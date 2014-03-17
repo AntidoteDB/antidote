@@ -1,0 +1,7 @@
+*.beam
+.eunit
+deps/*
+ebin/*
+rel/floppy
+dev
+apps/floppy/src/*

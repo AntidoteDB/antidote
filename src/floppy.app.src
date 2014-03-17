@@ -1,0 +1,14 @@
+%% -*- erlang -*-
+{application, floppy,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  riak_core
+                 ]},
+  {mod, { floppy_app, []}},
+  {env, []}
+ ]}.
