@@ -13,5 +13,5 @@ update_snapshot(Type, Snapshot, [Op|Rest]) ->
     {_,#operation{payload=Payload}}=Op,
     {OpParam, Actor}=Payload,
     io:format("OpParam: ~w, Actor: ~w and Snapshot: ~w~n",[OpParam, Actor, Snapshot]),	
-    NewSnapshot= Type:update(OpParam, Actor, Snapshot),
+    {ok, NewSnapshot}= Type:update(OpParam, Actor, Snapshot),
     update_snapshot(Type, NewSnapshot, Rest).
