@@ -1,2 +1,3 @@
 -define(PRINT(Var), io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
 -define(MASTER, floppy_vnode_master).
+-define(LOGGINGMASTER, logging_vnode_master).
