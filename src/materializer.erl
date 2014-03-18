@@ -18,5 +18,5 @@ update_snapshot(Type, Snapshot, [Op|Rest]) ->
     update_snapshot(Type, NewSnapshot, Rest).
     
     
-    update_snapshot_test() -> fun () -> ?assert(1 + 1 =:= 4) end.
+    update_snapshot_test() -> fun () -> ?assert(1 + 1 =:= 2) end.
    % update_snapshot(test, test, []).
