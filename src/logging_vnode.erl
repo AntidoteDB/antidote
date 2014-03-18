@@ -28,7 +28,6 @@
              ]).
 
 -record(state, {partition, log, objects, lclock}).
--record(operation, {opNumber, payload}).
 
 %% API
 start_vnode(I) ->
@@ -53,7 +52,7 @@ init([Partition]) ->
     FileStore = filename:join(app_helper:get_env(riak_core, platform_data_dir),
                          "store"),
     {ok, Objects} = dets:open_file(partition_objects, [{file, FileStore}, {type, set}]),
-    {ok, #state { partition=Partition, log=Log, objects= Objects }}.
+    {ok, #state { partition=Partition, log=Log, objects= Objects, lclock=0 }}.
 
 handle_command({create, Key, Type}, _Sender, #state{objects=Objects}=State) ->
     io:format("Key: ~w, Type: ~w~n",[Key, Type]),
@@ -73,12 +72,12 @@ handle_command({get, Key}, _Sender, #state{log=Log, objects=Objects}=State) ->
     [] ->
 	{reply, {error, key_never_created}, State};
     [{_, {Type,Snapshot}}] ->
-    	io:format("It reaches this point. Type: ~w, Snapshot: ~w~n",[Type, Snapshot]),
 	case dets:lookup(Log, Key) of
 	[] ->
 	    Value=Type:value(Snapshot),
 	    {reply, {ok, Value}, State};
 	[H|T] ->
+	    io:format("Operation: ~w~n",[H]),
 	    NewSnapshot=materializer:update_snapshot(Type, Snapshot,[H|T]),
 	    dets:insert(Objects, {Key, {Type, NewSnapshot}}),
 	    dets:delete(Log, Key),
@@ -94,8 +93,10 @@ handle_command({get, Key}, _Sender, #state{log=Log, objects=Objects}=State) ->
 handle_command({update, Key, Payload}, _Sender, #state{log=Log, lclock=LC}=State) ->
     %Should we return key_never_created?
     OpId= generate_op_id(LC),
+    {NewClock,_}=OpId,
+    io:format("LClock: ~w and NewClock: ~w~n",[LC, NewClock]),
     dets:insert(Log, {Key, #operation{opNumber=OpId, payload=Payload}}),
-    {reply, {ok, OpId}, State#state{lclock=OpId}};
+    {reply, {ok, OpId}, State#state{lclock=NewClock}};
 
 %handle_command({prune, Key, UntilOp}, _Sender, #state{log=Log}=State) ->
 handle_command({prune, _, _}, _Sender, State) ->
