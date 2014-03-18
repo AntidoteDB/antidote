@@ -35,16 +35,16 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 get(Preflist, Key) ->
-    riak_core_vnode_master:sync_command(PrefList, {get, Key}, ?MASTER)).
+    riak_core_vnode_master:sync_command(Preflist, {get, Key}, ?MASTER).
 
 update(Preflist, Key, Op) ->
-    riak_core_vnode_master:sync_command(PrefList, {update, Key, Op}, ?MASTER)).
+    riak_core_vnode_master:sync_command(Preflist, {update, Key, Op}, ?MASTER).
 
 create(Preflist, Key, Type) ->
-    riak_core_vnode_master:sync_command(PrefList, {create, Key, Type}, ?MASTER)).
+    riak_core_vnode_master:sync_command(Preflist, {create, Key, Type}, ?MASTER).
 
 prune(Preflist, Key, Until) ->
-    riak_core_vnode_master:sync_command(PrefList, {create, Key, Until}, ?MASTER)).
+    riak_core_vnode_master:sync_command(Preflist, {prune, Key, Until}, ?MASTER).
 
 init([Partition]) ->
     FileLog = filename:join(app_helper:get_env(riak_core, platform_data_dir),
@@ -59,46 +59,46 @@ init([Partition]) ->
 handle_command(ping, _Sender, State) ->
     {reply, {pong, State#state.partition}, State};
 
-handle_command({create, Key, Type}, _Sender, State) ->
+handle_command({create, Key, Type}, _Sender, #state{objects=Objects}=State) ->
     case dets:lookup(Objects, Key) of
     [] ->
 	NewSnapshot=materializer:create_snapshot(Type),
 	dets:insert(Objects, {Key, {Type, NewSnapshot}}),
-	{reply, {ok, null}},
-    [Snapshot] ->
-	{reply, {error, key_in_use}};
+	{reply, {ok, null}, State};
+    [_] ->
+	{reply, {error, key_in_use}, State};
     {error, Reason}->
-	{reply, {error, Reason}}
+	{reply, {error, Reason}, State}
     end;
 
-handle_command({get, Key}, _Sender, Statei#state{log=Log, objects=Objects) ->
+handle_command({get, Key}, _Sender, #state{log=Log, objects=Objects}=State) ->
     case dets:lookup(Objects, Key) of
     [] ->
-	{reply, {error, key_never_created}},
+	{reply, {error, key_never_created}, State};
     [{Type, Snapshot}] ->
 	case dets:lookup(Log, Key) of
 	[] ->
-	    {reply, {ok, Snapshot}},
+	    {reply, {ok, Snapshot}};
 	[H|T] ->
 	    NewSnapshot=materializer:update_snapshot(Type, Snapshot,[H|T]),
 	    dets:insert(Objects, {Key, {Type, NewSnapshot}}),
 	    dets:delete(Log, Key),
-	    {reply, {ok, NewSnapshot}};
+	    {reply, {ok, NewSnapshot}, State};
 	{error, Reason}->
-	    {reply, {error, Reason}}
+	    {reply, {error, Reason}, State}
 	end;
     {error, Reason}->
-	{reply, {error, Reason}}
+	{reply, {error, Reason}, State}
     end;
 
-handle_command({update, Key, Payload}, _Sender, State#state{log=Log}) ->
+handle_command({update, Key, Payload}, _Sender, #state{log=Log, lclock=LC}=State) ->
     %Should we return key_never_created?
-    OpId= generate_op_id(),
+    OpId= generate_op_id(LC),
     dets:insert(Log, {Key, #operation{opNumber=OpId, payload=Payload}}),
-    {reply, {ok, OpId}, State};
+    {reply, {ok, OpId}, State#state{lclock=OpId}};
 
-handle_command({prune, Key, UntilOp}, _Sender, State#state(log=Log)) ->
-    prune(Log, Key, UntilOp),
+handle_command({prune, Key, UntilOp}, _Sender, #state{log=Log}=State) ->
+    do_prune(Log, Key, UntilOp),
     {reply, {ok, State#state.partition}, State};
 
 handle_command(Message, _Sender, State) ->
@@ -108,8 +108,8 @@ handle_command(Message, _Sender, State) ->
 generate_op_id(Current)->
     {Current + 1, node()}.
 	
-prune(Log, Key, OpId)->
-    dets:select_delete(Log, ets:fun2ms(fun({Key, #operation{opNumber=Op}}) when Op<=OpId -> true end)).
+do_prune(Log, Key, OpId)->
+    dets:select_delete(Log, ets:fun2ms(fun({Key, #operation{opNumber=Op}}) when Op=<OpId -> true end)).
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.

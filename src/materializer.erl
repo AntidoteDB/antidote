@@ -5,7 +5,7 @@
 create_snapshot(Type) ->
     Type:new().
 
-update_snapshot(Type, Snapshot, []) ->
+update_snapshot(_, Snapshot, []) ->
     Snapshot;
 update_snapshot(Type, Snapshot, [Op|Rest]) ->
     {OpParam, Actor} = Op,
