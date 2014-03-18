@@ -18,6 +18,9 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
 
+	    ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
+            ok = riak_core_node_watcher:service_up(logging, self()),
+
             ok = riak_core_ring_events:add_guarded_handler(floppy_ring_event_handler, []),
             ok = riak_core_node_watcher_events:add_guarded_handler(floppy_node_event_handler, []),
 
