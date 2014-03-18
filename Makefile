@@ -1,7 +1,7 @@
 REBAR = $(shell pwd)/rebar
 .PHONY: deps
 
-all: deps compile
+all: deps compile test
 
 compile:
 	$(REBAR) compile
@@ -10,7 +10,7 @@ deps:
 	$(REBAR) get-deps
 
 test:
-	$(REBAR) eunit
+	$(REBAR) eunit skip_deps=true
 
 clean:
 	$(REBAR) clean

@@ -17,6 +17,8 @@ update_snapshot(Type, Snapshot, [Op|Rest]) ->
     {ok, NewSnapshot}= Type:update(OpParam, Actor, Snapshot),
     update_snapshot(Type, NewSnapshot, Rest).
     
-    
-    update_snapshot_test() -> fun () -> ?assert(1 + 1 =:= 2) end.
+    length_test() -> ?assert(length([1,2,3]) =:= 3).
+    length_bad_test() -> ?assert(length([1,2,3, 4]) =:= 3).
+  % update_snapshot_wrong_test() -> fun () -> ?assert(true).
+  % update_snapshot_ok_test() -> fun () -> ?assert(false).
    % update_snapshot(test, test, []).
