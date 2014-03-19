@@ -1,6 +1,7 @@
 -module(logging_vnode).
 -behaviour(riak_core_vnode).
 -include("floppy.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
 	 %API begin
@@ -57,17 +58,6 @@ init([Partition]) ->
     {ok, Objects} = dets:open_file(StoreFile, [{file, StorePath}, {type, set}]),
     {ok, Log} = dets:open_file(LogFile, [{file, LogPath}, {type, bag}]),
     {ok, #state { partition=Partition, log=Log, objects=Objects }}.
-
-    %Path = filename:join(app_helper:get_env(riak_core, platform_data_dir),integer_to_list(Partition)),
-    %FileLog = string:concat(Path,"log"),
-    %FileStore = string:concat(Path,"store"),
-    %io:format("Partition: ~s~n",[FileLog]),
-    %filelib:ensure_dir(FileLog),
-    %filelib:ensure_dir(FileStore),
-    %{_, Log} = dets:open_file(partition_log, [{file, Path}, {type, bag}]),
-    %io:format("Log: ~w~n",[Log]),
-    %{ok, Objects} = dets:open_file(partition_objects, [{file, Path}, {type, set}]),
-    %{ok, #state { partition=Partition, log=Log, objects= Objects, lclock=1 }}.
 
 handle_command({create, Key, Type}, _Sender, #state{objects=Objects}=State) ->
     io:format("Key: ~w, Type: ~w~n",[Key, Type]),
