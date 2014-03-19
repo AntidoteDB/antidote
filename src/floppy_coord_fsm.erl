@@ -6,7 +6,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/5, start_link/6]).
+-export([start_link/5]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -15,10 +15,11 @@
 %% States
 -export([prepare/2, execute/2, waiting/2]).
 
+
+-define(BUCKET, <<"floppy">>).
 -record(state, {req_id :: pos_integer(),
                 from :: pid(),
                 op :: atom(),
-                fetch,
                 key,
                 val = undefined :: term() | undefined,
                 preflist :: riak_core_apl:preflist2()}).
@@ -31,9 +32,9 @@
 %start_link(Key, Op) ->
 %    start_link(Key, Op).
 
-start_link(ReqID, From, Op, Fetch, Key, Val) ->
-    io:format('The worker is about to start~n'),
-    gen_fsm:start_link(?MODULE, [ReqID, From, Op, Fetch, Key, Val], []).
+start_link(ReqID, From, Op, Key, Val) ->
+    io:format('Coord:The worker is about to start~n'),
+    gen_fsm:start_link(?MODULE, [ReqID, From, Op, Key, Val], []).
 
 %start_link(Key, Op) ->
 %    io:format('The worker is about to start~n'),
@@ -44,21 +45,22 @@ start_link(ReqID, From, Op, Fetch, Key, Val) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init([ReqID, From, Op, Fetch, Key, Val]) ->
+init([ReqID, From, Op,  Key, Val]) ->
     SD = #state{req_id=ReqID,
                 from=From,
-                op=Op,
-                fetch=Fetch,
+                op=Op, 
                 key=Key,
                 val=Val},
 		%num_w=1},
+    io:format("Coord:init~n"),
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
 prepare(timeout, SD0=#state{key=Key}) ->
-    DocIdx = riak_core_util:chash_key({<<"basic">>,
+    DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_apl(DocIdx, ?N, mfmn),
+    Preflist = riak_core_apl:get_apl(DocIdx, ?N, replication),
+    io:format("Coord:prepare~n"),
     SD = SD0#state{preflist=Preflist},
     {next_state, execute, SD, 0}.
 
@@ -66,29 +68,26 @@ prepare(timeout, SD0=#state{key=Key}) ->
 %% verify it has meets consistency requirements.
 execute(timeout, SD0=#state{req_id=ReqID,
                             op=Op,
-                            fetch=Fetch,
                             key=Key,
                             val=Val,
                             preflist=Preflist}) ->
 			%    num_w=W}) ->
+    io:format("coord:execute"),
     case Preflist of 
+	[] ->
+	    io:format("no pref list~n"),
+	    {stop, normal, SD0};
 	[H|T] ->
-	    floppy_rep_vnode:handle([H], Op, ReqID, Key, Val),
-	    SD1 = SD0#state{preflist=[T]},
-	    {next_state, waiting, SD1};
-	[H] ->
-	    floppy_rep_vnode:handle([H], Op, ReqID, Key, Val), 
-            SD1 = SD0#state{preflist=[]},
-            {next_state, waiting, SD1};
-	_ ->
-	   %%reply message to user
-	    {stop, normal, SD0}
+	    io:format("something in list~w~n",[H]),
+	    floppy_rep_vnode:handle(H, Op, ReqID, Key, Val), 
+            SD1 = SD0#state{preflist=[T]},
+            {next_state, waiting, SD1}
     end.
 
 %% @doc Waits for 1 write reqs to respond.
-waiting({ReqID, Val, Lease}, SD0=#state{from=From, key=Key}) ->
+waiting({ReqID,Key, Val}, SD0=#state{from=From}) ->
     SD = SD0#state{val=Val},
-    io:format("Floppy coord fsm got message! ~w ~n", [Val]),
+    io:format("Floppy coord fsm got message! ~w ~w ~w ~w ~n", [ReqID, From, Key,Val]),
     {stop, normal, SD};
 
 waiting({error, no_key}, SD) ->

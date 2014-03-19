@@ -6,7 +6,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/5, start_link/6]).
+-export([start_link/5]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -18,12 +18,13 @@
 -record(state, {req_id :: pos_integer(),
                 from :: pid(),
                 op :: atom(),
-                fetch,
                 key,
                 val = undefined :: term() | undefined,
-                preflist :: riak_core_apl:preflist2()}).
+                preflist :: riak_core_apl:preflist2(),
                 num_w = 1 :: non_neg_integer(),
-		num_r = 1 :: non_neg_integer()}).
+		num_r = 1 :: non_neg_integer(),
+		num_to_ack = 0 :: non_neg_integer()}).
+-define(BUCKET, <<"floppy">>).
 
 %%%===================================================================
 %%% API
@@ -32,9 +33,9 @@
 %start_link(Key, Op) ->
 %    start_link(Key, Op).
 
-start_link(ReqID, From, Op, Fetch, Key, Val) ->
-    io:format('The worker is about to start~n'),
-    gen_fsm:start_link(?MODULE, [ReqID, From, Op, Fetch, Key, Val], []).
+start_link(ReqID, From, Op,  Key, Val) ->
+    io:format('rep:The worker is about to start~n'),
+    gen_fsm:start_link(?MODULE, [ReqID, From, Op,  Key, Val], []).
 
 %start_link(Key, Op) ->
 %    io:format('The worker is about to start~n'),
@@ -45,11 +46,10 @@ start_link(ReqID, From, Op, Fetch, Key, Val) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init([ReqID, From, Op, Fetch, Key, Val]) ->
+init([ReqID, From, Op,  Key, Val]) ->
     SD = #state{req_id=ReqID,
                 from=From,
                 op=Op,
-                fetch=Fetch,
                 key=Key,
                 val=Val},
 		%num_w=1},
@@ -57,9 +57,9 @@ init([ReqID, From, Op, Fetch, Key, Val]) ->
 
 %% @doc Prepare the write by calculating the _preference list_.
 prepare(timeout, SD0=#state{key=Key}) ->
-    DocIdx = riak_core_util:chash_key({<<"basic">>,
+    DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_apl(DocIdx, ?N, mfmn),
+    Preflist = riak_core_apl:get_apl(DocIdx, ?N, logging),
     SD = SD0#state{preflist=Preflist},
     {next_state, execute, SD, 0}.
 
@@ -67,31 +67,38 @@ prepare(timeout, SD0=#state{key=Key}) ->
 %% verify it has meets consistency requirements.
 execute(timeout, SD0=#state{req_id=ReqID,
                             op=Op,
-                            fetch=Fetch,
                             key=Key,
                             val=Val,
                             preflist=Preflist}) ->
-			%    num_w=W}) ->
-    case Preflist of 
-	[H|T] ->
-	    floppy_vnode:Op([H], ReqID, Key, Val),
-	    SD1 = SD0#state{preflist=[T]},
-	    {next_state, waiting, SD1};
-	[H] ->
-	    floppy_vnode:Op([H], ReqID, Key, Val), 
-            SD1 = SD0#state{preflist=[]},
-            {next_state, waiting, SD1};
+    case Op of 
+	update ->
+	    io:format("replication propagating updates!~n"),
+	    logging_vnode:Op(Preflist, ReqID, Key, Val),
+	    Num_w = SD0#state.num_w,
+	    SD1 = SD0#state{num_to_ack=Num_w},
+	    {next_state, execute, SD1};
+	read ->
+	    io:format("replication propagating reads!~n"),
+	    logging_vnode:Op(Preflist, ReqID, Key, Val),
+	    Num_r = SD0#state.num_r,
+	    SD1 = SD0#state{num_to_ack=Num_r},
+	    {next_state, execute, SD1};
 	_ ->
+	    io:format("wrong commands~n"),
 	   %%reply message to user
 	    {stop, normal, SD0}
     end.
 
 %% @doc Waits for 1 write reqs to respond.
-waiting({ReqID, Val, Lease}, SD0=#state{from=From, key=Key}) ->
-    SD = SD0#state{val=Val},
-    io:format("Op fsm is forwarding key ~w ~n", [Val]),
-    mfmn_cache:add_key(From, ReqID, Key, Val, Lease),
-    {stop, normal, SD};
+waiting({ReqID, Val}, SD=#state{ from=From, key=Key, num_to_ack= NumToAck}) ->
+    if NumToAck == 1 -> 
+    	io:format("Finish collecting replies ~w ~w ~n", [From, Val]),
+	{reply, {ReqID, Key, Val}, SD};
+	true ->
+         io:format("Keep collecting keys!"),
+	{next_state, SD#state{num_to_ack= NumToAck-1}}
+    end;
+
 
 waiting({error, no_key}, SD) ->
     {stop, normal, SD}.

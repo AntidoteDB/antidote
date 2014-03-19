@@ -22,30 +22,35 @@
         ]).
 
 
--record(state, {partition, kv}).
--record(value, {queue, lease, crdt}).
+-record(state, {partition}).
+%-record(value, {queue, lease, crdt}).
 
--define(MASTER, mfmn_vnode_master).
+
 
 handle(Preflist, Op, ReqID, Key, Param) ->
-    riak_core_vnode_master:command(Preflist,
-                                   {op, Op, ReqID, Key, Param},
-                                   {fsm, undefined, self()},
-                                   ?MASTER).
+    io:format("Rep_vnode:Handle ~w ~n",[Preflist]),
+    riak_core_vnode_master:sync_command(Preflist,
+                                   {operate, Op, ReqID, Key, Param},
+                                   ?REPMASTER).
 
 %read(Preflist, ReqID, Vclock, Key) ->
 %    riak_core_vnode_master:command(Preflist,
 %                                   {read, ReqID, Vclock, Key},
 %                                   {fsm, undefined, self()},
 %
-                                   ?MASTER).
+%                                   ?REPMASTER).
+
+
 start_vnode(I) ->
+    io:format("rep vnode started~n"),
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-    {ok, #state{partition=Partition, kv=dict:new()}}.
+    io:format("rep vnode inited~n"),
+    {ok, #state{partition=Partition}}.
 
-handle_command({op, Op, ReqID, Key, Param}, _Sender, State) ->
+handle_command({operate, Op, ReqID, Key, Param}, _Sender, _State) ->
+      io:format("Node starts replication~n."),
       floppy_rep_sup:start_fsm([ReqID, self(), Op, Key, Param]);
 
 %handle_command({put, Key, Value}, _Sender, State) ->
@@ -89,8 +94,4 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%private functions
-get_first([Value|_]) -> Value.
-
-get_time_inseconds() -> calendar:datetime_to_gregorian_seconds(calendar:universal_time()).
 
