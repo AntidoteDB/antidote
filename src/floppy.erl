@@ -39,19 +39,19 @@ ping() ->
     riak_core_vnode_master:sync_spawn_command(IndexNode, ping, floppy_vnode_master).
 
 create(Key, Type) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(now())}),
+    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
     [{IndexNode, _Type}] = PrefList,
     logging_vnode:create(IndexNode, Key, Type).
 
 update(Key, Op) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(now())}),
+    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
     [{IndexNode, _Type}] = PrefList,
     logging_vnode:update(IndexNode, Key, Op).
 
 get(Key) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(now())}),
+    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
     [{IndexNode, _Type}] = PrefList,
     logging_vnode:get(IndexNode, Key).

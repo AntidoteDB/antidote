@@ -46,13 +46,28 @@ prune(Preflist, Key, Until) ->
     riak_core_vnode_master:sync_command(Preflist, {prune, Key, Until}, ?LOGGINGMASTER).
 
 init([Partition]) ->
-    FileLog = filename:join(app_helper:get_env(riak_core, platform_data_dir),
-                         "log"),
-    {ok, Log} = dets:open_file(partition_log, [{file, FileLog}, {type, bag}]),
-    FileStore = filename:join(app_helper:get_env(riak_core, platform_data_dir),
-                         "store"),
-    {ok, Objects} = dets:open_file(partition_objects, [{file, FileStore}, {type, set}]),
-    {ok, #state { partition=Partition, log=Log, objects= Objects, lclock=0 }}.
+
+    LogFile=string:concat(integer_to_list(Partition),"log"),
+    StoreFile=string:concat(integer_to_list(Partition),"store"),
+    LogPath = filename:join(app_helper:get_env(riak_core, platform_data_dir),
+                         LogFile),
+    StorePath = filename:join(app_helper:get_env(riak_core, platform_data_dir),
+                         StoreFile),
+    %{ok, Log} = dets:open_file(log, [{file, File}, {type, bag}]),
+    {ok, Objects} = dets:open_file(StoreFile, [{file, StorePath}, {type, set}]),
+    {ok, Log} = dets:open_file(LogFile, [{file, LogPath}, {type, bag}]),
+    {ok, #state { partition=Partition, log=Log, objects=Objects }}.
+
+    %Path = filename:join(app_helper:get_env(riak_core, platform_data_dir),integer_to_list(Partition)),
+    %FileLog = string:concat(Path,"log"),
+    %FileStore = string:concat(Path,"store"),
+    %io:format("Partition: ~s~n",[FileLog]),
+    %filelib:ensure_dir(FileLog),
+    %filelib:ensure_dir(FileStore),
+    %{_, Log} = dets:open_file(partition_log, [{file, Path}, {type, bag}]),
+    %io:format("Log: ~w~n",[Log]),
+    %{ok, Objects} = dets:open_file(partition_objects, [{file, Path}, {type, set}]),
+    %{ok, #state { partition=Partition, log=Log, objects= Objects, lclock=1 }}.
 
 handle_command({create, Key, Type}, _Sender, #state{objects=Objects}=State) ->
     io:format("Key: ~w, Type: ~w~n",[Key, Type]),
@@ -90,13 +105,14 @@ handle_command({get, Key}, _Sender, #state{log=Log, objects=Objects}=State) ->
 	{reply, {error, Reason}, State}
     end;
 
-handle_command({update, Key, Payload}, _Sender, #state{log=Log, lclock=LC}=State) ->
+handle_command({update, Key, Payload}, _Sender, #state{log=Log, objects=Objects, lclock=LC}=_State) ->
     %Should we return key_never_created?
     OpId= generate_op_id(LC),
     {NewClock,_}=OpId,
     io:format("LClock: ~w and NewClock: ~w~n",[LC, NewClock]),
     dets:insert(Log, {Key, #operation{opNumber=OpId, payload=Payload}}),
-    {reply, {ok, OpId}, State#state{lclock=NewClock}};
+    State1=#state{log=Log, objects=Objects, lclock=NewClock},
+    {reply, {ok, OpId}, State1};
 
 %handle_command({prune, Key, UntilOp}, _Sender, #state{log=Log}=State) ->
 handle_command({prune, _, _}, _Sender, State) ->
