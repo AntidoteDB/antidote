@@ -57,7 +57,7 @@ init([Partition]) ->
     %{ok, Log} = dets:open_file(log, [{file, File}, {type, bag}]),
     {ok, Objects} = dets:open_file(StoreFile, [{file, StorePath}, {type, set}]),
     {ok, Log} = dets:open_file(LogFile, [{file, LogPath}, {type, bag}]),
-    {ok, #state { partition=Partition, log=Log, objects=Objects }}.
+    {ok, #state { partition=Partition, log=Log, objects=Objects, lclock=0 }}.
 
 handle_command({create, Key, Type}, _Sender, #state{objects=Objects}=State) ->
     io:format("Key: ~w, Type: ~w~n",[Key, Type]),

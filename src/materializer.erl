@@ -18,7 +18,7 @@ update_snapshot(Type, Snapshot, [Op|Rest]) ->
     update_snapshot(Type, NewSnapshot, Rest).
     
     length_test() -> ?assert(length([1,2,3]) =:= 3).
-    length_bad_test() -> ?assert(length([1,2,3, 4]) =:= 3).
+   % length_bad_test() -> ?assert(length([1,2,3, 4]) =:= 3).
   % update_snapshot_wrong_test() -> fun () -> ?assert(true).
   % update_snapshot_ok_test() -> fun () -> ?assert(false).
    % update_snapshot(test, test, []).
