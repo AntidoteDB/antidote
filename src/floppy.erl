@@ -4,9 +4,11 @@
 
 -export([
          ping/0,
-	 create/2,
+	 %create/2,
+	 append/2,
+	 read/1,
+	 get/2,
 	 update/2,
-	 get/1,
 	 types/0
         ]).
 
@@ -38,22 +40,30 @@ ping() ->
     [{IndexNode, _Type}] = PrefList,
     riak_core_vnode_master:sync_spawn_command(IndexNode, ping, floppy_vnode_master).
 
-create(Key, Type) ->
+%create(Key, Type) ->
+%    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+%    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
+%    [{IndexNode, _Type}] = PrefList,
+%    logging_vnode:create(IndexNode, Key, Type).
+
+append(Key, Op) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
     [{IndexNode, _Type}] = PrefList,
-    logging_vnode:create(IndexNode, Key, Type).
+    logging_vnode:append(IndexNode, Key, Op).
 
-update(Key, Op) ->
+read(Key) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
     [{IndexNode, _Type}] = PrefList,
-    logging_vnode:update(IndexNode, Key, Op).
+    logging_vnode:read(IndexNode, Key).
 
-get(Key) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
-    [{IndexNode, _Type}] = PrefList,
-    logging_vnode:get(IndexNode, Key).
+get(Key, Type) ->
+    {ok, Ops} = read(Key),
+    Init=materializer:create_snapshot(Type),
+    Snapshot=materializer:update_snapshot(Type, Init, Ops),
+    Value=Type:value(Snapshot),
+    {ok, Value}.
 
-
+update(Key, Op)->
+    append(Key, Op).
