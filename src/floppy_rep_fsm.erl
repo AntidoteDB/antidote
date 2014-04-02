@@ -19,10 +19,10 @@
                 from :: pid(),
                 op :: atom(),
                 key,
-                val = undefined :: term() | undefined,
+                param = undefined :: term() | undefined,
                 preflist :: riak_core_apl:preflist2(),
-                num_w = 1 :: non_neg_integer(),
-		num_r = 1 :: non_neg_integer(),
+                num_w = 2 :: non_neg_integer(),
+		num_r = 2 :: non_neg_integer(),
 		num_to_ack = 0 :: non_neg_integer()}).
 -define(BUCKET, <<"floppy">>).
 
@@ -33,9 +33,9 @@
 %start_link(Key, Op) ->
 %    start_link(Key, Op).
 
-start_link(ReqID, From, Op,  Key, Val) ->
-    io:format('rep:The worker is about to start~n'),
-    gen_fsm:start_link(?MODULE, [ReqID, From, Op,  Key, Val], []).
+start_link(ReqID, From, Op,  Key, Param, OpClock) ->
+    io:format("rep:The worker is about to start~w~n",[From]),
+    gen_fsm:start_link(?MODULE, [ReqID, From, Op, Key, Param, OpClock], []).
 
 %start_link(Key, Op) ->
 %    io:format('The worker is about to start~n'),
@@ -46,12 +46,13 @@ start_link(ReqID, From, Op,  Key, Val) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init([ReqID, From, Op,  Key, Val]) ->
+init([ReqID, From, Op,  Key, Param, OpClock]) ->
     SD = #state{req_id=ReqID,
                 from=From,
                 op=Op,
                 key=Key,
-                val=Val},
+                param=Param,
+		opclock= OpClock},
 		%num_w=1},
     {ok, prepare, SD, 0}.
 
@@ -59,30 +60,38 @@ init([ReqID, From, Op,  Key, Val]) ->
 prepare(timeout, SD0=#state{key=Key}) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_apl(DocIdx, ?N, logging),
-    SD = SD0#state{preflist=Preflist},
+    Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, logging),
+    NewPref = [Node|| {Node,_} <- Preflist ],
+    SD = SD0#state{preflist=NewPref},
     {next_state, execute, SD, 0}.
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
-execute(timeout, SD0=#state{req_id=ReqID,
+execute(timeout, SD0=#state{req_id=_ReqID,
                             op=Op,
                             key=Key,
-                            val=Val,
-                            preflist=Preflist}) ->
+                            param=Param,
+                            preflist=Preflist,
+			    opclock=OpClock}) ->
     case Op of 
 	update ->
 	    io:format("replication propagating updates!~n"),
-	    logging_vnode:Op(Preflist, ReqID, Key, Val),
+	    logging_vnode:dupdate(Preflist, Key, Param),
 	    Num_w = SD0#state.num_w,
 	    SD1 = SD0#state{num_to_ack=Num_w},
-	    {next_state, execute, SD1};
-	read ->
+	    {next_state, waiting, SD1};
+	create ->
+	    io:format("replication propagating create!~w~n",[Preflist]),
+	    logging_vnode:dcreate(Preflist, Key, Param, OpClock),
+	    Num_w = SD0#state.num_w,
+	    SD1 = SD0#state{num_to_ack=Num_w},
+	    {next_state, waiting, SD1};
+	get ->
 	    io:format("replication propagating reads!~n"),
-	    logging_vnode:Op(Preflist, ReqID, Key, Val),
+	    logging_vnode:dget(Preflist, Key),
 	    Num_r = SD0#state.num_r,
 	    SD1 = SD0#state{num_to_ack=Num_r},
-	    {next_state, execute, SD1};
+	    {next_state, waiting, SD1};
 	_ ->
 	    io:format("wrong commands~n"),
 	   %%reply message to user
@@ -90,13 +99,18 @@ execute(timeout, SD0=#state{req_id=ReqID,
     end.
 
 %% @doc Waits for 1 write reqs to respond.
-waiting({ReqID, Val}, SD=#state{ from=From, key=Key, num_to_ack= NumToAck}) ->
+waiting({ok, _}, SD=#state{req_id= ReqID, from= From, key=Key, num_to_ack= NumToAck}) ->
+    io:format("rep_fsm:got reply~n"),
     if NumToAck == 1 -> 
-    	io:format("Finish collecting replies ~w ~w ~n", [From, Val]),
-	{reply, {ReqID, Key, Val}, SD};
+    	io:format("Finish collecting replies ~w ~n", [From]),
+	%{stop, normal, {ReqID, Key, no_real_value},  SD};
+	%floppy_rep_vnode:fsm_try(From,nothing),
+	%floppy_rep_vnode:fsm_reply(From, ReqID, Key, something),
+	floppy_coord_fsm:receiveData(From, ReqID, Key),	
+	{stop, normal, SD};
 	true ->
          io:format("Keep collecting keys!"),
-	{next_state, SD#state{num_to_ack= NumToAck-1}}
+	{next_state, waiting, SD#state{num_to_ack= NumToAck-1}}
     end;
 
 

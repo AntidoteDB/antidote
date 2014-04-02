@@ -1,12 +1,16 @@
 -module(logging_vnode).
 -behaviour(riak_core_vnode).
 -include("floppy.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
 	 %API begin
 	 get/2,
 	 update/3,
 	 create/3,
+	 dget/2,
+	 dupdate/3,
+	 dcreate/3,
 	 prune/3,
 	 %API end
          init/1,
@@ -36,11 +40,21 @@ start_vnode(I) ->
 get(Preflist, Key) ->
     riak_core_vnode_master:sync_command(Preflist, {get, Key}, ?LOGGINGMASTER).
 
+dget(Preflist, Key) ->
+    riak_core_vnode_master:command(Preflist, {get, Key}, {fsm, undefined, self()},?LOGGINGMASTER).
+
 update(Preflist, Key, Op) ->
     riak_core_vnode_master:sync_command(Preflist, {update, Key, Op}, ?LOGGINGMASTER).
 
+dupdate(Preflist, Key, Op) ->
+    riak_core_vnode_master:command(Preflist, {update, Key, Op},{fsm, undefined, self()}, ?LOGGINGMASTER).
+
 create(Preflist, Key, Type) ->
     riak_core_vnode_master:sync_command(Preflist, {create, Key, Type}, ?LOGGINGMASTER).
+
+
+dcreate(Preflist, Key, Type) ->
+    riak_core_vnode_master:command(Preflist, {create, Key, Type}, {fsm, undefined, self()}, ?LOGGINGMASTER).
 
 prune(Preflist, Key, Until) ->
     riak_core_vnode_master:sync_command(Preflist, {prune, Key, Until}, ?LOGGINGMASTER).
@@ -55,13 +69,15 @@ init([Partition]) ->
     {ok, #state { partition=Partition, log=Log, objects= Objects, lclock=0 }}.
 
 handle_command({create, Key, Type}, _Sender, #state{objects=Objects}=State) ->
-    io:format("Key: ~w, Type: ~w~n",[Key, Type]),
+    io:format("logging Key: ~w, Type: ~w~n",[Key, Type]),
     case dets:lookup(Objects, Key) of
     [] ->
 	NewSnapshot=materializer:create_snapshot(Type),
 	dets:insert(Objects, {Key, {Type, NewSnapshot}}),
+	io:format("replying OK~n"),
 	{reply, {ok, null}, State};
     [_] ->
+	io:format("error, key in use!"),
 	{reply, {error, key_in_use}, State};
     {error, Reason}->
 	{reply, {error, Reason}, State}

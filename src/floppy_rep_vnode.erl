@@ -18,7 +18,7 @@
          handle_exit/3]).
 
 -export([
-	handle/5
+	handle/6
         ]).
 
 
@@ -27,11 +27,23 @@
 
 
 
-handle(Preflist, Op, ReqID, Key, Param) ->
+handle(Preflist, ToReply, Op, ReqID, Key, Param) ->
     io:format("Rep_vnode:Handle ~w ~n",[Preflist]),
-    riak_core_vnode_master:sync_command(Preflist,
-                                   {operate, Op, ReqID, Key, Param},
+    riak_core_vnode_master:command(Preflist,
+                                   {operate, ToReply, Op, ReqID, Key, Param},
                                    ?REPMASTER).
+
+%%%TODO: How can fsm reply message to vnode?
+%fsm_reply(From, ReqID, Key, Value) ->
+%    io:format("Rep_vnode:reply ~w ~n",[From]),
+%    gen_server:call(From, {fsm_reply, ReqID, Key, Value}).
+    %riak_core_vnode_master:command(Preflist,
+    %                               {fsm_reply, ReqID, Key, Value},
+    %                               ?REPMASTER).
+
+%fsm_try(From, Nothing) ->
+%    io:format("Trying..."),
+%    gen_server:call(From, {fsm_try, Nothing}).
 
 %read(Preflist, ReqID, Vclock, Key) ->
 %    riak_core_vnode_master:command(Preflist,
@@ -42,16 +54,15 @@ handle(Preflist, Op, ReqID, Key, Param) ->
 
 
 start_vnode(I) ->
-    io:format("rep vnode started~n"),
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-    io:format("rep vnode inited~n"),
     {ok, #state{partition=Partition}}.
 
-handle_command({operate, Op, ReqID, Key, Param}, _Sender, _State) ->
+handle_command({operate, ToReply, Op, ReqID, Key, Param}, _Sender, State) ->
       io:format("Node starts replication~n."),
-      floppy_rep_sup:start_fsm([ReqID, self(), Op, Key, Param]);
+      floppy_rep_sup:start_fsm([ReqID, ToReply, Op, Key, Param]),
+      {noreply, State};
 
 %handle_command({put, Key, Value}, _Sender, State) ->
 %    D0 = dict:erase(Key, State#state.kv),
@@ -60,6 +71,15 @@ handle_command({operate, Op, ReqID, Key, Param}, _Sender, _State) ->
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command, Message}),
     {noreply, State}.
+
+%handle_call({fsm_reply, ReqID, Key, Value}, _Sender, State)->
+%      io:format("Got reply from FSM~n ~w ~w ~w ~n", [ReqID, Key, Value]),
+%      {noreply, State};
+
+%handle_call({fsm_try, Nothing}, _Sender, State) ->
+%	io:format("Fsm try! ~w", [Nothing]),
+%	{noreply, State}.
+
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.

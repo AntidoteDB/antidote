@@ -5,9 +5,11 @@
 -export([
          ping/0,
 	 create/2,
-	 add/2,
 	 update/2,
 	 get/1,
+	 dcreate/2,
+	 dupdate/2,
+	 dget/1,
 	 types/0
         ]).
 
@@ -39,8 +41,14 @@ ping() ->
     [{IndexNode, _Type}] = PrefList,
     riak_core_vnode_master:sync_spawn_command(IndexNode, ping, floppy_vnode_master).
 
-add(Key, Param) ->
-   {ok, _} = floppy_coord_sup:start_fsm([100, self(), update, Key, Param]).
+dcreate(Key, Type) ->
+   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
+
+dupdate(Key, Op) ->
+   floppy_coord_sup:start_fsm([100, self(), update, Key, Op]).
+
+dget(Key) ->
+   floppy_coord_sup:start_fsm([100, self(), get, Key, something]).
 
 create(Key, Type) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(now())}),
