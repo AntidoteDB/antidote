@@ -17,13 +17,13 @@
 
 
 -define(BUCKET, <<"floppy">>).
--record(state, {req_id :: pos_integer(),
+-record(state, {
                 from :: pid(),
                 op :: atom(),
                 key,
-                val = undefined :: term() | undefined,
+		client,
+                param = undefined :: term() | undefined,
                 preflist :: riak_core_apl:preflist2()}).
-                %num_w = 0 :: non_neg_integer()}).
 
 %%%===================================================================
 %%% API
@@ -32,33 +32,32 @@
 %start_link(Key, Op) ->
 %    start_link(Key, Op).
 
-start_link(ReqID, From, Op, Key, Val) ->
+start_link(From, Op, Key, Param, Client) ->
     io:format('Coord:The worker is about to start~n'),
-    gen_fsm:start_link(?MODULE, [ReqID, From, Op, Key, Val], []).
+    gen_fsm:start_link(?MODULE, [From, Op, Key, Param, Client], []).
 
 %start_link(Key, Op) ->
 %    io:format('The worker is about to start~n'),
 %    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
 
-receiveData(From, ReqID, Key) ->
+receiveData(From, Key,Result) ->
    io:format("Sending message to~w~n",[From]),
-   gen_fsm:send_event(From, {ReqID,Key, nothing}).
+   gen_fsm:send_event(From, {Key, Result}).
 %%%===================================================================
 %%% States
 %%%===================================================================
 
-%% @doc Initialize the state data.
-init([ReqID, From, Op,  Key, Val]) ->
-    SD = #state{req_id=ReqID,
+%% @doc Initialize the s,,tate data.
+init([From, Op,  Key, Param, Client]) ->
+    SD = #state{
                 from=From,
                 op=Op, 
                 key=Key,
-                val=Val},
+                param=Param,
+		client=Client},
 		%num_w=1},
     io:format("Coord:init~n"),
     {ok, prepare, SD, 0}.
-
-
 
 
 %% @doc Prepare the write by calculating the _preference list_.
@@ -72,12 +71,11 @@ prepare(timeout, SD0=#state{key=Key}) ->
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
-execute(timeout, SD0=#state{req_id=ReqID,
+execute(timeout, SD0=#state{
                             op=Op,
                             key=Key,
-                            val=Val,
+                            param=Param,
                             preflist=Preflist}) ->
-			%    num_w=W}) ->
     io:format("coord:execute~w~n",[self()]),
     case Preflist of 
 	[] ->
@@ -86,18 +84,19 @@ execute(timeout, SD0=#state{req_id=ReqID,
 	[H|T] ->
 	    io:format("something in list~w~n",[H]),
 	    {IndexNode, _} = H,
-	    floppy_rep_vnode:handle(IndexNode, self(), Op, ReqID, Key, Val), 
+	    floppy_rep_vnode:handle(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=[T]},
 	    io:format("Coord fsm:Going to wait~n"),
             {next_state, waiting, SD1}
     end.
 
 %% @doc Waits for 1 write reqs to respond.
-waiting({ReqID,Key, Val}, SD0=#state{from=From}) ->
+waiting({Key, Val}, SD=#state{from=_From,client=Client}) ->
     io:format("Received Message~n"),
-    SD = SD0#state{val=Val},
-    io:format("Floppy coord fsm got message! ~w ~w ~w ~w ~n", [ReqID, From, Key,Val]),
+    io:format("Floppy coord fsm got message!  ~w ~n", [Key]),
+    proxy:returnResult(Key, Val, Client),    
     {stop, normal, SD};
+
 
 waiting({error, no_key}, SD) ->
     {stop, normal, SD}.

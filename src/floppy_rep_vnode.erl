@@ -17,20 +17,21 @@
          handle_coverage/4,
          handle_exit/3]).
 
+
 -export([
-	handle/6
+	handle/5
         ]).
 
 
--record(state, {partition}).
+-record(state, {partition,lclock}).
 %-record(value, {queue, lease, crdt}).
 
 
 
-handle(Preflist, ToReply, Op, ReqID, Key, Param) ->
+handle(Preflist, ToReply, Op, Key, Param) ->
     io:format("Rep_vnode:Handle ~w ~n",[Preflist]),
     riak_core_vnode_master:command(Preflist,
-                                   {operate, ToReply, Op, ReqID, Key, Param},
+                                   {operate, ToReply, Op, Key, Param},
                                    ?REPMASTER).
 
 %%%TODO: How can fsm reply message to vnode?
@@ -57,12 +58,14 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-    {ok, #state{partition=Partition}}.
+    {ok, #state{partition=Partition,lclock=0}}.
 
-handle_command({operate, ToReply, Op, ReqID, Key, Param}, _Sender, State) ->
+handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Partition,lclock=LC}) ->
       io:format("Node starts replication~n."),
-      floppy_rep_sup:start_fsm([ReqID, ToReply, Op, Key, Param]),
-      {noreply, State};
+      OpId = generate_op_id(LC),
+      {NewClock,_} = OpId,
+      floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
+      {noreply, #state{lclock=NewClock, partition= Partition}};
 
 %handle_command({put, Key, Value}, _Sender, State) ->
 %    D0 = dict:erase(Key, State#state.kv),
@@ -80,6 +83,10 @@ handle_command(Message, _Sender, State) ->
 %	io:format("Fsm try! ~w", [Nothing]),
 %	{noreply, State}.
 
+
+
+generate_op_id(Current) ->
+    {Current + 1, node()}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
