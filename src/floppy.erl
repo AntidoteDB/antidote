@@ -9,8 +9,8 @@
 	 read/1,
 	 get/2,
 	 update/2,
-	 dupdate/0,
-	 dread/0,
+	 dupdate/2,
+	 dread/2,
 	 types/0
         ]).
 
@@ -45,15 +45,14 @@ ping() ->
 %dcreate(Key, Type) ->
 %   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
 
-dupdate() ->
-   proxy:update(li, {increment, good},self()).
+dupdate(Key, Op) ->
+   proxy:update(Key, Op,self()).
    %{ok, {_ObjKey, _ObjVal}} = floppy_coord_sup:start_fsm([self(), update, li, {increment, thin}]),
    %io:format("Floppy: finished~n"),
    %{ok}.
 
-dread() ->
-    {_, Ops} = proxy:read(li, self()),
-    Type = riak_dt_gcounter,
+dread(Key, Type) ->
+    {_, Ops} = proxy:read(Key, self()),
     Init=materializer:create_snapshot(Type),
     Snapshot=materializer:update_snapshot(Type, Init, Ops),
     Value=Type:value(Snapshot),
