@@ -3,4 +3,6 @@
 -define(LOGGINGMASTER, logging_vnode_master).
 -define(REPMASTER, floppy_rep_vnode_master).
 -define(N, 3).
+-define(NUM_W, 2).
+-define(NUM_R, 2).
 -record(operation, {opNumber, payload}).

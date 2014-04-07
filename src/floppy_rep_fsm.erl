@@ -22,8 +22,6 @@
                 param = undefined :: term() | undefined,
 		readresult,
                 preflist :: riak_core_apl:preflist2(),
-                num_w = 2 :: non_neg_integer(),
-		num_r = 2 :: non_neg_integer(),
 		num_to_ack = 0 :: non_neg_integer(),
 		opid}).
 -define(BUCKET, <<"floppy">>).
@@ -55,7 +53,6 @@ init([From, Op,  Key, Param, OpId]) ->
                 param=Param,
 		opid= OpId,
 		readresult=[]},
-		%num_w=1},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
@@ -78,8 +75,7 @@ execute(timeout, SD0=#state{op=Op,
 	update ->
 	    io:format("replication propagating updates!~n"),
 	    logging_vnode:dupdate(Preflist, Key, Param, OpId),
-	    Num_w = SD0#state.num_w,
-	    SD1 = SD0#state{num_to_ack=Num_w},
+	    SD1 = SD0#state{num_to_ack=?NUM_W},
 	    {next_state, waiting, SD1};
 %	create ->
 %	    io:format("replication propagating create!~w~n",[Preflist]),
@@ -90,8 +86,7 @@ execute(timeout, SD0=#state{op=Op,
 	read ->
 	    io:format("replication propagating reads!~n"),
 	    logging_vnode:dread(Preflist, Key),
-	    Num_r = SD0#state.num_r,
-	    SD1 = SD0#state{num_to_ack=Num_r},
+	    SD1 = SD0#state{num_to_ack=?NUM_R},
 	    {next_state, waiting, SD1};
 	_ ->
 	    io:format("wrong commands~n"),

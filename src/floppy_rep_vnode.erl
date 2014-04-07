@@ -30,9 +30,19 @@
 
 handle(Preflist, ToReply, Op, Key, Param) ->
     io:format("Rep_vnode:Handle ~w ~n",[Preflist]),
-    riak_core_vnode_master:command(Preflist,
+    %{A1,A2,A3} = now(),
+    %random:seed(A1, A2, A3),
+    %Rand = random:uniform(2),
+    %io:format("**********Rand ~w********** ~n",[Rand]),
+    %if Rand == 2 ->
+	%io:format("Proceed request~n"),
+    	riak_core_vnode_master:command(Preflist,
                                    {operate, ToReply, Op, Key, Param},
                                    ?REPMASTER).
+     %  true ->
+%	 io:format("Do nothing~n"),
+%	 {ok}
+ %   end.
 
 %%%TODO: How can fsm reply message to vnode?
 %fsm_reply(From, ReqID, Key, Value) ->
@@ -46,12 +56,6 @@ handle(Preflist, ToReply, Op, Key, Param) ->
 %    io:format("Trying..."),
 %    gen_server:call(From, {fsm_try, Nothing}).
 
-%read(Preflist, ReqID, Vclock, Key) ->
-%    riak_core_vnode_master:command(Preflist,
-%                                   {read, ReqID, Vclock, Key},
-%                                   {fsm, undefined, self()},
-%
-%                                   ?REPMASTER).
 
 
 start_vnode(I) ->

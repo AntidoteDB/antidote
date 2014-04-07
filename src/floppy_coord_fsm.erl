@@ -82,15 +82,33 @@ execute(timeout, SD0=#state{
 	    io:format("no pref list~n"),
 	    {stop, normal, SD0};
 	[H|T] ->
-	    io:format("something in list~w~n",[H]),
+	    io:format("First node:~w~n",[H]),
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handle(IndexNode, self(), Op, Key, Param), 
-            SD1 = SD0#state{preflist=[T]},
+            SD1 = SD0#state{preflist=T},
 	    io:format("Coord fsm:Going to wait~n"),
-            {next_state, waiting, SD1}
+            {next_state, waiting, SD1, 1000}
     end.
 
 %% @doc Waits for 1 write reqs to respond.
+waiting(timeout, SD0=#state{op=Op,
+			   key=Key,
+			   param=Param,
+			   preflist=Preflist}) ->
+    io:format("TIMEOUT: No acknowledge, retrying...~n"),
+    case Preflist of 
+	[] ->
+	    io:format("no pref list~n"),
+	    {stop, normal, SD0};
+	[H|T] ->
+	    io:format("First node:~w~n",[H]),
+	    {IndexNode, _} = H,
+	    floppy_rep_vnode:handle(IndexNode, self(), Op, Key, Param), 
+            SD1 = SD0#state{preflist=T},
+	    io:format("Coord fsm:Going to wait~n"),
+            {next_state, waiting, SD1, 1000}
+    end;
+
 waiting({Key, Val}, SD=#state{from=_From,client=Client}) ->
     io:format("Received Message~n"),
     io:format("Floppy coord fsm got message!  ~w ~n", [Key]),
