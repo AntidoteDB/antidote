@@ -46,7 +46,8 @@ ping() ->
 %   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
 
 dupdate(Key, Op) ->
-   proxy:update(Key, Op,self()).
+    proxy:update(Key, Op,self()),
+    inter_dc_repl:propogate({Key,Op}).
    %{ok, {_ObjKey, _ObjVal}} = floppy_coord_sup:start_fsm([self(), update, li, {increment, thin}]),
    %io:format("Floppy: finished~n"),
    %{ok}.
