@@ -10,6 +10,7 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+    inter_dc_recvr:start(),
     case floppy_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, floppy_vnode}]),
