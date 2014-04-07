@@ -5,3 +5,4 @@ ebin/*
 rel/floppy
 dev
 apps/floppy/src/*
+*.swp
