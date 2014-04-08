@@ -1,5 +1,6 @@
 -module(inter_dc_repl).
 -behaviour(gen_fsm).
+-include("floppy.hrl").
 
 %%gen_fsm call backs
 -export([init/1, handle_event/3, handle_sync_event/4, 
@@ -22,7 +23,7 @@
 %public api
 
 propogate(Payload) ->
-    gen_fsm:start(?MODULE, ['floppy1@127.0.0.1', inter_dc_recvr, Payload], []).
+    gen_fsm:start(?MODULE, [?OTHER_DC, inter_dc_recvr, Payload], []).
    
 acknowledge(Pid, Payload) ->
     gen_fsm:send_event(Pid, {ok, Payload}),   

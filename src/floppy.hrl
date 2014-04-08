@@ -5,4 +5,5 @@
 -define(N, 3).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
+-define(OTHER_DC, 'floppy1@127.0.0.1').
 -record(operation, {opNumber, payload}).
