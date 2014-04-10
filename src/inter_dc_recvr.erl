@@ -56,6 +56,6 @@ code_change(_OldVsn, State, _Extra) ->
 apply(Payload) ->
     io:format("Recieved update ~p ~n",[Payload]),
     {Key, Op} = Payload,
-    proxy:update(Key, Op, self()),
+    proxy:update(Key, Op, self()), %%TODO: Replace this with proper replication protocol
     io:format("Updated operation ~p ~n", [Payload]),
     ok.
