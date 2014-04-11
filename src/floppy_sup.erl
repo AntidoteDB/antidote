@@ -39,9 +39,9 @@ init(_Args) ->
                   {floppy_coord_sup, start_link, []},
                   permanent, 5000, supervisor, [floppy_coord_sup]},
 
-    ProxySup =  { proxy_sup,
-                  {proxy_sup, start_link, []},
-                  permanent, 5000, supervisor, [proxy_sup]},
+%    ProxySup =  { proxy_sup,
+%                  {proxy_sup, start_link, []},
+%                  permanent, 5000, supervisor, [proxy_sup]},
 
     RepSup = {   floppy_rep_sup,
                   {floppy_rep_sup, start_link, []},
@@ -49,4 +49,4 @@ init(_Args) ->
 
     { ok,
         { {one_for_one, 5, 10},
-          [VMaster, LoggingMaster, RepMaster, InterDcRepMaster, CoordSup, ProxySup, RepSup]}}.
+          [VMaster, LoggingMaster, RepMaster, InterDcRepMaster, CoordSup,  RepSup]}}.

@@ -6,7 +6,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/5]).
+-export([start_link/4]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -21,7 +21,6 @@
                 from :: pid(),
                 op :: atom(),
                 key,
-		client,
                 param = undefined :: term() | undefined,
                 preflist :: riak_core_apl:preflist2()}).
 
@@ -29,8 +28,8 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Op, Key, Param, Client) ->
-    gen_fsm:start_link(?MODULE, [From, Op, Key, Param, Client], []).
+start_link(From, Op, Key, Param) ->
+    gen_fsm:start_link(?MODULE, [From, Op, Key, Param], []).
 
 %start_link(Key, Op) ->
 %    io:format('The worker is about to start~n'),
@@ -43,13 +42,13 @@ finishOp(From, Key,Result) ->
 %%%===================================================================
 
 %% @doc Initialize the s,,tate data.
-init([From, Op,  Key, Param, Client]) ->
+init([From, Op,  Key, Param]) ->
     SD = #state{
                 from=From,
                 op=Op, 
                 key=Key,
-                param=Param,
-		client=Client},
+                param=Param
+		},
 		%num_w=1},
     {ok, prepare, SD, 0}.
 
@@ -79,7 +78,7 @@ execute(timeout, SD0=#state{
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
-            {next_state, waiting, SD1, 1000}
+            {next_state, waiting, SD1, ?INDC_TIMEOUT}
     end.
 
 %% @doc Waits for 1 write reqs to respond.
@@ -87,7 +86,7 @@ waiting(timeout, SD0=#state{op=Op,
 			   key=Key,
 			   param=Param,
 			   preflist=Preflist}) ->
-    io:format("Coord: TIMEOUT, retry...~n"),
+    io:format("Coord: INDC_TIMEOUT, retry...~n"),
     case Preflist of 
 	[] ->
 	    io:format("Coord: Nothing in pref list~n"),
@@ -97,12 +96,13 @@ waiting(timeout, SD0=#state{op=Op,
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
-            {next_state, waiting, SD1, 1000}
+            {next_state, waiting, SD1, ?INDC_TIMEOUT}
     end;
 
-waiting({Key, Val}, SD=#state{from=_From,client=Client}) ->
+waiting({Key, Val}, SD=#state{from=From}) ->
     io:format("Coord: Finish operation ~w ~w ~n",[Key,Val]),
-    proxy:returnResult(Key, Val, Client),    
+    %proxy:returnResult(Key, Val, Client),
+    From! {Key,Val},   
     {stop, normal, SD};
 
 

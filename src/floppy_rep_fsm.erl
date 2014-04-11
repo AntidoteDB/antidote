@@ -114,7 +114,7 @@ waitRead({Node, Result}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key
     if NumToAck == 1 -> 
     	io:format("FSM: Finish reading for ~w ~w ~w ~n", [Op, Key, Result1]),
 	floppy_coord_fsm:finishOp(From,  Key, Result1),	
-	{next_state, readRepair, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, 1000};
+	{next_state, readRepair, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
 	true ->
          io:format("FSM: Keep collecting replies~n"),
 	{next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
@@ -139,7 +139,7 @@ readRepair({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, r
 	{stop, normal, SD};
     	true ->
          io:format("FSM: Keep collecting replies~n"),
-	{next_state, readRepair, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, 1000}
+	{next_state, readRepair, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
     end.
 
 repair([], _) ->

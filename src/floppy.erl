@@ -46,18 +46,33 @@ ping() ->
 %   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
 
 dupdate(Key, Op) ->
-    proxy:update(Key, Op),
-    inter_dc_repl_vnode:propogate({Key,Op}).
+    io:format("Update ~w ~w ~n", [Key, Op]),
+    floppy_coord_sup:start_fsm([self(), update, Key, Op]),    
+    receive 
+	{_, Result} ->
+	io:format("Update completed!~w~n",[Result]),
+        inter_dc_repl_vnode:propogate({Key,Op})
+	after 5000 ->
+	io:format("Update failed!~n")
+    end.
    %{ok, {_ObjKey, _ObjVal}} = floppy_coord_sup:start_fsm([self(), update, li, {increment, thin}]),
    %io:format("Floppy: finished~n"),
    %{ok}.
 
 dread(Key, Type) ->
-    {_, Ops} = proxy:read(Key),
-    Init=materializer:create_snapshot(Type),
-    Snapshot=materializer:update_snapshot(Type, Init, Ops),
-    Value=Type:value(Snapshot),
-    {ok, Value}.
+    io:format("Read ~w ~w ~n", [Key, Type]),
+    floppy_coord_sup:start_fsm([self(), read, Key, noop]),
+    receive 
+	{_, Ops} ->
+	io:format("Read completed!~n"),
+    	Init=materializer:create_snapshot(Type),
+    	Snapshot=materializer:update_snapshot(Type, Init, Ops),
+    	Value=Type:value(Snapshot),
+    	{ok, Value}
+	after 5000 ->
+	io:format("Read failed!~n"),
+	{error, nothing}
+    end.
    %floppy_coord_sup:start_fsm([self(), read, Key, something]).
 
 append(Key, Op) ->
