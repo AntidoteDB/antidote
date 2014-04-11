@@ -46,25 +46,19 @@ ping() ->
 %   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
 
 dupdate(Key, Op) ->
-    proxy:update(Key, Op,self()),
+    proxy:update(Key, Op),
     inter_dc_repl:propogate({Key,Op}).
    %{ok, {_ObjKey, _ObjVal}} = floppy_coord_sup:start_fsm([self(), update, li, {increment, thin}]),
    %io:format("Floppy: finished~n"),
    %{ok}.
 
 dread(Key, Type) ->
-    {_, Ops} = proxy:read(Key, self()),
+    {_, Ops} = proxy:read(Key),
     Init=materializer:create_snapshot(Type),
     Snapshot=materializer:update_snapshot(Type, Init, Ops),
     Value=Type:value(Snapshot),
     {ok, Value}.
    %floppy_coord_sup:start_fsm([self(), read, Key, something]).
-
-%create(Key, Type) ->
-%    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-%    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
-%    [{IndexNode, _Type}] = PrefList,
-%    logging_vnode:create(IndexNode, Key, Type).
 
 append(Key, Op) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),

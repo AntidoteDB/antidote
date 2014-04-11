@@ -12,4 +12,4 @@ init([]) ->
     Proxy = {proxy,
                 {proxy, start_link, []},
                 permanent, 5000, worker, [proxy]},
-    catch  {ok, {{one_for_one, 5, 10}, [Proxy]}}.
+    {ok, {{one_for_one, 5, 10}, [Proxy]}}.

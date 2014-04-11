@@ -13,7 +13,7 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([prepare/2, execute/2, waiting/2, receiveData/3]).
+-export([prepare/2, execute/2, waiting/2, finishOp/3]).
 
 
 -define(BUCKET, <<"floppy">>).
@@ -29,19 +29,14 @@
 %%% API
 %%%===================================================================
 
-%start_link(Key, Op) ->
-%    start_link(Key, Op).
-
 start_link(From, Op, Key, Param, Client) ->
-    io:format('Coord:The worker is about to start~n'),
     gen_fsm:start_link(?MODULE, [From, Op, Key, Param, Client], []).
 
 %start_link(Key, Op) ->
 %    io:format('The worker is about to start~n'),
 %    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
 
-receiveData(From, Key,Result) ->
-   io:format("Sending message to~w~n",[From]),
+finishOp(From, Key,Result) ->
    gen_fsm:send_event(From, {Key, Result}).
 %%%===================================================================
 %%% States
@@ -56,7 +51,6 @@ init([From, Op,  Key, Param, Client]) ->
                 param=Param,
 		client=Client},
 		%num_w=1},
-    io:format("Coord:init~n"),
     {ok, prepare, SD, 0}.
 
 
@@ -65,7 +59,6 @@ prepare(timeout, SD0=#state{key=Key}) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, replication),
-    io:format("Coord:prepare~n"),
     SD = SD0#state{preflist=Preflist},
     {next_state, execute, SD, 0}.
 
@@ -76,17 +69,16 @@ execute(timeout, SD0=#state{
                             key=Key,
                             param=Param,
                             preflist=Preflist}) ->
-    io:format("coord:execute~w~n",[self()]),
+    io:format("Coord: Execute operation ~w ~w ~w~n",[Op, Key, Param]),
     case Preflist of 
 	[] ->
-	    io:format("no pref list~n"),
+	    io:format("Coord: Nothing in pref list~n"),
 	    {stop, normal, SD0};
 	[H|T] ->
-	    io:format("First node:~w~n",[H]),
+	    io:format("Coord: Forward to node~w~n",[H]),
 	    {IndexNode, _} = H,
-	    floppy_rep_vnode:handle(IndexNode, self(), Op, Key, Param), 
+	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
-	    io:format("Coord fsm:Going to wait~n"),
             {next_state, waiting, SD1, 1000}
     end.
 
@@ -95,23 +87,21 @@ waiting(timeout, SD0=#state{op=Op,
 			   key=Key,
 			   param=Param,
 			   preflist=Preflist}) ->
-    io:format("TIMEOUT: No acknowledge, retrying...~n"),
+    io:format("Coord: TIMEOUT, retry...~n"),
     case Preflist of 
 	[] ->
-	    io:format("no pref list~n"),
+	    io:format("Coord: Nothing in pref list~n"),
 	    {stop, normal, SD0};
 	[H|T] ->
-	    io:format("First node:~w~n",[H]),
+	    io:format("Coord: Forward to node:~w~n",[H]),
 	    {IndexNode, _} = H,
-	    floppy_rep_vnode:handle(IndexNode, self(), Op, Key, Param), 
+	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
-	    io:format("Coord fsm:Going to wait~n"),
             {next_state, waiting, SD1, 1000}
     end;
 
 waiting({Key, Val}, SD=#state{from=_From,client=Client}) ->
-    io:format("Received Message~n"),
-    io:format("Floppy coord fsm got message!  ~w ~n", [Key]),
+    io:format("Coord: Finish operation ~w ~w ~n",[Key,Val]),
     proxy:returnResult(Key, Val, Client),    
     {stop, normal, SD};
 

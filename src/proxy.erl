@@ -11,17 +11,17 @@
          handle_info/2,
          terminate/2,
          code_change/3,
-	 update/3,
-	 read/2,
+	 update/2,
+	 read/1,
 	 returnResult/3]).
  
 -record(state, {}).
 
-update(Key, Op, Client)->
-    gen_server:call(?MODULE, {update, Key, Op, Client}).
+update(Key, Op)->
+    gen_server:call(?MODULE, {update, Key, Op}).
 
-read(Key, Client)->
-    gen_server:call(?MODULE, {read, Key, Client}).
+read(Key)->
+    gen_server:call(?MODULE, {read, Key}).
 
 returnResult(Key, Result, Client) ->
     gen_server:call(?MODULE, {returnResult, Key, Result, Client}).
@@ -32,18 +32,18 @@ start_link() ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({update, Key, Op, Client}, From, State ) ->
-    io:format("Client: ~w From: ~w ~n", [Client, From]),
+handle_call({update, Key, Op}, From, State ) ->
+    io:format("Proxy: Update from client ~w~n", [From]),
     floppy_coord_sup:start_fsm([self(), update, Key, Op, From]),
     {noreply, State};
 
-handle_call({read, Key, Client}, From, State) ->
-    io:format("Client: ~w From: ~w ~n", [Client, From]),
+handle_call({read, Key}, From, State) ->
+    io:format("Proxy: Read from client ~w~n", [From]),
     floppy_coord_sup:start_fsm([self(), read, Key, noop, From]),
     {noreply, State};
 
 handle_call({returnResult, Key, Result, Client}, _From, State) ->
-    io:format("Proxy returning result~n"),
+    io:format("Proxy: Returning result~n"),
     gen_server:reply(Client, {Key, Result}),
     {reply, {ok}, State};
  
