@@ -5,12 +5,8 @@
 -export([
          ping/0,
 	 %create/2,
-	 append/2,
-	 read/1,
-	 get/2,
 	 update/2,
-	 dupdate/2,
-	 dread/2,
+	 read/2,
 	 types/0
         ]).
 
@@ -45,7 +41,7 @@ ping() ->
 %dcreate(Key, Type) ->
 %   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
 
-dupdate(Key, Op) ->
+update(Key, Op) ->
     io:format("Update ~w ~w ~n", [Key, Op]),
     floppy_coord_sup:start_fsm([self(), update, Key, Op]),    
     receive 
@@ -59,7 +55,7 @@ dupdate(Key, Op) ->
    %io:format("Floppy: finished~n"),
    %{ok}.
 
-dread(Key, Type) ->
+read(Key, Type) ->
     io:format("Read ~w ~w ~n", [Key, Type]),
     floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive 
@@ -75,24 +71,4 @@ dread(Key, Type) ->
     end.
    %floppy_coord_sup:start_fsm([self(), read, Key, something]).
 
-append(Key, Op) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
-    [{IndexNode, _Type}] = PrefList,
-    logging_vnode:append(IndexNode, Key, Op).
 
-read(Key) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, logging),
-    [{IndexNode, _Type}] = PrefList,
-    logging_vnode:read(IndexNode, Key).
-
-get(Key, Type) ->
-    {ok, Ops} = read(Key),
-    Init=materializer:create_snapshot(Type),
-    Snapshot=materializer:update_snapshot(Type, Init, Ops),
-    Value=Type:value(Snapshot),
-    {ok, Value}.
-
-update(Key, Op)->
-    append(Key, Op).
