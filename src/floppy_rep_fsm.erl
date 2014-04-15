@@ -113,8 +113,9 @@ waitRead({Node, Result}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key
     %io:format("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
     if NumToAck == 1 -> 
     	io:format("FSM: Finish reading for ~w ~w ~w ~n", [Op, Key, Result1]),
+	repair(NodeOps1, Result1),
 	floppy_coord_fsm:finishOp(From,  Key, Result1),	
-	{next_state, readRepair, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
+	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
 	true ->
          io:format("FSM: Keep collecting replies~n"),
 	{next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
@@ -124,12 +125,12 @@ waitRead({error, no_key}, SD) ->
     io:format("FSM: No key!~n"),
     {stop, normal, SD}.
 
-readRepair(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
+repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
     io:format("FSM: read repair timeout! Start repair anyway~n"),
     repair(NodeOps, ReadResult),
     {stop, normal, SD};
 
-readRepair({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
+repairRest({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, Result),
     %io:format("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
@@ -139,7 +140,7 @@ readRepair({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, r
 	{stop, normal, SD};
     	true ->
          io:format("FSM: Keep collecting replies~n"),
-	{next_state, readRepair, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
+	{next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
     end.
 
 repair([], _) ->
