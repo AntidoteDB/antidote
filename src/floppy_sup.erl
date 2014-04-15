@@ -39,10 +39,6 @@ init(_Args) ->
                   {floppy_coord_sup, start_link, []},
                   permanent, 5000, supervisor, [floppy_coord_sup]},
 
-%    ProxySup =  { proxy_sup,
-%                  {proxy_sup, start_link, []},
-%                  permanent, 5000, supervisor, [proxy_sup]},
-
     RepSup = {   floppy_rep_sup,
                   {floppy_rep_sup, start_link, []},
                   permanent, 5000, supervisor, [floppy_rep_sup]},
