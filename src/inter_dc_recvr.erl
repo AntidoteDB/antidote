@@ -56,6 +56,13 @@ code_change(_OldVsn, State, _Extra) ->
 apply(Payload) ->
     io:format("Recieved update ~p ~n",[Payload]),
     {Key, Op} = Payload,
-    proxy:update(Key, Op, self()), %%TODO: Replace this with proper replication protocol
+    %%TODO: Replace this with proper replication protocol
+    floppy_coord_sup:start_fsm([self(), update, Key, Op]),
+    receive 
+	{_, Result} ->
+	io:format("Updated ~p",[Result])
+	after 5000 ->
+	io:format("Update failed!~n")
+    end,
     io:format("Updated operation ~p ~n", [Payload]),
     ok.
