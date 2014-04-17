@@ -13,7 +13,7 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([prepare/2, execute/2, waitAppend/2, waitRead/2, readRepair/2 ]).
+-export([prepare/2, execute/2, waitAppend/2, waitRead/2, repairRest/2 ]).
 
 -record(state, {
                 from :: pid(),
@@ -109,12 +109,13 @@ waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= Nu
 
 waitRead({Node, Result}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key, readresult= ReadResult , num_to_ack= NumToAck}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
-    Result1 = union_ops(ReadResult, Result),
+    Result1 = union_ops(ReadResult, [], Result),
     %io:format("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
     if NumToAck == 1 -> 
     	io:format("FSM: Finish reading for ~w ~w ~w ~n", [Op, Key, Result1]),
+	repair(NodeOps1, Result1),
 	floppy_coord_fsm:finishOp(From,  Key, Result1),	
-	{next_state, readRepair, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
+	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
 	true ->
          io:format("FSM: Keep collecting replies~n"),
 	{next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
@@ -124,14 +125,14 @@ waitRead({error, no_key}, SD) ->
     io:format("FSM: No key!~n"),
     {stop, normal, SD}.
 
-readRepair(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
+repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
     io:format("FSM: read repair timeout! Start repair anyway~n"),
     repair(NodeOps, ReadResult),
     {stop, normal, SD};
 
-readRepair({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
+repairRest({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
-    Result1 = union_ops(ReadResult, Result),
+    Result1 = union_ops(ReadResult, [], Result),
     %io:format("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
     if NumToAck == 1 -> 
     	io:format("FSM: Finish collecting replies, start read repair ~n"),
@@ -139,7 +140,7 @@ readRepair({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, r
 	{stop, normal, SD};
     	true ->
          io:format("FSM: Keep collecting replies~n"),
-	{next_state, readRepair, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
+	{next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
     end.
 
 repair([], _) ->
@@ -159,25 +160,25 @@ find_diff_ops(Set1, Set2) ->
     lists:filter(fun(X)-> lists:member(X, Set1) == false end , Set2).
 
 
-union_ops(Set1,[]) ->
-    Set1;
-union_ops(Set1, [Op|T]) ->
+union_ops(L1, L2, []) ->
+    lists:append(L1, L2);
+union_ops(L1, L2, [Op|T]) ->
     {_, #operation{opNumber= OpId}} = Op,
-    Set3 = union_list(Set1, OpId,[]),
-    Set4 = lists:append(Set3, [Op]),
-    union_ops(Set4, T).
+    L3 = remove_dup(L1, OpId,[]),
+    L4 = lists:append(L2, [Op]),
+    union_ops(L3, L4, T).
 
 
-union_list([], _OpId, Set2) ->
+remove_dup([], _OpId, Set2) ->
     Set2;
-union_list([H|T], OpId, Set2) ->
+remove_dup([H|T], OpId, Set2) ->
     {_, #operation{opNumber= OpNum}} = H,
     if OpNum /= OpId ->
 	Set3 = lists:append(Set2, [H]);
        true ->
 	Set3 = Set2
     end,
-    union_list(T, OpId, Set3).
+    remove_dup(T, OpId, Set3).
     
 
 handle_info(_Info, _StateName, StateData) ->
