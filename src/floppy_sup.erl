@@ -47,6 +47,10 @@ init(_Args) ->
                   {floppy_rep_sup, start_link, []},
                   permanent, 5000, supervisor, [floppy_rep_sup]},
 
+    InterDcRecvr = { inter_dc_recvr, 
+		     {inter_dc_recvr, start_link, []},
+		     permanent, 5000, worker, [inter_dc_recvr]},
+
     { ok,
         { {one_for_one, 5, 10},
-          [VMaster, LoggingMaster, RepMaster, InterDcRepMaster, CoordSup,  RepSup]}}.
+          [VMaster, LoggingMaster, RepMaster, InterDcRepMaster, CoordSup,  RepSup, InterDcRecvr]}}.

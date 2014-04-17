@@ -3,16 +3,18 @@
 -behaviour(gen_server).
 
 %%public API
--export([start/0, replicate/3, stop/1]).
+-export([start_link/0, replicate/3, stop/1]).
 
 %%gen_server call backs
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 %API
-start()->
+
+start_link() ->
     {ok, PID} = gen_server:start_link(?MODULE, [], []),
-    register(inter_dc_recvr, PID).
+    register(inter_dc_recvr, PID),
+    {ok, PID}.
 
 replicate(Node, Payload, Origin) ->
     io:format("Sending update ~p to ~p ~n",[Payload, Node]),
