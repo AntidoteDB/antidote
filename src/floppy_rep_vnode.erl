@@ -19,7 +19,9 @@
 
 
 -export([
-	handle/5
+	append/2,
+	read/2,
+	handleOp/5
         ]).
 
 
@@ -28,8 +30,34 @@
 
 
 
-handle(Preflist, ToReply, Op, Key, Param) ->
-    io:format("Rep_vnode:Handle ~w ~n",[Preflist]),
+append(Key, Op) ->
+    io:format("Update ~w ~w ~n", [Key, Op]),
+    floppy_coord_sup:start_fsm([self(), update, Key, Op]),
+    receive
+        {_, Result} ->
+        io:format("Update completed!~w~n",[Result]),
+        inter_dc_repl_vnode:propogate({Key,Op})
+        after 5000 ->
+        io:format("Update failed!~n")
+    end.
+
+read(Key, Type) ->
+    io:format("Read ~w ~w ~n", [Key, Type]),
+    floppy_coord_sup:start_fsm([self(), read, Key, noop]),
+    receive
+        {_, Ops} ->
+        io:format("Read completed!~n"),
+        Init=materializer:create_snapshot(Type),
+        Snapshot=materializer:update_snapshot(Type, Init, Ops),
+        Value=Type:value(Snapshot),
+        {ok, Value}
+        after 5000 ->
+        io:format("Read failed!~n"),
+        {error, nothing}
+    end.
+
+
+handleOp(Preflist, ToReply, Op, Key, Param) ->
     %{A1,A2,A3} = now(),
     %random:seed(A1, A2, A3),
     %Rand = random:uniform(2),
@@ -65,9 +93,16 @@ init([Partition]) ->
     {ok, #state{partition=Partition,lclock=0}}.
 
 handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Partition,lclock=LC}) ->
-      io:format("Node starts replication~n."),
-      OpId = generate_op_id(LC),
+      case Op of update ->
+      	OpId = generate_op_id(LC);
+	read  ->
+	OpId = current_op_id(LC);
+	_ ->
+	io:format("RepVNode: Wrong operations!~w~n", [Op]),
+	OpId = current_op_id(LC)
+      end,
       {NewClock,_} = OpId,
+      io:format("RepVNode: Start replication, clock: ~w~n",[NewClock]),
       floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
       {noreply, #state{lclock=NewClock, partition= Partition}};
 
@@ -91,6 +126,9 @@ handle_command(Message, _Sender, State) ->
 
 generate_op_id(Current) ->
     {Current + 1, node()}.
+
+current_op_id(Current) ->
+    {Current, node()}.    
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.

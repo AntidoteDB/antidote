@@ -7,6 +7,7 @@
 	 %API begin
 	 dread/2,
 	 dupdate/4,
+	 repair/2,
 	 read/2,
 	 append/3,
 	 prune/3,
@@ -47,6 +48,8 @@ dread(Preflist, Key) ->
 dupdate(Preflist, Key, Op, LClock) ->
     riak_core_vnode_master:command(Preflist, {append, Key, Op, LClock},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
+repair(Preflist, Ops) ->
+    riak_core_vnode_master:command(Preflist, {repair, Ops},{fsm, undefined, self()}, ?LOGGINGMASTER).
 %create(Preflist, Key, Type) ->
 %    riak_core_vnode_master:sync_command(Preflist, {create, Key, Type}, ?LOGGINGMASTER).
 
@@ -88,7 +91,6 @@ prune(Node, Key, Until) ->
     riak_core_vnode_master:sync_command(Node, {prune, Key, Until}, ?LOGGINGMASTER).
 
 init([Partition]) ->
-
     LogFile=string:concat(integer_to_list(Partition),"log"),
     LogPath = filename:join(app_helper:get_env(riak_core, platform_data_dir),
                          LogFile),
@@ -109,12 +111,12 @@ init([Partition]) ->
 %	{reply, {error, Reason}, State}
 %    end;
 
-handle_command({read, Key}, _Sender, #state{log=Log}=State) ->
+handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State) ->
 	case dets:lookup(Log, Key) of
 	[] ->
-	    {reply, {ok, []}, State};
+	    {reply, {{Partition, node()}, []}, State};
 	[H|T] ->
-	    {reply, {ok, [H|T]}, State};
+	    {reply, {{Partition, node()}, [H|T]}, State};
 	{error, Reason}->
 	    {reply, {error, Reason}, State}
 	end;
@@ -142,14 +144,17 @@ handle_command({read, Key}, _Sender, #state{log=Log}=State) ->
 %	{reply, {error, Reason}, State}
 %    end;
 
-handle_command({append, Key, Payload, OpId}, _Sender, #state{log=Log}=_State) ->
+handle_command({repair, Ops}, _Sender, #state{log=Log}=State) ->
     %Should we return key_never_created?
-    %OpId= generate_op_id(LC),
-    {NewClock,_}=OpId,
-    io:format("NewClock: ~w~n",[NewClock]),
+    dets:insert(Log, Ops),
+    State1=State#state{log=Log},
+    {noreply, State1};
+
+handle_command({append, Key, Payload, OpId}, _Sender, #state{partition=Partition, log=Log}=State) ->
+    %Should we return key_never_created?
     dets:insert(Log, {Key, #operation{opNumber=OpId, payload=Payload}}),
-    State1=#state{log=Log},
-    {reply, {ok, OpId}, State1};
+    State1=State#state{log=Log},
+    {reply, {{Partition,node()}, OpId}, State1};
 
 %handle_command({update, Key, Payload}, _Sender, #state{log=Log, objects=Objects, lclock=LC}=_State) ->
     %Should we return key_never_created?

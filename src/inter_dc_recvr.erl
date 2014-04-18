@@ -3,16 +3,18 @@
 -behaviour(gen_server).
 
 %%public API
--export([start/0, replicate/3, stop/1]).
+-export([start_link/0, replicate/3, stop/1]).
 
 %%gen_server call backs
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 %API
-start()->
+
+start_link() ->
     {ok, PID} = gen_server:start_link(?MODULE, [], []),
-    register(inter_dc_recvr, PID).
+    register(inter_dc_recvr, PID),
+    {ok, PID}.
 
 replicate(Node, Payload, Origin) ->
     io:format("Sending update ~p to ~p ~n",[Payload, Node]),
@@ -56,6 +58,13 @@ code_change(_OldVsn, State, _Extra) ->
 apply(Payload) ->
     io:format("Recieved update ~p ~n",[Payload]),
     {Key, Op} = Payload,
-    proxy:update(Key, Op, self()), %%TODO: Replace this with proper replication protocol
+    %%TODO: Replace this with proper replication protocol
+    floppy_coord_sup:start_fsm([self(), update, Key, Op]),
+    receive 
+	{_, Result} ->
+	io:format("Updated ~p",[Result])
+	after 5000 ->
+	io:format("Update failed!~n")
+    end,
     io:format("Updated operation ~p ~n", [Payload]),
     ok.

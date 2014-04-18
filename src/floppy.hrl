@@ -4,6 +4,7 @@
 -define(LOGGINGMASTER, logging_vnode_master).
 -define(CLOCKSIMASTER, clocksi_vnode_master).
 -define(REPMASTER, floppy_rep_vnode_master).
+-define(INDC_TIMEOUT, 1000).
 -define(N, 3).
 -define(NUM_W, 2).
 -define(NUM_R, 2).

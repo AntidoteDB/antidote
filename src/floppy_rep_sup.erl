@@ -11,7 +11,6 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_fsm(Args) ->
-    io:format('Creatting a new worker/child~n'),
     supervisor:start_child(?MODULE, Args).
 
 init([]) ->
