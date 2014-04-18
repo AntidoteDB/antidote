@@ -16,7 +16,6 @@
 -export([prepare/2, execute/2, waiting/2, receiveData/3]).
 
 
--define(BUCKET, <<"floppy">>).
 -record(state, {
                 from :: pid(),
                 op :: atom(),

@@ -24,7 +24,6 @@
                 preflist :: riak_core_apl:preflist2(),
 		num_to_ack = 0 :: non_neg_integer(),
 		opid}).
--define(BUCKET, <<"floppy">>).
 
 %%%===================================================================
 %%% API

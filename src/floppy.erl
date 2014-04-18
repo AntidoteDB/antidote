@@ -18,8 +18,6 @@
               ping/0
              ]).
 
--define(BUCKET, <<"floppy">>).
-
 %% Public API
 
 types()->

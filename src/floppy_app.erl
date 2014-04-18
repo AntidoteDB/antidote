@@ -19,6 +19,9 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
 
+            ok = riak_core:register([{vnode_module, clocksi_vnode}]),
+            ok = riak_core_node_watcher:service_up(clocksi, self()),
+
 	    ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
             ok = riak_core_node_watcher:service_up(replication, self()),
 
