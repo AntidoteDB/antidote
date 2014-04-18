@@ -7,6 +7,7 @@
 	 %create/2,
 	 update/2,
 	 read/2,
+	 read1/2,
 	 types/0
         ]).
 
@@ -48,3 +49,5 @@ read(Key, Type) ->
     floppy_rep_vnode:read(Key, Type).
 
 
+read1(Key, Type) ->
+    floppy_rep_vnode:read(Key, Type).
