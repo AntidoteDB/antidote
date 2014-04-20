@@ -59,7 +59,7 @@ apply(Payload) ->
     io:format("Recieved update ~p ~n",[Payload]),
     {Key, Op} = Payload,
     %%TODO: Replace this with proper replication protocol
-    floppy_coord_sup:start_fsm([self(), update, Key, Op]),
+    _ = floppy_coord_sup:start_fsm([self(), update, Key, Op]),
     receive 
 	{_, Result} ->
 	io:format("Updated ~p",[Result])

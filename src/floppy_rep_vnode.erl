@@ -32,7 +32,7 @@
 
 append(Key, Op) ->
     io:format("Update ~w ~w ~n", [Key, Op]),
-    floppy_coord_sup:start_fsm([self(), update, Key, Op]),
+    _ = floppy_coord_sup:start_fsm([self(), update, Key, Op]),
     receive
         {_, Result} ->
         io:format("Update completed!~w~n",[Result]),
@@ -43,7 +43,7 @@ append(Key, Op) ->
 
 read(Key, Type) ->
     io:format("Read ~w ~w ~n", [Key, Type]),
-    floppy_coord_sup:start_fsm([self(), read, Key, noop]),
+    _ = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
         {_, Ops} ->
         io:format("Read completed!~n"),
@@ -103,7 +103,7 @@ handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Par
       end,
       {NewClock,_} = OpId,
       io:format("RepVNode: Start replication, clock: ~w~n",[NewClock]),
-      floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
+      _ = floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
       {noreply, #state{lclock=NewClock, partition= Partition}};
 
 %handle_command({put, Key, Value}, _Sender, State) ->

@@ -1,0 +1,5 @@
+floppy_vnode.erl:2: Callback info about the riak_core_vnode behaviour is not available
+inter_dc_repl_vnode.erl:2: Callback info about the riak_core_vnode behaviour is not available
+floppy_rep_vnode.erl:2: Callback info about the riak_core_vnode behaviour is not available
+clocksi_vnode.erl:2: Callback info about the riak_core_vnode behaviour is not available
+logging_vnode.erl:2: Callback info about the riak_core_vnode behaviour is not available

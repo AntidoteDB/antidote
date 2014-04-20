@@ -1,5 +1,5 @@
 REBAR = $(shell pwd)/rebar
-.PHONY: deps
+.PHONY: rel deps test
 
 all: deps compile test
 
@@ -8,9 +8,6 @@ compile:
 
 deps:
 	$(REBAR) get-deps
-
-test:
-	$(REBAR) eunit skip_deps=true
 
 clean:
 	$(REBAR) clean
@@ -24,13 +21,9 @@ rel: all
 relclean:
 	rm -rf rel/floppy
 
-xref: all
-	$(REBAR) skip_deps=true xref
-
 stage : rel
 	$(foreach dep,$(wildcard deps/*), rm -rf rel/floppy/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/floppy/lib;)
 	$(foreach app,$(wildcard apps/*), rm -rf rel/floppy/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/floppy/lib;)
-
 
 ##
 ## Developer targets
@@ -63,3 +56,11 @@ stagedev% : dev%
 
 devclean: clean
 	rm -rf dev
+
+DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
+	xmerl webtool eunit syntax_tools compiler mnesia public_key snmp
+
+include tools.mk
+
+typer:
+	typer --annotate -I ../ --plt $(PLT) -r src
