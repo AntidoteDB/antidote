@@ -11,7 +11,7 @@ xref: compile
 
 PLT ?= $(HOME)/.combo_dialyzer_plt
 LOCAL_PLT = .local_dialyzer_plt
-DIALYZER_FLAGS ?= -Wunmatched_returns
+DIALYZER_FLAGS ?= -Wunmatched_returns -Werror_handling -Wrace_conditions -Wunderspecs
 
 ${PLT}: compile
 	@if [ -f $(PLT) ]; then \
