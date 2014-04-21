@@ -1,18 +1,22 @@
 -module(logging_vnode).
 -behaviour(riak_core_vnode).
--include("floppy.hrl").
--include_lib("eunit/include/eunit.hrl").
 
+-include("floppy.hrl").
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
+%% API
 -export([start_vnode/1,
-	 %API begin
-	 dread/2,
-	 dupdate/4,
-	 repair/2,
-	 read/2,
-	 append/3,
-	 prune/3,
-	 %API end
-         init/1,
+         dread/2,
+         dupdate/4,
+         repair/2,
+         read/2,
+         append/3,
+         prune/3]).
+
+-export([init/1,
          terminate/2,
          handle_command/3,
          is_empty/1,
@@ -26,9 +30,7 @@
          handle_coverage/4,
          handle_exit/3]).
 
--ignore_xref([
-             start_vnode/1
-             ]).
+-ignore_xref([start_vnode/1]).
 
 -record(state, {partition, log, objects}).
 
