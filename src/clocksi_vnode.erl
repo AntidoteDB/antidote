@@ -1,10 +1,14 @@
--module(inter_dc_repl_vnode).
+-module(clocksi_vnode).
 -behaviour(riak_core_vnode).
 -include("floppy.hrl").
+-include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
 	 %API begin
-	 propogate/1,
+	 read_data_item/3,
+	 update_data_item/4,
+	 prepare/2,
+	 commit/2,
 	 %API end
          init/1,
          terminate/2,
@@ -20,23 +24,39 @@
          handle_coverage/4,
          handle_exit/3]).
 
+-ignore_xref([
+             start_vnode/1
+             ]).
+
+-record(state, {partition}).
+
+%% API
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-%% public API
-propogate({Key,Op}) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    [{Indexnode,_Type} | _Preflist] = riak_core_apl:get_primary_apl(DocIdx, ?N, interdcreplication),
-    riak_core_vnode_master:command(Indexnode, {propogate, {Key,Op}}, inter_dc_repl_vnode_master).
+read_data_item(Node, Transaction, Key) ->
+    riak_core_vnode_master:sync_command(Node, {read_data_item, Transaction, Key}, ?CLOCKSIMASTER).
 
-%% riak_core_vnode call backs
-init([_Partition]) ->
-    {ok, []}.
+update_data_item(Node, Transaction, Key, Op) ->
+    riak_core_vnode_master:sync_command(Node, {update_data_item, Transaction, Key, Op}, ?CLOCKSIMASTER).
 
-handle_command({propogate, {Key, Op}}, _Sender, _State) ->
-    inter_dc_repl:propogate_sync({Key, Op}),
-    {noreply, []}.
+prepare(Node, Transaction) ->
+    riak_core_vnode_master:sync_command(Node, {prepare, Transaction}, ?CLOCKSIMASTER).
+
+commit(Node, Transaction) ->
+    riak_core_vnode_master:sync_command(Node, {commit, Transaction}, ?CLOCKSIMASTER).
+
+init([Partition]) ->
+    {ok, #state { partition=Partition }}.
+
+%handle_command({read_data_item, Transaction, Key}, _Sender, State) ->
+%    {T_State, T_ST} = Transaction,
+    
+    
+
+handle_command(Message, _Sender, State) ->
+    ?PRINT({unhandled_command_logging, Message}),
+    {noreply, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.

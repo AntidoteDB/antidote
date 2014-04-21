@@ -25,7 +25,6 @@
 		num_to_ack = 0 :: non_neg_integer(),
 		opid,
 		nodeOps}).
--define(BUCKET, <<"floppy">>).
 
 %%%===================================================================
 %%% API
