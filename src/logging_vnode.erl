@@ -58,6 +58,15 @@ prune(Node, Key, Until) ->
     riak_core_vnode_master:sync_command(Node, {prune, Key, Until}, ?LOGGINGMASTER).
 
 init([Partition]) ->
+    LogFile = string:concat(integer_to_list(Partition), "log"),
+    LogPath = filename:join(
+            app_helper:get_env(riak_core, platform_data_dir), LogFile),
+    case dets:open_file(LogFile, [{file, LogPath}, {type, bag}]) of
+        {ok, Log} ->
+            {ok, #state{partition=Partition, log=Log}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State) ->
     case dets:lookup(Log, Key) of
