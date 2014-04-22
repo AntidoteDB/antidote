@@ -48,8 +48,10 @@ dread(Preflist, Key) ->
 dupdate(Preflist, Key, Op, LClock) ->
     riak_core_vnode_master:command(Preflist, {append, Key, Op, LClock},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
-repair(Preflist, Ops) ->
-    riak_core_vnode_master:command(Preflist, {repair, Ops},{fsm, undefined, self()}, ?LOGGINGMASTER).
+repair(Node, Ops) ->
+    riak_core_vnode_master:sync_command(Node,
+                                        {repair, Ops},
+                                        ?LOGGINGMASTER).
 
 append(Node, Key, Op) ->
     riak_core_vnode_master:sync_command(Node, {append, Key, Op}, ?LOGGINGMASTER).
@@ -79,8 +81,8 @@ handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State)
     end;
 
 handle_command({repair, Ops}, _Sender, #state{log=Log}=State) ->
-    dets:insert(Log, Ops),
-    {reply, State};
+    Result = dets:insert(Log, Ops),
+    {reply, Result, State};
 
 handle_command({append, Key, Payload, OpId}, _Sender,
                #state{partition=Partition, log=Log}=State) ->
