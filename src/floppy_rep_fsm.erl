@@ -162,7 +162,7 @@ find_diff_ops(Set1, Set2) ->
 union_ops(L1, L2, []) ->
     lists:append(L1, L2);
 union_ops(L1, L2, [Op|T]) ->
-    {_, #operation{opNumber= OpId}} = Op,
+    {_, #operation{op_number= OpId}} = Op,
     L3 = remove_dup(L1, OpId,[]),
     L4 = lists:append(L2, [Op]),
     union_ops(L3, L4, T).
@@ -171,7 +171,7 @@ union_ops(L1, L2, [Op|T]) ->
 remove_dup([], _OpId, Set2) ->
     Set2;
 remove_dup([H|T], OpId, Set2) ->
-    {_, #operation{opNumber= OpNum}} = H,
+    {_, #operation{op_number= OpNum}} = H,
     if OpNum /= OpId ->
 	Set3 = lists:append(Set2, [H]);
        true ->

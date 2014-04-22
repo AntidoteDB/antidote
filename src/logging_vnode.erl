@@ -85,9 +85,17 @@ handle_command({repair, Ops}, _Sender, #state{log=Log}=State) ->
     {reply, Result, State};
 
 handle_command({append, Key, Payload, OpId}, _Sender,
-               #state{partition=Partition, log=Log}=State) ->
-    dets:insert(Log, {Key, #operation{opNumber=OpId, payload=Payload}}),
-    {reply, {{Partition,node()}, OpId}, State};
+               #state{log=Log}=State) ->
+    Result = dets:insert(Log,
+                         {Key, #operation{op_number=OpId,
+                                          payload=Payload}}),
+    Response = case Result of
+        ok ->
+            {ok, OpId};
+        {error, Reason} ->
+            {error, Reason, OpId}
+    end,
+    {reply, Response, State};
 
 handle_command({prune, _, _}, _Sender, State) ->
     {reply, {ok, State#state.partition}, State};
