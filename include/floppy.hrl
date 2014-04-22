@@ -1,4 +1,5 @@
--define(PRINT(Var), io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
+-define(PRINT(Var),
+        io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
 -define(BUCKET, <<"floppy">>).
 -define(MASTER, floppy_vnode_master).
 -define(LOGGINGMASTER, logging_vnode_master).
@@ -9,4 +10,4 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
--record(operation, {opNumber, payload}).
+-record(operation, {op_number, payload}).
