@@ -60,15 +60,14 @@ prune(Node, Key, Until) ->
 init([Partition]) ->
 
 handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State) ->
-	case dets:lookup(Log, Key) of
-	[] ->
-	    {reply, {{Partition, node()}, []}, State};
-	[H|T] ->
-	    {reply, {{Partition, node()}, [H|T]}, State};
-	{error, Reason}->
-	    {reply, {error, Reason}, State}
-	end;
-
+    case dets:lookup(Log, Key) of
+        [] ->
+            {reply, {{Partition, node()}, []}, State};
+        [H|T] ->
+            {reply, {{Partition, node()}, [H|T]}, State};
+        {error, Reason}->
+            {reply, {error, Reason}, State}
+    end;
 
 handle_command({repair, Ops}, _Sender, #state{log=Log}=State) ->
     dets:insert(Log, Ops),
