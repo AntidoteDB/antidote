@@ -147,16 +147,13 @@ handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State)
 %    end;
 
 handle_command({repair, Ops}, _Sender, #state{log=Log}=State) ->
-    %Should we return key_never_created?
     dets:insert(Log, Ops),
-    State1=State#state{log=Log},
-    {noreply, State1};
+    {reply, State};
 
-handle_command({append, Key, Payload, OpId}, _Sender, #state{partition=Partition, log=Log}=State) ->
-    %Should we return key_never_created?
+handle_command({append, Key, Payload, OpId}, _Sender,
+               #state{partition=Partition, log=Log}=State) ->
     dets:insert(Log, {Key, #operation{opNumber=OpId, payload=Payload}}),
-    State1=State#state{log=Log},
-    {reply, {{Partition,node()}, OpId}, State1};
+    {reply, {{Partition,node()}, OpId}, State};
 
 %handle_command({update, Key, Payload}, _Sender, #state{log=Log, objects=Objects, lclock=LC}=_State) ->
     %Should we return key_never_created?
