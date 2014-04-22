@@ -23,7 +23,7 @@
                 key,
 		client,
                 param = undefined :: term() | undefined,
-                preflist :: riak_core_apl:preflist2()}).
+                preflist :: riak_core_apl:preflist()}).
 
 -record(tx, {ts, cts}).
 

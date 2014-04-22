@@ -21,7 +21,7 @@
                 key,
                 param = undefined :: term() | undefined,
 		readresult,
-                preflist :: riak_core_apl:preflist2(),
+                preflist :: riak_core_apl:preflist(),
 		num_to_ack = 0 :: non_neg_integer(),
 		opid,
 		nodeOps}).
