@@ -53,7 +53,6 @@ dupdate(Preflist, Key, Op, LClock) ->
 repair(Preflist, Ops) ->
     riak_core_vnode_master:sync_command(Preflist,
                                         {repair, Ops},
-                                        {fsm, undefined, self()},
                                         ?LOGGINGMASTER).
 %create(Preflist, Key, Type) ->
 %    riak_core_vnode_master:sync_command(Preflist, {create, Key, Type}, ?LOGGINGMASTER).
