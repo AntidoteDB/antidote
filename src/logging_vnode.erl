@@ -3,6 +3,7 @@
 -behaviour(riak_core_vnode).
 
 -include("floppy.hrl").
+-include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -104,8 +105,11 @@ handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
     {noreply, State}.
 
-handle_handoff_command(_Message, _Sender, State) ->
-    {noreply, State}.
+handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
+                       #state{log=Log}=State) ->
+    F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
+    Acc = dets:foldl(F, Acc0, Log),
+    {reply, Acc, State}.
 
 handoff_starting(_TargetNode, State) ->
     {true, State}.
@@ -116,11 +120,13 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(_Data, State) ->
-    {reply, ok, State}.
+handle_handoff_data(Data, #state{log=Log}=State) ->
+    {Key, Operation} = binary_to_term(Data),
+    Response = dets:insert_new(Log, {Key, Operation}),
+    {reply, Response, State}.
 
-encode_handoff_item(_ObjectName, _ObjectValue) ->
-    <<>>.
+encode_handoff_item(Key, Operation) ->
+    term_to_binary({Key, Operation}).
 
 is_empty(State) ->
     {true, State}.
