@@ -25,7 +25,6 @@
                 param = undefined :: term() | undefined,
                 preflist :: riak_core_apl:preflist2()}).
 
--record(tx, {ts, cts}).
 
 %%%===================================================================
 %%% API
@@ -59,7 +58,7 @@ init([Vnode, Client,  Tx]) ->
     {ok, check_clock, SD, 0}.
 
 check_clock(timeout, SD0=#state{tx=Tx}) ->
-    T_TS = Tx#tx.ts,
+    T_TS = Tx#tx.snapshot_time,
     Time = now_milisec(erlang:now()),
     if T_TS > Time ->
 	timer:sleep(T_TS - Time)
