@@ -53,20 +53,10 @@ update(Key, Op) ->
 read(Key, Type) ->
     floppy_rep_vnode:read(Key, Type).
 
-
 %% Clock SI API
 startTX(ClientClock, Operations) ->
-	{Megasecs, Secs, Microsecs}=erlang:now(),
-	if 
-		ClientClock > {Megasecs, Secs, Microsecs - ?DELTA}->
-			{ClientMegasecs, ClientSecs, ClientMicrosecs}=ClientClock,
-			SnapshotTime = {{ClientMegasecs, ClientSecs, ClientMicrosecs + ?MIN}, node()},
-			clockSI_tx_coord_sup:start_fsm([self(), SnapshotTime, Operations]);
+		clockSI_tx_coord_sup:start_fsm([self(), ClientClock, Operations]).
 
-		true ->
-			SnapshotTime = {{Megasecs, Secs, Microsecs - ?DELTA}, node()},
-			clockSI_tx_coord_sup:start_fsm([self(), SnapshotTime, Operations])
-	end.
 
 	
 		
