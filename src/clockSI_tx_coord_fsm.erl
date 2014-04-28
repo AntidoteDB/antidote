@@ -13,7 +13,7 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([prepare/2, execute/2, finishOp/3, prepare_2PC/2, receive_prepared/2, committing/2, receive_committed/2]).
+-export([prepareOp/2, executeOp/2, finishOp/3, prepare_2PC/2, receive_prepared/2, committing/2, receive_committed/2]).
 
 
 %-record(operationCSI, {opType, key, params}).
@@ -70,7 +70,7 @@ init([From, ClientClock, Operations]) ->
 
 %% @doc Prepare the execution of the operation by obtaining an operation from the list,
 %%		and getting the leader of the operation.
-prepare(timeout, SD0=#state{operations=Operations, transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
+prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
 	case Operations of 
 	[] ->
 		case lists:lenght(UpdatedPartitions) of
@@ -91,12 +91,12 @@ prepare(timeout, SD0=#state{operations=Operations, transaction=Transaction, upda
                                        term_to_binary(Key)}),
     	[Leader] = riak_core_apl:get_primary_apl(DocIdx, 1, replication),	
         SD1 = SD0#state{operations=TailOps, currentOp=Op, currentOpLeader=Leader},
-        {next_state, execute, SD1, 0}
+        {next_state, executeOp, SD1, 0}
     end.
 
 
 %% @doc Contact the leader computed in the prepare state for it to execute the operation
-execute(timeout, SD0=#state{
+executeOp(timeout, SD0=#state{
                             currentOp=CurrentOp,
                             transaction=Transaction,
                             updated_partitions=UpdatedPartitions,
@@ -105,7 +105,6 @@ execute(timeout, SD0=#state{
     io:format("Coord: Execute operation ~w ~w ~w~n",[OpType, Key, Param]),
 	io:format("Coord: Forward to node~w~n",[CurrentOpLeader]),
 	{IndexNode, _} = CurrentOpLeader,
-	
 	case OpType of read ->
 		clockSI_vnode:read_data_item(IndexNode, Transaction, Key),
 		SD1=SD0;
@@ -115,7 +114,7 @@ execute(timeout, SD0=#state{
 		NewUpdatedPartitions= lists:append(UpdatedPartitions, [{IndexNode}]),
 		SD1 = SD0#state{transaction=Transaction#tx{write_set=WriteSet}, updated_partitions= NewUpdatedPartitions}
 	end,
-    {next_state, prepare, SD1, ?INDC_TIMEOUT}.
+    {next_state, prepareOp, SD1, 0}.
     
     
 prepare_2PC(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
@@ -127,17 +126,23 @@ prepare_2PC(timeout, SD0=#state{transaction=Transaction, updated_partitions=Upda
 	
 
 receive_prepared({_Node, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, transaction=Transaction}) ->
-
+	
+	
+	%{next_state, abort, S0, ?CLOCKSI_TIMEOUT},	
 	PrepareTime = max(Transaction#tx.prepare_time, ReceivedPrepareTime),
 
     case NumToAck of 1 -> 
     	io:format("ClockSI: Finished collecting prepare replies, start committing..."),
 		{next_state, committing, S0=#state{transaction=#tx{prepare_time=coomit_time=PrepareTime, state=committing}}};
-
 	_ ->
          io:format("ClockSI: Keep collecting prepare replies~n"),
 	{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1}, Transaction#tx{prepare_time=PrepareTime}}
-    end.
+    end;
+
+receive_prepared({_Node, abort}, S0) ->
+	{next_state, abort, S0}.
+	
+	
     
 committing(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) -> 
 	clock_SI_vnode:commit(UpdatedPartitions, Transaction),
