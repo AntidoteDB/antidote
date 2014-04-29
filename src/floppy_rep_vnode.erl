@@ -21,6 +21,8 @@
 -export([
 	append/2,
 	read/2,
+	append_clockSI/2,
+	read_clockSI/2,
 	handleOp/5
         ]).
 
@@ -56,6 +58,28 @@ read(Key, Type) ->
         {error, nothing}
     end.
 
+read_clockSI(Key, Type) ->
+    io:format("Read ~w ~w ~n", [Key, Type]),
+    _ = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
+    receive
+        {_, Ops} ->
+            io:format("Read completed!~n"),
+            {ok, Ops}
+        after 5000 ->
+            io:format("Read failed!~n"),
+            {error, nothing}
+    end.
+
+append_clockSI(Key, Payload) ->
+    io:format("Update ~w ~w ~n", [Key, Payload]),
+    _ = floppy_coord_sup:start_fsm([self(), update, Key, Payload]),
+    receive
+        {_, Result} ->
+        io:format("Update completed!~w~n",[Result]),
+        inter_dc_repl_vnode:propogate({Key,Payload})
+        after 5000 ->
+        io:format("Update failed!~n")
+    end.
 
 handleOp(Preflist, ToReply, Op, Key, Param) ->
     %{A1,A2,A3} = now(),
