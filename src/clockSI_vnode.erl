@@ -29,7 +29,28 @@
              start_vnode/1
              ]).
 
--record(state, {partition,snapshotTime}).
+-record(state, {partition,log}).
+
+
+
+
+
+%%
+%% Calculate the time difference (in microseconds) of two
+%% erlang:now() timestamps, T2-T1.
+%%
+%-spec now_diff(T2, T1) -> Tdiff when
+%      T1 :: erlang:timestamp(),
+%      T2 :: erlang:timestamp(),
+%      Tdiff :: integer().
+%now_diff({A2, B2, C2}, {A1, B1, C1}) ->
+%    ((A2-A1)*1000000 + B2-B1)*1000000 + C2-C1.
+
+
+
+
+
+
 
 %% API
 start_vnode(I) ->
@@ -54,21 +75,63 @@ prepare(Node, Transaction) ->
 commit(Node, Transaction) ->
     riak_core_vnode_master:sync_command(Node, {commit, Transaction}, ?CLOCKSIMASTER).
 
+
+
+
+
 init([Partition]) ->
-    {ok, #state { partition=Partition }}.
+
+% It generates a dets file to store active transactions.
+
+	
+    TxLogFile = string:concat(integer_to_list(Partition), "clockSI_tx"),
+    TxLogPath = filename:join(
+            app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
+    case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
+        {ok, TxLog} ->
+            {ok, #state{partition=Partition, log=TxLog}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 
 
-handle_command({operate, ToReply, Op, Key, Param, SnapshotTime}, _Sender, #state{partition=Partition,snapshotTime=SnapshotTime}) ->
-     
+
+
+
+
+handle_command({operate, ToReply, OpType, Key, Param, SnapshotTime}, 
+	_Sender, #state{partition=Partition,log=TxLog}) ->
+	
+	
+%	if oid is updated by T′ ∧
+%T′.State = committing ∧
+%T.SnapshotTime > T′.CommitTime then wait until T′ .State = committed
+	
+	
+    case OpType of 
+	%	read  ->
+			%read_data_item();
+	
+			% If the operation was originated at another node,
+	%		% check for clock skew.
+	%		Now=now(),	
+	%		if (Partition /= OriginPartition) and (SnapshotTime > Now) ->
+	%			timer:sleep(now_diff(SnapshotTime, Now)/1000)
+	%		end;
+			%check if delay needed due to pending commit 
+	%		 activeTx(Key)
+
+			
+	_ ->
+	io:format("RepVNode: Wrong operations!~w~n", [OpType])
+      end,
       io:format("ClockSIVNode: Start replication, clock: ~w~n",[SnapshotTime]),
-      floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, SnapshotTime]),
-      {noreply, #state{snapshotTime=SnapshotTime, partition= Partition}};
-
-
-
-
-
+      _ = floppy_rep_sup:start_fsm([ToReply, OpType, Key, Param, SnapshotTime]),
+      {noreply, #state{partition=Partition, log= TxLog}};
+     
+     
+    
 
 
 

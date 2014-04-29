@@ -37,10 +37,11 @@ append(Key, Op) ->
     _ = floppy_coord_sup:start_fsm([self(), update, Key, Op]),
     receive
         {_, Result} ->
-        io:format("Update completed!~w~n",[Result]),
-        inter_dc_repl_vnode:propogate({Key,Op})
-        after 5000 ->
-        io:format("Update failed!~n")
+	    io:format("Update completed!~w~n",[Result]),
+	    {ok, Result}
+    after 5000 ->
+	    io:format("Update failed!~n"),
+	    {error, timeout}
     end.
 
 read(Key, Type) ->
@@ -48,14 +49,14 @@ read(Key, Type) ->
     _ = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
         {_, Ops} ->
-        io:format("Read completed!~n"),
-        Init=materializer:create_snapshot(Type),
-        Snapshot=materializer:update_snapshot(Type, Init, Ops),
-        Value=Type:value(Snapshot),
-        {ok, Value}
-        after 5000 ->
-        io:format("Read failed!~n"),
-        {error, nothing}
+	    io:format("Read completed!~n"),
+	    Init=materializer:create_snapshot(Type),
+	    Snapshot=materializer:update_snapshot(Type, Init, Ops),
+	    Value=Type:value(Snapshot),
+	    {ok, Value}
+    after 5000 ->
+	    io:format("Read failed!~n"),
+	    {error, nothing}
     end.
 
 read_clockSI(Key, Type) ->

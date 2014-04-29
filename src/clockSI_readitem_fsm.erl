@@ -29,8 +29,6 @@
 		left_prepared,
 		left_acks}).
 
--record(tx, {snapshot_time, commit_time, prepare_time, state, write_set, origin}).
-
 %%%===================================================================
 %%% API
 %%%===================================================================
