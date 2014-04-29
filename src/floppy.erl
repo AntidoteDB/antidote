@@ -7,7 +7,7 @@
 	 %create/2,
 	 update/2,
 	 read/2,
-	 startTX/2,
+	 %startTX/2,
 	 types/0
         ]).
 
