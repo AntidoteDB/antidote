@@ -7,7 +7,7 @@
 	 %create/2,
 	 update/2,
 	 read/2,
-	 startTX/2,
+	 clockSI_execute_TX/2,
 	 types/0
         ]).
 
@@ -54,5 +54,5 @@ read(Key, Type) ->
     floppy_rep_vnode:read(Key, Type).
 
 %% Clock SI API
-startTX(ClientClock, Operations) ->
+clockSI_execute_TX(ClientClock, Operations) ->
 		clockSI_tx_coord_sup:start_fsm([self(), ClientClock, Operations]).	

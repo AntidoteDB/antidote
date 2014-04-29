@@ -65,7 +65,7 @@ init([From, ClientClock, Operations]) ->
                 operations=Operations,
                 updated_partitions=[]
 		},
-    {ok, prepare, SD, 0}.
+    {ok, prepareOp, SD, 0}.
 
 
 %% @doc Prepare the execution of the operation by obtaining an operation from the list,
@@ -89,7 +89,7 @@ prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, up
 		{_, Key,_} = Op, 
 		DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
-    	[Leader] = riak_core_apl:get_primary_apl(DocIdx, 1, replication),	
+    	[Leader] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSIMASTER),	
         SD1 = SD0#state{operations=TailOps, currentOp=Op, currentOpLeader=Leader},
         {next_state, executeOp, SD1, 0}
     end.
@@ -101,12 +101,12 @@ executeOp(timeout, SD0=#state{
                             transaction=Transaction,
                             updated_partitions=UpdatedPartitions,
                             currentOpLeader=CurrentOpLeader}) ->
-    [OpType, Key, Param]=CurrentOp,                        
-    io:format("Coord: Execute operation ~w ~w ~w~n",[OpType, Key, Param]),
+    [OpType, DataType, Key, Param]=CurrentOp,                        
+    io:format("Coord: Execute operation ~w ~w ~w ~w~n",[OpType, DataType, Key, Param]),
 	io:format("Coord: Forward to node~w~n",[CurrentOpLeader]),
 	{IndexNode, _} = CurrentOpLeader,
 	case OpType of read ->
-		clockSI_vnode:read_data_item(IndexNode, Transaction, Key),
+		clockSI_vnode:read_data_item(IndexNode, Transaction, Key, DataType),
 		SD1=SD0;
 	update ->
 		clockSI_vnode:update_data_item(IndexNode, Transaction#tx{write_set=[]}, Key, Param),
@@ -121,33 +121,37 @@ prepare_2PC(timeout, SD0=#state{transaction=Transaction, updated_partitions=Upda
 	TransactionLight=Transaction#tx{write_set=[], operations=[]},
 	clock_SI_vnode:prepare(TransactionLight, UpdatedPartitions),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_prepared, SD0#state{transaction=TransactionLight, num_to_ack=NumToAck}, ?INDC_TIMEOUT}.
+	{next_state, receive_prepared, SD0#state{transaction=TransactionLight, num_to_ack=NumToAck}, ?CLOCKSI_TIMEOUT}.
 	
 	
 
 receive_prepared({_Node, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, transaction=Transaction}) ->
 	
 	
-	%{next_state, abort, S0, ?CLOCKSI_TIMEOUT},	
 	PrepareTime = max(Transaction#tx.prepare_time, ReceivedPrepareTime),
 
     case NumToAck of 1 -> 
     	io:format("ClockSI: Finished collecting prepare replies, start committing..."),
-		{next_state, committing, S0=#state{transaction=#tx{prepare_time=coomit_time=PrepareTime, state=committing}}};
+		{next_state, committing, S0=#state{transaction=#tx{prepare_time=coomit_time=PrepareTime, state=committing}},0};
 	_ ->
          io:format("ClockSI: Keep collecting prepare replies~n"),
 	{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1}, Transaction#tx{prepare_time=PrepareTime}}
     end;
 
 receive_prepared({_Node, abort}, S0) ->
+	{next_state, abort, S0};
+    
+receive_prepared(timeout, S0) ->
 	{next_state, abort, S0}.
+
+
 	
 	
     
 committing(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) -> 
 	clock_SI_vnode:commit(UpdatedPartitions, Transaction),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, transaction=#tx{state=committed}}, ?INDC_TIMEOUT}.
+	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, transaction=#tx{state=committed}}, 0}.
 	
 
 receive_committed({_Node}, S0=#state{num_to_ack= NumToAck}) ->
@@ -158,6 +162,12 @@ receive_committed({_Node}, S0=#state{num_to_ack= NumToAck}) ->
          io:format("ClockSI: Keep collecting prepare replies~n"),
 		{next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
     end.
+    
+    %% Should we retry sending the committed message if we don't receive a reply from
+    %% every partition?
+    %% What delivery guarantees does sending messages provide?
+    
+
 	
 	
 
