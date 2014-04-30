@@ -7,7 +7,7 @@
 	 %create/2,
 	 update/2,
 	 read/2,
-	 read1/2,
+	 %startTX/2,
 	 types/0
         ]).
 
@@ -41,11 +41,18 @@ ping() ->
 %   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
 
 update(Key, Op) ->
-    floppy_rep_vnode:append(Key, Op).
+    case floppy_rep_vnode:append(Key, Op) of
+	{ok, Result} ->
+	    %inter_dc_repl_vnode:propogate(Key, Op),
+	    {ok, Result};
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+	
 
 read(Key, Type) ->
     floppy_rep_vnode:read(Key, Type).
 
-
-read1(Key, Type) ->
-    floppy_rep_vnode:read(Key, Type).
+%% Clock SI API
+%startTX(ClientClock, Operations) ->
+%		clockSI_tx_coord_sup:start_fsm([self(), ClientClock, Operations]).	

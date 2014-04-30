@@ -32,28 +32,29 @@
 
 append(Key, Op) ->
     io:format("Update ~w ~w ~n", [Key, Op]),
-    floppy_coord_sup:start_fsm([self(), update, Key, Op]),
+    _ = floppy_coord_sup:start_fsm([self(), update, Key, Op]),
     receive
         {_, Result} ->
-        io:format("Update completed!~w~n",[Result]),
-        inter_dc_repl_vnode:propogate({Key,Op})
-        after 5000 ->
-        io:format("Update failed!~n")
+	    io:format("Update completed!~w~n",[Result]),
+	    {ok, Result}
+    after 5000 ->
+	    io:format("Update failed!~n"),
+	    {error, timeout}
     end.
 
 read(Key, Type) ->
     io:format("Read ~w ~w ~n", [Key, Type]),
-    floppy_coord_sup:start_fsm([self(), read, Key, noop]),
+    _ = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
         {_, Ops} ->
-        io:format("Read completed!~n"),
-        Init=materializer:create_snapshot(Type),
-        Snapshot=materializer:update_snapshot(Type, Init, Ops),
-        Value=Type:value(Snapshot),
-        {ok, Value}
-        after 5000 ->
-        io:format("Read failed!~n"),
-        {error, nothing}
+	    io:format("Read completed!~n"),
+	    Init=materializer:create_snapshot(Type),
+	    Snapshot=materializer:update_snapshot(Type, Init, Ops),
+	    Value=Type:value(Snapshot),
+	    {ok, Value}
+    after 5000 ->
+	    io:format("Read failed!~n"),
+	    {error, nothing}
     end.
 
 
@@ -103,7 +104,7 @@ handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Par
       end,
       {NewClock,_} = OpId,
       io:format("RepVNode: Start replication, clock: ~w~n",[NewClock]),
-      floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
+      _ = floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
       {noreply, #state{lclock=NewClock, partition= Partition}};
 
 %handle_command({put, Key, Value}, _Sender, State) ->

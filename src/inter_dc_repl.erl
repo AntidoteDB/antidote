@@ -26,7 +26,7 @@
 propogate_sync(Payload) ->
     Me = self(),
     ReqId = 1, %Generate reqID here
-    gen_fsm:start_link(?MODULE, [?OTHER_DC, inter_dc_recvr, Payload, {ReqId, Me}], []),
+    _ = gen_fsm:start_link(?MODULE, [?OTHER_DC, inter_dc_recvr, Payload, {ReqId, Me}], []),
     receive
         {ReqId, normal} -> done;
 	{ReqId, Reason} -> Reason
