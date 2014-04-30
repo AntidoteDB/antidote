@@ -6,10 +6,10 @@
 run(Key1,Key2)->
     net_kernel:start(['walletclient@127.0.0.1', longnames]),
     erlang:set_cookie(node(),floppy),
-    Created = walletapp:createuser(Key1,Key2),
+    %Created = walletapp:createuser(Key1,Key2),
     Result1 = testc(Key1, 10, [bal]),
     Result2 = testvoucher(Key2,10,[voucher]),
-    [Created | [Result1 | Result2]].
+    [Result1 | Result2].
        
 testc(_, 0, Result) ->
     lists:reverse(Result);
