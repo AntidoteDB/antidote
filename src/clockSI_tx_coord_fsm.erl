@@ -88,7 +88,7 @@ init([From, ClientClock, Operations]) ->
 %%		1.  it finishes (read tx),
 %%		2. 	it starts a local_commit (update tx that only updates a single partition) or
 %%		3.	it goes to the prepare_2PC to start a two phase commit (when multiple partitions
-$$		are updated. 
+%%		are updated. 
 prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
 	case Operations of 
 	[] ->
@@ -98,7 +98,7 @@ prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, up
 			{stop, normal, SD0};
 		1 ->
 			[IndexNode]=UpdatedPartitions,
-			clockSI_vnode:local_commit(IndexNode, Transaction);
+			clockSI_vnode:local_commit(IndexNode, Transaction),
 			{stop, normal, SD0};
 		_ ->
 			{next_state, prepare_2PC, SD0, 0}		
@@ -172,9 +172,9 @@ committing(timeout, SD0=#state{transaction=Transaction, updated_partitions=Updat
 	
 %%	the fsm waits for acks indicating that each partition has successfully committed the tx
 %%	and finishes operation.
-%% Should we retry sending the committed message if we don't receive a reply from
-%% every partition?
-%% What delivery guarantees does sending messages provide?
+%% 	Should we retry sending the committed message if we don't receive a reply from
+%% 	every partition?
+%% 	What delivery guarantees does sending messages provide?
 receive_committed({_Node}, S0=#state{num_to_ack= NumToAck}) ->
     case NumToAck of 1 -> 
     	io:format("ClockSI: Finished collecting commit acks. Tx committed succesfully."),
