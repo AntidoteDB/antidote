@@ -5,10 +5,12 @@
 
 -export([start_vnode/1,
 	 %API begin
-	 read_data_item/3,
+	 read_data_item/4,
 	 update_data_item/4,
 	 prepare/2,
 	 commit/2,
+	 abort/2,
+  	 notify_commit/2,
 	 %API end
          init/1,
          terminate/2,
@@ -22,126 +24,85 @@
          handle_handoff_data/2,
          encode_handoff_item/2,
          handle_coverage/4,
-         handleOp/6,
          handle_exit/3]).
 
 -ignore_xref([
              start_vnode/1
              ]).
 
--record(state, {partition,log}).
-
-
-
-
-
-%%
-%% Calculate the time difference (in microseconds) of two
-%% erlang:now() timestamps, T2-T1.
-%%
-%-spec now_diff(T2, T1) -> Tdiff when
-%      T1 :: erlang:timestamp(),
-%      T2 :: erlang:timestamp(),
-%      Tdiff :: integer().
-%now_diff({A2, B2, C2}, {A1, B1, C1}) ->
-%    ((A2-A1)*1000000 + B2-B1)*1000000 + C2-C1.
-
-
-
-
-
+-record(state, {partition,log, pending}).
 
 
 %% API
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
     
-    
-    
-handleOp(Leader, ToReply, OpType, Key, Param, SnapshotTime) ->
-    	riak_core_vnode_master:command(Leader,
-                                   {operate, ToReply, OpType, Key, Param, SnapshotTime},
-                                   ?REPMASTER).
+read_data_item(Node, Tx, Key, Type) ->
+    riak_core_vnode_master:sync_command(Node, {read_data_item, Tx, Key, Type}, ?CLOCKSIMASTER).
 
-read_data_item(Node, Transaction, Key) ->
-    riak_core_vnode_master:sync_command(Node, {read_data_item, Transaction, Key}, ?CLOCKSIMASTER).
+update_data_item(Node, Tx, Key, Op) ->
+    riak_core_vnode_master:sync_command(Node, {update_data_item, Tx, Key, Op}, ?CLOCKSIMASTER).
 
-update_data_item(Node, Transaction, Key, Op) ->
-    riak_core_vnode_master:sync_command(Node, {update_data_item, Transaction, Key, Op}, ?CLOCKSIMASTER).
+prepare(Node, Tx) ->
+    riak_core_vnode_master:sync_command(Node, {prepare, Tx}, ?CLOCKSIMASTER).
 
-prepare(Node, Transaction) ->
-    riak_core_vnode_master:sync_command(Node, {prepare, Transaction}, ?CLOCKSIMASTER).
+commit(Node, Tx) ->
+    riak_core_vnode_master:sync_command(Node, {commit, Tx}, ?CLOCKSIMASTER).
 
-commit(Node, Transaction) ->
-    riak_core_vnode_master:sync_command(Node, {commit, Transaction}, ?CLOCKSIMASTER).
+abort(Node, Tx) ->
+    riak_core_vnode_master:sync_command(Node, {abort, Tx}, ?CLOCKSIMASTER).
 
-
-
-
+notify_commit(Node, Tx) ->
+    riak_core_vnode_master:sync_command(Node, {notify_commit, Tx}, ?CLOCKSIMASTER).
 
 init([Partition]) ->
-
-% It generates a dets file to store active transactions.
-
-	
+    % It generates a dets file to store active transactions.
     TxLogFile = string:concat(integer_to_list(Partition), "clockSI_tx"),
     TxLogPath = filename:join(
             app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
     case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
         {ok, TxLog} ->
-            {ok, #state{partition=Partition, log=TxLog}};
+	    Pendings=pendings,
+	    ets:new(Pendings, [bag, named_table, public]),
+            {ok, #state{partition=Partition, log=TxLog, pending=Pendings}};
         {error, Reason} ->
             {error, Reason}
     end.
 
+handle_command({read_data_item, Tx, Key, Type}, Sender, #state{partition= Partition, log=_Log}=State) ->
+    Vnode={Partition, node()},
+    clockSI_readitem_fsm:start_link(Vnode, Sender, Tx, Key, Type),
+    {no_reply, State};
 
+handle_command({update_data_item, Tx, Key, Op}, Sender, #state{log=_Log}=State) ->
+    clockSI_updateitem_fsm:start_link(Sender, Tx, Key, Op),
+    {no_reply, State};
 
+handle_command({prepare, Tx}, _Sender, #state{log=Log}=State) ->
+    case certification_check(Tx,Log) of
+    true ->
+	%TODO: Log T.writeset and T.origin
+	NewTx=Tx#tx{state=prepared, prepare_time=now_milisec(erlang:now())},
+	{reply, NewTx#tx.prepare_time, State};
+    false ->
+	%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
+	{reply, abort, State}
+    end;
 
+handle_command({commit, Tx}, _Sender, #state{log=_Log, pending=Pendings}=State) ->
+    %TODO: log commit time.
+    Processes=ets:lookup(Pendings, Tx#tx.id),
+    notify_all(Processes, {committed, Tx#tx.id}),
+    {reply, done, State};
 
+handle_command({abort, _Tx}, _Sender, #state{log=_Log}=State) ->
+    %TODO: abort tx
+    {no_reply, State};
 
-
-handle_command({operate, ToReply, OpType, Key, Param, SnapshotTime}, 
-	_Sender, #state{partition=Partition,log=TxLog}) ->
-	
-	
-%	if oid is updated by T′ ∧
-%T′.State = committing ∧
-%T.SnapshotTime > T′.CommitTime then wait until T′ .State = committed
-	
-	
-    case OpType of 
-	%	read  ->
-			%read_data_item();
-	
-			% If the operation was originated at another node,
-	%		% check for clock skew.
-	%		Now=now(),	
-	%		if (Partition /= OriginPartition) and (SnapshotTime > Now) ->
-	%			timer:sleep(now_diff(SnapshotTime, Now)/1000)
-	%		end;
-			%check if delay needed due to pending commit 
-	%		 activeTx(Key)
-
-			
-	_ ->
-	io:format("RepVNode: Wrong operations!~w~n", [OpType])
-      end,
-      io:format("ClockSIVNode: Start replication, clock: ~w~n",[SnapshotTime]),
-      _ = floppy_rep_sup:start_fsm([ToReply, OpType, Key, Param, SnapshotTime]),
-      {noreply, #state{partition=Partition, log= TxLog}};
-     
-     
-    
-
-
-
-
-
-
-
-
-
- 
+handle_command({notify_commit, TXs}, Sender, #state{pending=Pendings}=State) ->
+    %TODO: Check if anyone is already commited 
+    add_list_to_pendings(TXs, Sender, Pendings),
+    {no_reply, State};
 
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
@@ -179,3 +140,17 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, _State) ->
     ok.
+
+%Internal functions
+now_milisec({MegaSecs,Secs,MicroSecs}) ->
+        (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
+
+add_list_to_pendings([], _Sender, _Pendings) -> done;
+add_list_to_pendings([Next|Rest], Sender, Pendings) ->
+    ets:insert(Pendings, {Next, Sender}),
+    add_list_to_pendings(Rest, Sender, Pendings).
+notify_all([],_Reply) -> done;
+notify_all([Next|Rest],Reply) -> 
+    riak_core_vnode:reply(Next, Reply),
+    notify_all(Rest, Reply).
+certification_check(_Tx,_Log) -> true.

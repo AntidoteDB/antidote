@@ -3,7 +3,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/3]).
+-export([start_link/4]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -15,25 +15,15 @@
 -record(state, {
 		key,
 	 	tx,
+		op,
 		client}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-%start_link(Key, Op) ->
-%    start_link(Key, Op).
-
-start_link(Client, Tx, Key) ->
-    gen_fsm:start_link(?MODULE, [Client, Tx, Key], []).
-
-%start_link(Key, Op) ->
-%    io:format('The worker is about to start~n'),
-%    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
-
-%receiveData(From, Key,Result) ->
-%   io:format("Sending message to~w~n",[From]),
-%   gen_fsm:send_event(From, {Key, Result}).
+start_link(Client, Tx, Key, Op) ->
+    gen_fsm:start_link(?MODULE, [Client, Tx, Key, Op], []).
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
 	(MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
@@ -41,10 +31,11 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Client, Tx, Key]) ->
+init([Client, Tx, Key, Op]) ->
     SD = #state{
 		key=Key,
-                client=Client, 
+                client=Client,
+		op=Op, 
                 tx=Tx},
     {ok, check_clock, SD, 0}.
 

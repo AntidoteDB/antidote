@@ -25,4 +25,4 @@
 -define(MIN, 1).
 -define(DELTA, 10000). 
 -define(CLOCKSI_TIMEOUT, 1000).
--record(tx, {snapshot_time, commit_time, prepare_time, state, write_set, operations, origin}).
+-record(tx, {id, snapshot_time, commit_time, prepare_time, state, write_set, operations, origin}).

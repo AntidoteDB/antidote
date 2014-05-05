@@ -21,8 +21,8 @@
 -record(state, {type,
 		key,
 	 	tx,
-		vnode,
 		client,
+		vnode,
                 committing_txs,
 		left_committing,
 		prepared_txs,
@@ -33,19 +33,8 @@
 %%% API
 %%%===================================================================
 
-%start_link(Key, Op) ->
-%    start_link(Key, Op).
-
 start_link(Vnode, Client, Tx, Key, Type) ->
     gen_fsm:start_link(?MODULE, [Vnode, Client, Tx, Key, Type], []).
-
-%start_link(Key, Op) ->
-%    io:format('The worker is about to start~n'),
-%    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
-
-%receiveData(From, Key,Result) ->
-%   io:format("Sending message to~w~n",[From]),
-%   gen_fsm:send_event(From, {Key, Result}).
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
 	(MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
@@ -55,9 +44,9 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 
 init([Vnode, Client, Tx, Key, Type]) ->
     SD = #state{
+		vnode=Vnode,
 		type=Type,
 		key=Key,
-                vnode=Vnode,
                 client=Client, 
                 tx=Tx,
 		committing_txs=[],
