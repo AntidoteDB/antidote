@@ -3,7 +3,7 @@
 -define(BUCKET, <<"floppy">>).
 -define(MASTER, floppy_vnode_master).
 -define(LOGGINGMASTER, logging_vnode_master).
--define(CLOCKSIMASTER, clocksi_vnode_master).
+%-define(CLOCKSIMASTER, clocksi_vnode_master).
 -define(REPMASTER, floppy_rep_vnode_master).
 -define(INDC_TIMEOUT, 1000).
 -define(N, 3).
@@ -19,10 +19,22 @@
 % in the case that a client has already seen a snapshot time
 % greater than the current time at the replica it is starting
 % a new transaction.
+-define(MIN, 1).
 
 % DELTA has the same meaning as in the clock-SI paper.
-
--define(MIN, 1).
 -define(DELTA, 10000). 
+
 -define(CLOCKSI_TIMEOUT, 1000).
+
+%%---------------------------------------------------------------------
+%% Data Type: tx
+%% where:
+%%    snapshot_time: clock time of the tx's originating partition as returned by now().
+%%    commit_time: final commit time of the tx.
+%%    prepare_time: intermediate prepare-commit tx time.
+%%    state: the state of the transaction, {active|prepare|committing|committed}. 
+%%	  write_set: the tx's write set.
+%%	  origin: the transaction's originating partition
+%%----------------------------------------------------------------------
+
 -record(tx, {snapshot_time, commit_time, prepare_time, state, write_set, origin}).
