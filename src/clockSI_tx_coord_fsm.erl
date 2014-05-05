@@ -1,6 +1,11 @@
-%% @doc The coordinator for stat write opeartions.  This example will
-%% show how to properly replicate your data in Riak Core by making use
-%% of the _preflist_.
+%% @doc The coordinator for a given Clock SI transaction.  
+%%		It handles the state of the tx and sends each operation
+%%		to the responsible clockSI_vnode of the involved key.
+%%		when a tx is finalized (committed or aborted, the fsm
+%%		also finishes.
+
+
+
 -module(clockSI_tx_coord_fsm).
 -behavior(gen_fsm).
 -include("floppy.hrl").
@@ -42,7 +47,7 @@ finishOp(From, Key,Result) ->
 %%% States
 %%%===================================================================
 
-%% @doc Initialize the s,,tate data.
+%% @doc Initialize the state, set the transaction's state to active.
 init([From, ClientClock, Operations]) ->	
 
 
@@ -68,8 +73,9 @@ init([From, ClientClock, Operations]) ->
     {ok, prepareOp, SD, 0}.
 
 
-%% @doc Prepare the execution of the operation by obtaining an operation from the list,
-%%		and getting the leader of the operation.
+%% @doc Prepare the execution of the next operation. 
+%%		It calculates the responsible vnode and sends the operation to it.
+%%		when there are no more operations to be executed
 prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
 	case Operations of 
 	[] ->
@@ -118,7 +124,7 @@ executeOp(timeout, SD0=#state{
     
     
 prepare_2PC(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
-	TransactionLight=Transaction#tx{write_set=[], operations=[]},
+	TransactionLight=Transaction#tx{write_set=[]},
 	clock_SI_vnode:prepare(TransactionLight, UpdatedPartitions),
 	NumToAck=lists:lenght(UpdatedPartitions),
 	{next_state, receive_prepared, SD0#state{transaction=TransactionLight, num_to_ack=NumToAck}, ?CLOCKSI_TIMEOUT}.
