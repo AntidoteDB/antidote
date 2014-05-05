@@ -98,7 +98,7 @@ execute(timeout, SD0=#state{op=Op,
 %% @doc Waits for 1 write reqs to respond.
 waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
     if NumToAck == 1 -> 
-    	io:format("FSM: Finish collecting replies for ~w ~w ~n", [Op, Result]),
+    	io:format("FSM: Finish collecting replies for ~w ~n", [Op]),
 	floppy_coord_fsm:finishOp(From,  Key, Result),	
 	{stop, normal, SD};
 	true ->
@@ -111,7 +111,7 @@ waitRead({Node, Result}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key
     Result1 = union_ops(ReadResult, [], Result),
     %io:format("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
     if NumToAck == 1 -> 
-    	io:format("FSM: Finish reading for ~w ~w ~w ~n", [Op, Key, Result1]),
+    	io:format("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
 	repair(NodeOps1, Result1),
 	floppy_coord_fsm:finishOp(From,  Key, Result1),	
 	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};

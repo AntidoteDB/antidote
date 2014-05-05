@@ -50,10 +50,7 @@ read(Key, Type) ->
     receive
         {_, Ops} ->
 	    io:format("Read completed!~n"),
-	    Init=materializer:create_snapshot(Type),
-	    Snapshot=materializer:update_snapshot(Type, Init, Ops),
-	    Value=Type:value(Snapshot),
-	    {ok, Value}
+	    {ok,Ops}
     after 5000 ->
 	    io:format("Read failed!~n"),
 	    {error, nothing}
