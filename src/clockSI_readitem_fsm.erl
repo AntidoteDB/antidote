@@ -13,7 +13,8 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([check_clock/2, get_txs_to_check/2, check_committing/2, commit_notification/2, commit_ts_notification/2, check_prepared/2, commit_notification2/2, return/2]).
+-export([check_clock/2, get_txs_to_check/2, check_committing/2, commit_notification/2, 
+commit_ts_notification/2, check_prepared/2, commit_notification2/2, return/2]).
 
 %% Spawn
 -export([bcast_get_commit_ts/2]).
@@ -23,7 +24,7 @@
 	 	tx,
 		client,
 		vnode,
-                committing_txs,
+        committing_txs,
 		left_committing,
 		prepared_txs,
 		left_prepared,
@@ -61,7 +62,7 @@ check_clock(timeout, SD0=#state{tx=Tx}) ->
     if T_TS > Time ->
 	timer:sleep(T_TS - Time)
     end,
-    {next_state, get_txs_to_wait, SD0, 0}.
+    {next_state, get_txs_to_check, SD0, 0}.
 
 get_txs_to_check(timeout, SD0=#state{tx=Tx}) ->
     T_snapshot_time = Tx#tx.snapshot_time,
@@ -154,19 +155,19 @@ pending_commits(Snapshot_time, TXs)->
 internal_pending_commits(_Snapshot_time, [], Committing, Pendings)->
     {Committing, Pendings};
 
-internal_pending_commits(Snapshot_time, [Next|Rest], Committing, Pendings)->
-    case Rest#tx.state of
+internal_pending_commits(Snapshot_time, [Next|Rest], Committing, Pendings)-> 
+    case Next#tx.state of
     commiting ->
-	if Rest#tx.commit_time=<Snapshot_time ->
-	    internal_pending_commits(Snapshot_time, Rest, lists:append(Committing,[Next]), Pendings);
-	true ->
-	    internal_pending_commits(Snapshot_time, Rest, Committing, Pendings)
-	end;
+		if Rest#tx.commit_time=<Snapshot_time ->
+	    	internal_pending_commits(Snapshot_time, Rest, lists:append(Committing,[Next]), Pendings);
+		true ->
+	 		internal_pending_commits(Snapshot_time, Rest, Committing, Pendings)
+		end;
     prepared ->
-	internal_pending_commits(Snapshot_time, Rest, Committing, lists:append(Pendings,[Next]));
-    else ->
-	internal_pending_commits(Snapshot_time, Rest, Committing, Pendings)
-    end.
+		internal_pending_commits(Snapshot_time, Rest, Committing, lists:append(Pendings,[Next]));
+	_ ->
+		internal_pending_commits(Snapshot_time, Rest, Committing, Pendings)
+	end.
 
 clean_left(TxId, Left) ->
     internal_clean_left(TxId, Left, []).
