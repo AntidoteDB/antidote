@@ -58,10 +58,10 @@ check_clock(timeout, SD0=#state{tx=Tx}) ->
     end,
     {next_state, get_txs_to_check, SD0, 0}.
 
-get_txs_to_check(timeout, SD0=#state{tx=Tx, vnode=Vnode}) ->
+get_txs_to_check(timeout, SD0=#state{tx=Tx, vnode=Vnode, key=Key}) ->
     T_snapshot_time = Tx#tx.snapshot_time,
     %Concurrent txs
-    case riak_core_vnode_master:sync_command(Vnode, {get_pending_txs, T_snapshot_time}, ?CLOCKSIMASTER) of
+    case riak_core_vnode_master:sync_command(Vnode, {get_pending_txs, T_snapshot_time, Key}, ?CLOCKSIMASTER) of
     {ok, empty} ->
 	{next_state, return, SD0};
     {ok, Pending} ->
