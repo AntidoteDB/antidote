@@ -13,22 +13,19 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([check_clock/2, get_txs_to_check/2, check_committing/2, commit_notification/2, 
-commit_ts_notification/2, check_prepared/2, commit_notification2/2, return/2]).
+-export([check_clock/2,
+	 get_txs_to_check/2,
+	 commit_notification/2, 
+	 return/2]).
 
 %% Spawn
--export([bcast_get_commit_ts/2]).
 
 -record(state, {type,
 		key,
 	 	tx,
 		client,
 		vnode,
-        committing_txs,
-		left_committing,
-		prepared_txs,
-		left_prepared,
-		left_acks}).
+		pending_txs}).
 
 %%%===================================================================
 %%% API
@@ -50,10 +47,7 @@ init([Vnode, Client, Tx, Key, Type]) ->
 		key=Key,
                 client=Client, 
                 tx=Tx,
-		committing_txs=[],
-		left_committing=[],
-		prepared_txs=[],
-		left_prepared=[]},
+		pending_txs=[]},
     {ok, check_clock, SD, 0}.
 
 check_clock(timeout, SD0=#state{tx=Tx}) ->
@@ -64,56 +58,25 @@ check_clock(timeout, SD0=#state{tx=Tx}) ->
     end,
     {next_state, get_txs_to_check, SD0, 0}.
 
-get_txs_to_check(timeout, SD0=#state{tx=Tx}) ->
+get_txs_to_check(timeout, SD0=#state{tx=Tx, vnode=Vnode}) ->
     T_snapshot_time = Tx#tx.snapshot_time,
     %Concurrent txs
-    Txprimes=[Tx, Tx, Tx],
-    {Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
-    {next_state, check_committing, SD0=#state{committing_txs=Committing, prepared_txs=Pendings}, 0}.
-
-check_committing(timeout, SD0=#state{committing_txs=Committing, vnode=Vnode}) ->
-    riak_core_vnode_master:sync_command(Vnode, {notify_commit, Committing}, ?CLOCKSIMASTER),
-    {next_state, commit_notification, SD0=#state{left_committing=Committing}}.
-    
-commit_notification({committed, TxId}, SD0=#state{left_committing=Left}) ->
-    Left2=clean_left(TxId, Left),
-    if Left2==[] ->
-    	{next_state, check_prepared, SD0=#state{left_committing=Left2}, 0};
-    true->
-    	{next_state, commit_notification, SD0=#state{left_committing=Left2}}
+    case riak_core_vnode_master:sync_command(Vnode, {get_pending_txs, T_snapshot_time}, ?CLOCKSIMASTER) of
+    {ok, empty} ->
+	{next_state, return, SD0};
+    {ok, Pending} ->
+    %{Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
+        {next_state, commit_notification, SD0=#state{pending_txs=Pending}, 0};
+    {error, _Reason} ->
+	{stop, noraml, SD0}
     end.
 
-check_prepared(timeout, SD0=#state{tx=Tx, prepared_txs=Pendings}) ->
-    spawn(clockSI_readitem_fsm, bcast_get_commit_ts, [Pendings, Tx#tx.snapshot_time]),
-    {next_state, commit_ts_notification, SD0=#state{left_acks=Pendings}, 0}.
-
-%Either already committed or t'_ts_commit > t_snapshot_time
-commit_ts_notification({forget, TxId}, SD0=#state{left_acks=Left, vnode=Vnode, left_committing=Wait}) ->
+commit_notification({committed, TxId}, SD0=#state{pending_txs=Left}) ->
     Left2=clean_left(TxId, Left),
     if Left2==[] ->
-    	riak_core_vnode_master:sync_command(Vnode, {notify_commit, Wait}, ?CLOCKSIMASTER),
-    	{next_state, commit_notification2, SD0=#state{left_committing=Wait, left_acks=Left2}};
+    	{next_state, return, SD0=#state{pending_txs=Left2}, 0};
     true->
-    	{next_state, commit_ts_notification, SD0=#state{left_acks=Left2}}
-    end;
-
-%Tx not commited and t'_ts_commit < T_snapshot_time
-commit_ts_notification({wait, TxId}, SD0=#state{left_acks=Left, vnode=Vnode, left_committing=Wait}) ->
-    Left2=clean_left(TxId, Left),
-    Wait2=lists:append(Wait, [TxId]),
-    if Left2==[] ->
-    	riak_core_vnode_master:sync_command(Vnode, {notify_commit, Wait2}, ?CLOCKSIMASTER),
-    	{next_state, commit_notification2, SD0=#state{left_committing=Wait2, left_acks=Left2}};
-    true->
-    	{next_state, commit_ts_notification, SD0=#state{left_acks=Left2, left_committing=Wait2}}
-    end.
-
-commit_notification2({committed, TxId}, SD0=#state{left_committing=Left}) ->
-    Left2=clean_left(TxId, Left),
-    if Left2==[] ->
-    	{next_state, return, SD0=#state{left_committing=Left2}, 0};
-    true->
-    	{next_state, commit_notification, SD0=#state{left_committing=Left2}}
+    	{next_state, commit_notification, SD0=#state{pending_txs=Left2}}
     end.
 
 return(timeout, SD0=#state{client=Client, tx= Tx, key=Key, type=Type}) ->
@@ -143,32 +106,6 @@ terminate(_Reason, _SN, _SD) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-bcast_get_commit_ts([], _Snapshot_time) ->
-    ok;
-bcast_get_commit_ts([Next, Rest], Snapshot_time) ->
-    riak_core_vnode_master:sync_command(Next#tx.origin, {get_commit_ts, Snapshot_time}, ?CLOCKSIMASTER),
-    bcast_get_commit_ts(Rest, Snapshot_time).
-
-pending_commits(Snapshot_time, TXs)->
-    internal_pending_commits(Snapshot_time, TXs, [], []).
-
-internal_pending_commits(_Snapshot_time, [], Committing, Pendings)->
-    {Committing, Pendings};
-
-internal_pending_commits(Snapshot_time, [Next|Rest], Committing, Pendings)-> 
-    case Next#tx.state of
-    commiting ->
-		if Rest#tx.commit_time=<Snapshot_time ->
-	    	internal_pending_commits(Snapshot_time, Rest, lists:append(Committing,[Next]), Pendings);
-		true ->
-	 		internal_pending_commits(Snapshot_time, Rest, Committing, Pendings)
-		end;
-    prepared ->
-		internal_pending_commits(Snapshot_time, Rest, Committing, lists:append(Pendings,[Next]));
-	_ ->
-		internal_pending_commits(Snapshot_time, Rest, Committing, Pendings)
-	end.
-
 clean_left(TxId, Left) ->
     internal_clean_left(TxId, Left, []).
 
