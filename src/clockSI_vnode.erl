@@ -73,10 +73,10 @@ init([Partition]) ->
 			WaitingFsms=waiting_fsms,
 			ActiveTxsPerKey=active_txs_per_key,
 			WriteSet=write_set,
-	    	ets:new(PreparedTx, [set, named_table, public]),
-	    	ets:new(WaitingFsms, [bag, named_table, public]),
-	    	ets:new(ActiveTxsPerKey, [bag, named_table, public]),
-	    	ets:new(WriteSet, [bag, named_table, public]),
+	    	ets:new(PreparedTx, [set, named_table]),
+	    	ets:new(WaitingFsms, [bag, named_table]),
+	    	ets:new(ActiveTxsPerKey, [bag, named_table]),
+	    	ets:new(WriteSet, [bag, named_table]),
             {ok, #state{partition=Partition, log=TxLog, prepared_tx=PreparedTx, 
 						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
         {error, Reason} ->
@@ -110,14 +110,15 @@ handle_command({prepare, TxId}, _Sender, #state{log=Log, prepared_tx=PreparedTx}
 			Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
     		case Result of
         		ok ->
-					ets:insert(PreparedTx, TxId),
-            		{reply, PrepareTime, State=#state{prepared_tx=PreparedTx}};
+					ets:insert(PreparedTx, {TxId, prepared}),
+            		{reply, PrepareTime, State};
         		{error, Reason} ->
             		{reply, {error, Reason}, State}
     		end;
     	false ->
 		%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
 			{reply, abort, State}
+			
    		end;
 
 handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log}=State) ->
@@ -125,7 +126,6 @@ handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log}=State) ->
 			Result = dets:insert(Log, {TxId, {commit, TxCommitTime}}),
     		case Result of
         		ok ->
-					#state{log=Log}=State,
             		{reply, ack, State};
         		{error, Reason} ->
             		{reply, {error, Reason}, State}
@@ -141,10 +141,10 @@ handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
 	Pending=pending_txs(ets:lookup(ActiveTxsPerKey, Key), TxId),
 	case Pending of
 		[]->
-			{reply, ok};
+			{reply, {ok, empty}, State};
 		[H|T]->
-			NewWaitingFsms = add_to_waiting_fsms(WaitingFsms, [H|T], Sender),    
-			{reply, {ok, [H|T]}, State=#state{waiting_fsms=NewWaitingFsms}}
+			add_to_waiting_fsms(WaitingFsms, [H|T], Sender),    
+			{reply, {ok, [H|T]}, State}
 	end;
 	
 		
@@ -204,18 +204,16 @@ terminate(_Reason, _State) ->
 %% 	a. ActiteTxsPerKey,
 %% 	b. Waiting_Fsms,
 %% 	c. TxState
-clean_and_notify(timeout, TxId, State=#state{prepared_tx=PreparedTx, 
+clean_and_notify(timeout, TxId, #state{prepared_tx=PreparedTx, 
 					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
 	notify_all(ets:lookup(WaitingFsms, TxId), TxId),
 	case ets:lookup(WriteSet, TxId) of
         [Op|Ops] ->
-			CleanActiveTxsPerKey=clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
+			clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
     end,
 	ets:delete(PreparedTx, TxId),
 	ets:delete(WriteSet, TxId),
-	ets:delete(WaitingFsms, TxId),
-	State=#state{waiting_fsms=WaitingFsms, active_txs_per_key=CleanActiveTxsPerKey, prepared_tx=PreparedTx, write_set=WriteSet}.
-
+	ets:delete(WaitingFsms, TxId).
 
 
 
@@ -250,6 +248,7 @@ pending_txs(ListOfPendingTxs, TxId) ->
 	internal_pending_txs(ListOfPendingTxs, TxId, []).
 internal_pending_txs([], _TxId, Result) -> Result;
 internal_pending_txs([H|T], TxId, Result) ->
+	%% TODO: check that H is prepared!
 	case (H > TxId) of
 		true -> 
 			internal_pending_txs(T, TxId,lists:append(Result, H));
@@ -258,13 +257,13 @@ internal_pending_txs([H|T], TxId, Result) ->
 	end.
 
 
-clean_active_txs_per_key(_, [], ActiveTxsPerKey) -> ActiveTxsPerKey;
+clean_active_txs_per_key(_, [], _) -> ok;
 clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey) ->
 	{Key, _}=Op,
 	dets:delete_object(ActiveTxsPerKey, {Key, TxId}),
 	clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
 
-add_to_waiting_fsms(WaitingFsms, [], _) -> WaitingFsms;    
+add_to_waiting_fsms(_, [], _) -> ok;    
 add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->   
 	ets:insert(WaitingFsms, {H, Sender}),
 	add_to_waiting_fsms(WaitingFsms, T, Sender).

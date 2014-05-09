@@ -67,7 +67,7 @@ finishOp(From, Key,Result) ->
 init([From, ClientClock, Operations]) ->	
 
 	{ok, SnapshotTime}= get_snapshot_time(ClientClock),
-	TransactionId=#tx_id{snapshot_time=SnapshotTime, server_pid=From},            
+	TransactionId=#tx_id{snapshot_time=clockSI_vnode:now_milisec(SnapshotTime), server_pid=From},            
     SD = #state{
                 from=From,
                 tx_id=TransactionId,
