@@ -22,7 +22,7 @@
 
 -record(state, {type,
 		key,
-	 	tx,
+	 	tx_id,
 		client,
 		vnode,
 		pending_txs}).
@@ -40,32 +40,30 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Vnode, Client, Tx, Key, Type]) ->
+init([Vnode, Client, TxId, Key, Type]) ->
     SD = #state{
 		vnode=Vnode,
 		type=Type,
 		key=Key,
                 client=Client, 
-                tx=Tx,
+                tx_id=TxId,
 		pending_txs=[]},
     {ok, check_clock, SD, 0}.
 
-check_clock(timeout, SD0=#state{tx=Tx}) ->
-    T_TS = Tx#tx.snapshot_time,
+check_clock(timeout, SD0=#state{tx_id=TxId}) ->
+    T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
     if T_TS > Time ->
 	timer:sleep(T_TS - Time)
     end,
     {next_state, get_txs_to_check, SD0, 0}.
 
-get_txs_to_check(timeout, SD0=#state{tx=Tx, vnode=Vnode}) ->
-    T_snapshot_time = Tx#tx.snapshot_time,
-    %Concurrent txs
-    case riak_core_vnode_master:sync_command(Vnode, {get_pending_txs, T_snapshot_time}, ?CLOCKSIMASTER) of
-    {ok, empty} ->
-	{next_state, return, SD0};
+get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
+    case (clockSI_vnode:get_pending_txs(Vnode, {Key, TxId})) of
+    {ok, []} ->
+		{next_state, return, SD0};
     {ok, Pending} ->
-    %{Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
+    	%{Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
         {next_state, commit_notification, SD0=#state{pending_txs=Pending}, 0};
     {error, _Reason} ->
 	{stop, noraml, SD0}
@@ -79,10 +77,10 @@ commit_notification({committed, TxId}, SD0=#state{pending_txs=Left}) ->
     	{next_state, commit_notification, SD0=#state{pending_txs=Left2}}
     end.
 
-return(timeout, SD0=#state{client=Client, tx= Tx, key=Key, type=Type}) ->
+return(timeout, SD0=#state{client=Client, tx_id= TxId, key=Key, type=Type}) ->
     case floppy_rep_vnode:read_clockSI(Key, Type) of
     {ok, Ops} ->
-	Reply = clockSI_materializer:materialize(Type, Tx#tx.snapshot_time, Ops);
+	Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops);
     Else ->
 	Reply=Else
     end,

@@ -7,11 +7,12 @@
 	 %API begin
 	 read_data_item/4,
 	 update_data_item/4,
+	 notify_commit/2,
+	 clean_and_notify/3,
+	 get_pending_txs/2,
 	 prepare/2,
 	 commit/2,
 	 abort/2,
-  	 notify_commit/2,
-	 %API end
          init/1,
          terminate/2,
          handle_command/3,
@@ -55,8 +56,11 @@ commit(Node, Tx) ->
 abort(Node, Tx) ->
     riak_core_vnode_master:sync_command(Node, {abort, Tx}, ?CLOCKSIMASTER).
 
-notify_commit(Node, Tx) ->
-    riak_core_vnode_master:sync_command(Node, {notify_commit, Tx}, ?CLOCKSIMASTER).
+notify_commit(Node, TxId) ->
+   riak_core_vnode_master:sync_command(Node, {notify_commit, TxId}, ?CLOCKSIMASTER).
+
+get_pending_txs(Node, {Key, TxId}) ->
+	riak_core_vnode_master:sync_command (Node, {get_pending_txs, {Key, TxId}}, ?CLOCKSIMASTER).
 
 init([Partition]) ->
     % It generates a dets file to store active transactions.
@@ -84,7 +88,7 @@ handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Part
     clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type),
     {no_reply, State};
 
-handle_command({update_data_item, TxId, Key, Op}, Sender, #state{write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
+handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
 	%%do we need the Sender here?
     
 	%%clockSI_updateitem_fsm:start_link(Sender, Tx, Key, Op),
@@ -93,11 +97,11 @@ handle_command({update_data_item, TxId, Key, Op}, Sender, #state{write_set=Write
     	ok ->
 			ets:insert(ActiveTxsPerKey, {Key, TxId}),
 			ets:insert(WriteSet, {TxId, {Key, Op}}),
-        	{reply, {ok, {Key, Op}}, State=#state{active_txs_per_key=ActiveTxsPerKey, write_set=WriteSet}};
+        	{reply, {ok, {Key, Op}}, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
-    end,
-    {no_reply, State};
+    end;
+%%     {no_reply, State};
 
 handle_command({prepare, TxId}, _Sender, #state{log=Log, prepared_tx=PreparedTx}=State) ->
     case certification_check(TxId,Log) of
@@ -122,17 +126,28 @@ handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log}=State) ->
     		case Result of
         		ok ->
 					#state{log=Log}=State,
-            		{reply, ack, State},
-					{next_state, clean_and_notify, TxId, State, 0};
+            		{reply, ack, State};
         		{error, Reason} ->
             		{reply, {error, Reason}, State}
     		end;
+%% 			{next_state, clean_and_notify, TxId, State, 0};
 
 
-handle_command({abort, _Tx}, _Sender, #state{log=_Log}=State) ->
-    %TODO: abort tx
-    {no_reply, State};
+handle_command({abort, TxId}, _Sender, #state{log=_Log}=State) ->
+    {next_state, clean_and_notify, TxId, State, 0};
 
+handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
+			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms}=State) ->
+	Pending=pending_txs(ets:lookup(ActiveTxsPerKey, Key), TxId),
+	case Pending of
+		[]->
+			{reply, ok};
+		[H|T]->
+			NewWaitingFsms = add_to_waiting_fsms(WaitingFsms, [H|T], Sender),    
+			{reply, {ok, [H|T]}, State=#state{waiting_fsms=NewWaitingFsms}}
+	end;
+	
+		
 %% handle_command({notify_commit, TXs}, Sender, #state{pending=Pendings}=State) ->
 %%     %TODO: Check if anyone is already commited 
 %%     add_list_to_pendings(TXs, Sender, Pendings),
@@ -180,14 +195,26 @@ terminate(_Reason, _State) ->
 %%% States
 %%%===================================================================
 
+
+%% clean_and_notify: 
+%% This function is used for cleanning the state a transaction stores in the vnode
+%% while it is being procesed. Once a transaction commits or aborts, it is necessary to:
+%% 1. notify all read_fsms that are waiting for this transaction to finish to perform a read.
+%% 2. clean the state of the transaction. Namely:
+%% 	a. ActiteTxsPerKey,
+%% 	b. Waiting_Fsms,
+%% 	c. TxState
 clean_and_notify(timeout, TxId, State=#state{prepared_tx=PreparedTx, 
 					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
+	notify_all(ets:lookup(WaitingFsms, TxId), TxId),
 	case ets:lookup(WriteSet, TxId) of
         [Op|Ops] ->
-			notify(TxId, [Op|Ops], WaitingFsms)
+			CleanActiveTxsPerKey=clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
     end,
 	ets:delete(PreparedTx, TxId),
-	ets:delete(WriteSet, TxId).
+	ets:delete(WriteSet, TxId),
+	ets:delete(WaitingFsms, TxId),
+	State=#state{waiting_fsms=WaitingFsms, active_txs_per_key=CleanActiveTxsPerKey, prepared_tx=PreparedTx, write_set=WriteSet}.
 
 
 
@@ -200,21 +227,55 @@ clean_and_notify(timeout, TxId, State=#state{prepared_tx=PreparedTx,
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
         (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
 
-add_list_to_pendings([], _Sender, _Pendings) -> done;
+%% add_list_to_pendings([], _Sender, _Pendings) -> done;
+%% 
+%% add_list_to_pendings([Next|Rest], Sender, Pendings) ->
+%%     ets:insert(Pendings, {Next, Sender}),
+%%     add_list_to_pendings(Rest, Sender, Pendings).
 
-add_list_to_pendings([Next|Rest], Sender, Pendings) ->
-    ets:insert(Pendings, {Next, Sender}),
-    add_list_to_pendings(Rest, Sender, Pendings).
-notify_all([],_Reply) -> done;
-notify_all([Next|Rest],Reply) -> 
-    riak_core_vnode:reply(Next, Reply),
-    notify_all(Rest, Reply).
+notify_all([], _) -> done; 
+notify_all([Next|Rest], TxId) -> 
+    riak_core_vnode:reply(Next, {committed, TxId}),
+    notify_all(Rest, TxId).
+	
 certification_check(_Tx,_Log) -> true.
 
-state_cleanup(TxId, PreparedTx, ActiveTxsPerKey) ->
-	{PreparedTx, ActiveTxsPerKey}.
+
+%% returns a list of transactions with
+%% prepare timestamp bigger than TxId
+%% input:
+%% 	ListOfPendingTxs: a List of all transactions in prepare state that update Key
+%% 	Key: the key of the object for which there are prepared transactions that updated it.
+pending_txs(ListOfPendingTxs, TxId) -> 
+	internal_pending_txs(ListOfPendingTxs, TxId, []).
+internal_pending_txs([], _TxId, Result) -> Result;
+internal_pending_txs([H|T], TxId, Result) ->
+	case (H > TxId) of
+		true -> 
+			internal_pending_txs(T, TxId,lists:append(Result, H));
+		false-> 
+			internal_pending_txs(T, TxId, Result)
+	end.
 
 
-notify([], TxId) -> {ok};
-notify(TxId, [Op|Ops], ActiveTxsPerKey) -> 
-	case (ets:lookup())
+clean_active_txs_per_key(_, [], ActiveTxsPerKey) -> ActiveTxsPerKey;
+clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey) ->
+	{Key, _}=Op,
+	dets:delete_object(ActiveTxsPerKey, {Key, TxId}),
+	clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
+
+add_to_waiting_fsms(WaitingFsms, [], _) -> WaitingFsms;    
+add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->   
+	ets:insert(WaitingFsms, {H, Sender}),
+	add_to_waiting_fsms(WaitingFsms, T, Sender).
+	
+	
+	
+	
+
+
+
+
+
+
+	%%case (ets:lookup())

@@ -12,9 +12,9 @@
 %% States
 -export([check_clock/2, update_item/2]).
 
--record(state, {
+-record(state, { 
 		key,
-	 	tx,
+	 	tx_id,
 		op,
 		client}).
 
@@ -31,23 +31,23 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Client, Tx, Key, Op]) ->
+init([Client, TxId, Key, Op]) ->
     SD = #state{
 		key=Key,
                 client=Client,
 		op=Op, 
-                tx=Tx},
+                tx_id=TxId},
     {ok, check_clock, SD, 0}.
 
-check_clock(timeout, SD0=#state{tx=Tx}) ->
-    T_TS = Tx#tx.snapshot_time,
+check_clock(timeout, SD0=#state{tx_id=TxId}) ->
+    T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
     if T_TS > Time ->
 	timer:sleep(T_TS - Time)
     end,
     {next_state, update_item, SD0, 0}.
 
-update_item(timeout, SD0=#state{tx=_Tx, key=_Key, client=_Client}) ->
+update_item(timeout, SD0=#state{tx_id=_TxId, key=_Key, client=_Client}) ->
     
     {stop, normal, SD0}.
 

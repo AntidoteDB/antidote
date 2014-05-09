@@ -32,22 +32,28 @@
 %%	  currentOp: a currently executing operation of the form {Key, Params}.
 %%	  currentOpLeader: the partition responsible for the key involved in 'currentOP'.
 %%	  num_to_ack: when sending prepare_commit, the number of partitions that have acked.
+%% 	  prepare_time: transaction prepare time.
+%% 	  commit_time: transaction commit time.
+%% 	  state: state of the transaction: {active|prepared|committing|committed}
 %%----------------------------------------------------------------------
 -record(state, {
                 from :: pid(),
-                transaction :: #tx{},
+                tx_id :: #tx_id{},
                 operations :: list,
                 updated_partitions :: list, 
                 currentOp = undefined :: term() | undefined,
                 num_to_ack :: int, 
-                currentOpLeader :: riak_core_apl:preflist2()}).
+                currentOpLeader :: riak_core_apl:preflist2(),
+				prepare_time,	
+				commit_time,
+				state}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(From, Transaction=#tx{}, Operations) ->
-    gen_fsm:start_link(?MODULE, [From, Transaction, Operations], []).
+start_link(From, ClientClock, Operations) ->
+    gen_fsm:start_link(?MODULE, [From, ClientClock, Operations], []).
 
 finishOp(From, Key,Result) ->
    gen_fsm:send_event(From, {Key, Result}).
@@ -61,10 +67,10 @@ finishOp(From, Key,Result) ->
 init([From, ClientClock, Operations]) ->	
 
 	{ok, SnapshotTime}= get_snapshot_time(ClientClock),
-	Transaction=#tx{snapshot_time=SnapshotTime, state=active},            
+	TransactionId=#tx_id{snapshot_time=SnapshotTime, server_pid=From},            
     SD = #state{
                 from=From,
-                transaction=Transaction,
+                tx_id=TransactionId,
                 operations=Operations,
                 updated_partitions=[]
 		},
@@ -78,7 +84,7 @@ init([From, ClientClock, Operations]) ->
 %%		2. 	it starts a local_commit (update tx that only updates a single partition) or
 %%		3.	it goes to the prepare_2PC to start a two phase commit (when multiple partitions
 %%		are updated. 
-prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
+prepareOp(timeout, SD0=#state{operations=Operations, tx_id=TransactionId, updated_partitions=UpdatedPartitions}) ->
 	case Operations of 
 	[] ->
 		case lists:lenght(UpdatedPartitions) of
@@ -87,7 +93,7 @@ prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, up
 			{stop, normal, SD0};
 		1 ->
 			[IndexNode]=UpdatedPartitions,
-			clockSI_vnode:local_commit(IndexNode, Transaction),
+			clockSI_vnode:local_commit(IndexNode, TransactionId),
 			{stop, normal, SD0};
 		_ ->
 			{next_state, prepare_2PC, SD0, 0}		
@@ -109,7 +115,7 @@ prepareOp(timeout, SD0=#state{operations=Operations, transaction=Transaction, up
 %%		operation.
 executeOp(timeout, SD0=#state{
                             currentOp=CurrentOp,
-                            transaction=Transaction,
+                            tx_id=TransactionId,
                             updated_partitions=UpdatedPartitions,
                             currentOpLeader=CurrentOpLeader}) ->
     [OpType, DataType, Key, Param]=CurrentOp,                        
@@ -117,10 +123,10 @@ executeOp(timeout, SD0=#state{
 	io:format("Coord: Forward to node~w~n",[CurrentOpLeader]),
 	{IndexNode, _} = CurrentOpLeader,
 	case OpType of read ->
-		clockSI_vnode:read_data_item(IndexNode, Transaction, Key, DataType),
+		clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, DataType),
 		SD1=SD0;
 	update ->
-		clockSI_vnode:update_data_item(IndexNode, Transaction, Key, Param),
+		clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param),
 		case lists:member(IndexNode, UpdatedPartitions) of
 			true ->
 				NewUpdatedPartitions= lists:append(UpdatedPartitions, [{IndexNode}]),
@@ -128,27 +134,27 @@ executeOp(timeout, SD0=#state{
 			false->
 				SD1 = SD0
 		end
-	end,
+	end, 
     {next_state, prepareOp, SD1, 0}.
     
 %%	when the tx updates multiple partitions, a two phase commit protocol is started.
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
-prepare_2PC(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
-	clock_SI_vnode:prepare(Transaction, UpdatedPartitions),
+prepare_2PC(timeout, SD0=#state{tx_id=TransactionId, updated_partitions=UpdatedPartitions}) ->
+	clock_SI_vnode:prepare(TransactionId, UpdatedPartitions),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_prepared, SD0#state{transaction=Transaction, num_to_ack=NumToAck}, ?CLOCKSI_TIMEOUT}.
+	{next_state, receive_prepared, SD0#state{tx_id=TransactionId, num_to_ack=NumToAck}, ?CLOCKSI_TIMEOUT}.
 	
 %%	in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  
-receive_prepared({_Node, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, transaction=Transaction}) ->		
-	PrepareTime = max(Transaction#tx.prepare_time, ReceivedPrepareTime),
+receive_prepared({_Node, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, prepare_time=PrepareTime}) ->		
+	MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 -> 
     	io:format("ClockSI: Finished collecting prepare replies, start committing..."),
-		{next_state, committing, S0=#state{transaction=#tx{prepare_time=coomit_time=PrepareTime, state=committing}},0};
+		{next_state, committing, S0=#state{prepare_time=commit_time=MaxPrepareTime, state=committing},0};
 	_ ->
          io:format("ClockSI: Keep collecting prepare replies~n"),
-	{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1}, Transaction#tx{prepare_time=PrepareTime}}
+	{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 receive_prepared({_Node, abort}, S0) ->
 	{next_state, abort, S0};   
@@ -157,10 +163,10 @@ receive_prepared(timeout, S0) ->
 
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
-committing(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) -> 
-	clock_SI_vnode:commit(UpdatedPartitions, Transaction),
+committing(timeout, SD0=#state{tx_id=TransactionId, updated_partitions=UpdatedPartitions}) -> 
+	clock_SI_vnode:commit(UpdatedPartitions, TransactionId),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, transaction=#tx{state=committed}}, 0}.
+	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, state=committed}, 0}.
 	
 %%	the fsm waits for acks indicating that each partition has successfully committed the tx
 %%	and finishes operation.
