@@ -57,22 +57,11 @@ finishOp(From, Key,Result) ->
 %%%===================================================================
 
 %% @doc Initialize the state, set the transaction's state to active.
+
 init([From, ClientClock, Operations]) ->	
 
-
-	{Megasecs, Secs, Microsecs}=erlang:now(),
-	 
-	case (ClientClock > {Megasecs, Secs, Microsecs - ?DELTA}) of 
-		true->
-			%% should we wait?
-			{ClientMegasecs, ClientSecs, ClientMicrosecs}=ClientClock,
-			SnapshotTime = {ClientMegasecs, ClientSecs, ClientMicrosecs + ?MIN};
-
-		false ->
-			SnapshotTime = {Megasecs, Secs, Microsecs - ?DELTA}
-	end,
-		Transaction=#tx{snapshot_time=SnapshotTime, state=active, write_set=[]},
-                
+	{ok, SnapshotTime}= get_snapshot_time(ClientClock),
+	Transaction=#tx{snapshot_time=SnapshotTime, state=active},            
     SD = #state{
                 from=From,
                 transaction=Transaction,
@@ -131,10 +120,14 @@ executeOp(timeout, SD0=#state{
 		clockSI_vnode:read_data_item(IndexNode, Transaction, Key, DataType),
 		SD1=SD0;
 	update ->
-		clockSI_vnode:update_data_item(IndexNode, Transaction#tx{write_set=[]}, Key, Param),
-		WriteSet= lists:append([Transaction#tx.write_set, [{CurrentOp}]]),
-		NewUpdatedPartitions= lists:append(UpdatedPartitions, [{IndexNode}]),
-		SD1 = SD0#state{transaction=Transaction#tx{write_set=WriteSet}, updated_partitions= NewUpdatedPartitions}
+		clockSI_vnode:update_data_item(IndexNode, Transaction, Key, Param),
+		case lists:member(IndexNode, UpdatedPartitions) of
+			true ->
+				NewUpdatedPartitions= lists:append(UpdatedPartitions, [{IndexNode}]),
+				SD1 = SD0#state{updated_partitions= NewUpdatedPartitions};
+			false->
+				SD1 = SD0
+		end
 	end,
     {next_state, prepareOp, SD1, 0}.
     
@@ -142,10 +135,9 @@ executeOp(timeout, SD0=#state{
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
 prepare_2PC(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) ->
-	TransactionLight=Transaction#tx{write_set=[]},
-	clock_SI_vnode:prepare(TransactionLight, UpdatedPartitions),
+	clock_SI_vnode:prepare(Transaction, UpdatedPartitions),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_prepared, SD0#state{transaction=TransactionLight, num_to_ack=NumToAck}, ?CLOCKSI_TIMEOUT}.
+	{next_state, receive_prepared, SD0#state{transaction=Transaction, num_to_ack=NumToAck}, ?CLOCKSI_TIMEOUT}.
 	
 %%	in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  
@@ -205,3 +197,19 @@ terminate(_Reason, _SN, _SD) ->
 %%%===================================================================
 
 
+%%	Set the transaction Snapshot Time to the maximum value of:
+%%	1.	ClientClock, which is the last clock of the system the client
+%%		starting this transaction has seen, and
+%%	2. 	machine's local time, as returned by erlang:now(). 	
+get_snapshot_time(ClientClock) ->
+	{Megasecs, Secs, Microsecs}=erlang:now(), 
+	case (ClientClock > {Megasecs, Secs, Microsecs - ?DELTA}) of 
+		true->
+			%% should we wait until the clock of this machine catches up with this value?
+			{ClientMegasecs, ClientSecs, ClientMicrosecs}=ClientClock,
+			SnapshotTime = {ClientMegasecs, ClientSecs, ClientMicrosecs + ?MIN};
+
+		false ->
+			SnapshotTime = {Megasecs, Secs, Microsecs - ?DELTA}
+	end,
+	{ok, SnapshotTime}.

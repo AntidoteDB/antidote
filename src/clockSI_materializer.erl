@@ -7,7 +7,7 @@
 	 materialize/3]).
 
 create_snapshot(Type) ->
-    Type:new().
+    	Type:new().
 
 update_snapshot(_, Snapshot, _Snapshot_time, []) ->
     Snapshot;

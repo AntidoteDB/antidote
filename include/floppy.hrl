@@ -37,4 +37,4 @@
 %%	  origin: the transaction's originating partition
 %%----------------------------------------------------------------------
 
--record(tx, {id, snapshot_time, commit_time, prepare_time, state, write_set, origin}).
+-record(tx, {id, snapshot_time, commit_time, prepare_time, state, origin}).

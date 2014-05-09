@@ -30,10 +30,13 @@
              start_vnode/1
              ]).
 
--record(state, {partition,log, pending}).
+-record(state, {partition,log, prepared_tx, waiting_fsms, active_txs_per_key, write_set}).
 
 
-%% API
+%%%===================================================================
+%%% API
+%%%=================================================================== 
+
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
     
@@ -62,47 +65,78 @@ init([Partition]) ->
             app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
     case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
         {ok, TxLog} ->
-	    Pendings=pendings,
-	    ets:new(Pendings, [bag, named_table, public]),
-            {ok, #state{partition=Partition, log=TxLog, pending=Pendings}};
+	    	PreparedTx=prepared_tx,
+			WaitingFsms=waiting_fsms,
+			ActiveTxsPerKey=active_txs_per_key,
+			WriteSet=write_set,
+	    	ets:new(PreparedTx, [set, named_table, public]),
+	    	ets:new(WaitingFsms, [bag, named_table, public]),
+	    	ets:new(ActiveTxsPerKey, [bag, named_table, public]),
+	    	ets:new(WriteSet, [bag, named_table, public]),
+            {ok, #state{partition=Partition, log=TxLog, prepared_tx=PreparedTx, 
+						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
         {error, Reason} ->
             {error, Reason}
     end.
 
-handle_command({read_data_item, Tx, Key, Type}, Sender, #state{partition= Partition, log=_Log}=State) ->
+handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Partition, log=_Log}=State) ->
     Vnode={Partition, node()},
-    clockSI_readitem_fsm:start_link(Vnode, Sender, Tx, Key, Type),
+    clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type),
     {no_reply, State};
 
-handle_command({update_data_item, Tx, Key, Op}, Sender, #state{log=_Log}=State) ->
-    clockSI_updateitem_fsm:start_link(Sender, Tx, Key, Op),
+handle_command({update_data_item, TxId, Key, Op}, Sender, #state{write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
+	%%do we need the Sender here?
+    
+	%%clockSI_updateitem_fsm:start_link(Sender, Tx, Key, Op),
+	Result = dets:insert(Log, {TxId, {Key, Op}}),
+    case Result of
+    	ok ->
+			ets:insert(ActiveTxsPerKey, {Key, TxId}),
+			ets:insert(WriteSet, {TxId, {Key, Op}}),
+        	{reply, {ok, {Key, Op}}, State=#state{active_txs_per_key=ActiveTxsPerKey, write_set=WriteSet}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end,
     {no_reply, State};
 
-handle_command({prepare, Tx}, _Sender, #state{log=Log}=State) ->
-    case certification_check(Tx,Log) of
-    true ->
-	%TODO: Log T.writeset and T.origin
-	NewTx=Tx#tx{state=prepared, prepare_time=now_milisec(erlang:now())},
-	{reply, NewTx#tx.prepare_time, State};
-    false ->
-	%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
-	{reply, abort, State}
-    end;
+handle_command({prepare, TxId}, _Sender, #state{log=Log, prepared_tx=PreparedTx}=State) ->
+    case certification_check(TxId,Log) of
+    	true ->
+			PrepareTime=now_milisec(erlang:now()),
+			Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
+    		case Result of
+        		ok ->
+					ets:insert(PreparedTx, TxId),
+            		{reply, PrepareTime, State=#state{prepared_tx=PreparedTx}};
+        		{error, Reason} ->
+            		{reply, {error, Reason}, State}
+    		end;
+    	false ->
+		%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
+			{reply, abort, State}
+   		end;
 
-handle_command({commit, Tx}, _Sender, #state{log=_Log, pending=Pendings}=State) ->
-    %TODO: log commit time.
-    Processes=ets:lookup(Pendings, Tx#tx.id),
-    notify_all(Processes, {committed, Tx#tx.id}),
-    {reply, done, State};
+handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log}=State) ->
+			%ale: Log T.writeset
+			Result = dets:insert(Log, {TxId, {commit, TxCommitTime}}),
+    		case Result of
+        		ok ->
+					#state{log=Log}=State,
+            		{reply, ack, State},
+					{next_state, clean_and_notify, TxId, State, 0};
+        		{error, Reason} ->
+            		{reply, {error, Reason}, State}
+    		end;
+
 
 handle_command({abort, _Tx}, _Sender, #state{log=_Log}=State) ->
     %TODO: abort tx
     {no_reply, State};
 
-handle_command({notify_commit, TXs}, Sender, #state{pending=Pendings}=State) ->
-    %TODO: Check if anyone is already commited 
-    add_list_to_pendings(TXs, Sender, Pendings),
-    {no_reply, State};
+%% handle_command({notify_commit, TXs}, Sender, #state{pending=Pendings}=State) ->
+%%     %TODO: Check if anyone is already commited 
+%%     add_list_to_pendings(TXs, Sender, Pendings),
+%%     {no_reply, State};
 
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
@@ -141,11 +175,33 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%Internal functions
+
+%%%===================================================================
+%%% States
+%%%===================================================================
+
+clean_and_notify(timeout, TxId, State=#state{prepared_tx=PreparedTx, 
+					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
+	case ets:lookup(WriteSet, TxId) of
+        [Op|Ops] ->
+			notify(TxId, [Op|Ops], WaitingFsms)
+    end,
+	ets:delete(PreparedTx, TxId),
+	ets:delete(WriteSet, TxId).
+
+
+
+
+
+%%%===================================================================
+%%% Internal Functions
+%%%===================================================================
+
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
         (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
 
 add_list_to_pendings([], _Sender, _Pendings) -> done;
+
 add_list_to_pendings([Next|Rest], Sender, Pendings) ->
     ets:insert(Pendings, {Next, Sender}),
     add_list_to_pendings(Rest, Sender, Pendings).
@@ -154,3 +210,11 @@ notify_all([Next|Rest],Reply) ->
     riak_core_vnode:reply(Next, Reply),
     notify_all(Rest, Reply).
 certification_check(_Tx,_Log) -> true.
+
+state_cleanup(TxId, PreparedTx, ActiveTxsPerKey) ->
+	{PreparedTx, ActiveTxsPerKey}.
+
+
+notify([], TxId) -> {ok};
+notify(TxId, [Op|Ops], ActiveTxsPerKey) -> 
+	case (ets:lookup())
