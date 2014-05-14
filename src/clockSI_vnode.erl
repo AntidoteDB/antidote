@@ -31,7 +31,7 @@
              start_vnode/1
              ]).
 
--record(state, {partition,log, prepared_tx, waiting_fsms, active_txs_per_key, write_set}).
+-record(state, {partition,log, active_tx, prepared_tx, committed_tx, waiting_fsms, active_txs_per_key, write_set}).
 
 
 %%%===================================================================
@@ -69,7 +69,7 @@ init([Partition]) ->
             app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
     case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
         {ok, TxLog} ->
-	    	PreparedTx=prepared_tx,
+	    	PreparedTx=active_tx,
 			WaitingFsms=waiting_fsms,
 			ActiveTxsPerKey=active_txs_per_key,
 			WriteSet=write_set,
@@ -77,7 +77,7 @@ init([Partition]) ->
 	    	ets:new(WaitingFsms, [bag, named_table]),
 	    	ets:new(ActiveTxsPerKey, [bag, named_table]),
 	    	ets:new(WriteSet, [bag, named_table]),
-            {ok, #state{partition=Partition, log=TxLog, prepared_tx=PreparedTx, 
+            {ok, #state{partition=Partition, log=TxLog, active_tx=PreparedTx, 
 						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
         {error, Reason} ->
             {error, Reason}
@@ -88,13 +88,14 @@ handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Part
     clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type),
     {no_reply, State};
 
-handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
+handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
 	%%do we need the Sender here?
     
 	%%clockSI_updateitem_fsm:start_link(Sender, Tx, Key, Op),
 	Result = dets:insert(Log, {TxId, {Key, Op}}),
     case Result of
     	ok ->
+    		ets:insert(ActiveTx, {TxId, TxId#tx_id.snapshot_time}),
 			ets:insert(ActiveTxsPerKey, {Key, TxId}),
 			ets:insert(WriteSet, {TxId, {Key, Op}}),
         	{reply, {ok, {Key, Op}}, State};
@@ -103,14 +104,17 @@ handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{write_set=Writ
     end;
 %%     {no_reply, State};
 
-handle_command({prepare, TxId}, _Sender, #state{log=Log, prepared_tx=PreparedTx}=State) ->
-    case certification_check(TxId,Log) of
+handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Log,
+	active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
+	
+	TxWriteSet=ets:lookup(WriteSet, TxId), 
+    case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
     	true ->
 			PrepareTime=now_milisec(erlang:now()),
 			Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
     		case Result of
         		ok ->
-					ets:insert(PreparedTx, {TxId, prepared}),
+					ets:insert(PreparedTx, {TxId, PrepareTime}),
             		{reply, PrepareTime, State};
         		{error, Reason} ->
             		{reply, {error, Reason}, State}
@@ -121,11 +125,12 @@ handle_command({prepare, TxId}, _Sender, #state{log=Log, prepared_tx=PreparedTx}
 			
    		end;
 
-handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log}=State) ->
+handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx}=State) ->
 			%ale: Log T.writeset
-			Result = dets:insert(Log, {TxId, {commit, TxCommitTime}}),
+			Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
     		case Result of
         		ok ->
+        			ets:insert(CommittedTx, {TxId, committed}),
             		{reply, ack, State};
         		{error, Reason} ->
             		{reply, {error, Reason}, State}
@@ -137,8 +142,8 @@ handle_command({abort, TxId}, _Sender, #state{log=_Log}=State) ->
     {next_state, clean_and_notify, TxId, State, 0};
 
 handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
-			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms}=State) ->
-	Pending=pending_txs(ets:lookup(ActiveTxsPerKey, Key), TxId),
+			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms, prepared_tx=PreparedTx}=State) ->
+	Pending=pending_txs(ets:lookup(ActiveTxsPerKey, Key), TxId, PreparedTx),
 	case Pending of
 		[]->
 			{reply, {ok, empty}, State};
@@ -203,8 +208,8 @@ terminate(_Reason, _State) ->
 %% 2. clean the state of the transaction. Namely:
 %% 	a. ActiteTxsPerKey,
 %% 	b. Waiting_Fsms,
-%% 	c. TxState
-clean_and_notify(timeout, TxId, #state{prepared_tx=PreparedTx, 
+%% 	c. PreparedTx
+clean_and_notify(timeout, TxId, #state{active_tx=PreparedTx, 
 					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
 	notify_all(ets:lookup(WaitingFsms, TxId), TxId),
 	case ets:lookup(WriteSet, TxId) of
@@ -235,25 +240,23 @@ notify_all([], _) -> done;
 notify_all([Next|Rest], TxId) -> 
     riak_core_vnode:reply(Next, {committed, TxId}),
     notify_all(Rest, TxId).
-	
-certification_check(_Tx,_Log) -> true.
-
 
 %% returns a list of transactions with
-%% prepare timestamp bigger than TxId
+%% prepare timestamp bigger than TxId (snapshot time)
 %% input:
 %% 	ListOfPendingTxs: a List of all transactions in prepare state that update Key
 %% 	Key: the key of the object for which there are prepared transactions that updated it.
-pending_txs(ListOfPendingTxs, TxId) -> 
-	internal_pending_txs(ListOfPendingTxs, TxId, []).
-internal_pending_txs([], _TxId, Result) -> Result;
-internal_pending_txs([H|T], TxId, Result) ->
-	%% TODO: check that H is prepared!
-	case (H > TxId) of
-		true -> 
-			internal_pending_txs(T, TxId,lists:append(Result, H));
-		false-> 
-			internal_pending_txs(T, TxId, Result)
+pending_txs(ListOfPendingTxs, TxId, PreparedTx) -> 
+	internal_pending_txs(ListOfPendingTxs, TxId, PreparedTx, []).
+internal_pending_txs([], _TxId, _, Result) -> Result;
+internal_pending_txs([H|T], TxId, PreparedTx, Result) ->
+	case ets:lookup(PreparedTx, H) of {prepared, {PrepTime, ProcId}} ->
+		case {PrepTime, ProcId} > TxId of
+			true -> 
+				internal_pending_txs(T, TxId,PreparedTx, lists:append(Result, H));
+			false-> 
+				internal_pending_txs(T, TxId, PreparedTx, Result)
+		end
 	end.
 
 
@@ -267,10 +270,28 @@ add_to_waiting_fsms(_, [], _) -> ok;
 add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->   
 	ets:insert(WaitingFsms, {H, Sender}),
 	add_to_waiting_fsms(WaitingFsms, T, Sender).
+		
 	
-	
-	
-	
+certification_check(_, [], _, _) -> true;
+certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) ->
+	[{Key, _}|T]=TxWriteSet,
+	TxsPerKey=ets:lookup(ActiveTxPerKey, Key),
+	case check_keylog(TxId, TxsPerKey, CommittedTx) of
+		true -> false;	
+		false ->
+			certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
+	end.
+
+check_keylog(_, [], _) -> true;
+check_keylog(TxId, [H|T], CommittedTx)->
+	case H > TxId of 
+		true ->
+			case ets:lookup(CommittedTx, H) of 
+				true -> true;
+				false->
+					check_keylog(TxId, T, CommittedTx)
+			end
+	end.
 
 
 
