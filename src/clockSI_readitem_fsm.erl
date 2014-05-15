@@ -81,8 +81,8 @@ return(timeout, SD0=#state{client=Client, tx_id= TxId, key=Key, type=Type}) ->
     case floppy_rep_vnode:read_clockSI(Key, Type) of
     {ok, Ops} ->
 	Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops);
-    Else ->
-	Reply=Else
+    _ ->
+	Reply=error
     end,
     gen_fsm:reply(Client, Reply),
     {stop, normal, SD0}.

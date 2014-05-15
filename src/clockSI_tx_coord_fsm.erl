@@ -17,7 +17,7 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([prepareOp/2, executeOp/2, finishOp/3, prepare_2PC/2, receive_prepared/2, committing/2, receive_committed/2]).
+-export([handle_read/2, prepareOp/2, executeOp/2, finishOp/3, prepare_2PC/2, receive_prepared/2, committing/2, receive_committed/2]).
 
 
 %-record(operationCSI, {opType, key, params}).
@@ -34,6 +34,7 @@
 %%	  num_to_ack: when sending prepare_commit, the number of partitions that have acked.
 %% 	  prepare_time: transaction prepare time.
 %% 	  commit_time: transaction commit time.
+%%	  read_set: a list of the objects read by read operations that have already returned.
 %% 	  state: state of the transaction: {active|prepared|committing|committed}
 %%----------------------------------------------------------------------
 -record(state, {
@@ -46,6 +47,7 @@
                 currentOpLeader :: riak_core_apl:preflist2(),
 				prepare_time,	
 				commit_time,
+				read_set,
 				state}).
 
 %%%===================================================================
@@ -62,7 +64,7 @@ finishOp(From, Key,Result) ->
 %%% States
 %%%===================================================================
 
-%% @doc Initialize the state, set the transaction's state to active.
+%% @doc Initialize the state.
 
 init([From, ClientClock, Operations]) ->	
 
@@ -72,7 +74,8 @@ init([From, ClientClock, Operations]) ->
                 from=From,
                 tx_id=TransactionId,
                 operations=Operations,
-                updated_partitions=[]
+                updated_partitions=[],
+                read_set=[]
 		},
     {ok, prepareOp, SD, 0}.
 
@@ -119,8 +122,8 @@ executeOp(timeout, SD0=#state{
                             updated_partitions=UpdatedPartitions,
                             currentOpLeader=CurrentOpLeader}) ->
     [OpType, DataType, Key, Param]=CurrentOp,                        
-    io:format("Coord: Execute operation ~w ~w ~w ~w~n",[OpType, DataType, Key, Param]),
-	io:format("Coord: Forward to node~w~n",[CurrentOpLeader]),
+    io:format("ClockSI-Coord: Execute operation ~w ~w ~w ~w~n",[OpType, DataType, Key, Param]),
+	io:format("ClockSI-Coord: Forward to node~w~n",[CurrentOpLeader]),
 	{IndexNode, _} = CurrentOpLeader,
 	case OpType of read ->
 		clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, DataType),
@@ -128,14 +131,29 @@ executeOp(timeout, SD0=#state{
 	update ->
 		clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param),
 		case lists:member(IndexNode, UpdatedPartitions) of
-			true ->
+			false ->
 				NewUpdatedPartitions= lists:append(UpdatedPartitions, [{IndexNode}]),
 				SD1 = SD0#state{updated_partitions= NewUpdatedPartitions};
-			false->
+			true->
 				SD1 = SD0
 		end
 	end, 
     {next_state, prepareOp, SD1, 0}.
+    
+%%	Handles the reply of a clockSI_read_fsm when it has finished reading.
+%%	It stores the replied ReadResult in the read_set list of the vnode's state.
+
+handle_read({ReadResult}, #state{read_set=ReadSet}=State) ->
+	case ReadResult of 
+	error ->
+		{no_reply, State};
+    _ ->
+        NewReadSet=lists:append(ReadSet, ReadResult),
+        {no_reply, #state{read_set=NewReadSet}}
+    end.
+
+
+
     
 %%	when the tx updates multiple partitions, a two phase commit protocol is started.
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
