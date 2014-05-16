@@ -69,15 +69,13 @@ init([Partition]) ->
             app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
     case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
         {ok, TxLog} ->
-	    	PreparedTx=active_tx,
-			WaitingFsms=waiting_fsms,
-			ActiveTxsPerKey=active_txs_per_key,
-			WriteSet=write_set,
-	    	ets:new(PreparedTx, [set, named_table]),
-	    	ets:new(WaitingFsms, [bag, named_table]),
-	    	ets:new(ActiveTxsPerKey, [bag, named_table]),
-	    	ets:new(WriteSet, [bag, named_table]),
-            {ok, #state{partition=Partition, log=TxLog, active_tx=PreparedTx, 
+	    	ActiveTx=ets:new(active_tx, [set]),
+	    	PreparedTx=ets:new(prepared_tx, [set]),
+	    	CommittedTx=ets:new(committed_tx, [set]),
+	    	WaitingFsms=ets:new(waiting_fsms, [bag]),
+	    	ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
+	    	WriteSet=ets:new(write_set, [bag]),
+            {ok, #state{partition=Partition, log=TxLog, active_tx=ActiveTx, prepared_tx=PreparedTx, committed_tx=CommittedTx, 
 						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
         {error, Reason} ->
             {error, Reason}
