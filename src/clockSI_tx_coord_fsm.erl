@@ -17,7 +17,9 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([handle_read/2, prepareOp/2, executeOp/2, finishOp/3, prepare_2PC/2, receive_prepared/2, committing/2, receive_committed/2]).
+-export	([handle_read/2, prepareOp/2, executeOp/2, finishOp/3, prepare_2PC/2, 
+		receive_prepared/2, committing/2, receive_committed/2, abort/2, receive_aborted/2,
+		reply_to_client/2]).
 
 
 %-record(operationCSI, {opType, key, params}).
@@ -151,17 +153,14 @@ handle_read({ReadResult}, #state{read_set=ReadSet}=State) ->
         NewReadSet=lists:append(ReadSet, ReadResult),
         {no_reply, #state{read_set=NewReadSet}}
     end.
-
-
-
-    
+     
 %%	when the tx updates multiple partitions, a two phase commit protocol is started.
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
 prepare_2PC(timeout, SD0=#state{tx_id=TransactionId, updated_partitions=UpdatedPartitions}) ->
-	clock_SI_vnode:prepare(TransactionId, UpdatedPartitions),
+	clock_SI_vnode:prepare(UpdatedPartitions, TransactionId),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_prepared, SD0#state{tx_id=TransactionId, num_to_ack=NumToAck}, ?CLOCKSI_TIMEOUT}.
+	{next_state, receive_prepared, SD0#state{tx_id=TransactionId, num_to_ack=NumToAck, state=prepared}, 0}.
 	
 %%	in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  
@@ -175,16 +174,16 @@ receive_prepared({_Node, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, p
 	{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 receive_prepared({_Node, abort}, S0) ->
-	{next_state, abort, S0};   
+	{next_state, abort, S0, 0};   
 receive_prepared(timeout, S0) ->
 	{next_state, abort, S0}.
 
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
-committing(timeout, SD0=#state{tx_id=TransactionId, updated_partitions=UpdatedPartitions}) -> 
-	clock_SI_vnode:commit(UpdatedPartitions, TransactionId),
+committing(timeout, SD0=#state{tx_id=TransactionId, updated_partitions=UpdatedPartitions, prepare_time=PrepareTime}) -> 
+	clock_SI_vnode:commit(UpdatedPartitions, TransactionId, PrepareTime),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, state=committed}, 0}.
+	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, state=committing}, 0}.
 	
 %%	the fsm waits for acks indicating that each partition has successfully committed the tx
 %%	and finishes operation.
@@ -194,11 +193,45 @@ committing(timeout, SD0=#state{tx_id=TransactionId, updated_partitions=UpdatedPa
 receive_committed({_Node}, S0=#state{num_to_ack= NumToAck}) ->
     case NumToAck of 1 -> 
     	io:format("ClockSI: Finished collecting commit acks. Tx committed succesfully."),
-    	{stop, normal, S0};
+    	{next_state, reply_to_client, S0, 0};
 	_ ->
-         io:format("ClockSI: Keep collecting prepare replies~n"),
+         io:format("ClockSI: Keep collecting commit replies~n"),
 		{next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
     end.
+    
+%% when an updated partition does not pass the certification check, the transaction
+%% aborts.
+abort(timeout, SD0=#state{tx_id=TxId, updated_partitions=UpdatedPartitions}) -> 
+	clock_SI_vnode:abort(UpdatedPartitions, TxId),
+	NumToAck=lists:lenght(UpdatedPartitions),
+	{next_state, receive_aborted, SD0=#state{state=abort, num_to_ack=NumToAck}, 0}.
+	
+%%	the fsm waits for acks indicating that each partition has aborted the tx
+%%	and finishes operation.	
+receive_aborted({_Node, ack_abort}, S0=#state{num_to_ack= NumToAck}) ->
+    case NumToAck of 1 -> 
+    	io:format("ClockSI-coord-fsm: Finished collecting abort acks. Tx aborted."),
+    	{next_state, reply_to_client, S0, 0};
+	_ ->
+         io:format("ClockSI-coord-fsm: Keep collecting abort replies~n"),
+		{next_state, receive_aborted, S0#state{num_to_ack= NumToAck-1}}
+    end.
+    
+%% when the transaction has committed or aborted, a reply is sent to the client
+%% that started the transaction.
+reply_to_client(timeout, SD=#state{from=From, tx_id=TxId, read_set=ReadSet, state=TxState}) ->
+	case TxState of
+	committed->
+		From! {ok, {TxId, ReadSet}};
+	aborted->
+		From! {aborted, TxId};
+	_->
+		From! {error, TxId}
+	end,
+	{stop, normal, SD}.
+
+	
+
     
 %% ====================================================================================
 

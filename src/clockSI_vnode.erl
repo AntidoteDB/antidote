@@ -11,7 +11,7 @@
 	 clean_and_notify/3,
 	 get_pending_txs/2,
 	 prepare/2,
-	 commit/2,
+	 commit/3,
 	 abort/2,
          init/1,
          terminate/2,
@@ -47,14 +47,14 @@ read_data_item(Node, Tx, Key, Type) ->
 update_data_item(Node, Tx, Key, Op) ->
     riak_core_vnode_master:sync_command(Node, {update_data_item, Tx, Key, Op}, ?CLOCKSIMASTER).
 
-prepare(Node, Tx) ->
-    riak_core_vnode_master:sync_command(Node, {prepare, Tx}, ?CLOCKSIMASTER).
+prepare(Node, TxId) ->
+    riak_core_vnode_master:sync_command(Node, {prepare, TxId}, ?CLOCKSIMASTER).
 
-commit(Node, Tx) ->
-    riak_core_vnode_master:sync_command(Node, {commit, Tx}, ?CLOCKSIMASTER).
+commit(Node, TxId, CommitTime) ->
+    riak_core_vnode_master:sync_command(Node, {commit, TxId, CommitTime}, ?CLOCKSIMASTER).
 
-abort(Node, Tx) ->
-    riak_core_vnode_master:sync_command(Node, {abort, Tx}, ?CLOCKSIMASTER).
+abort(Node, TxId) ->
+    riak_core_vnode_master:sync_command(Node, {abort, TxId}, ?CLOCKSIMASTER).
 
 notify_commit(Node, TxId) ->
    riak_core_vnode_master:sync_command(Node, {notify_commit, TxId}, ?CLOCKSIMASTER).
@@ -130,7 +130,7 @@ handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_
 			Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
     		case Result of
         		ok ->
-        			ets:insert(CommittedTx, {TxId, committed}),
+        			ets:insert(CommittedTx, {TxId, TxCommitTime}),
             		{reply, ack, State};
         		{error, Reason} ->
             		{reply, {error, Reason}, State}
@@ -139,7 +139,8 @@ handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_
 
 
 handle_command({abort, TxId}, _Sender, #state{log=_Log}=State) ->
-    {next_state, clean_and_notify, TxId, State, 0};
+    clean_and_notify(timeout, TxId, State),
+    {reply, ack_abort, State};
 
 handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
 			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms, prepared_tx=PreparedTx}=State) ->
@@ -209,7 +210,7 @@ terminate(_Reason, _State) ->
 %% 	a. ActiteTxsPerKey,
 %% 	b. Waiting_Fsms,
 %% 	c. PreparedTx
-clean_and_notify(timeout, TxId, #state{active_tx=PreparedTx, 
+clean_and_notify(timeout, TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedTx, 
 					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
 	notify_all(ets:lookup(WaitingFsms, TxId), TxId),
 	case ets:lookup(WriteSet, TxId) of
@@ -217,6 +218,7 @@ clean_and_notify(timeout, TxId, #state{active_tx=PreparedTx,
 			clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
     end,
 	ets:delete(PreparedTx, TxId),
+	ets:delete(ActiveTx, TxId),
 	ets:delete(WriteSet, TxId),
 	ets:delete(WaitingFsms, TxId).
 
