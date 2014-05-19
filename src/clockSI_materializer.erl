@@ -1,14 +1,30 @@
 -module(clockSI_materializer).
 -include("floppy.hrl").
+
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -export([create_snapshot/1,
 	 update_snapshot/4,
 	 materialize/3]).
 
+%% @doc	Creates an empty CRDT
+%%	Input:	Type: The type of CRDT to create
+%%	Output: The newly created CRDT 
+-spec create_snapshot(Type::atom()) -> term().
 create_snapshot(Type) ->
     	Type:new().
 
+%% @doc	Applies the operation of a list to a CRDT. Only the
+%%	operations with smaller timestamp than the specified
+%%	are considered. Newer ooperations are discarded.
+%%	Input:	Type: The type of CRDT to create
+%%		Snapshot: Current state of the CRDT
+%%		SnapshotTime: Threshold for the operations to be applied.
+%%		Ops: The list of operations to apply
+%%	Output: The CRDT after appliying the operations 
+-spec update_snapshot(Type::atom(), Snapshot::term(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
 update_snapshot(_, Snapshot, _Snapshot_time, []) ->
     Snapshot;
 update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
@@ -21,13 +37,27 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
     true ->
 	update_snapshot(Type, Snapshot, Snapshot_time, Rest)
     end.
+
+%% @doc materialize a CRDT from its logged operations
+%%	- First creates an empty CRDT
+%%	- Second apply the corresponding logged operations
+%%	- Finally, transform the CRDT state into its value.
+%%	Input:	Type: The type of the CRDT
+%%		SnapshotTime: Threshold for the operations to be applied.
+%%		Ops: The list of operations to apply
+%%	Output: The value of the CRDT after appliying the operations 
+-spec materialize(Type::atom(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
 materialize(Type, Snapshot_time, Ops) ->
     Init=create_snapshot(Type),
-    Snapshot=materializer:update_snapshot(Type, Init, Snapshot_time, Ops),
+    Snapshot=update_snapshot(Type, Init, Snapshot_time, Ops),
     Type:value(Snapshot).
-    
-    length_test() -> ?assert(length([1,2,3]) =:= 3).
-   % length_bad_test() -> ?assert(length([1,2,3, 4]) =:= 3).
-  % update_snapshot_wrong_test() -> fun () -> ?assert(true).
-  % update_snapshot_ok_test() -> fun () -> ?assert(false).
-   % update_snapshot(test, test, []).
+
+-ifdef(TEST).
+    materializer_clockSI_test()->
+    	GCounter = create_snapshot(riak_dt_gcounter),
+	?assertEqual(0,riak_dt_gcounter:value(GCounter)),
+	Ops = [{1,#operation{payload={increment, actor1, 4}}},{2,#operation{payload={increment, actor2, 5}}},{3,#operation{payload={{increment, 3}, actor1, 9}}},{4,#operation{payload={increment, actor3, 2}}}],
+	GCounter2 = update_snapshot(riak_dt_gcounter, GCounter, 7, Ops),
+	?assertEqual(3,riak_dt_gcounter:value(GCounter2)),
+	?assertEqual(6,materialize(riak_dt_gcounter,9,Ops)).
+-endif.

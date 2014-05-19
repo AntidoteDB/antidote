@@ -50,6 +50,9 @@ init([Vnode, Client, TxId, Key, Type]) ->
 		pending_txs=[]},
     {ok, check_clock, SD, 0}.
 
+%% @doc check_clock: Compares its local clock with the tx timestamp.
+%%	if local clock is behinf, it sleeps the fms until the clock
+%%	catches up. CLOCK-SI: clock scew.
 check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
@@ -58,6 +61,10 @@ check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     end,
     {next_state, get_txs_to_check, SD0, 0}.
 		
+%% @doc get_txs_to_check: 
+%%	- Asks the Vnode for pending txs conflicting the cyrrent one
+%%	- If none, goes to return state
+%%	- Otherwise, goes to commit_notification
 get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
     case clockSI_vnode:get_pending_txs(Vnode, {Key, TxId}) of
     {ok, empty} ->
@@ -69,14 +76,19 @@ get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
 		{stop, normal, SD0}
     end.
 
+%% @doc commit_notification:
+%%	- The fsm stays in this state until the list of pending txs is empty.
+%%	- The commit notifications are sent by the vnode.
 commit_notification({committed, TxId}, SD0=#state{pending_txs=Left}) ->
-    Left2=clean_left(TxId, Left),
+    Left2=lists:delete(TxId, Left),
     if Left2==[] ->
     	{next_state, return, SD0=#state{pending_txs=Left2}, 0};
     true->
     	{next_state, commit_notification, SD0=#state{pending_txs=Left2}}
     end.
 
+%% @doc	return:
+%%	- Reads adn retunrs the log of the specified Key using the replication layer.
 return(timeout, SD0=#state{client=Client, tx_id= TxId, key=Key, type=Type}) ->
     case floppy_rep_vnode:read_clockSI(Key, Type) of
     {ok, Ops} ->
@@ -104,14 +116,3 @@ terminate(_Reason, _SN, _SD) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-clean_left(TxId, Left) ->
-    internal_clean_left(TxId, Left, []).
-
-internal_clean_left(_TxId, [], NewLeft) -> NewLeft;
-
-internal_clean_left(TxId, [Next|Rest], NewLeft) ->
-    if TxId==Next ->
-	NewLeft;
-    true ->
-	internal_clean_left(TxId, Rest, lists:append(NewLeft, [Next]))
-    end.

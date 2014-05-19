@@ -39,6 +39,9 @@ init([Client, TxId, Key, Op]) ->
                 tx_id=TxId},
     {ok, check_clock, SD, 0}.
 
+%% @doc check_clock: Compares its local clock with the tx timestamp.
+%%      if local clock is behinf, it sleeps the fms until the clock
+%%      catches up. CLOCK-SI: clock scew.
 check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
@@ -47,8 +50,8 @@ check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     end,
     {next_state, update_item, SD0, 0}.
 
+%% @doc simply finishes the fsm.
 update_item(timeout, SD0=#state{tx_id=_TxId, key=_Key, client=_Client}) ->
-    
     {stop, normal, SD0}.
 
 handle_info(_Info, _StateName, StateData) ->
