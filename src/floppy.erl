@@ -33,7 +33,7 @@ types()->
 %% @doc Pings a random vnode to make sure communication is functional
 ping() ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(now())}),
-    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, floppy),
+    PrefList = riak_core_apl:get_primary_apl(DocIdx, ?N, floppy),
     [{IndexNode, _Type}] = PrefList,
     riak_core_vnode_master:sync_spawn_command(IndexNode, ping, floppy_vnode_master).
 
@@ -69,7 +69,7 @@ clockSI_execute_TX(ClientClock, Operations) ->
     clockSI_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),	
     receive
         EndOfTx ->
-	    io:format("Read completed!~n"),
+	    io:format("TX completed!~n"),
 	    EndOfTx
     after 10000 ->
 	    io:format("Tx failed!~n"),

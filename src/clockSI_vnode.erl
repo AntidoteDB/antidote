@@ -13,6 +13,7 @@
 	 prepare/2,
 	 commit/3,
 	 abort/2,
+	 now_milisec/1,
          init/1,
          terminate/2,
          handle_command/3,
