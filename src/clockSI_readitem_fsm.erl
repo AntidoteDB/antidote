@@ -56,11 +56,12 @@ init([Vnode, Client, TxId, Key, Type]) ->
 check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
-    if T_TS > Time ->
-	timer:sleep(T_TS - Time)
-    end,
-    {next_state, get_txs_to_check, SD0, 0}.
-		
+    case T_TS > Time of true ->
+		timer:sleep(T_TS - Time),
+		{next_state, get_txs_to_check, SD0, 0};
+	false ->
+		{next_state, get_txs_to_check, SD0, 0}
+    end.		
 %% @doc get_txs_to_check: 
 %%	- Asks the Vnode for pending txs conflicting the cyrrent one
 %%	- If none, goes to return state
