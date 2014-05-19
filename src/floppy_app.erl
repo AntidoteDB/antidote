@@ -18,6 +18,11 @@ start(_StartType, _StartArgs) ->
             
             ok = riak_core:register([{vnode_module, clockSI_vnode}]),
             ok = riak_core_node_watcher:service_up(clockSI, self()),
+       	    
+       	 %ClockSI layer
+     
+         	ok = riak_core:register([{vnode_module, clockSI_vnode}]),
+         	ok = riak_core_node_watcher:service_up(clockSI, self()),
 
 	    %Within DC replication layer
 	    ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
