@@ -15,9 +15,6 @@ start(_StartType, _StartArgs) ->
 	    %Log layer
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
-            
-            ok = riak_core:register([{vnode_module, clockSI_vnode}]),
-            ok = riak_core_node_watcher:service_up(clockSI, self()),
        	    
        	 %ClockSI layer
      
