@@ -3,7 +3,7 @@ REBAR = $(shell pwd)/rebar
 
 all: deps compile test
 
-compile:
+compile: deps
 	$(REBAR) compile
 
 deps:
