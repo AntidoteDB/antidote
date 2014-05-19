@@ -30,7 +30,7 @@ debit(Key, Amount) ->
     end.
 
 getbalance(Key) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, get, [Key]) of
+    case rpc:call('floppy1@127.0.0.1', floppy, read, [Key, riak_dt_pncounter]) of
 	{ok, Val} ->
 	    Val;
 	{error, Reason} ->
@@ -44,7 +44,7 @@ usevoucher(Key, Voucher) ->
     rpc:call('floppy1@127.0.0.1', floppy, update, [Key, {{remove, Voucher},actor1}]).
 
 readvouchers(Key) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, get, [Key]) of
+    case rpc:call('floppy1@127.0.0.1', floppy, read, [Key, riak_dt_orset]) of
 	{ok, Val} ->
 	    Val;
 	{error, Reason} ->

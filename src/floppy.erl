@@ -51,7 +51,16 @@ update(Key, Op) ->
 	
 
 read(Key, Type) ->
-    floppy_rep_vnode:read(Key, Type).
+    case floppy_rep_vnode:read(Key, Type) of
+	{ok, Ops} ->
+    	    Init=materializer:create_snapshot(Type),
+	    Snapshot=materializer:update_snapshot(Type, Init, Ops),
+	    Value=Type:value(Snapshot),
+	    Value;
+        {error, _} ->
+	    io:format("Read failed!~n"),
+	    error
+    end.
 
 %% Clock SI API
 clockSI_execute_TX(ClientClock, Operations) ->
