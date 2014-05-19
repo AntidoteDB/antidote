@@ -15,8 +15,7 @@
          dupdate/4,
          repair/2,
          read/2,
-         append/3,
-         prune/3]).
+         append/3]).
 
 -export([init/1,
          terminate/2,
@@ -34,32 +33,40 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(state, {partition, log, objects}).
+-record(state, {partition, log}).
 
 %% API
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
+%% @doc Sends a `read' syncrhonous command to the Log in `Node' 
 read(Node, Key) ->
     riak_core_vnode_master:sync_command(Node, {read, Key}, ?LOGGINGMASTER).
 
+%% @doc Sends a `read' asynchronous command to the Logs in `Preflist' 
 dread(Preflist, Key) ->
     riak_core_vnode_master:command(Preflist, {read, Key}, {fsm, undefined, self()},?LOGGINGMASTER).
 
+%% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist' 
 dupdate(Preflist, Key, Op, LClock) ->
     riak_core_vnode_master:command(Preflist, {append, Key, Op, LClock},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
+%% @doc Sends a `repair' syncrhonous command to the Log in `Node'.
+%%	This should be part of the append command. Conceptually, a Log should
+%%	not have a repair operation. 
 repair(Node, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {repair, Ops},
                                         ?LOGGINGMASTER).
 
+%% @doc Sends an `append' syncrhonous command to the Log in `Node' 
 append(Node, Key, Op) ->
     riak_core_vnode_master:sync_command(Node, {append, Key, Op}, ?LOGGINGMASTER).
 
-prune(Node, Key, Until) ->
-    riak_core_vnode_master:sync_command(Node, {prune, Key, Until}, ?LOGGINGMASTER).
 
+%% @doc Opens the persistent copy of the Log.
+%%	The name of the Log in disk is a combination of the the word `log' and
+%%	the partition identifier.
 init([Partition]) ->
     LogFile = string:concat(integer_to_list(Partition), "log"),
     LogPath = filename:join(
@@ -71,6 +78,9 @@ init([Partition]) ->
             {error, Reason}
     end.
 
+%% @doc Read command: Returns the operations logged for Key
+%%	Input: Key of the object to read
+%%	Output: {vnode_id, Operations} | {error, Reason}
 handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State) ->
     case dets:lookup(Log, Key) of
         [] ->
@@ -81,10 +91,18 @@ handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State)
             {reply, {error, Reason}, State}
     end;
 
+%% @doc Repair command: Appends the Ops to the Log
+%%	Input: Ops: Operations to append
+%%	Output: ok | {error, Reason}
 handle_command({repair, Ops}, _Sender, #state{log=Log}=State) ->
     Result = dets:insert(Log, Ops),
     {reply, Result, State};
 
+%% @doc Append command: Appends a new op to the Log of Key
+%%	Input:	Key of the object
+%%		Payload of the operation
+%%		OpId: Unique operation id	      	
+%%	Output: {ok, op_id} | {error, Reason}
 handle_command({append, Key, Payload, OpId}, _Sender,
                #state{log=Log}=State) ->
     Result = dets:insert(Log,
@@ -97,9 +115,6 @@ handle_command({append, Key, Payload, OpId}, _Sender,
             {error, Reason, OpId}
     end,
     {reply, Response, State};
-
-handle_command({prune, _, _}, _Sender, State) ->
-    {reply, {ok, State#state.partition}, State};
 
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),

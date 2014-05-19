@@ -12,18 +12,18 @@
 start(_StartType, _StartArgs) ->
     case floppy_sup:start_link() of
         {ok, Pid} ->
-            ok = riak_core:register([{vnode_module, floppy_vnode}]),
-            ok = riak_core_node_watcher:service_up(floppy, self()),
-
+	    %Log layer
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
             
             ok = riak_core:register([{vnode_module, clockSI_vnode}]),
             ok = riak_core_node_watcher:service_up(clockSI, self()),
 
-	    	ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
+	    %Within DC replication layer
+	    ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
             ok = riak_core_node_watcher:service_up(replication, self()),
 
+	    %Inter DC replication layer
 	    ok = riak_core:register([{vnode_module, inter_dc_repl_vnode}]),
             ok = riak_core_node_watcher:service_up(interdcreplication, self()),
 
