@@ -32,6 +32,18 @@
              start_vnode/1
              ]).
 
+%%---------------------------------------------------------------------
+%% @doc Data Type: state
+%% where:
+%%	partition: the partition that the vnode is responsible for.
+%%	log: the transaction log (stored on disc by using dets)
+%%	active_tx: a list of active transactions.
+%%	prepared_tx: a list of prepared transactions.		
+%%	committed_tx: a list of committed transactions.	
+%%	waiting_fsms: a list of the read_fsms that are currently waiting for each tx to finish.
+%%	active_txs_per_key: a list of the active transactions that have updated a key (but not yet finished).
+%%	write_set: a list of the write sets that the transactions generate.	
+%%----------------------------------------------------------------------
 -record(state, {partition,log, active_tx, prepared_tx, committed_tx, waiting_fsms, active_txs_per_key, write_set}).
 
 
@@ -41,34 +53,45 @@
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
-    
+
+%% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
 	io:format("ClockSI-Vnode: read key ~w for TxId ~w ~n",[Key, TxId]),
     riak_core_vnode_master:sync_command(Node, {read_data_item, TxId, Key, Type}, ?CLOCKSIMASTER).
 
+%% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Op) ->
 	io:format("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
     riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Op}, ?CLOCKSIMASTER).
 
+%% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(Node, TxId) ->
 	io:format("ClockSI-Vnode: prepare TxId ~w ~n",[TxId]),
     riak_core_vnode_master:sync_command(Node, {prepare, TxId}, ?CLOCKSIMASTER).
 
+%% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(Node, TxId, CommitTime) ->
 	io:format("ClockSI-Vnode: commit TxId ~w ~n",[TxId]),
     riak_core_vnode_master:sync_command(Node, {commit, TxId, CommitTime}, ?CLOCKSIMASTER).
 
+%% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(Node, TxId) ->
 	io:format("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
     riak_core_vnode_master:sync_command(Node, {abort, TxId}, ?CLOCKSIMASTER).
 
+%% @doc Sends a commit notification to the coordinator (after successfully committing)
 notify_commit(Node, TxId) ->
    riak_core_vnode_master:sync_command(Node, {notify_commit, TxId}, ?CLOCKSIMASTER).
 
+%% @doc sends a request to Node to get all the transactions that are pending for a given Key
+%% This function is called by the ClockSI read FSM
 get_pending_txs(Node, {Key, TxId}) ->
 	io:format("ClockSI-Vnode: get pending txs for Key ~w, TxId ~w ~n",[Key,TxId]),
 	riak_core_vnode_master:sync_command (Node, {get_pending_txs, {Key, TxId}}, ?CLOCKSIMASTER).
 
+
+%% @doc Initializes all the data structures that the vnode needs to track information of
+%% the transactions it participates on.
 init([Partition]) ->
 	io:format("ClockSI-Vnode: initialize partition ~w ~n",[Partition]),
     % It generates a dets file to store active transactions.
@@ -92,6 +115,8 @@ init([Partition]) ->
             {error, Reason}
     end.
 
+
+%% @doc starts a read_fsm to handle a read operation.
 handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Partition, log=_Log}=State) ->
     Vnode={Partition, node()},
     io:format("ClockSI-Vnode: start a read fsm for key ~w ~n",[Key]),
@@ -99,6 +124,7 @@ handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Part
     io:format("ClockSI-Vnode: done. Reply to the coordinator."),
     {reply, {ok, Sender}, State};
 
+%% @doc handles an update operation at a Leader's partition
 handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
 	%%do we need the Sender here?
     
@@ -113,7 +139,7 @@ handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{active_tx=Acti
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-%%     {no_reply, State};
+
 
 handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Log,
 	active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
@@ -210,13 +236,11 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-
 %%%===================================================================
-%%% States
+%%% Internal Functions
 %%%===================================================================
 
-
-%% clean_and_notify: 
+%% @doc clean_and_notify: 
 %% This function is used for cleanning the state a transaction stores in the vnode
 %% while it is being procesed. Once a transaction commits or aborts, it is necessary to:
 %% 1. notify all read_fsms that are waiting for this transaction to finish to perform a read.
@@ -236,13 +260,7 @@ clean_and_notify(timeout, TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedT
 	ets:delete(WriteSet, TxId),
 	ets:delete(WaitingFsms, TxId).
 
-
-
-
-%%%===================================================================
-%%% Internal Functions
-%%%===================================================================
-
+%% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into a number expressed in microseconds
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
         (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
 
@@ -257,7 +275,7 @@ notify_all([Next|Rest], TxId) ->
     riak_core_vnode:reply(Next, {committed, TxId}),
     notify_all(Rest, TxId).
 
-%% returns a list of transactions with
+%% @doc returns a list of transactions with
 %% prepare timestamp bigger than TxId (snapshot time)
 %% input:
 %% 	ListOfPendingTxs: a List of all transactions in prepare state that update Key
@@ -287,7 +305,8 @@ add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->
 	ets:insert(WaitingFsms, {H, Sender}),
 	add_to_waiting_fsms(WaitingFsms, T, Sender).
 		
-	
+%% @doc performs a certification check when a transaction wants to move
+%% to the prepared state.	
 certification_check(_, [], _, _) -> true;
 certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) ->
 	[{Key, _}|T]=TxWriteSet,

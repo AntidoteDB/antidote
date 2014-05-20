@@ -14,6 +14,8 @@ start_link() ->
 start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
+
+%% @doc Starts the coordinator of a ClockSI transaction. 
 init([]) ->
     Worker = {clockSI_tx_coord_fsm,
                 {clockSI_tx_coord_fsm, start_link, []},
