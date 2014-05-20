@@ -23,7 +23,7 @@
 -record(state, {type,
 		key,
 	 	tx_id,
-		client,
+		tx_coordinator,
 		vnode,
 		pending_txs}).
 
@@ -31,8 +31,8 @@
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Client, Tx, Key, Type) ->
-    gen_fsm:start_link(?MODULE, [Vnode, Client, Tx, Key, Type], []).
+start_link(Vnode, Coordinator, Tx, Key, Type) ->
+    gen_fsm:start_link(?MODULE, [Vnode, Coordinator, Tx, Key, Type], []).
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
 	(MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
@@ -40,12 +40,12 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Vnode, Client, TxId, Key, Type]) ->
+init([Vnode, Coordinator, TxId, Key, Type]) ->
     SD = #state{
 		vnode=Vnode,
 		type=Type,
 		key=Key,
-                client=Client, 
+                tx_coordinator=Coordinator, 
                 tx_id=TxId,
 		pending_txs=[]},
     {ok, check_clock, SD, 0}.
@@ -56,10 +56,14 @@ init([Vnode, Client, TxId, Key, Type]) ->
 check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
-    case T_TS > Time of true ->
-		timer:sleep(T_TS - Time),
+    case (T_TS) > Time of true ->
+    	io:format("ClockSI ReadItemFSM: waiting for clock to catchUp ~n"),
+		timer:sleep(T_TS - Time),	
+		io:format("ClockSI ReadItemFSM: done waiting... ~n"),
 		{next_state, get_txs_to_check, SD0, 0};
+		
 	false ->
+		io:format("ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
 		{next_state, get_txs_to_check, SD0, 0}
     end.		
 %% @doc get_txs_to_check: 
@@ -67,13 +71,17 @@ check_clock(timeout, SD0=#state{tx_id=TxId}) ->
 %%	- If none, goes to return state
 %%	- Otherwise, goes to commit_notification
 get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
+	io:format("ClockSI ReadItemFSM: Calling vnode ~w to get pending txs for Key ~w ~n", [Vnode, Key]),
     case clockSI_vnode:get_pending_txs(Vnode, {Key, TxId}) of
-    {ok, empty} ->
+    {ok, empty} ->		
+    	io:format("ClockSI ReadItemFSM: no txs to wait for ~w ~n", [Key]),
 		{next_state, return, SD0};
     {ok, Pending} ->
     	%{Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
+    	io:format("ClockSI ReadItemFSM: no txs to wait for ~w ~n", [Key]),
         {next_state, commit_notification, SD0=#state{pending_txs=Pending}, 0};
     {error, _Reason} ->
+        io:format("ClockSI ReadItemFSM: error while retrieving pending txs for Key: ~w ~n", [Key]),
 		{stop, normal, SD0}
     end.
 
@@ -82,22 +90,33 @@ get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
 %%	- The commit notifications are sent by the vnode.
 commit_notification({committed, TxId}, SD0=#state{pending_txs=Left}) ->
     Left2=lists:delete(TxId, Left),
-    if Left2==[] ->
+    io:format("ClockSI ReadItemFSM: tx ~w has committed ~n", [TxId]),
+    case Left2 of [] ->
+		io:format("ClockSI ReadItemFSM: no further txs to wait for"),
     	{next_state, return, SD0=#state{pending_txs=Left2}, 0};
-    true->
-    	{next_state, commit_notification, SD0=#state{pending_txs=Left2}}
+    [H|T] ->
+    	io:format("ClockSI ReadItemFSM: still waiting for txs ~w ~n", [Left2]),
+    	{next_state, commit_notification, SD0=#state{pending_txs=[H|T]}};
+    _-> 
+    	io:format("ClockSI ReadItemFSM: tx ~w has committed ~n", [TxId])
     end.
 
 %% @doc	return:
 %%	- Reads adn retunrs the log of the specified Key using the replication layer.
-return(timeout, SD0=#state{client=Client, tx_id= TxId, key=Key, type=Type}) ->
+return(timeout, SD0=#state{tx_coordinator=Coordinator, tx_id= TxId, key=Key, type=Type}) ->
+	io:format("ClockSI ReadItemFSM: reading key ~w ~n", [Key]),
     case floppy_rep_vnode:read_clockSI(Key, Type) of
     {ok, Ops} ->
-	Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops);
+    	io:format("ClockSI ReadItemFSM: got the operations for key ~w, calling the materializer... ~n", [Key]),
+		Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops),
+		io:format("ClockSI ReadItemFSM: finished materializing");
     _ ->
-	Reply=error
+    	io:format("ClockSI ReadItemFSM: reading from the replication group has returned an unexpected response ~n"),
+		Reply=error
     end,
-    gen_fsm:reply(Client, Reply),
+    io:format("ClockSI ReadItemFSM: replying to the tx coordinator ~w ~n", [Coordinator]),
+    gen_fsm:reply(Coordinator, Reply),
+    io:format("ClockSI ReadItemFSM: finished fsm for key ~w ~n", [Key]),
     {stop, normal, SD0}.
 
 handle_info(_Info, _StateName, StateData) ->

@@ -63,6 +63,9 @@ read(Key, Type) ->
     end.
 
 %% Clock SI API
+
+%% @doc Starts a new ClockSI transaction.
+%% 
 clockSI_execute_TX(ClientClock, Operations) ->
     io:format("Received order to execute transaction with clock: ~w for
     			the list of operations ~w ~n", [ClientClock, Operations]),

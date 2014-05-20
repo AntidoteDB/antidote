@@ -42,28 +42,35 @@
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
     
-read_data_item(Node, Tx, Key, Type) ->
-    riak_core_vnode_master:sync_command(Node, {read_data_item, Tx, Key, Type}, ?CLOCKSIMASTER).
+read_data_item(Node, TxId, Key, Type) ->
+	io:format("ClockSI-Vnode: read key ~w for TxId ~w ~n",[Key, TxId]),
+    riak_core_vnode_master:sync_command(Node, {read_data_item, TxId, Key, Type}, ?CLOCKSIMASTER).
 
-update_data_item(Node, Tx, Key, Op) ->
-    riak_core_vnode_master:sync_command(Node, {update_data_item, Tx, Key, Op}, ?CLOCKSIMASTER).
+update_data_item(Node, TxId, Key, Op) ->
+	io:format("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
+    riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Op}, ?CLOCKSIMASTER).
 
 prepare(Node, TxId) ->
+	io:format("ClockSI-Vnode: prepare TxId ~w ~n",[TxId]),
     riak_core_vnode_master:sync_command(Node, {prepare, TxId}, ?CLOCKSIMASTER).
 
 commit(Node, TxId, CommitTime) ->
+	io:format("ClockSI-Vnode: commit TxId ~w ~n",[TxId]),
     riak_core_vnode_master:sync_command(Node, {commit, TxId, CommitTime}, ?CLOCKSIMASTER).
 
 abort(Node, TxId) ->
+	io:format("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
     riak_core_vnode_master:sync_command(Node, {abort, TxId}, ?CLOCKSIMASTER).
 
 notify_commit(Node, TxId) ->
    riak_core_vnode_master:sync_command(Node, {notify_commit, TxId}, ?CLOCKSIMASTER).
 
 get_pending_txs(Node, {Key, TxId}) ->
+	io:format("ClockSI-Vnode: get pending txs for Key ~w, TxId ~w ~n",[Key,TxId]),
 	riak_core_vnode_master:sync_command (Node, {get_pending_txs, {Key, TxId}}, ?CLOCKSIMASTER).
 
 init([Partition]) ->
+	io:format("ClockSI-Vnode: initialize partition ~w ~n",[Partition]),
     % It generates a dets file to store active transactions.
     TxLogFile = string:concat(integer_to_list(Partition), "clockSI_tx"),
     TxLogPath = filename:join(
@@ -76,16 +83,21 @@ init([Partition]) ->
 	    	WaitingFsms=ets:new(waiting_fsms, [bag]),
 	    	ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
 	    	WriteSet=ets:new(write_set, [bag]),
+	    	io:format("ClockSI-Vnode: Initialized state, data structures and Log ~n"),
             {ok, #state{partition=Partition, log=TxLog, active_tx=ActiveTx, prepared_tx=PreparedTx, committed_tx=CommittedTx, 
 						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
+			
         {error, Reason} ->
+        	io:format("ClockSI-Vnode: could not initialize state, reason: ~w ~n",[Reason]),
             {error, Reason}
     end.
 
 handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Partition, log=_Log}=State) ->
     Vnode={Partition, node()},
+    io:format("ClockSI-Vnode: start a read fsm for key ~w ~n",[Key]),
     clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type),
-    {no_reply, State};
+    io:format("ClockSI-Vnode: done. Reply to the coordinator."),
+    {reply, {ok, Sender}, State};
 
 handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
 	%%do we need the Sender here?
@@ -143,11 +155,14 @@ handle_command({abort, TxId}, _Sender, #state{log=_Log}=State) ->
 
 handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
 			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms, prepared_tx=PreparedTx}=State) ->
+	io:format("ClockSI-Vnode: retrieving pending Txs for key ~w ~n",[Key]),
 	Pending=pending_txs(ets:lookup(ActiveTxsPerKey, Key), TxId, PreparedTx),
 	case Pending of
 		[]->
+			io:format("ClockSI-Vnode: no pending txs. ~n"),
 			{reply, {ok, empty}, State};
 		[H|T]->
+			io:format("ClockSI-Vnode: There are pending Txs for key ~w, notifying the read_FSM. ~w ~n",[Key, Sender]),
 			add_to_waiting_fsms(WaitingFsms, [H|T], Sender),    
 			{reply, {ok, [H|T]}, State}
 	end;

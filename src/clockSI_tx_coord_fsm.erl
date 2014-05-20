@@ -128,11 +128,12 @@ executeOp(timeout, SD0=#state{
                             updated_partitions=UpdatedPartitions,
                             currentOpLeader=CurrentOpLeader}) ->    
     {OpType, Key, Param}=CurrentOp,                       
-    io:format("ClockSI-Coord: Execute operation ~w ~w ~w~n",[OpType, Key, Param]),
-	io:format("ClockSI-Coord: Forward to node~w~n",[CurrentOpLeader]),
+    io:format("ClockSI-Coord: Execute operation ~w ~n",[CurrentOp]),
+	io:format("ClockSI-Coord: Leader node ~w ~n",[CurrentOpLeader]),
 	{IndexNode, _} = CurrentOpLeader,
 	case OpType of read ->
 		clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, Param),
+		io:format("ClockSI-Coord: Leader node ~w ~n",[CurrentOpLeader]),
 		SD1=SD0;
 	update ->
 		clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param),
@@ -146,9 +147,9 @@ executeOp(timeout, SD0=#state{
 	end, 
     {next_state, prepareOp, SD1, 0}.
     
+       
 %%	Handles the reply of a clockSI_read_fsm when it has finished reading.
 %%	It stores the replied ReadResult in the read_set list of the vnode's state.
-
 handle_read({ReadResult}, #state{read_set=ReadSet}=State) ->
 	case ReadResult of 
 	error ->
@@ -156,8 +157,7 @@ handle_read({ReadResult}, #state{read_set=ReadSet}=State) ->
     _ ->
         NewReadSet=lists:append(ReadSet, ReadResult),
         {no_reply, #state{read_set=NewReadSet}}
-    end.
-     
+    end.   
 %%	when the tx updates multiple partitions, a two phase commit protocol is started.
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
