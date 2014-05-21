@@ -1,4 +1,4 @@
-%% @doc Supervise the fsm.
+%% @doc Supervise coord fsm.
 -module(floppy_coord_sup).
 -behavior(supervisor).
 
