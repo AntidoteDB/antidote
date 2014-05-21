@@ -41,7 +41,7 @@ init([Partition]) ->
 %% @doc Start a fsm to coordinate the `append' operation to be performed in the object's replicaiton group
 append(Key, Op) ->
     io:format("Append ~w ~w ~n", [Key, Op]),
-    floppy_coord_sup:start_fsm([self(), update, Key, Op]),
+    floppy_coord_sup:start_fsm([self(), append, Key, Op]),
     receive
         {_, Result} ->
 	    io:format("Append completed!~w~n",[Result]),
@@ -76,7 +76,7 @@ handleOp(Preflist, ToReply, Op, Key, Param) ->
 %% If the operation is `read', there is no such need.
 %% Then start a rep fsm to perform quorum read/append.  
 handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Partition,lclock=LC}) ->
-      case Op of update ->
+      case Op of append ->
       	OpId = generate_op_id(LC);
 	read  ->
 	OpId = current_op_id(LC);
@@ -132,3 +132,5 @@ generate_op_id(Current) ->
 
 current_op_id(Current) ->
     {Current, node()}.    
+
+

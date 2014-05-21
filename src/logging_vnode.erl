@@ -12,7 +12,7 @@
 %% API
 -export([start_vnode/1,
          dread/2,
-         dupdate/4,
+         dappend/4,
          repair/2,
          read/2,
          append/3]).
@@ -48,7 +48,7 @@ dread(Preflist, Key) ->
     riak_core_vnode_master:command(Preflist, {read, Key}, {fsm, undefined, self()},?LOGGINGMASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist' 
-dupdate(Preflist, Key, Op, LClock) ->
+dappend(Preflist, Key, Op, LClock) ->
     riak_core_vnode_master:command(Preflist, {append, Key, Op, LClock},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
 %% @doc Sends a `repair' syncrhonous command to the Log in `Node'.

@@ -5,6 +5,10 @@
 -behavior(gen_fsm).
 -include("floppy.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% API
 -export([start_link/5]).
 
@@ -69,9 +73,9 @@ execute(timeout, SD0=#state{op=Op,
                             preflist=Preflist,
 			    opid=OpId}) ->
     case Op of 
-	update ->
-	    io:format("FSM: Replicate update ~n"),
-	    logging_vnode:dupdate(Preflist, Key, Param, OpId),
+	append ->
+	    io:format("FSM: Replicate append ~n"),
+	    logging_vnode:dappend(Preflist, Key, Param, OpId),
 	    SD1 = SD0#state{num_to_ack=?NUM_W},
 	    {next_state, waitAppend, SD1};
 %	create ->
@@ -201,4 +205,10 @@ remove_dup([H|T], OpId, Set2) ->
 	Set3 = Set2
     end,
     remove_dup(T, OpId, Set3).
-    
+
+
+-ifdef(TEST).
+%    union_test()-> 
+%	union_ops([{{nothing, }}],[],[{nothing, }]),
+	
+-endif.    
