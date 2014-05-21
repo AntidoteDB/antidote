@@ -92,12 +92,13 @@ init([From, ClientClock, Operations]) ->
 prepareOp(timeout, SD0=#state{operations=Operations, txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
 	case Operations of 
 	[] ->
-		case lists:lenght(UpdatedPartitions) of
+		case length(UpdatedPartitions) of
 		0 ->
 			io:format("Executed all operations of a read-only transaction.~n"),
 			{stop, normal, SD0};
 		1 ->
 			[IndexNode]=UpdatedPartitions,
+			io:format("Starting local commit at node ~w.~n", [IndexNode]),
 			clockSI_vnode:local_commit(IndexNode, TransactionId),
 			{stop, normal, SD0};
 		_ ->
@@ -139,6 +140,7 @@ executeOp(timeout, SD0=#state{
 		clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param),
 		case lists:member(IndexNode, UpdatedPartitions) of
 			false ->
+				io:format("ClockSI-Coord: Adding Leader node ~w ~n",[IndexNode]),
 				NewUpdatedPartitions= lists:append(UpdatedPartitions, [{IndexNode}]),
 				SD1 = SD0#state{updated_partitions= NewUpdatedPartitions};
 			true->
@@ -162,7 +164,8 @@ handle_read({ReadResult}, #state{read_set=ReadSet}=State) ->
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
 prepare_2PC(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
-	clock_SI_vnode:prepare(UpdatedPartitions, TransactionId),
+	io:format("Executed all operations of a read-only transaction.~n"),
+	clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
 	NumToAck=lists:lenght(UpdatedPartitions),
 	{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}, 0}.
 	

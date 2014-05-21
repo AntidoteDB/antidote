@@ -75,10 +75,10 @@ get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
     case clockSI_vnode:get_pending_txs(Vnode, {Key, TxId}) of
     {ok, empty} ->		
     	io:format("ClockSI ReadItemFSM: no txs to wait for ~w ~n", [Key]),
-		{next_state, return, SD0};
+		{next_state, return, SD0, 0};
     {ok, Pending} ->
     	%{Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
-    	io:format("ClockSI ReadItemFSM: no txs to wait for ~w ~n", [Key]),
+    	io:format("ClockSI ReadItemFSM: txs to wait for ~w. Pendings ~w~n", [Key, Pending]),
         {next_state, commit_notification, SD0=#state{pending_txs=Pending}, 0};
     {error, _Reason} ->
         io:format("ClockSI ReadItemFSM: error while retrieving pending txs for Key: ~w ~n", [Key]),
@@ -115,7 +115,7 @@ return(timeout, SD0=#state{tx_coordinator=Coordinator, tx_id= TxId, key=Key, typ
 		Reply=error
     end,
     io:format("ClockSI ReadItemFSM: replying to the tx coordinator ~w ~n", [Coordinator]),
-    gen_fsm:reply(Coordinator, Reply),
+    riak_core_vnode:reply(Coordinator, Reply),
     io:format("ClockSI ReadItemFSM: finished fsm for key ~w ~n", [Key]),
     {stop, normal, SD0}.
 
@@ -132,7 +132,3 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
     ok.
-
-%%%===================================================================
-%%% Internal Functions
-%%%===================================================================

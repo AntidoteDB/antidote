@@ -109,7 +109,6 @@ init([Partition]) ->
 	    	io:format("ClockSI-Vnode: Initialized state, data structures and Log ~n"),
             {ok, #state{partition=Partition, log=TxLog, active_tx=ActiveTx, prepared_tx=PreparedTx, committed_tx=CommittedTx, 
 						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
-			
         {error, Reason} ->
         	io:format("ClockSI-Vnode: could not initialize state, reason: ~w ~n",[Reason]),
             {error, Reason}
@@ -122,7 +121,7 @@ handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Part
     io:format("ClockSI-Vnode: start a read fsm for key ~w ~n",[Key]),
     clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type),
     io:format("ClockSI-Vnode: done. Reply to the coordinator."),
-    {reply, {ok, Sender}, State};
+    {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
 handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
@@ -282,15 +281,18 @@ notify_all([Next|Rest], TxId) ->
 %% 	Key: the key of the object for which there are prepared transactions that updated it.
 pending_txs(ListOfPendingTxs, TxId, PreparedTx) -> 
 	internal_pending_txs(ListOfPendingTxs, TxId, PreparedTx, []).
-internal_pending_txs([], _TxId, _, Result) -> Result;
-internal_pending_txs([H|T], TxId, PreparedTx, Result) ->
-	case ets:lookup(PreparedTx, H) of {prepared, {PrepTime, ProcId}} ->
-		case {PrepTime, ProcId} > TxId of
+internal_pending_txs([], _ST, _PreparedTx, Result) -> Result;
+internal_pending_txs([H|T], ST, PreparedTx, Result) ->
+	case ets:lookup(PreparedTx, H) of 
+	[PrepareTime] ->
+		case PrepareTime < ST of
 			true -> 
-				internal_pending_txs(T, TxId,PreparedTx, lists:append(Result, H));
+				internal_pending_txs(T, ST,PreparedTx, lists:append(Result,[H]));
 			false-> 
-				internal_pending_txs(T, TxId, PreparedTx, Result)
-		end
+				internal_pending_txs(T, ST, PreparedTx, Result)
+		end;
+	[] ->
+		internal_pending_txs(T, ST, PreparedTx, Result)
 	end.
 
 
