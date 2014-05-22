@@ -5,6 +5,10 @@
 -behavior(gen_fsm).
 -include("floppy.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% API
 -export([start_link/5]).
 
@@ -36,9 +40,6 @@
 start_link(From, Op,  Key, Param, OpId) ->
     gen_fsm:start_link(?MODULE, [From, Op, Key, Param, OpId], []).
 
-%start_link(Key, Op) ->
-%    io:format('The worker is about to start~n'),
-%    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
 
 %%%===================================================================
 %%% States
@@ -72,9 +73,9 @@ execute(timeout, SD0=#state{op=Op,
                             preflist=Preflist,
 			    opid=OpId}) ->
     case Op of 
-	update ->
-	    io:format("FSM: Replicate update ~n"),
-	    logging_vnode:dupdate(Preflist, Key, Param, OpId),
+	append ->
+	    io:format("FSM: Replicate append ~n"),
+	    logging_vnode:dappend(Preflist, Key, Param, OpId),
 	    SD1 = SD0#state{num_to_ack=?NUM_W},
 	    {next_state, waitAppend, SD1};
 %	create ->
@@ -95,7 +96,7 @@ execute(timeout, SD0=#state{op=Op,
     end.
 
 
-%% @doc Waits for 1 write reqs to respond.
+%% @doc Waits for W write reqs to respond.
 waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
     if NumToAck == 1 -> 
     	io:format("FSM: Finish collecting replies for ~w ~n", [Op]),
@@ -106,6 +107,9 @@ waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= Nu
 	{next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }}
     end.
 
+%% @doc Waits for R read reqs to respond and union returned operations.
+%% Then send vnodes operations if they haven't seen some.
+%% Finally reply the unioned operation list to the coord fsm.
 waitRead({Node, Result}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key, readresult= ReadResult , num_to_ack= NumToAck}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
@@ -124,6 +128,8 @@ waitRead({error, no_key}, SD) ->
     io:format("FSM: No key!~n"),
     {stop, normal, SD}.
 
+%% @doc Keeps waiting for read replies from vnodes after replying to coord fsm.
+%% Do read repair if any of them haven't seen some ops.
 repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
     io:format("FSM: read repair timeout! Start repair anyway~n"),
     repair(NodeOps, ReadResult),
@@ -141,44 +147,6 @@ repairRest({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, r
          io:format("FSM: Keep collecting replies~n"),
 	{next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
     end.
-
-repair([], _) ->
-    ok;
-repair([H|T], FullOps) ->
-    {Node, Ops} = H,
-    DiffOps = find_diff_ops(Ops, FullOps),
-    %io:format("FSM: Ops ~w  Diffops ~w", [H, DiffOps]),
-    if DiffOps /= [] ->
-    	logging_vnode:repair(Node, DiffOps),
-    	repair(T, FullOps);
-	true ->
-    	repair(T, FullOps)
-    end.
-
-find_diff_ops(Set1, Set2) ->
-    lists:filter(fun(X)-> lists:member(X, Set1) == false end , Set2).
-
-
-union_ops(L1, L2, []) ->
-    lists:append(L1, L2);
-union_ops(L1, L2, [Op|T]) ->
-    {_, #operation{op_number= OpId}} = Op,
-    L3 = remove_dup(L1, OpId,[]),
-    L4 = lists:append(L2, [Op]),
-    union_ops(L3, L4, T).
-
-
-remove_dup([], _OpId, Set2) ->
-    Set2;
-remove_dup([H|T], OpId, Set2) ->
-    {_, #operation{op_number= OpNum}} = H,
-    if OpNum /= OpId ->
-	Set3 = lists:append(Set2, [H]);
-       true ->
-	Set3 = Set2
-    end,
-    remove_dup(T, OpId, Set3).
-    
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -198,4 +166,53 @@ terminate(_Reason, _SN, _SD) ->
 %%% Internal Functions
 %%%===================================================================
 
+%% @doc Find operations that are in List2 but not in List1
+find_diff_ops(List1, List2) ->
+    lists:filter(fun(X)-> lists:member(X, List1) == false end , List2).
 
+%% @doc Make a union of operations in L1 and L2
+%% TODO: Possible to simplify?
+union_ops(L1, L2, []) ->
+    lists:append(L1, L2);
+union_ops(L1, L2, [Op|T]) ->
+    {_, #operation{op_number= OpId}} = Op,
+    L3 = remove_dup(L1, OpId,[]),
+    L4 = lists:append(L2, [Op]),
+    union_ops(L3, L4, T).
+
+%% @doc Send logging vnodes with operations that they havn't seen
+repair([], _) ->
+    ok;
+repair([H|T], FullOps) ->
+    {Node, Ops} = H,
+    DiffOps = find_diff_ops(Ops, FullOps),
+    if DiffOps /= [] ->
+    	logging_vnode:repair(Node, DiffOps),
+    	repair(T, FullOps);
+	true ->
+    	repair(T, FullOps)
+    end.
+
+%% @doc Remove duplicate ops with OpId from a list (the first param)
+%% and return a list with only one operation with OpId
+remove_dup([], _OpId, Set2) ->
+    Set2;
+remove_dup([H|T], OpId, Set2) ->
+    {_, #operation{op_number= OpNum}} = H,
+    if OpNum /= OpId ->
+	Set3 = lists:append(Set2, [H]);
+       true ->
+	Set3 = Set2
+    end,
+    remove_dup(T, OpId, Set3).
+
+
+-ifdef(TEST).
+   union_test()-> 
+	Result = union_ops([{nothing, {operation,1,dwaf}}, {nothing, {operation,2,fasd}}],[],[{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
+	?assertEqual(Result, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
+	Result1 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
+	?assertEqual(Result1, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
+	Result2 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,2, fasd}}]),
+	?assertEqual(Result2, [{nothing, {operation, 2, fasd}}]).
+-endif.    

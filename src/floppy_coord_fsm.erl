@@ -5,6 +5,7 @@
 -behavior(gen_fsm).
 -include("floppy.hrl").
 
+
 %% API
 -export([start_link/4]).
 
@@ -73,6 +74,8 @@ execute(timeout, SD0=#state{
 	    io:format("Coord: Nothing in pref list~n"),
 	    {stop, normal, SD0};
 	[H|T] ->
+	    %% Send the operation to the first vnode in the preflist;
+	    %% Will timeout if the vnode does not respond within INDC_TIMEOUT
 	    io:format("Coord: Forward to node~w~n",[H]),
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
@@ -80,7 +83,8 @@ execute(timeout, SD0=#state{
             {next_state, waiting, SD1, ?INDC_TIMEOUT}
     end.
 
-%% @doc Waits for 1 write reqs to respond.
+%% @doc The contacted vnode failed to respond within timeout. So contact
+%% the next one in the preflist
 waiting(timeout, SD0=#state{op=Op,
 			   key=Key,
 			   param=Param,
@@ -98,6 +102,7 @@ waiting(timeout, SD0=#state{op=Op,
             {next_state, waiting, SD1, ?INDC_TIMEOUT}
     end;
 
+%% @doc Receive result and reply the result to the process that started the fsm (From). 
 waiting({Key, Val}, SD=#state{from=From}) ->
     io:format("Coord: Finish operation ~w ~w ~n",[Key,Val]),
     %proxy:returnResult(Key, Val, Client),

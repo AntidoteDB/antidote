@@ -9,3 +9,6 @@ apps/floppy/src/*
 dialyzer_unhandled_warnings
 .local_dialyzer_plt
 dialyzer_warnings
+rel/vars
+doc/
+.DS_Store
