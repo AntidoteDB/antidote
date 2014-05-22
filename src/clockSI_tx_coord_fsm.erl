@@ -129,23 +129,36 @@ executeOp(timeout, SD0=#state{
                             currentOp=CurrentOp,
                             txid=TransactionId,
                             updated_partitions=UpdatedPartitions,
+							read_set=ReadSet,
                             currentOpLeader=CurrentOpLeader}) ->    
     {OpType, Key, Param}=CurrentOp,                       
     io:format("ClockSI-Coord: Execute operation ~w ~n",[CurrentOp]),
 	{IndexNode, _} = CurrentOpLeader,
-	case OpType of read ->
-		clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, Param),
-		io:format("ClockSI-Coord: Leader node ~w ~n",[CurrentOpLeader]),
-		SD1=SD0;
+	case OpType of
+	read ->
+		case clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, Param) of
+		error ->
+			SD1=SD0,
+			{next_state, abort, SD1};
+		ReadResult -> 
+        	NewReadSet=lists:append(ReadSet, ReadResult),
+			io:format("ClockSI-Coord: Leader node ~w ~n",[CurrentOpLeader]),
+			SD1=SD0#state{read_set=NewReadSet}
+		end;
 	update ->
-		clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param),
-		case lists:member(IndexNode, UpdatedPartitions) of
+		case clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param) of
+		ok ->
+		    case lists:member(IndexNode, UpdatedPartitions) of
 			false ->
 				io:format("ClockSI-Coord: Adding Leader node ~w, updt: ~w ~n",[IndexNode, UpdatedPartitions]),
 				NewUpdatedPartitions= lists:append(UpdatedPartitions, [IndexNode]),
 				SD1 = SD0#state{updated_partitions= NewUpdatedPartitions};
 			true->
 				SD1 = SD0
+		    end;
+		error ->
+			SD1=SD0,
+			{next_state, abort, SD1}
 		end
 	end, 
     {next_state, prepareOp, SD1, 0}.
@@ -185,7 +198,7 @@ receive_prepared(abort, S0) ->
 	{next_state, abort, S0, 0};   
 
 receive_prepared(timeout, S0) ->
-	{next_state, abort, S0}.
+	{next_state, abort, S0 ,0}.
 
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.

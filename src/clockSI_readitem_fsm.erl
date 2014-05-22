@@ -6,7 +6,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/5]).
+-export([start_link/6]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -25,14 +25,15 @@
 	 	tx_id,
 		tx_coordinator,
 		vnode,
+		updates,
 		pending_txs}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, Tx, Key, Type) ->
-    gen_fsm:start_link(?MODULE, [Vnode, Coordinator, Tx, Key, Type], []).
+start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
+    gen_fsm:start_link(?MODULE, [Vnode, Coordinator, Tx, Key, Type, Updates], []).
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
 	(MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
@@ -40,13 +41,14 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, TxId, Key, Type]) ->
+init([Vnode, Coordinator, TxId, Key, Type, Updates]) ->
     SD = #state{
 		vnode=Vnode,
 		type=Type,
 		key=Key,
                 tx_coordinator=Coordinator, 
                 tx_id=TxId,
+		updates=Updates,
 		pending_txs=[]},
     {ok, check_clock, SD, 0}.
 
@@ -103,16 +105,22 @@ commit_notification({committed, TxId}, SD0=#state{pending_txs=Left}) ->
 
 %% @doc	return:
 %%	- Reads adn retunrs the log of the specified Key using the replication layer.
-return(timeout, SD0=#state{tx_coordinator=Coordinator, tx_id= TxId, key=Key, type=Type}) ->
+return(timeout, SD0=#state{tx_coordinator=Coordinator, tx_id= TxId, key=Key, type=Type, updates=Updates}) ->
 	io:format("ClockSI ReadItemFSM: reading key ~w ~n", [Key]),
     case floppy_rep_vnode:read(Key, Type) of
     {ok, Ops} ->
     	io:format("ClockSI ReadItemFSM: got the operations for key ~w, calling the materializer... ~n", [Key]),
-		Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops),
-		io:format("ClockSI ReadItemFSM: finished materializing");
+	Init=clockSI_materializer:create_snapshot(Type),
+    	Snapshot=clockSI_materializer:update_snapshot(Type, Init, TxId#tx_id.snapshot_time, Ops),
+	Updates2=filter_updates_per_key(Updates, Key),
+	io:format("Filtered updates before completeing the read: ~w ~n" , [Updates2]),
+	Snapshot2=clockSI_materializer:update_snapshot_eager(Type, Snapshot, Updates2),
+	Reply=Type:value(Snapshot2),
+	%Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops),
+	io:format("ClockSI ReadItemFSM: finished materializing");
     _ ->
     	io:format("ClockSI ReadItemFSM: reading from the replication group has returned an unexpected response ~n"),
-		Reply=error
+	Reply=error
     end,
     io:format("ClockSI ReadItemFSM: replying to the tx coordinator ~w ~n", [Coordinator]),
     riak_core_vnode:reply(Coordinator, Reply),
@@ -132,3 +140,21 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
     ok.
+
+%%Internal functions
+
+filter_updates_per_key(Updates, Key) ->
+    int_filter_updates_key(Updates, Key, []).
+
+int_filter_updates_key([], _Key, Updates2) ->
+    Updates2;
+
+int_filter_updates_key([Next|Rest], Key, Updates2) ->
+    {_, {KeyPrime, Op}} = Next,
+    io:format("Comparing keys ~w==~w~n",[KeyPrime, Key]),
+    case KeyPrime==Key of
+    true ->
+	int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
+    false ->	    
+	int_filter_updates_key(Rest, Key, Updates2)
+    end.

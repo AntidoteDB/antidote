@@ -3,7 +3,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/4]).
+-export([start_link/2]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -13,17 +13,15 @@
 -export([check_clock/2, update_item/2]).
 
 -record(state, { 
-		key,
 	 	tx_id,
-		op,
-		client}).
+		coordinator}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Client, Tx, Key, Op) ->
-    gen_fsm:start_link(?MODULE, [Client, Tx, Key, Op], []).
+start_link(Coordinator, Tx) ->
+    gen_fsm:start_link(?MODULE, [Coordinator, Tx], []).
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
 	(MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
@@ -31,11 +29,9 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Client, TxId, Key, Op]) ->
+init([Coordinator, TxId]) ->
     SD = #state{
-		key=Key,
-                client=Client,
-		op=Op, 
+                coordinator=Coordinator,
                 tx_id=TxId},
     {ok, check_clock, SD, 0}.
 
@@ -45,13 +41,17 @@ init([Client, TxId, Key, Op]) ->
 check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
-    if T_TS > Time ->
-	timer:sleep(T_TS - Time)
-    end,
-    {next_state, update_item, SD0, 0}.
+    case T_TS > Time of
+	true -> 
+	    timer:sleep(T_TS - Time),
+    	    {next_state, update_item, SD0, 0};
+	false ->
+    	    {next_state, update_item, SD0, 0}
+    end.
 
 %% @doc simply finishes the fsm.
-update_item(timeout, SD0=#state{tx_id=_TxId, key=_Key, client=_Client}) ->
+update_item(timeout, SD0=#state{tx_id=_TxId, coordinator=Coordinator}) ->
+    riak_core_vnode:reply(Coordinator, ok),
     {stop, normal, SD0}.
 
 handle_info(_Info, _StateName, StateData) ->

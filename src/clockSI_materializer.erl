@@ -7,6 +7,7 @@
 
 -export([create_snapshot/1,
 	 update_snapshot/4,
+	 update_snapshot_eager/3,
 	 materialize/3]).
 
 %% @doc	Creates an empty CRDT
@@ -37,6 +38,13 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
     true ->
 	update_snapshot(Type, Snapshot, Snapshot_time, Rest)
     end.
+
+update_snapshot_eager(_, Snapshot, []) ->
+    Snapshot;
+update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
+    {OpParam,Actor}=Op,
+    {ok, NewSnapshot}= Type:update(OpParam, Actor, Snapshot),
+    update_snapshot_eager(Type, NewSnapshot, Rest).
 
 %% @doc materialize a CRDT from its logged operations
 %%	- First creates an empty CRDT

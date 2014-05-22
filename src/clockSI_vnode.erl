@@ -100,7 +100,7 @@ init([Partition]) ->
 	    	CommittedTx=ets:new(committed_tx, [set]),
 	    	WaitingFsms=ets:new(waiting_fsms, [bag]),
 	    	ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
-	    	WriteSet=ets:new(write_set, [bag]),
+	    	WriteSet=ets:new(write_set, [duplicate_bag]),
 	    	io:format("ClockSI-Vnode: Initialized state, data structures and Log ~n"),
             {ok, #state{partition=Partition, log=TxLog, active_tx=ActiveTx, prepared_tx=PreparedTx, committed_tx=CommittedTx, 
 						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
@@ -111,25 +111,25 @@ init([Partition]) ->
 
 
 %% @doc starts a read_fsm to handle a read operation.
-handle_command({read_data_item, TxId, Key, Type}, Sender, #state{partition= Partition, log=_Log}=State) ->
+handle_command({read_data_item, TxId, Key, Type}, Sender, #state{write_set=WriteSet, partition= Partition, log=_Log}=State) ->
     Vnode={Partition, node()},
-    io:format("ClockSI-Vnode: start a read fsm for key ~w ~n",[Key]),
-    clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type),
+	Updates = ets:lookup(WriteSet, TxId),
+    io:format("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~w ~n",[Key, Updates]),
+    clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type, Updates),
     io:format("ClockSI-Vnode: done. Reply to the coordinator."),
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
-	%%do we need the Sender here?
-    
-	%%clockSI_updateitem_fsm:start_link(Sender, Tx, Key, Op),
-	Result = dets:insert(Log, {TxId, {Key, Op}}),
+handle_command({update_data_item, TxId, Key, Op}, Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
+    %%do we need the Sender here?
+    Result = dets:insert(Log, {TxId, {Key, Op}}),
     case Result of
     	ok ->
-    		ets:insert(ActiveTx, {TxId, TxId#tx_id.snapshot_time}),
-			ets:insert(ActiveTxsPerKey, {Key, TxId}),
-			ets:insert(WriteSet, {TxId, {Key, Op}}),
-        	{reply, {ok, {Key, Op}}, State};
+    	    ets:insert(ActiveTx, {TxId, TxId#tx_id.snapshot_time}),
+		ets:insert(ActiveTxsPerKey, {Key, TxId}),
+		ets:insert(WriteSet, {TxId, {Key, Op}}),
+    		clockSI_updateitem_fsm:start_link(Sender, TxId),
+		{noreply, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -154,10 +154,12 @@ handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Lo
 	{reply, abort, State}
     end;
 
-handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx}=State) ->
+handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
     Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
     case Result of
     ok ->
+		Updates = ets:lookup(WriteSet, TxId),
+		issue_updates(Updates, TxCommitTime),
         ets:insert(CommittedTx, {TxId, TxCommitTime}),
         {reply, committed, State};
     {error, Reason} ->
@@ -317,3 +319,11 @@ check_keylog(TxId, [H|T], CommittedTx)->
 	    check_keylog(TxId, T, CommittedTx)
 	end
     end.
+
+issue_updates([], _CommitTS)-> ok;
+
+issue_updates([Next|Rest], CommitTS)->
+	{_,{Key,{Op,Actor}}}=Next,
+	io:format("About to append this: ~w~n",[{Key, {Op, Actor, CommitTS}}]),
+    floppy_rep_vnode:append(Key, {Op, Actor, CommitTS}),
+	issue_updates(Rest, CommitTS).
