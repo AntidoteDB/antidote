@@ -187,7 +187,7 @@ repair([H|T], FullOps) ->
     {Node, Ops} = H,
     DiffOps = find_diff_ops(Ops, FullOps),
     if DiffOps /= [] ->
-    	logging_vnode:repair(Node, DiffOps),
+    	logging_vnode:append_list(Node, DiffOps),
     	repair(T, FullOps);
 	true ->
     	repair(T, FullOps)
