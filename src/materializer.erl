@@ -6,30 +6,24 @@
 -endif.
 
 -export([create_snapshot/1,
-	 update_snapshot/3]).
+   update_snapshot/3]).
 
-%% @doc	Creates an empty CRDT
-%%	Input:	Type: The type of CRDT to create
-%%	Output: The newly created CRDT 
+%% @doc Creates an empty CRDT
 -spec create_snapshot(Type::atom()) -> term().
 create_snapshot(Type) ->
     Type:new().
 
-%% @doc	Applies all the operations of a list to a CRDT.
-%%	Input:	Type: The type of CRDT to create
-%%		Snapshot: Current state of the CRDT
-%%		Ops: The list of operations to apply
-%%	Output: The CRDT after appliying the operations 
+%% @doc Applies all the operations of a list to a CRDT.
 -spec update_snapshot(Type::atom(), Snapshot::term(), Ops::list()) -> term().
 update_snapshot(_, Snapshot, []) ->
     Snapshot;
 update_snapshot(Type, Snapshot, [Op|Rest]) ->
-    {_,#operation{payload=Payload}}=Op,
-    {OpParam, Actor}=Payload,
-    io:format("OpParam: ~w, Actor: ~w and Snapshot: ~w~n",[OpParam, Actor, Snapshot]),	
-    {ok, NewSnapshot}= Type:update(OpParam, Actor, Snapshot),
+    {_, #operation{payload={OpParam, Actor}}} = Op,
+    lager:info("OpParam: ~w, Actor: ~w and Snapshot: ~w~n",
+               [OpParam, Actor, Snapshot]),
+    {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
     update_snapshot(Type, NewSnapshot, Rest).
-    
+
 -ifdef(TEST).
 
 %% @doc Testing gcounter with update log
