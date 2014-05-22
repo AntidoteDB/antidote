@@ -30,16 +30,6 @@ types()->
    io:format("riak_dt_orswot~n"),
    io:format("riak_dt_pncounter~n").
 
-%% @doc Pings a random vnode to make sure communication is functional
-ping() ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(now())}),
-    PrefList = riak_core_apl:get_primary_apl(DocIdx, ?N, floppy),
-    [{IndexNode, _Type}] = PrefList,
-    riak_core_vnode_master:sync_spawn_command(IndexNode, ping, floppy_vnode_master).
-
-%dcreate(Key, Type) ->
-%   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
-
 append(Key, Op) ->
     case floppy_rep_vnode:append(Key, Op) of
 	{ok, Result} ->
