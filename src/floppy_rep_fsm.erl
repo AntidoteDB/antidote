@@ -208,7 +208,11 @@ remove_dup([H|T], OpId, Set2) ->
 
 
 -ifdef(TEST).
-%    union_test()-> 
-%	union_ops([{{nothing, }}],[],[{nothing, }]),
-	
+   union_test()-> 
+	Result = union_ops([{nothing, {operation,1,dwaf}}, {nothing, {operation,2,fasd}}],[],[{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
+	?assertEqual(Result, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
+	Result1 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
+	?assertEqual(Result1, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
+	Result2 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,2, fasd}}]),
+	?assertEqual(Result2, [{nothing, {operation, 2, fasd}}]).
 -endif.    
