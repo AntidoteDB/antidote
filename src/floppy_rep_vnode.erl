@@ -30,7 +30,11 @@
 	handleOp/5
         ]).
 
-
+%%------------------------
+%% Data type: state
+%%   partition: an integer (default is undefined).
+%%   lclock: an integer (default is undefined).
+%%------------------------
 -record(state, {partition,lclock}).
 
 %% API
@@ -40,7 +44,10 @@ start_vnode(I) ->
 init([Partition]) ->
     {ok, #state{partition=Partition,lclock=0}}.
 
-%% @doc Start a fsm to coordinate the `append' operation to be performed in the object's replicaiton group
+%% @doc Function: append/2 
+%% Purpose: Start a fsm to coordinate the `append' operation to be performed in the object's replicaiton group
+%% Args: Key of the object and operation parameters
+%% Returns: {ok, Result} if success; {error, timeout} if operation failed.
 append(Key, Op) ->
     io:format("Append ~w ~w ~n", [Key, Op]),
     floppy_coord_sup:start_fsm([self(), append, Key, Op]),
@@ -53,7 +60,10 @@ append(Key, Op) ->
 	    {error, timeout}
     end.
 
-%% @doc Start a fsm to `read' from the replication group of the object specified by Key
+%% @doc Function: read/2 
+%% Purpose: Start a fsm to `read' from the replication group of the object specified by Key
+%% Args: Key of the object and its type, which should be supported by the riak_dt.
+%% Returns: {ok, Ops} if succeeded, Ops is the union of operations; {error, nothing} if operation failed.
 read(Key, Type) ->
     io:format("Read ~w ~w ~n", [Key, Type]),
     floppy_coord_sup:start_fsm([self(), read, Key, noop]),
@@ -66,7 +76,8 @@ read(Key, Type) ->
 	    {error, nothing}
     end.
 
-%% @doc Handles `read' or `append' operations. Tne vnode must be in the replication group
+%% @doc Function: handleOp/5
+%% Purpose: Handles `read' or `append' operations. Tne vnode must be in the replication group
 %% of the corresponding key. 
 handleOp(Preflist, ToReply, Op, Key, Param) ->
     	riak_core_vnode_master:command(Preflist,

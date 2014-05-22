@@ -13,7 +13,7 @@
 -export([start_vnode/1,
          dread/2,
          dappend/4,
-         repair/2,
+         append_list/2,
          read/2,
          append/3]).
 
@@ -51,12 +51,12 @@ dread(Preflist, Key) ->
 dappend(Preflist, Key, Op, LClock) ->
     riak_core_vnode_master:command(Preflist, {append, Key, Op, LClock},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
-%% @doc Sends a `repair' syncrhonous command to the Log in `Node'.
+%% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
 %%	This should be part of the append command. Conceptually, a Log should
 %%	not have a repair operation. 
-repair(Node, Ops) ->
+append_list(Node, Ops) ->
     riak_core_vnode_master:sync_command(Node,
-                                        {repair, Ops},
+                                        {append_list, Ops},
                                         ?LOGGINGMASTER).
 
 %% @doc Sends an `append' syncrhonous command to the Log in `Node' 
@@ -94,7 +94,7 @@ handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State)
 %% @doc Repair command: Appends the Ops to the Log
 %%	Input: Ops: Operations to append
 %%	Output: ok | {error, Reason}
-handle_command({repair, Ops}, _Sender, #state{log=Log}=State) ->
+handle_command({append_list, Ops}, _Sender, #state{log=Log}=State) ->
     Result = dets:insert(Log, Ops),
     {reply, Result, State};
 
