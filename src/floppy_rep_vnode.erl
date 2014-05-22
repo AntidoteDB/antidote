@@ -25,8 +25,6 @@
 -export([
 	append/2,
 	read/2,
-	append_clockSI/2,
-	read_clockSI/2,
 	handleOp/5
         ]).
 

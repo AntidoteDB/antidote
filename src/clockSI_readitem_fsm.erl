@@ -105,7 +105,7 @@ commit_notification({committed, TxId}, SD0=#state{pending_txs=Left}) ->
 %%	- Reads adn retunrs the log of the specified Key using the replication layer.
 return(timeout, SD0=#state{tx_coordinator=Coordinator, tx_id= TxId, key=Key, type=Type}) ->
 	io:format("ClockSI ReadItemFSM: reading key ~w ~n", [Key]),
-    case floppy_rep_vnode:read_clockSI(Key, Type) of
+    case floppy_rep_vnode:read(Key, Type) of
     {ok, Ops} ->
     	io:format("ClockSI ReadItemFSM: got the operations for key ~w, calling the materializer... ~n", [Key]),
 		Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops),
