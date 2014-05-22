@@ -7,8 +7,7 @@
 	 %API begin
 	 read_data_item/4,
 	 update_data_item/4,
-	 notify_commit/2,
-	 clean_and_notify/3,
+	 %clean_and_notify/3,
 	 get_pending_txs/2,
 	 prepare/2,
 	 commit/3,
@@ -56,32 +55,28 @@ start_vnode(I) ->
 
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
-	io:format("ClockSI-Vnode: read key ~w for TxId ~w ~n",[Key, TxId]),
+    io:format("ClockSI-Vnode: read key ~w for TxId ~w ~n",[Key, TxId]),
     riak_core_vnode_master:sync_command(Node, {read_data_item, TxId, Key, Type}, ?CLOCKSIMASTER).
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Op) ->
-	io:format("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
+    io:format("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
     riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Op}, ?CLOCKSIMASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
-prepare(Node, TxId) ->
-	io:format("ClockSI-Vnode: prepare TxId ~w ~n",[TxId]),
-    riak_core_vnode_master:sync_command(Node, {prepare, TxId}, ?CLOCKSIMASTER).
+prepare(ListofNodes, TxId) ->
+    io:format("ClockSI-Vnode: prepare TxId ~w ~n",[TxId]),
+    riak_core_vnode_master:command(ListofNodes, {prepare, TxId}, {fsm, undefined, self()},?CLOCKSIMASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
-commit(Node, TxId, CommitTime) ->
-	io:format("ClockSI-Vnode: commit TxId ~w ~n",[TxId]),
-    riak_core_vnode_master:sync_command(Node, {commit, TxId, CommitTime}, ?CLOCKSIMASTER).
+commit(ListofNodes, TxId, CommitTime) ->
+    io:format("ClockSI-Vnode: commit TxId ~w ~n",[TxId]),
+    riak_core_vnode_master:command(ListofNodes, {commit, TxId, CommitTime}, {fsm, undefined, self()},?CLOCKSIMASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
-abort(Node, TxId) ->
-	io:format("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
-    riak_core_vnode_master:sync_command(Node, {abort, TxId}, ?CLOCKSIMASTER).
-
-%% @doc Sends a commit notification to the coordinator (after successfully committing)
-notify_commit(Node, TxId) ->
-   riak_core_vnode_master:sync_command(Node, {notify_commit, TxId}, ?CLOCKSIMASTER).
+abort(ListofNodes, TxId) ->
+    io:format("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
+    riak_core_vnode_master:command(ListofNodes, {abort, TxId}, {fsm, undefined, self()},?CLOCKSIMASTER).
 
 %% @doc sends a request to Node to get all the transactions that are pending for a given Key
 %% This function is called by the ClockSI read FSM
@@ -140,42 +135,38 @@ handle_command({update_data_item, TxId, Key, Op}, _Sender, #state{active_tx=Acti
     end;
 
 
-handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Log,
-	active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
-	
-	TxWriteSet=ets:lookup(WriteSet, TxId), 
+handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Log, active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
+    TxWriteSet=ets:lookup(WriteSet, TxId), 
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
-    	true ->
-			PrepareTime=now_milisec(erlang:now()),
-			Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
-    		case Result of
-        		ok ->
-					ets:insert(PreparedTx, {TxId, PrepareTime}),
-            		{reply, PrepareTime, State};
-        		{error, Reason} ->
-            		{reply, {error, Reason}, State}
-    		end;
-    	false ->
-		%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
-			{reply, abort, State}
-			
-   		end;
+    true ->
+	PrepareTime=now_milisec(erlang:now()),
+	Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
+        case Result of
+    	ok ->
+	    ets:insert(PreparedTx, {TxId, PrepareTime}),
+            {reply, {prepared, PrepareTime}, State};
+    	{error, Reason} ->
+            {reply, {error, Reason}, State}
+        end;
+    false ->
+	io:format("ClockSI_Vnode: certification_check failed~n"),
+	%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
+	{reply, abort, State}
+    end;
 
 handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx}=State) ->
-			%ale: Log T.writeset
-			Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
-    		case Result of
-        		ok ->
-        			ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            		{reply, ack, State};
-        		{error, Reason} ->
-            		{reply, {error, Reason}, State}
-    		end;
-%% 			{next_state, clean_and_notify, TxId, State, 0};
+    Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
+    case Result of
+    ok ->
+        ets:insert(CommittedTx, {TxId, TxCommitTime}),
+        {reply, committed, State};
+    {error, Reason} ->
+        {reply, {error, Reason}, State}
+    end;
 
-
-handle_command({abort, TxId}, _Sender, #state{log=_Log}=State) ->
-    clean_and_notify(timeout, TxId, State),
+handle_command({abort, _TxId}, _Sender, #state{log=_Log}=State) ->
+    %clean_and_notify(timeout, TxId, State),
+    io:format("Vnode: Recieved abort~n"),
     {reply, ack_abort, State};
 
 handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
@@ -192,12 +183,6 @@ handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
 			{reply, {ok, [H|T]}, State}
 	end;
 	
-		
-%% handle_command({notify_commit, TXs}, Sender, #state{pending=Pendings}=State) ->
-%%     %TODO: Check if anyone is already commited 
-%%     add_list_to_pendings(TXs, Sender, Pendings),
-%%     {no_reply, State};
-
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
     {noreply, State}.
@@ -247,17 +232,17 @@ terminate(_Reason, _State) ->
 %% 	a. ActiteTxsPerKey,
 %% 	b. Waiting_Fsms,
 %% 	c. PreparedTx
-clean_and_notify(timeout, TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedTx, 
-					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
-	notify_all(ets:lookup(WaitingFsms, TxId), TxId),
-	case ets:lookup(WriteSet, TxId) of
-        [Op|Ops] ->
-			clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
-    end,
-	ets:delete(PreparedTx, TxId),
-	ets:delete(ActiveTx, TxId),
-	ets:delete(WriteSet, TxId),
-	ets:delete(WaitingFsms, TxId).
+%clean_and_notify(timeout, TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedTx, 
+%					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=_ActiveTxsPerKey}) ->
+%	notify_all(ets:lookup(WaitingFsms, TxId), TxId),
+	%case ets:lookup(WriteSet, TxId) of
+        %[Op|Ops] ->
+		%clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
+    	%end,
+%	ets:delete(PreparedTx, TxId),
+%	ets:delete(ActiveTx, TxId),
+%	ets:delete(WriteSet, TxId),
+%	ets:delete(WaitingFsms, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into a number expressed in microseconds
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
@@ -269,10 +254,10 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%     ets:insert(Pendings, {Next, Sender}),
 %%     add_list_to_pendings(Rest, Sender, Pendings).
 
-notify_all([], _) -> done; 
-notify_all([Next|Rest], TxId) -> 
-    riak_core_vnode:reply(Next, {committed, TxId}),
-    notify_all(Rest, TxId).
+%notify_all([], _) -> done; 
+%notify_all([Next|Rest], TxId) -> 
+%    riak_core_vnode:reply(Next, {committed, TxId}),
+%    notify_all(Rest, TxId).
 
 %% @doc returns a list of transactions with
 %% prepare timestamp bigger than TxId (snapshot time)
@@ -296,11 +281,11 @@ internal_pending_txs([H|T], ST, PreparedTx, Result) ->
 	end.
 
 
-clean_active_txs_per_key(_, [], _) -> ok;
-clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey) ->
-	{Key, _}=Op,
-	dets:delete_object(ActiveTxsPerKey, {Key, TxId}),
-	clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
+%clean_active_txs_per_key(_, [], _) -> ok;
+%clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey) ->
+%	{Key, _}=Op,
+%	dets:delete_object(ActiveTxsPerKey, {Key, TxId}),
+%	clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
 
 add_to_waiting_fsms(_, [], _) -> ok;    
 add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->   
@@ -311,28 +296,24 @@ add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->
 %% to the prepared state.	
 certification_check(_, [], _, _) -> true;
 certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) ->
-	[{Key, _}|T]=TxWriteSet,
-	TxsPerKey=ets:lookup(ActiveTxPerKey, Key),
-	case check_keylog(TxId, TxsPerKey, CommittedTx) of
-		true -> false;	
-		false ->
-			certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
-	end.
+    [{Key, _}|T]=TxWriteSet,
+    TxsPerKey=ets:lookup(ActiveTxPerKey, Key),
+    case check_keylog(TxId, TxsPerKey, CommittedTx) of
+    true -> 
+        false;	
+    false ->
+	certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
+    end.
 
-check_keylog(_, [], _) -> true;
+check_keylog(_, [], _) -> false;
 check_keylog(TxId, [H|T], CommittedTx)->
-	case H > TxId of 
-		true ->
-			case ets:lookup(CommittedTx, H) of 
-				true -> true;
-				false->
-					check_keylog(TxId, T, CommittedTx)
-			end
-	end.
-
-
-
-
-
-
-	%%case (ets:lookup())
+    io:format("Active Tx to check ~w~n",[H]),
+    case H > TxId of 
+    true ->
+        case ets:lookup(CommittedTx, H) of 
+	true ->
+	    true;
+	false->
+	    check_keylog(TxId, T, CommittedTx)
+	end
+    end.

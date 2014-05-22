@@ -77,6 +77,7 @@ init([From, ClientClock, Operations]) ->
                 txid=TransactionId,
                 operations=Operations,
                 updated_partitions=[],
+		prepare_time=0,
                 read_set=[]
 		},
     {ok, prepareOp, SD, 0}.
@@ -89,7 +90,7 @@ init([From, ClientClock, Operations]) ->
 %%		2. 	it starts a local_commit (update tx that only updates a single partition) or
 %%		3.	it goes to the prepare_2PC to start a two phase commit (when multiple partitions
 %%		are updated. 
-prepareOp(timeout, SD0=#state{operations=Operations, txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
+prepareOp(timeout, SD0=#state{operations=Operations, txid=_TransactionId, updated_partitions=UpdatedPartitions}) ->
 	case Operations of 
 	[] ->
 		case length(UpdatedPartitions) of
@@ -99,8 +100,9 @@ prepareOp(timeout, SD0=#state{operations=Operations, txid=TransactionId, updated
 		1 ->
 			[IndexNode]=UpdatedPartitions,
 			io:format("Starting local commit at node ~w.~n", [IndexNode]),
-			clockSI_vnode:local_commit(IndexNode, TransactionId),
-			{stop, normal, SD0};
+			%clockSI_vnode:local_commit(IndexNode, TransactionId),
+			%{stop, normal, SD0};
+			{next_state, prepare_2PC, SD0, 0};
 		_ ->
 			{next_state, prepare_2PC, SD0, 0}		
 		end;
@@ -130,7 +132,6 @@ executeOp(timeout, SD0=#state{
                             currentOpLeader=CurrentOpLeader}) ->    
     {OpType, Key, Param}=CurrentOp,                       
     io:format("ClockSI-Coord: Execute operation ~w ~n",[CurrentOp]),
-	io:format("ClockSI-Coord: Leader node ~w ~n",[CurrentOpLeader]),
 	{IndexNode, _} = CurrentOpLeader,
 	case OpType of read ->
 		clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, Param),
@@ -140,8 +141,8 @@ executeOp(timeout, SD0=#state{
 		clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param),
 		case lists:member(IndexNode, UpdatedPartitions) of
 			false ->
-				io:format("ClockSI-Coord: Adding Leader node ~w ~n",[IndexNode]),
-				NewUpdatedPartitions= lists:append(UpdatedPartitions, [{IndexNode}]),
+				io:format("ClockSI-Coord: Adding Leader node ~w, updt: ~w ~n",[IndexNode, UpdatedPartitions]),
+				NewUpdatedPartitions= lists:append(UpdatedPartitions, [IndexNode]),
 				SD1 = SD0#state{updated_partitions= NewUpdatedPartitions};
 			true->
 				SD1 = SD0
@@ -164,76 +165,84 @@ handle_read({ReadResult}, #state{read_set=ReadSet}=State) ->
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
 prepare_2PC(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
-	io:format("Executed all operations of a read-only transaction.~n"),
 	clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
-	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}, 0}.
+	NumToAck=length(UpdatedPartitions),
+	{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}.
 	
 %%	in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  
-receive_prepared({_Node, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, prepare_time=PrepareTime}) ->		
+receive_prepared({prepared, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, prepare_time=PrepareTime}) ->		
 	MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 -> 
-    	io:format("ClockSI: Finished collecting prepare replies, start committing..."),
-		{next_state, committing, S0=#state{prepare_time=commit_time=MaxPrepareTime, state=committing},0};
-	_ ->
-         io:format("ClockSI: Keep collecting prepare replies~n"),
+    	io:format("ClockSI: Finished collecting prepare replies, start committing... Commit time: ~w~n",[MaxPrepareTime]),
+	{next_state, committing, S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing},0};
+    _ ->
+        io:format("ClockSI: Keep collecting prepare replies~n"),
 	{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
-receive_prepared({_Node, abort}, S0) ->
+
+receive_prepared(abort, S0) ->
 	{next_state, abort, S0, 0};   
+
 receive_prepared(timeout, S0) ->
 	{next_state, abort, S0}.
 
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
 committing(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions, prepare_time=PrepareTime}) -> 
-	clock_SI_vnode:commit(UpdatedPartitions, TransactionId, PrepareTime),
-	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, state=committing}, 0}.
+	clockSI_vnode:commit(UpdatedPartitions, TransactionId, PrepareTime),
+	NumToAck=length(UpdatedPartitions),
+	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, state=committing}}.
 	
 %%	the fsm waits for acks indicating that each partition has successfully committed the tx
 %%	and finishes operation.
 %% 	Should we retry sending the committed message if we don't receive a reply from
 %% 	every partition?
 %% 	What delivery guarantees does sending messages provide?
-receive_committed({_Node}, S0=#state{num_to_ack= NumToAck}) ->
-    case NumToAck of 1 -> 
-    	io:format("ClockSI: Finished collecting commit acks. Tx committed succesfully."),
-    	{next_state, reply_to_client, S0, 0};
-	_ ->
-         io:format("ClockSI: Keep collecting commit replies~n"),
-		{next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
+receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
+    case NumToAck of
+    1 -> 
+    	io:format("ClockSI: Finished collecting commit acks. Tx committed succesfully.~n"),
+    	{next_state, reply_to_client, S0#state{state=committed}, 0};
+    _ ->
+        io:format("ClockSI: Keep collecting commit replies~n"),
+	{next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
     end.
     
 %% when an updated partition does not pass the certification check, the transaction
 %% aborts.
 abort(timeout, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions}) -> 
-	clock_SI_vnode:abort(UpdatedPartitions, TxId),
+	clockSI_vnode:abort(UpdatedPartitions, TxId),
 	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_aborted, SD0=#state{state=abort, num_to_ack=NumToAck}, 0}.
+	{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}, 0};
+
+abort(abort, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions}) -> 
+	%TODO: Do not send to who issue the abort
+	clockSI_vnode:abort(UpdatedPartitions, TxId),
+	NumToAck=length(UpdatedPartitions),
+	{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}}.
 	
 %%	the fsm waits for acks indicating that each partition has aborted the tx
 %%	and finishes operation.	
-receive_aborted({_Node, ack_abort}, S0=#state{num_to_ack= NumToAck}) ->
+receive_aborted(ack_abort, S0=#state{num_to_ack= NumToAck}) ->
     case NumToAck of 1 -> 
-    	io:format("ClockSI-coord-fsm: Finished collecting abort acks. Tx aborted."),
+   	io:format("ClockSI-coord-fsm: Finished collecting abort acks. Tx aborted."),
     	{next_state, reply_to_client, S0, 0};
-	_ ->
-         io:format("ClockSI-coord-fsm: Keep collecting abort replies~n"),
-		{next_state, receive_aborted, S0#state{num_to_ack= NumToAck-1}}
+    _ ->
+        io:format("ClockSI-coord-fsm: Keep collecting abort replies~n"),
+	{next_state, receive_aborted, S0#state{num_to_ack= NumToAck-1}}
     end.
     
 %% when the transaction has committed or aborted, a reply is sent to the client
 %% that started the transaction.
-reply_to_client(timeout, SD=#state{from=From, txid=TxId, read_set=ReadSet, state=TxState}) ->
+reply_to_client(timeout, SD=#state{from=From, txid=TxId, read_set=ReadSet, state=TxState, commit_time=CommitTime}) ->
 	case TxState of
 	committed->
-		From! {ok, {TxId, ReadSet}};
+		From ! {ok, {TxId, ReadSet, CommitTime}};
 	aborted->
-		From! {aborted, TxId};
-	_->
-		From! {error, TxId}
+		From ! {abort, TxId};
+	Reason->
+		From ! {ok, TxId, Reason}
 	end,
 	{stop, normal, SD}.
 
