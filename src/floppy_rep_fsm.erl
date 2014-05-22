@@ -74,23 +74,23 @@ execute(timeout, SD0=#state{op=Op,
 			    opid=OpId}) ->
     case Op of 
 	append ->
-	    io:format("FSM: Replicate append ~n"),
+	    lager:info("FSM: Replicate append ~n"),
 	    logging_vnode:dappend(Preflist, Key, Param, OpId),
 	    SD1 = SD0#state{num_to_ack=?NUM_W},
 	    {next_state, waitAppend, SD1};
 %	create ->
-%	    io:format("replication propagating create!~w~n",[Preflist]),
+%	    lager:info("replication propagating create!~w~n",[Preflist]),
 %	    logging_vnode:dcreate(Preflist, Key, Param, OpClock),
 %	    Num_w = SD0#state.num_w,
 %	    SD1 = SD0#state{num_to_ack=Num_w},
 %	    {next_state, waiting, SD1};
 	read ->
-	    io:format("FSM: Replication read ~n"),
+	    lager:info("FSM: Replication read ~n"),
 	    logging_vnode:dread(Preflist, Key),
 	    SD1 = SD0#state{num_to_ack=?NUM_R},
 	    {next_state, waitRead, SD1};
 	_ ->
-	    io:format("FSM: Wrong command ~n"),
+	    lager:info("FSM: Wrong command ~n"),
 	   %%reply message to user
 	    {stop, normal, SD0}
     end.
@@ -99,11 +99,11 @@ execute(timeout, SD0=#state{op=Op,
 %% @doc Waits for W write reqs to respond.
 waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
     if NumToAck == 1 -> 
-    	io:format("FSM: Finish collecting replies for ~w ~n", [Op]),
+    	lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
 	floppy_coord_fsm:finishOp(From,  Key, Result),	
 	{stop, normal, SD};
 	true ->
-         io:format("FSM: Keep collecting replies~n"),
+         lager:info("FSM: Keep collecting replies~n"),
 	{next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }}
     end.
 
@@ -113,38 +113,38 @@ waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= Nu
 waitRead({Node, Result}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key, readresult= ReadResult , num_to_ack= NumToAck}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
-    %io:format("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
+    %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
     if NumToAck == 1 -> 
-    	io:format("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
+    	lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
 	repair(NodeOps1, Result1),
 	floppy_coord_fsm:finishOp(From,  Key, Result1),	
 	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
 	true ->
-         io:format("FSM: Keep collecting replies~n"),
+         lager:info("FSM: Keep collecting replies~n"),
 	{next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
     end;
 
 waitRead({error, no_key}, SD) ->
-    io:format("FSM: No key!~n"),
+    lager:info("FSM: No key!~n"),
     {stop, normal, SD}.
 
 %% @doc Keeps waiting for read replies from vnodes after replying to coord fsm.
 %% Do read repair if any of them haven't seen some ops.
 repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
-    io:format("FSM: read repair timeout! Start repair anyway~n"),
+    lager:info("FSM: read repair timeout! Start repair anyway~n"),
     repair(NodeOps, ReadResult),
     {stop, normal, SD};
 
 repairRest({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
-    %io:format("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
+    %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
     if NumToAck == 1 -> 
-    	io:format("FSM: Finish collecting replies, start read repair ~n"),
+    	lager:info("FSM: Finish collecting replies, start read repair ~n"),
 	repair(NodeOps, ReadResult),
 	{stop, normal, SD};
     	true ->
-         io:format("FSM: Keep collecting replies~n"),
+         lager:info("FSM: Keep collecting replies~n"),
 	{next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
     end.
 

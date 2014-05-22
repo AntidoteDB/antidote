@@ -17,7 +17,7 @@ start_link() ->
     {ok, PID}.
 
 replicate(Node, Payload, Origin) ->
-    io:format("Sending update ~p to ~p ~n",[Payload, Node]),
+    lager:info("Sending update ~p to ~p ~n",[Payload, Node]),
     gen_server:cast(Node, {replicate, Payload, from, Origin}).
 
 stop(Pid)->
@@ -39,11 +39,11 @@ handle_call(terminate, _From, State) ->
     {stop, normal, ok, State}.
    
 handle_info(Msg, State) ->
-    io:format("Unexpected message: ~p~n",[Msg]),
+    lager:info("Unexpected message: ~p~n",[Msg]),
     {noreply, State}.
 
 terminate(normal, _State) ->
-    io:format("Inter_dc_repl_recvr stopping"),
+    lager:info("Inter_dc_repl_recvr stopping"),
     ok;
 terminate(_Reason, _State) -> ok.
 
@@ -56,15 +56,15 @@ code_change(_OldVsn, State, _Extra) ->
 %private
 
 apply(Payload) ->
-    io:format("Recieved update ~p ~n",[Payload]),
+    lager:info("Recieved update ~p ~n",[Payload]),
     {Key, Op} = Payload,
     %%TODO: Replace this with proper replication protocol
     _ = floppy_coord_sup:start_fsm([self(), update, Key, Op]),
     receive 
 	{_, Result} ->
-	io:format("Updated ~p",[Result])
+	lager:info("Updated ~p",[Result])
 	after 5000 ->
-	io:format("Update failed!~n")
+	lager:info("Update failed!~n")
     end,
-    io:format("Updated operation ~p ~n", [Payload]),
+    lager:info("Updated operation ~p ~n", [Payload]),
     ok.
