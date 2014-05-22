@@ -52,7 +52,7 @@ ready(timeout, StateData = #state{otherdc = Other, otherpid = PID, retries = Ret
 	     ?TIMEOUT}.
 
 await_ack({ok,Payload}, StateData) ->
-    io:format("Replicated ~p ~n",[Payload]),
+    lager:info("Replicated ~p ~n",[Payload]),
     {stop, normal, StateData};
 await_ack(timeout,StateData = #state{retries = RetryLeft}) ->
     case RetryLeft of 

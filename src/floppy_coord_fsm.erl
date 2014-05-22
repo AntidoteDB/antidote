@@ -32,7 +32,7 @@ start_link(From, Op, Key, Param) ->
     gen_fsm:start_link(?MODULE, [From, Op, Key, Param], []).
 
 %start_link(Key, Op) ->
-%    io:format('The worker is about to start~n'),
+%    lager:info('The worker is about to start~n'),
 %    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
 
 finishOp(From, Key,Result) ->
@@ -68,15 +68,15 @@ execute(timeout, SD0=#state{
                             key=Key,
                             param=Param,
                             preflist=Preflist}) ->
-    io:format("Coord: Execute operation ~w ~w ~w~n",[Op, Key, Param]),
+    lager:info("Coord: Execute operation ~w ~w ~w~n",[Op, Key, Param]),
     case Preflist of 
 	[] ->
-	    io:format("Coord: Nothing in pref list~n"),
+	    lager:info("Coord: Nothing in pref list~n"),
 	    {stop, normal, SD0};
 	[H|T] ->
 	    %% Send the operation to the first vnode in the preflist;
 	    %% Will timeout if the vnode does not respond within INDC_TIMEOUT
-	    io:format("Coord: Forward to node~w~n",[H]),
+	    lager:info("Coord: Forward to node~w~n",[H]),
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
@@ -89,13 +89,13 @@ waiting(timeout, SD0=#state{op=Op,
 			   key=Key,
 			   param=Param,
 			   preflist=Preflist}) ->
-    io:format("Coord: INDC_TIMEOUT, retry...~n"),
+    lager:info("Coord: INDC_TIMEOUT, retry...~n"),
     case Preflist of 
 	[] ->
-	    io:format("Coord: Nothing in pref list~n"),
+	    lager:info("Coord: Nothing in pref list~n"),
 	    {stop, normal, SD0};
 	[H|T] ->
-	    io:format("Coord: Forward to node:~w~n",[H]),
+	    lager:info("Coord: Forward to node:~w~n",[H]),
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
@@ -104,7 +104,7 @@ waiting(timeout, SD0=#state{op=Op,
 
 %% @doc Receive result and reply the result to the process that started the fsm (From). 
 waiting({Key, Val}, SD=#state{from=From}) ->
-    io:format("Coord: Finish operation ~w ~w ~n",[Key,Val]),
+    lager:info("Coord: Finish operation ~w ~w ~n",[Key,Val]),
     %proxy:returnResult(Key, Val, Client),
     From! {Key,Val},   
     {stop, normal, SD};
