@@ -3,8 +3,6 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -export([
-         ping/0,
-	 %create/2,
 	 append/2,
 	 read/2,
 	 %startTX/2,
