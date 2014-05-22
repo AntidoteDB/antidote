@@ -5,8 +5,7 @@
 -export([
 	 append/2,
 	 read/2,
-	 clockSI_execute_TX/2,
-        ]).
+	 clockSI_execute_TX/2]).
 
 %% Public API
 
