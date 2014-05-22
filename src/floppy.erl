@@ -5,7 +5,7 @@
 -export([
          ping/0,
 	 %create/2,
-	 update/2,
+	 append/2,
 	 read/2,
 	 clockSI_execute_TX/2,
 	 types/0
@@ -40,7 +40,7 @@ ping() ->
 %dcreate(Key, Type) ->
 %   floppy_coord_sup:start_fsm([100, self(), create, Key, Type]).
 
-update(Key, Op) ->
+append(Key, Op) ->
     case floppy_rep_vnode:append(Key, Op) of
 	{ok, Result} ->
 	    %inter_dc_repl_vnode:propogate(Key, Op),
