@@ -118,7 +118,7 @@ handle_command({threshold_read, Key, From}, _Sender, #state{partition=Partition,
 %%	Input: Ops: Operations to append
 %%	Output: ok | {error, Reason}
 handle_command({append_list, Ops}, _Sender, #state{log=Log}=State) ->
-    Result = dets:insert(Log, Ops),
+    Result = dets:insert_new(Log, Ops),
     {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
@@ -128,7 +128,7 @@ handle_command({append_list, Ops}, _Sender, #state{log=Log}=State) ->
 %%	Output: {ok, op_id} | {error, Reason}
 handle_command({append, Key, Payload, OpId}, _Sender,
                #state{log=Log}=State) ->
-    Result = dets:insert(Log,
+    Result = dets:insert_new(Log,
                          {Key, #operation{op_number=OpId,
                                           payload=Payload}}),
     Response = case Result of
