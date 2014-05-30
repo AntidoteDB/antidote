@@ -15,6 +15,7 @@
          dappend/4,
          append_list/2,
          read/2,
+	 threshold_read/3,
          append/3]).
 
 -export([init/1,
@@ -39,6 +40,12 @@
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
+%% @doc Sends a `threshold read' asyncrhonous command to the Logs in `Preflist'
+%%	From is the operation id form which the caller wants to retrieve the operations.
+%%	The operations are retrieved in inserted order and the From operation is also included.
+threshold_read(Preflist, Key, From) ->
+    riak_core_vnode_master:command(Preflist, {threshold_read, Key, From}, {fsm, undefined, self()},?LOGGINGMASTER).
+ 
 %% @doc Sends a `read' syncrhonous command to the Log in `Node' 
 read(Node, Key) ->
     riak_core_vnode_master:sync_command(Node, {read, Key}, ?LOGGINGMASTER).
@@ -87,6 +94,22 @@ handle_command({read, Key}, _Sender, #state{partition=Partition, log=Log}=State)
             {reply, {{Partition, node()}, []}, State};
         [H|T] ->
             {reply, {{Partition, node()}, [H|T]}, State};
+        {error, Reason}->
+            {reply, {error, Reason}, State}
+    end;
+
+%% @doc Threshold read command: Returns the operations logged for Key from a specified op_id-based threshold
+%%	Input:  Key of the object to read
+%%		From: the oldest op_id to return
+%%	Output: {vnode_id, Operations} | {error, Reason}
+handle_command({threshold_read, Key, From}, _Sender, #state{partition=Partition, log=Log}=State) ->
+    case dets:lookup(Log, Key) of
+        [] ->
+            {reply, {{Partition, node()}, []}, State};
+        [H|T] ->
+	    Operations =  [H|T],
+	    Operations2 = threshold_prune(Operations, From),
+            {reply, {{Partition, node()}, Operations2}, State};
         {error, Reason}->
             {reply, {error, Reason}, State}
     end;
@@ -157,3 +180,39 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, _State) ->
     ok.
+
+%%====================%%
+%% Internal Functions %%
+%%====================%%
+%% @doc threshold_prune: returns the operations that are not onlder than the specified op_id
+%%  Assump:	The operations are retrieved in the order of insertion
+%%			If the order of insertion was Op1 -> Op2 -> Op4 -> Op3, the expected list of operations would be: [Op1, Op2, Op4, Op3]
+%%	Input:	Operations: Operations to filter
+%%			From: Oldest op_id to return
+%%			Filtered: List of filetered operations
+%%	Return:	The filtered list of operations
+-spec threshold_prune(Operations::list(), From::atom()) -> list().
+threshold_prune([], _From) -> [];
+threshold_prune([Next|Rest], From) ->
+	case Next#operation.op_number == From of
+		true ->
+			[Next|Rest];
+		false ->
+			threshold_prune(Rest, From)
+	end.
+
+-ifdef(TEST).
+
+%% @doc Testing threshold_prune works as expected
+thresholdprune_test() ->
+	Operations = [#operation{op_number=op1},#operation{op_number=op2},#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],
+	Filtered = threshold_prune(Operations,op3),
+    ?assertEqual([#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],Filtered).
+
+%% @doc Testing threshold_prune works even when there is no matching op_id
+thresholdprune_notmatching_test() ->
+	Operations = [#operation{op_number=op1},#operation{op_number=op2},#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],
+	Filtered = threshold_prune(Operations,op6),
+    ?assertEqual([],Filtered).
+
+-endif.
