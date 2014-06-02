@@ -64,7 +64,6 @@ init([From, ClientClock]) ->
 	{ok, SnapshotTime}= get_snapshot_time(ClientClock),
 	TxId=#tx_id{snapshot_time=SnapshotTime, server_pid=self()},            
 	SD = #state{
-				from=From,
 				txid=TxId,
 				updated_partitions=[],
 		        prepare_time=0
@@ -80,7 +79,9 @@ executeOp({OpType, Args}, Sender, SD0=#state{
                             updated_partitions=UpdatedPartitions}) ->
 	case OpType of
 	commit ->
-		SD1=SD0#state{from=Args},
+		{Pid, Ref}=Sender,
+        lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
+		SD1=SD0#state{from={Pid, Ref}},
 		{next_state, prepare, SD1, 0};		
 	read ->
 		{Key, Param}=Args,                       
@@ -211,7 +212,6 @@ reply_to_client(timeout, SD=#state{from=From, txid=TxId, state=TxState, commit_t
 		gen_fsm:reply(From,{ok, TxId, Reason})
 	end,
 	{stop, normal, SD}.
-
 	
 
     
