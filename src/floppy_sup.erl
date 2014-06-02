@@ -40,6 +40,10 @@ init(_Args) ->
                   {clockSI_tx_coord_sup, start_link, []},
                   permanent, 5000, supervisor, [clockSI_tx_coord_sup]},
     
+    ClockSIiTxCoordSup =  { clockSI_interactive_tx_coord_sup,
+                  {clockSI_interactive_tx_coord_sup, start_link, []},
+                  permanent, 5000, supervisor, [clockSI_interactive_tx_coord_sup]},
+    
     CoordSup =  { floppy_coord_sup,
                   {floppy_coord_sup, start_link, []},
                   permanent, 5000, supervisor, [floppy_coord_sup]},
@@ -54,4 +58,4 @@ init(_Args) ->
 
     { ok,
         { {one_for_one, 5, 10},
-          [LoggingMaster, RepMaster, ClockSIMaster, ClockSITxCoordSup, InterDcRepMaster, CoordSup, RepSup, InterDcRecvr]}}.
+          [LoggingMaster, RepMaster, ClockSIMaster, ClockSITxCoordSup, ClockSIiTxCoordSup, InterDcRepMaster, CoordSup, RepSup, InterDcRecvr]}}.

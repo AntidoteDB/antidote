@@ -32,7 +32,7 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
     {_,#operation{payload=Payload}}=Op,
     {OpParam, Actor, Commit_ts}=Payload,
     if Commit_ts =< Snapshot_time ->
-    	io:format("OpParam: ~w, Actor: ~w , Commit_TS: ~w and Snapshot: ~w~n",[OpParam, Actor, Commit_ts, Snapshot]),	
+    	lager:info("OpParam: ~w, Actor: ~w , Commit_TS: ~w and Snapshot: ~w~n",[OpParam, Actor, Commit_ts, Snapshot]),	
     	{ok, NewSnapshot}= Type:update(OpParam, Actor, Snapshot),
     	update_snapshot(Type, NewSnapshot, Snapshot_time, Rest);
     true ->
