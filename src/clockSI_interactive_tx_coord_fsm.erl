@@ -1,23 +1,23 @@
-%%@doc	The coordinator for a given Clock SI transaction.  
+%%@doc	The coordinator for a given Clock SI interactive transaction.  
 %%		It handles the state of the tx and executes the operations sequentially by
 %%		sending each operation
 %%		to the responsible clockSI_vnode of the involved key.
 %%		when a tx is finalized (committed or aborted, the fsm
 %%		also finishes.
 
--module(clockSI_tx_coord_fsm).
+-module(clockSI_interactive_tx_coord_fsm).
 -behavior(gen_fsm).
 -include("floppy.hrl").
 
 %% API
--export([start_link/3]).
+-export([start_link/2]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
          handle_sync_event/4, terminate/3]).
 
 %% States
--export	([prepareOp/2, executeOp/2, finishOp/3, prepare_2PC/2, 
+-export	([executeOp/3, finishOp/3, prepare/2, 
 		receive_prepared/2, committing/2, receive_committed/2, abort/2, receive_aborted/2,
 		reply_to_client/2]).
 
@@ -29,35 +29,27 @@
 %% where:
 %%    from: the pid of the calling process.
 %%    txid: the transaction id that this fsm handles, as defined in src/floppy.hrl.
-%%    operations: a list of all the operation the tx involves.
 %%    updated_partitions: the partitions where update operations take place. 
-%%	  currentOp: a currently executing operation of the form {Key, Params}.
-%%	  currentOpLeader: the partition responsible for the key involved in 'currentOP'.
 %%	  num_to_ack: when sending prepare_commit, the number of partitions that have acked.
 %% 	  prepare_time: transaction prepare time.
 %% 	  commit_time: transaction commit time.
-%%	  read_set: a list of the objects read by read operations that have already returned.
 %% 	  state: state of the transaction: {active|prepared|committing|committed}
 %%----------------------------------------------------------------------
 -record(state, {
-                from :: pid(),
+                from,
                 txid :: #tx_id{},
-                operations :: list,
                 updated_partitions :: list, 
-                currentOp = undefined :: term() | undefined,
                 num_to_ack :: int, 
-                currentOpLeader :: riak_core_apl:preflist2(),
 				prepare_time :: int,	
 				commit_time ::int,
-				read_set :: list,
-				state}).
+				state:: atom()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(From, ClientClock, Operations) ->
-    gen_fsm:start_link(?MODULE, [From, ClientClock, Operations], []).
+start_link(From, ClientClock) ->
+    gen_fsm:start_link(?MODULE, [From, ClientClock], []).
 
 finishOp(From, Key,Result) ->
    gen_fsm:send_event(From, {Key, Result}).
@@ -68,105 +60,75 @@ finishOp(From, Key,Result) ->
 
 %% @doc Initialize the state.
 
-init([From, ClientClock, Operations]) ->	
-
+init([From, ClientClock]) ->	
 	{ok, SnapshotTime}= get_snapshot_time(ClientClock),
-	TransactionId=#tx_id{snapshot_time=clockSI_vnode:now_milisec(SnapshotTime), server_pid=self()},            
-    SD = #state{
-                from=From,
-                txid=TransactionId,
-                operations=Operations,
-                updated_partitions=[],
-		prepare_time=0,
-                read_set=[]
+	TxId=#tx_id{snapshot_time=SnapshotTime, server_pid=self()},            
+	SD = #state{
+				from=From,
+				txid=TxId,
+				updated_partitions=[],
+		        prepare_time=0
 		},
-    {ok, prepareOp, SD, 0}.
-
-
-%% @doc Prepare the execution of the next operation. 
-%%		It calculates the responsible vnode and sends the operation to it.
-%%		when there are no more operations to be executed there are three posibilities:
-%%		1.  it finishes (read tx),
-%%		2. 	it starts a local_commit (update tx that only updates a single partition) or
-%%		3.	it goes to the prepare_2PC to start a two phase commit (when multiple partitions
-%%		are updated. 
-prepareOp(timeout, SD0=#state{operations=Operations, txid=_TransactionId, updated_partitions=UpdatedPartitions}) ->
-	case Operations of 
-	[] ->
-		case length(UpdatedPartitions) of
-		0 ->
-			lager:info("Executed all operations of a read-only transaction.~n"),
-			{stop, normal, SD0};
-		1 ->
-			[IndexNode]=UpdatedPartitions,
-			lager:info("Starting local commit at node ~w.~n", [IndexNode]),
-			%clockSI_vnode:local_commit(IndexNode, TransactionId),
-			%{stop, normal, SD0};
-			{next_state, prepare_2PC, SD0, 0};
-		_ ->
-			{next_state, prepare_2PC, SD0, 0}		
-		end;
-		
-	[Op|TailOps] ->
-		[Op|TailOps] = Operations,
-		{_, Key,_} = Op,
-		DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-        lager:info("ClockSI-Coord: PID ~w ~n ", [self()]),
-        lager:info("ClockSI-Coord: Op ~w ~n ", [Op]),
-        lager:info("ClockSI-Coord: TailOps ~w ~n ", [TailOps]),
-        lager:info("ClockSI-Coord: getting leader for Key ~w ~n", [Key]),
-    	[Leader] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),	
-        SD1 = SD0#state{operations=TailOps, currentOp=Op, currentOpLeader=Leader},
-        {next_state, executeOp, SD1, 0}
-    end.
-
-
+	From ! {ok, TxId},
+	{ok, executeOp, SD}.
+	
 %% @doc Contact the leader computed in the prepare state for it to execute the operation,
 %%		wait for it to finish (synchronous) and go to the prepareOP to execute the next
 %%		operation.
-executeOp(timeout, SD0=#state{
-                            currentOp=CurrentOp,
-                            txid=TransactionId,
-                            updated_partitions=UpdatedPartitions,
-							read_set=ReadSet,
-                            currentOpLeader=CurrentOpLeader}) ->    
-    {OpType, Key, Param}=CurrentOp,                       
-    lager:info("ClockSI-Coord: Execute operation ~w ~n",[CurrentOp]),
-	{IndexNode, _} = CurrentOpLeader,
+executeOp({OpType, Args}, Sender, SD0=#state{
+                            txid=TransactionId, from=From,
+                            updated_partitions=UpdatedPartitions}) ->
 	case OpType of
+	commit ->
+		SD1=SD0#state{from=Args},
+		{next_state, prepare, SD1, 0};		
 	read ->
+		{Key, Param}=Args,                       
+		DocIdx = riak_core_util:chash_key({?BUCKET,
+									   term_to_binary(Key)}),
+		lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
+		lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
+		lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
+		lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ~n", [Key]),
+		[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),	
 		case clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, Param) of
 		error ->
-			SD1=SD0,
-			{next_state, abort, SD1};
+			{reply, error, abort, SD0};
 		ReadResult -> 
-        	NewReadSet=lists:append(ReadSet, ReadResult),
-			lager:info("ClockSI-Coord: Leader node ~w ~n",[CurrentOpLeader]),
-			SD1=SD0#state{read_set=NewReadSet}
+			lager:info("ClockSI-Interactive-Coord: Read Result:  ~w ~n",[ReadResult]),
+			{reply, {ok, ReadResult}, executeOp, SD0}
 		end;
 	update ->
+		{Key, Param}=Args,                       
+		DocIdx = riak_core_util:chash_key({?BUCKET,
+									   term_to_binary(Key)}),
+		lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
+		lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
+		lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
+		lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
+		lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ~n", [Key]),
+		[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),	
+
 		case clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param) of
 		ok ->
 		    case lists:member(IndexNode, UpdatedPartitions) of
 			false ->
-				lager:info("ClockSI-Coord: Adding Leader node ~w, updt: ~w ~n",[IndexNode, UpdatedPartitions]),
+				lager:info("ClockSI-Interactive-Coord: Adding Leader node ~w, updt: ~w ~n",[IndexNode, UpdatedPartitions]),
 				NewUpdatedPartitions= lists:append(UpdatedPartitions, [IndexNode]),
-				SD1 = SD0#state{updated_partitions= NewUpdatedPartitions};
+				{reply, ok, executeOp, SD0#state{updated_partitions= NewUpdatedPartitions}};
 			true->
-				SD1 = SD0
+				{reply, ok, executeOp, SD0}
 		    end;
 		error ->
-			SD1=SD0,
-			{next_state, abort, SD1}
+			{reply, error, abort, SD0}
 		end
-	end, 
-    {next_state, prepareOp, SD1, 0}.
-
-%%	when the tx updates multiple partitions, a two phase commit protocol is started.
-%%	the prepare_2PC state sends a prepare message to all updated partitions and goes
+	end.     
+       
+ 
+%%	a message from a client wanting to start committing the tx.
+%%	this state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
-prepare_2PC(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
+prepare(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
 	clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
 	NumToAck=length(UpdatedPartitions),
 	{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}.
@@ -237,14 +199,16 @@ receive_aborted(ack_abort, S0=#state{num_to_ack= NumToAck}) ->
     
 %% when the transaction has committed or aborted, a reply is sent to the client
 %% that started the transaction.
-reply_to_client(timeout, SD=#state{from=From, txid=TxId, read_set=ReadSet, state=TxState, commit_time=CommitTime}) ->
+reply_to_client(timeout, SD=#state{from=From, txid=TxId, state=TxState, commit_time=CommitTime}) ->
 	case TxState of
 	committed->
-		From ! {ok, {TxId, ReadSet, CommitTime}};
+		Reply={ok, {TxId, CommitTime}}, 
+		lager:info("ClockSI-coord-fsm: Replying ~w to ~w ~n", [Reply, From]),
+		gen_fsm:reply(From,Reply);
 	aborted->
-		From ! {abort, TxId};
+		gen_fsm:reply(From,{abort, TxId});
 	Reason->
-		From ! {ok, TxId, Reason}
+		gen_fsm:reply(From,{ok, TxId, Reason})
 	end,
 	{stop, normal, SD}.
 
@@ -277,14 +241,11 @@ terminate(_Reason, _SN, _SD) ->
 %%		starting this transaction has seen, and
 %%	2. 	machine's local time, as returned by erlang:now(). 	
 get_snapshot_time(ClientClock) ->
-	{Megasecs, Secs, Microsecs}=erlang:now(), 
-	case (ClientClock > {Megasecs, Secs, Microsecs - ?DELTA}) of 
+	Now=clockSI_vnode: now_milisec(erlang:now()), 
+	case (ClientClock > Now) of 
 		true->
-			%% should we wait until the clock of this machine catches up with this value?
-			{ClientMegasecs, ClientSecs, ClientMicrosecs}=ClientClock,
-			SnapshotTime = {ClientMegasecs, ClientSecs, ClientMicrosecs + ?MIN};
-
+			SnapshotTime = ClientClock + ?MIN;
 		false ->
-			SnapshotTime = {Megasecs, Secs, Microsecs - ?DELTA}
+			SnapshotTime = Now - ?DELTA
 	end,
 	{ok, SnapshotTime}.
