@@ -14,11 +14,14 @@ mult_writes_one_read() ->
     ListIds = [random:uniform(N) || _ <- lists:seq(1, 10)],
     [Nodes] = rt:build_clusters([N]),
 
+    lager:info("Waiting for ring to converge."),
+    rt:wait_until_ring_converged(Nodes),
+
     F = fun(Elem, Acc) ->
             Node = lists:nth(Elem, Nodes),
             lager:info("Sending append to Node ~w~n",[Node]),
-              WriteResult = rpc:call(Node, floppy, append, [abc, {increment, 4}]),
-              ?assertMatch({ok, _}, WriteResult),
+            WriteResult = rpc:call(Node, floppy, append, [abc, {increment, 4}]),
+            ?assertMatch({ok, _}, WriteResult),
             Acc + 1
     end,
 
