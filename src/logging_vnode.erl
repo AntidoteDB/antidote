@@ -69,7 +69,8 @@ init([Partition]) ->
 	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
 	GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
 	Preflists = lists:foldl(fun(X, Filtered) -> 
-					case lists:member({Partition, node()}, X) of 
+					case preflist_member(Partition, X) of 
+					%case lists:member({Partition, node()}, X) of 
 						true ->
 							lists:append(Filtered,[X]);
 						false ->
@@ -235,18 +236,27 @@ LogId = string:concat(LogFile, integer_to_list(Initial)),
             app_helper:get_env(riak_core, platform_data_dir), LogId),
     case dets:open_file(LogId, [{file, LogPath}, {type, bag}]) of
         {ok, Log} ->
-			Map2 = dict:store(Next, Log, Map),
+			Map2 = dict:store(get_rid_of_node(Next), Log, Map),
 			open_logs(LogFile, Rest, Initial+1, Map2);
         {error, Reason} ->
             {error, Reason}
     end.
+
+get_rid_of_node(Preflist) ->
+    F = fun(Elem, Acc) ->
+            {P,_} = Elem,
+            lists:append(Acc, [P])
+        end,
+    lists:foldl(F, [], Preflist).
+
 %% @doc	get_log_from_map:	abstracts the get function of a key-value store
 %%							currently using dict
 %%		Input:	Map:	dict that representes the map
 %%				Preflist:	The key to search for.
 %%		Return:	The actual name of the log
--spec get_log_from_map(Map::dict(), Preflist::[{Index::integer(), Node::term()}]) -> {ok, term()} | {error, no_log_for_preflist}.
-get_log_from_map(Map, Preflist) ->
+-spec get_log_from_map(Map::dict(), FullPreflist::[{Index::integer(), Node::term()}]) -> {ok, term()} | {error, no_log_for_preflist}.
+get_log_from_map(Map, FullPreflist) ->
+    Preflist = get_rid_of_node(FullPreflist),
 	lager:info("Preflist to map: ~w~n",[Preflist]),
 	case dict:find(Preflist, Map) of
 		{ok, Value} ->
@@ -300,7 +310,17 @@ insert_operation(Log, Key, OpId, Payload) ->
 -spec lookup_operations(Log::term(), Key::term()) -> list().
 lookup_operations(Log, Key) ->
 	dets:lookup(Log, Key).
-	
+
+preflist_member(_Partition,[]) -> false;
+preflist_member(Partition,[Next|Rest]) ->
+    {PartitionB, _} = Next,
+    case PartitionB==Partition of
+        true ->
+            true;
+        false ->
+            preflist_member(Partition, Rest)
+    end.    
+
 -ifdef(TEST).
 
 %% @doc Testing threshold_prune works as expected
@@ -315,14 +335,19 @@ thresholdprune_notmatching_test() ->
 	Filtered = threshold_prune(Operations,op6),
     ?assertEqual([],Filtered).
 
+get_rid_of_node_test()->
+    Preflist = [{partition1, node},{partition2, node},{partition3, node}],
+    ?assertEqual([partition1, partition2, partition3], get_rid_of_node(Preflist)).
+
 %% @doc Testing get_log_from_map works in both situations, when the key is in the map and when the key is not in the map
 get_log_from_map_test() ->
 	Dict = dict:new(),
-	Dict2 = dict:store(floppy1, value1, Dict),
-	Dict3 = dict:store(floppy2, value2, Dict2),
-	Dict4 = dict:store(floppy3, value3, Dict3),
-	Dict5 = dict:store(floppy4, value4, Dict4),
-	?assertEqual({ok, value3}, get_log_from_map(Dict5, floppy3)),
-	?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5, floppy5)).
+	Dict2 = dict:store([floppy1, c], value1, Dict),
+	Dict3 = dict:store([floppy2, c], value2, Dict2),
+	Dict4 = dict:store([floppy3, c], value3, Dict3),
+	Dict5 = dict:store([floppy4, c], value4, Dict4),
+	?assertEqual({ok, value3}, get_log_from_map(Dict5, [{floppy3,x},{c, x}])),
+	?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5, [{floppy5,x}, {c, x}])).
+
 
 -endif.
