@@ -9,4 +9,4 @@
 confirm() ->
     Nodes = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
-    ok.
+    pass.
