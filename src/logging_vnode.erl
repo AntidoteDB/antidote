@@ -65,6 +65,7 @@ append_list(Node, Ops) ->
 %%	the partition identifier.
 init([Partition]) ->
     LogFile = string:concat(integer_to_list(Partition), "log"),
+	lager:info("Currently running the last version~n",[]),
 	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
 	GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
 	Preflists = lists:foldl(fun(X, Filtered) -> 
@@ -75,6 +76,8 @@ init([Partition]) ->
 							Filtered
 					end
 					end, [], GrossPreflists),
+	lager:info("Preflists to map: ~w~n",[Preflists]),
+	lager:info("Myself: ~w~n",[{Partition, node()}]),
 	case open_logs(LogFile, Preflists, 1, dict:new()) of
 		{error, Reason} ->
 			{error, Reason};
@@ -166,10 +169,12 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, #state{logs_map=Map}=State) ->
+    
     {Key, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
 	DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, replication),
+	lager:info("Receiving data from handoff ~w~n",[node()]),
 	case get_log_from_map(Map, Preflist) of
 		{ok, Log} ->
 			Response = insert_operation(Log, Key, OpId, Payload),
@@ -242,10 +247,13 @@ LogId = string:concat(LogFile, integer_to_list(Initial)),
 %%		Return:	The actual name of the log
 -spec get_log_from_map(Map::dict(), Preflist::[{Index::integer(), Node::term()}]) -> {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, Preflist) ->
+	lager:info("Preflist to map: ~w~n",[Preflist]),
 	case dict:find(Preflist, Map) of
 		{ok, Value} ->
+			lager:info("Preflist to map return: ~w~n",[Value]),
 			{ok, Value};
 		error ->
+			lager:info("Preflist to map return: no_log_for_preflist~n",[]),
 			{error, no_log_for_preflist}
 	end.
 
