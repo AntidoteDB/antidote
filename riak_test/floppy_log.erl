@@ -11,7 +11,7 @@ confirm() ->
 
 mult_writes_one_read() ->
     N = 3,
-    ListIds = [random:uniform(N) || _ <- lists:seq(1, 10)],
+    ListIds = [random:uniform(N) || _ <- lists:seq(1, 120)],
     [Nodes] = rt:build_clusters([N]),
 
     lager:info("Waiting for ring to converge."),
@@ -27,7 +27,7 @@ mult_writes_one_read() ->
 
     Total = lists:foldl(F, 0, ListIds),
     FirstNode = hd(Nodes),
-    lager:info("Sending read to Node ~w~n",[FirstNode]),
     ReadResult = rpc:call(FirstNode, floppy, read, [abc, riak_dt_gcounter]),
+    lager:info("Read value: ~w~n",[ReadResult]),
     ?assertEqual(Total, ReadResult),
     pass.
