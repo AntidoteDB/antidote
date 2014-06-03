@@ -95,11 +95,11 @@ clockSI_iupdate(TxId=#tx_id{}, Key, OpParams) ->
 
 clockSI_iprepare(TxId=#tx_id{})->
 	{_, _, CoordFsmPid}=TxId,
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, self()}).
+    gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
 
 clockSI_icommit(TxId=#tx_id{})->
 	{_, _, CoordFsmPid}=TxId,
-    gen_fsm:sync_send_event(CoordFsmPid, {commit, self()}).
+    gen_fsm:sync_send_event(CoordFsmPid, commit).
         
     
     
