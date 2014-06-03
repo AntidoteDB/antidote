@@ -131,9 +131,15 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 %%	this state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
 prepare(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
-	clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
-	NumToAck=length(UpdatedPartitions),
-	{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}.
+    case length(UpdatedPartitions) of
+	0->
+		{SnapshotTime, _}=TransactionId,
+	    {next_state, reply_to_client, SD0=#state{state=committed, commit_time=SnapshotTime}, 0};
+	_->
+		clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
+		NumToAck=length(UpdatedPartitions),
+		{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}
+	end.
 	
 %%	in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  

@@ -90,23 +90,10 @@ init([From, ClientClock, Operations]) ->
 %%		2. 	it starts a local_commit (update tx that only updates a single partition) or
 %%		3.	it goes to the prepare_2PC to start a two phase commit (when multiple partitions
 %%		are updated. 
-prepareOp(timeout, SD0=#state{operations=Operations, txid=_TransactionId, updated_partitions=UpdatedPartitions}) ->
+prepareOp(timeout, SD0=#state{operations=Operations, txid=_TransactionId}) ->
 	case Operations of 
 	[] ->
-		case length(UpdatedPartitions) of
-		0 ->
-			lager:info("Executed all operations of a read-only transaction.~n"),
-			{stop, normal, SD0};
-		1 ->
-			[IndexNode]=UpdatedPartitions,
-			lager:info("Starting local commit at node ~w.~n", [IndexNode]),
-			%clockSI_vnode:local_commit(IndexNode, TransactionId),
-			%{stop, normal, SD0};
-			{next_state, prepare_2PC, SD0, 0};
-		_ ->
-			{next_state, prepare_2PC, SD0, 0}		
-		end;
-		
+		{next_state, prepare_2PC, SD0, 0};
 	[Op|TailOps] ->
 		[Op|TailOps] = Operations,
 		{_, Key,_} = Op,
@@ -167,9 +154,15 @@ executeOp(timeout, SD0=#state{
 %%	the prepare_2PC state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
 prepare_2PC(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
-	clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
-	NumToAck=length(UpdatedPartitions),
-	{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}.
+	case length(UpdatedPartitions) of
+	0->
+		SnapshotTime=TransactionId#tx_id.snapshot_time,
+	    {next_state, reply_to_client, SD0#state{state=committed, commit_time=SnapshotTime}, 0};
+	_->
+		clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
+		NumToAck=length(UpdatedPartitions),
+		{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}
+	end.	
 	
 %%	in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  
