@@ -81,8 +81,8 @@ update({assign, Value, TS}, Actor, MVReg) ->
     case dominate_ts(TS, Actor, MVReg) of 
         true ->
             VV = incVV(MVReg, Actor),
-            NewMVReg = {Value, VV},
-            {ok, NewMVReg};
+            NewMVReg = [{Value, VV}],
+            update({assign, Value, TS}, Actor, NewMVReg); 
         false ->
             {ok, MVReg}
     end;
@@ -91,7 +91,7 @@ update({assign, Value, TS}, Actor, MVReg) ->
 %% don't think it is a good idea to mix server and client timestamps
 update({assign, Value}, Actor, MVReg) ->
     VV = incVV(MVReg, Actor),
-    NewMVReg = {Value, VV},
+    NewMVReg = [{Value, VV}],
     {ok, NewMVReg};
 
 update({propagate, Value, TS}, _, MVReg ) ->
@@ -114,14 +114,18 @@ update(Op, Actor, Reg, _Ctx) ->
 
 incVV(MVReg, Actor) ->
     TSL = [TS || {_Val, TS}<- MVReg],
-    MaxVC = getMax(TSL, riak_dt_vclock:fresh()),
+    [H|T] = TSL,
+    MaxVC = getMax(T, H),
     NewVC = riak_dt_vclock:increment(Actor, MaxVC),
     NewVC.
 
-dominate_ts(TS, Actor, MVReg) ->
-    OldTS = riak_dt_vclock:get_counter(Actor, MVReg),
-    if OldTS+1 == TS ->
-        true;
+dominate_ts(_TS, _Actor, []) ->
+    true;
+dominate_ts(TS, Actor, [H|T]) ->
+    {_Value, VC} = H,
+    OldTS = riak_dt_vclock:get_counter(Actor, VC),
+    if  TS > OldTS ->
+        dominate_ts(TS, Actor, T);
     true ->
         false
     end.
@@ -192,8 +196,6 @@ generate() ->
              Lww
          end).
 
-init_state() ->
-    [{<<>>, []}].
 
 gen_op() ->
     ?LET(TS, largeint(), {assign, binary(), abs(TS)}).
@@ -212,23 +214,40 @@ eqc_state_value({Val, _TS}) ->
     Val.
 -endif.
 
+init_state() ->
+    [{<<>>, []}].
+
 new_test() ->
     ?assertEqual(init_state(), new()).
 
 value_test() ->
     Val1 = "the rain in spain falls mainly on the plane",
-    LWWREG1 = {Val1, 19090},
+    LWWREG1 = [{Val1, riak_dt_vclock:fresh()}],
     LWWREG2 = new(),
-    ?assertEqual(Val1, value(LWWREG1)),
-    ?assertEqual(<<>>, value(LWWREG2)).
+    ?assertEqual([Val1], value(LWWREG1)),
+    ?assertEqual([<<>>], value(LWWREG2)).
+
+basic_assign_test() ->
+    MVR0 = new(),
+    VC0 = riak_dt_vclock:fresh(),
+    VC1 = riak_dt_vclock:increment(actor0, VC0),
+    VC2 = riak_dt_vclock:increment(actor0, VC1),
+    {ok, MVR1} = update({assign, value0}, actor0, MVR0),
+    ?assertEqual([{value0, VC1}], MVR1),
+    {ok, MVR2} = update({assign, value1, 2}, actor0, MVR1),
+    ?assertEqual([{value1, VC2}], MVR2).
 
 update_assign_test() ->
     LWW0 = new(),
+    VC0 = riak_dt_vclock:fresh(),
+    VC1 = riak_dt_vclock:increment(actor1, VC0),
+    VC2 = riak_dt_vclock:increment(actor1, VC1),
+    VC3 = riak_dt_vclock:increment(actor1, VC2),
     {ok, LWW1} = update({assign, value1, 2}, actor1, LWW0),
     {ok, LWW2} = update({assign, value0, 1}, actor1, LWW1),
-    ?assertEqual({value1, 2}, LWW2),
+    ?assertEqual([{value1, VC2}], LWW2),
     {ok, LWW3} = update({assign, value2, 3}, actor1, LWW2),
-    ?assertEqual({value2, 3}, LWW3).
+    ?assertEqual([{value2, VC3}], LWW3).
 
 update_assign_ts_test() ->
     LWW0 = new(),
