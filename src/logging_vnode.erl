@@ -53,8 +53,6 @@ dappend(Preflist, Key, Op, OpId) ->
     riak_core_vnode_master:command(Preflist, {append, Key, Op, OpId, Preflist},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
 %% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
-%%	This should be part of the append command. Conceptually, a Log should
-%%	not have a repair operation. 
 append_list(Node, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {append_list, Ops},
@@ -65,20 +63,16 @@ append_list(Node, Ops) ->
 %%	the partition identifier.
 init([Partition]) ->
     LogFile = string:concat(integer_to_list(Partition), "log"),
-	lager:info("Currently running the last version~n",[]),
 	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
 	GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
 	Preflists = lists:foldl(fun(X, Filtered) -> 
 					case preflist_member(Partition, X) of 
-					%case lists:member({Partition, node()}, X) of 
 						true ->
 							lists:append(Filtered,[X]);
 						false ->
 							Filtered
 					end
 					end, [], GrossPreflists),
-	lager:info("Preflists to map: ~w~n",[Preflists]),
-	lager:info("Myself: ~w~n",[{Partition, node()}]),
 	case open_logs(LogFile, Preflists, 1, dict:new()) of
 		{error, Reason} ->
 			{error, Reason};
@@ -236,13 +230,17 @@ LogId = string:concat(LogFile, integer_to_list(Initial)),
             app_helper:get_env(riak_core, platform_data_dir), LogId),
     case dets:open_file(LogId, [{file, LogPath}, {type, bag}]) of
         {ok, Log} ->
-			Map2 = dict:store(get_rid_of_node(Next), Log, Map),
+			Map2 = dict:store(remove_node_from_preflist(Next), Log, Map),
 			open_logs(LogFile, Rest, Initial+1, Map2);
         {error, Reason} ->
             {error, Reason}
     end.
 
-get_rid_of_node(Preflist) ->
+%% @doc remove_node_from_preflist:  From each element of the input preflist, the node identifier is removed
+%%      Input:  Preflist: list of pairs {Partition, Node}
+%%      Return: List of Partition identifiers
+-spec remove_node_from_preflist(Preflist::[{Index::integer(), Node::term()}]) -> [integer()].
+remove_node_from_preflist(Preflist) ->
     F = fun(Elem, Acc) ->
             {P,_} = Elem,
             lists:append(Acc, [P])
@@ -256,7 +254,7 @@ get_rid_of_node(Preflist) ->
 %%		Return:	The actual name of the log
 -spec get_log_from_map(Map::dict(), FullPreflist::[{Index::integer(), Node::term()}]) -> {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, FullPreflist) ->
-    Preflist = get_rid_of_node(FullPreflist),
+    Preflist = remove_node_from_preflist(FullPreflist),
 	lager:info("Preflist to map: ~w~n",[Preflist]),
 	case dict:find(Preflist, Map) of
 		{ok, Value} ->
@@ -311,6 +309,12 @@ insert_operation(Log, Key, OpId, Payload) ->
 lookup_operations(Log, Key) ->
 	dets:lookup(Log, Key).
 
+
+%% @doc preflist_member: Returns true if the Partition identifier is part of the Preflist
+%%      Input:  Partition: The partidion identifier to check
+%%              Preflist: A list of pairs {Partition, Node}
+%%      Return: true | false
+-spec preflist_member(Partition::non_neg_integer(), Preflist::[{Index::integer(), Node::term()}]) -> true | false.
 preflist_member(_Partition,[]) -> false;
 preflist_member(Partition,[Next|Rest]) ->
     {PartitionB, _} = Next,
@@ -335,9 +339,10 @@ thresholdprune_notmatching_test() ->
 	Filtered = threshold_prune(Operations,op6),
     ?assertEqual([],Filtered).
 
-get_rid_of_node_test()->
+%% @doc Testing remove_node_from_preflist
+remove_node_from_preflist_test()->
     Preflist = [{partition1, node},{partition2, node},{partition3, node}],
-    ?assertEqual([partition1, partition2, partition3], get_rid_of_node(Preflist)).
+    ?assertEqual([partition1, partition2, partition3], remove_node_from_preflist(Preflist)).
 
 %% @doc Testing get_log_from_map works in both situations, when the key is in the map and when the key is not in the map
 get_log_from_map_test() ->
@@ -349,5 +354,14 @@ get_log_from_map_test() ->
 	?assertEqual({ok, value3}, get_log_from_map(Dict5, [{floppy3,x},{c, x}])),
 	?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5, [{floppy5,x}, {c, x}])).
 
+%% @doc Testing that preflist_member returns true when there is a match
+preflist_member_true_test() ->
+    Preflist = [{partition1, node},{partition2, node},{partition3, node}],
+    ?assertEqual(true, preflist_member(partition1, Preflist)).
+
+%% @doc Testing that preflist_member returns false when there is no match
+preflist_member_false_test() ->
+    Preflist = [{partition1, node},{partition2, node},{partition3, node}],
+    ?assertEqual(false, preflist_member(partition5, Preflist)).
 
 -endif.
