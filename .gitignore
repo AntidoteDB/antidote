@@ -6,6 +6,7 @@ rel/floppy
 dev
 apps/floppy/src/*
 *.swp
+*.swo
 dialyzer_unhandled_warnings
 .local_dialyzer_plt
 dialyzer_warnings
