@@ -105,3 +105,4 @@ clockSI_test3(Nodes) ->
     ReadResult= rpc:call(FirstNode, floppy, clockSI_read, [now(), 1, riak_dt_pncounter]),
     ?assertMatch({ok, _}, ReadResult),
     ok.
+
