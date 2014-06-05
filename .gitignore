@@ -7,6 +7,7 @@ dev
 apps/floppy/src/*
 *.swp
 *.swo
+src/*.swo
 dialyzer_unhandled_warnings
 .local_dialyzer_plt
 dialyzer_warnings
