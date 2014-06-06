@@ -14,7 +14,7 @@ confirm() ->
     ok.
     
 simple_test(Nodes) ->
-   % [Nodes] = rt:build_clusters([2]),
+   % [Nodes] = rt:build_clusters([1]),
  
     FirstNode = hd(Nodes),
  

@@ -133,8 +133,8 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 prepare(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
     case length(UpdatedPartitions) of
 	0->
-		{SnapshotTime, _}=TransactionId,
-	    {next_state, reply_to_client, SD0=#state{state=committed, commit_time=SnapshotTime}, 0};
+		SnapshotTime=TransactionId#tx_id.snapshot_time,
+	    {next_state, committing, SD0#state{state=committing, commit_time=SnapshotTime}, 0};
 	_->
 		clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
 		NumToAck=length(UpdatedPartitions),
