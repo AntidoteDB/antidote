@@ -10,7 +10,7 @@ confirm() ->
     mult_writes_one_read().
 
 mult_writes_one_read() ->
-    N = 3,
+    N = 6,
     ListIds = [random:uniform(N) || _ <- lists:seq(1, 120)],
     [Nodes] = rt:build_clusters([N]),
 
