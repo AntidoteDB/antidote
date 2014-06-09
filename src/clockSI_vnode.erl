@@ -90,7 +90,7 @@ get_pending_txs(Node, {Key, TxId}) ->
 init([Partition]) ->
 	%lager:info("ClockSI-Vnode: initialize partition ~w ~n",[Partition]),
     % It generates a dets file to store active transactions.
-    TxLogFile = string:concat(integer_to_list(Partition), "clockSI_tx"),
+    TxLogFile = string:concat(integer_to_list(Partition), "_clockSI"),
     TxLogPath = filename:join(
             app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
     case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of

@@ -79,10 +79,8 @@ executeOp({OpType, Args}, Sender, SD0=#state{
                             updated_partitions=UpdatedPartitions}) ->
 	case OpType of
 	prepare ->
-		{Pid, Ref}=Sender,
         lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
-		SD1=SD0#state{from={Pid, Ref}},
-		{next_state, prepare, SD1, 0};
+		{next_state, prepare, SD0#state{from=Sender}, 0};
 	read ->
 		{Key, Param}=Args,                       
 		DocIdx = riak_core_util:chash_key({?BUCKET,
@@ -130,16 +128,18 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 %%	a message from a client wanting to start committing the tx.
 %%	this state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
-prepare(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions}) ->
+prepare(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions, from=From}) ->
     case length(UpdatedPartitions) of
 	0->
 		SnapshotTime=TransactionId#tx_id.snapshot_time,
-	    {next_state, committing, SD0#state{state=committing, commit_time=SnapshotTime}, 0};
+		gen_fsm:reply(From, {ok, SnapshotTime}),
+	    {next_state, committing, SD0#state{state=committing, commit_time=SnapshotTime}};
 	_->
 		clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
 		NumToAck=length(UpdatedPartitions),
 		{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}
 	end.
+	
 	
 %%	in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  
@@ -163,21 +163,26 @@ receive_prepared(timeout, S0) ->
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
 committing(commit, Sender, SD0=#state{txid=TransactionId, 
-				updated_partitions=UpdatedPartitions, prepare_time=PrepareTime}) -> 
-	clockSI_vnode:commit(UpdatedPartitions, TransactionId, PrepareTime),
+				updated_partitions=UpdatedPartitions, commit_time=CommitTime}) -> 
 	NumToAck=length(UpdatedPartitions),
-	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}.
+	case NumToAck of
+		0 ->
+			{next_state, reply_to_client, SD0#state{state=committed, from=Sender},0};
+		_ ->
+			clockSI_vnode:commit(UpdatedPartitions, TransactionId, CommitTime),
+			{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
+	end.
+	
 	
 %%	the fsm waits for acks indicating that each partition has successfully committed the tx
 %%	and finishes operation.
 %% 	Should we retry sending the committed message if we don't receive a reply from
 %% 	every partition?
 %% 	What delivery guarantees does sending messages provide?
-receive_committed(committed, S0=#state{txid=TxId, num_to_ack= NumToAck, from=From, commit_time=CommitTime}) ->
+receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
     case NumToAck of
     1 -> 
     	lager:info("ClockSI: Finished collecting commit acks. Tx committed succesfully.~n"),
-    	gen_fsm:reply(From, {ok, {TxId, CommitTime}}),
     	{next_state, reply_to_client, S0#state{state=committed}, 0};
     _ ->
         lager:info("ClockSI: Keep collecting commit replies~n"),

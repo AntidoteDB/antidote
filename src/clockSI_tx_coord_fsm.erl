@@ -129,7 +129,7 @@ executeOp(timeout, SD0=#state{
 			{next_state, abort, SD1};
 		ReadResult -> 
         	NewReadSet=lists:append(ReadSet, ReadResult),
-			lager:info("ClockSI-Coord: Leader node ~w ~n",[CurrentOpLeader]),
+			lager:info("ClockSI-Coord: Read value added to read set: ~p",[CurrentOpLeader]),
 			SD1=SD0#state{read_set=NewReadSet}
 		end;
 	update ->
@@ -157,7 +157,7 @@ prepare_2PC(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPa
 	case length(UpdatedPartitions) of
 	0->
 		SnapshotTime=TransactionId#tx_id.snapshot_time,
-	    {next_state, committing, SD0#state{state=committing, commit_time=SnapshotTime}, 0};
+	    {next_state, committing, SD0#state{state=prepared, commit_time=SnapshotTime}, 0};
 	_->
 		clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
 		NumToAck=length(UpdatedPartitions),
@@ -184,10 +184,16 @@ receive_prepared(timeout, S0) ->
 
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
-committing(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions, prepare_time=PrepareTime}) -> 
-	clockSI_vnode:commit(UpdatedPartitions, TransactionId, PrepareTime),
+committing(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions, commit_time=CommitTime}) -> 
 	NumToAck=length(UpdatedPartitions),
-	{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, state=committing}}.
+	case NumToAck of
+		0 ->
+    		lager:info("ClockSI-Coord: No updated partitions. Committing and replying to client."),
+			{next_state, reply_to_client, SD0#state{state=committed}, 0};
+		_ ->
+			clockSI_vnode:commit(UpdatedPartitions, TransactionId, CommitTime),
+			{next_state, receive_committed, SD0#state{num_to_ack=NumToAck}}
+	end.
 	
 %%	the fsm waits for acks indicating that each partition has successfully committed the tx
 %%	and finishes operation.
