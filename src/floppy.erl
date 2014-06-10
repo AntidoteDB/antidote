@@ -64,9 +64,13 @@ clockSI_execute_TX(ClientClock, Operations) ->
 %%	ClientClock: the last clock the client has seen from a successful transaction.
 %% Returns:
 %%	an ok message along with the new TxId. 
-clockSI_istart_tx(ClientClock) ->
+clockSI_istart_tx(Clock) ->
 	lager:info("FLOPPY: Starting FSM for interactive transaction.~n"),
-    clockSI_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
+	case Clock of
+		{Mega,Sec,Micro} ->
+			ClientClock= clockSI_vnode:now_milisec({Mega,Sec,Micro})
+		end,
+	clockSI_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
     %lager:info("FLOPPY: Worker started: ~w!~n", [Worker]),	
     receive
         TxId ->

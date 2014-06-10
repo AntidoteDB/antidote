@@ -75,7 +75,7 @@ init([From, ClientClock]) ->
 %%		wait for it to finish (synchronous) and go to the prepareOP to execute the next
 %%		operation.
 executeOp({OpType, Args}, Sender, SD0=#state{
-                            txid=TransactionId, from=From,
+                            txid=TxId, from=From,
                             updated_partitions=UpdatedPartitions}) ->
 	case OpType of
 	prepare ->
@@ -90,7 +90,7 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 		lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
 		lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ~n", [Key]),
 		[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),	
-		case clockSI_vnode:read_data_item(IndexNode, TransactionId, Key, Param) of
+		case clockSI_vnode:read_data_item(IndexNode, TxId, Key, Param) of
 		error ->
 			{reply, error, abort, SD0};
 		ReadResult -> 
@@ -108,7 +108,7 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 		lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ~n", [Key]),
 		[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),	
 
-		case clockSI_vnode:update_data_item(IndexNode, TransactionId, Key, Param) of
+		case clockSI_vnode:update_data_item(IndexNode, TxId, Key, Param) of
 		ok ->
 		    case lists:member(IndexNode, UpdatedPartitions) of
 			false ->
@@ -128,16 +128,16 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 %%	a message from a client wanting to start committing the tx.
 %%	this state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
-prepare(timeout, SD0=#state{txid=TransactionId, updated_partitions=UpdatedPartitions, from=From}) ->
+prepare(timeout, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions, from=From}) ->
     case length(UpdatedPartitions) of
 	0->
-		SnapshotTime=TransactionId#tx_id.snapshot_time,
+		SnapshotTime=TxId#tx_id.snapshot_time,
 		gen_fsm:reply(From, {ok, SnapshotTime}),
 	    {next_state, committing, SD0#state{state=committing, commit_time=SnapshotTime}};
 	_->
-		clockSI_vnode:prepare(UpdatedPartitions, TransactionId),
+		clockSI_vnode:prepare(UpdatedPartitions, TxId),
 		NumToAck=length(UpdatedPartitions),
-		{next_state, receive_prepared, SD0#state{txid=TransactionId, num_to_ack=NumToAck, state=prepared}}
+		{next_state, receive_prepared, SD0#state{txid=TxId, num_to_ack=NumToAck, state=prepared}}
 	end.
 	
 	
@@ -162,14 +162,14 @@ receive_prepared(timeout, S0) ->
 
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
-committing(commit, Sender, SD0=#state{txid=TransactionId, 
+committing(commit, Sender, SD0=#state{txid=TxId, 
 				updated_partitions=UpdatedPartitions, commit_time=CommitTime}) -> 
 	NumToAck=length(UpdatedPartitions),
 	case NumToAck of
 		0 ->
 			{next_state, reply_to_client, SD0#state{state=committed, from=Sender},0};
 		_ ->
-			clockSI_vnode:commit(UpdatedPartitions, TransactionId, CommitTime),
+			clockSI_vnode:commit(UpdatedPartitions, TxId, CommitTime),
 			{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
 	end.
 	

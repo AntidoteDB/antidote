@@ -81,7 +81,7 @@ get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
     {ok, Pending} ->
     	%{Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
     	lager:info("ClockSI ReadItemFSM: txs to wait for ~w. Pendings ~w~n", [Key, Pending]),
-        {next_state, commit_notification, SD0=#state{pending_txs=Pending}, 0};
+        {next_state, commit_notification, SD0#state{pending_txs=Pending}};
     {error, _Reason} ->
         lager:error("ClockSI ReadItemFSM: error while retrieving pending txs for Key: ~w, Reason: ~w~n", [Key, _Reason]),
 		{stop, normal, SD0}
@@ -90,15 +90,15 @@ get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
 %% @doc commit_notification:
 %%	- The fsm stays in this state until the list of pending txs is empty.
 %%	- The commit notifications are sent by the vnode.
-commit_notification({committed, TxId}, SD0=#state{pending_txs=Left}) ->
-    Left2=lists:delete(TxId, Left),
-    lager:info("ClockSI ReadItemFSM: tx ~w has committed ~n", [TxId]),
+commit_notification({committed, TxId}, SD0=#state{pending_txs=Left, key=Key}) ->
+    Left2=lists:delete({Key, TxId}, Left),
+    lager:info("ClockSI ReadItemFSM: tx ~w has committed, removed from the list of pending txs.", [TxId]),
     case Left2 of [] ->
 		lager:info("ClockSI ReadItemFSM: no further txs to wait for"),
-    	{next_state, return, SD0=#state{pending_txs=Left2}, 0};
+    	{next_state, return, SD0#state{pending_txs=Left2}, 0};
     [H|T] ->
     	lager:info("ClockSI ReadItemFSM: still waiting for txs ~w ~n", [Left2]),
-    	{next_state, commit_notification, SD0=#state{pending_txs=[H|T]}};
+    	{next_state, commit_notification, SD0#state{pending_txs=[H|T]}};
     _-> 
     	lager:info("ClockSI ReadItemFSM: tx ~w has committed ~n", [TxId])
     end.
