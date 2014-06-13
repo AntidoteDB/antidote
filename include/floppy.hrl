@@ -39,4 +39,6 @@
 
 %% -record(tx, {id, snapshot_time, commit_time, prepare_time, state, origin}).
 -record(tx_id, {snapshot_time, server_pid}).
+-record(clocksi_payload, {key, type, op_param, actor, snapshot_time, commit_time, txid}).
+-record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
 

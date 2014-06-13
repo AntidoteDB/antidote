@@ -37,7 +37,7 @@
 %%----------------------------------------------------------------------
 -record(state, {
                 from,
-                txid :: #tx_id{},
+                transaction :: #transaction{},
                 updated_partitions :: list, 
                 num_to_ack :: int, 
 				prepare_time :: int,	
@@ -61,23 +61,27 @@ finishOp(From, Key,Result) ->
 %% @doc Initialize the state.
 
 init([From, ClientClock]) ->	
-	{ok, SnapshotTime}= get_snapshot_time(ClientClock),
-	TxId=#tx_id{snapshot_time=SnapshotTime, server_pid=self()},            
-	SD = #state{
-				txid=TxId,
-				updated_partitions=[],
-		        prepare_time=0
-		},
-	From ! {ok, TxId},
-	{ok, executeOp, SD}.
+    {ok, SnapshotTime}= get_snapshot_time(ClientClock),
+    TxId=#tx_id{snapshot_time=SnapshotTime, server_pid=self()},
+    Vec_snapshot_time = orddict:new(), %TODO: Get observed timestamps from other DCs
+    Dc_id = 1, %TODO: Find local DC_id somehow
+    Snapshot_time = orddict:update(Dc_id, fun (_Old) -> SnapshotTime end, SnapshotTime, Vec_snapshot_time),
+    Transaction = #transaction{snapshot_time = SnapshotTime, vec_snapshot_time = Snapshot_time, txn_id = TxId},
+    SD = #state{
+            transaction = Transaction,
+            updated_partitions=[],
+            prepare_time=0
+           },
+    From ! {ok, TxId},
+    {ok, executeOp, SD}.
 	
 %% @doc Contact the leader computed in the prepare state for it to execute the operation,
 %%		wait for it to finish (synchronous) and go to the prepareOP to execute the next
 %%		operation.
 executeOp({OpType, Args}, Sender, SD0=#state{
-                            txid=TxId, from=From,
+                            transaction=Transaction, from=From,
                             updated_partitions=UpdatedPartitions}) ->
-	case OpType of
+    	case OpType of
 	prepare ->
         lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
 		{next_state, prepare, SD0#state{from=Sender}, 0};
@@ -90,7 +94,7 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 		lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
 		lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ~n", [Key]),
 		[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),	
-		case clockSI_vnode:read_data_item(IndexNode, TxId, Key, Param) of
+		case clockSI_vnode:read_data_item(IndexNode, Transaction, Key, Param) of
 		error ->
 			{reply, error, abort, SD0};
 		ReadResult -> 
@@ -108,7 +112,7 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 		lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ~n", [Key]),
 		[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),	
 
-		case clockSI_vnode:update_data_item(IndexNode, TxId, Key, Param) of
+		case clockSI_vnode:update_data_item(IndexNode, Transaction, Key, Param) of
 		ok ->
 		    case lists:member(IndexNode, UpdatedPartitions) of
 			false ->
@@ -128,16 +132,16 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 %%	a message from a client wanting to start committing the tx.
 %%	this state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
-prepare(timeout, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions, from=From}) ->
+prepare(timeout, SD0=#state{transaction = Transaction, updated_partitions=UpdatedPartitions, from=From}) ->
     case length(UpdatedPartitions) of
 	0->
-		SnapshotTime=TxId#tx_id.snapshot_time,
+		SnapshotTime=Transaction#transaction.snapshot_time,
 		gen_fsm:reply(From, {ok, SnapshotTime}),
 	    {next_state, committing, SD0#state{state=committing, commit_time=SnapshotTime}};
 	_->
-		clockSI_vnode:prepare(UpdatedPartitions, TxId),
+		clockSI_vnode:prepare(UpdatedPartitions, Transaction),
 		NumToAck=length(UpdatedPartitions),
-		{next_state, receive_prepared, SD0#state{txid=TxId, num_to_ack=NumToAck, state=prepared}}
+		{next_state, receive_prepared, SD0#state{num_to_ack=NumToAck, state=prepared}}
 	end.
 	
 	
@@ -162,14 +166,14 @@ receive_prepared(timeout, S0) ->
 
 %%	after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
-committing(commit, Sender, SD0=#state{txid=TxId, 
+committing(commit, Sender, SD0=#state{transaction = Transaction, 
 				updated_partitions=UpdatedPartitions, commit_time=CommitTime}) -> 
 	NumToAck=length(UpdatedPartitions),
 	case NumToAck of
 		0 ->
 			{next_state, reply_to_client, SD0#state{state=committed, from=Sender},0};
 		_ ->
-			clockSI_vnode:commit(UpdatedPartitions, TxId, CommitTime),
+			clockSI_vnode:commit(UpdatedPartitions, Transaction, CommitTime),
 			{next_state, receive_committed, SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
 	end.
 	
@@ -191,14 +195,14 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
     
 %% when an updated partition does not pass the certification check, the transaction
 %% aborts.
-abort(timeout, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions}) -> 
-	clockSI_vnode:abort(UpdatedPartitions, TxId),
+abort(timeout, SD0=#state{transaction = Transaction, updated_partitions=UpdatedPartitions}) -> 
+	clockSI_vnode:abort(UpdatedPartitions, Transaction),
 	NumToAck=lists:lenght(UpdatedPartitions),
 	{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}, 0};
 
-abort(abort, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions}) -> 
+abort(abort, SD0=#state{transaction = Transaction, updated_partitions=UpdatedPartitions}) -> 
 	%TODO: Do not send to who issue the abort
-	clockSI_vnode:abort(UpdatedPartitions, TxId),
+	clockSI_vnode:abort(UpdatedPartitions, Transaction),
 	NumToAck=length(UpdatedPartitions),
 	{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}}.
 	
@@ -215,7 +219,8 @@ receive_aborted(ack_abort, S0=#state{num_to_ack= NumToAck}) ->
     
 %% when the transaction has committed or aborted, a reply is sent to the client
 %% that started the transaction.
-reply_to_client(timeout, SD=#state{from=From, txid=TxId, state=TxState, commit_time=CommitTime}) ->
+reply_to_client(timeout, SD=#state{from=From, transaction=Transaction, state=TxState, commit_time=CommitTime}) ->
+    TxId = Transaction#transaction.txn_id,
 	case TxState of
 	committed->
 		Reply={ok, {TxId, CommitTime}}, 
