@@ -1,0 +1,884 @@
+2014-06-16 15:06:06.044 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 15:06:06.088 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 15:06:06.173 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:06:06.192 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:06:06.193 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:06:06.194 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:06:06.195 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:06:06.200 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:06:06.201 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:06:06.202 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:06:06.251 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 15:06:06.251 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 15:06:07.254 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 15:06:08.256 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 15:06:09.258 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 15:06:09.260 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 15:06:09.260 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 15:06:09.260 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 15:06:09.261 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 15:06:09.262 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 15:06:10.269 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 15:06:10.269 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 15:06:10.295 [info] <0.108.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 15:06:10.523 [info] <0.163.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:06:11.719 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:06:11.720 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 15:06:11.720 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 15:06:11.771 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1']
+2014-06-16 15:06:11.771 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1']
+2014-06-16 15:06:11.772 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1']
+2014-06-16 15:06:11.773 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1']
+2014-06-16 15:06:11.773 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1']
+2014-06-16 15:06:11.773 [info] <0.106.0>@clock_si:confirm:8 Nodes: ['dev1@127.0.0.1']
+2014-06-16 15:06:11.773 [info] <0.106.0>@clock_si:clockSI_test1:21 Test1 started
+2014-06-16 15:06:11.838 [info] <0.106.0>@clock_si:clockSI_test1:26 Test1 passed
+2014-06-16 15:06:11.838 [info] <0.106.0>@clock_si:clockSI_test2:35 Test2 started
+2014-06-16 15:06:11.879 [info] <0.106.0>@clock_si:clockSI_test3:61 Test3
+2014-06-16 15:06:11.950 [warning] <0.2.0>@riak_test_runner:rec_loop:147 clock_si failed: {{badmatch,{ok,{{tx_id,1402923971947622,<11048.871.0>},[1],1402923971947622}}},[{clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,65}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,11}]}]}
+2014-06-16 15:06:11.950 [error] emulator Error in process <0.106.0> on node 'riak_test@127.0.0.1' with exit value: {{badmatch,{ok,{{tx_id,1402923971947622,<11048.871.0>},[1],1402923971947622}}},[{clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,65}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,11}]}]}
+
+
+2014-06-16 15:06:11.950 [error] <0.2.0>@riak_test_runner:execute:119 
+================ clock_si failure stack trace =====================
+{{badmatch,{ok,{{tx_id,1402923971947622,<11048.871.0>},[1],1402923971947622}}},
+ [{clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,65}]},
+  {clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,11}]}]}
+===================================================================
+
+2014-06-16 15:06:11.950 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 15:06:11.965 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 15:08:59.989 [info] <0.170.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:08:59.989 [info] <0.170.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:08:59.990 [info] <0.171.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev1@127.0.0.1' (process ID 90134) with init:stop/0...
+2014-06-16 15:08:59.996 [info] <0.172.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:08:59.996 [info] <0.173.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:09:00.007 [info] <0.172.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:09:00.009 [info] <0.173.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:09:15.869 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 15:09:15.910 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 15:09:15.985 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:09:16.003 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:09:16.004 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:09:16.005 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:09:16.005 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:09:16.011 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:09:16.012 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:09:16.012 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:09:16.057 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 15:09:16.057 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 15:09:17.059 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 15:09:18.060 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 15:09:19.063 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 15:09:19.064 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 15:09:19.064 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 15:09:19.064 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 15:09:19.065 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 15:09:19.065 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 15:09:20.073 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 15:09:20.074 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 15:09:20.096 [info] <0.108.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 15:09:20.313 [info] <0.163.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:09:21.513 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:09:21.513 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 15:09:21.514 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 15:09:21.567 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1']
+2014-06-16 15:09:21.567 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1']
+2014-06-16 15:09:21.568 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1']
+2014-06-16 15:09:21.568 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1']
+2014-06-16 15:09:21.568 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1']
+2014-06-16 15:09:21.568 [info] <0.106.0>@clock_si:confirm:8 Nodes: ['dev1@127.0.0.1']
+2014-06-16 15:09:21.568 [info] <0.106.0>@clock_si:clockSI_test1:21 Test1 started
+2014-06-16 15:09:21.623 [info] <0.106.0>@clock_si:clockSI_test1:26 Test1 passed
+2014-06-16 15:09:21.623 [info] <0.106.0>@clock_si:clockSI_test2:35 Test2 started
+2014-06-16 15:09:21.662 [info] <0.106.0>@clock_si:clockSI_test3:61 Test3
+2014-06-16 15:09:21.674 [warning] <0.2.0>@riak_test_runner:rec_loop:147 clock_si failed: {{assertMatch_failed,[{module,clock_si},{line,67},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,67}]},{clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,67}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,11}]}]}
+2014-06-16 15:09:21.674 [error] emulator Error in process <0.106.0> on node 'riak_test@127.0.0.1' with exit value: {{assertMatch_failed,[{module,clock_si},{line,67},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,67}]},{clock_si,clockSI_test3,1,[{file,"riak... 
+
+
+2014-06-16 15:09:21.674 [error] <0.2.0>@riak_test_runner:execute:119 
+================ clock_si failure stack trace =====================
+{{assertMatch_failed,[{module,clock_si},
+                      {line,67},
+                      {expression,"ReadSet"},
+                      {pattern,"[ 2 ]"},
+                      {value,[1]}]},
+ [{clock_si,'-clockSI_test3/1-fun-2-',1,
+            [{file,"riak_test/clock_si.erl"},{line,67}]},
+  {clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,67}]},
+  {clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,11}]}]}
+===================================================================
+
+2014-06-16 15:09:21.674 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 15:09:21.675 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 15:09:24.007 [info] <0.170.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:09:24.008 [info] <0.170.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:09:24.008 [info] <0.171.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev1@127.0.0.1' (process ID 90425) with init:stop/0...
+2014-06-16 15:09:24.011 [info] <0.172.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:09:24.013 [info] <0.173.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:09:24.024 [info] <0.172.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:09:24.024 [info] <0.173.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:14:39.684 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 15:14:39.718 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 15:14:39.786 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:14:39.804 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:14:39.805 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:14:39.806 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:14:39.806 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:14:39.811 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:14:39.813 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:14:39.814 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:14:39.853 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 15:14:39.854 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 15:14:40.855 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 15:14:41.858 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 15:14:42.860 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 15:14:42.862 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 15:14:42.862 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 15:14:42.862 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 15:14:42.864 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 15:14:42.864 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 15:14:43.872 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 15:14:43.872 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 15:14:43.901 [info] <0.108.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 15:14:44.108 [info] <0.163.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:14:45.306 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:14:45.306 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 15:14:45.307 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 15:14:45.361 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1']
+2014-06-16 15:14:45.361 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1']
+2014-06-16 15:14:45.361 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1']
+2014-06-16 15:14:45.362 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1']
+2014-06-16 15:14:45.362 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1']
+2014-06-16 15:14:45.362 [info] <0.106.0>@clock_si:confirm:8 Nodes: ['dev1@127.0.0.1']
+2014-06-16 15:14:45.362 [info] <0.106.0>@clock_si:clockSI_test1:21 Test1 started
+2014-06-16 15:14:45.414 [info] <0.106.0>@clock_si:clockSI_test1:26 Test1 passed
+2014-06-16 15:14:45.414 [info] <0.106.0>@clock_si:clockSI_test2:35 Test2 started
+2014-06-16 15:14:45.454 [info] <0.106.0>@clock_si:clockSI_test4:72 Test4
+2014-06-16 15:14:45.454 [info] <0.106.0>@clock_si:clockSI_test4:74 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:14:45.455 [info] <0.106.0>@clock_si:clockSI_test4:77 Tx Started, id : {tx_id,1402924485445122,<11048.829.0>}
+2014-06-16 15:14:45.457 [info] <0.106.0>@clock_si:clockSI_test4:79 Tx Reading...~n
+2014-06-16 15:14:45.457 [info] <0.106.0>@clock_si:clockSI_test4:81 Tx Read value...{ok,1}
+2014-06-16 15:14:45.457 [info] <0.106.0>@clock_si:clockSI_test4:84 Tx sent prepare, got commitTime=..., id : {ok,1402924485445122}
+2014-06-16 15:14:45.458 [info] <0.106.0>@clock_si:clockSI_test4:87 Tx Committed.~n
+2014-06-16 15:14:45.458 [info] <0.106.0>@clock_si:clockSI_test4:88 Test finished.~n
+2014-06-16 15:14:45.458 [info] <0.106.0>@clock_si:clockSI_test_read_wait:97 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:14:45.458 [info] <0.106.0>@clock_si:clockSI_test_read_wait:98 LastNode: 'dev1@127.0.0.1'
+2014-06-16 15:14:45.458 [info] <0.106.0>@clock_si:clockSI_test_read_wait:101 Tx1 Started, id : {tx_id,1402924485448402,<11048.837.0>}
+2014-06-16 15:14:45.459 [info] <0.106.0>@clock_si:clockSI_test_read_wait:103 Tx1 Writing..., id : ~n
+2014-06-16 15:14:45.460 [info] <0.106.0>@clock_si:clockSI_test_read_wait:107 Tx1 sent prepare, got commitTime=..., id : {ok,1402924485459952}
+2014-06-16 15:14:45.460 [info] <0.106.0>@clock_si:clockSI_test_read_wait:112 Tx2 Started, id : {tx_id,1402924485450350,<11048.842.0>}
+2014-06-16 15:14:45.460 [info] <0.106.0>@clock_si:clockSI_test_read_wait:113 Tx2 Reading...~n
+2014-06-16 15:14:45.462 [info] <0.106.0>@clock_si:clockSI_test_read_wait:115 Tx2 Reading...~n
+2014-06-16 15:14:45.462 [info] <0.106.0>@clock_si:clockSI_test_read_wait:117 Tx2 Read value...{ok,1}
+2014-06-16 15:14:45.465 [info] <0.106.0>@clock_si:clockSI_test_read_wait:122 Tx1 Committed.~n
+2014-06-16 15:14:45.466 [info] <0.106.0>@clock_si:clockSI_test_read_wait:127 Tx2 sent prepare, got commitTime=..., id : {ok,1402924485450350}
+2014-06-16 15:14:45.466 [info] <0.106.0>@clock_si:clockSI_test_read_wait:130 Tx2 Committed.~n
+2014-06-16 15:14:45.466 [info] <0.106.0>@clock_si:clockSI_test_read_wait:131 Test finished.~n
+2014-06-16 15:14:45.466 [info] <0.106.0>@rt:stop:348 Stopping riak on 'dev1@127.0.0.1'
+2014-06-16 15:14:55.467 [info] <0.106.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy stop
+2014-06-16 15:14:57.680 [info] <0.106.0>@rt:wait_until_unpingable:727 Wait until 'dev1@127.0.0.1' is not pingable
+2014-06-16 15:14:57.681 [info] <0.106.0>@rtdev:rm_dir:332 Removing directory /Users/alek/rt/floppystore/current/dev/dev1/data/
+2014-06-16 15:14:57.698 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 15:14:57.698 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 15:14:57.698 [info] <0.2.0>@riak_test_escript:maybe_teardown:194 Multiple tests run or no failure
+2014-06-16 15:14:57.699 [info] <0.176.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:14:57.699 [info] <0.176.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:14:57.700 [info] <0.181.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:14:57.701 [info] <0.180.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:14:57.701 [info] <0.179.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:14:57.708 [info] <0.181.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:14:57.709 [info] <0.180.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:14:57.710 [info] <0.179.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:29:17.322 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 15:29:17.377 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 15:29:17.477 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:29:17.496 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:29:17.498 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:29:17.498 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:29:17.499 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:29:17.505 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:29:17.506 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:29:17.507 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:29:17.557 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 15:29:17.557 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 15:29:18.558 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 15:29:19.560 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 15:29:20.562 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 15:29:20.563 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 15:29:20.563 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 15:29:20.563 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 15:29:20.564 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 15:29:20.564 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 15:29:21.574 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 15:29:21.574 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 15:29:21.602 [info] <0.108.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 15:29:21.821 [info] <0.163.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:29:23.021 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:29:23.022 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 15:29:23.022 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 15:29:23.075 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1']
+2014-06-16 15:29:23.076 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1']
+2014-06-16 15:29:23.076 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1']
+2014-06-16 15:29:23.076 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1']
+2014-06-16 15:29:23.077 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1']
+2014-06-16 15:29:23.077 [info] <0.106.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1']
+2014-06-16 15:29:23.077 [info] <0.106.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 15:29:23.131 [info] <0.106.0>@clock_si:clockSI_test1:28 Test1 passed
+2014-06-16 15:29:23.132 [info] <0.106.0>@clock_si:clockSI_test2:37 Test2 started
+2014-06-16 15:29:23.167 [info] <0.106.0>@clock_si:clockSI_test4:74 Test4
+2014-06-16 15:29:23.167 [info] <0.106.0>@clock_si:clockSI_test4:76 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:29:23.168 [info] <0.106.0>@clock_si:clockSI_test4:79 Tx Started, id : {tx_id,1402925363157811,<11069.829.0>}
+2014-06-16 15:29:23.171 [info] <0.106.0>@clock_si:clockSI_test4:81 Tx Reading...~n
+2014-06-16 15:29:23.171 [info] <0.106.0>@clock_si:clockSI_test4:83 Tx Read value...{ok,0}
+2014-06-16 15:29:23.171 [info] <0.106.0>@clock_si:clockSI_test4:86 Tx sent prepare, got commitTime=..., id : {ok,1402925363157811}
+2014-06-16 15:29:23.172 [info] <0.106.0>@clock_si:clockSI_test4:89 Tx Committed.~n
+2014-06-16 15:29:23.172 [info] <0.106.0>@clock_si:clockSI_test4:90 Test finished.~n
+2014-06-16 15:29:23.172 [info] <0.106.0>@clock_si:clockSI_test_read_time:99 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:29:23.172 [info] <0.106.0>@clock_si:clockSI_test_read_time:100 LastNode: 'dev1@127.0.0.1'
+2014-06-16 15:29:23.172 [info] <0.106.0>@clock_si:clockSI_test_read_time:103 Tx1 Started, id : {tx_id,1402925363162314,<11069.837.0>}
+2014-06-16 15:29:23.173 [info] <0.106.0>@clock_si:clockSI_test_read_time:105 Tx1 Writing..., id : ~n
+2014-06-16 15:29:23.173 [info] <0.106.0>@clock_si:clockSI_test_read_time:109 Tx1 sent prepare, got commitTime=..., id : {ok,1402925363173461}
+2014-06-16 15:29:23.173 [info] <0.106.0>@clock_si:clockSI_test_read_time:114 Tx2 Started, id : {tx_id,1402925363163806,<11069.842.0>}
+2014-06-16 15:29:23.173 [info] <0.106.0>@clock_si:clockSI_test_read_time:115 Tx2 Reading...~n
+2014-06-16 15:29:23.175 [info] <0.106.0>@clock_si:clockSI_test_read_time:117 Tx2 Reading...~n
+2014-06-16 15:29:23.175 [info] <0.106.0>@clock_si:clockSI_test_read_time:119 Tx2 Read value...{ok,1}
+2014-06-16 15:29:23.178 [info] <0.106.0>@clock_si:clockSI_test_read_time:124 Tx1 Committed.~n
+2014-06-16 15:29:23.178 [info] <0.106.0>@clock_si:clockSI_test_read_time:129 Tx2 sent prepare, got commitTime=..., id : {ok,1402925363163806}
+2014-06-16 15:29:23.178 [info] <0.106.0>@clock_si:clockSI_test_read_time:132 Tx2 Committed.~n
+2014-06-16 15:29:23.178 [info] <0.106.0>@clock_si:clockSI_test_read_time:133 Test finished.~n
+2014-06-16 15:29:23.178 [info] <0.106.0>@clock_si:clockSI_test_read_wait:142 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:29:23.178 [info] <0.106.0>@clock_si:clockSI_test_read_wait:143 LastNode: 'dev1@127.0.0.1'
+2014-06-16 15:29:23.179 [info] <0.106.0>@clock_si:clockSI_test_read_wait:146 Tx1 Started, id : {tx_id,1402925363169103,<11069.855.0>}
+2014-06-16 15:29:23.181 [info] <0.106.0>@clock_si:clockSI_test_read_wait:148 Tx1 Writing...
+2014-06-16 15:29:23.181 [info] <0.106.0>@clock_si:clockSI_test_read_wait:152 Tx1 sent prepare, got commitTime=..., id : {ok,1402925363181406}
+2014-06-16 15:29:23.181 [info] <0.106.0>@clock_si:clockSI_test_read_wait:157 Tx2 Started, id : {tx_id,1402925363171719,<11069.864.0>}
+2014-06-16 15:29:23.181 [info] <0.106.0>@clock_si:clockSI_test_read_wait:158 Tx2 Reading...
+2014-06-16 15:29:23.186 [info] <0.106.0>@clock_si:clockSI_test_read_wait:160 Tx2 Reading...~n
+2014-06-16 15:29:23.186 [info] <0.106.0>@clock_si:clockSI_test_read_wait:162 Tx2 Read value...{ok,0}
+2014-06-16 15:29:23.189 [info] <0.106.0>@clock_si:clockSI_test_read_wait:167 Tx1 Committed.~n
+2014-06-16 15:29:23.189 [info] <0.106.0>@clock_si:clockSI_test_read_wait:172 Tx2 sent prepare, got commitTime=..., id : {ok,1402925363171719}
+2014-06-16 15:29:23.189 [info] <0.106.0>@clock_si:clockSI_test_read_wait:175 Tx2 Committed.~n
+2014-06-16 15:29:23.189 [info] <0.106.0>@clock_si:clockSI_test_read_wait:176 Test finished.~n
+2014-06-16 15:29:23.189 [info] <0.106.0>@rt:stop:348 Stopping riak on 'dev1@127.0.0.1'
+2014-06-16 15:29:33.191 [info] <0.106.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy stop
+2014-06-16 15:29:35.428 [info] <0.106.0>@rt:wait_until_unpingable:727 Wait until 'dev1@127.0.0.1' is not pingable
+2014-06-16 15:29:35.429 [info] <0.106.0>@rtdev:rm_dir:332 Removing directory /Users/alek/rt/floppystore/current/dev/dev1/data/
+2014-06-16 15:29:35.442 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 15:29:35.442 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 15:29:35.443 [info] <0.2.0>@riak_test_escript:maybe_teardown:194 Multiple tests run or no failure
+2014-06-16 15:29:35.443 [info] <0.176.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:29:35.444 [info] <0.176.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:29:35.445 [info] <0.179.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:29:35.446 [info] <0.180.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:29:35.446 [info] <0.181.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:29:35.454 [info] <0.179.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:29:35.454 [info] <0.180.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:29:35.455 [info] <0.181.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:39:41.236 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 15:39:41.286 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 15:39:41.360 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:39:41.376 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:39:41.377 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:39:41.378 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:39:41.378 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:39:41.384 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:39:41.385 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:39:41.385 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:39:41.429 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 15:39:41.429 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 15:39:42.431 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 15:39:43.433 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 15:39:44.435 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 15:39:44.437 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 15:39:44.437 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 15:39:44.437 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 15:39:44.439 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 15:39:44.439 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 15:39:45.445 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 15:39:45.445 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 15:39:45.468 [info] <0.108.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 15:39:45.686 [info] <0.163.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:39:46.887 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:39:46.887 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 15:39:46.888 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 15:39:46.945 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1']
+2014-06-16 15:39:46.946 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1']
+2014-06-16 15:39:46.946 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1']
+2014-06-16 15:39:46.946 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1']
+2014-06-16 15:39:46.947 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1']
+2014-06-16 15:39:46.947 [info] <0.106.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1']
+2014-06-16 15:39:46.947 [info] <0.106.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 15:39:47.004 [info] <0.106.0>@clock_si:clockSI_test1:28 Test1 passed
+2014-06-16 15:39:47.004 [info] <0.106.0>@clock_si:clockSI_test2:37 Test2 started
+2014-06-16 15:39:47.041 [info] <0.106.0>@clock_si:clockSI_test4:74 Test4
+2014-06-16 15:39:47.042 [info] <0.106.0>@clock_si:clockSI_test4:76 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:39:47.042 [info] <0.106.0>@clock_si:clockSI_test4:79 Tx Started, id : {tx_id,1402925987032329,<11070.829.0>}
+2014-06-16 15:39:47.044 [info] <0.106.0>@clock_si:clockSI_test4:81 Tx Reading...~n
+2014-06-16 15:39:47.044 [info] <0.106.0>@clock_si:clockSI_test4:83 Tx Read value...{ok,1}
+2014-06-16 15:39:47.045 [info] <0.106.0>@clock_si:clockSI_test4:86 Tx sent prepare, got commitTime=..., id : {ok,1402925987032329}
+2014-06-16 15:39:47.045 [info] <0.106.0>@clock_si:clockSI_test4:89 Tx Committed.~n
+2014-06-16 15:39:47.045 [info] <0.106.0>@clock_si:clockSI_test4:90 Test finished.~n
+2014-06-16 15:39:47.045 [info] <0.106.0>@clock_si:clockSI_test_read_time:99 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:39:47.045 [info] <0.106.0>@clock_si:clockSI_test_read_time:100 LastNode: 'dev1@127.0.0.1'
+2014-06-16 15:39:47.045 [info] <0.106.0>@clock_si:clockSI_test_read_time:103 Tx1 Started, id : {tx_id,1402925987035601,<11070.837.0>}
+2014-06-16 15:39:47.047 [info] <0.106.0>@clock_si:clockSI_test_read_time:105 Tx1 Writing..., id : ~n
+2014-06-16 15:39:47.047 [info] <0.106.0>@clock_si:clockSI_test_read_time:109 Tx1 sent prepare, got commitTime=..., id : {ok,1402925987047518}
+2014-06-16 15:39:47.048 [info] <0.106.0>@clock_si:clockSI_test_read_time:114 Tx2 Started, id : {tx_id,1402925987037832,<11070.846.0>}
+2014-06-16 15:39:47.048 [info] <0.106.0>@clock_si:clockSI_test_read_time:115 Tx2 Reading...~n
+2014-06-16 15:39:47.054 [info] <0.106.0>@clock_si:clockSI_test_read_time:117 Tx2 Reading...~n
+2014-06-16 15:39:47.054 [info] <0.106.0>@clock_si:clockSI_test_read_time:119 Tx2 Read value...{ok,0}
+2014-06-16 15:39:47.057 [info] <0.106.0>@clock_si:clockSI_test_read_time:124 Tx1 Committed.~n
+2014-06-16 15:39:47.058 [info] <0.106.0>@clock_si:clockSI_test_read_time:129 Tx2 sent prepare, got commitTime=..., id : {ok,1402925987037832}
+2014-06-16 15:39:47.058 [info] <0.106.0>@clock_si:clockSI_test_read_time:132 Tx2 Committed.~n
+2014-06-16 15:39:47.058 [info] <0.106.0>@clock_si:clockSI_test_read_time:133 Test finished.~n
+2014-06-16 15:39:47.058 [info] <0.106.0>@clock_si:clockSI_test_read_wait:142 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:39:47.058 [info] <0.106.0>@clock_si:clockSI_test_read_wait:143 LastNode: 'dev1@127.0.0.1'
+2014-06-16 15:39:47.059 [info] <0.106.0>@clock_si:clockSI_test_read_wait:146 Tx1 Started, id : {tx_id,1402925987048892,<11070.885.0>}
+2014-06-16 15:39:47.070 [info] <0.106.0>@clock_si:clockSI_test_read_wait:148 Tx1 Writing...
+2014-06-16 15:39:47.070 [info] <0.106.0>@clock_si:clockSI_test_read_wait:152 Tx1 sent prepare, got commitTime=..., id : {ok,1402925987070495}
+2014-06-16 15:39:47.071 [info] <0.106.0>@clock_si:clockSI_test_read_wait:157 Tx2 Started, id : {tx_id,1402925987061073,<11070.894.0>}
+2014-06-16 15:39:47.071 [info] <0.106.0>@clock_si:clockSI_test_read_wait:158 Tx2 Reading...
+2014-06-16 15:39:47.071 [info] <0.106.0>@clock_si:clockSI_test_read_wait:163 Tx2 Reading...~n
+2014-06-16 15:39:47.075 [error] emulator Error in process <0.106.0> on node 'riak_test@127.0.0.1' with exit value: {{assertMatch_failed,[{module,clock_si},{line,168},{expression,"End"},{pattern,"{ ok , _ }"},{value,{badrpc,{'EXIT',{{function_clause,[{clockSI_interactive_tx_coord_fsm,receive_committed,[{vnode_error,{function_clause... 
+
+
+2014-06-16 15:39:47.075 [warning] <0.2.0>@riak_test_runner:rec_loop:147 clock_si failed: {{assertMatch_failed,[{module,clock_si},{line,168},{expression,"End"},{pattern,"{ ok , _ }"},{value,{badrpc,{'EXIT',{{function_clause,[{clockSI_interactive_tx_coord_fsm,receive_committed,[{vnode_error,{function_clause,[{clockSI_downstream,'-generate_downstream_op/1-lc$^0/1-0-',[{riak_vnode_req_v1,388211372416021087647853783690262677096107081728,{server,undefined,{<11070.894.0>,#Ref<11070.0.0.4180>}},{read_data_item,{transaction,1402925987061073,undefined,[{1,1402925987061073}],{tx_id,1402925987061073,<11070.894.0>}},read_wait_test,riak_dt_pncounter}}],[{file,"src/clockSI_downstream.erl"},{line,15}]},{clockSI_downstream,generate_downstream_op,1,[{file,"src/clockSI_downstream.erl"},{line,15}]},{clockSI_vnode,issue_updates,3,[{file,"src/clockSI_vnode.erl"},{line,355}]},{clockSI_vnode,handle_command,3,[{file,"src/clockSI_vnode.erl"},{line,173}]},{riak_core_vnode,vnode_command,3,[{file,"src/riak_core_vnode.erl"},{line,345}]},{gen_fsm,handle_msg,7,[{file,"gen_fsm.erl"},{line,505}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,239}]}]}},{state,{<11070.895.0>,#Ref<11070.0.0.4177>},{transaction,1402925987048892,undefined,[{1,1402925987048892}],{tx_id,1402925987048892,<11070.885.0>}},[{388211372416021087647853783690262677096107081728,'dev1@127.0.0.1'}],1,1402925987070495,1402925987070495,committing}],[{file,"src/clockSI_interactive_tx_coord_fsm.erl"},{line,186}]},{gen_fsm,handle_msg,7,[{file,"gen_fsm.erl"},{line,505}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,239}]}]},{gen_fsm,sync_send_event,[<11070.885.0>,commit]}}}}}]},[{clock_si,'-clockSI_test_read_wait/1-fun-10-',1,[{file,"riak_test/clock_si.erl"},{line,168}]},{clock_si,clockSI_test_read_wait,1,[{file,"riak_test/clock_si.erl"},{line,168}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,15}]}]}
+2014-06-16 15:39:47.076 [error] <0.2.0>@riak_test_runner:execute:119 
+================ clock_si failure stack trace =====================
+{{assertMatch_failed,
+  [{module,clock_si},
+   {line,168},
+   {expression,"End"},
+   {pattern,"{ ok , _ }"},
+   {value,
+    {badrpc,
+     {'EXIT',
+      {{function_clause,
+        [{clockSI_interactive_tx_coord_fsm,receive_committed,
+          [{vnode_error,
+            {function_clause,
+             [{clockSI_downstream,'-generate_downstream_op/1-lc$^0/1-0-',
+               [{riak_vnode_req_v1,
+                 388211372416021087647853783690262677096107081728,
+                 {server,undefined,{<11070.894.0>,#Ref<11070.0.0.4180>}},
+                 {read_data_item,
+                  {transaction,1402925987061073,undefined,
+                   [{1,1402925987061073}],
+                   {tx_id,1402925987061073,<11070.894.0>}},
+                  read_wait_test,riak_dt_pncounter}}],
+               [{file,"src/clockSI_downstream.erl"},{line,15}]},
+              {clockSI_downstream,generate_downstream_op,1,
+               [{file,"src/clockSI_downstream.erl"},{line,15}]},
+              {clockSI_vnode,issue_updates,3,
+               [{file,"src/clockSI_vnode.erl"},{line,355}]},
+              {clockSI_vnode,handle_command,3,
+               [{file,"src/clockSI_vnode.erl"},{line,173}]},
+              {riak_core_vnode,vnode_command,3,
+               [{file,"src/riak_core_vnode.erl"},{line,345}]},
+              {gen_fsm,handle_msg,7,[{file,"gen_fsm.erl"},{line,505}]},
+              {proc_lib,init_p_do_apply,3,
+               [{file,"proc_lib.erl"},{line,239}]}]}},
+           {state,
+            {<11070.895.0>,#Ref<11070.0.0.4177>},
+            {transaction,1402925987048892,undefined,
+             [{1,1402925987048892}],
+             {tx_id,1402925987048892,<11070.885.0>}},
+            [{388211372416021087647853783690262677096107081728,
+              'dev1@127.0.0.1'}],
+            1,1402925987070495,1402925987070495,committing}],
+          [{file,"src/clockSI_interactive_tx_coord_fsm.erl"},{line,186}]},
+         {gen_fsm,handle_msg,7,[{file,"gen_fsm.erl"},{line,505}]},
+         {proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,239}]}]},
+       {gen_fsm,sync_send_event,[<11070.885.0>,commit]}}}}}]},
+ [{clock_si,'-clockSI_test_read_wait/1-fun-10-',1,
+   [{file,"riak_test/clock_si.erl"},{line,168}]},
+  {clock_si,clockSI_test_read_wait,1,
+   [{file,"riak_test/clock_si.erl"},{line,168}]},
+  {clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,15}]}]}
+===================================================================
+
+2014-06-16 15:39:47.076 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 15:39:47.089 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 15:40:02.621 [info] <0.171.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:40:02.622 [info] <0.171.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:40:02.622 [info] <0.172.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev1@127.0.0.1' (process ID 91651) with init:stop/0...
+2014-06-16 15:40:02.630 [info] <0.173.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:40:02.630 [info] <0.174.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:40:02.640 [info] <0.173.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:40:02.643 [info] <0.174.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:46:19.046 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 15:46:19.084 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 15:46:19.152 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:46:19.169 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:46:19.170 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:46:19.170 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:46:19.172 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:46:19.177 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:46:19.177 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:46:19.178 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:46:19.220 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 15:46:19.220 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 15:46:20.222 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 15:46:21.224 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 15:46:22.227 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 15:46:22.228 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 15:46:22.228 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 15:46:22.228 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 15:46:22.231 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 15:46:22.231 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 15:46:23.239 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 15:46:23.239 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 15:46:23.284 [info] <0.110.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 15:46:23.284 [info] <0.111.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev2/bin/floppy start
+2014-06-16 15:46:23.284 [info] <0.112.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev3/bin/floppy start
+2014-06-16 15:46:23.568 [error] emulator Error in process <0.117.0> on node 'riak_test@127.0.0.1' with exit value: {badarg,[{erlang,register,[cover_server,<0.117.0>],[]},{cover,init_main,1,[{file,"cover.erl"},{line,585}]}]}
+
+
+2014-06-16 15:46:23.623 [info] <0.274.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 15:46:23.623 [info] <0.275.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 15:46:23.623 [info] <0.276.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:46:24.932 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:46:24.932 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 15:46:24.933 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 15:46:24.933 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 15:46:24.934 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev2@127.0.0.1'
+2014-06-16 15:46:24.934 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev3@127.0.0.1'
+2014-06-16 15:46:24.935 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 15:46:24.999 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev2@127.0.0.1' is a singleton
+2014-06-16 15:46:24.999 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev3@127.0.0.1' is a singleton
+2014-06-16 15:46:25.000 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 15:46:25.014 [info] <0.106.0>@rt:staged_join:392 [join] 'dev2@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 15:46:25.033 [info] <0.106.0>@rt:staged_join:392 [join] 'dev3@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 15:46:25.534 [info] <0.106.0>@rt:plan_and_commit:398 planning and commiting cluster join
+2014-06-16 15:46:26.058 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 15:46:26.059 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 15:46:45.090 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 15:46:55.117 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 15:46:55.117 [info] <0.106.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 15:46:55.117 [info] <0.106.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 15:47:05.139 [warning] <0.2.0>@riak_test_runner:rec_loop:147 clock_si failed: {{badmatch,{error}},[{clock_si,clockSI_test1,1,[{file,"riak_test/clock_si.erl"},{line,26}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,10}]}]}
+2014-06-16 15:47:05.139 [error] emulator Error in process <0.106.0> on node 'riak_test@127.0.0.1' with exit value: {{badmatch,{error}},[{clock_si,clockSI_test1,1,[{file,"riak_test/clock_si.erl"},{line,26}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,10}]}]}
+
+
+2014-06-16 15:47:05.139 [error] <0.2.0>@riak_test_runner:execute:119 
+================ clock_si failure stack trace =====================
+{{badmatch,{error}},
+ [{clock_si,clockSI_test1,1,[{file,"riak_test/clock_si.erl"},{line,26}]},
+  {clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,10}]}]}
+===================================================================
+
+2014-06-16 15:47:05.139 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 15:47:05.140 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 15:47:22.150 [info] <0.296.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:47:22.150 [info] <0.296.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:47:22.151 [info] <0.298.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev2@127.0.0.1' (process ID 91992) with init:stop/0...
+2014-06-16 15:47:22.151 [info] <0.297.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev1@127.0.0.1' (process ID 91997) with init:stop/0...
+2014-06-16 15:47:22.151 [info] <0.299.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev3@127.0.0.1' (process ID 92007) with init:stop/0...
+2014-06-16 15:49:39.913 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 15:49:39.967 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 15:49:40.063 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:49:40.086 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:49:40.088 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:49:40.088 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:49:40.090 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:49:40.096 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:49:40.097 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:49:40.098 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:49:40.149 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 15:49:40.149 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 15:49:41.151 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 15:49:42.153 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 15:49:43.155 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 15:49:43.156 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 15:49:43.156 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 15:49:43.156 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 15:49:43.157 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 15:49:43.157 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 15:49:44.164 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 15:49:44.164 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 15:49:44.193 [info] <0.108.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 15:49:44.403 [info] <0.163.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:49:45.613 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 15:49:45.613 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 15:49:45.614 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 15:49:45.680 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1']
+2014-06-16 15:49:45.680 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1']
+2014-06-16 15:49:45.680 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1']
+2014-06-16 15:49:45.681 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1']
+2014-06-16 15:49:45.681 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1']
+2014-06-16 15:49:45.681 [info] <0.106.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1']
+2014-06-16 15:49:45.681 [info] <0.106.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 15:49:45.737 [info] <0.106.0>@clock_si:clockSI_test1:28 Test1 passed
+2014-06-16 15:49:45.737 [info] <0.106.0>@clock_si:clockSI_test2:37 Test2 started
+2014-06-16 15:49:45.772 [info] <0.106.0>@clock_si:clockSI_test4:74 Test4
+2014-06-16 15:49:45.772 [info] <0.106.0>@clock_si:clockSI_test4:76 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:49:45.772 [info] <0.106.0>@clock_si:clockSI_test4:79 Tx Started, id : {tx_id,1402926585762579,<11070.829.0>}
+2014-06-16 15:49:45.775 [info] <0.106.0>@clock_si:clockSI_test4:81 Tx Reading...~n
+2014-06-16 15:49:45.775 [info] <0.106.0>@clock_si:clockSI_test4:83 Tx Read value...{ok,0}
+2014-06-16 15:49:45.775 [info] <0.106.0>@clock_si:clockSI_test4:86 Tx sent prepare, got commitTime=..., id : {ok,1402926585762579}
+2014-06-16 15:49:45.775 [info] <0.106.0>@clock_si:clockSI_test4:89 Tx Committed.~n
+2014-06-16 15:49:45.775 [info] <0.106.0>@clock_si:clockSI_test4:90 Test finished.~n
+2014-06-16 15:49:45.775 [info] <0.106.0>@clock_si:clockSI_test_read_time:99 Node1: 'dev1@127.0.0.1'
+2014-06-16 15:49:45.775 [info] <0.106.0>@clock_si:clockSI_test_read_time:100 LastNode: 'dev1@127.0.0.1'
+2014-06-16 15:49:45.776 [info] <0.106.0>@clock_si:clockSI_test_read_time:103 Tx1 Started, id : {tx_id,1402926585766137,<11070.837.0>}
+2014-06-16 15:49:45.777 [info] <0.106.0>@clock_si:clockSI_test_read_time:105 Tx1 Writing..., id : ~n
+2014-06-16 15:49:45.778 [info] <0.106.0>@clock_si:clockSI_test_read_time:109 Tx1 sent prepare, got commitTime=..., id : {ok,1402926585778126}
+2014-06-16 15:49:45.778 [info] <0.106.0>@clock_si:clockSI_test_read_time:114 Tx2 Started, id : {tx_id,1402926585768439,<11070.846.0>}
+2014-06-16 15:49:45.778 [info] <0.106.0>@clock_si:clockSI_test_read_time:115 Tx2 Reading...~n
+2014-06-16 15:49:45.783 [info] <0.106.0>@clock_si:clockSI_test_read_time:117 Tx2 Reading...~n
+2014-06-16 15:49:45.783 [info] <0.106.0>@clock_si:clockSI_test_read_time:119 Tx2 Read value...{ok,0}
+2014-06-16 15:49:45.786 [info] <0.106.0>@clock_si:clockSI_test_read_time:124 Tx1 Committed.~n
+2014-06-16 15:49:45.786 [info] <0.106.0>@clock_si:clockSI_test_read_time:129 Tx2 sent prepare, got commitTime=..., id : {ok,1402926585768439}
+2014-06-16 15:49:45.786 [info] <0.106.0>@clock_si:clockSI_test_read_time:132 Tx2 Committed.~n
+2014-06-16 15:49:45.786 [info] <0.106.0>@clock_si:clockSI_test_read_time:133 Test finished.~n
+2014-06-16 15:49:45.786 [info] <0.106.0>@rt:stop:348 Stopping riak on 'dev1@127.0.0.1'
+2014-06-16 15:49:55.787 [info] <0.106.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy stop
+2014-06-16 15:49:57.999 [info] <0.106.0>@rt:wait_until_unpingable:727 Wait until 'dev1@127.0.0.1' is not pingable
+2014-06-16 15:49:58.000 [info] <0.106.0>@rtdev:rm_dir:332 Removing directory /Users/alek/rt/floppystore/current/dev/dev1/data/
+2014-06-16 15:49:58.016 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 15:49:58.016 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 15:49:58.016 [info] <0.2.0>@riak_test_escript:maybe_teardown:194 Multiple tests run or no failure
+2014-06-16 15:49:58.017 [info] <0.176.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 15:49:58.017 [info] <0.176.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 15:49:58.018 [info] <0.180.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 15:49:58.019 [info] <0.181.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 15:49:58.020 [info] <0.179.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 15:49:58.026 [info] <0.180.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:49:58.027 [info] <0.181.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 15:49:58.027 [info] <0.179.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:43:49.527 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 17:43:49.574 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 17:43:49.658 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 17:43:49.674 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 17:43:49.675 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 17:43:49.675 [info] <0.82.0>@rtdev:gen_stop_fun:431 RPC to node 'dev4@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev4/bin/riak stop
+2014-06-16 17:43:49.677 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 17:43:49.677 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 17:43:49.683 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:43:49.683 [info] <0.82.0>@rtdev:gen_stop_fun:447 Stopped node 'dev4@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:43:49.684 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:43:49.685 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:43:49.733 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 17:43:49.733 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 17:43:50.735 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 17:43:51.737 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 17:43:52.740 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 17:43:52.741 [info] <0.105.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 17:43:52.741 [info] <0.106.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 17:43:52.741 [info] <0.107.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 17:43:52.742 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 17:43:52.742 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 17:43:53.750 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 17:43:53.750 [info] <0.112.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 17:43:53.801 [info] <0.117.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev2/bin/floppy start
+2014-06-16 17:43:53.801 [info] <0.116.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 17:43:53.801 [info] <0.118.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev3/bin/floppy start
+2014-06-16 17:43:54.115 [info] <0.278.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:43:54.115 [info] <0.280.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:43:54.116 [info] <0.281.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:43:55.399 [info] <0.112.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:43:55.399 [info] <0.112.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:43:55.399 [info] <0.112.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:43:55.400 [info] <0.112.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 17:43:55.400 [info] <0.112.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev2@127.0.0.1'
+2014-06-16 17:43:55.401 [info] <0.112.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev3@127.0.0.1'
+2014-06-16 17:43:55.401 [info] <0.112.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 17:43:55.456 [info] <0.112.0>@rt:check_singleton_node:911 Check 'dev2@127.0.0.1' is a singleton
+2014-06-16 17:43:55.457 [info] <0.112.0>@rt:check_singleton_node:911 Check 'dev3@127.0.0.1' is a singleton
+2014-06-16 17:43:55.457 [info] <0.112.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:43:55.467 [info] <0.112.0>@rt:staged_join:392 [join] 'dev2@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:43:55.477 [info] <0.112.0>@rt:staged_join:392 [join] 'dev3@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:43:55.978 [info] <0.112.0>@rt:plan_and_commit:398 planning and commiting cluster join
+2014-06-16 17:43:56.499 [info] <0.112.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:43:56.500 [info] <0.112.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:44:15.533 [info] <0.112.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:44:25.561 [info] <0.112.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:44:25.561 [info] <0.112.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:44:25.561 [info] <0.112.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 17:44:25.645 [info] <0.112.0>@clock_si:clockSI_test1:28 Test1 passed
+2014-06-16 17:44:25.645 [info] <0.112.0>@clock_si:clockSI_test2:37 Test2 started
+2014-06-16 17:44:25.695 [info] <0.112.0>@clock_si:clockSI_test4:74 Test4
+2014-06-16 17:44:25.695 [info] <0.112.0>@clock_si:clockSI_test4:76 Node1: 'dev1@127.0.0.1'
+2014-06-16 17:44:25.695 [info] <0.112.0>@clock_si:clockSI_test4:79 Tx Started, id : {tx_id,1402933465685352,<11070.2816.0>}
+2014-06-16 17:44:25.698 [info] <0.112.0>@clock_si:clockSI_test4:81 Tx Reading...~n
+2014-06-16 17:44:25.698 [info] <0.112.0>@clock_si:clockSI_test4:83 Tx Read value...{ok,0}
+2014-06-16 17:44:25.699 [info] <0.112.0>@clock_si:clockSI_test4:86 Tx sent prepare, got commitTime=..., id : {ok,1402933465685352}
+2014-06-16 17:44:25.699 [info] <0.112.0>@clock_si:clockSI_test4:89 Tx Committed.~n
+2014-06-16 17:44:25.699 [info] <0.112.0>@clock_si:clockSI_test4:90 Test finished.~n
+2014-06-16 17:44:25.699 [info] <0.112.0>@clock_si:clockSI_test_read_time:99 Node1: 'dev1@127.0.0.1'
+2014-06-16 17:44:25.699 [info] <0.112.0>@clock_si:clockSI_test_read_time:100 LastNode: 'dev3@127.0.0.1'
+2014-06-16 17:44:25.700 [info] <0.112.0>@clock_si:clockSI_test_read_time:103 Tx1 Started, id : {tx_id,1402933465690065,<11070.2821.0>}
+2014-06-16 17:44:25.702 [info] <0.112.0>@clock_si:clockSI_test_read_time:105 Tx1 Writing..., id : ~n
+2014-06-16 17:44:25.703 [info] <0.112.0>@clock_si:clockSI_test_read_time:109 Tx1 sent prepare, got commitTime=..., id : {ok,1402933465703021}
+2014-06-16 17:44:25.709 [info] <0.112.0>@clock_si:clockSI_test_read_time:114 Tx2 Started, id : {tx_id,1402933465698953,<11072.1278.0>}
+2014-06-16 17:44:25.709 [info] <0.112.0>@clock_si:clockSI_test_read_time:115 Tx2 Reading...~n
+2014-06-16 17:44:25.712 [info] <0.112.0>@clock_si:clockSI_test_read_time:117 Tx2 Reading...~n
+2014-06-16 17:44:25.712 [info] <0.112.0>@clock_si:clockSI_test_read_time:119 Tx2 Read value...{ok,0}
+2014-06-16 17:44:25.715 [info] <0.112.0>@clock_si:clockSI_test_read_time:124 Tx1 Committed.~n
+2014-06-16 17:44:25.716 [info] <0.112.0>@clock_si:clockSI_test_read_time:129 Tx2 sent prepare, got commitTime=..., id : {ok,1402933465698953}
+2014-06-16 17:44:25.716 [info] <0.112.0>@clock_si:clockSI_test_read_time:132 Tx2 Committed.~n
+2014-06-16 17:44:25.716 [info] <0.112.0>@clock_si:clockSI_test_read_time:133 Test finished.~n
+2014-06-16 17:44:25.716 [info] <0.112.0>@rt:stop:348 Stopping riak on 'dev1@127.0.0.1'
+2014-06-16 17:44:35.717 [info] <0.112.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy stop
+2014-06-16 17:44:37.932 [info] <0.112.0>@rt:wait_until_unpingable:727 Wait until 'dev1@127.0.0.1' is not pingable
+2014-06-16 17:44:37.933 [info] <0.112.0>@rt:stop:348 Stopping riak on 'dev2@127.0.0.1'
+2014-06-16 17:44:47.935 [info] <0.112.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev2/bin/floppy stop
+2014-06-16 17:44:50.150 [info] <0.112.0>@rt:wait_until_unpingable:727 Wait until 'dev2@127.0.0.1' is not pingable
+2014-06-16 17:44:50.151 [info] <0.112.0>@rt:stop:348 Stopping riak on 'dev3@127.0.0.1'
+2014-06-16 17:45:00.153 [info] <0.112.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev3/bin/floppy stop
+2014-06-16 17:45:02.376 [info] <0.112.0>@rt:wait_until_unpingable:727 Wait until 'dev3@127.0.0.1' is not pingable
+2014-06-16 17:45:02.378 [info] <0.112.0>@rtdev:rm_dir:332 Removing directory /Users/alek/rt/floppystore/current/dev/dev1/data/
+2014-06-16 17:45:02.394 [info] <0.112.0>@rtdev:rm_dir:332 Removing directory /Users/alek/rt/floppystore/current/dev/dev2/data/
+2014-06-16 17:45:02.409 [info] <0.112.0>@rtdev:rm_dir:332 Removing directory /Users/alek/rt/floppystore/current/dev/dev3/data/
+2014-06-16 17:45:02.425 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 17:45:02.425 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 17:45:02.425 [info] <0.2.0>@riak_test_escript:maybe_teardown:194 Multiple tests run or no failure
+2014-06-16 17:45:02.426 [info] <0.318.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 17:45:02.427 [info] <0.318.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 17:45:02.429 [info] <0.321.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 17:45:02.431 [info] <0.322.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 17:45:02.432 [info] <0.323.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 17:45:02.437 [info] <0.321.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:45:02.438 [info] <0.322.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:45:02.439 [info] <0.323.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:48:36.183 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 17:48:36.228 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 17:48:36.309 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 17:48:36.325 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 17:48:36.326 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 17:48:36.327 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 17:48:36.327 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 17:48:36.333 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:48:36.333 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:48:36.334 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:48:36.380 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 17:48:36.380 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 17:48:37.381 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 17:48:38.383 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 17:48:39.386 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 17:48:39.387 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 17:48:39.387 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 17:48:39.388 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 17:48:39.390 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 17:48:39.390 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 17:48:40.401 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 17:48:40.401 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 17:48:40.454 [info] <0.111.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev2/bin/floppy start
+2014-06-16 17:48:40.454 [info] <0.110.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 17:48:40.454 [info] <0.112.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev3/bin/floppy start
+2014-06-16 17:48:41.124 [error] emulator Error in process <0.117.0> on node 'riak_test@127.0.0.1' with exit value: {badarg,[{erlang,register,[cover_server,<0.117.0>],[]},{cover,init_main,1,[{file,"cover.erl"},{line,585}]}]}
+
+
+2014-06-16 17:48:41.146 [info] <0.126.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:48:41.147 [info] <0.127.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:48:41.172 [info] <0.129.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:48:41.896 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:48:41.897 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:48:41.897 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:48:41.914 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 17:48:41.915 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev2@127.0.0.1'
+2014-06-16 17:48:41.916 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev3@127.0.0.1'
+2014-06-16 17:48:41.918 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 17:48:42.103 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev2@127.0.0.1' is a singleton
+2014-06-16 17:48:42.104 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev3@127.0.0.1' is a singleton
+2014-06-16 17:48:42.104 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:48:42.112 [info] <0.106.0>@rt:staged_join:392 [join] 'dev2@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:48:42.125 [info] <0.106.0>@rt:staged_join:392 [join] 'dev3@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:48:42.626 [info] <0.106.0>@rt:plan_and_commit:398 planning and commiting cluster join
+2014-06-16 17:48:43.145 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:48:43.147 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:49:12.194 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:49:22.222 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:49:22.222 [info] <0.106.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:49:22.222 [info] <0.106.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 17:49:22.410 [info] <0.106.0>@clock_si:clockSI_test1:28 Test1 passed
+2014-06-16 17:49:22.410 [info] <0.106.0>@clock_si:clockSI_test2:37 Test2 started
+2014-06-16 17:49:22.458 [info] <0.106.0>@clock_si:clockSI_test2:57 Test2 passed
+2014-06-16 17:49:22.458 [info] <0.106.0>@clock_si:clockSI_test3:64 Test3 started
+2014-06-16 17:49:22.467 [warning] <0.2.0>@riak_test_runner:rec_loop:147 clock_si failed: {{assertMatch_failed,[{module,clock_si},{line,70},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,12}]}]}
+2014-06-16 17:49:22.467 [error] emulator Error in process <0.106.0> on node 'riak_test@127.0.0.1' with exit value: {{assertMatch_failed,[{module,clock_si},{line,70},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,clockSI_test3,1,[{file,"riak... 
+
+
+2014-06-16 17:49:22.467 [error] <0.2.0>@riak_test_runner:execute:119 
+================ clock_si failure stack trace =====================
+{{assertMatch_failed,[{module,clock_si},
+                      {line,70},
+                      {expression,"ReadSet"},
+                      {pattern,"[ 2 ]"},
+                      {value,[1]}]},
+ [{clock_si,'-clockSI_test3/1-fun-2-',1,
+            [{file,"riak_test/clock_si.erl"},{line,70}]},
+  {clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,70}]},
+  {clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,12}]}]}
+===================================================================
+
+2014-06-16 17:49:22.467 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 17:49:22.468 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 17:49:48.028 [info] <0.133.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 17:49:48.028 [info] <0.133.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 17:49:48.029 [info] <0.135.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev2@127.0.0.1' (process ID 8464) with init:stop/0...
+2014-06-16 17:49:48.029 [info] <0.136.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev3@127.0.0.1' (process ID 8500) with init:stop/0...
+2014-06-16 17:49:48.030 [info] <0.134.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev1@127.0.0.1' (process ID 8468) with init:stop/0...
+2014-06-16 17:50:38.050 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 17:50:38.085 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 17:50:38.152 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 17:50:38.170 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 17:50:38.171 [info] <0.81.0>@rtdev:gen_stop_fun:431 RPC to node 'dev3@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev3/bin/riak stop
+2014-06-16 17:50:38.172 [info] <0.79.0>@rtdev:gen_stop_fun:431 RPC to node 'dev1@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev1/bin/riak stop
+2014-06-16 17:50:38.172 [info] <0.80.0>@rtdev:gen_stop_fun:431 RPC to node 'dev2@127.0.0.1' returned {badrpc,nodedown}, will try stop anyway... /Users/alek/rt/floppystore/current/dev/dev2/bin/riak stop
+2014-06-16 17:50:38.178 [info] <0.81.0>@rtdev:gen_stop_fun:447 Stopped node 'dev3@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:50:38.178 [info] <0.79.0>@rtdev:gen_stop_fun:447 Stopped node 'dev1@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:50:38.180 [info] <0.80.0>@rtdev:gen_stop_fun:447 Stopped node 'dev2@127.0.0.1', stop status: wasn't running.
+2014-06-16 17:50:38.218 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 17:50:38.218 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 17:50:39.220 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 17:50:40.223 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 17:50:41.225 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 17:50:41.226 [info] <0.99.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 17:50:41.226 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 17:50:41.226 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 17:50:41.228 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 17:50:41.228 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 17:50:42.235 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 17:50:42.235 [info] <0.106.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 17:50:42.287 [info] <0.111.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev2/bin/floppy start
+2014-06-16 17:50:42.287 [info] <0.110.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 17:50:42.287 [info] <0.112.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev3/bin/floppy start
+2014-06-16 17:50:42.558 [error] emulator Error in process <0.117.0> on node 'riak_test@127.0.0.1' with exit value: {badarg,[{erlang,register,[cover_server,<0.117.0>],[]},{cover,init_main,1,[{file,"cover.erl"},{line,585}]}]}
+
+
+2014-06-16 17:50:42.559 [error] emulator Error in process <0.118.0> on node 'riak_test@127.0.0.1' with exit value: {badarg,[{erlang,register,[cover_server,<0.118.0>],[]},{cover,init_main,1,[{file,"cover.erl"},{line,585}]}]}
+
+
+2014-06-16 17:50:42.621 [info] <0.273.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:50:42.621 [info] <0.276.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:50:42.622 [info] <0.277.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:50:43.909 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:50:43.909 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:50:43.909 [info] <0.106.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:50:43.910 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 17:50:43.910 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev2@127.0.0.1'
+2014-06-16 17:50:43.911 [info] <0.106.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev3@127.0.0.1'
+2014-06-16 17:50:43.911 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 17:50:43.979 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev2@127.0.0.1' is a singleton
+2014-06-16 17:50:43.980 [info] <0.106.0>@rt:check_singleton_node:911 Check 'dev3@127.0.0.1' is a singleton
+2014-06-16 17:50:43.980 [info] <0.106.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:50:44.001 [info] <0.106.0>@rt:staged_join:392 [join] 'dev2@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:50:44.022 [info] <0.106.0>@rt:staged_join:392 [join] 'dev3@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:50:44.523 [info] <0.106.0>@rt:plan_and_commit:398 planning and commiting cluster join
+2014-06-16 17:50:45.047 [info] <0.106.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:50:45.048 [info] <0.106.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:51:04.075 [info] <0.106.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:51:14.097 [info] <0.106.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:51:14.097 [info] <0.106.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:51:14.097 [info] <0.106.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 17:51:14.278 [info] <0.106.0>@clock_si:clockSI_test1:28 Test1 passed
+2014-06-16 17:51:14.278 [info] <0.106.0>@clock_si:clockSI_test2:37 Test2 started
+2014-06-16 17:51:14.334 [info] <0.106.0>@clock_si:clockSI_test2:57 Test2 passed
+2014-06-16 17:51:14.334 [info] <0.106.0>@clock_si:clockSI_test3:64 Test3 started
+2014-06-16 17:51:14.344 [error] emulator Error in process <0.106.0> on node 'riak_test@127.0.0.1' with exit value: {{assertMatch_failed,[{module,clock_si},{line,70},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,clockSI_test3,1,[{file,"riak... 
+
+
+2014-06-16 17:51:14.344 [warning] <0.2.0>@riak_test_runner:rec_loop:147 clock_si failed: {{assertMatch_failed,[{module,clock_si},{line,70},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,12}]}]}
+2014-06-16 17:51:14.344 [error] <0.2.0>@riak_test_runner:execute:119 
+================ clock_si failure stack trace =====================
+{{assertMatch_failed,[{module,clock_si},
+                      {line,70},
+                      {expression,"ReadSet"},
+                      {pattern,"[ 2 ]"},
+                      {value,[1]}]},
+ [{clock_si,'-clockSI_test3/1-fun-2-',1,
+            [{file,"riak_test/clock_si.erl"},{line,70}]},
+  {clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,70}]},
+  {clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,12}]}]}
+===================================================================
+
+2014-06-16 17:51:14.344 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 17:51:14.345 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 17:55:33.256 [info] <0.7.0> Application lager started on node nonode@nohost
+2014-06-16 17:55:33.292 [info] <0.2.0>@riak_test_escript:which_tests_to_run:241 These modules are not runnable tests: []
+2014-06-16 17:55:33.366 [info] <0.74.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 17:55:33.387 [info] <0.74.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 17:55:33.387 [info] <0.80.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev1@127.0.0.1' (process ID 8866) with init:stop/0...
+2014-06-16 17:55:33.392 [info] <0.81.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev2@127.0.0.1' (process ID 8855) with init:stop/0...
+2014-06-16 17:55:33.412 [info] <0.82.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev3@127.0.0.1' (process ID 8868) with init:stop/0...
+2014-06-16 17:55:35.479 [info] <0.2.0>@rtdev:setup_harness:98 Resetting nodes to fresh state
+2014-06-16 17:55:35.479 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" reset HEAD --hard
+2014-06-16 17:55:36.481 [info] <0.2.0>@rtdev:run_git:56 Running: git --git-dir="/Users/alek/rt/floppystore/.git" --work-tree="/Users/alek/rt/floppystore/" clean -fd
+2014-06-16 17:55:37.483 [info] <0.2.0>@rtdev:setup_harness:102 Cleaning up lingering pipe directories
+2014-06-16 17:55:38.487 [warning] <0.2.0>@rt:set_backend:1416 rt:set_backend doesn't recognize undefined as a legit backend, using the default.
+2014-06-16 17:55:38.488 [info] <0.100.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev1/etc/app.config)
+2014-06-16 17:55:38.488 [info] <0.101.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev2/etc/app.config)
+2014-06-16 17:55:38.488 [info] <0.102.0>@rtdev:get_backend:270 get_backend(/Users/alek/rt/floppystore/current/dev/dev3/etc/app.config)
+2014-06-16 17:55:38.490 [info] <0.2.0>@riak_test_runner:check_prereqs:156 clock_si prereqs: []
+2014-06-16 17:55:38.490 [notice] <0.2.0>@riak_test_runner:confirm:54 Running Test clock_si
+2014-06-16 17:55:39.497 [info] <0.2.0>@riak_test_runner:execute:96 Test Runner `uname -a` : Darwin mbp-alejandro.rsr.lip6.fr 13.2.0 Darwin Kernel Version 13.2.0: Thu Apr 17 23:03:13 PDT 2014; root:xnu-2422.100.13~1/RELEASE_X86_64 x86_64
+
+2014-06-16 17:55:39.497 [info] <0.107.0>@rtdev:deploy_nodes:368 Riak path: "/Users/alek/rt/floppystore"
+2014-06-16 17:55:39.547 [info] <0.112.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev2/bin/floppy start
+2014-06-16 17:55:39.547 [info] <0.111.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev1/bin/floppy start
+2014-06-16 17:55:39.547 [info] <0.113.0>@rtdev:run_riak:61 Running: /Users/alek/rt/floppystore/current/dev/dev3/bin/floppy start
+2014-06-16 17:55:39.816 [error] emulator Error in process <0.118.0> on node 'riak_test@127.0.0.1' with exit value: {badarg,[{erlang,register,[cover_server,<0.118.0>],[]},{cover,init_main,1,[{file,"cover.erl"},{line,585}]}]}
+
+
+2014-06-16 17:55:39.872 [info] <0.270.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:55:39.873 [info] <0.274.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:55:39.874 [info] <0.277.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:55:41.214 [info] <0.107.0>@rt:wait_until_pingable:718 Wait until 'dev1@127.0.0.1' is pingable
+2014-06-16 17:55:41.215 [info] <0.107.0>@rt:wait_until_pingable:718 Wait until 'dev2@127.0.0.1' is pingable
+2014-06-16 17:55:41.215 [info] <0.107.0>@rt:wait_until_pingable:718 Wait until 'dev3@127.0.0.1' is pingable
+2014-06-16 17:55:41.215 [info] <0.107.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev1@127.0.0.1'
+2014-06-16 17:55:41.216 [info] <0.107.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev2@127.0.0.1'
+2014-06-16 17:55:41.217 [info] <0.107.0>@rt:wait_until_registered:744 Wait until riak_core_ring_manager is up on 'dev3@127.0.0.1'
+2014-06-16 17:55:41.217 [info] <0.107.0>@rt:check_singleton_node:911 Check 'dev1@127.0.0.1' is a singleton
+2014-06-16 17:55:41.273 [info] <0.107.0>@rt:check_singleton_node:911 Check 'dev2@127.0.0.1' is a singleton
+2014-06-16 17:55:41.273 [info] <0.107.0>@rt:check_singleton_node:911 Check 'dev3@127.0.0.1' is a singleton
+2014-06-16 17:55:41.274 [info] <0.107.0>@rtdev:deploy_nodes:414 Deployed nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:55:41.282 [info] <0.107.0>@rt:staged_join:392 [join] 'dev2@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:55:41.293 [info] <0.107.0>@rt:staged_join:392 [join] 'dev3@127.0.0.1' to ('dev1@127.0.0.1'): ok
+2014-06-16 17:55:41.794 [info] <0.107.0>@rt:plan_and_commit:398 planning and commiting cluster join
+2014-06-16 17:55:42.313 [info] <0.107.0>@rt:wait_until_nodes_ready:661 Wait until nodes are ready : ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:55:42.314 [info] <0.107.0>@rt:wait_until_nodes_agree_about_ownership:824 Wait until nodes agree about ownership ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:56:01.342 [info] <0.107.0>@rt:wait_until_no_pending_changes:611 Wait until no pending changes on ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:56:11.369 [info] <0.107.0>@rt:build_clusters:330 Cluster built: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:56:11.369 [info] <0.107.0>@clock_si:confirm:9 Nodes: ['dev1@127.0.0.1','dev2@127.0.0.1','dev3@127.0.0.1']
+2014-06-16 17:56:11.369 [info] <0.107.0>@clock_si:clockSI_test1:23 Test1 started
+2014-06-16 17:56:11.579 [info] <0.107.0>@clock_si:clockSI_test1:28 Test1 passed
+2014-06-16 17:56:11.579 [info] <0.107.0>@clock_si:clockSI_test2:37 Test2 started
+2014-06-16 17:56:11.637 [info] <0.107.0>@clock_si:clockSI_test2:57 Test2 passed
+2014-06-16 17:56:11.637 [info] <0.107.0>@clock_si:clockSI_test3:64 Test3 started
+2014-06-16 17:56:11.651 [warning] <0.2.0>@riak_test_runner:rec_loop:147 clock_si failed: {{assertMatch_failed,[{module,clock_si},{line,70},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,12}]}]}
+2014-06-16 17:56:11.651 [error] emulator Error in process <0.107.0> on node 'riak_test@127.0.0.1' with exit value: {{assertMatch_failed,[{module,clock_si},{line,70},{expression,"ReadSet"},{pattern,"[ 2 ]"},{value,[1]}]},[{clock_si,'-clockSI_test3/1-fun-2-',1,[{file,"riak_test/clock_si.erl"},{line,70}]},{clock_si,clockSI_test3,1,[{file,"riak... 
+
+
+2014-06-16 17:56:11.651 [error] <0.2.0>@riak_test_runner:execute:119 
+================ clock_si failure stack trace =====================
+{{assertMatch_failed,[{module,clock_si},
+                      {line,70},
+                      {expression,"ReadSet"},
+                      {pattern,"[ 2 ]"},
+                      {value,[1]}]},
+ [{clock_si,'-clockSI_test3/1-fun-2-',1,
+            [{file,"riak_test/clock_si.erl"},{line,70}]},
+  {clock_si,clockSI_test3,1,[{file,"riak_test/clock_si.erl"},{line,70}]},
+  {clock_si,confirm,0,[{file,"riak_test/clock_si.erl"},{line,12}]}]}
+===================================================================
+
+2014-06-16 17:56:11.651 [notice] <0.2.0>@riak_test_runner:confirm:62 clock_si Test Run Complete
+2014-06-16 17:56:11.653 [info] <0.2.0>@rt_cover:stop:431 Stopping cover
+2014-06-16 17:57:59.696 [info] <0.294.0>@rtdev:stop_all:497 Trying to obtain node shutdown_time via RPC...
+2014-06-16 17:57:59.697 [info] <0.294.0>@rtdev:stop_all:502 Using node shutdown_time of 20000
+2014-06-16 17:57:59.697 [info] <0.295.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev1@127.0.0.1' (process ID 9304) with init:stop/0...
+2014-06-16 17:57:59.697 [info] <0.296.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev2@127.0.0.1' (process ID 9290) with init:stop/0...
+2014-06-16 17:57:59.698 [info] <0.297.0>@rtdev:gen_stop_fun:422 Preparing to stop node 'dev3@127.0.0.1' (process ID 9297) with init:stop/0...

@@ -134,7 +134,7 @@ executeOp(timeout, SD0=#state{
                     SD1=SD0,
                     {next_state, abort, SD1};
                 ReadResult -> 
-                    NewReadSet=lists:append(ReadSet, ReadResult),
+                    NewReadSet=lists:append(ReadSet, [ReadResult]),
                     lager:info("ClockSI-Coord: Read value added to read set: ~p",[CurrentOpLeader]),
                     SD1=SD0#state{read_set=NewReadSet}
             end;
