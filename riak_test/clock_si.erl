@@ -1,6 +1,6 @@
 -module(clock_si).
 -export([confirm/0, clockSI_test1/1, clockSI_test2/1, clockSI_test3/1,
-		clockSI_test_read_wait/1, clockSI_test4/1, clockSI_test_read_time/1]).
+		clockSI_test_read_wait/1, clockSI_test4/1, clockSI_test_read_time/1, spawn_read/3]).
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
@@ -9,9 +9,9 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     %clockSI_test1(Nodes),
     %clockSI_test2 (Nodes),
-    clockSI_test3 (Nodes),
+    %clockSI_test3 (Nodes),
     %clockSI_test4 (Nodes),
-    clockSI_test_read_time(Nodes),
+    %clockSI_test_read_time(Nodes),
     clockSI_test_read_wait(Nodes),
     rt:clean_cluster(Nodes),
     ok.
@@ -165,18 +165,21 @@ clockSI_test_read_wait(Nodes) ->
     
     %rpc:call(LastNode, floppy, clockSI_iread, [TxId1, read_wait_test, riak_dt_pncounter])
     
-    ReadResult1=spawn(rpc, call, [LastNode, floppy, clockSI_iread, [TxId1, read_wait_test, riak_dt_pncounter]]),
-    timer:sleep(2000),
+    %Pid=spawn(rpc, call, [LastNode, floppy, clockSI_iread, [TxId1, read_wait_test, riak_dt_pncounter]]),
+    Pid=spawn(clock_si, spawn_read, [LastNode, TxId1, self()]),
     
     %% commit the first tx.
     End=rpc:call(FirstNode, floppy, clockSI_icommit, [TxId]),   
     ?assertMatch({ok, _}, End),
     lager:info("Tx1 Committed."),
     
-    %receive the read value
-    ?assertMatch({ok, 0}, ReadResult1),
-    lager:info("Tx2 Read value...~p", [ReadResult1]),
-    
+
+    receive
+        {Pid, ReadResult1} ->
+            %receive the read value
+            ?assertMatch({ok, 0}, ReadResult1),
+            lager:info("Tx2 Read value...~p", [ReadResult1])
+    end,
     
     %% prepare and commit the second transaction.
     CommitTime1=rpc:call(LastNode, floppy, clockSI_iprepare, [TxId1]),
@@ -188,3 +191,6 @@ clockSI_test_read_wait(Nodes) ->
     lager:info("Test read_time passed"),
     ok.
 
+spawn_read(LastNode, TxId, Return) ->
+    ReadResult=rpc:call(LastNode, floppy, clockSI_iread, [TxId, read_wait_test, riak_dt_pncounter]),
+    Return ! {self(), ReadResult}.
