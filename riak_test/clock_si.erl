@@ -7,8 +7,8 @@
 confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
-    clockSI_test1(Nodes),
-    clockSI_test2 (Nodes),
+    %clockSI_test1(Nodes),
+    %clockSI_test2 (Nodes),
     clockSI_test3 (Nodes),
     %clockSI_test4 (Nodes),
     clockSI_test_read_time(Nodes),
@@ -63,7 +63,8 @@ clockSI_test2(Nodes) ->
 clockSI_test3(Nodes) ->
 	lager:info("Test3 started"),
 	FirstNode = hd(Nodes),
-    Result= rpc:call(FirstNode, floppy, clockSI_bulk_update, [now(), [{update, 3, {increment, a}}, {update, 3, {increment, a}}]]),
+    Result= rpc:call(FirstNode, floppy, clockSI_bulk_update, [now(), [{update, 3, 
+    {increment, a}}, {update, 3, {increment, a}}]]),
     ?assertMatch({ok, _}, Result),
     Result2= rpc:call(FirstNode, floppy, clockSI_read, [now(), 3, riak_dt_pncounter]),
     {ok, {_, ReadSet, _}}=Result2,
@@ -165,7 +166,7 @@ clockSI_test_read_wait(Nodes) ->
     %rpc:call(LastNode, floppy, clockSI_iread, [TxId1, read_wait_test, riak_dt_pncounter])
     
     ReadResult1=spawn(rpc, call, [LastNode, floppy, clockSI_iread, [TxId1, read_wait_test, riak_dt_pncounter]]),
-    
+    timer:sleep(2000),
     
     %% commit the first tx.
     End=rpc:call(FirstNode, floppy, clockSI_icommit, [TxId]),   
