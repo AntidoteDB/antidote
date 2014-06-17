@@ -291,7 +291,7 @@ internal_pending_txs([H|T], ST, PreparedTx, Result) ->
     Lookup=ets:lookup(PreparedTx, TxId),
     case Lookup of 
         [{_, PrepareTime}] ->
-            lager:info("Got prepare time for tx ~w of ~w", [TxId, PrepareTime]),
+            lager:info("Got prepare time for tx ~w of ~w, SnapshotTime of ~w", [TxId, PrepareTime, ST]),
             case PrepareTime < ST of
                 true -> 
                     internal_pending_txs(T, ST,PreparedTx, lists:append(Result,[H]));

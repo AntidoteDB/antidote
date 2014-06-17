@@ -7,11 +7,11 @@
 confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
-    %clockSI_test1(Nodes),
-    %clockSI_test2 (Nodes),
-    %clockSI_test3 (Nodes),
-    %clockSI_test4 (Nodes),
-    %clockSI_test_read_time(Nodes),
+    clockSI_test1(Nodes),
+    clockSI_test2 (Nodes),
+    clockSI_test3 (Nodes),
+    clockSI_test4 (Nodes),
+    clockSI_test_read_time(Nodes),
     clockSI_test_read_wait(Nodes),
     rt:clean_cluster(Nodes),
     ok.
@@ -64,7 +64,7 @@ clockSI_test3(Nodes) ->
 	lager:info("Test3 started"),
 	FirstNode = hd(Nodes),
     Result= rpc:call(FirstNode, floppy, clockSI_bulk_update, [now(), [{update, 3, 
-    {increment, a}}, {update, 3, {increment, a}}]]),
+    {increment, a}}, {update, 3, {increment, b}}]]),
     ?assertMatch({ok, _}, Result),
     Result2= rpc:call(FirstNode, floppy, clockSI_read, [now(), 3, riak_dt_pncounter]),
     {ok, {_, ReadSet, _}}=Result2,
@@ -103,24 +103,23 @@ clockSI_test_read_time(Nodes) ->
     lager:info("Node1: ~p", [FirstNode]), 
     lager:info("LastNode: ~p", [LastNode]),  
     {ok,TxId}=rpc:call(FirstNode, floppy, clockSI_istart_tx, [now()]),
-    %?assertMatch({ok, _}, TxId), 
     lager:info("Tx1 Started, id : ~p", [TxId]),
+    %% start a different tx and try to read key read_time. 
+    {ok,TxId1}=rpc:call(LastNode, floppy, clockSI_istart_tx, [now()]),
+    %?assertMatch({ok, _}, TxId), 
+    lager:info("Tx2 Started, id : ~p", [TxId1]),
     WriteResult=rpc:call(FirstNode, floppy, clockSI_iupdate, [TxId, read_time, {increment, 4}]),
     lager:info("Tx1 Writing..."),
     ?assertEqual(ok, WriteResult),
     CommitTime=rpc:call(FirstNode, floppy, clockSI_iprepare, [TxId]),
     ?assertMatch({ok, _}, CommitTime),
     lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]), 
-    
-    
-    %% start a different tx and try to read key read_time. 
-    {ok,TxId1}=rpc:call(LastNode, floppy, clockSI_istart_tx, [now()]),
-    %?assertMatch({ok, _}, TxId1), 
-    lager:info("Tx2 Started, id : ~p", [TxId1]),
+    %% try to read key read_time. 
+    %?assertMatch({ok, _}, TxId1),  
     lager:info("Tx2 Reading..."),
     ReadResult1=rpc:call(LastNode, floppy, clockSI_iread, [TxId1, read_time, riak_dt_pncounter]),
     lager:info("Tx2 Reading..."),
-    ?assertMatch({ok, _}, ReadResult1),
+    ?assertMatch({ok, 0}, ReadResult1),
     lager:info("Tx2 Read value...~p", [ReadResult1]),
     
     %% commit the first tx.
@@ -157,16 +156,16 @@ clockSI_test_read_wait(Nodes) ->
     ?assertMatch({ok, _}, CommitTime),
     lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]), 
     
+    timer:sleep(1000),
+    
     %% start a different tx and try to read key read_wait_test. 
     {ok,TxId1}=rpc:call(LastNode, floppy, clockSI_istart_tx, [now()]),
     %?assertMatch({ok, _}, TxId1), 
     lager:info("Tx2 Started, id : ~p", [TxId1]),
     lager:info("Tx2 Reading..."),
     
-    %rpc:call(LastNode, floppy, clockSI_iread, [TxId1, read_wait_test, riak_dt_pncounter])
-    
-    %Pid=spawn(rpc, call, [LastNode, floppy, clockSI_iread, [TxId1, read_wait_test, riak_dt_pncounter]]),
-    Pid=spawn(clock_si, spawn_read, [LastNode, TxId1, self()]),
+    Pid=spawn(clock_si, spawn_read, [LastNode, TxId1, self()]),    
+    timer:sleep(1000),
     
     %% commit the first tx.
     End=rpc:call(FirstNode, floppy, clockSI_icommit, [TxId]),   
@@ -177,7 +176,7 @@ clockSI_test_read_wait(Nodes) ->
     receive
         {Pid, ReadResult1} ->
             %receive the read value
-            ?assertMatch({ok, 0}, ReadResult1),
+            ?assertMatch({ok, 1}, ReadResult1),
             lager:info("Tx2 Read value...~p", [ReadResult1])
     end,
     
@@ -188,7 +187,7 @@ clockSI_test_read_wait(Nodes) ->
     End1=rpc:call(LastNode, floppy, clockSI_icommit, [TxId1]),   
     ?assertMatch({ok, _}, End1),
     lager:info("Tx2 Committed."),
-    lager:info("Test read_time passed"),
+    lager:info("Test read_wait passed"),
     ok.
 
 spawn_read(LastNode, TxId, Return) ->
