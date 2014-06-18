@@ -25,7 +25,7 @@ create_snapshot(Type) ->
 %%	Output: The CRDT after appliying the operations 
 -spec update_snapshot(Type::atom(), Snapshot::term(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
 update_snapshot(_, Snapshot, _Snapshot_time, []) ->
-    Snapshot;
+    {ok, Snapshot};
 update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
     Payload = Op#operation.payload,
     Type = Payload#clocksi_payload.type,
@@ -33,11 +33,14 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
         true -> 	    
             case Payload#clocksi_payload.op_param of
                 {merge, State} -> 
-                    {ok, New_snapshot} = Type:merge(Snapshot, State),
+                    New_snapshot = Type:merge(Snapshot, State),
                     update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
                 {Update, Actor} ->
-                    {ok, New_snapshot}= Type:update(Update, Actor, Snapshot),
-                    update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
+                    case Type:update(Update, Actor, Snapshot) of
+                        {ok, New_snapshot} ->  update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
+                        {error, Reason} -> {error, Reason};
+                        Other -> {error, Other}
+                    end;                             
                 Other -> lager:info("OP is ~p", [Other])
             end;
         false ->
@@ -88,8 +91,9 @@ materializer_clockSI_test()->
     Op4 = #clocksi_payload{key = abc, type = riak_dt_gcounter, op_param = {{increment,2}, actor1}, snapshot_time = [{1,2}], commit_time = {1, 4}, txid = 4},
 
     Ops = [#operation{op_number = 1,payload =Op1},#operation{op_number = 2,payload = Op2},#operation{op_number = 3,payload = Op3},#operation{op_number = 4,payload = Op4}],
-    GCounter2 = update_snapshot(riak_dt_gcounter, GCounter, orddict:from_list([{1,3}]), Ops),
+    {ok, GCounter2} = update_snapshot(riak_dt_gcounter, GCounter, orddict:from_list([{1,3}]), Ops),
     ?assertEqual(4,riak_dt_gcounter:value(GCounter2)),
-    ?assertEqual(6,riak_dt_gcounter:value(get_snapshot(riak_dt_gcounter,orddict:from_list([{1,4}]),Ops))).
+    {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,orddict:from_list([{1,4}]),Ops),
+    ?assertEqual(6,riak_dt_gcounter:value(Gcounter3)).
 
 -endif.

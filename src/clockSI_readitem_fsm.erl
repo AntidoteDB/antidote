@@ -113,13 +113,16 @@ return(timeout, SD0=#state{tx_coordinator=Coordinator, transaction=Transaction, 
         {ok, Ops} ->
             lager:info("ClockSI ReadItemFSM: got the operations for key ~w, calling the materializer... ~n", [Key]),	      
             ListofOps = [ Op || { _Key, Op } <- Ops ],  
-            Snapshot=clockSI_materializer:get_snapshot(Type, Transaction#transaction.vec_snapshot_time, ListofOps),
-            Updates2=filter_updates_per_key(Updates, Key),
-            lager:info("Filtered updates before completeing the read: ~w ~n" , [Updates2]),
-            Snapshot2=clockSI_materializer:update_snapshot_eager(Type, Snapshot, Updates2),
-            Reply=Type:value(Snapshot2),
-                                                %Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops),
-            lager:info("ClockSI ReadItemFSM: finished materializing");
+            case clockSI_materializer:get_snapshot(Type, Transaction#transaction.vec_snapshot_time, ListofOps) of
+                {ok, Snapshot} -> 
+                    Updates2=filter_updates_per_key(Updates, Key),
+                    lager:info("Filtered updates before completeing the read: ~w ~n" , [Updates2]),
+                    Snapshot2=clockSI_materializer:update_snapshot_eager(Type, Snapshot, Updates2),
+                    Reply=Type:value(Snapshot2),                                               
+                    lager:info("ClockSI ReadItemFSM: finished materializing, Value = ~p ~n", [Reply]);
+                {error, Reason} ->
+                    Reply = {error, Reason}
+            end;
         _ ->
             lager:error("ClockSI ReadItemFSM: reading from the replication group has returned an unexpected response ~n"),
             Reply=error
