@@ -1,7 +1,12 @@
 -module(walletclient).
 -include_lib("eunit/include/eunit.hrl").
 
--export([run/1]).
+-export([run/1, start/1]).
+
+start(Args) ->
+    [Key1, Key2] = Args,
+    Result = run([Key1,Key2]),
+    io:format("~p ~n",[Result]).
 
 run([Key1,Key2])->
     walletapp:init('wallet1@127.0.0.1', floppy),

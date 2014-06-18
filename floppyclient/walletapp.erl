@@ -2,7 +2,7 @@
 
 -export([credit/2, debit/2, init/2, getbalance/1, buyvoucher/2, usevoucher/2, readvouchers/1]).
 
--define(SERVER, 'dev1@127.0.0.1').
+-define(SERVER, 'floppy@127.0.0.1').
 %% walletapp uses floppystore apis - create, update, get
 
 init(Nodename, Cookie) ->
