@@ -1,27 +1,23 @@
 -module(walletclient).
 -include_lib("eunit/include/eunit.hrl").
 
--export([run/2]).
+-export([run/1]).
 
-run(Key1,Key2)->
-    net_kernel:start(['walletclient@127.0.0.1', longnames]),
-    erlang:set_cookie(node(),floppy),
-    %Created = walletapp:createuser(Key1,Key2),
-    Result1 = testc(Key1, 10, [bal]),
+run([Key1,Key2])->
+    walletapp:init('wallet1@127.0.0.1', floppy),
+    Result1 = testbalance(Key1, 10, [bal]),
     Result2 = testvoucher(Key2,10,[voucher]),
     [Result1 | Result2].
        
-testc(_, 0, Result) ->
+testbalance(_, 0, Result) ->
     lists:reverse(Result);
-testc(Key, N, Result) ->
+testbalance(Key, N, Result) ->
     {A1,A2,A3} = now(),
     random:seed(A1, A2, A3),
     Result1 = testcredit(Key, random:uniform(100)),
-    Result2 = testdebit(Key, random:uniform(100)),
-    %Result1 = testcredit(Key, 2),
-    %Result2 = testdebit(Key,1),
+    Result2 = testdebit(Key, random:uniform(100)),    
     timer:sleep(10),
-    testc(Key, N-1,[Result2 | [Result1 | Result]]).
+    testbalance(Key, N-1,[Result2 | [Result1 | Result]]).
 
 testcredit(Key, Amount) ->
     Balbefore = walletapp:getbalance(Key),
@@ -41,8 +37,7 @@ testdebit(Key, Amount) ->
 	{error,Reason} ->
 	    {error,Reason};
 	Val ->
-	    ?assert(Val =:= Balbefore - Amount)
-	    %{ok, debit, Balbefore, Amount, Val}
+	    ?assert(Val =:= Balbefore - Amount)	    
     end.
    
 testvoucher(_,0,Result) ->

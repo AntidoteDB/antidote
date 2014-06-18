@@ -1,20 +1,17 @@
 -module(walletapp).
 
--export([credit/2, debit/2, init/2, getbalance/1, buyvoucher/2, usevoucher/2, readvouchers/1, createuser/2]).
+-export([credit/2, debit/2, init/2, getbalance/1, buyvoucher/2, usevoucher/2, readvouchers/1]).
 
+-define(SERVER, 'dev1@127.0.0.1').
 %% walletapp uses floppystore apis - create, update, get
 
-%specify separate key for bal and voucher, could be put under same object later
-createuser(Keybal, Keyvoucher) ->
-    Result1 = init(Keybal, riak_dt_pncounter),
-    Result2 = init(Keyvoucher, riak_dt_orset), %which type to use for vouchers
-    [Result1 | Result2].
+init(Nodename, Cookie) ->
+    net_kernel:start([Nodename, longnames]),
+    erlang:set_cookie(node(),Cookie).
 
-init(Key, Type) ->
-    rpc:call('floppy1@127.0.0.1', floppy, create, [Key, Type]).
-    
+-spec credit(Key::term(), Amount::non_neg_integer()) -> term().  
 credit(Key, Amount) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, update, [Key,{{increment,Amount}, actor1}]) of
+    case rpc:call(?SERVER, floppy, append, [Key,{{increment,Amount}, actor1}]) of
 	{ok, _} ->
 	    ok;
 	{error, Reason} ->
@@ -22,7 +19,7 @@ credit(Key, Amount) ->
     end.
 
 debit(Key, Amount) ->
-    case rpc:call('floppy1@127.0.0.1', floppy,  update, [Key,{{decrement,Amount}, actor1}]) of
+    case rpc:call(?SERVER, floppy,  append, [Key,{{decrement,Amount}, actor1}]) of
 	{ok, _} ->
 	    ok;
 	{error, Reason} ->
@@ -30,25 +27,25 @@ debit(Key, Amount) ->
     end.
 
 getbalance(Key) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, read, [Key, riak_dt_pncounter]) of
-	{ok, Val} ->
-	    Val;
-	{error, Reason} ->
-	    {error, Reason}
+    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_pncounter]) of	
+	{error} ->
+	    {error};
+        Val ->
+            Val
     end. 
 							      
 buyvoucher(Key, Voucher) ->
-    rpc:call('floppy1@127.0.0.1',floppy,  update, [Key, {{add, Voucher},actor1}]).
+    rpc:call(?SERVER,floppy,  append, [Key, {{add, Voucher},actor1}]).
 
 usevoucher(Key, Voucher) ->
-    rpc:call('floppy1@127.0.0.1', floppy, update, [Key, {{remove, Voucher},actor1}]).
+    rpc:call(?SERVER, floppy, append, [Key, {{remove, Voucher},actor1}]).
 
 readvouchers(Key) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, read, [Key, riak_dt_orset]) of
-	{ok, Val} ->
-	    Val;
+    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_orset]) of
 	{error, Reason} ->
-	    {error, Reason}
+	    {error, Reason};
+        Val ->
+	    Val
     end.
     
 
