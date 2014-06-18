@@ -119,7 +119,7 @@ return(timeout, SD0=#state{tx_coordinator=Coordinator, transaction=Transaction, 
             Snapshot2=clockSI_materializer:update_snapshot_eager(Type, Snapshot, Updates2),
             Reply=Type:value(Snapshot2),
                                                 %Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops),
-            lager:info("ClockSI ReadItemFSM: finished materializing, Value = ~p ~n", [Reply]);
+            lager:info("ClockSI ReadItemFSM: finished materializing");
         _ ->
             lager:error("ClockSI ReadItemFSM: reading from the replication group has returned an unexpected response ~n"),
             Reply=error

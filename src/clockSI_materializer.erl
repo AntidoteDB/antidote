@@ -33,7 +33,7 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
         true -> 	    
             case Payload#clocksi_payload.op_param of
                 {merge, State} -> 
-                    New_snapshot = Type:merge(Snapshot, State),
+                    {ok, New_snapshot} = Type:merge(Snapshot, State),
                     update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
                 {Update, Actor} ->
                     {ok, New_snapshot}= Type:update(Update, Actor, Snapshot),

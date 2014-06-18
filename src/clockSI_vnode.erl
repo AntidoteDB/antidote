@@ -351,7 +351,5 @@ issue_updates([Next|Rest], Transaction, Commit_time)->
     Vec_snapshot_time = Transaction#transaction.vec_snapshot_time,  
     Dc_id = 1, %TODO: Find local dc id
     OpPayload = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, actor = Actor, snapshot_time = Vec_snapshot_time, commit_time = {Dc_id, Commit_time}, txid = Transaction#transaction.txn_id},
-    Update=#operation{payload = OpPayload},
-    Downstream_op = clockSI_downstream:generate_downstream_op(Update),
-    floppy_rep_vnode:append(Key, Downstream_op#operation.payload),
+    floppy_rep_vnode:append(Key, OpPayload),
     issue_updates(Rest, Transaction, Commit_time).
