@@ -63,7 +63,7 @@ append(Key, Op) ->
 %% Args: Key of the object and its type, which should be supported by the riak_dt.
 %% Returns: {ok, Ops} if succeeded, Ops is the union of operations; {error, nothing} if operation failed.
 read(Key, Type) ->
-    lager:info("Read ~w ~w ~n", [Key, Type]),
+    lager:info("Read ~w ~w", [Key, Type]),
     floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
         {_, Ops} ->

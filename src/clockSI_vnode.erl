@@ -116,7 +116,7 @@ handle_command({read_data_item, Txn, Key, Type}, Sender, #state{write_set=WriteS
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
     lager:info("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",[Key, Updates]),
     clockSI_readitem_fsm:start_link(Vnode, Sender, Txn, Key, Type, Updates),
-    lager:info("ClockSI-Vnode: done. Reply to the coordinator."),
+    lager:info("ClockSI-Vnode: done."),
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
@@ -168,8 +168,8 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender, #state{log=Log, com
     Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
     case Result of
         ok ->
-            lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Result]),
             Updates = ets:lookup(WriteSet, TxId),
+            lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Updates]),
             issue_updates(Updates, Transaction, TxCommitTime),
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
             lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
