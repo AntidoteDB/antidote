@@ -30,18 +30,20 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
     Payload = Op#operation.payload,
     Type = Payload#clocksi_payload.type,
     case is_op_in_snapshot(Payload#clocksi_payload.commit_time, Snapshot_time) of
-        true -> 	    
-            case Payload#clocksi_payload.op_param of
-                {merge, State} -> 
-                    {ok, New_snapshot} = Type:merge(Snapshot, State),
-                    update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
-                {Update, Actor} ->
-                    {ok, New_snapshot}= Type:update(Update, Actor, Snapshot),
-                    update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
-                Other -> lager:info("OP is ~p", [Other])
-            end;
-        false ->
-            update_snapshot(Type, Snapshot, Snapshot_time, Rest)
+	true -> 	    
+	    case Payload#clocksi_payload.op_param of
+		{merge, State} -> 
+		    {ok, New_snapshot} = Type:merge(Snapshot, State),
+		    update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
+		{Update, Actor} ->
+		    {ok, New_snapshot}= Type:update(Update, Actor, Snapshot),
+		    update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
+		Other -> lager:info("OP is ~p", [Other])
+			
+	    end;
+	    %update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
+	false ->
+	    update_snapshot(Type, Snapshot, Snapshot_time, Rest)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot
@@ -52,10 +54,10 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
 -spec is_op_in_snapshot({Dc::term(),Commit_time::non_neg_integer()}, SnapshotTime::orddict:orddict()) -> term().
 is_op_in_snapshot({Dc, Commit_time}, Snapshot_time) ->
     case orddict:find(Dc, Snapshot_time) of
-        {ok, Ts} ->
-            Commit_time =< Ts;
-        error  ->
-            false %Snaphot hasnot seen any udpate from this DC
+	{ok, Ts} ->
+	    Commit_time =< Ts;
+	error  ->
+	    false %Snaphot hasnot seen any udpate from this DC
     end.
 
 update_snapshot_eager(_, Snapshot, []) ->

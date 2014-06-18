@@ -3,16 +3,16 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -export([
-         append/2,
-         read/2,
-         clockSI_execute_TX/2,
-         clockSI_read/3,
-         clockSI_bulk_update/2,
-         clockSI_istart_tx/1,
-         clockSI_iread/3,
-         clockSI_iupdate/3, 
-         clockSI_iprepare/1, 
-         clockSI_icommit/1]).
+	 append/2,
+	 read/2,
+	 clockSI_execute_TX/2,
+	 clockSI_read/3,
+	 clockSI_bulk_update/2,
+	 clockSI_istart_tx/1,
+	 clockSI_iread/3,
+	 clockSI_iupdate/3,	 
+	 clockSI_iprepare/1,	 
+	 clockSI_icommit/1]).
 
 %% Public API
 
@@ -47,17 +47,17 @@ read(Key, Type) ->
 %%	error message in case of a failure.
 clockSI_execute_TX(ClientClock, Operations) ->
     lager:info("FLOPPY: Received order to execute transaction with clock: ~w for the list of operations ~w ~n",
-               [ClientClock, Operations]),
+    [ClientClock, Operations]),
     clockSI_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
     receive
         EndOfTx ->
-            lager:info("FLOPPY: TX completed!~n"),
-            EndOfTx
+	    lager:info("FLOPPY: TX completed!~n"),
+	    EndOfTx
     after 10000 ->
-            lager:info("FLOPPY: Tx failed!~n"),
-            {error}
+	    lager:info("FLOPPY: Tx failed!~n"),
+	    {error}
     end.
-
+    
 
 %% @doc Starts a new ClockSI interactive transaction.
 %% Input:
@@ -65,42 +65,46 @@ clockSI_execute_TX(ClientClock, Operations) ->
 %% Returns:
 %%	an ok message along with the new TxId. 
 clockSI_istart_tx(Clock) ->
-    lager:info("FLOPPY: Starting FSM for interactive transaction.~n"),
-    case Clock of
-        {Mega,Sec,Micro} ->
-            ClientClock= clockSI_vnode:now_milisec({Mega,Sec,Micro})
-    end,
-    clockSI_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
-                                                %lager:info("FLOPPY: Worker started: ~w!~n", [Worker]),	
+	lager:info("FLOPPY: Starting FSM for interactive transaction.~n"),
+	case Clock of
+		{Mega,Sec,Micro} ->
+			ClientClock= clockSI_vnode:now_milisec({Mega,Sec,Micro})
+		end,
+	clockSI_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
+    %lager:info("FLOPPY: Worker started: ~w!~n", [Worker]),	
     receive
         TxId ->
-            lager:info("FLOPPY: TX started with TxId= ~w~n", [TxId]),
-            TxId
+	        lager:info("FLOPPY: TX started with TxId= ~w~n", [TxId]),
+	        TxId
     after 10000 ->
-            lager:info("FLOPPY: Tx was not started!~n"),
-            {error, timeout}
+	    lager:info("FLOPPY: Tx was not started!~n"),
+	    {error, timeout}
     end.
-
-
+    
+    
 clockSI_bulk_update(ClientClock, Operations) ->
     clockSI_execute_TX(ClientClock, Operations).
 
 clockSI_read(ClientClock, Key, Type) ->
-    Operation={read, Key, Type},
+	Operation={read, Key, Type},
     clockSI_execute_TX(ClientClock, [Operation]).
-
+    
 clockSI_iread(TxId=#tx_id{}, Key, Type) ->
-    {_, _, CoordFsmPid}=TxId,
-    gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
-
+	{_, _, CoordFsmPid}=TxId,
+	gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
+    
 clockSI_iupdate(TxId=#tx_id{}, Key, OpParams) ->
-    {_, _, CoordFsmPid}=TxId,
+	{_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, OpParams}}).
 
 clockSI_iprepare(TxId=#tx_id{})->
-    {_, _, CoordFsmPid}=TxId,
+	{_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
 
 clockSI_icommit(TxId=#tx_id{})->
-    {_, _, CoordFsmPid}=TxId,
+	{_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, commit).
+        
+    
+    
+    

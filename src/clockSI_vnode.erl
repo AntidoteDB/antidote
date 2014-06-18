@@ -4,15 +4,15 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
-         %%API begin
-         read_data_item/4,
-         update_data_item/4,
-         %%clean_and_notify/3,
-         get_pending_txs/2,
-         prepare/2,
-         commit/3,
-         abort/2,
-         now_milisec/1,
+	 %API begin
+	 read_data_item/4,
+	 update_data_item/4,
+	 %clean_and_notify/3,
+	 get_pending_txs/2,
+	 prepare/2,
+	 commit/3,
+	 abort/2,
+	 now_milisec/1,
          init/1,
          terminate/2,
          handle_command/3,
@@ -28,7 +28,7 @@
          handle_exit/3]).
 
 -ignore_xref([
-              start_vnode/1
+             start_vnode/1
              ]).
 
 %%---------------------------------------------------------------------
@@ -81,31 +81,31 @@ abort(ListofNodes, TxId) ->
 %% @doc sends a request to Node to get all the transactions that are pending for a given Key
 %% This function is called by the ClockSI read FSM
 get_pending_txs(Node, {Key, TxId}) ->
-    lager:info("ClockSI-Vnode: get pending txs for Key ~w, TxId ~w ~n",[Key,TxId]),
-    riak_core_vnode_master:sync_command (Node, {get_pending_txs, {Key, TxId}}, ?CLOCKSIMASTER).
+	lager:info("ClockSI-Vnode: get pending txs for Key ~w, TxId ~w ~n",[Key,TxId]),
+	riak_core_vnode_master:sync_command (Node, {get_pending_txs, {Key, TxId}}, ?CLOCKSIMASTER).
 
 
 %% @doc Initializes all the data structures that the vnode needs to track information of
 %% the transactions it participates on.
 init([Partition]) ->
-                                                %lager:info("ClockSI-Vnode: initialize partition ~w ~n",[Partition]),
-                                                % It generates a dets file to store active transactions.
+	%lager:info("ClockSI-Vnode: initialize partition ~w ~n",[Partition]),
+    % It generates a dets file to store active transactions.
     TxLogFile = string:concat(integer_to_list(Partition), "_clockSI"),
     TxLogPath = filename:join(
-                  app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
+            app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
     case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
         {ok, TxLog} ->
-            ActiveTx=ets:new(active_tx, [set]),
-            PreparedTx=ets:new(prepared_tx, [set]),
-            CommittedTx=ets:new(committed_tx, [set]),
-            WaitingFsms=ets:new(waiting_fsms, [bag]),
-            ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
-            WriteSet=ets:new(write_set, [duplicate_bag]),
-                                                %lager:info("ClockSI-Vnode: Initialized state, data structures and Log ~n"),
+	    	ActiveTx=ets:new(active_tx, [set]),
+	    	PreparedTx=ets:new(prepared_tx, [set]),
+	    	CommittedTx=ets:new(committed_tx, [set]),
+	    	WaitingFsms=ets:new(waiting_fsms, [bag]),
+	    	ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
+	    	WriteSet=ets:new(write_set, [duplicate_bag]),
+	    	%lager:info("ClockSI-Vnode: Initialized state, data structures and Log ~n"),
             {ok, #state{partition=Partition, log=TxLog, active_tx=ActiveTx, prepared_tx=PreparedTx, committed_tx=CommittedTx, 
-                        write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
+						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
         {error, Reason} ->
-            lager:error("ClockSI-Vnode: could not initialize state, reason: ~w ~n",[Reason]),
+        	lager:error("ClockSI-Vnode: could not initialize state, reason: ~w ~n",[Reason]),
             {error, Reason}
     end.
 
@@ -113,7 +113,7 @@ init([Partition]) ->
 %% @doc starts a read_fsm to handle a read operation.
 handle_command({read_data_item, Txn, Key, Type}, Sender, #state{write_set=WriteSet, partition= Partition, log=_Log}=State) ->
     Vnode={Partition, node()},
-    Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
+	Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
     lager:info("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",[Key, Updates]),
     clockSI_readitem_fsm:start_link(Vnode, Sender, Txn, Key, Type, Updates),
     lager:info("ClockSI-Vnode: done."),
@@ -125,18 +125,18 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=Active
     TxId = Txn#transaction.txn_id,
     Result = dets:insert(Log, {TxId, {Key, Op}}),
     case Result of
-        ok ->
-            ets:insert(ActiveTx, {TxId, Txn#transaction.snapshot_time}),
-            Check1=ets:lookup(ActiveTx, TxId),
-            lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
-            ets:insert(ActiveTxsPerKey, {Key, TxId}),
-            Check2=ets:lookup(ActiveTxsPerKey, Key),
-            lager:info("ClockSI-Vnode: Inserted to ActiveTxsPerKey ~p",[Check2]),
-            ets:insert(WriteSet, {TxId, {Key, Op}}),
-            Check3=ets:lookup(WriteSet, TxId),
-            lager:info("ClockSI-Vnode: Inserted to WriteSet ~p",[Check3]),
-            clockSI_updateitem_fsm:start_link(Sender, TxId),
-            {noreply, State};
+    	ok ->
+    	    ets:insert(ActiveTx, {TxId, Txn#transaction.snapshot_time}),
+    	    Check1=ets:lookup(ActiveTx, TxId),
+    	    lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
+			ets:insert(ActiveTxsPerKey, {Key, TxId}),
+			Check2=ets:lookup(ActiveTxsPerKey, Key),
+    	    lager:info("ClockSI-Vnode: Inserted to ActiveTxsPerKey ~p",[Check2]),
+			ets:insert(WriteSet, {TxId, {Key, Op}}),
+			Check3=ets:lookup(WriteSet, TxId),
+    	    lager:info("ClockSI-Vnode: Inserted to WriteSet ~p",[Check3]),
+    		clockSI_updateitem_fsm:start_link(Sender, TxId),
+			{noreply, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -146,20 +146,20 @@ handle_command({prepare, Transaction}, _Sender, #state{committed_tx=CommittedTx,
     TxId = Transaction#transaction.txn_id,
     TxWriteSet=ets:lookup(WriteSet, TxId), 
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
-        true ->
-            PrepareTime=now_milisec(erlang:now()),
-            Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
-            case Result of
-                ok ->
-                    ets:insert(PreparedTx, {TxId, PrepareTime}),
-                    {reply, {prepared, PrepareTime}, State};
-                {error, Reason} ->
-                    {reply, {error, Reason}, State}
-            end;
-        false ->
-            lager:info("ClockSI_Vnode: certification_check failed"),
-                                                %This does not match Ale's coordinator. We have to discuss it. It also expect Node.
-            {reply, abort, State}
+    true ->
+	PrepareTime=now_milisec(erlang:now()),
+	Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
+        case Result of
+    	ok ->
+	    ets:insert(PreparedTx, {TxId, PrepareTime}),
+            {reply, {prepared, PrepareTime}, State};
+    	{error, Reason} ->
+            {reply, {error, Reason}, State}
+        end;
+    false ->
+	lager:info("ClockSI_Vnode: certification_check failed"),
+	%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
+	{reply, abort, State}
     end;
 
 handle_command({commit, Transaction, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
@@ -181,27 +181,27 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender, #state{log=Log, com
     end;
 
 handle_command({abort, _TxId}, _Sender, #state{log=_Log}=State) ->
-                                                %clean_and_notify(timeout, TxId, State),
+    %clean_and_notify(timeout, TxId, State),
     lager:info("Vnode: Recieved abort~n"),
     {reply, ack_abort, State};
 
 handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
-                                                           active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms, prepared_tx=PreparedTx}=State) ->
-    lager:info("ClockSI-Vnode: retrieving active Txs for key ~w ~n",[Key]),
-    ActiveTxs=ets:lookup(ActiveTxsPerKey, Key),
-    lager:info("ClockSI-Vnode:  Active Txs for key ~w: ~w ",[Key, ActiveTxs]),
-    Pending=pending_txs(ActiveTxs, TxId, PreparedTx),
-    lager:info("ClockSI-Vnode:  Pending Txs for key ~w: ~w ",[Key, Pending]),
-    case Pending of
-        []->
-            lager:info("ClockSI-Vnode: no pending txs. ~n"),
-            {reply, {ok, empty}, State};
-        [H|T]->
-            lager:info("ClockSI-Vnode: There are pending Txs for key ~w, notifying the read_FSM. ~w ~n",[Key, Sender]),
-            add_to_waiting_fsms(WaitingFsms, [H|T], Sender),    
-            {reply, {ok, [H|T]}, State}
-    end;
-
+			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms, prepared_tx=PreparedTx}=State) ->
+	lager:info("ClockSI-Vnode: retrieving active Txs for key ~w ~n",[Key]),
+	ActiveTxs=ets:lookup(ActiveTxsPerKey, Key),
+	lager:info("ClockSI-Vnode:  Active Txs for key ~w: ~w ",[Key, ActiveTxs]),
+	Pending=pending_txs(ActiveTxs, TxId, PreparedTx),
+	lager:info("ClockSI-Vnode:  Pending Txs for key ~w: ~w ",[Key, Pending]),
+	case Pending of
+		[]->
+			lager:info("ClockSI-Vnode: no pending txs. ~n"),
+			{reply, {ok, empty}, State};
+		[H|T]->
+			lager:info("ClockSI-Vnode: There are pending Txs for key ~w, notifying the read_FSM. ~w ~n",[Key, Sender]),
+			add_to_waiting_fsms(WaitingFsms, [H|T], Sender),    
+			{reply, {ok, [H|T]}, State}
+	end;
+	
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
     {noreply, State}.
@@ -252,28 +252,28 @@ terminate(_Reason, _State) ->
 %% 	b. Waiting_Fsms,
 %% 	c. PreparedTx
 clean_and_notify(TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedTx, 
-                              write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
-    Pending=ets:lookup(WaitingFsms, TxId),
-    lager:info("ClockSI_Vnode: fsms that are waiting for tx ~p to finish: ~p", [TxId, Pending]),
-    notify_all(Pending, TxId),
-    case ets:lookup(WriteSet, TxId) of
+					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
+	Pending=ets:lookup(WaitingFsms, TxId),
+	lager:info("ClockSI_Vnode: fsms that are waiting for tx ~p to finish: ~p", [TxId, Pending]),
+	notify_all(Pending, TxId),
+	case ets:lookup(WriteSet, TxId) of
         [Op|Ops] ->
-            lager:info("ClockSI_Vnode: cleanning tx state on the vnode."),
-            clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
-    end,
-    ets:delete(PreparedTx, TxId),
-    ets:delete(ActiveTx, TxId),
-    ets:delete(WriteSet, TxId),
-    ets:delete(WaitingFsms, TxId).
+        lager:info("ClockSI_Vnode: cleanning tx state on the vnode."),
+		clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
+    	end,
+	ets:delete(PreparedTx, TxId),
+	ets:delete(ActiveTx, TxId),
+	ets:delete(WriteSet, TxId),
+	ets:delete(WaitingFsms, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into a number expressed in microseconds
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
-    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
+        (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
 
 notify_all([], _) -> ok; 
 notify_all([Next|Rest], TxId) -> 
-    {_, {_,_,{FsmId,_}}} = Next,
-    lager:info("ClockSI_Vnode: Notifying fsm: ~p", [FsmId]),
+	{_, {_,_,{FsmId,_}}} = Next,
+	lager:info("ClockSI_Vnode: Notifying fsm: ~p", [FsmId]),
     gen_fsm:send_event(FsmId, {committed, TxId}),
     notify_all(Rest, TxId).
 
@@ -283,10 +283,11 @@ notify_all([Next|Rest], TxId) ->
 %% 	ListOfPendingTxs: a List of all transactions in prepare state that update Key
 %% 	Key: the key of the object for which there are prepared transactions that updated it.
 pending_txs(ListOfPendingTxs, TxId, PreparedTx) -> 
-    SnapshotTime= TxId#tx_id.snapshot_time,
-    internal_pending_txs(ListOfPendingTxs, SnapshotTime, PreparedTx, []).
+	SnapshotTime= TxId#tx_id.snapshot_time,
+	internal_pending_txs(ListOfPendingTxs, SnapshotTime, PreparedTx, []).
 internal_pending_txs([], _ST, _PreparedTx, Result) -> Result;
 internal_pending_txs([H|T], ST, PreparedTx, Result) ->
+<<<<<<< HEAD
     {_, TxId}=H,
     Lookup=ets:lookup(PreparedTx, TxId),
     case Lookup of 
@@ -301,22 +302,38 @@ internal_pending_txs([H|T], ST, PreparedTx, Result) ->
         [] ->
             internal_pending_txs(T, ST, PreparedTx, Result)
     end.
+=======
+	{_, TxId}=H,
+	Lookup=ets:lookup(PreparedTx, TxId),
+		case Lookup of 
+		[{_, PrepareTime}] ->
+			lager:info("Got prepare time for tx ~w of ~w", [TxId, PrepareTime]),
+			case PrepareTime < ST of
+				true -> 
+					internal_pending_txs(T, ST,PreparedTx, lists:append(Result,[H]));
+				false-> 
+					internal_pending_txs(T, ST, PreparedTx, Result)
+			end;
+		[] ->
+			internal_pending_txs(T, ST, PreparedTx, Result)
+		end.
+>>>>>>> parent of 3aa84b3... Correct whitespace
 
 
 clean_active_txs_per_key(_, [], _) -> ok;
 clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey) ->
-    {_, {Key, _}}=Op,
-    lager:info("ClockSI-Vnode: trying to remove tx ~w for Key ~w.", [TxId, Key]),
-    ets:delete_object(ActiveTxsPerKey, {Key, TxId}),
-    clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
+	{_, {Key, _}}=Op,
+	lager:info("ClockSI-Vnode: trying to remove tx ~w for Key ~w.", [TxId, Key]),
+	ets:delete_object(ActiveTxsPerKey, {Key, TxId}),
+	clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
 
 add_to_waiting_fsms(_, [], _) -> ok;    
 add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->
-    {_, ToWaitForId}= H,
-    lager:info("ClockSI-Vnode: adding fsm ~w to wait for tx ~w.", [ToWaitForId]),  
-    ets:insert(WaitingFsms, {ToWaitForId, Sender}),
-    add_to_waiting_fsms(WaitingFsms, T, Sender).
-
+	{_, ToWaitForId}= H,
+	lager:info("ClockSI-Vnode: adding fsm ~w to wait for tx ~w.", [ToWaitForId]),  
+	ets:insert(WaitingFsms, {ToWaitForId, Sender}),
+	add_to_waiting_fsms(WaitingFsms, T, Sender).
+		
 %% @doc performs a certification check when a transaction wants to move
 %% to the prepared state.	
 certification_check(_, [], _, _) -> true;
@@ -324,23 +341,23 @@ certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) ->
     [{Key, _}|T]=TxWriteSet,
     TxsPerKey=ets:lookup(ActiveTxPerKey, Key),
     case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true -> 
-            false;	
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
+    true -> 
+        false;	
+    false ->
+	certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
     end.
 
 check_keylog(_, [], _) -> false;
 check_keylog(TxId, [H|T], CommittedTx)->
     lager:info("Active Tx to check ~w~n",[H]),
     case H > TxId of 
-        true ->
-            case ets:lookup(CommittedTx, H) of 
-                true ->
-                    true;
-                false->
-                    check_keylog(TxId, T, CommittedTx)
-            end
+    true ->
+        case ets:lookup(CommittedTx, H) of 
+	true ->
+	    true;
+	false->
+	    check_keylog(TxId, T, CommittedTx)
+	end
     end.
 
 issue_updates([], _Transaction,  _CommitTS)-> ok;
