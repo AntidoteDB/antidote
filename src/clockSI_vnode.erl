@@ -115,13 +115,8 @@ handle_command({read_data_item, TxId, Key, Type}, Sender, #state{write_set=Write
     Vnode={Partition, node()},
 	Updates = ets:lookup(WriteSet, TxId),
     lager:info("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",[Key, Updates]),
-<<<<<<< HEAD
-    clockSI_readitem_fsm:start_link(Vnode, Sender, Txn, Key, Type, Updates),
-    lager:info("ClockSI-Vnode: done."),
-=======
     clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type, Updates),
     lager:info("ClockSI-Vnode: done. Reply to the coordinator."),
->>>>>>> parent of acfe61c... Enable clocksi functions to use vector-timestamps for inter dc replication
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
@@ -172,7 +167,7 @@ handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_
         ok ->
             Updates = ets:lookup(WriteSet, TxId),
             lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Updates]),
-            issue_updates(Updates, Transaction, TxCommitTime),
+            issue_updates(Updates, TxCommitTime),
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
             lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
             clean_and_notify(TxId, State),
@@ -289,7 +284,6 @@ pending_txs(ListOfPendingTxs, TxId, PreparedTx) ->
 	internal_pending_txs(ListOfPendingTxs, SnapshotTime, PreparedTx, []).
 internal_pending_txs([], _ST, _PreparedTx, Result) -> Result;
 internal_pending_txs([H|T], ST, PreparedTx, Result) ->
-<<<<<<< HEAD
     {_, TxId}=H,
     Lookup=ets:lookup(PreparedTx, TxId),
     case Lookup of 
@@ -304,22 +298,6 @@ internal_pending_txs([H|T], ST, PreparedTx, Result) ->
         [] ->
             internal_pending_txs(T, ST, PreparedTx, Result)
     end.
-=======
-	{_, TxId}=H,
-	Lookup=ets:lookup(PreparedTx, TxId),
-		case Lookup of 
-		[{_, PrepareTime}] ->
-			lager:info("Got prepare time for tx ~w of ~w", [TxId, PrepareTime]),
-			case PrepareTime < ST of
-				true -> 
-					internal_pending_txs(T, ST,PreparedTx, lists:append(Result,[H]));
-				false-> 
-					internal_pending_txs(T, ST, PreparedTx, Result)
-			end;
-		[] ->
-			internal_pending_txs(T, ST, PreparedTx, Result)
-		end.
->>>>>>> parent of 3aa84b3... Correct whitespace
 
 
 clean_active_txs_per_key(_, [], _) -> ok;
