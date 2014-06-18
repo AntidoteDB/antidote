@@ -180,17 +180,6 @@ handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_
             {reply, committed, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
-    ok ->
-    	lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Result]),
-		Updates = ets:lookup(WriteSet, TxId),
-		issue_updates(Updates, TxCommitTime),
-        ets:insert(CommittedTx, {TxId, TxCommitTime}),
-        lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
-        clean_and_notify(TxId, State),
-        lager:info("ClockSI_Vnode: done"),
-        {reply, committed, State};
-    {error, Reason} ->
-        {reply, {error, Reason}, State}
     end;
 
 handle_command({abort, _TxId}, _Sender, #state{log=_Log}=State) ->

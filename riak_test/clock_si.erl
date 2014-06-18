@@ -165,7 +165,7 @@ clockSI_test_read_wait(Nodes) ->
     lager:info("Tx2 Reading..."),
     
     Pid=spawn(clock_si, spawn_read, [LastNode, TxId1, self()]),    
-    timer:sleep(1000),
+    %timer:sleep(1000),
     
     %% commit the first tx.
     End=rpc:call(FirstNode, floppy, clockSI_icommit, [TxId]),   
