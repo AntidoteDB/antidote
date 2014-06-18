@@ -64,9 +64,9 @@ update_data_item(Node, TxId, Key, Op) ->
     riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Op}, ?CLOCKSIMASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
-prepare(ListofNodes, Txn) ->
-    lager:info("ClockSI-Vnode: prepare TxId ~w ~n",[Txn]),
-    riak_core_vnode_master:command(ListofNodes, {prepare, Txn}, {fsm, undefined, self()},?CLOCKSIMASTER).
+prepare(ListofNodes, TxId) ->
+    lager:info("ClockSI-Vnode: prepare TxId ~w ~n",[TxId]),
+    riak_core_vnode_master:command(ListofNodes, {prepare, TxId}, {fsm, undefined, self()},?CLOCKSIMASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
@@ -111,22 +111,26 @@ init([Partition]) ->
 
 
 %% @doc starts a read_fsm to handle a read operation.
-handle_command({read_data_item, Txn, Key, Type}, Sender, #state{write_set=WriteSet, partition= Partition, log=_Log}=State) ->
+handle_command({read_data_item, TxId, Key, Type}, Sender, #state{write_set=WriteSet, partition= Partition, log=_Log}=State) ->
     Vnode={Partition, node()},
-	Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
+	Updates = ets:lookup(WriteSet, TxId),
     lager:info("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",[Key, Updates]),
+<<<<<<< HEAD
     clockSI_readitem_fsm:start_link(Vnode, Sender, Txn, Key, Type, Updates),
     lager:info("ClockSI-Vnode: done."),
+=======
+    clockSI_readitem_fsm:start_link(Vnode, Sender, TxId, Key, Type, Updates),
+    lager:info("ClockSI-Vnode: done. Reply to the coordinator."),
+>>>>>>> parent of acfe61c... Enable clocksi functions to use vector-timestamps for inter dc replication
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
+handle_command({update_data_item, TxId, Key, Op}, Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
     %%do we need the Sender here?
-    TxId = Txn#transaction.txn_id,
     Result = dets:insert(Log, {TxId, {Key, Op}}),
     case Result of
     	ok ->
-    	    ets:insert(ActiveTx, {TxId, Txn#transaction.snapshot_time}),
+    	    ets:insert(ActiveTx, {TxId, TxId#tx_id.snapshot_time}),
     	    Check1=ets:lookup(ActiveTx, TxId),
     	    lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
 			ets:insert(ActiveTxsPerKey, {Key, TxId}),
@@ -142,8 +146,7 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=Active
     end;
 
 
-handle_command({prepare, Transaction}, _Sender, #state{committed_tx=CommittedTx, log=Log, active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
-    TxId = Transaction#transaction.txn_id,
+handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Log, active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
     TxWriteSet=ets:lookup(WriteSet, TxId), 
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
     true ->
@@ -162,9 +165,8 @@ handle_command({prepare, Transaction}, _Sender, #state{committed_tx=CommittedTx,
 	{reply, abort, State}
     end;
 
-handle_command({commit, Transaction, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
+handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
     lager:info("ClockSI_Vnode: got commit message."),
-    TxId = Transaction#transaction.txn_id,
     Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
     case Result of
         ok ->
@@ -178,6 +180,17 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender, #state{log=Log, com
             {reply, committed, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
+    ok ->
+    	lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Result]),
+		Updates = ets:lookup(WriteSet, TxId),
+		issue_updates(Updates, TxCommitTime),
+        ets:insert(CommittedTx, {TxId, TxCommitTime}),
+        lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
+        clean_and_notify(TxId, State),
+        lager:info("ClockSI_Vnode: done"),
+        {reply, committed, State};
+    {error, Reason} ->
+        {reply, {error, Reason}, State}
     end;
 
 handle_command({abort, _TxId}, _Sender, #state{log=_Log}=State) ->
@@ -360,13 +373,10 @@ check_keylog(TxId, [H|T], CommittedTx)->
 	end
     end.
 
-issue_updates([], _Transaction,  _CommitTS)-> ok;
+issue_updates([], _CommitTS)-> ok;
 
-issue_updates([Next|Rest], Transaction, Commit_time)->
-    {_,{Key,{Op,Actor}}}=Next,
-    lager:info("About to append this: ~w~n",[{Key, {Op, Actor, Commit_time}}]),
-    Vec_snapshot_time = Transaction#transaction.vec_snapshot_time,  
-    Dc_id = 1, %TODO: Find local dc id
-    OpPayload = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, actor = Actor, snapshot_time = Vec_snapshot_time, commit_time = {Dc_id, Commit_time}, txid = Transaction#transaction.txn_id},
-    floppy_rep_vnode:append(Key, OpPayload),
-    issue_updates(Rest, Transaction, Commit_time).
+issue_updates([Next|Rest], CommitTS)->
+	{_,{Key,{Op,Actor}}}=Next,
+	lager:info("About to append this: ~w~n",[{Key, {Op, Actor, CommitTS}}]),
+    floppy_rep_vnode:append(Key, {Op, Actor, CommitTS}),
+	issue_updates(Rest, CommitTS).

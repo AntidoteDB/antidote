@@ -22,7 +22,7 @@
 
 -record(state, {type,
 		key,
-	 	transaction,
+	 	tx_id,
 		tx_coordinator,
 		vnode,
 		updates,
@@ -41,13 +41,13 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
+init([Vnode, Coordinator, TxId, Key, Type, Updates]) ->
     SD = #state{
 		vnode=Vnode,
 		type=Type,
 		key=Key,
                 tx_coordinator=Coordinator, 
-                transaction=Transaction,
+                tx_id=TxId,
 		updates=Updates,
 		pending_txs=[]},
     {ok, check_clock, SD, 0}.
@@ -55,8 +55,7 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%	if local clock is behinf, it sleeps the fms until the clock
 %%	catches up. CLOCK-SI: clock scew.
-check_clock(timeout, SD0=#state{transaction=Transaction}) ->
-    TxId = Transaction#transaction.txn_id,
+check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
     case (T_TS) > Time of true ->
@@ -73,9 +72,8 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
 %%	- Asks the Vnode for pending txs conflicting the cyrrent one
 %%	- If none, goes to return state
 %%	- Otherwise, goes to commit_notification
-get_txs_to_check(timeout, SD0=#state{transaction= Transaction, vnode=Vnode, key=Key}) ->
+get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
 	lager:info("ClockSI ReadItemFSM: Calling vnode ~w to get pending txs for Key ~w ~n", [Vnode, Key]),
-    TxId = Transaction#transaction.txn_id,
     case clockSI_vnode:get_pending_txs(Vnode, {Key, TxId}) of
     {ok, empty} ->		
     	lager:info("ClockSI ReadItemFSM: no txs to wait for ~w ~n", [Key]),
@@ -107,13 +105,13 @@ commit_notification({committed, TxId}, SD0=#state{pending_txs=Left, key=Key}) ->
 
 %% @doc	return:
 %%	- Reads adn retunrs the log of the specified Key using the replication layer.
-return(timeout, SD0=#state{tx_coordinator=Coordinator, transaction=Transaction, key=Key, type=Type, updates=Updates}) ->
+return(timeout, SD0=#state{tx_coordinator=Coordinator, tx_id= TxId, key=Key, type=Type, updates=Updates}) ->
 	lager:info("ClockSI ReadItemFSM: reading key ~w ~n", [Key]),
     case floppy_rep_vnode:read(Key, Type) of
     {ok, Ops} ->
-    	lager:info("ClockSI ReadItemFSM: got the operations for key ~w, calling the materializer... ~n", [Key]),	      
-        ListofOps = [ Op || { _Key, Op } <- Ops ],  
-    	Snapshot=clockSI_materializer:get_snapshot(Type, Transaction#transaction.vec_snapshot_time, ListofOps),
+    	lager:info("ClockSI ReadItemFSM: got the operations for key ~w, calling the materializer... ~n", [Key]),
+	    Init=clockSI_materializer:create_snapshot(Type),
+    	Snapshot=clockSI_materializer:update_snapshot(Type, Init, TxId#tx_id.snapshot_time, Ops),
 		Updates2=filter_updates_per_key(Updates, Key),
 		lager:info("Filtered updates before completeing the read: ~w ~n" , [Updates2]),
 		Snapshot2=clockSI_materializer:update_snapshot_eager(Type, Snapshot, Updates2),
