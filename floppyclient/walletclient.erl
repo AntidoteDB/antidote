@@ -3,16 +3,17 @@
 
 -export([run/1, start/1]).
 
-start(Args) ->
+start(Args) ->    
     [Key1, Key2] = Args,
-    Result = run([Key1,Key2]),
-    io:format("~p ~n",[Result]).
+    run([Key1,Key2]).
 
-run([Key1,Key2])->
+run([Key_bal,Key_voucher])->
+    io:format("Starting Wallet Client~n"),
     walletapp:init('wallet1@127.0.0.1', floppy),
-    Result1 = testbalance(Key1, 10, [bal]),
-    Result2 = testvoucher(Key2,10,[voucher]),
-    [Result1 | Result2].
+    Result1 = testbalance(Key_bal, 10, []),
+    io:format("~nTesting credit and debit operations: ~p ~n ", [Result1]),
+    Result2 = testvoucher(Key_voucher,10,[]),
+    io:format("~nTesting voucher use and buy operations: ~p ~n", [Result2]).
        
 testbalance(_, 0, Result) ->
     lists:reverse(Result);
@@ -32,7 +33,6 @@ testcredit(Key, Amount) ->
 	    {error,Reason};
 	 Val ->
 	    ?assert(Val =:= Balbefore + Amount)
-	    %{ok, credit, Balbefore, Amount, Val}
     end.
 
 testdebit(Key, Amount) ->
