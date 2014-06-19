@@ -135,7 +135,7 @@ repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
     repair(NodeOps, ReadResult),
     {stop, normal, SD};
 
-repairRest({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
+repairRest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
