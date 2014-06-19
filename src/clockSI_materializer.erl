@@ -23,7 +23,7 @@ create_snapshot(Type) ->
 %%		SnapshotTime: Threshold for the operations to be applied.
 %%		Ops: The list of operations to apply in causal order
 %%	Output: The CRDT after appliying the operations 
--spec update_snapshot(Type::atom(), Snapshot::term(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
+-spec update_snapshot(Type::atom(), Snapshot::term(), SnapshotTime::term(),Ops::list()) -> term().
 update_snapshot(_, Snapshot, _Snapshot_time, []) ->
     {ok, Snapshot};
 update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->

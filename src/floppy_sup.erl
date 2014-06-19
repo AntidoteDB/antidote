@@ -43,6 +43,11 @@ init(_Args) ->
     ClockSIiTxCoordSup =  { clockSI_interactive_tx_coord_sup,
                   {clockSI_interactive_tx_coord_sup, start_link, []},
                   permanent, 5000, supervisor, [clockSI_interactive_tx_coord_sup]},
+
+    ClockSIDSGenMaster = { clockSI_downstream_generator_vnode_master,
+                           {riak_core_vnode_master,  start_link, [clockSI_downstream_generator_vnode]},
+                  permanent, 5000, worker, [riak_core_vnode_master]},
+
     
     CoordSup =  { floppy_coord_sup,
                   {floppy_coord_sup, start_link, []},
@@ -58,4 +63,5 @@ init(_Args) ->
 
     { ok,
         { {one_for_one, 5, 10},
-          [LoggingMaster, RepMaster, ClockSIMaster, ClockSITxCoordSup, ClockSIiTxCoordSup, InterDcRepMaster, CoordSup, RepSup, InterDcRecvr]}}.
+          [LoggingMaster, RepMaster, ClockSIMaster, ClockSITxCoordSup, ClockSIiTxCoordSup, InterDcRepMaster, CoordSup, RepSup, InterDcRecvr,
+          ClockSIDSGenMaster]}}.

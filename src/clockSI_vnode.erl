@@ -170,7 +170,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender, #state{log=Log, com
         ok ->
             lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Result]),
             Updates = ets:lookup(WriteSet, TxId),
-            issue_updates(Updates, Transaction, TxCommitTime),
+            issue_updates(Updates, Transaction, TxCommitTime, ignore),
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
             lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
             clean_and_notify(TxId, State),
@@ -343,20 +343,32 @@ check_keylog(TxId, [H|T], CommittedTx)->
             end
     end.
 
-issue_updates([], _Transaction,  _CommitTS)-> ok;
-
-issue_updates([Next|Rest], Transaction, Commit_time)->
+issue_updates([], _Transaction, _CommitTS, ignore) ->
+    ok;
+issue_updates([], _Transaction,  _CommitTS, Key) ->
+    ok = clockSI_downstream_generator_vnode:trigger(Key),
+    ok;
+issue_updates([Next|Rest], Transaction, Commit_time, _Key)->
     {_,{Key,{Op,Actor}}}=Next,
     lager:info("About to append this: ~w~n",[{Key, {Op, Actor, Commit_time}}]),
-    Vec_snapshot_time = Transaction#transaction.vec_snapshot_time,  
-    Dc_id = 1, %TODO: Find local dc id
-    OpPayload = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, actor = Actor, snapshot_time = Vec_snapshot_time, commit_time = {Dc_id, Commit_time}, txid = Transaction#transaction.txn_id},
-    Update=#operation{payload = OpPayload},
-    case clockSI_downstream:generate_downstream_op(Update) of
-        {ok, Downstream_op} ->
-            floppy_rep_vnode:append(Key, Downstream_op#operation.payload),
-            issue_updates(Rest, Transaction, Commit_time);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    Vec_snapshot_time = Transaction#transaction.vec_snapshot_time, 
 
+    Dc_id = 1, %TODO: Find local dc id
+
+    OpPayload = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, actor = Actor, snapshot_time = Vec_snapshot_time, commit_time = {Dc_id, Commit_time}, txid = Transaction#transaction.txn_id},
+    %% Write operation to a key "clientops"
+    %% TODO: Replicate writes to its preflists 
+    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+    Nodelist = riak_core_apl:get_primary_apl(DocIdx, ?N, logging),
+    Preflist = [Node || {Node, _Type} <- Nodelist],
+    [IndexNode | _] = Preflist,
+    OpId = {now_milisec(erlang:now()), node()}, %%This is a hack, generate OpId systematically using replication leader
+   
+    case riak_core_vnode_master:sync_command(IndexNode, {append, clientops, OpPayload, OpId, Preflist}, ?LOGGINGMASTER) of
+        {ok, Result} ->
+            lager:info("Issueupdates: Writing op ~p Result = ~p to log ~n",[OpPayload, Result]),
+            issue_updates(Rest, Transaction, Commit_time, Key);
+        {error, Reason} ->
+            lager:info("Cannot write op ~p", [OpPayload]),
+            {error,Reason}
+     end.

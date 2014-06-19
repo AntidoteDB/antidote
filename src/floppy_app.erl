@@ -16,10 +16,13 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
        	    
-       	 %ClockSI layer
+       	    %ClockSI layer
      
-			ok = riak_core:register([{vnode_module, clockSI_vnode}]),
-			ok = riak_core_node_watcher:service_up(clockSI, self()),
+	    ok = riak_core:register([{vnode_module, clockSI_vnode}]),
+	    ok = riak_core_node_watcher:service_up(clockSI, self()),
+
+            ok = riak_core:register([{vnode_module, clockSI_downstream_generator_vnode}]),
+            ok = riak_core_node_watcher:service_up(clockSI_downstream_generator, self()),
 
 	    %Within DC replication layer
 	    ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
