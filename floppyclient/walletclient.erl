@@ -1,3 +1,7 @@
+%% @doc This walletclient is a tiny test application for the wallet API.
+
+%% @TODO Adapt to protocol buffer API once it is ready! 
+
 -module(walletclient).
 -include_lib("eunit/include/eunit.hrl").
 
