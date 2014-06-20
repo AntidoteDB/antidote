@@ -49,7 +49,6 @@ init([Partition]) ->
                                             Filtered
                                     end
                             end, [], GrossPreflists),
-    lager:info("Downstream vnode init"),
     {ok, #dstate{partition = Partition, preflist = Preflists, last_opid = 0}}.
 
 %% @doc Read client update operations, generate downstream operations and store it to persistent log.

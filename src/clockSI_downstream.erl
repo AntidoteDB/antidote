@@ -13,7 +13,7 @@ generate_downstream_op(Update=#operation{payload = Payload}) ->
         {ok, Ops} when is_list(Ops) ->    
             lager:info("Downstream Generator reading key ~w ~p, calling the materializer ~n", [Key, Ops]),	      
             ListofOps = [ Op || { _Key, Op } <- Ops ],             
-            {ok, Snapshot} = clockSI_materializer:get_snapshot(Type,Snapshot_time, ListofOps),
+            {ok, Snapshot} = clockSI_materializer:get_snapshot(Type,Snapshot_time, ListofOps, Payload#clocksi_payload.txid),
             lager:info("~p :Snapshot => ~p ~n", [?MODULE, Snapshot]), 
             {Op, Actor} = Op_param,
             {ok, Newstate} = Type:update(Op, Actor, Snapshot),

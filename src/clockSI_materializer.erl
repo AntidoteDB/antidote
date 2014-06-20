@@ -6,6 +6,7 @@
 -endif.
 
 -export([get_snapshot/3,
+         get_snapshot/4,
         update_snapshot_eager/3]).
 
 %% @doc	Creates an empty CRDT
@@ -23,28 +24,28 @@ create_snapshot(Type) ->
 %%		SnapshotTime: Threshold for the operations to be applied.
 %%		Ops: The list of operations to apply in causal order
 %%	Output: The CRDT after appliying the operations 
--spec update_snapshot(Type::atom(), Snapshot::term(), SnapshotTime::term(),Ops::list()) -> term().
-update_snapshot(_, Snapshot, _Snapshot_time, []) ->
+-spec update_snapshot(Type::atom(), Snapshot::term(), SnapshotTime::term(),Ops::list(), TxId::term()) -> term().
+update_snapshot(_, Snapshot, _Snapshot_time, [], _TxId) ->
     {ok, Snapshot};
-update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest]) ->
+update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest], TxId) ->
     Payload = Op#operation.payload,
     Type = Payload#clocksi_payload.type,
-    case is_op_in_snapshot(Payload#clocksi_payload.commit_time, Snapshot_time) of
+    case (is_op_in_snapshot(Payload#clocksi_payload.commit_time, Snapshot_time) or (TxId =:= Payload#clocksi_payload.txid)) of
         true -> 	    
             case Payload#clocksi_payload.op_param of
                 {merge, State} -> 
                     New_snapshot = Type:merge(Snapshot, State),
-                    update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
+                    update_snapshot(Type, New_snapshot, Snapshot_time, Rest, TxId);
                 {Update, Actor} ->
                     case Type:update(Update, Actor, Snapshot) of
-                        {ok, New_snapshot} ->  update_snapshot(Type, New_snapshot, Snapshot_time, Rest);
+                        {ok, New_snapshot} ->  update_snapshot(Type, New_snapshot, Snapshot_time, Rest, TxId);
                         {error, Reason} -> {error, Reason};
                         Other -> {error, Other}
                     end;                             
                 Other -> lager:info("OP is ~p", [Other])
             end;
         false ->
-            update_snapshot(Type, Snapshot, Snapshot_time, Rest)
+            update_snapshot(Type, Snapshot, Snapshot_time, Rest, TxId)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot
@@ -76,10 +77,14 @@ update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
 %%		SnapshotTime: Threshold for the operations to be applied.
 %%		Ops: The list of operations to apply
 %%	Output: The value of the CRDT after appliying the operations 
--spec get_snapshot(Type::atom(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
+%-spec get_snapshot(Type::atom(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
 get_snapshot(Type, Snapshot_time, Ops) ->
     Init=create_snapshot(Type),
-    update_snapshot(Type, Init, Snapshot_time, Ops).
+    update_snapshot(Type, Init, Snapshot_time, Ops, ignore).
+
+get_snapshot(Type,Snapshot_time,Ops,TxId) ->
+    Init=create_snapshot(Type),
+    update_snapshot(Type, Init, Snapshot_time, Ops, TxId).
 
 -ifdef(TEST).
 materializer_clockSI_test()->
@@ -91,7 +96,7 @@ materializer_clockSI_test()->
     Op4 = #clocksi_payload{key = abc, type = riak_dt_gcounter, op_param = {{increment,2}, actor1}, snapshot_time = [{1,2}], commit_time = {1, 4}, txid = 4},
 
     Ops = [#operation{op_number = 1,payload =Op1},#operation{op_number = 2,payload = Op2},#operation{op_number = 3,payload = Op3},#operation{op_number = 4,payload = Op4}],
-    {ok, GCounter2} = update_snapshot(riak_dt_gcounter, GCounter, orddict:from_list([{1,3}]), Ops),
+    {ok, GCounter2} = update_snapshot(riak_dt_gcounter, GCounter, orddict:from_list([{1,3}]), Ops, ignore),
     ?assertEqual(4,riak_dt_gcounter:value(GCounter2)),
     {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,orddict:from_list([{1,4}]),Ops),
     ?assertEqual(6,riak_dt_gcounter:value(Gcounter3)).
