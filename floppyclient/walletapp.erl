@@ -8,12 +8,12 @@
 -export([credit/2, debit/2, init/2, getbalance/1, buyvoucher/2, usevoucher/2, readvouchers/1]).
 
 -define(SERVER, 'floppy@127.0.0.1').
-%% walletapp uses floppystore apis - create, update, get
-
+%% @doc Initializes the application by setting a cookie.
 init(Nodename, Cookie) ->
     net_kernel:start([Nodename, longnames]),
     erlang:set_cookie(node(),Cookie).
 
+%% @doc Increases the available credit for a customer.
 -spec credit(Key::term(), Amount::non_neg_integer()) -> ok | {error, string()}.  
 credit(Key, Amount) ->
     case rpc:call(?SERVER, floppy, append, [Key,{{increment,Amount}, actor1}]) of
@@ -23,6 +23,7 @@ credit(Key, Amount) ->
 	    {error, Reason}
     end.
 
+%% @doc Decreases the available credit for a customer.
 -spec debit(Key::term(), Amount::non_neg_integer()) -> ok | {error, string()}.
 debit(Key, Amount) ->
     case rpc:call(?SERVER, floppy,  append, [Key,{{decrement,Amount}, actor1}]) of
@@ -32,6 +33,7 @@ debit(Key, Amount) ->
 	    {error, Reason}
     end.
 
+%% @doc Returns the current balance for a customer.
 -spec getbalance(Key::term()) -> error | number().				  
 getbalance(Key) ->
     case rpc:call(?SERVER, floppy, read, [Key, riak_dt_pncounter]) of	
@@ -41,13 +43,16 @@ getbalance(Key) ->
             Val
     end. 
 
+%% @doc Increases the number of available vouchers for a customer.
 -spec buyvouchers(Key::term()) -> ok | {error, string()}.				  buyvoucher(Key, Voucher) ->
     rpc:call(?SERVER,floppy,  append, [Key, {{add, Voucher},actor1}]).
 
+%% @doc Decreases the number of available vouchers for a customer.
 -spec usevouchers(Key::term()) -> ok | {error, string()}.
 usevoucher(Key, Voucher) ->
     rpc:call(?SERVER, floppy, append, [Key, {{remove, Voucher},actor1}]).
 
+%% @doc Returns the number of currently available vouchers for a customer.
 -spec readvouchers(Key::term()) -> number() | {error, string()}.
 readvouchers(Key) ->
     case rpc:call(?SERVER, floppy, read, [Key, riak_dt_orset]) of
