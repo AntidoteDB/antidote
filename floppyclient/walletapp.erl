@@ -44,11 +44,11 @@ getbalance(Key) ->
     end. 
 
 %% @doc Increases the number of available vouchers for a customer.
--spec buyvouchers(Key::term()) -> ok | {error, string()}.				  buyvoucher(Key, Voucher) ->
+-spec buyvoucher(Key::term(),Voucher::term()) -> ok | {error, string()}.		  buyvoucher(Key, Voucher) ->
     rpc:call(?SERVER,floppy,  append, [Key, {{add, Voucher},actor1}]).
 
 %% @doc Decreases the number of available vouchers for a customer.
--spec usevouchers(Key::term()) -> ok | {error, string()}.
+-spec usevoucher(Key::term(),Voucher::term()) -> ok | {error, string()}.
 usevoucher(Key, Voucher) ->
     rpc:call(?SERVER, floppy, append, [Key, {{remove, Voucher},actor1}]).
 
