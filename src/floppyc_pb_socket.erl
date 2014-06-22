@@ -5,6 +5,7 @@
 -behaviour(gen_server).
 
 -define(FIRST_RECONNECT_INTERVAL, 100).
+-define(TIMEOUT, 1000).
 
 -type address() :: string() | atom() | inet:ip_address(). %% The TCP/IP host name or address of the Riak node
 -type portnum() :: non_neg_integer(). %% The TCP port number of the Riak node's Protocol Buffers interface
@@ -18,14 +19,9 @@
           address :: address(),    % address to connect to
           port :: portnum(),       % port to connect to
           sock :: port(),       % gen_tcp socket
-          queue :: queue() | undefined,
-          auto_reconnect = false :: boolean(), % if true, automatically reconnects to server
-                                               % if false, exits on connection failure/request timeout
+          active :: #request{} | undefined,     % active request
           connect_timeout=infinity :: timeout(), % timeout of TCP connection
-          keepalive = false :: boolean(), % if true, enabled TCP keepalive for the socket
-          connects=0 :: non_neg_integer(), % number of successful connects
-          reconnect_interval=?FIRST_RECONNECT_INTERVAL :: non_neg_integer(),
-          credentials :: undefined | {string(), string()} % username/password
+          keepalive = false :: boolean() % if true, enabled TCP keepalive for the socket
          }).
 
 -export([start_link/2, start_link/3,
@@ -39,18 +35,19 @@
          terminate/2]).
 
 -export([
-         get/1
+         increment/3
         ]).
 
-get(Pid) ->
-    Req = #fpbincrementreq{key="key", amount=2},
-    call_infinity(Pid, {req, Req}).
+%Must abstract data-type interface
+increment(Key,Amount,Pid) ->
+    Req = #fpbincrementreq{key=Key, amount=Amount},
+    call_infinity(Pid, {req, Req, ?TIMEOUT}).
 
 %% Callback functions
 
 %% @private
 init([Address, Port, _Options]) ->
-    State = #state{address = Address, port = Port, queue = queue:new()},
+    State = #state{address = Address, port = Port, active = undefined},
     case connect(State) of
         {error, Reason} ->
             {stop, {tcp, Reason}};
@@ -85,9 +82,34 @@ start(Address, Port, Options) when is_list(Options) ->
 stop(Pid) ->
     call_infinity(Pid, stop).
 
+%% @private Like `gen_server:call/3', but with the timeout hardcoded
+%% to `infinity'.
+call_infinity(Pid, Msg) ->
+   gen_server:call(Pid, Msg, infinity).
+
 %% @private
-handle_info(_, State) ->
-    {noreply, State}.
+handle_call({req, Msg, Timeout}, From, State) ->
+    {noreply, send_request(new_request(Msg, From, Timeout), State)}.
+
+%% @private
+handle_info({_Proto, Sock, Data}, State=#state{active = Active}) ->
+    <<MsgCode:8, MsgData/binary>> = Data,
+    Resp = riak_pb_codec:decode(MsgCode, MsgData),
+    NewState = case Resp of
+        %Must improve message handling
+        #fpboperationresp{success = true} ->
+            cancel_req_timer(Active#request.tref),
+             _ = send_caller(Resp, Active),
+            State#state{ active = undefined };
+        _ ->
+            lager:warning("Unexpected Message ~p",[Resp]),
+            State#state{ active = undefined }
+    end,
+    ok = inet:setopts(Sock, [{active, once}]),
+   {noreply, NewState};
+
+handle_info(Msg, State) ->
+    State.
 
 %% @private
 handle_cast(_Msg, State) ->
@@ -102,29 +124,18 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %% @private
 %% Connect the socket if disconnected
 connect(State) when State#state.sock =:= undefined ->
-    #state{address = Address, port = Port, connects = Connects} = State,
+    #state{address = Address, port = Port} = State,
     case gen_tcp:connect(Address, Port,
                          [binary, {active, once}, {packet, 4},
                           {keepalive, State#state.keepalive}],
                          State#state.connect_timeout) of
         {ok, Sock} ->
-            State1 = State#state{sock = Sock, connects = Connects+1,
-                                 reconnect_interval = ?FIRST_RECONNECT_INTERVAL},
-            {ok, State1};
+            {ok, State#state{sock = Sock}};
         Error -> Error
     end.
 
-handle_call({req, Msg}, From, State) ->
-    {reply, send_request(new_request(Msg, From, infinity), State),State}.
-
-%% @private Like `gen_server:call/3', but with the timeout hardcoded
-%% to `infinity'.
-call_infinity(Pid, Msg) ->
-    gen_server:call(Pid, Msg, infinity).
 
 %% @private
-%% Make a new request that can be sent or queued
-%% @todo Support Context?? see riak-erlang-client. Also removed timeout (must do this)
 new_request(Msg, From, Timeout) ->
     Ref = make_ref(),
     #request{ref = Ref, msg = Msg, from = From, timeout = Timeout, tref = create_req_timer(Timeout, Ref)}.
@@ -140,19 +151,38 @@ create_req_timer(Msecs, Ref) ->
 
 %% Send a request to the server and prepare the state for the response
 %% @private
-send_request(Request0, State)  -> % when State#state.active =:= undefined 
-    {_Request, Pkt} = encode_request_message(Request0),
+send_request(Request0, State) when State#state.active =:= undefined  -> 
+    {Request, Pkt} = encode_request_message(Request0),
     case gen_tcp:send(State#state.sock, Pkt) of
         ok ->
-            ok;
-            %maybe_reply(after_send(Request, State#state{active = Request}));
+            maybe_reply({noreply,State#state{active = Request}});
         {error, Reason} ->
             error_logger:warning_msg("Socket error while sending riakc request: ~p.", [Reason]),
             gen_tcp:close(State#state.sock)
-            %maybe_enqueue_and_reconnect(Request, State#state{sock=undefined})
     end.
 
 %% Unencoded Request (the normal PB client path)
 encode_request_message(#request{msg=Msg}=Req) ->
     {Req, riak_pb_codec:encode(Msg)}.
+
+maybe_reply({reply, Reply, State}) ->
+    Request = State#state.active,
+    NewRequest = send_caller(Reply, Request),
+    State#state{active = NewRequest};
+maybe_reply({noreply, State}) ->
+    State.
+
+% Replies the message and clears the requester id
+send_caller(Msg, #request{from = From}=Request) when From /= undefined ->
+    gen_server:reply(From, Msg),
+    Request#request{from = undefined}.
+
+%% @private
+%% Cancel a request timer made by create_timer/2
+cancel_req_timer(undefined) ->
+    ok;
+cancel_req_timer(Tref) ->
+    _ = erlang:cancel_timer(Tref),
+    ok.
+
 
