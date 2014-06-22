@@ -97,10 +97,10 @@ execute(timeout, SD0=#state{op=Op,
 
 
 %% @doc Waits for W write reqs to respond.
-waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
+waitAppend({ok,{_Node, Result}}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
     if NumToAck == 1 -> 
     	lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
-	floppy_coord_fsm:finishOp(From,  Key, Result),	
+	floppy_coord_fsm:finishOp(From,  ok,{Key, Result}),	
 	{stop, normal, SD};
 	true ->
          lager:info("FSM: Keep collecting replies~n"),
@@ -110,14 +110,14 @@ waitAppend({_Node, Result}, SD=#state{op=Op, from= From, key=Key, num_to_ack= Nu
 %% @doc Waits for R read reqs to respond and union returned operations.
 %% Then send vnodes operations if they haven't seen some.
 %% Finally reply the unioned operation list to the coord fsm.
-waitRead({Node, Result}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key, readresult= ReadResult , num_to_ack= NumToAck}) ->
+waitRead({ok,{Node, Result}}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key, readresult= ReadResult , num_to_ack= NumToAck}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
     if NumToAck == 1 -> 
     	lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
 	repair(NodeOps1, Result1),
-	floppy_coord_fsm:finishOp(From,  Key, Result1),	
+	floppy_coord_fsm:finishOp(From, ok,{Key, Result1}),	
 	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
 	true ->
          lager:info("FSM: Keep collecting replies~n"),
@@ -135,7 +135,7 @@ repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
     repair(NodeOps, ReadResult),
     {stop, normal, SD};
 
-repairRest({Node, Result}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
+repairRest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
