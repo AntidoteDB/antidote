@@ -9,12 +9,7 @@
 
 append(Key, Op) ->
     lager:info("Append called!"),
-    case floppy_rep_vnode:append(Key, Op) of
-        {ok, Result} ->
-            {ok, Result};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    floppy_rep_vnode:append(Key, Op).
 
 read(Key, Type) ->
     case floppy_rep_vnode:read(Key, Type) of
@@ -22,7 +17,7 @@ read(Key, Type) ->
             Init=materializer:create_snapshot(Type),
             Snapshot=materializer:update_snapshot(Type, Init, Ops),
             Type:value(Snapshot);
-        {error, _} ->
-            lager:info("Read failed!~n"),
-            error
+        {error, Reason} ->
+            lager:info("Read failed: ~w~n", Reason),
+	    error
     end.
