@@ -270,7 +270,7 @@ get_log_from_map(Map, FullPreflist) ->
             lager:info("Preflist to map return: ~w~n",[Value]),
             {ok, Value};
         error ->
-            lager:info("Preflist to map return: no_log_for_preflist~n",[]),
+            lager:info("Preflist to map return: no_log_for_preflist~n"),
             {error, no_log_for_preflist}
     end.
 
@@ -279,7 +279,7 @@ get_log_from_map(Map, FullPreflist) ->
 %%				F: Function to apply when floding the log (dets)
 %%				Acc: Folded data
 %%		Return: Folded data of all the logs.
--spec join_logs(Map::[{[{Index::integer(), node()}], log()}], F::fun(), Acc::term()) -> term().
+-spec join_logs(Map::[{preflist(), log()}], F::fun(), Acc::term()) -> term().
 join_logs([], _F, Acc) -> Acc;
 join_logs([Element|Rest], F, Acc) ->
     {_Preflist, Log} = Element,
@@ -324,13 +324,13 @@ lookup_operations(Log, Key) ->
 %%      Input:  Partition: The partition identifier to check
 %%              Preflist: A list of pairs {Partition, Node}
 %%      Return: true | false
--spec preflist_member(partition(),preflist()) -> boolean().
+-spec preflist_member(partition(), preflist()) -> boolean().
 preflist_member(Partition,Preflist) ->
     lists:any(fun({P,_}) -> P == Partition end, Preflist).
 
 -ifdef(TEST).
 
-%% @doc Testing threshold_prune works as expected
+%% @doc Testing threshold_prune 
 thresholdprune_test() ->
     Operations = [#operation{op_number=op1},#operation{op_number=op2},#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],
     Filtered = threshold_prune(Operations,op3),
