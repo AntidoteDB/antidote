@@ -48,7 +48,7 @@ init([Partition]) ->
 %% Returns: {ok, Result} if success; {error, timeout} if operation failed.
 append(Key, Op) ->
     lager:info("Append ~w ~w ~n", [Key, Op]),
-    _ = floppy_coord_sup:start_fsm([self(), append, Key, Op]),
+    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, Key, Op]),
     receive
         {ok,{_, Result}} ->
 	    lager:info("Append completed!~w~n",[Result]),
@@ -64,7 +64,7 @@ append(Key, Op) ->
 %% Returns: {ok, Ops} if succeeded, Ops is the union of operations; {error, nothing} if operation failed.
 read(Key, Type) ->
     lager:info("Read ~w ~w", [Key, Type]),
-    _ = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
+    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
         {ok,{_, Ops}} ->
 	    lager:info("Read completed!~n"),
@@ -97,7 +97,7 @@ handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Par
       end,
       {NewClock,_} = OpId,
       lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
-      _ = floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
+      {ok,_Pid} = floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
       {noreply, #state{lclock=NewClock, partition= Partition}};
 
 handle_command(Message, _Sender, State) ->
