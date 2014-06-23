@@ -35,8 +35,8 @@ start_link(From, Op, Key, Param) ->
 %    lager:info('The worker is about to start~n'),
 %    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
 
-finishOp(From, Key,Result) ->
-   gen_fsm:send_event(From, {Key, Result}).
+finishOp(From, Result, Message) ->
+   gen_fsm:send_event(From, {Result, Message}).
 %%%===================================================================
 %%% States
 %%%===================================================================
