@@ -73,38 +73,33 @@ execute(timeout, SD0=#state{op=Op,
                             preflist=Preflist,
 			    opid=OpId}) ->
     case Op of 
-	append ->
-	    lager:info("FSM: Replicate append ~n"),
-	    logging_vnode:dappend(Preflist, Key, Param, OpId),
-	    SD1 = SD0#state{num_to_ack=?NUM_W},
-	    {next_state, waitAppend, SD1};
-%	create ->
-%	    lager:info("replication propagating create!~w~n",[Preflist]),
-%	    logging_vnode:dcreate(Preflist, Key, Param, OpClock),
-%	    Num_w = SD0#state.num_w,
-%	    SD1 = SD0#state{num_to_ack=Num_w},
-%	    {next_state, waiting, SD1};
-	read ->
-	    lager:info("FSM: Replication read ~n"),
-	    logging_vnode:dread(Preflist, Key),
-	    SD1 = SD0#state{num_to_ack=?NUM_R},
-	    {next_state, waitRead, SD1};
-	_ ->
-	    lager:info("FSM: Wrong command ~n"),
-	   %%reply message to user
-	    {stop, normal, SD0}
+	    append ->
+	        lager:info("FSM: Replicate append ~n"),
+	        logging_vnode:dappend(Preflist, Key, Param, OpId),
+	        SD1 = SD0#state{num_to_ack=?NUM_W},
+	        {next_state, waitAppend, SD1};
+	    read ->
+	        lager:info("FSM: Replication read ~n"),
+	        logging_vnode:dread(Preflist, Key),
+	        SD1 = SD0#state{num_to_ack=?NUM_R},
+	        {next_state, waitRead, SD1};
+	    _ ->
+	        lager:info("FSM: Wrong command ~n"),
+	        %%reply message to user
+	        {stop, normal, SD0}
     end.
 
 
 %% @doc Waits for W write reqs to respond.
 waitAppend({ok,{_Node, Result}}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
-	floppy_coord_fsm:finishOp(From,  ok,{Key, Result}),	
-	{stop, normal, SD};
-	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }}
+    case NumToAck of
+         1 -> 
+    	    lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
+	        floppy_coord_fsm:finishOp(From, ok, {Key, Result}),	
+	        {stop, normal, SD};
+	    _ ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }}
     end.
 
 %% @doc Waits for R read reqs to respond and union returned operations.
@@ -114,14 +109,15 @@ waitRead({ok,{Node, Result}}, SD=#state{op=Op, from= From, nodeOps = NodeOps, ke
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
-	repair(NodeOps1, Result1),
-	floppy_coord_fsm:finishOp(From, ok,{Key, Result1}),	
-	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
-	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
+    case NumToAck of 
+        1 -> 
+    	    lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
+	        repair(NodeOps1, Result1),
+	        floppy_coord_fsm:finishOp(From, ok,{Key, Result1}),	
+	        {next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
+	    _ ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
     end;
 
 waitRead({error, no_key}, SD) ->
@@ -139,13 +135,14 @@ repairRest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = Node
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish collecting replies, start read repair ~n"),
-	repair(NodeOps, ReadResult),
-	{stop, normal, SD};
-    	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
+    case NumToAck of 
+        1 -> 
+    	    lager:info("FSM: Finish collecting replies, start read repair ~n"),
+	        repair(NodeOps, ReadResult),
+	        {stop, normal, SD};
+    	_ ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
     end.
 
 handle_info(_Info, _StateName, StateData) ->
@@ -199,11 +196,9 @@ remove_dup([], _OpId, Set2) ->
     Set2;
 remove_dup([H|T], OpId, Set2) ->
     {_, #operation{op_number= OpNum}} = H,
-    if OpNum /= OpId ->
-	Set3 = lists:append(Set2, [H]);
-       true ->
-	Set3 = Set2
-    end,
+    Set3 = if OpNum /= OpId -> lists:append(Set2, [H]);
+            true -> Set2
+           end,
     remove_dup(T, OpId, Set3).
 
 

@@ -79,8 +79,8 @@ execute(timeout, SD0=#state{
 	    lager:info("Coord: Forward to node~w~n",[H]),
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
-            SD1 = SD0#state{preflist=T},
-            {next_state, waiting, SD1, ?INDC_TIMEOUT}
+        SD1 = SD0#state{preflist=T},
+        {next_state, waiting, SD1, ?INDC_TIMEOUT}
     end.
 
 %% @doc The contacted vnode failed to respond within timeout. So contact
@@ -98,8 +98,8 @@ waiting(timeout, SD0=#state{op=Op,
 	    lager:info("Coord: Forward to node:~w~n",[H]),
 	    {IndexNode, _} = H,
 	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
-            SD1 = SD0#state{preflist=T},
-            {next_state, waiting, SD1, ?INDC_TIMEOUT}
+        SD1 = SD0#state{preflist=T},
+        {next_state, waiting, SD1, ?INDC_TIMEOUT}
     end;
 
 %% @doc Receive result and reply the result to the process that started the fsm (From). 
