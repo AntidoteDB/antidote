@@ -121,7 +121,7 @@ waitAppend({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
 
 waitAppend(timeout, SD=#state{from=From}) ->
     lager:info("FSM: Error in append: timeout"),
-    floppy_coord_fsm:finishOp(From, error, timeout),
+    floppy_coord_fsm:finishOp(From, error, operation_timeout),
     {stop, normal, SD}.
 
 %% @doc Waits for R read reqs to respond and union returned operations.
