@@ -35,12 +35,23 @@
          terminate/2]).
 
 -export([
-         increment/3
+         increment/3,
+         decrement/3,
+         get_counter/2
         ]).
 
-%Must abstract data-type interface
+% Client interface... must abstract the different data-type operations
+
 increment(Key,Amount,Pid) ->
     Req = #fpbincrementreq{key=Key, amount=Amount},
+    call_infinity(Pid, {req, Req, ?TIMEOUT}).
+
+decrement(Key,Amount,Pid) ->
+    Req = #fpbdecrementreq{key=Key, amount=Amount},
+    call_infinity(Pid, {req, Req, ?TIMEOUT}).
+
+get_counter(Key,Pid) ->
+    Req = #fpbgetcounterreq{key=Key},
     call_infinity(Pid, {req, Req, ?TIMEOUT}).
 
 %% Callback functions
@@ -85,30 +96,35 @@ stop(Pid) ->
 %% @private Like `gen_server:call/3', but with the timeout hardcoded
 %% to `infinity'.
 call_infinity(Pid, Msg) ->
-   gen_server:call(Pid, Msg, infinity).
+    gen_server:call(Pid, Msg, infinity).
 
 %% @private
 handle_call({req, Msg, Timeout}, From, State) ->
     {noreply, send_request(new_request(Msg, From, Timeout), State)}.
 
 %% @private
+%% @todo handle timeout
 handle_info({_Proto, Sock, Data}, State=#state{active = Active}) ->
     <<MsgCode:8, MsgData/binary>> = Data,
     Resp = riak_pb_codec:decode(MsgCode, MsgData),
     NewState = case Resp of
-        %Must improve message handling
-        #fpboperationresp{success = true} ->
-            cancel_req_timer(Active#request.tref),
-             _ = send_caller(Resp, Active),
-            State#state{ active = undefined };
-        _ ->
-            lager:warning("Unexpected Message ~p",[Resp]),
-            State#state{ active = undefined }
-    end,
+                   %Must abstract message handling
+                   #fpboperationresp{success = true} ->
+                       cancel_req_timer(Active#request.tref),
+                       _ = send_caller(ok, Active),
+                       State#state{ active = undefined };
+                   #fpbgetcounterresp{value = Val} ->
+                       cancel_req_timer(Active#request.tref),
+                       _ = send_caller({ok,Val}, Active),
+                       State#state{ active = undefined };
+                   _ ->
+                       lager:warning("Unexpected Message ~p",[Resp]),
+                       State#state{ active = undefined }
+               end,
     ok = inet:setopts(Sock, [{active, once}]),
-   {noreply, NewState};
+    {noreply, NewState};
 
-handle_info(Msg, State) ->
+handle_info(_Msg, State) ->
     State.
 
 %% @private
