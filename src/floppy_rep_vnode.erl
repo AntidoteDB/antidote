@@ -50,7 +50,7 @@ append(Key, Op) ->
     lager:info("Append ~w ~w ~n", [Key, Op]),
     floppy_coord_sup:start_fsm([self(), append, Key, Op]),
     receive
-        {_, Result} ->
+        {ok,{_, Result}} ->
 	    lager:info("Append completed!~w~n",[Result]),
 	    {ok, Result}
     after 5000 ->
@@ -66,7 +66,7 @@ read(Key, Type) ->
     lager:info("Read ~w ~w", [Key, Type]),
     floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
-        {_, Ops} ->
+        {ok,{_, Ops}} ->
 	    lager:info("Read completed!~n"),
 	    {ok,Ops}
     after 5000 ->
