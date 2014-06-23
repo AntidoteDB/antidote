@@ -122,9 +122,26 @@ handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=
 %% @doc Repair command: Appends the Ops to the Log
 %%	Input: Ops: Operations to append
 %%	Output: ok | {error, Reason}
-%%TODO: fix this due to the new log-per-partition modification
 handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->	
-    Result = dets:insert_new(Map, Ops),
+    F = fun(Elem, Acc) ->
+            {Key, #operation{op_number=OpId, payload=Payload}} = Elem,
+            DocIdx = riak_core_util:chash_key({?BUCKET,
+                                       term_to_binary(Key)}),
+            Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, replication),
+            case get_log_from_map(Map, Preflist) of
+                {ok, Log} ->
+                    case insert_operation(Log, Key, OpId, Payload) of
+                        {ok, _}->
+                            Acc;
+                        {error, Reason} ->
+                            [{error, Reason}|Acc]
+                    end;        
+                {error, Reason} ->
+                    [{error, Reason}|Acc]
+            end 
+        end,
+    
+    Result = lists:foldl(F, [], Ops),
     {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
