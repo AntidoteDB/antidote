@@ -124,8 +124,26 @@ handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=
 %%	Output: ok | {error, Reason}
 %%TODO: fix this due to the new log-per-partition modification
 handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->
-	
-    Result = dets:insert_new(Map, Ops),
+
+    F = fun(Elem, Acc) ->
+            {Key, #operation{op_number=OpId, payload=Payload}} = Elem,
+            DocIdx = riak_core_util:chash_key({?BUCKET,
+                                       term_to_binary(Key)}),
+            Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, replication),
+            case get_log_from_map(Map, Preflist) of
+                {ok, Log} ->
+                    case insert_operation(Log, Key, OpId, Payload) of
+                        {ok, _}->
+                            Acc;
+                        {error, Reason} ->
+                            [{error, Reason}|Acc]
+                    end;        
+                {error, Reason} ->
+                    [{error, Reason}|Acc]
+            end	
+        end,
+    
+    Result = lists:foldl(F, [], Ops),
     {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
@@ -150,6 +168,7 @@ handle_command(Message, _Sender, State) ->
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
 	
+	lager:info("Folding req  ~w~n", [node()]),
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
 	Acc= join_logs(dict:to_list(Map), F, Acc0),
     {reply, Acc, State}.
@@ -255,10 +274,8 @@ remove_node_from_preflist(Preflist) ->
 -spec get_log_from_map(Map::dict(), FullPreflist::[{Index::integer(), Node::term()}]) -> {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, FullPreflist) ->
     Preflist = remove_node_from_preflist(FullPreflist),
-	lager:info("Preflist to map: ~w~n",[Preflist]),
 	case dict:find(Preflist, Map) of
 		{ok, Value} ->
-			lager:info("Preflist to map return: ~w~n",[Value]),
 			{ok, Value};
 		error ->
 			lager:info("Preflist to map return: no_log_for_preflist~n",[]),
