@@ -1,6 +1,7 @@
 -module(clock_si).
 -export([confirm/0, clockSI_test1/1, clockSI_test2/1, clockSI_test3/1,
-		clockSI_test_read_wait/1, clockSI_test4/1, clockSI_test_read_time/1, spawn_read/3]).
+		clockSI_test_read_wait/1, clockSI_test4/1, clockSI_test_read_time/1,
+		clockSI_test_certification_check/1, spawn_read/3]).
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
@@ -13,6 +14,7 @@ confirm() ->
     clockSI_test4 (Nodes),
     clockSI_test_read_time(Nodes),
     clockSI_test_read_wait(Nodes),
+    clockSI_test_certification_check(Nodes),
     rt:clean_cluster(Nodes),
     ok.
     
@@ -193,3 +195,48 @@ clockSI_test_read_wait(Nodes) ->
 spawn_read(LastNode, TxId, Return) ->
     ReadResult=rpc:call(LastNode, floppy, clockSI_iread, [TxId, read_wait_test, riak_dt_pncounter]),
     Return ! {self(), ReadResult}.
+    
+%% The following function tests the certification check algorithm.
+%% when two concurrent txs modify a single object, one hast to abort.
+clockSI_test_certification_check(Nodes) ->
+    lager:info("clockSI_test_certification_check started"),
+    FirstNode = hd(Nodes),
+    LastNode= lists:last(Nodes),
+    lager:info("Node1: ~p", [FirstNode]), 
+    lager:info("LastNode: ~p", [LastNode]), 
+    
+    %% Start a new tx,  perform an update over key write. 
+    {ok,TxId}=rpc:call(FirstNode, floppy, clockSI_istart_tx, [now()]),
+    lager:info("Tx1 Started, id : ~p", [TxId]),
+    WriteResult=rpc:call(FirstNode, floppy, clockSI_iupdate, [TxId, write, {increment, 1}]),
+    lager:info("Tx1 Writing..."),
+    ?assertEqual(ok, WriteResult),
+    
+    %% Start a new tx,  perform an update over key write.
+    {ok,TxId1}=rpc:call(LastNode, floppy, clockSI_istart_tx, [now()]),
+    lager:info("Tx2 Started, id : ~p", [TxId1]),    
+    WriteResult1=rpc:call(LastNode, floppy, clockSI_iupdate, [TxId, write, {increment, 2}]),
+    lager:info("Tx2 Writing..."),
+    ?assertEqual(ok, WriteResult1),
+    lager:info("Tx1 finished concurrent write..."),
+    
+    %% prepare and commit the second transaction.
+    CommitTime1=rpc:call(LastNode, floppy, clockSI_iprepare, [TxId1]),
+    ?assertMatch({ok, _}, CommitTime1), 
+    lager:info("Tx2 sent prepare, got commitTime=..., id : ~p", [CommitTime1]), 
+    End1=rpc:call(LastNode, floppy, clockSI_icommit, [TxId1]),   
+    ?assertMatch({ok, _}, End1),
+    lager:info("Tx2 Committed."),
+    lager:info("Test read_time passed"),
+   
+    
+    %% commit the first tx.
+    CommitTime=rpc:call(FirstNode, floppy, clockSI_iprepare, [TxId]),
+    ?assertMatch({ok, _}, CommitTime),
+    lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]), 
+    End=rpc:call(FirstNode, floppy, clockSI_icommit, [TxId]),   
+    ?assertMatch({ok, _}, End),
+    lager:info("Tx1 Committed."),
+     ok.
+    
+    
