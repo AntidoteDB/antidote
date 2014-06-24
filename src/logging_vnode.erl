@@ -177,7 +177,6 @@ handle_command(Message, _Sender, State) ->
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
-	lager:info("HANDOFF_FOLDING: Folding req  ~w~n", [node()]),
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
     Acc= join_logs(dict:to_list(Map), F, Acc0),
     
@@ -193,17 +192,13 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
+handle_handoff_data(Data, #state{logs_map=Map}=State) ->
 
-    {Key, #operation{op_number=_OpId, payload=_Payload}=Operation} = binary_to_term(Data),
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, replication),
-    Keys= dict:fetch_keys(Map),
-    lager:info("HANDOFF_DATA: Receiving data, key: ~w and operation: ~w. The preflist is: ~w and my partition is ~w. I have the following logs:~w~n",[Key, Operation, Preflist, Partition, Keys]),
+    {Key, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
+    Preflist = get_primaries_preflist(Key),
     case get_log_from_map(Map, Preflist) of
-        {ok, _Log} ->
-            %{ok, _OpId} = insert_operation(Log, Key, OpId, Payload),
+        {ok, Log} ->
+            {ok, _OpId} = insert_operation(Log, Key, OpId, Payload),
             {reply, ok, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -215,7 +210,7 @@ encode_handoff_item(Key, Operation) ->
 
 is_empty(State=#state{logs_map=Map}) ->
     Preflists = dict:fetch_keys(Map),
-    case no_elements(Preflists) of
+    case no_elements(Preflists, Map) of
         true ->
             {true, State};
         false ->
@@ -237,10 +232,27 @@ terminate(_Reason, _State) ->
 %%====================%%
 %% Internal Functions %%
 %%====================%%
-no_elements([]) ->
+
+%% @doc no_elements: checks whether any of the logs contains any data
+%%  Input:  Preflists: Each preflist is the represents one log
+%%          Map: the dictionary that relates the preflist with the actual log
+%%  Return: true if all logs are empty. false if at least one log contains data.
+-spec no_elements(Preflists::[[Partition::non_neg_integer()]], Map::dict()) -> boolean().
+no_elements([], _Map) ->
     true;
-no_elements([_Preflist|_Rest]) ->
-    false.
+no_elements([Preflist|Rest], Map) ->
+	case dict:find(Preflist, Map) of
+		{ok, Log} ->
+            case dets:first(Log) of
+                '$end_of_table' ->
+                    no_elements(Rest, Map);
+                _ ->
+                    false
+            end; 
+		error ->
+			lager:info("Preflist to map return: no_log_for_preflist: ~w~n",[Preflist]),
+			{error, no_log_for_preflist}
+	end.
 
 %% @doc threshold_prune: returns the operations that are not onlder than the specified op_id
 %%  Assump:	The operations are retrieved in the order of insertion
