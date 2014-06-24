@@ -56,7 +56,8 @@ append(Key, Op) ->
         {error, Reason} ->
 	        lager:info("Append failed!~n"),
 	        {error, Reason}
-    after 5000 ->
+    after 
+        ?OP_TIMEOUT ->
 	        lager:info("Append failed!~n"),
 	        {error, timeout}
     end.
@@ -76,7 +77,7 @@ read(Key, Type) ->
 	        lager:info("Read failed!~n"),
 	        {error, Reason}
     after 
-        5000 ->
+        ?OP_TIMEOUT ->
 	        lager:info("Read failed!~n"),
 	        {error, timeout}
     end.
@@ -95,11 +96,11 @@ handleOp(Preflist, ToReply, Op, Key, Param) ->
 %% Then start a rep fsm to perform quorum read/append.  
 handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Partition,lclock=LC}) ->
     OpId = case Op of 
-            append -> generate_op_id(LC);
-	        read  -> current_op_id(LC);
-	        _ ->  lager:info("RepVNode: Wrong operations!~w~n", [Op]), 
-                  current_op_id(LC)
-            end,
+                append -> generate_op_id(LC);
+	            read  -> current_op_id(LC);
+	            _ ->  lager:info("RepVNode: Wrong operations!~w~n", [Op]), 
+                    current_op_id(LC)
+           end,
     {NewClock,_} = OpId,
     lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
     {ok,_Pid} = floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),

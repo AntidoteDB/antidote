@@ -22,7 +22,7 @@ read(Key, Type) ->
             Init=materializer:create_snapshot(Type),
             Snapshot=materializer:update_snapshot(Type, Init, Ops),
             Type:value(Snapshot);
-        {error, _} ->
+        {error, Reason} ->
             lager:info("Read failed!~n"),
-            error
+            {error, Reason}
     end.

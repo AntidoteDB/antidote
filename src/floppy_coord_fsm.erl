@@ -64,54 +64,55 @@ prepare(timeout, SD0=#state{key=Key}) ->
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
 execute(timeout, SD0=#state{
+                            from=From,
                             op=Op,
                             key=Key,
                             param=Param,
                             preflist=Preflist}) ->
     lager:info("Coord: Execute operation ~w ~w ~w~n",[Op, Key, Param]),
     case Preflist of 
-	[] ->
-	    lager:info("Coord: Nothing in pref list~n"),
-	    {stop, normal, SD0};
-	[H|T] ->
-	    %% Send the operation to the first vnode in the preflist;
-	    %% Will timeout if the vnode does not respond within INDC_TIMEOUT
-	    lager:info("Coord: Forward to node~w~n",[H]),
-	    {IndexNode, _} = H,
-	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
-        SD1 = SD0#state{preflist=T},
-        {next_state, waiting, SD1, ?INDC_TIMEOUT}
+	    [] ->
+	        lager:info("Coord: Nothing in pref list~n"),
+            From ! {error, can_not_reach_vnode},
+	        {stop, normal, SD0};
+	    [H|T] ->
+	        %% Send the operation to the first vnode in the preflist;
+	        %% Will timeout if the vnode does not respond within COORD_TIMEOUT
+	        lager:info("Coord: Forward to node~w~n",[H]),
+	        {IndexNode, _} = H,
+	        floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
+            SD1 = SD0#state{preflist=T},
+            {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end.
 
 %% @doc The contacted vnode failed to respond within timeout. So contact
 %% the next one in the preflist
 waiting(timeout, SD0=#state{op=Op,
 			   key=Key,
+               from=From,
 			   param=Param,
 			   preflist=Preflist}) ->
-    lager:info("Coord: INDC_TIMEOUT, retry...~n"),
+    lager:info("Coord: COORD_TIMEOUT, retry...~n"),
     case Preflist of 
-	[] ->
-	    lager:info("Coord: Nothing in pref list~n"),
-	    {stop, normal, SD0};
-	[H|T] ->
-	    lager:info("Coord: Forward to node:~w~n",[H]),
-	    {IndexNode, _} = H,
-	    floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
-        SD1 = SD0#state{preflist=T},
-        {next_state, waiting, SD1, ?INDC_TIMEOUT}
+	    [] ->
+	        lager:info("Coord: Nothing in pref list~n"),
+            From ! {error, can_not_reach_vnode},
+	        {stop, normal, SD0};
+	    [H|T] ->
+	        lager:info("Coord: Forward to node:~w~n",[H]),
+	        {IndexNode, _} = H,
+	        floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
+            SD1 = SD0#state{preflist=T},
+            {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end;
 
 %% @doc Receive result and reply the result to the process that started the fsm (From). 
-waiting({Key, Val}, SD=#state{from=From}) ->
-    lager:info("Coord: Finish operation ~w ~w ~n",[Key,Val]),
+waiting({Result, Message}, SD=#state{from=From}) ->
+    lager:info("Coord: Finish operation ~w ~w ~n",[Result, Message]),
     %proxy:returnResult(Key, Val, Client),
-    From! {Key,Val},   
-    {stop, normal, SD};
-
-
-waiting({error, no_key}, SD) ->
+    From! {Result, Message},   
     {stop, normal, SD}.
+
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.

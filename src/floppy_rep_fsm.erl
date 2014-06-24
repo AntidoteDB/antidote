@@ -77,20 +77,22 @@ execute(timeout, SD0=#state{op=Op,
                             key=Key,
                             param=Param,
                             preflist=Preflist,
-			    opid=OpId}) ->
+                            from=From,
+			                opid=OpId}) ->
     case Op of 
 	    append ->
 	        lager:info("FSM: Replicate append ~n"),
 	        logging_vnode:dappend(Preflist, Key, Param, OpId),
 	        SD1 = SD0#state{num_to_ack=?NUM_W},
-	        {next_state, waitAppend, SD1, ?INDC_TIMEOUT};
+	        {next_state, waitAppend, SD1, ?COMM_TIMEOUT};
 	    read ->
 	        lager:info("FSM: Replication read ~n"),
 	        logging_vnode:dread(Preflist, Key),
 	        SD1 = SD0#state{num_to_ack=?NUM_R},
-	        {next_state, waitRead, SD1, ?INDC_TIMEOUT};
+	        {next_state, waitRead, SD1, ?COMM_TIMEOUT};
 	    _ ->
 	        lager:info("FSM: Wrong command ~n"),
+	        floppy_coord_fsm:finishOp(From, error, wrong_command),	
 	        %%reply message to user
 	        {stop, normal, SD0}
     end.
@@ -105,7 +107,7 @@ waitAppend({ok,{_Node, Result}}, SD=#state{op=Op, from= From, key=Key, num_to_ac
 	        {stop, normal, SD};
 	    _ ->
             lager:info("FSM: Keep collecting replies~n"),
-	        {next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }, ?INDC_TIMEOUT}
+	        {next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }, ?COMM_TIMEOUT}
     end;
 
 waitAppend({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
@@ -116,12 +118,12 @@ waitAppend({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
 	        floppy_coord_fsm:finishOp(From, error, ErrorMsg1),
 	        {stop, normal, SD};
         _ ->
-	        {next_state, waitAppend, SD#state{error_msg=ErrorMsg}, ?INDC_TIMEOUT}
+	        {next_state, waitAppend, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
     end;
 
 waitAppend(timeout, SD=#state{from=From}) ->
     lager:info("FSM: Error in append: timeout"),
-    floppy_coord_fsm:finishOp(From, error, operation_timeout),
+    floppy_coord_fsm:finishOp(From, error, quorum_unreachable),
     {stop, normal, SD}.
 
 %% @doc Waits for R read reqs to respond and union returned operations.
@@ -136,10 +138,10 @@ waitRead({ok,{Node, Result}}, SD=#state{op=Op, from= From, nodeOps = NodeOps, ke
     	    lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
 	        repair(NodeOps1, Result1),
 	        floppy_coord_fsm:finishOp(From, ok, {Key, Result1}),	
-	        {next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
+	        {next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?COMM_TIMEOUT};
 	    _ ->
             lager:info("FSM: Keep collecting replies~n"),
-	        {next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
+	        {next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
     end;
 
 waitRead({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
@@ -150,12 +152,12 @@ waitRead({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
 	        floppy_coord_fsm:finishOp(From, error, ErrorMsg1),
 	        {stop, normal, SD};
         _ ->
-	        {next_state, waitRead, SD#state{error_msg=ErrorMsg}, ?INDC_TIMEOUT}
+	        {next_state, waitRead, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
     end;
 
 waitRead(timeout, SD=#state{from=From}) ->
     lager:info("FSM: Error in read: timeout"),
-    floppy_coord_fsm:finishOp(From, error, timeout),
+    floppy_coord_fsm:finishOp(From, error, quorum_unreachable),
     {stop, normal, SD}.
 
 %% @doc Keeps waiting for read replies from vnodes after replying to coord fsm.
@@ -175,12 +177,12 @@ repairRest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = Node
 	        {stop, normal, SD};
     	_ ->
             lager:info("FSM: Keep collecting replies~n"),
-	        {next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
+	        {next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
     end;
 
 repairRest({error, Reason}, SD) ->
     lager:info("FSM: Error in read repair: ~w", [Reason]),
-	{next_state, repairRest, SD, ?INDC_TIMEOUT}.
+	{next_state, repairRest, SD, ?COMM_TIMEOUT}.
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
