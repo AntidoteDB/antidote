@@ -18,14 +18,15 @@
 
 %% States
 -export	([executeOp/3, finishOp/3, prepare/2, 
-		receive_prepared/2, committing/3, receive_committed/2, abort/2, receive_aborted/2,
+		receive_prepared/2, committing/3, receive_committed/2, abort/2, 
+		%%receive_aborted/2,
 		reply_to_client/2]).
 
 
 %-record(operationCSI, {opType, key, params}).
 
 %%---------------------------------------------------------------------
-%% Data Type: state
+%% @doc Data Type: state
 %% where:
 %%    from: the pid of the calling process.
 %%    txid: the transaction id that this fsm handles, as defined in src/floppy.hrl.
@@ -125,7 +126,7 @@ executeOp({OpType, Args}, Sender, SD0=#state{
 	end.     
        
  
-%%	a message from a client wanting to start committing the tx.
+%%	@doc a message from a client wanting to start committing the tx.
 %%	this state sends a prepare message to all updated partitions and goes
 %%	to the "receive_prepared"state. 
 prepare(timeout, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions, from=From}) ->
@@ -141,26 +142,28 @@ prepare(timeout, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions, fro
 	end.
 	
 	
-%%	in this state, the fsm waits for prepare_time from each updated partitions in order
+%%	@doc in this state, the fsm waits for prepare_time from each updated partitions in order
 %%	to compute the final tx timestamp (the maximum of the received prepare_time).  
 receive_prepared({prepared, ReceivedPrepareTime}, S0=#state{num_to_ack= NumToAck, from= From, prepare_time=PrepareTime}) ->		
 	MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 -> 
-    	lager:info("ClockSI: Finished collecting prepare replies, start committing... Commit time: ~w~n",[MaxPrepareTime]),
+    	lager:info("ClockSI: Finished collecting prepare replies, start committing... Commit time: ~p",[MaxPrepareTime]),
 		gen_fsm:reply(From, {ok, MaxPrepareTime}),
 		{next_state, committing, S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}};
     _ ->
-        lager:info("ClockSI: Keep collecting prepare replies~n"),
-	{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
+        lager:info("ClockSI: Keep collecting prepare replies."),
+		{next_state, receive_prepared, S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 
 receive_prepared(abort, S0) ->
+	lager:info("ClockSI: Got reply to abort."),
 	{next_state, abort, S0, 0};   
 
 receive_prepared(timeout, S0) ->
+	lager:info("ClockSI: Did not receive all replies in time, aborting..."),
 	{next_state, abort, S0 ,0}.
 
-%%	after receiving all prepare_times, send the commit message to all updated partitions,
+%%	@doc after receiving all prepare_times, send the commit message to all updated partitions,
 %% 	and go to the "receive_committed" state.
 committing(commit, Sender, SD0=#state{txid=TxId, 
 				updated_partitions=UpdatedPartitions, commit_time=CommitTime}) -> 
@@ -174,7 +177,7 @@ committing(commit, Sender, SD0=#state{txid=TxId,
 	end.
 	
 	
-%%	the fsm waits for acks indicating that each partition has successfully committed the tx
+%%	@doc the fsm waits for acks indicating that each partition has successfully committed the tx
 %%	and finishes operation.
 %% 	Should we retry sending the committed message if we don't receive a reply from
 %% 	every partition?
@@ -189,42 +192,47 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
 	{next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
     end.
     
-%% when an updated partition does not pass the certification check, the transaction
+%% @doc when an updated partition does not pass the certification check, the transaction
 %% aborts.
 abort(timeout, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions}) -> 
+	lager:info("ClockSI-coord-fsm: aborting..."),
 	clockSI_vnode:abort(UpdatedPartitions, TxId),
-	NumToAck=lists:lenght(UpdatedPartitions),
-	{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}, 0};
+	lager:info("ClockSI-coord-fsm: sent abort command to partitions..."),
+	%NumToAck=length(UpdatedPartitions),
+	{next_state, reply_to_client, SD0#state{state=aborted},0};
 
 abort(abort, SD0=#state{txid=TxId, updated_partitions=UpdatedPartitions}) -> 
-	%TODO: Do not send to who issue the abort
+	lager:info("ClockSI-coord-fsm: received abort command, aborting..."),
 	clockSI_vnode:abort(UpdatedPartitions, TxId),
-	NumToAck=length(UpdatedPartitions),
-	{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}}.
+	lager:info("ClockSI-coord-fsm: sent abort command to partitions..."),
+	%NumToAck=length(UpdatedPartitions),
+	%{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}}.
+	{next_state, reply_to_client, SD0#state{state=aborted},0}.
 	
-%%	the fsm waits for acks indicating that each partition has aborted the tx
+%% @alek The following state is disabled as it is not clear if it's needed	
+%%	@doc the fsm waits for acks indicating that each partition has aborted the tx
 %%	and finishes operation.	
-receive_aborted(ack_abort, S0=#state{num_to_ack= NumToAck}) ->
-    case NumToAck of 1 -> 
-   	lager:info("ClockSI-coord-fsm: Finished collecting abort acks. Tx aborted."),
-    	{next_state, reply_to_client, S0, 0};
-    _ ->
-        lager:info("ClockSI-coord-fsm: Keep collecting abort replies~n"),
-	{next_state, receive_aborted, S0#state{num_to_ack= NumToAck-1}}
-    end.
+%%receive_aborted(ack_abort, S0=#state{num_to_ack= NumToAck}) ->
+%%    case NumToAck of 1 -> 
+%%   	lager:info("ClockSI-coord-fsm: Finished collecting abort acks. Tx aborted."),
+%%    	{next_state, reply_to_client, S0, 0};
+%%    _ ->
+%%        lager:info("ClockSI-coord-fsm: Keep collecting abort replies~n"),
+%%	{next_state, receive_aborted, S0#state{num_to_ack= NumToAck-1}}
+%%    end.
     
-%% when the transaction has committed or aborted, a reply is sent to the client
+%% @doc when the transaction has committed or aborted, a reply is sent to the client
 %% that started the transaction.
 reply_to_client(timeout, SD=#state{from=From, txid=TxId, state=TxState, commit_time=CommitTime}) ->
+	lager:info("ClockSI-coord-fsm: Replying ~w to ~w", [TxState, From]),
 	case TxState of
 	committed->
 		Reply={ok, {TxId, CommitTime}}, 
-		lager:info("ClockSI-coord-fsm: Replying ~w to ~w ~n", [Reply, From]),
 		gen_fsm:reply(From,Reply);
 	aborted->
-		gen_fsm:reply(From,{abort, TxId});
+		gen_fsm:reply(From,{aborted, TxId});
 	Reason->
-		gen_fsm:reply(From,{ok, TxId, Reason})
+		gen_fsm:reply(From,{TxId, Reason})
 	end,
 	{stop, normal, SD}.
 	
@@ -251,7 +259,7 @@ terminate(_Reason, _SN, _SD) ->
 %%%===================================================================
 
 
-%%	Set the transaction Snapshot Time to the maximum value of:
+%%	@doc Set the transaction Snapshot Time to the maximum value of:
 %%	1.	ClientClock, which is the last clock of the system the client
 %%		starting this transaction has seen, and
 %%	2. 	machine's local time, as returned by erlang:now(). 	

@@ -76,7 +76,8 @@ commit(ListofNodes, TxId, CommitTime) ->
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
     lager:info("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
-    riak_core_vnode_master:command(ListofNodes, {abort, TxId}, {fsm, undefined, self()},?CLOCKSIMASTER).
+    riak_core_vnode_master:command(ListofNodes, {abort, TxId}, {fsm, undefined, self()},?CLOCKSIMASTER),
+    lager:info("ClockSI-Vnode: sent command to abort TxId ~w ~n",[TxId]).
 
 %% @doc sends a request to Node to get all the transactions that are pending for a given Key
 %% This function is called by the ClockSI read FSM
@@ -142,22 +143,26 @@ handle_command({update_data_item, TxId, Key, Op}, Sender, #state{active_tx=Activ
 
 
 handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Log, active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
+    lager:info("ClockSI_Vnode: got prepare message."),
     TxWriteSet=ets:lookup(WriteSet, TxId), 
+    lager:info("ClockSI_Vnode: starting certification check."),
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
-    true ->
-	PrepareTime=now_milisec(erlang:now()),
-	Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
-        case Result of
-    	ok ->
-	    ets:insert(PreparedTx, {TxId, PrepareTime}),
-            {reply, {prepared, PrepareTime}, State};
-    	{error, Reason} ->
-            {reply, {error, Reason}, State}
-        end;
+	true ->
+		lager:info("ClockSI_Vnode: certification check passed."),
+		PrepareTime=now_milisec(erlang:now()),
+		lager:info("ClockSI_Vnode: local prepare time: ~p.", [PrepareTime]),
+		Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
+			case Result of
+			ok ->
+			ets:insert(PreparedTx, {TxId, PrepareTime}),
+				{reply, {prepared, PrepareTime}, State};
+			{error, Reason} ->
+				lager:error("ClockSI_Vnode: error logging the prepare time. Reason: ~p", [Reason]),
+				{reply, {error, Reason}, State}
+			end;
     false ->
-	lager:info("ClockSI_Vnode: certification_check failed"),
-	%This does not match Ale's coordinator. We have to discuss it. It also expect Node.
-	{reply, abort, State}
+		lager:info("ClockSI_Vnode: certification_check failed, beginning to abort tx..."),
+		{reply, abort, State}
     end;
 
 handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
@@ -177,10 +182,10 @@ handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_
             {reply, {error, Reason}, State}
     end;
 
-handle_command({abort, _TxId}, _Sender, #state{log=_Log}=State) ->
-    %clean_and_notify(timeout, TxId, State),
-    lager:info("Vnode: Recieved abort~n"),
-    {reply, ack_abort, State};
+handle_command({abort, TxId}, _Sender, #state{}=State) ->
+    clean_and_notify(TxId, State),
+    lager:info("Vnode: Recieved abort. State cleaned."),
+    {noreply, State};
 
 handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
 			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms, prepared_tx=PreparedTx}=State) ->
@@ -249,15 +254,15 @@ terminate(_Reason, _State) ->
 %% 	b. Waiting_Fsms,
 %% 	c. PreparedTx
 clean_and_notify(TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedTx, 
-					write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}) ->
+					write_set=WriteSet, waiting_fsms=WaitingFsms}) ->
 	Pending=ets:lookup(WaitingFsms, TxId),
 	lager:info("ClockSI_Vnode: fsms that are waiting for tx ~p to finish: ~p", [TxId, Pending]),
 	notify_all(Pending, TxId),
-	case ets:lookup(WriteSet, TxId) of
-        [Op|Ops] ->
-        lager:info("ClockSI_Vnode: cleanning tx state on the vnode."),
-		clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
-    	end,
+	lager:info("ClockSI_Vnode: cleanning tx state on the vnode."),
+	%case ets:lookup(WriteSet, TxId) of
+    %    [Op|Ops] ->
+	%	clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
+    %	end,
 	ets:delete(PreparedTx, TxId),
 	ets:delete(ActiveTx, TxId),
 	ets:delete(WriteSet, TxId),
@@ -300,12 +305,12 @@ internal_pending_txs([H|T], ST, PreparedTx, Result) ->
     end.
 
 
-clean_active_txs_per_key(_, [], _) -> ok;
-clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey) ->
-	{_, {Key, _}}=Op,
-	lager:info("ClockSI-Vnode: trying to remove tx ~w for Key ~w.", [TxId, Key]),
-	ets:delete_object(ActiveTxsPerKey, {Key, TxId}),
-	clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
+%clean_active_txs_per_key(_, [], _) -> ok;
+%clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey) ->
+%	{_, {Key, _}}=Op,
+%	lager:info("ClockSI-Vnode: trying to remove tx ~w for Key ~w.", [TxId, Key]),
+%	ets:delete_object(ActiveTxsPerKey, {Key, TxId}),
+%	clean_active_txs_per_key(TxId, Ops, ActiveTxsPerKey).
 
 add_to_waiting_fsms(_, [], _) -> ok;    
 add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->
@@ -317,9 +322,12 @@ add_to_waiting_fsms(WaitingFsms, [H|T], Sender) ->
 %% @doc performs a certification check when a transaction wants to move
 %% to the prepared state.	
 certification_check(_, [], _, _) -> true;
-certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) ->
-    [{Key, _}|T]=TxWriteSet,
+certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
+	lager:info("ClockSI_Vnode: getting key of operation: ~p.", [H]),
+    {_,{Key,_}}=H,
+    lager:info("ClockSI_Vnode: checking key: ~p.", [Key]),
     TxsPerKey=ets:lookup(ActiveTxPerKey, Key),
+    lager:info("ClockSI_Vnode: active txs for Key: ~p: ~p.", [Key, TxsPerKey]),
     case check_keylog(TxId, TxsPerKey, CommittedTx) of
     true -> 
         false;	
@@ -329,15 +337,26 @@ certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) ->
 
 check_keylog(_, [], _) -> false;
 check_keylog(TxId, [H|T], CommittedTx)->
-    lager:info("Active Tx to check ~w~n",[H]),
-    case H > TxId of 
+	{_, ThisTxId}=H,
+    lager:info("Checking if Tx ~p started after Tx to check ~w~n",[ThisTxId, TxId]),
+    case ThisTxId > TxId of 
     true ->
-        case ets:lookup(CommittedTx, H) of 
-	true ->
-	    true;
-	false->
-	    check_keylog(TxId, T, CommittedTx)
-	end
+    	lager:info("It did! Checking if it has committed..."),
+    	CommitInfo=ets:lookup(CommittedTx, ThisTxId),
+    	lager:info("got this from the lookup ~p", [CommitInfo]),
+    	timer:sleep(1000),
+        case CommitInfo of 
+		[{_,CommitTime}] ->
+			%{_, CommitTime}= H,
+			lager:info("The transaction has already committed with commit time: ~p", [CommitTime]),
+			true;
+		[]->
+			lager:info("It did not... Continuing..."),
+			check_keylog(TxId, T, CommittedTx)
+		end;
+	false ->
+		lager:info("It did not... Continuing..."),
+		check_keylog(TxId, T, CommittedTx)
     end.
 
 issue_updates([], _CommitTS)-> ok;
