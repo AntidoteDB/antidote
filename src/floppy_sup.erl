@@ -28,9 +28,21 @@ init(_Args) ->
                   {riak_core_vnode_master, start_link, [floppy_rep_vnode]},
                   permanent, 5000, worker, [riak_core_vnode_master]},
 
+    ClockSIMaster = { clockSI_vnode_master,
+                  {riak_core_vnode_master, start_link, [clockSI_vnode]},
+                  permanent, 5000, worker, [riak_core_vnode_master]},
+
     InterDcRepMaster = { inter_dc_repl_vnode_master,
                   {riak_core_vnode_master, start_link, [inter_dc_repl_vnode]},
                   permanent, 5000, worker, [riak_core_vnode_master]},
+    
+    ClockSITxCoordSup =  { clockSI_tx_coord_sup,
+                  {clockSI_tx_coord_sup, start_link, []},
+                  permanent, 5000, supervisor, [clockSI_tx_coord_sup]},
+    
+    ClockSIiTxCoordSup =  { clockSI_interactive_tx_coord_sup,
+                  {clockSI_interactive_tx_coord_sup, start_link, []},
+                  permanent, 5000, supervisor, [clockSI_interactive_tx_coord_sup]},
     
     CoordSup =  { floppy_coord_sup,
                   {floppy_coord_sup, start_link, []},
@@ -46,4 +58,4 @@ init(_Args) ->
 
     { ok,
         { {one_for_one, 5, 10},
-          [LoggingMaster, RepMaster, InterDcRepMaster, CoordSup, RepSup, InterDcRecvr]}}.
+          [LoggingMaster, RepMaster, ClockSIMaster, ClockSITxCoordSup, ClockSIiTxCoordSup, InterDcRepMaster, CoordSup, RepSup, InterDcRecvr]}}.
