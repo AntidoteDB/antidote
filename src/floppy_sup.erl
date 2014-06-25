@@ -48,6 +48,9 @@ init(_Args) ->
                            {riak_core_vnode_master,  start_link, [clockSI_downstream_generator_vnode]},
                   permanent, 5000, worker, [riak_core_vnode_master]},
 
+    VectorClockMaster = {vectoclock_vnode_master,
+                         {riak_core_vnode_master,  start_link, [vectorclock_vnode]},
+                         permanent, 5000, worker, [riak_core_vnode_master]},
     
     CoordSup =  { floppy_coord_sup,
                   {floppy_coord_sup, start_link, []},
@@ -64,4 +67,5 @@ init(_Args) ->
     { ok,
         { {one_for_one, 5, 10},
           [LoggingMaster, RepMaster, ClockSIMaster, ClockSITxCoordSup, ClockSIiTxCoordSup, InterDcRepMaster, CoordSup, RepSup, InterDcRecvr,
-          ClockSIDSGenMaster]}}.
+          ClockSIDSGenMaster,
+          VectorClockMaster]}}.

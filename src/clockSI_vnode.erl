@@ -95,7 +95,7 @@ init([Partition]) ->
                   app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
     case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
         {ok, TxLog} ->
-            ActiveTx=ets:new(active_tx, [set]),
+            ActiveTx=ets:new(active_tx, [bag]),
             PreparedTx=ets:new(prepared_tx, [set]),
             CommittedTx=ets:new(committed_tx, [set]),
             WaitingFsms=ets:new(waiting_fsms, [bag]),
@@ -126,8 +126,8 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=Active
     Result = dets:insert(Log, {TxId, {Key, Op}}),
     case Result of
         ok ->
-            ets:insert(ActiveTx, {TxId, Txn#transaction.snapshot_time}),
-            Check1=ets:lookup(ActiveTx, TxId),
+            ets:insert(ActiveTx, {active, {TxId, Txn#transaction.snapshot_time}}),
+            Check1=ets:lookup(ActiveTx, active),
             lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
             ets:insert(ActiveTxsPerKey, {Key, TxId}),
             Check2=ets:lookup(ActiveTxsPerKey, Key),
@@ -202,6 +202,17 @@ handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
             {reply, {ok, [H|T]}, State}
     end;
 
+handle_command({get_active_txns},_Sender, #state{active_tx=Active}=State) ->
+    %%ActiveTxs = [{active,{TxId, Snapshottime}}]
+    ActiveTxs = ets:lookup(Active, active),
+    lager:info("ActiveTxs: ~p", [ActiveTxs]),
+    ActiveTxsFiltered = lists:foldl( fun({active, {TxId, Snapshottime}}, Txns) ->
+                                             lists:append(Txns,[{TxId, Snapshottime}]) end,
+                                     [],
+                                     ActiveTxs),
+    lager:info(" Active Txns after filtered ~p",[ActiveTxsFiltered]),
+    {reply, {ok, ActiveTxsFiltered}, State};
+
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
     {noreply, State}.
@@ -262,7 +273,7 @@ clean_and_notify(TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedTx,
             clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
     end,
     ets:delete(PreparedTx, TxId),
-    ets:delete(ActiveTx, TxId),
+    ets:delete_object(ActiveTx, {active,{TxId, TxId#tx_id.snapshot_time}}),
     ets:delete(WriteSet, TxId),
     ets:delete(WaitingFsms, TxId).
 
@@ -346,7 +357,7 @@ check_keylog(TxId, [H|T], CommittedTx)->
 issue_updates([], _Transaction, _CommitTS, ignore) ->
     ok;
 issue_updates([], _Transaction,  _CommitTS, Key) ->
-    ok = clockSI_downstream_generator_vnode:trigger(Key),
+    clockSI_downstream_generator_vnode:trigger(Key),
     ok;
 issue_updates([Next|Rest], Transaction, Commit_time, _Key)->
     {_,{Key,{Op,Actor}}}=Next,
