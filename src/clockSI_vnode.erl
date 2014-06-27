@@ -173,6 +173,8 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender, #state{log=Log, com
             issue_updates(Updates, Transaction, TxCommitTime, ignore),
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
             lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
+            [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
+            clockSI_downstream_generator_vnode:trigger(Key, {TxId, Updates, TxCommitTime}),
             clean_and_notify(TxId, State),
             lager:info("ClockSI_Vnode: done"),
             {reply, committed, State};
@@ -356,8 +358,8 @@ check_keylog(TxId, [H|T], CommittedTx)->
 
 issue_updates([], _Transaction, _CommitTS, ignore) ->
     ok;
-issue_updates([], _Transaction,  _CommitTS, Key) ->
-    clockSI_downstream_generator_vnode:trigger(Key),
+issue_updates([], _Transaction,  _CommitTS, _Key) ->
+    %clockSI_downstream_generator_vnode:trigger(Key),
     ok;
 issue_updates([Next|Rest], Transaction, Commit_time, _Key)->
     {_,{Key,{Op,Actor}}}=Next,
