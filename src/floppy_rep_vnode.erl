@@ -47,7 +47,7 @@ init([Partition]) ->
 %% Args: Key of the object and operation parameters
 %% Returns: {ok, Result} if success; {error, timeout} if operation failed.
 append(LogId, Op) ->
-    floppy_coord_sup:start_fsm([self(), append, LogId, Op]),
+    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, LogId, Op]),
     receive
         {ok, Result} ->
 	        lager:info("Append completed!~w~n",[Result]),
@@ -63,7 +63,7 @@ append(LogId, Op) ->
 %% Returns: {ok, Ops} if succeeded, Ops is the union of operations; {error, nothing} if operation failed.
 read(LogId) ->
     lager:info("Read ~w", [LogId]),
-    floppy_coord_sup:start_fsm([self(), read, LogId, noop]),
+    {ok,_Pid}=floppy_coord_sup:start_fsm([self(), read, LogId, noop]),
     receive
         {ok, Ops} ->
 	        lager:info("Read completed!~n"),

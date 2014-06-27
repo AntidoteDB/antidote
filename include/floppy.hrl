@@ -11,8 +11,8 @@
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
 -define(MAXRING,1461501637330902918203684832716283019655932542975).
+-record (payload, {key, op_param, actor}).
 -record(operation, {op_number, payload}).
-
 
 % Clock SI
 

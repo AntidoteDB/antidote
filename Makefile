@@ -1,13 +1,18 @@
 REBAR = $(shell pwd)/rebar
 .PHONY: rel deps test
 
-all: deps compile test compile-riak-test
+all: deps compile test compile-riak-test compile-client
 
 compile: deps
 	$(REBAR) compile
 
 compile-riak-test: compile
 	$(REBAR) skip_deps=true riak_test_compile
+
+compile-client: 
+	mkdir -p floppyclient/ebin
+	erlc -o floppyclient/ebin floppyclient/walletapp.erl
+	erlc -o floppyclient/ebin floppyclient/walletclient.erl 
 
 deps:
 	$(REBAR) get-deps
