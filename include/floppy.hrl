@@ -10,8 +10,8 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
+-record (payload, {key, op_param, actor}).
 -record(operation, {op_number, payload}).
-
 
 % Clock SI
 

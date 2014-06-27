@@ -6,23 +6,37 @@
 -endif.
 
 -export([create_snapshot/1,
-   update_snapshot/3]).
+   update_snapshot/4]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(Type::atom()) -> term().
 create_snapshot(Type) ->
     Type:new().
 
-%% @doc Applies all the operations of a list to a CRDT.
--spec update_snapshot(Type::atom(), Snapshot::term(), Ops::list()) -> term().
-update_snapshot(_, Snapshot, []) ->
+%% @doc Applies all the operations of a list of log entriesto a CRDT.
+-spec update_snapshot(Key::term(), Type::atom(), Snapshot::term(), Ops::list()) -> term().
+update_snapshot(_, _, Snapshot, []) ->
     Snapshot;
-update_snapshot(Type, Snapshot, [Op|Rest]) ->
-    {_, #operation{payload={OpParam, Actor}}} = Op,
-    lager:info("OpParam: ~w, Actor: ~w and Snapshot: ~w~n",
-               [OpParam, Actor, Snapshot]),
-    {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
-    update_snapshot(Type, NewSnapshot, Rest).
+update_snapshot(Key, Type, Snapshot, [LogEntry|Rest]) ->
+	%case Op#log_record.op_type of
+	%update ->
+		%case Op#log_record.op_payload of
+	case LogEntry of
+	{_, Operation}->
+		Payload=Operation#operation.payload,
+		Key=Payload#payload.key, 
+		OpParam=Payload#payload.op_param, 
+		Actor=Payload#payload.actor,
+		lager:info("OpParam: ~w, Actor: ~w and Snapshot: ~w",
+				   [OpParam, Actor, Snapshot]),
+		{ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
+		update_snapshot(Key, Type, NewSnapshot, Rest);
+	_->
+		lager:info("Unexpected log record: ~w, Actor: ~w and Snapshot: ~w",[LogEntry]),
+		{error, unexpected_format, LogEntry}
+	end.
+	
+	
 
 -ifdef(TEST).
 
