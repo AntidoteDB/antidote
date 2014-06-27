@@ -93,10 +93,10 @@ init([Partition]) ->
 %% @doc Read command: Returns the operations logged for Key
 %%	Input: Key of the object to read
 %%	Output: {vnode_id, Operations} | {error, Reason}
-handle_command({read, Key, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
+handle_command({read, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
-            case lookup_operations(Log, Key) of
+            case lookup_operations(Log) of
                 [] ->
                     {reply, {ok,{{Partition, node()}, []}}, State};
                 [H|T] ->
@@ -109,19 +109,18 @@ handle_command({read, Key, Preflist}, _Sender, #state{partition=Partition, logs_
     end;
 
 %% @doc Threshold read command: Returns the operations logged for Key from a specified op_id-based threshold
-%%	Input:  Key of the object to read
-%%		From: the oldest op_id to return
+%%	Input:  From: the oldest op_id to return
+%%          Preflist: Identifies the log to be read
 %%	Output: {vnode_id, Operations} | {error, Reason}
-handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
+handle_command({threshold_read, From, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
-            case lookup_operations(Log, Key) of
+            case lookup_operations(Log) of
                 [] ->
                     {reply, {ok,{{Partition, node()}, []}}, State};
                 [H|T] ->
-                    Operations =  [H|T],
-                    Operations2 = threshold_prune(Operations, From),
-                    {reply, {ok,{{Partition, node()}, Operations2}}, State};
+                    Operations = threshold_prune([H|T], From),
+                    {reply, {ok,{{Partition, node()}, Operations}}, State};
                 {error, Reason}->
                     {reply, {error, Reason}, State}
             end;
@@ -161,7 +160,7 @@ handle_command({append, Key, Payload, OpId, Preflist}, _Sender,
                #state{logs_map=Map, partition = Partition}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
-            case insert_operation(Log, Key, OpId, Payload) of
+            case insert_operation(Log, Key, OpId, Pfayload) of
                 {ok, OpId} ->
                     {reply, {ok, {{Partition, node()}, OpId}}, State};
                 {error, Reason} ->
