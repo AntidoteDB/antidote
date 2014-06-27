@@ -24,12 +24,14 @@ update_snapshot(Key, Type, Snapshot, [LogEntry|Rest]) ->
 	case LogEntry of
 	{_, Operation}->
 		Payload=Operation#operation.payload,
-		Key=Payload#payload.key, 
-		OpParam=Payload#payload.op_param, 
-		Actor=Payload#payload.actor,
-		lager:info("OpParam: ~w, Actor: ~w and Snapshot: ~w",
-				   [OpParam, Actor, Snapshot]),
-		{ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
+		case Payload#payload.key of 
+		Key->
+			OpParam=Payload#payload.op_param, 
+			Actor=Payload#payload.actor,
+			lager:info("OpParam: ~w, Actor: ~w and Snapshot: ~w",
+					   [OpParam, Actor, Snapshot]),
+			{ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot)
+		end,
 		update_snapshot(Key, Type, NewSnapshot, Rest);
 	_->
 		lager:info("Unexpected log record: ~w, Actor: ~w and Snapshot: ~w",[LogEntry]),
