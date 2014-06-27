@@ -35,7 +35,6 @@
 %% @doc Data Type: state
 %% where:
 %%	partition: the partition that the vnode is responsible for.
-%%	log: the transaction log (stored on disc by using dets)
 %%	active_tx: a list of active transactions.
 %%	prepared_tx: a list of prepared transactions.		
 %%	committed_tx: a list of committed transactions.	
@@ -43,7 +42,7 @@
 %%	active_txs_per_key: a list of the active transactions that have updated a key (but not yet finished).
 %%	write_set: a list of the write sets that the transactions generate.	
 %%----------------------------------------------------------------------
--record(state, {partition,log, active_tx, prepared_tx, committed_tx, waiting_fsms, active_txs_per_key, write_set}).
+-record(state, {partition, active_tx, prepared_tx, committed_tx, waiting_fsms, active_txs_per_key, write_set}).
 
 
 %%%===================================================================
@@ -91,28 +90,29 @@ get_pending_txs(Node, {Key, TxId}) ->
 init([Partition]) ->
 	%lager:info("ClockSI-Vnode: initialize partition ~w ~n",[Partition]),
     % It generates a dets file to store active transactions.
-    TxLogFile = string:concat(integer_to_list(Partition), "_clockSI"),
-    TxLogPath = filename:join(
-            app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
-    case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
-        {ok, TxLog} ->
-	    	ActiveTx=ets:new(active_tx, [set]),
-	    	PreparedTx=ets:new(prepared_tx, [set]),
-	    	CommittedTx=ets:new(committed_tx, [set]),
-	    	WaitingFsms=ets:new(waiting_fsms, [bag]),
-	    	ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
-	    	WriteSet=ets:new(write_set, [duplicate_bag]),
-	    	%lager:info("ClockSI-Vnode: Initialized state, data structures and Log ~n"),
-            {ok, #state{partition=Partition, log=TxLog, active_tx=ActiveTx, prepared_tx=PreparedTx, committed_tx=CommittedTx, 
-						write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}};
-        {error, Reason} ->
-        	lager:error("ClockSI-Vnode: could not initialize state, reason: ~w ~n",[Reason]),
-            {error, Reason}
-    end.
+    % we don't anymore.
+    %TxLogFile = string:concat(integer_to_list(Partition), "_clockSI"),
+    %TxLogPath = filename:join(
+    %         app_helper:get_env(riak_core, platform_data_dir), TxLogFile),
+    %case dets:open_file(TxLogFile, [{file, TxLogPath}, {type, bag}]) of
+    %    {ok, TxLog} ->
+	ActiveTx=ets:new(active_tx, [set]),
+	PreparedTx=ets:new(prepared_tx, [set]),
+	CommittedTx=ets:new(committed_tx, [set]),
+	WaitingFsms=ets:new(waiting_fsms, [bag]),
+	ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
+	WriteSet=ets:new(write_set, [duplicate_bag]),
+	%lager:info("ClockSI-Vnode: Initialized state, data structures and Log ~n"),
+	{ok, #state{partition=Partition, active_tx=ActiveTx, prepared_tx=PreparedTx, committed_tx=CommittedTx, 
+				write_set=WriteSet, waiting_fsms=WaitingFsms, active_txs_per_key=ActiveTxsPerKey}}.
+     %   {error, Reason} ->
+     %   	lager:error("ClockSI-Vnode: could not initialize state, reason: ~w ~n",[Reason]),
+     %       {error, Reason}
+    %end.
 
 
 %% @doc starts a read_fsm to handle a read operation.
-handle_command({read_data_item, TxId, Key, Type}, Sender, #state{write_set=WriteSet, partition= Partition, log=_Log}=State) ->
+handle_command({read_data_item, TxId, Key, Type}, Sender, #state{write_set=WriteSet, partition= Partition}=State) ->
     Vnode={Partition, node()},
 	Updates = ets:lookup(WriteSet, TxId),
     lager:info("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",[Key, Updates]),
@@ -121,11 +121,12 @@ handle_command({read_data_item, TxId, Key, Type}, Sender, #state{write_set=Write
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, TxId, Key, Op}, Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey, log=Log}=State) ->
-    %%do we need the Sender here?
-    Result = dets:insert(Log, {TxId, {Key, Op}}),
+handle_command({update_data_item, TxId, Key, Op}, Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey}=State) ->
+    HashedKey= riak_core_util:chash_key({?BUCKET,
+                                       term_to_binary(Key)}),
+    Result = floppy_rep_vnode:append(HashedKey, {TxId, Op}),
     case Result of
-    	ok ->
+    	{ok,_} ->
     	    ets:insert(ActiveTx, {TxId, TxId#tx_id.snapshot_time}),
     	    Check1=ets:lookup(ActiveTx, TxId),
     	    lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
@@ -137,12 +138,12 @@ handle_command({update_data_item, TxId, Key, Op}, Sender, #state{active_tx=Activ
     	    lager:info("ClockSI-Vnode: Inserted to WriteSet ~p",[Check3]),
     		clockSI_updateitem_fsm:start_link(Sender, TxId),
 			{noreply, State};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+        {error, timeout} ->
+            {reply, {error, timeout}, State}
     end;
 
 
-handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Log, active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
+handle_command({prepare, TxId}, _Sender, #state{partition=Partition,committed_tx=CommittedTx, active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
     lager:info("ClockSI_Vnode: got prepare message."),
     TxWriteSet=ets:lookup(WriteSet, TxId), 
     lager:info("ClockSI_Vnode: starting certification check."),
@@ -151,41 +152,49 @@ handle_command({prepare, TxId}, _Sender, #state{committed_tx=CommittedTx, log=Lo
 		lager:info("ClockSI_Vnode: certification check passed."),
 		PrepareTime=now_milisec(erlang:now()),
 		lager:info("ClockSI_Vnode: local prepare time: ~p.", [PrepareTime]),
-		Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
+		%Result = dets:insert(Log, {TxId, {prepare, PrepareTime}}),
+		Result = floppy_rep_vnode:append(Partition-1, {TxId, {prepare, PrepareTime}}),
 			case Result of
-			ok ->
+			{ok,_} ->
 			ets:insert(PreparedTx, {TxId, PrepareTime}),
 				{reply, {prepared, PrepareTime}, State};
-			{error, Reason} ->
-				lager:error("ClockSI_Vnode: error logging the prepare time. Reason: ~p", [Reason]),
-				{reply, {error, Reason}, State}
+			{error, timeout} ->
+				{reply, {error, timeout}, State}
 			end;
     false ->
 		lager:info("ClockSI_Vnode: certification_check failed, beginning to abort tx..."),
 		{reply, abort, State}
     end;
 
-handle_command({commit, TxId, TxCommitTime}, _Sender, #state{log=Log, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
+handle_command({commit, TxId, TxCommitTime}, _Sender, #state{partition=Partition, committed_tx=CommittedTx}=State) ->
     lager:info("ClockSI_Vnode: got commit message."),
-    Result = dets:insert(Log, {TxId, {committed, TxCommitTime}}),
+    Result = floppy_rep_vnode:append(Partition-1, {TxId, {committed, TxCommitTime}}), 
     case Result of
-        ok ->
-            Updates = ets:lookup(WriteSet, TxId),
-            lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Updates]),
-            issue_updates(Updates, TxCommitTime),
+        {ok,_} ->
+            %Updates = ets:lookup(WriteSet, TxId),
+            %lager:info("ClockSI_Vnode: issuing all updates to the logging layer: ~p", [Updates]),
+            %issue_updates(Updates, TxCommitTime),
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
             lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
             clean_and_notify(TxId, State),
             lager:info("ClockSI_Vnode: done"),
             {reply, committed, State};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+        {error, timeout} ->
+            {reply, {error, timeout}, State}
     end;
 
-handle_command({abort, TxId}, _Sender, #state{}=State) ->
-    clean_and_notify(TxId, State),
-    lager:info("Vnode: Recieved abort. State cleaned."),
+handle_command({abort, TxId}, _Sender, #state{partition=Partition}=State) ->
+	Result = floppy_rep_vnode:append(Partition-1, {TxId, aborted}), 
+    case Result of
+        {ok,_} ->
+        	clean_and_notify(TxId, State),
+			lager:info("Vnode: Recieved abort. State cleaned.")      
+        %{error, timeout} ->
+        	%% should we reply something here?
+            %%{reply, {error, timeout}, State},
+    end,
     {noreply, State};
+    
 
 handle_command ({get_pending_txs, {Key, TxId}}, Sender, #state{
 			active_txs_per_key=ActiveTxsPerKey, waiting_fsms=WaitingFsms, prepared_tx=PreparedTx}=State) ->
@@ -359,10 +368,10 @@ check_keylog(TxId, [H|T], CommittedTx)->
 		check_keylog(TxId, T, CommittedTx)
     end.
 
-issue_updates([], _CommitTS)-> ok;
+%issue_updates([], _CommitTS)-> ok;
 
-issue_updates([Next|Rest], CommitTS)->
-	{_,{Key,{Op,Actor}}}=Next,
-	lager:info("About to append this: ~w~n",[{Key, {Op, Actor, CommitTS}}]),
-    floppy_rep_vnode:append(Key, {Op, Actor, CommitTS}),
-	issue_updates(Rest, CommitTS).
+%issue_updates([Next|Rest], CommitTS)->
+%	{_,{Key,{Op,Actor}}}=Next,
+%	lager:info("About to append this: ~w~n",[{Key, {Op, Actor, CommitTS}}]),
+%    floppy_rep_vnode:append(Key, {Op, Actor, CommitTS}),
+%	issue_updates(Rest, CommitTS).
