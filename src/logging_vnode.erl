@@ -314,7 +314,7 @@ join_logs([Element|Rest], F, Acc) ->
 %%		Return:	{ok, OpId} | {error, Reason}
 -spec insert_operation(Log::term(), Key::term(), OpId::{Number::non_neg_integer(), Node::term()}, Payload::term()) -> {ok, {Number::non_neg_integer(), Node::term()}} | {error, term()}.
 insert_operation(Log, LogId, OpId, Payload) ->
-    case dets:match(Log, {LogId, #operation{op_number=OpId, payload='$1'}}) of
+    case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
             Result = dets:insert(Log,{LogId, #operation{op_number=OpId,payload=Payload}}),
             Response = case Result of

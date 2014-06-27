@@ -46,8 +46,8 @@ init([Partition]) ->
 %% Purpose: Start a fsm to coordinate the `append' operation to be performed in the object's replicaiton group
 %% Args: Key of the object and operation parameters
 %% Returns: {ok, Result} if success; {error, timeout} if operation failed.
-append(LogId, Op) ->
-    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, LogId, Op]),
+append(LogId, Payload) ->
+    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, LogId, Payload]),
     receive
         {ok, Result} ->
 	        lager:info("Append completed!~w~n",[Result]),
