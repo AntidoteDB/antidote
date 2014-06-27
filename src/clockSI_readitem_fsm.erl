@@ -110,8 +110,9 @@ commit_notification({committed, TxId}, SD0=#state{pending_txs=Left, key=Key}) ->
 return(timeout, SD0=#state{key=Key,
                            tx_coordinator = Coordinator, transaction = Transaction,type=Type, updates=Updates}) ->
     lager:info("ClockSI ReadItemFSM: reading key from the materialiser ~w", [Key]),
-    TxId = Transaction#transaction.txn_id,
-    case materialiser_vnode:read(Key, Type, TxId#tx_id.snapshot_time) of
+    %TxId = Transaction#transaction.txn_id,
+    Vec_snapshot_time = Transaction#transaction.vec_snapshot_time,
+    case materializer_vnode:read(Key, Type, Vec_snapshot_time) of
         {ok, Snapshot} ->            
             Updates2=filter_updates_per_key(Updates, Key),
             lager:info("Filtered updates before completeing the read: ~w ~n" , [Updates2]),

@@ -172,17 +172,18 @@ handle_command({prepare, Transaction}, _Sender, #state{ partition = Partition,
             {reply, abort, State}
     end;
 
-handle_command({commit, Transaction, TxCommitTime}, Sender, 
-               #state{partition = Partition, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
+handle_command({commit, Transaction, TxCommitTime}, _Sender, 
+               #state{partition = _Partition, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
     lager:info("ClockSI_Vnode: got commit message."),
     TxId = Transaction#transaction.txn_id,
 	LogRecord=#log_record{tx_id=TxId, op_type=commit, op_payload=TxCommitTime},
 	lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
-	LogId=log_utilities:get_logid_from_partition(Partition),
-	Result = floppy_rep_vnode:append(LogId-1, LogRecord),
+	%LogId=log_utilities:get_logid_from_partition(Partition),
+	%Result = floppy_rep_vnode:append(LogId-1, LogRecord),
+         Result = {ok, done},
     case Result of
         {ok,_} ->
-        	gen_fsm:send_event(Sender, committed),
+            %gen_fsm:send_event(Sender, committed),
             Updates = ets:lookup(WriteSet, TxId),
             lager:info("ClockSI_Vnode: sending updates to the downstream vnode layer: ~p", [Updates]),
             %% CALL THE 
@@ -193,7 +194,7 @@ handle_command({commit, Transaction, TxCommitTime}, Sender,
             clockSI_downstream_generator_vnode:trigger(Key, {TxId, Updates, TxCommitTime}),
             clean_and_notify(TxId, State),
             lager:info("ClockSI_Vnode: done"),
-            {noreply, State};
+            {reply, committed, State};
         {error, timeout} ->
             {reply, {error, timeout}, State}
     end;
