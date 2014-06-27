@@ -13,7 +13,7 @@
 create_snapshot(Type) ->
     Type:new().
 
-%% @doc Applies all the operations of a list of log entriesto a CRDT.
+%% @doc Applies all the operations of key from a list of log entriesto a CRDT.
 -spec update_snapshot(Key::term(), Type::atom(), Snapshot::term(), Ops::list()) -> term().
 update_snapshot(_, _, Snapshot, []) ->
     Snapshot;
