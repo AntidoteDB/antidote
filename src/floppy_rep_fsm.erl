@@ -21,14 +21,14 @@
 
 -record(state, {
                 from :: pid(),
-                op :: atom(),
-                key,
-                param = undefined :: term() | undefined,
-		readresult,
+                type :: atom(),
+                log_id,
+                payload = undefined :: term() | undefined,
+		        readresult,
                 preflist :: riak_core_apl:preflist(),
-		num_to_ack = 0 :: non_neg_integer(),
-		opid,
-		nodeOps}).
+		        num_to_ack = 0 :: non_neg_integer(),
+		        opid,
+		        nodeOps}).
 
 %%%===================================================================
 %%% API
@@ -37,8 +37,8 @@
 %start_link(Key, Op) ->
 %    start_link(Key, Op).
 
-start_link(From, Op,  Key, Param, OpId) ->
-    gen_fsm:start_link(?MODULE, [From, Op, Key, Param, OpId], []).
+start_link(From, Type, LogId, Payload, OpId) ->
+    gen_fsm:start_link(?MODULE, [From, Type, LogId, Payload, OpId], []).
 
 
 %%%===================================================================
@@ -46,34 +46,33 @@ start_link(From, Op,  Key, Param, OpId) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init([From, Op,  Key, Param, OpId]) ->
+init([From, Type, LogId, Payload, OpId]) ->
     SD = #state{from=From,
-                op=Op,
-                key=Key,
-                param=Param,
-		opid= OpId,
-		readresult=[],
-		nodeOps =[]},
+                type=Type,
+                log_id=LogId,
+                payload=Payload,
+		        opid= OpId,
+		        readresult=[],
+		        nodeOps =[]},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
-prepare(timeout, SD0=#state{key=Key}) ->
-    Preflist = riak_core_apl:get_primary_apl(Key, ?N, logging),
-    NewPref = [Node|| {Node,_} <- Preflist ],
-    SD = SD0#state{preflist=NewPref},
+prepare(timeout, SD0=#state{log_id=LogId}) ->
+    Preflist = log_utilities:get_apl_from_logid(LogId, logging),
+    SD = SD0#state{preflist=Preflist},
     {next_state, execute, SD, 0}.
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
-execute(timeout, SD0=#state{op=Op,
-                            key=Key,
-                            param=Param,
+execute(timeout, SD0=#state{type=Type,
+                            log_id=LogId,
+                            payload=Payload,
                             preflist=Preflist,
-			    opid=OpId}) ->
-    case Op of 
+			                opid=OpId}) ->
+    case Type of 
 	append ->
 	    lager:info("FSM: Replicate append ~n"),
-	    logging_vnode:dappend(Preflist, Key, Param, OpId),
+	    logging_vnode:dappend(Preflist, LogId, OpId, Payload),
 	    SD1 = SD0#state{num_to_ack=?NUM_W},
 	    {next_state, waitAppend, SD1};
 %	create ->
@@ -84,7 +83,7 @@ execute(timeout, SD0=#state{op=Op,
 %	    {next_state, waiting, SD1};
 	read ->
 	    lager:info("FSM: Replication read ~n"),
-	    logging_vnode:dread(Preflist, Key),
+	    logging_vnode:dread(Preflist, LogId),
 	    SD1 = SD0#state{num_to_ack=?NUM_R},
 	    {next_state, waitRead, SD1};
 	_ ->
@@ -95,31 +94,33 @@ execute(timeout, SD0=#state{op=Op,
 
 
 %% @doc Waits for W write reqs to respond.
-waitAppend({ok,{_Node, Result}}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
-	floppy_coord_fsm:finishOp(From,  ok,{Key, Result}),	
-	{stop, normal, SD};
-	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }}
+waitAppend({ok, {_Node, Result}}, SD=#state{type=Type, from=From, num_to_ack=NumToAck}) ->
+    if
+        NumToAck == 1 -> 
+    	    lager:info("FSM: Finish collecting replies for ~w ~n", [Type]),
+	        floppy_coord_fsm:finish_op(From, ok, Result),	
+	        {stop, normal, SD};
+	    true ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }}
     end.
 
 %% @doc Waits for R read reqs to respond and union returned operations.
 %% Then send vnodes operations if they haven't seen some.
 %% Finally reply the unioned operation list to the coord fsm.
-waitRead({ok,{Node, Result}}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key, readresult= ReadResult , num_to_ack= NumToAck}) ->
+waitRead({ok, {Node, Result}}, SD=#state{type=Type, from= From, nodeOps = NodeOps, log_id=LogId, readresult= ReadResult , num_to_ack= NumToAck}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
-	repair(NodeOps1, Result1),
-	floppy_coord_fsm:finishOp(From, ok,{Key, Result1}),	
-	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
-	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
+    if
+        NumToAck == 1 -> 
+    	    lager:info("FSM: Finish reading for ~w ~w ~n", [Type, LogId]),
+	        repair(NodeOps1, Result1, LogId),
+	        floppy_coord_fsm:finish_op(From, ok, Result1),	
+	        {next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
+	    true ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
     end;
 
 waitRead({error, no_key}, SD) ->
@@ -128,22 +129,23 @@ waitRead({error, no_key}, SD) ->
 
 %% @doc Keeps waiting for read replies from vnodes after replying to coord fsm.
 %% Do read repair if any of them haven't seen some ops.
-repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
+repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult, log_id=LogId}) ->
     lager:info("FSM: read repair timeout! Start repair anyway~n"),
-    repair(NodeOps, ReadResult),
+    repair(NodeOps, ReadResult, LogId),
     {stop, normal, SD};
 
-repairRest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
+repairRest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult, log_id=LogId}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish collecting replies, start read repair ~n"),
-	repair(NodeOps, ReadResult),
-	{stop, normal, SD};
-    	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
+    if
+        NumToAck == 1 -> 
+    	    lager:info("FSM: Finish collecting replies, start read repair ~n"),
+	        repair(NodeOps, ReadResult, LogId),
+	        {stop, normal, SD};
+        true ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
     end.
 
 handle_info(_Info, _StateName, StateData) ->
@@ -179,16 +181,16 @@ union_ops(L1, L2, [Op|T]) ->
     union_ops(L3, L4, T).
 
 %% @doc Send logging vnodes with operations that they havn't seen
-repair([], _) ->
+repair([], _, _) ->
     ok;
-repair([H|T], FullOps) ->
+repair([H|T], FullOps, LogId) ->
     {Node, Ops} = H,
     DiffOps = find_diff_ops(Ops, FullOps),
     if DiffOps /= [] ->
-    	logging_vnode:append_list(Node, DiffOps),
-    	repair(T, FullOps);
+    	logging_vnode:append_list(Node, LogId, DiffOps),
+    	repair(T, FullOps, LogId);
 	true ->
-    	repair(T, FullOps)
+    	repair(T, FullOps, LogId)
     end.
 
 %% @doc Remove duplicate ops with OpId from a list (the first param)

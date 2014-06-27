@@ -1,6 +1,7 @@
 -define(PRINT(Var),
         io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
 -define(BUCKET, <<"floppy">>).
+-define(MASTER, floppy_vnode_master).
 -define(LOGGINGMASTER, logging_vnode_master).
 -define(CLOCKSIMASTER, clockSI_vnode_master).
 -define(CLOCKSI, clockSI).
@@ -10,13 +11,14 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
+-define(MAXRING,1461501637330902918203684832716283019655932542975).
+-record (payload, {key, op_param, actor}).
 
 % Used by the replication layer
 -record(operation, {op_number, payload}).
 
 % The way records are stored in the log.
 -record(log_record, {tx_id, op_type::atom(), op_payload}).
-
 
 % Clock SI
 

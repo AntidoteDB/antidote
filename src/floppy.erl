@@ -16,9 +16,11 @@
 
 %% Public API
 
-append(Key, Op) ->
+append(Key, {OpParam, Actor}) ->
     lager:info("Append called!"),
-    case floppy_rep_vnode:append(Key, Op) of
+    LogId = log_utilities:get_logid_from_key(Key),
+    Payload = #payload{key=Key, op_param=OpParam, actor=Actor},
+    case floppy_rep_vnode:append(LogId, Payload) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
@@ -26,10 +28,11 @@ append(Key, Op) ->
     end.
 
 read(Key, Type) ->
-    case floppy_rep_vnode:read(Key, Type) of
+    LogId = log_utilities:get_logid_from_key(Key),
+    case floppy_rep_vnode:read(LogId) of
         {ok, Ops} ->
             Init=materializer:create_snapshot(Type),
-            Snapshot=materializer:update_snapshot(Type, Init, Ops),
+            Snapshot=materializer:update_snapshot(Key, Type, Init, Ops),
             Type:value(Snapshot);
         {error, _} ->
             lager:info("Read failed!~n"),
