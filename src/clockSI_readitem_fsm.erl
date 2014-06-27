@@ -46,8 +46,8 @@ init([Vnode, Coordinator, TxId, Key, Type, Updates]) ->
 		vnode=Vnode,
 		type=Type,
 		key=Key,
-                tx_coordinator=Coordinator, 
-                tx_id=TxId,
+		tx_coordinator=Coordinator, 
+		tx_id=TxId,
 		updates=Updates,
 		pending_txs=[]},
     {ok, check_clock, SD, 0}.
@@ -59,13 +59,12 @@ check_clock(timeout, SD0=#state{tx_id=TxId}) ->
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
     case (T_TS) > Time of true ->
-    	lager:info("ClockSI ReadItemFSM: waiting for clock to catchUp ~n"),
+    	lager:info("ClockSI ReadItemFSM: waiting for clock to catchUp"),
 		timer:sleep(T_TS - Time),	
-		lager:info("ClockSI ReadItemFSM: done waiting... ~n"),
-		{next_state, get_txs_to_check, SD0, 0};
-		
+		lager:info("ClockSI ReadItemFSM: done waiting..."),
+		{next_state, get_txs_to_check, SD0, 0};		
 	false ->
-		lager:info("ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
+		lager:info("ClockSI ReadItemFSM: no need to wait for clock to catchUp"),
 		{next_state, get_txs_to_check, SD0, 0}
     end.		
 %% @doc get_txs_to_check: 
@@ -73,17 +72,17 @@ check_clock(timeout, SD0=#state{tx_id=TxId}) ->
 %%	- If none, goes to return state
 %%	- Otherwise, goes to commit_notification
 get_txs_to_check(timeout, SD0=#state{tx_id=TxId, vnode=Vnode, key=Key}) ->
-	lager:info("ClockSI ReadItemFSM: Calling vnode ~w to get pending txs for Key ~w ~n", [Vnode, Key]),
+	lager:info("ClockSI ReadItemFSM: Calling vnode ~w to get pending txs for Key ~w", [Vnode, Key]),
     case clockSI_vnode:get_pending_txs(Vnode, {Key, TxId}) of
     {ok, empty} ->		
-    	lager:info("ClockSI ReadItemFSM: no txs to wait for ~w ~n", [Key]),
+    	lager:info("ClockSI ReadItemFSM: no txs to wait for ~w", [Key]),
 		{next_state, return, SD0, 0};
     {ok, Pending} ->
     	%{Committing, Pendings} = pending_commits(T_snapshot_time, Txprimes),
-    	lager:info("ClockSI ReadItemFSM: txs to wait for ~w. Pendings ~w~n", [Key, Pending]),
+    	lager:info("ClockSI ReadItemFSM: txs to wait for ~w. Pendings ~w", [Key, Pending]),
         {next_state, commit_notification, SD0#state{pending_txs=Pending}};
     {error, _Reason} ->
-        lager:error("ClockSI ReadItemFSM: error while retrieving pending txs for Key: ~w, Reason: ~w~n", [Key, _Reason]),
+        lager:error("ClockSI ReadItemFSM: error while retrieving pending txs for Key: ~w, Reason: ~w", [Key, _Reason]),
 		{stop, normal, SD0}
     end.
 
@@ -97,34 +96,27 @@ commit_notification({committed, TxId}, SD0=#state{pending_txs=Left, key=Key}) ->
 		lager:info("ClockSI ReadItemFSM: no further txs to wait for"),
     	{next_state, return, SD0#state{pending_txs=Left2}, 0};
     [H|T] ->
-    	lager:info("ClockSI ReadItemFSM: still waiting for txs ~w ~n", [Left2]),
+    	lager:info("ClockSI ReadItemFSM: still waiting for txs ~w", [Left2]),
     	{next_state, commit_notification, SD0#state{pending_txs=[H|T]}};
     _-> 
-    	lager:info("ClockSI ReadItemFSM: tx ~w has committed ~n", [TxId])
+    	lager:info("ClockSI ReadItemFSM: tx ~w has committed", [TxId])
     end.
 
 %% @doc	return:
 %%	- Reads adn retunrs the log of the specified Key using the replication layer.
-return(timeout, SD0=#state{tx_coordinator=Coordinator, tx_id= TxId, key=Key, type=Type, updates=Updates}) ->
-	lager:info("ClockSI ReadItemFSM: reading key ~w ~n", [Key]),
-    case floppy_rep_vnode:read(Key, Type) of
-    {ok, Ops} ->
-    	lager:info("ClockSI ReadItemFSM: got the operations for key ~w, calling the materializer... ~n", [Key]),
-	    Init=clockSI_materializer:create_snapshot(Type),
-    	Snapshot=clockSI_materializer:update_snapshot(Type, Init, TxId#tx_id.snapshot_time, Ops),
-		Updates2=filter_updates_per_key(Updates, Key),
-		lager:info("Filtered updates before completeing the read: ~w ~n" , [Updates2]),
-		Snapshot2=clockSI_materializer:update_snapshot_eager(Type, Snapshot, Updates2),
-		Reply=Type:value(Snapshot2),
-		%Reply = clockSI_materializer:materialize(Type, TxId#tx_id.snapshot_time, Ops),
-		lager:info("ClockSI ReadItemFSM: finished materializing");
-    _ ->
-    	lager:error("ClockSI ReadItemFSM: reading from the replication group has returned an unexpected response ~n"),
-		Reply=error
-    end,
-    lager:info("ClockSI ReadItemFSM: replying to the tx coordinator ~w ~n", [Coordinator]),
-    riak_core_vnode:reply(Coordinator, Reply),
-    lager:info("ClockSI ReadItemFSM: finished fsm for key ~w ~n", [Key]),
+return(timeout, SD0=#state{key=Key}) ->
+			%%tx_coordinator=Coordinator, tx_id= TxId, key=Key, type=Type, updates=Updates}) ->
+	lager:info("ClockSI ReadItemFSM: reading key from the materialiser ~w", [Key]),
+    %case materialiser_vnode:read(Key, Type, TxId#tx_id.snapshot_time) of
+    %{ok, Snapshot} ->
+	%	Reply=Snapshot;
+    %{error, Reason} ->
+    %	lager:error("ClockSI ReadItemFSM: reading from the replication group has returned an error: ~w",[Reason]),
+	%	Reply={error, Reason}
+    %end,
+    %lager:info("ClockSI ReadItemFSM: replying to the tx coordinator ~w", [Coordinator]),
+    %riak_core_vnode:reply(Coordinator, Reply),
+    lager:info("ClockSI ReadItemFSM: finished fsm for key ~w", [Key]),
     {stop, normal, SD0}.
 
 handle_info(_Info, _StateName, StateData) ->
@@ -151,7 +143,7 @@ int_filter_updates_key([], _Key, Updates2) ->
 
 int_filter_updates_key([Next|Rest], Key, Updates2) ->
     {_, {KeyPrime, Op}} = Next,
-    lager:info("Comparing keys ~w==~w~n",[KeyPrime, Key]),
+    lager:info("Comparing keys ~w==~w",[KeyPrime, Key]),
     case KeyPrime==Key of
     true ->
 	int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
