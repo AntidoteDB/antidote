@@ -10,7 +10,12 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
+
+% Used by the replication layer
 -record(operation, {op_number, payload}).
+
+% The way records are stored in the log.
+-record(log_record, {tx_id, op_type::atom(), op_payload}).
 
 
 % Clock SI

@@ -220,8 +220,8 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
 %% aborts.
 abort(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) -> 
     clockSI_vnode:abort(UpdatedPartitions, Transaction#transaction.txn_id),
-    NumToAck=lists:lenght(UpdatedPartitions),
-    {next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}, 0};
+	NumToAck=length(UpdatedPartitions),
+	{next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}};
 
 abort(abort, SD0=#state{transaction= Transaction, updated_partitions=UpdatedPartitions}) -> 
                                                 %TODO: Do not send to who issue the abort

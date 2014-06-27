@@ -58,9 +58,7 @@ init([From, Op,  Key, Param, OpId]) ->
 
 %% @doc Prepare the write by calculating the _preference list_.
 prepare(timeout, SD0=#state{key=Key}) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, logging),
+    Preflist = riak_core_apl:get_primary_apl(Key, ?N, logging),
     NewPref = [Node|| {Node,_} <- Preflist ],
     SD = SD0#state{preflist=NewPref},
     {next_state, execute, SD, 0}.
