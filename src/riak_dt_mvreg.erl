@@ -51,8 +51,9 @@
 
 -export_type([mvreg/0, mvreg_op/0]).
 
--opaque mvreg() :: [{term(), riak_dt_vclock:vclock()}].
+-opaque mvreg() :: [{term(), riak_dt_vclock:vclock()}]. %[register_entry].
 
+%%-type register_entry() :: {term(), riak_dt_vclock:vclock()}.
 -type mvreg_op() :: {assign, term(), non_neg_integer()}  | {assign, term()} | {propagate, term(), term()}.
 
 -type mv_q() :: timestamp.
@@ -61,6 +62,10 @@
 -spec new() -> mvreg().
 new() ->
     [{<<>>, riak_dt_vclock:fresh()}].
+
+-spec init(term(), riak_dt_vclock:vclock()) -> mvreg().
+init(Value, VC) ->
+    [{Value, VC}].
 
 -spec parent_clock(riak_dt_vclock:vclock(), mvreg()) -> mvreg().
 parent_clock(_Clock, Reg) ->
@@ -101,7 +106,7 @@ update({assign, Value, TS}, Actor, MVReg) ->
     case larger_than(TS, Actor, MVReg) of 
         true ->
             VV = incVV(MVReg, Actor),
-            NewMVReg = [{Value, VV}],
+            NewMVReg = init(Value, VV),
             update({assign, Value, TS}, Actor, NewMVReg); 
         false ->
             {ok, MVReg}
@@ -119,7 +124,7 @@ update({propagate, Value, TS}, _, MVReg ) ->
         true ->
             {ok, MVReg};
         false ->
-            NewMVReg = merge_to(MVReg, [{Value, TS}]),
+            NewMVReg = merge_to(MVReg, init(Value, TS)),
             {ok, NewMVReg}
     end.
 
@@ -128,14 +133,16 @@ update(Op, Actor, Reg, _Ctx) ->
 
 %% @doc Find a least-uppder bound for all non-compatible vector clocks in MVReg 
 %% (if there is any) and then increment timestamp for `Actor' by one.
+-spec incVV(mvreg(), term()) -> riak_dt_vclock:vclock().
 incVV(MVReg, Actor) ->
     TSL = [TS || {_Val, TS}<- MVReg],
     [H|T] = TSL,
-    MaxVC = getMax(T, H),
+    MaxVC = lists:foldl(fun(VC, Acc) -> riak_dt_vclock:merge([VC, Acc]) end, H, T),
     NewVC = riak_dt_vclock:increment(Actor, MaxVC),
     NewVC.
 
 %% @doc If the timestamp is larger than the counter of all corresponding entries.
+-spec larger_than(pos_integer(), term(), mvreg()) -> boolean().
 larger_than(_TS, _Actor, []) ->
     true;
 larger_than(TS, Actor, [H|T]) ->
@@ -147,18 +154,14 @@ larger_than(TS, Actor, [H|T]) ->
         false
     end.
 
-getMax([], VC) ->
-    VC;
-getMax([H|T], VC) ->
-    NewVC = riak_dt_vclock:merge([H, VC]),
-    getMax(T, NewVC).   
 
 %% @doc Merge a `mvreg()' to another `mvreg()'. Note that the first `mvreg()' is local and can have multiple vector clocks,
 %% while the second one is remote and only has one vector clock.
+-spec merge_to(mvreg(), mvreg()) -> mvreg().
 merge_to([], MVReg2) ->
     MVReg2;
 merge_to([H|T], MVReg2) ->
-    [First|_] = MVReg2,
+    First = hd(MVReg2),
     {_, TS1} = H,
     {_, TS2} = First,
     D1 = riak_dt_vclock:dominates(TS2, TS1),
@@ -166,8 +169,10 @@ merge_to([H|T], MVReg2) ->
         true ->
             merge_to(T, MVReg2);
         false ->
-            merge_to(T, lists:append(MVReg2, [H]))
-    end.
+            merge_to(T, MVReg2++[H])
+    end;
+merge_to(_, _) ->
+    [].
 
 %% @doc If any vector clock of the first list dominates the second vector clock.
 if_dominate([], _VC) ->
@@ -203,18 +208,18 @@ eq([H1|T1], [H2|T2]) ->
     VEqual = V1 =:= V2,
     TSEqual = riak_dt_vclock:equal(TS1, TS2),
     if VEqual andalso TSEqual ->
-            equal(T1, T2);
+            eq(T1, T2);
         true ->
             false
     end;
 eq(_, _) ->
     false.
 
--spec stats(mvreg()) -> [{atom(), number()}].
+-spec stats(mvreg()) -> [{atom(), non_neg_integer()}].
 stats(MVReg) ->
     [{value_size, stat(value_size, MVReg)}].
 
--spec stat(atom(), mvreg()) -> number() | undefined.
+-spec stat(atom(), mvreg()) -> non_neg_integer() | undefined.
 stat(value_size, MVReg) ->
     Values = value(MVReg),
     TS = value(timestamp, MVReg),
@@ -230,12 +235,12 @@ stat(_, _) -> undefined.
 %% Not working yet...
 -spec to_binary(mvreg()) -> binary().
 to_binary(MVReg) ->
-    <<?TAG:8/integer, ?V1_VERS:8/integer, (riak_dt:to_binary(MVReg))/binary>>.
+    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(MVReg))/binary>>.
 
 %% @doc Decode binary `mvreg()'
 -spec from_binary(binary()) -> mvreg().
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
-    riak_dt:from_binary(Bin).
+    binary_to_term(Bin).
 
 %% ===================================================================
 %% EUnit tests
@@ -375,7 +380,7 @@ get_max_test() ->
     VC2_2 = riak_dt_vclock:increment(actor2, VC1_1),
     VC2_3 = riak_dt_vclock:increment(actor2, VC2_2),
     FinalVC = riak_dt_vclock:increment(actor1, VC2_3),
-    NewVC = getMax([VC1_3, VC2_3], []),
+    NewVC = lists:foldl(fun(VC, Acc) -> riak_dt_vclock:merge([VC, Acc]) end, VC0, [FinalVC, VC1_3, VC2_3]),
     ?assert(riak_dt_vclock:equal(NewVC, FinalVC)).
 
 %% Update a MVReg with two different actors. Check if both actors are kept in the vector clock. 
@@ -441,15 +446,14 @@ update_assign_diverge_test() ->
 
 %%Somehow to_binary does not work
 roundtrip_bin_test() ->
-%    LWW = new(),
-%    {ok, LWW1} = update({assign, 2}, a1, LWW),
-%    {ok, LWW2} = update({assign, 4}, a2, LWW1),
-%    {ok, LWW3} = update({assign, 89}, a3, LWW2),
-%    {ok, LWW4} = update({assign, <<"this is a binary">>}, a4, LWW3),
-%    Bin = to_binary(LWW4),
-%    Decoded = from_binary(Bin),
-%    ?assert(equal(LWW4, Decoded)).
-    ok.
+    LWW = new(),
+    {ok, LWW1} = update({assign, 2}, a1, LWW),
+    {ok, LWW2} = update({assign, 4}, a2, LWW1),
+    {ok, LWW3} = update({assign, 89}, a3, LWW2),
+    {ok, LWW4} = update({assign, <<"this is a binary">>}, a4, LWW3),
+    Bin = to_binary(LWW4),
+    Decoded = from_binary(Bin),
+    ?assert(equal(LWW4, Decoded)).
 
 query_test() ->
     MVR = new(),
