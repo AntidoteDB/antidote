@@ -49,7 +49,7 @@ init([Partition]) ->
 handle_command({read, Key, Type, Snapshot_time}, _Sender, State = #state{cache= Cache}) ->     
     case ets:lookup(Cache, Key) of 
         Operations when is_list(Operations) ->
-            %% Operations is intthe order which it is inserted
+            %% Operations are in the order which it is inserted
             lager:info(" Operations ~p", Operations),
             ListofOps = filter_ops(Operations),
             {ok, Snapshot} = clockSI_materializer:get_snapshot(Type, Snapshot_time, ListofOps),
@@ -62,7 +62,10 @@ handle_command({read, Key, Type, Snapshot_time}, _Sender, State = #state{cache= 
     end;
 
 handle_command({update, Key, DownstreamOp}, _Sender, State = #state{cache = Cache})->
-    case floppy_rep_vnode:append(Key, DownstreamOp) of
+    
+    LogId = log_utilities:get_logid_from_key(Key),    
+    %%TODO: Construct log record 
+    case floppy_rep_vnode:append(LogId, DownstreamOp) of
         {ok, _} -> 
             case ets:insert(Cache, {Key, DownstreamOp}) of
                 true ->  {reply, ok, State};

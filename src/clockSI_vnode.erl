@@ -145,30 +145,33 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=Active
             {reply, {error, timeout}, State}
     end;
 
-handle_command({prepare, Transaction}, _Sender, #state{ partition = Partition,
+handle_command({prepare, Transaction}, _Sender, #state{ partition = _Partition,
                                                         committed_tx=CommittedTx,
-                                                       active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
+                                                        active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
     TxId = Transaction#transaction.txn_id,
     lager:info("ClockSI_Vnode: got prepare message."),
     TxWriteSet=ets:lookup(WriteSet, TxId), 
     lager:info("ClockSI_Vnode: starting certification check."),
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
         true ->
-		lager:info("ClockSI_Vnode: certification check passed."),
+            lager:info("ClockSI_Vnode: certification check passed."),
             PrepareTime=now_milisec(erlang:now()),
-		LogRecord=#log_record{tx_id=TxId, op_type=prepare, op_payload=PrepareTime},
-		lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
-		LogId=log_utilities:get_logid_from_partition(Partition),
-		Result = floppy_rep_vnode:append(LogId, LogRecord),
+            LogRecord=#log_record{tx_id=TxId, op_type=prepare, op_payload=PrepareTime},
+            lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
+            Updates = ets:lookup(WriteSet, TxId),
+            [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
+            LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
+            %% LogId=log_utilities:get_logid_from_partition(Partition),
+            Result = floppy_rep_vnode:append(LogId, LogRecord),
             case Result of
-			{ok,_} ->
+                {ok,_} ->
                     ets:insert(PreparedTx, {TxId, PrepareTime}),
                     {reply, {prepared, PrepareTime}, State};
-			{error, timeout} ->
-				{reply, {error, timeout}, State}
+                {error, timeout} ->
+                    {reply, {error, timeout}, State}
             end;
         false ->
-		lager:info("ClockSI_Vnode: certification_check failed, beginning to abort tx..."),
+            lager:info("ClockSI_Vnode: certification_check failed, beginning to abort tx..."),
             {reply, abort, State}
     end;
 
@@ -176,11 +179,13 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                #state{partition = _Partition, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
     lager:info("ClockSI_Vnode: got commit message."),
     TxId = Transaction#transaction.txn_id,
-	LogRecord=#log_record{tx_id=TxId, op_type=commit, op_payload=TxCommitTime},
-	lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
-	%LogId=log_utilities:get_logid_from_partition(Partition),
-	%Result = floppy_rep_vnode:append(LogId-1, LogRecord),
-         Result = {ok, done},
+    LogRecord=#log_record{tx_id=TxId, op_type=commit, op_payload=TxCommitTime},
+    lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
+    Updates = ets:lookup(WriteSet, TxId),
+    [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
+                                                %LogId=log_utilities:get_logid_from_partition(Partition),
+    Result = floppy_rep_vnode:append(LogId, LogRecord),   
     case Result of
         {ok,_} ->
             %gen_fsm:send_event(Sender, committed),
