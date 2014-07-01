@@ -64,9 +64,9 @@ finishOp(From, Key,Result) ->
 init([From, ClientClock]) ->	
     {ok, SnapshotTime}= get_snapshot_time(ClientClock),
     TxId=#tx_id{snapshot_time=SnapshotTime, server_pid=self()},
-    Vec_snapshot_time = orddict:new(), %TODO: Get observed timestamps from other DCs
+    Vec_snapshot_time = dict:new(), %TODO: Get observed timestamps from other DCs
     Dc_id = 1, %TODO: Find local DC_id somehow
-    Snapshot_time = orddict:update(Dc_id, fun (_Old) -> SnapshotTime end, SnapshotTime, Vec_snapshot_time),
+    Snapshot_time = dict:update(Dc_id, fun (_Old) -> SnapshotTime end, SnapshotTime, Vec_snapshot_time),
     Transaction = #transaction{snapshot_time = SnapshotTime, vec_snapshot_time = Snapshot_time, txn_id = TxId},
     SD = #state{
             transaction = Transaction,
