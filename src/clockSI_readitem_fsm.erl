@@ -15,7 +15,8 @@
 %% States
 -export([check_clock/2,
          get_txs_to_check/2,
-         commit_notification/2, 
+         commit_notification/2,
+         waiting/2,
          return/2]).
 
 %% Spawn
@@ -63,12 +64,24 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
             lager:info("ClockSI ReadItemFSM: waiting for clock to catchUp ~n"),
             timer:sleep(T_TS - Time),	
             lager:info("ClockSI ReadItemFSM: done waiting... ~n"),
-            {next_state, get_txs_to_check, SD0, 0};
+            {next_state, waiting, SD0, 0};
 
         false ->
             lager:info("ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
-            {next_state, get_txs_to_check, SD0, 0}
-    end.		
+            {next_state, waiting, SD0, 0}
+    end.
+
+waiting(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
+    {ok, LocalClock} = vectorclock:get_clock_by_key(Key),   
+    Snapshottime = Transaction#transaction.vec_snapshot_time, 
+    case vectorclock:is_greater_than(LocalClock, Snapshottime) of
+        false ->
+            clockSI_downstream_generator_vnode:trigger(Key, {dummytx, [], dummycommittime}), %%TODO change this, add a heartbeat to increase vectorclock if there are no pending txns in downstream generator
+            {next_state, waiting, SDO, 10};
+        true ->
+            {next_state, return, SDO, 0} 
+    end.
+		
 %% @doc get_txs_to_check: 
 %%	- Asks the Vnode for pending txs conflicting the cyrrent one
 %%	- If none, goes to return state
