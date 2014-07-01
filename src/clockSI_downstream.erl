@@ -24,6 +24,3 @@ generate_downstream_op(Update=#operation{payload = Payload}) ->
             lager:info("Other Error ~p",[Other]),
             {error, Other}
     end.
-
-	
-    

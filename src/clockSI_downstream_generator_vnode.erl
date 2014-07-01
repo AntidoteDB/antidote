@@ -198,7 +198,7 @@ filter_operations(Ops, Before, After) ->
 add_to_pending_operations(Pending, WriteSet) -> 
     lager:info("Writeset : ~p",[WriteSet]),
     case WriteSet of 
-    {TxId, Updates, CommitTime} ->
+        {TxId, Updates, CommitTime} ->
             lists:foldl( fun(Update, Operations) -> 
                                  {_,{Key,{Op,Actor}}} = Update,
                                  Vec_snapshot_time = dict:from_list([{1, TxId#tx_id.snapshot_time}]),

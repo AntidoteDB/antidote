@@ -7,7 +7,7 @@
 
 -export([get_snapshot/3,
          get_snapshot/4,
-        update_snapshot_eager/3]).
+         update_snapshot_eager/3]).
 
 %% @doc	Creates an empty CRDT
 %%	Input:	Type: The type of CRDT to create
@@ -77,7 +77,7 @@ update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
 %%		SnapshotTime: Threshold for the operations to be applied.
 %%		Ops: The list of operations to apply
 %%	Output: The value of the CRDT after appliying the operations 
-%-spec get_snapshot(Type::atom(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
+                                                %-spec get_snapshot(Type::atom(), SnapshotTime::non_neg_integer(),Ops::list()) -> term().
 get_snapshot(Type, Snapshot_time, Ops) ->
     Init=create_snapshot(Type),
     update_snapshot(Type, Init, Snapshot_time, Ops, ignore).
