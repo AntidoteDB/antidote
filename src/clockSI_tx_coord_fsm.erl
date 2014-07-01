@@ -74,7 +74,7 @@ init([From, ClientClock, Operations]) ->
     {ok, SnapshotTime}= get_snapshot_time(ClientClock),
     Local_clock = clockSI_vnode:now_milisec(SnapshotTime),
     TransactionId=#tx_id{snapshot_time=Local_clock, server_pid=self()},
-    Vec_snapshot_time = dict:new(), %TODO: Get observed timestamps from other DCs
+    {ok, Vec_snapshot_time} = vectorclock:get_clock_node(node()),
     Dc_id = 1, %TODO: Find local DC_id somehow
     Snapshot_time = dict:update(Dc_id, fun (_Old) -> Local_clock end, Local_clock, Vec_snapshot_time),
     Transaction = #transaction{snapshot_time = Local_clock, vec_snapshot_time = Snapshot_time, txn_id = TransactionId},
