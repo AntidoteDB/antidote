@@ -121,7 +121,7 @@ handle_command({read_data_item, Txn, Key, Type}, Sender, #state{write_set=WriteS
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=ActiveTx, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey}=State) ->
+handle_command({update_data_item, Txn, Key, Op}, Sender, #state{write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
     LogRecord=#log_record{tx_id=TxId, op_type=update, op_payload={Key, Op}},
     TxId = Txn#transaction.txn_id,
@@ -130,9 +130,9 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=Active
     Result = floppy_rep_vnode:append(LogId, LogRecord),
     case Result of
     	{ok,_} ->
-            ets:insert(ActiveTx, {active, {TxId, Txn#transaction.snapshot_time}}),
-            Check1=ets:lookup(ActiveTx, active),
-            lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
+            %ets:insert(ActiveTx, {active, {TxId, Txn#transaction.snapshot_time}}),
+            %Check1=ets:lookup(ActiveTx, active),
+            %lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
 			ets:insert(ActiveTxsPerKey, {Key, TxId}),
 			Check2=ets:lookup(ActiveTxsPerKey, Key),
             lager:info("ClockSI-Vnode: Inserted to ActiveTxsPerKey ~p",[Check2]),
@@ -146,7 +146,7 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{active_tx=Active
     end;
 
 handle_command({prepare, Transaction}, _Sender, #state{ partition = _Partition,
-                                                        committed_tx=CommittedTx,
+                                                        active_tx=ActiveTx, committed_tx=CommittedTx,
                                                         active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
     TxId = Transaction#transaction.txn_id,
     lager:info("ClockSI_Vnode: got prepare message."),
@@ -156,6 +156,9 @@ handle_command({prepare, Transaction}, _Sender, #state{ partition = _Partition,
         true ->
             lager:info("ClockSI_Vnode: certification check passed."),
             PrepareTime=now_milisec(erlang:now()),
+            ets:insert(ActiveTx, {TxId, PrepareTime}),
+            Check1=ets:lookup(ActiveTx, active),
+            lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
             LogRecord=#log_record{tx_id=TxId, op_type=prepare, op_payload=PrepareTime},
             lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
             Updates = ets:lookup(WriteSet, TxId),
@@ -204,13 +207,18 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
             {reply, {error, timeout}, State}
     end;
 
-handle_command({abort, TxId}, _Sender, #state{partition=Partition}=State) ->
-	Result = floppy_rep_vnode:append(Partition-1, {TxId, aborted}), 
+handle_command({abort, TxId}, _Sender, #state{partition=_Partition, write_set=WriteSet}=State) ->
+    Updates = ets:lookup(WriteSet, TxId),
+    [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
+                                                %LogId=log_utilities:get_logid_from_partition(Partition),
+    Result = floppy_rep_vnode:append(LogId, {TxId, aborted}), 
     case Result of
         {ok,_} ->
         	clean_and_notify(TxId, State),
 		lager:info("Vnode: Recieved abort. State cleaned.");     
         {error, timeout} ->
+            clean_and_notify(TxId, State),
             lager:info("Abort not written to all replica of log")
             
         	%% should we reply something here?
@@ -240,12 +248,12 @@ handle_command({get_active_txns},_Sender, #state{active_tx=Active}=State) ->
     %%ActiveTxs = [{active,{TxId, Snapshottime}}]
     ActiveTxs = ets:lookup(Active, active),
     lager:info("ActiveTxs: ~p", [ActiveTxs]),
-    ActiveTxsFiltered = lists:foldl( fun({active, {TxId, Snapshottime}}, Txns) ->
-                                             lists:append(Txns,[{TxId, Snapshottime}]) end,
-                                     [],
-                                     ActiveTxs),
-    lager:info(" Active Txns after filtered ~p",[ActiveTxsFiltered]),
-    {reply, {ok, ActiveTxsFiltered}, State};
+    %% ActiveTxsFiltered = lists:foldl( fun({active, {TxId, Snapshottime}}, Txns) ->
+    %%                                          lists:append(Txns,[{TxId, Snapshottime}]) end,
+    %%                                  [],
+    %%                                  ActiveTxs),
+    %% lager:info(" Active Txns after filtered ~p",[ActiveTxsFiltered]),
+    {reply, {ok, ActiveTxs}, State};
 
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
@@ -307,7 +315,7 @@ clean_and_notify(TxId, #state{active_tx=ActiveTx, prepared_tx=PreparedTx,
 	%	clean_active_txs_per_key(TxId, [Op|Ops], ActiveTxsPerKey)
     %	end,
     ets:delete(PreparedTx, TxId),
-    ets:delete_object(ActiveTx, {active,{TxId, TxId#tx_id.snapshot_time}}),
+    ets:delete(ActiveTx, TxId),
     ets:delete(WriteSet, TxId),
     ets:delete(WaitingFsms, TxId).
 
