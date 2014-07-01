@@ -8,6 +8,10 @@
          get_clock_node/1,
          from_list/1]).
 
+-export_type([vectorclock/0]).
+
+-type vectorclock() :: dict().
+
 get_clock_by_key(Key) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, vectorclock),

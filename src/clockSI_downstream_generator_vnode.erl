@@ -132,9 +132,9 @@ is_primary_preflist(Partition,[First|_Rest]) ->
 
 process_update(Update) ->
     case clockSI_downstream:generate_downstream_op(Update) of
-        {ok, #operation{payload = NewOp}} ->
+        {ok, NewOp} ->
             Key = NewOp#clocksi_payload.key,            
-            case materializer_vnode:update(Key, #operation{payload = NewOp}) of
+            case materializer_vnode:update(Key, NewOp) of
                 ok ->
                     {_Dcid, Commit_time} = NewOp#clocksi_payload.commit_time,
                     {ok, Commit_time};
@@ -167,8 +167,7 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 %% @doc Select updates committed before Time and sort them in timestamp order.
 filter_operations(Ops, Before, After) ->
     %% Remove operations which are already processed
-    UnprocessedOps = lists:filtermap( fun(Update) ->
-                                              Payload = Update#operation.payload,
+    UnprocessedOps = lists:filtermap( fun(Payload) ->                                             
                                               {_Dcid, Commit_time} = Payload#clocksi_payload.commit_time,
                                               Commit_time > After
                                       end,
@@ -176,8 +175,7 @@ filter_operations(Ops, Before, After) ->
     lager:info("Unprocessed Ops ~p after ~p",[UnprocessedOps, After]),
 
     %% remove operations which are not safer to process now, because there could be other operations with lesser timestamps
-    FilteredOps = lists:filtermap( fun(Update) ->
-                                           Payload = Update#operation.payload,
+    FilteredOps = lists:filtermap( fun(Payload) ->                                          
                                            {_Dcid, Commit_time} = Payload#clocksi_payload.commit_time,
                                            Commit_time < Before
                                    end,
@@ -185,9 +183,7 @@ filter_operations(Ops, Before, After) ->
 
     lager:info("Filter operations: ~p",[FilteredOps]),
     %% Sort operations in timestamp order
-    SortedOps = lists:sort( fun( Update1, Update2) ->
-                                    Payload1 = Update1#operation.payload,
-                                    Payload2 = Update2#operation.payload,
+    SortedOps = lists:sort( fun( Payload1, Payload2) ->                                    
                                     {_Dcid1, Time1} = Payload1#clocksi_payload.commit_time,
                                     {_Dcid1, Time2} = Payload2#clocksi_payload.commit_time,
                                     Time1 < Time2
@@ -201,9 +197,10 @@ add_to_pending_operations(Pending, WriteSet) ->
         {TxId, Updates, CommitTime} ->
             lists:foldl( fun(Update, Operations) -> 
                                  {_,{Key,{Op,Actor}}} = Update,
-                                 Vec_snapshot_time = dict:from_list([{1, TxId#tx_id.snapshot_time}]),
-                                 NewOp = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, actor = Actor, snapshot_time = Vec_snapshot_time, commit_time = {1,CommitTime}, txid = TxId},
-                                 lists:append(Operations,[#operation{payload = NewOp}])
+                                 Vec_snapshot_time = dict:from_list([{1, TxId#tx_id.snapshot_time}]), %%TODO: Use vector snapshot time of transaction
+                                 %%TODO: Generate DCId for commit time
+                                 NewOp = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, snapshot_time = Vec_snapshot_time, commit_time = {1,CommitTime}, txid = TxId},
+                                 lists:append(Operations, [NewOp])
                          end,
                          Pending, Updates);
         _  -> Pending

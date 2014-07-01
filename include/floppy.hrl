@@ -46,6 +46,12 @@
 
 %% -record(tx, {id, snapshot_time, commit_time, prepare_time, state, origin}).
 -record(tx_id, {snapshot_time, server_pid}).
--record(clocksi_payload, {key, type, op_param, actor, snapshot_time, commit_time, txid}).
+-record(clocksi_payload, {key :: term(), 
+                          type :: term(), 
+                          op_param :: {term(), term()}, 
+                          snapshot_time :: vectorclock:vectorclock(), 
+                          commit_time :: {term(), non_neg_integer()}, 
+                          txid :: #tx_id{}
+                         }).
 -record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
 
