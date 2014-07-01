@@ -63,6 +63,7 @@ handle_command({trigger, WriteSet, From}, _Sender,
                State=#dstate{partition = Partition,preflist = _Preflist, last_commit_time = Last_commit_time, pending_operations = Pending}) ->
 
     Pending_operations = add_to_pending_operations(Pending, WriteSet),
+    lager:info("Pending Operations ~p",[Pending_operations]),
     From ! {ok, trigger_received},
     Node = {Partition, node()}, %% Send ack to caller and continue processing
 
@@ -79,8 +80,8 @@ handle_command({trigger, WriteSet, From}, _Sender,
                                                                          {error, _Reason} ->
                                                                              {Ops, LCTS} 
                                                                      end
-                                                             end, {Pending_operations, last_commit_time}, Sorted_ops),
-    vectorclock:update_clock(Node, 1, Stable_time),   
+                                                             end, {Pending_operations, Last_commit_time}, Sorted_ops),
+    vectorclock:update_clock(Partition, 1, Stable_time),   
     {reply, ok, State#dstate{last_commit_time = LastProcessedTime, pending_operations = Remaining_operations}};
 
 handle_command(Message, _Sender, State) ->
@@ -171,7 +172,8 @@ filter_operations(Ops, Before, After) ->
                                               {_Dcid, Commit_time} = Payload#clocksi_payload.commit_time,
                                               Commit_time > After
                                       end,
-                                      Ops), 
+                                      Ops),
+    lager:info("Unprocessed Ops ~p after ~p",[UnprocessedOps, After]),
 
     %% remove operations which are not safer to process now, because there could be other operations with lesser timestamps
     FilteredOps = lists:filtermap( fun(Update) ->
@@ -181,7 +183,7 @@ filter_operations(Ops, Before, After) ->
                                    end,
                                    UnprocessedOps),
 
-    lager:info("Filter operations: ~p",FilteredOps),
+    lager:info("Filter operations: ~p",[FilteredOps]),
     %% Sort operations in timestamp order
     SortedOps = lists:sort( fun( Update1, Update2) ->
                                     Payload1 = Update1#operation.payload,
@@ -193,13 +195,17 @@ filter_operations(Ops, Before, After) ->
                             FilteredOps),
     SortedOps.
 
-add_to_pending_operations(Pending, WriteSet) ->         
-    {TxId, Updates, CommitTime} = WriteSet,
-    lists:foldl( fun(Update, Operations) -> 
-                         {_,{Key,{Op,Actor}}} = Update,
-                         Vec_snapshot_time = orddict:from_list([{1, TxId#tx_id.snapshot_time}]),
-                         NewOp = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, actor = Actor, snapshot_time = Vec_snapshot_time, commit_time = {1,CommitTime}, txid = TxId},
-                         lists:append(Operations,[#operation{payload = NewOp}])
-                 end,
-                 Pending, Updates).
+add_to_pending_operations(Pending, WriteSet) -> 
+    lager:info("Writeset : ~p",[WriteSet]),
+    case WriteSet of 
+    {TxId, Updates, CommitTime} ->
+            lists:foldl( fun(Update, Operations) -> 
+                                 {_,{Key,{Op,Actor}}} = Update,
+                                 Vec_snapshot_time = dict:from_list([{1, TxId#tx_id.snapshot_time}]),
+                                 NewOp = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, actor = Actor, snapshot_time = Vec_snapshot_time, commit_time = {1,CommitTime}, txid = TxId},
+                                 lists:append(Operations,[#operation{payload = NewOp}])
+                         end,
+                         Pending, Updates);
+        _  -> Pending
+    end.
 

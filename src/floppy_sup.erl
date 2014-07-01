@@ -48,7 +48,7 @@ init(_Args) ->
                            {riak_core_vnode_master,  start_link, [clockSI_downstream_generator_vnode]},
                   permanent, 5000, worker, [riak_core_vnode_master]},
 
-    VectorClockMaster = {vectoclock_vnode_master,
+    VectorClockMaster = {vectorclock_vnode_master,
                          {riak_core_vnode_master,  start_link, [vectorclock_vnode]},
                          permanent, 5000, worker, [riak_core_vnode_master]},
 

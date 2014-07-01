@@ -55,7 +55,7 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest], TxId) ->
 %%      Outptut: true or false
 -spec is_op_in_snapshot({Dc::term(),Commit_time::non_neg_integer()}, SnapshotTime::orddict:orddict()) -> term().
 is_op_in_snapshot({Dc, Commit_time}, Snapshot_time) ->
-    case orddict:find(Dc, Snapshot_time) of
+    case vectorclock:get_clock_of_dc(Dc, Snapshot_time) of
         {ok, Ts} ->
             Commit_time =< Ts;
         error  ->
@@ -96,9 +96,9 @@ materializer_clockSI_test()->
     Op4 = #clocksi_payload{key = abc, type = riak_dt_gcounter, op_param = {{increment,2}, actor1}, snapshot_time = [{1,2}], commit_time = {1, 4}, txid = 4},
 
     Ops = [#operation{op_number = 1,payload =Op1},#operation{op_number = 2,payload = Op2},#operation{op_number = 3,payload = Op3},#operation{op_number = 4,payload = Op4}],
-    {ok, GCounter2} = update_snapshot(riak_dt_gcounter, GCounter, orddict:from_list([{1,3}]), Ops, ignore),
+    {ok, GCounter2} = update_snapshot(riak_dt_gcounter, GCounter, vectorclock:from_list([{1,3}]), Ops, ignore),
     ?assertEqual(4,riak_dt_gcounter:value(GCounter2)),
-    {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,orddict:from_list([{1,4}]),Ops),
+    {ok, Gcounter3} = get_snapshot(riak_dt_gcounter, vectorclock:from_list([{1,4}]),Ops),
     ?assertEqual(6,riak_dt_gcounter:value(Gcounter3)).
 
 -endif.

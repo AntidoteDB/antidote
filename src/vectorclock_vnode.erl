@@ -36,7 +36,7 @@ start_vnode(I) ->
 
 %% @doc Initialize the clock
 init([_Partition]) ->
-     {ok, #currentclock{clock = orddict:new()}}.
+     {ok, #currentclock{clock = dict:new()}}.
 
 %% @doc 
 handle_command({get_clock}, _Sender, #currentclock{clock = Clock} = State) ->
@@ -44,7 +44,7 @@ handle_command({get_clock}, _Sender, #currentclock{clock = Clock} = State) ->
 
 %% @doc 
 handle_command({update_clock, Dc_id, Timestamp}, _Sender, #currentclock{clock = Clock} = State) ->
-    New_clock = orddict:update(Dc_id, 
+    New_clock = dict:update(Dc_id, 
                                fun(Value) -> 
                                        case Timestamp > Value of 
                                            true -> Timestamp;
