@@ -43,9 +43,9 @@ get_hashedkey_from_partition(Partition) ->
 
 %% @doc Returns the preflist with the primary vnodes. No matter they are up or down.
 get_primaries_preflist(HashedKey)->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    Preflist = riak_core_ring:preflist(HashedKey, Ring),
-    {Primaries, _} = lists:split(?N, Preflist),
+    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
+    Itr = chashbin:iterator(HashedKey, CHBin),
+    {Primaries, _} = chashbin:itr_pop(?N, Itr),
     Primaries.
 
 %% @doc remove_node_from_preflist:  From each element of the input preflist, the node identifier is removed
