@@ -73,13 +73,13 @@ parent_clock(_Clock, Reg) ->
 
 %% @doc The values of this `mvreg()'. Multiple values can be returned,
 %% since there can be diverged value in this register.
--spec value(mvreg()) -> term().
+-spec value(mvreg()) -> [term()].
 value(MVReg) ->
     [Val || {Val, _TS} <- MVReg].
 
 %% @doc query for this `mvreg()' of its timestamp.
 %% `timestamp' is the only query option.
--spec value(mv_q(), mvreg()) -> term().
+-spec value(mv_q(), mvreg()) -> [term()].
 value(timestamp, MVReg) ->
     [TS || {_Val, TS} <- MVReg].
 
