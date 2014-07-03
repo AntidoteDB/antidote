@@ -128,7 +128,7 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{write_set=WriteS
             {reply, {error, timeout}, State}
     end;
 
-handle_command({prepare, Transaction}, _Sender, #state{ partition = _Partition,
+handle_command({prepare, Transaction}, _Sender, #state{ partition = Partition,
                                                         active_tx=ActiveTx, committed_tx=CommittedTx,
                                                         active_txs_per_key=ActiveTxPerKey, prepared_tx=PreparedTx, write_set=WriteSet}=State) ->
     TxId = Transaction#transaction.txn_id,
@@ -144,10 +144,10 @@ handle_command({prepare, Transaction}, _Sender, #state{ partition = _Partition,
             lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
             LogRecord=#log_record{tx_id=TxId, op_type=prepare, op_payload=PrepareTime},
             lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
-            Updates = ets:lookup(WriteSet, TxId),
-            [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
-            LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
-            %% LogId=log_utilities:get_logid_from_partition(Partition),
+            %Updates = ets:lookup(WriteSet, TxId),
+            %[{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
+            %LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
+            LogId=log_utilities:get_logid_from_partition(Partition),
             Result = floppy_rep_vnode:append(LogId, LogRecord),
             case Result of
                 {ok,_} ->
@@ -162,19 +162,16 @@ handle_command({prepare, Transaction}, _Sender, #state{ partition = _Partition,
     end;
 
 handle_command({commit, Transaction, TxCommitTime}, _Sender, 
-               #state{partition = _Partition, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
+               #state{partition = Partition, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
     lager:info("ClockSI_Vnode: got commit message."),
     TxId = Transaction#transaction.txn_id,
     LogRecord=#log_record{tx_id=TxId, op_type=commit, op_payload=TxCommitTime},
     lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
-    Updates = ets:lookup(WriteSet, TxId),
-    [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
-    LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
-                                                %LogId=log_utilities:get_logid_from_partition(Partition),
+    LogId=log_utilities:get_logid_from_partition(Partition),
     Result = floppy_rep_vnode:append(LogId, LogRecord),   
     case Result of
         {ok,_} ->
-            %%gen_fsm:send_event(Sender, committed) %TODO: Return results to caller here,
+            %% gen_fsm:send_event(Sender, committed) %TODO: Return results to caller here,
             Updates = ets:lookup(WriteSet, TxId),
             lager:info("ClockSI_Vnode: sending updates to the downstream vnode layer: ~p", [Updates]),
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
@@ -188,11 +185,8 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
             {reply, {error, timeout}, State}
     end;
 
-handle_command({abort, TxId}, _Sender, #state{partition=_Partition, write_set=WriteSet}=State) ->
-    Updates = ets:lookup(WriteSet, TxId),
-    [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
-    LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
-                                                %LogId=log_utilities:get_logid_from_partition(Partition),
+handle_command({abort, TxId}, _Sender, #state{partition=Partition}=State) ->                                              
+    LogId=log_utilities:get_logid_from_partition(Partition),
     Result = floppy_rep_vnode:append(LogId, {TxId, aborted}), 
     case Result of
         {ok,_} ->
@@ -225,15 +219,11 @@ handle_command ({get_pending_txs, {HashedKey, TxId}}, Sender, #state{
             {reply, {ok, [H|T]}, State}
     end;
 
+%% @doc Return active transactions in prepare state with their preparetime
 handle_command({get_active_txns},_Sender, #state{active_tx=Active}=State) ->
     %%ActiveTxs = [{active,{TxId, Snapshottime}}]
     ActiveTxs = ets:lookup(Active, active),
-    lager:info("ActiveTxs: ~p", [ActiveTxs]),
-    %% ActiveTxsFiltered = lists:foldl( fun({active, {TxId, Snapshottime}}, Txns) ->
-    %%                                          lists:append(Txns,[{TxId, Snapshottime}]) end,
-    %%                                  [],
-    %%                                  ActiveTxs),
-    %% lager:info(" Active Txns after filtered ~p",[ActiveTxsFiltered]),
+    lager:info("ActiveTxs: ~p", [ActiveTxs]),    
     {reply, {ok, ActiveTxs}, State};
 
 handle_command(Message, _Sender, State) ->
