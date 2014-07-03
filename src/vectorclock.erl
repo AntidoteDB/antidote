@@ -21,43 +21,26 @@ get_clock_by_key(Key) ->
     riak_core_vnode_master:sync_command(IndexNode, {get_clock}, vectorclock_vnode_master).
 
 get_clock(Partition) ->
-    HashedKey = case Partition of
-        0 ->
-            ?MAXRING;
-        _ ->
-            Partition - 1
-    end,
-    PreflistAnn = riak_core_apl:get_primary_apl(HashedKey, 1, vectorclock),
-    [{IndexNode, _}] = PreflistAnn,
-    riak_core_vnode_master:sync_command(IndexNode, {get_clock}, vectorclock_vnode_master).
+    Logid = log_utilities:get_logid_from_partition(Partition),
+    Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),
+    Indexnode = hd(Preflist),
+    riak_core_vnode_master:sync_command(Indexnode, {get_clock}, vectorclock_vnode_master).
 
 get_clock_node(Node) ->
     Preflist = riak_core_apl:active_owners(vectorclock),
     Prefnode = [{Partition, Node1} || {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node], %Partitions in current node
     %% Take a random vnode
     {A1,A2,A3} = now(),
-    random:seed(A1, A2, A3),
+    _Seed = random:seed(A1, A2, A3),
     Index = random:uniform(length(Prefnode)),
     VecNode = lists:nth(Index, Prefnode),
     riak_core_vnode_master:sync_command(VecNode, {get_clock}, vectorclock_vnode_master).
-    
-    
-%% update_clock_by_key(Key, Dc_id, Timestamp) ->
-%%     DocIdx = riak_core_util:chash_key({<<"floppy">>, term_to_binary(Key)}),
-%%     PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, vectorclock),
-%%     [{IndexNode, _Type}] = PrefList,
-%%     riak_core_vnode_master:sync_command(IndexNode, {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master).
 
 update_clock(Partition, Dc_id, Timestamp) -> 
-    HashedKey = case Partition of
-        0 ->
-            ?MAXRING;
-        _ ->
-            Partition - 1
-    end,
-    PreflistAnn = riak_core_apl:get_primary_apl(HashedKey, 1, vectorclock),
-    [{IndexNode, _}] = PreflistAnn,
-    riak_core_vnode_master:sync_command(IndexNode, {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master).
+    Logid = log_utilities:get_logid_from_partition(Partition),
+    Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),
+    Indexnode = hd(Preflist),
+    riak_core_vnode_master:sync_command(Indexnode, {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master).
 
 is_greater_than(Clock1, Clock2) ->
     dict:fold( fun(Dcid, Time2, Result) ->
