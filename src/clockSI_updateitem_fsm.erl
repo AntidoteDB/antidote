@@ -41,9 +41,10 @@ init([Coordinator, Vec_snapshot_time, Partition]) ->
 %%      if local clock is behinf, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock scew.
 check_clock(timeout, SD0=#state{vclock = Vclock}) ->
-    {ok, T_TS} = vectorclock:get_clock_of_dc(1, Vclock), %%TODO: Find my dc_id
-    Time = now_milisec(erlang:now()),
-    Newclock = dict:erase(1, Vclock), %% No need to check current DCs clock in vector clock. Only check the clock from other DCs
+    Dc_id = dc_utilities:get_my_dc_id(),
+    {ok, T_TS} = vectorclock:get_clock_of_dc(Dc_id, Vclock), %%TODO: Find my dc_id
+    Time = now_milisec(erlang:now()),    
+    Newclock = dict:erase(Dc_id, Vclock), %% No need to check current DCs clock in vector clock. Only check the clock from other DCs
     case T_TS > Time of
 	true -> 
 	    timer:sleep(T_TS - Time),

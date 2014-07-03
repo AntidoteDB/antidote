@@ -75,7 +75,7 @@ init([From, ClientClock, Operations]) ->
     Local_clock = clockSI_vnode:now_milisec(SnapshotTime),
     TransactionId=#tx_id{snapshot_time=Local_clock, server_pid=self()},
     {ok, Vec_snapshot_time} = vectorclock:get_clock_node(node()),
-    Dc_id = 1, %TODO: Find local DC_id somehow
+    Dc_id = dc_utilities:get_my_dc_id(),
     Snapshot_time = dict:update(Dc_id, fun (_Old) -> Local_clock end, Local_clock, Vec_snapshot_time),
     Transaction = #transaction{snapshot_time = Local_clock, vec_snapshot_time = Snapshot_time, txn_id = TransactionId},
     SD = #state{
@@ -95,7 +95,7 @@ init([From, ClientClock, Operations]) ->
 %%		1.  it finishes (read tx),
 %%		2. 	it starts a local_commit (update tx that only updates a single partition) or
 %%		3.	it goes to the prepare_2PC to start a two phase commit (when multiple partitions
-%%		are updated. 
+%%		are updated.
 prepareOp(timeout, SD0=#state{operations=Operations}) ->
     case Operations of 
         [] ->

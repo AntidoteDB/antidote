@@ -81,7 +81,8 @@ handle_command({trigger, WriteSet, From}, _Sender,
                                                                              {Ops, LCTS} 
                                                                      end
                                                              end, {Pending_operations, Last_commit_time}, Sorted_ops),
-    vectorclock:update_clock(Partition, 1, Stable_time),   
+    Dc_id = dc_utilities:get_my_dc_id(),
+    vectorclock:update_clock(Partition, Dc_id, Stable_time),   
     {reply, ok, State#dstate{last_commit_time = LastProcessedTime, pending_operations = Remaining_operations}};
 
 handle_command(Message, _Sender, State) ->
@@ -197,7 +198,8 @@ add_to_pending_operations(Pending, WriteSet) ->
         {TxId, Updates, Vec_snapshot_time, CommitTime} ->
             lists:foldl( fun(Update, Operations) -> 
                                  {_,{Key,{Op,Actor}}} = Update,
-                                 NewOp = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, snapshot_time = Vec_snapshot_time, commit_time = {1,CommitTime}, txid = TxId},
+                                 Dc_id = dc_utilities:get_my_dc_id(),
+                                 NewOp = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, snapshot_time = Vec_snapshot_time, commit_time = {Dc_id,CommitTime}, txid = TxId},
                                  lists:append(Operations, [NewOp])
                          end,
                          Pending, Updates);
