@@ -107,7 +107,8 @@ handle_command({read_data_item, Txn, Key, Type}, Sender, #state{write_set=WriteS
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, Txn, Key, Op}, Sender, #state{write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey}=State) ->
+handle_command({update_data_item, Txn, Key, Op}, Sender, 
+               #state{partition = Partition, write_set=WriteSet, active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
     LogRecord=#log_record{tx_id=TxId, op_type=update, op_payload={Key, Op}},
     TxId = Txn#transaction.txn_id,
@@ -122,7 +123,7 @@ handle_command({update_data_item, Txn, Key, Op}, Sender, #state{write_set=WriteS
             ets:insert(WriteSet, {TxId, {Key, Op}}),
             Check3=ets:lookup(WriteSet, TxId),
             lager:info("ClockSI-Vnode: Inserted to WriteSet ~p",[Check3]),
-            clockSI_updateitem_fsm:start_link(Sender, TxId),
+            clockSI_updateitem_fsm:start_link(Sender, Txn#transaction.vec_snapshot_time, Partition),
             {noreply, State};
         {error, timeout} ->
             {reply, {error, timeout}, State}
