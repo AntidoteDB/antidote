@@ -194,11 +194,9 @@ filter_operations(Ops, Before, After) ->
 add_to_pending_operations(Pending, WriteSet) -> 
     lager:info("Writeset : ~p",[WriteSet]),
     case WriteSet of 
-        {TxId, Updates, CommitTime} ->
+        {TxId, Updates, Vec_snapshot_time, CommitTime} ->
             lists:foldl( fun(Update, Operations) -> 
                                  {_,{Key,{Op,Actor}}} = Update,
-                                 Vec_snapshot_time = dict:from_list([{1, TxId#tx_id.snapshot_time}]), %%TODO: Use vector snapshot time of transaction
-                                 %%TODO: Generate DCId for commit time
                                  NewOp = #clocksi_payload{key = Key, type = riak_dt_pncounter, op_param = {Op, Actor}, snapshot_time = Vec_snapshot_time, commit_time = {1,CommitTime}, txid = TxId},
                                  lists:append(Operations, [NewOp])
                          end,

@@ -145,9 +145,6 @@ handle_command({prepare, Transaction}, _Sender, #state{ partition = Partition,
             lager:info("ClockSI-Vnode: Inserted to ActiveTx ~p",[Check1]),
             LogRecord=#log_record{tx_id=TxId, op_type=prepare, op_payload=PrepareTime},
             lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
-            %Updates = ets:lookup(WriteSet, TxId),
-            %[{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
-            %LogId = log_utilities:get_logid_from_key(Key), %TODO: Modify this when get_logid_from_partition is fixed
             LogId=log_utilities:get_logid_from_partition(Partition),
             Result = floppy_rep_vnode:append(LogId, LogRecord),
             case Result of
@@ -178,7 +175,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
             lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
             [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
-            clockSI_downstream_generator_vnode:trigger(Key, {TxId, Updates, TxCommitTime}),
+            clockSI_downstream_generator_vnode:trigger(Key, {TxId, Updates, Transaction#transaction.vec_snapshot_time, TxCommitTime}),
             clean_and_notify(TxId, State),
             lager:info("ClockSI_Vnode: done"),
             {reply, committed, State};
