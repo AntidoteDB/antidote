@@ -20,11 +20,18 @@ get_clock_by_key(Key) ->
     lager:info("Get Clock"),
     riak_core_vnode_master:sync_command(IndexNode, {get_clock}, vectorclock_vnode_master).
 
+-spec get_clock(Partition :: non_neg_integer()) -> {ok, vectorclock()}.
 get_clock(Partition) ->
     Logid = log_utilities:get_logid_from_partition(Partition),
     Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),
     Indexnode = hd(Preflist),
-    riak_core_vnode_master:sync_command(Indexnode, {get_clock}, vectorclock_vnode_master).
+    case riak_core_vnode_master:sync_command(Indexnode, {get_clock}, vectorclock_vnode_master) of
+        {ok, Clock} ->
+            {ok, Clock};
+        {error, Reason} ->
+            lager:info("Update vector clock failed: ~p",[Reason]),
+            {error, Reason} 
+    end.
 
 get_clock_node(Node) ->
     Preflist = riak_core_apl:active_owners(vectorclock),
@@ -36,12 +43,21 @@ get_clock_node(Node) ->
     VecNode = lists:nth(Index, Prefnode),
     riak_core_vnode_master:sync_command(VecNode, {get_clock}, vectorclock_vnode_master).
 
+-spec update_clock(Partition :: non_neg_integer(), Dc_id :: term(), Timestamp :: non_neg_integer()) -> {ok, vectorclock()} | {error, term()}.
 update_clock(Partition, Dc_id, Timestamp) -> 
     Logid = log_utilities:get_logid_from_partition(Partition),
     Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),
     Indexnode = hd(Preflist),
-    riak_core_vnode_master:sync_command(Indexnode, {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master).
+    case riak_core_vnode_master:sync_command(Indexnode, {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master) of
+        {ok, Clock} ->
+            {ok, Clock};
+        {error, Reason} ->
+            lager:info("Update vector clock failed: ~p",[Reason]),
+            {error, Reason}
+    end.
 
+%% @doc Return true if Clock1 > Clock2
+-spec is_greater_than(Clock1 :: vectorclock(), Clock2 :: vectorclock()) -> boolean().
 is_greater_than(Clock1, Clock2) ->
     dict:fold( fun(Dcid, Time2, Result) ->
                        case dict:find(Dcid, Clock1) of

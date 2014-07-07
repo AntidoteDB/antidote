@@ -72,7 +72,7 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(_Data, State) ->
-    {noreply, State}.
+    {reply,ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
