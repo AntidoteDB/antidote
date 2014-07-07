@@ -79,10 +79,10 @@ And check that they're working:
 At this point you have 4 single node applications running. We need to
 join them together in a cluster:
 
-    for d in dev/dev{2,3,4,5,6}; do $d/bin/floppy-admin cluster join 'crdtdb1@127.0.0.1'; done
-    Success: staged join request for 'crdtdb2@127.0.0.1' to 'crdtdb1@127.0.0.1'
-    Success: staged join request for 'crdtdb3@127.0.0.1' to 'crdtdb1@127.0.0.1'
-    Success: staged join request for 'crdtdb4@127.0.0.1' to 'crdtdb1@127.0.0.1'
+    for d in dev/dev{2,3,4,5,6}; do $d/bin/floppy-admin cluster join 'floppy1@127.0.0.1'; done
+    Success: staged join request for 'floppy2@127.0.0.1' to 'floppy1@127.0.0.1'
+    Success: staged join request for 'floppy3@127.0.0.1' to 'floppy1@127.0.0.1'
+    Success: staged join request for 'floppy4@127.0.0.1' to 'floppy1@127.0.0.1'
 
 Sends the requests to node1, which we can now tell to build the cluster:
 
@@ -96,10 +96,10 @@ Have a look at the `member-status` to see that the cluster is balancing.
     ================================= Membership ==================================
     Status     Ring    Pending    Node
     -------------------------------------------------------------------------------
-    valid     100.0%     25.0%    'crdtdb1@127.0.0.1'
-    valid       0.0%     25.0%    'crdtdb2@127.0.0.1'
-    valid       0.0%     25.0%    'crdtdb3@127.0.0.1'
-    valid       0.0%     25.0%    'crdtdb4@127.0.0.1'
+    valid     100.0%     25.0%    'floppy1@127.0.0.1'
+    valid       0.0%     25.0%    'floppy2@127.0.0.1'
+    valid       0.0%     25.0%    'floppy3@127.0.0.1'
+    valid       0.0%     25.0%    'floppy4@127.0.0.1'
     -------------------------------------------------------------------------------
     Valid:4 / Leaving:0 / Exiting:0 / Joining:0 / Down:0
 
@@ -111,10 +111,10 @@ cluster.
     ================================= Membership ==================================
     Status     Ring    Pending    Node
     -------------------------------------------------------------------------------
-    valid      25.0%      --      'crdtdb1@127.0.0.1'
-    valid      25.0%      --      'crdtdb2@127.0.0.1'
-    valid      25.0%      --      'crdtdb3@127.0.0.1'
-    valid      25.0%      --      'crdtdb4@127.0.0.1'
+    valid      25.0%      --      'floppy1@127.0.0.1'
+    valid      25.0%      --      'floppy2@127.0.0.1'
+    valid      25.0%      --      'floppy3@127.0.0.1'
+    valid      25.0%      --      'floppy4@127.0.0.1'
     -------------------------------------------------------------------------------
     Valid:4 / Leaving:0 / Exiting:0 / Joining:0 / Down:0
 
@@ -130,12 +130,12 @@ Let's start a node:
 
 First check that we can connect to the cluster:
 
-     (cli@127.0.0.1)1> net_adm:ping('crdtdb3@127.0.0.1').
+     (cli@127.0.0.1)1> net_adm:ping('floppy3@127.0.0.1').
      pong
 
 Then we can rpc onto any of the nodes and call `ping`:
 
-    (cli@127.0.0.1)2> rpc:call('crdtdb1@127.0.0.1', floppy, ping, []).
+    (cli@127.0.0.1)2> rpc:call('floppy1@127.0.0.1', floppy, ping, []).
     {pong,662242929415565384811044689824565743281594433536}
     (cli@127.0.0.1)3>
 
