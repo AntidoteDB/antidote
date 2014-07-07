@@ -4,6 +4,9 @@
 
 -export([generate_downstream_op/1]).
 
+%% @doc Returns downstream operation for upstream operation
+%%      input: Update - upstream operation
+%%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Update::#clocksi_payload{}) -> {ok, DownstreamOp::#clocksi_payload{}} | {error, Reason::term()}.
 generate_downstream_op(Update) ->                        
     Key = Update#clocksi_payload.key,

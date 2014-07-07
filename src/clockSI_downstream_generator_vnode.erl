@@ -28,6 +28,8 @@
 %%      Downstream_generator_vnode then reads the updates from log, generate downstream op
 %%      and write to persistent log
 %%      input: Key for which update has been logged
+-spec trigger(Key :: term(), Writeset :: {TxId :: term(), Updates :: [{term(), {Key :: term(), Op :: term()}}], 
+                                          Vec_snapshot_time :: vectorclock:vectorclock(), CommitTime :: {Dcid::term(), Time::non_neg_integer()}}) -> {ok, trigger_received} | {error, timeout}.
 trigger(Key, WriteSet) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),

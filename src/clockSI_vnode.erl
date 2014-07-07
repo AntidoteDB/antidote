@@ -163,7 +163,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                #state{partition = Partition, committed_tx=CommittedTx, write_set=WriteSet}=State) ->
     lager:info("ClockSI_Vnode: got commit message."),
     TxId = Transaction#transaction.txn_id,
-    LogRecord=#log_record{tx_id=TxId, op_type=commit, op_payload=TxCommitTime},
+    LogRecord=#log_record{tx_id=TxId, op_type=commit, op_payload={TxCommitTime, Transaction#transaction.vec_snapshot_time}},
     lager:info("ClockSI_Vnode: logging the following operation: ~p.", [LogRecord]),
     LogId=log_utilities:get_logid_from_partition(Partition),
     Result = floppy_rep_vnode:append(LogId, LogRecord),   
