@@ -7,11 +7,14 @@ About FloppyStore
 ### Purpose ###
 FloppyStore is an in-development distributed CRDT key-value store written in Erlang and riak_core based (https://github.com/basho/riak_core)
 that is intended to provide the following features:
-	* Partitioning,
-	* Intra-DC replication,
-	* Inter-DC replication,
-	* Support for atomic write transactions,
-	* A flexible layered architecture so features can be smoothly added or removed.
+* Partitioning,
+* Intra-DC replication,
+* Inter-DC replication,
+* Support for atomic write transactions,
+* A flexible layered architecture so features can be smoothly added or removed. 
+ 
+### Architecture ###
+Information about Floppystore's layered design can be found in the following google doc: https://docs.google.com/document/d/1SNnmAtx5FrcNgEMdNQkKlfzYc1tqziaV2lQ6g9IQyzs/edit#heading=h.ze32da2pga2f
 
 ### Current state ###
 	NOTE: not all features are available in the master branch.'
