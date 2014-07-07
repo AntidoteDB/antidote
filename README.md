@@ -1,6 +1,9 @@
 floppy: A Riak Core Application
 ======================================
 
+Welcome to the Floppystore repository, the reference platform of the SyncFree european project (https://syncfree.lip6.fr/).
+
+
 Application Structure
 ---------------------
 
