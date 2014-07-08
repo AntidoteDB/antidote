@@ -225,7 +225,7 @@ threshold_prune([Next|Rest], From) ->
 %%			Initial: Initial log identifier. Non negative integer. Consecutive ids for the logs. 
 %%			Map: The ongoing map of preflist->log. dict() type.
 %%	Return:	LogsMap: Maps the  preflist and actual name of the log in the system. dict() type.
--spec open_logs(LogFile::string(), Preflists::[{Index :: integer(), Node :: term()}], N::non_neg_integer(), Map::dict()) -> LogsMap::dict().
+-spec open_logs(LogFile::string(), Preflists::[{Index :: integer(), Node :: term()}], N::non_neg_integer(), Map::dict()) -> LogsMap::dict() | {error, atom()}.
 open_logs(_LogFile, [], _Initial, Map) -> Map;
 open_logs(LogFile, [Next|Rest], Initial, Map)->
     LogId = string:concat(LogFile, integer_to_list(Initial)),
