@@ -43,6 +43,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-include_lib("riak_dt/include/riak_dt_tags.hrl").
+-define(DT_MVREG_TAG, 85).
+-define(TAG, ?DT_MVREG_TAG).
+-define(V1_VERS, 1).
+
 -export_type([mvreg/0, mvreg_op/0]).
 
 -opaque mvreg() :: [{term(), riak_dt_vclock:vclock()}]. %[register_entry].
@@ -223,10 +228,6 @@ stat(value_size, MVReg) ->
     Size;
 stat(_, _) -> undefined. 
 
--include("riak_dt_tags.hrl").
--define(TAG, ?DT_MVREG_TAG).
--define(V1_VERS, 1).
-
 %% @doc Encode an effecient binary representation of an `mvreg()'
 %% Not working yet...
 -spec to_binary(mvreg()) -> binary().
@@ -242,9 +243,6 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
-
--ifdef(EQC).
--endif.
 
 init_state() ->
     [{<<>>, []}].

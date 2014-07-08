@@ -1,4 +1,4 @@
--module(mvreg).
+-module(mvreg_test).
 
 -export([confirm/0]).
 
