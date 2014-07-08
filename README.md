@@ -159,18 +159,21 @@ Perform a write operation (example):
 	WriteResult = rpc:call('floppy1@127.0.0.1', floppy, append, [abc, {increment, 4}]),
 
 The above rpc calls the function append from the module floppy:
+
 	append(Key, {OpParam, Actor})
 
 where 
+
 	Key = the key to write to.
 	OpParam = the parameters of the update operation.
 	Actor = the actor of the update (as needed by riak_dt, basho's state-based CRDT implementation)
 
 In the particular call we have just used as an example, 
+
 	abc: the key to write to.
 	{increment,4} are the parameters of the update:
-		increment: is an operation type, as defined in the riak_dt definition of the data type that is being written (in this case a gcounter), and
-		4: is the operation's actor. 
+	increment: is an operation type, as defined in the riak_dt definition of the data type that is being written (in this case a gcounter), and
+	4: is the operation's actor. 
 
 
 
