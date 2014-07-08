@@ -308,7 +308,7 @@ insert_operation(Log, Key, OpId, Payload) ->
 %%		Input:	Log: Identifier of the log
 %%				Key: Key to shich the operation belongs
 %%		Return:	List of all the logged operations 
--spec lookup_operations(Log::term(), Key::term()) -> list().
+-spec lookup_operations(Log::term(), Key::term()) -> list() | {error, atom()}.
 lookup_operations(Log, Key) ->
     dets:lookup(Log, Key).
 
