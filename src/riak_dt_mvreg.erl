@@ -141,7 +141,7 @@ incVV(MVReg, Actor) ->
     NewVC = riak_dt_vclock:increment(Actor, MaxVC),
     NewVC.
 
-%% @doc If the timestamp is larger than the counter of all corresponding entries.
+%% @doc If `TS'(timestamp) is larger than all entries of `Actor' for the MVReg.
 -spec larger_than(pos_integer(), term(), mvreg()) -> boolean().
 larger_than(_TS, _Actor, []) ->
     true;
@@ -155,8 +155,10 @@ larger_than(TS, Actor, [H|T]) ->
     end.
 
 
-%% @doc Merge a `mvreg()' to another `mvreg()'. Note that the first `mvreg()' is local and can have multiple vector clocks,
-%% while the second one is remote and only has one vector clock.
+%% @doc Merge the first `mvreg()' to the second `mvreg()'. Note that the first `mvreg()' 
+%% is local and can have multiple vector clocks, while the second one is from remote and 
+%% only has one vector clock, since before propagating its multiple VCs should have been 
+%% merged.
 -spec merge_to(mvreg(), mvreg()) -> mvreg().
 merge_to([], MVReg2) ->
     MVReg2;
@@ -174,7 +176,7 @@ merge_to([H|T], MVReg2) ->
 merge_to(_, _) ->
     [].
 
-%% @doc If any vector clock of the first list dominates the second vector clock.
+%% @doc If any vector clock in the first list dominates the second vector clock.
 if_dominate([], _VC) ->
     false;
 if_dominate([H|T], VC) ->
@@ -188,10 +190,10 @@ if_dominate([H|T], VC) ->
 
 %% @doc Merge two `mvreg()'s to a single `mvreg()'. This is the Least Upper Bound
 %% function described in the literature.
+%% !!! Not implemented !!! Propagate is basically doing merging. 
 -spec merge(mvreg(), mvreg()) -> mvreg().
 merge(MVReg1, _MVReg2) ->
     MVReg1.
-    %{Val1, TS1}.
 
 %% @doc Are two `mvreg()'s structurally equal? This is not `value/1' equality.
 %% Two registers might represent the value `armchair', and not be `equal/2'. Equality here is
@@ -267,6 +269,7 @@ value_test() ->
 equal_test() ->
     MVReg1 = [{value1, [{actor1, 2}, {actor2, 1}]}, {value2, [{actor4, 1}, {actor3, 2}]}],
     MVReg2 = [{value2, [{actor4, 1}, {actor3, 2}]}, {value1, [{actor2, 1}, {actor1, 2}]}],
+    %%Test if different order does not matter.
     ?assert(equal(MVReg1, MVReg2)),
     MVReg3 = [{value1, [{actor1, 2}, {actor2, 1}]}],
     ?assertNot(equal(MVReg1, MVReg3)),
@@ -310,7 +313,6 @@ if_dominate_test() ->
     ?assertNot(if_dominate(VC1, VC4)).
      
     
-
 basic_assign_test() ->
     MVR0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -417,7 +419,6 @@ update_assign_diverge_test() ->
 %    ?assertEqual({new_value, 4}, merge(LWW2, LWW1)).
 
 
-%%Somehow to_binary does not work
 roundtrip_bin_test() ->
     LWW = new(),
     {ok, LWW1} = update({assign, 2}, a1, LWW),
