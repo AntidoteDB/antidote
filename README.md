@@ -158,7 +158,7 @@ Start a node (if you haven't done it yet):
 
 Perform a write operation (example):
 
-	WriteResult = rpc:call('floppy1@127.0.0.1', floppy, append, [abc, {increment, 4}]),
+	ok = rpc:call('floppy1@127.0.0.1', floppy, append, [abc, {increment, 4}]),
 
 The above rpc calls the function append from the module floppy:
 
@@ -181,6 +181,31 @@ In the particular call we have just used as an example,
 	IMPORTANT: the update operation will execute no operation on the CRDT, will just store the operation in floppystore. The execution of operations to a key occur when the CRDT is read.
 
 
+#### Reading
+
+Start a node (if you haven't done it yet):
+
+	erl -name 'client@127.0.0.1' -setcookie floppy
+
+Perform a read operation (example):
+
+	{ok, ReadResult} = rpc:call('floppy1@127.0.0.1', floppy, read, [abc, riak_dt_gcounter]),
+
+The above rpc calls the function read from the module floppy:
+
+	read(Key, Type)
+
+where 
+
+* `Key` = the key to read from.
+* `Type` = the type of CRDT.
+
+In the particular call we have just used as an example, 
+
+* `abc` = the key to read from.
+* `riak_dt_gcounter` = the CRDT type, a gcounter
+
+The read operation will materialise (i.e., apply the operations that have been stored since the last materialisation, if any) the CRDT and return the result as an {ok, Result} tuple.
 
 		
 
@@ -216,7 +241,7 @@ Running Tests
 
 1. Go to floppystore directory
 2. make stagedevrel
-3. ./riak\_test/bin/floppystore-setup.sh (Only for the first time)
+3. ./riak\_test/bin/floppystore-setup.sh (Only for the first time) 
     
 	./riak\_test/bin/floppystore-current.sh
 
