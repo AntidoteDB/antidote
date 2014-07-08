@@ -39,12 +39,6 @@
          equal/2, to_binary/1, from_binary/1, stats/1, stat/2]).
 -export([parent_clock/2, update/4]).
 
-%% EQC API
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
--export([gen_op/0, update_expected/3, eqc_state_value/1, init_state/0, generate/0]).
--endif.
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
