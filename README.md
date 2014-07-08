@@ -148,7 +148,7 @@ And you can shut down your cluster like
 
 When you start it up again, it will still be a cluster.
     
-##### Reading from and writing to a CRDT object stored in floppystore:
+### Reading from and writing to a CRDT object stored in floppystore:
 
 Start a node (if you haven't done it yet):
 
