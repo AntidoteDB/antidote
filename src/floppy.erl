@@ -32,5 +32,5 @@ read(Key, Type) ->
             Type:value(Snapshot);
         {error, Reason} ->
             lager:info("Read failed: ~w~n", Reason),
-	    {error, Reason}
+            {error, Reason}
     end.
