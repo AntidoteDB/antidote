@@ -12,3 +12,5 @@ dialyzer_warnings
 rel/vars
 doc/
 .DS_Store
+log/
+tags
