@@ -102,7 +102,7 @@ handle_command({read_data_item, Txn, Key, Type}, Sender, #state{write_set=WriteS
     Vnode={Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
     lager:info("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",[Key, Updates]),
-    clockSI_readitem_fsm:start_link(Vnode, Sender, Txn, Key, Type, Updates),
+    {ok, _Pid} = clockSI_readitem_fsm:start_link(Vnode, Sender, Txn, Key, Type, Updates),
     lager:info("ClockSI-Vnode: done. Reply to the coordinator."),
     {noreply, State};
 
@@ -123,7 +123,7 @@ handle_command({update_data_item, Txn, Key, Op}, Sender,
             ets:insert(WriteSet, {TxId, {Key, Op}}),
             Check3=ets:lookup(WriteSet, TxId),
             lager:info("ClockSI-Vnode: Inserted to WriteSet ~p",[Check3]),
-            clockSI_updateitem_fsm:start_link(Sender, Txn#transaction.vec_snapshot_time, Partition),
+            {ok, _Pid} = clockSI_updateitem_fsm:start_link(Sender, Txn#transaction.vec_snapshot_time, Partition),
             {noreply, State};
         {error, timeout} ->
             {reply, {error, timeout}, State}
@@ -175,7 +175,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
             lager:info("ClockSI_Vnode: starting to clean state and Notifying pending read_FSMs (if any)."),
             [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
-            clockSI_downstream_generator_vnode:trigger(Key, {TxId, Updates, Transaction#transaction.vec_snapshot_time, TxCommitTime}),
+            _Return = clockSI_downstream_generator_vnode:trigger(Key, {TxId, Updates, Transaction#transaction.vec_snapshot_time, TxCommitTime}),
             clean_and_notify(TxId, State),
             lager:info("ClockSI_Vnode: done"),
             {reply, committed, State};

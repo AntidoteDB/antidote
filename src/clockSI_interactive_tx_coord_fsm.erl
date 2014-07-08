@@ -36,10 +36,10 @@
 -record(state, {
           from,
           transaction :: #transaction{},
-          updated_partitions :: list, 
-          num_to_ack :: int, 
-          prepare_time :: int,	
-          commit_time ::int,
+          updated_partitions :: list(), 
+          num_to_ack :: integer(), 
+          prepare_time :: integer(),	
+          commit_time :: integer(),
           state:: atom()}).
 
 %%%===================================================================

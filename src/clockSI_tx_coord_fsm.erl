@@ -42,16 +42,16 @@
 -record(state, {
           from :: pid(),
           txid :: #tx_id{},
-          operations :: list,
+          operations :: list(),
           transaction :: #transaction{},
-          updated_partitions :: list, 
+          updated_partitions :: list(), 
           currentOp = undefined :: term() | undefined,
-          num_to_ack :: int, 
+          num_to_ack :: integer(), 
           currentOpLeader :: riak_core_apl:preflist2(),
-          prepare_time :: int,	
-          commit_time ::int,
-          read_set :: list,
-          state}).
+          prepare_time :: integer(),	
+          commit_time ::integer(),
+          read_set :: list(),
+          state :: prepared | committed | aborted | committing }).
 
 %%%===================================================================
 %%% API
@@ -221,13 +221,13 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
 abort(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedPartitions}) -> 
     clockSI_vnode:abort(UpdatedPartitions, Transaction#transaction.txn_id),
     NumToAck=length(UpdatedPartitions),
-    {next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}};
+    {next_state, receive_aborted, SD0#state{state=aborted, num_to_ack=NumToAck}};
 
 abort(abort, SD0=#state{transaction= Transaction, updated_partitions=UpdatedPartitions}) -> 
                                                 %TODO: Do not send to who issue the abort
     clockSI_vnode:abort(UpdatedPartitions, Transaction#transaction.txn_id),
     NumToAck=length(UpdatedPartitions),
-    {next_state, receive_aborted, SD0#state{state=abort, num_to_ack=NumToAck}}.
+    {next_state, receive_aborted, SD0#state{state=aborted, num_to_ack=NumToAck}}.
 
 %%	the fsm waits for acks indicating that each partition has aborted the tx
 %%	and finishes operation.	

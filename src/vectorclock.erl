@@ -20,7 +20,7 @@ get_clock_by_key(Key) ->
     lager:info("Get Clock"),
     riak_core_vnode_master:sync_command(IndexNode, {get_clock}, vectorclock_vnode_master).
 
--spec get_clock(Partition :: non_neg_integer()) -> {ok, vectorclock()}.
+-spec get_clock(Partition :: non_neg_integer()) -> {ok, vectorclock()} | {error, term()}.
 get_clock(Partition) ->
     Logid = log_utilities:get_logid_from_partition(Partition),
     Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),

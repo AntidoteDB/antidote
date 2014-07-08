@@ -29,8 +29,10 @@
 %%      and write to persistent log
 %%      input: Key to identify the partition,
 %%             Writeset -> set of updates
--spec trigger(Key :: term(), Writeset :: {TxId :: term(), Updates :: [{term(), {Key :: term(), Op :: term()}}], 
-                                          Vec_snapshot_time :: vectorclock:vectorclock(), CommitTime :: {Dcid::term(), Time::non_neg_integer()}}) -> {ok, trigger_received} | {error, timeout}.
+-spec trigger(Key :: term(), Writeset :: {TxId :: term(),
+                                          Updates :: [{term(), {Key :: term(), Op :: term()}}], 
+                                          Vec_snapshot_time :: vectorclock:vectorclock(), 
+                                          CommitTime :: non_neg_integer()}) -> ok | {error, timeout}.
 trigger(Key, WriteSet) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
@@ -105,7 +107,7 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(_Data, State) ->
-    {noreply, State}.
+    {reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).

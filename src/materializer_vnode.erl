@@ -47,30 +47,22 @@ init([Partition]) ->
     {ok,#state{partition = Partition, cache = Cache}}.
 
 handle_command({read, Key, Type, Snapshot_time}, _Sender, State = #state{cache= Cache}) ->     
-    case ets:lookup(Cache, Key) of 
-        Operations when is_list(Operations) ->
-            %% Operations are in the order which it is inserted
-            lager:info(" Operations ~p", Operations),
-            ListofOps = filter_ops(Operations),
-            {ok, Snapshot} = clockSI_materializer:get_snapshot(Type, Snapshot_time, ListofOps),
-            lager:info("Snapshot ~p", Snapshot),
-            %% TODO: Store Snapshots in Cache
-            {reply, {ok, Snapshot}, State};
-        _ ->  
-            %% TODO: If there is any error, cache might be corrupted. So reconstruct cache from the log
-            {reply, {error, read_cache_failed}, State} 
-    end;
+    Operations = ets:lookup(Cache, Key),        
+    %% Operations are in the order which it is inserted
+    lager:info(" Operations ~p", Operations),
+    ListofOps = filter_ops(Operations),
+    {ok, Snapshot} = clockSI_materializer:get_snapshot(Type, Snapshot_time, ListofOps),
+    lager:info("Snapshot ~p", Snapshot),
+    %% TODO: Store Snapshots in Cache
+    {reply, {ok, Snapshot}, State};       
 
-handle_command({update, Key, DownstreamOp}, _Sender, State = #state{cache = Cache})->
-    
+handle_command({update, Key, DownstreamOp}, _Sender, State = #state{cache = Cache})->    
     LogId = log_utilities:get_logid_from_key(Key),    
     %%TODO: Construct log record 
     case floppy_rep_vnode:append(LogId, DownstreamOp) of
         {ok, _} -> 
-            case ets:insert(Cache, {Key, DownstreamOp}) of
-                true ->  {reply, ok, State};
-                _ -> {reply, {error, writing_to_cache_failed}, State}
-            end;
+            true = ets:insert(Cache, {Key, DownstreamOp}),
+            {reply, ok, State};              
         {error, Reason} ->
             {reply, {error, Reason}, State} 
     end;    
@@ -92,7 +84,7 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(_Data, State) ->
-    {noreply, State}.
+    {reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).

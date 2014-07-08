@@ -76,7 +76,7 @@ waiting(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
     Snapshottime = Transaction#transaction.vec_snapshot_time, 
     case vectorclock:is_greater_than(LocalClock, Snapshottime) of
         false ->
-            clockSI_downstream_generator_vnode:trigger(Key, {dummytx, [], dummycommittime}), %%TODO change this, add a heartbeat to increase vectorclock if there are no pending txns in downstream generator
+            _Result = clockSI_downstream_generator_vnode:trigger(Key, {dummytx, [], vectorclock:from_list([]), 0}), %%TODO change this, add a heartbeat to increase vectorclock if there are no pending txns in downstream generator
             {next_state, waiting, SDO, 10};
         true ->
             {next_state, return, SDO, 0} 
