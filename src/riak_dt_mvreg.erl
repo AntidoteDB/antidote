@@ -248,33 +248,6 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 -ifdef(TEST).
 
 -ifdef(EQC).
-eqc_value_test_() ->
-    crdt_statem_eqc:run(?MODULE, 1000).
-
-%% EQC generator
-generate() ->
-    ?LET({Op, Actor}, {gen_op(), char()},
-         begin.
-             {ok, Lww} = riak_dt_mvreg:update(Op, Actor, riak_dt_mvreg:new()),
-             Lww
-         end).
-
-
-gen_op() ->
-    ?LET(TS, largeint(), {assign, binary(), abs(TS)}).
-
-update_expected(_ID, {assign, Val, TS}, {OldVal, OldTS}) ->
-    case TS >= OldTS of
-        true ->
-            {Val, TS};
-        false ->
-            {OldVal, OldTS}
-    end;
-update_expected(_ID, _Op, Prev) ->
-    Prev.
-
-eqc_state_value({Val, _TS}) ->
-    Val.
 -endif.
 
 init_state() ->
