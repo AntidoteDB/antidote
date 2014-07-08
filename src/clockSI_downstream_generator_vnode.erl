@@ -86,6 +86,7 @@ handle_command({trigger, WriteSet, From}, _Sender,
                                                              end, {Pending_operations, Last_commit_time}, Sorted_ops),
     Dc_id = dc_utilities:get_my_dc_id(),
     vectorclock:update_clock(Partition, Dc_id, Stable_time),   
+    inter_dc_repl_vnode:trigger({Partition, node()}),
     {reply, ok, State#dstate{last_commit_time = LastProcessedTime, pending_operations = Remaining_operations}};
 
 handle_command(Message, _Sender, State) ->

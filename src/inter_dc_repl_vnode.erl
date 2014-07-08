@@ -3,9 +3,9 @@
 -include("floppy.hrl").
 
 -export([start_vnode/1,
-     %API begin
-     propogate/1,
-     %API end
+         %API begin
+         trigger/1,
+         %API end
          init/1,
          terminate/2,
          handle_command/3,
@@ -20,23 +20,43 @@
          handle_coverage/4,
          handle_exit/3]).
 
+-record(state, {partition,
+                last_op=empty}).
+
+-define(RETRY_TIME, 5000).
+
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% public API
-propogate({Key,Op, Dc}) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    [{Indexnode,_Type} | _Preflist] = riak_core_apl:get_primary_apl(DocIdx, ?N, interdcreplication),
-    riak_core_vnode_master:command(Indexnode, {propogate, {Key,Op, Dc}}, inter_dc_repl_vnode_master).
+trigger(IndexNode) ->
+    riak_core_vnode_master:command(IndexNode, {trigger}, inter_dc_repl_vnode_master).
 
 %% riak_core_vnode call backs
-init([_Partition]) ->
-    {ok, []}.
+init([Partition]) ->
+    {ok, #state{partition=Partition}.
 
-handle_command({propogate, {Key, Op, Dc}}, _Sender, _State) ->
-    inter_dc_repl:propogate_sync({Key, Op, Dc}),
-    {noreply, []}.
+handle_command({trigger}, _Sender, State=#state{partition=Partition, last_op=Last}) ->
+    Log = log_utilities:get_logid_from_partition(Partition),
+    case Last of
+        empty ->
+            case floppy_read_vnode:read(Log) of
+                {ok, Ops} ->
+                    Last2 = inter_dc_repl:propagate_sync(Ops),
+                {error, nothing} ->
+                    timer:sleep(?RETRY_TIME),
+                    trigger({Partition, node()}),
+            end;
+        _ ->
+            case floppy_read_vnode:threshold_read(Log, Last) of
+                {ok, Ops} ->
+                    Last2 = inter_dc_repl:propagate_sync(Ops),
+                {error, nothing} ->
+                    timer:sleep(?RETRY_TIME),
+                    trigger({Partition, node()}),
+            end
+    end,
+    {noreply, State#state{last_op=Last2}}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
