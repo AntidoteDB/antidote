@@ -7,15 +7,16 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    mult_writes_one_read().
-
-mult_writes_one_read() ->
-    N = 6,
-    ListIds = [random:uniform(N) || _ <- lists:seq(1, 120)],
+    N=6,
     [Nodes] = rt:build_clusters([N]),
 
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
+
+    mult_writes_one_read(N, Nodes).
+
+mult_writes_one_read(N, Nodes) ->
+    ListIds = [random:uniform(N) || _ <- lists:seq(1, 120)],
 
     F = fun(Elem, Acc) ->
             Node = lists:nth(Elem, Nodes),
