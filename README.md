@@ -145,10 +145,35 @@ Then we can rpc onto any of the nodes and call `ping`:
 And you can shut down your cluster like
 
     for d in dev/dev*; do $d/bin/floppy stop; done
-    
+
 When you start it up again, it will still be a cluster.
-make devrel, if you want different nodes (6 by default) to be created. See https://github.com/SyncFree/floppy/blob/rdb/3-coordinator/tutorial/1-get-started.md#make-a-cluster
-on how to join all these nodes into a single cluster. Important: in every command there explained, replace "floppy" by "floppy" (when aplicable).
+    
+##### Reading from and writing to a CRDT object stored in floppystore:
+
+Start a node (if you haven't done it yet):
+
+	erl -name 'client@127.0.0.1' -setcookie floppy
+
+Perform a write operation (example):
+
+	WriteResult = rpc:call('floppy1@127.0.0.1', floppy, append, [abc, {increment, 4}]),
+
+The above rpc calls the function append from the module floppy:
+	append(Key, {OpParam, Actor})
+
+where 
+	Key = the key to write to.
+	OpParam = the parameters of the update operation.
+	Actor = the actor of the update (as needed by riak_dt, basho's state-based CRDT implementation)
+
+In the particular call we have just used as an example, 
+	abc: the key to write to.
+	{increment,4} are the parameters of the update:
+		increment: is an operation type, as defined in the riak_dt definition of the data type that is being written (in this case a gcounter), and
+		4: is the operation's actor. 
+
+
+
 		
 
 Application Structure
