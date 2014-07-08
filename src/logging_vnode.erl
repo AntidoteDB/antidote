@@ -48,21 +48,31 @@ start_vnode(I) ->
 %%	From is the operation id form which the caller wants to retrieve the operations.
 %%	The operations are retrieved in inserted order and the From operation is also included.
 threshold_read(Preflist, Key, From) ->
-    riak_core_vnode_master:command(Preflist, {threshold_read, Key, From, Preflist}, {fsm, undefined, self()},?LOGGINGMASTER).
+    Primaries = get_primaries_preflist(Key),
+    riak_core_vnode_master:command(Preflist, {threshold_read, Key, From, Primaries}, {fsm, undefined, self()},?LOGGINGMASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist' 
 dread(Preflist, Key) ->
-    riak_core_vnode_master:command(Preflist, {read, Key, Preflist}, {fsm, undefined, self()},?LOGGINGMASTER).
+    Primaries = get_primaries_preflist(Key),
+    riak_core_vnode_master:command(Preflist, {read, Key, Primaries}, {fsm, undefined, self()},?LOGGINGMASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist' 
 dappend(Preflist, Key, Op, OpId) ->
-    riak_core_vnode_master:command(Preflist, {append, Key, Op, OpId, Preflist},{fsm, undefined, self()}, ?LOGGINGMASTER).
+    Primaries = get_primaries_preflist(Key),
+    riak_core_vnode_master:command(Preflist, {append, Key, Op, OpId, Primaries},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
 %% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
 append_list(Node, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {append_list, Ops},
                                         ?LOGGINGMASTER).
+%% @doc Returns the preflist with the primary vnodes. No matter they are up or down.
+get_primaries_preflist(Key) ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    DocIdx = riak_core_util:chash_key({?BUCKET,term_to_binary(Key)}),
+    Preflist = riak_core_ring:preflist(DocIdx, Ring),
+    {Primaries, _} = lists:split(?N, Preflist),
+    Primaries.
 
 %% @doc Opens the persistent copy of the Log.
 %%	The name of the Log in disk is a combination of the the word `log' and
@@ -128,9 +138,24 @@ handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=
 %% @doc Repair command: Appends the Ops to the Log
 %%	Input: Ops: Operations to append
 %%	Output: ok | {error, Reason}
-%%TODO: fix this due to the new log-per-partition modification
 handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->	
-    Result = dets:insert_new(Map, Ops),
+    F = fun(Elem, Acc) ->
+            {Key, #operation{op_number=OpId, payload=Payload}} = Elem,
+            Preflist = get_primaries_preflist(Key),
+            case get_log_from_map(Map, Preflist) of
+                {ok, Log} ->
+                    case insert_operation(Log, Key, OpId, Payload) of
+                        {ok, _}->
+                            Acc;
+                        {error, Reason} ->
+                            [{error, Reason}|Acc]
+                    end;        
+                {error, Reason} ->
+                    [{error, Reason}|Acc]
+            end 
+        end,
+    
+    Result = lists:foldl(F, [], Ops),
     {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
@@ -312,10 +337,9 @@ insert_operation(Log, Key, OpId, Payload) ->
 
 %% @doc lookup_operations: Looks up for the operations logged for a particular key
 %%		Input:	Log: Identifier of the log
-%%		        Key: Key to shich the operation belongs
-%%		Return:	List of all the logged operations or error  
-%% TODO Fix type spec!
--spec lookup_operations(log(), key()) -> [tuple()] | {error, reason()}.
+%%				Key: Key to shich the operation belongs
+%%		Return:	List of all the logged operations 
+-spec lookup_operations(Log::term(), Key::term()) -> list() | {error, atom()}.
 lookup_operations(Log, Key) ->
     dets:lookup(Log, Key).
 
