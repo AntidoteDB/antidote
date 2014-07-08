@@ -3,9 +3,9 @@
 -include("floppy.hrl").
 
 -export([start_vnode/1,
-	 %API begin
-	 propogate/1,
-	 %API end
+     %API begin
+     propogate/1,
+     %API end
          init/1,
          terminate/2,
          handle_command/3,
@@ -24,18 +24,18 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% public API
-propogate({Key,Op}) ->
+propogate({Key,Op, Dc}) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
     [{Indexnode,_Type} | _Preflist] = riak_core_apl:get_primary_apl(DocIdx, ?N, interdcreplication),
-    riak_core_vnode_master:command(Indexnode, {propogate, {Key,Op}}, inter_dc_repl_vnode_master).
+    riak_core_vnode_master:command(Indexnode, {propogate, {Key,Op, Dc}}, inter_dc_repl_vnode_master).
 
 %% riak_core_vnode call backs
 init([_Partition]) ->
     {ok, []}.
 
-handle_command({propogate, {Key, Op}}, _Sender, _State) ->
-    inter_dc_repl:propogate_sync({Key, Op}),
+handle_command({propogate, {Key, Op, Dc}}, _Sender, _State) ->
+    inter_dc_repl:propogate_sync({Key, Op, Dc}),
     {noreply, []}.
 
 handle_handoff_command(_Message, _Sender, State) ->
