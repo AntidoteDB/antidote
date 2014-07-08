@@ -1,56 +1,65 @@
+%% @doc The walletapp is a test application for floppystore.
+%%      It makes use of create, read/get, and update operations on the floppystore.
+
+%% @TODO - Add transaction like operations - buy voucher and reduce balance -> Will be done when merging with clock_SI branch
+
 -module(walletapp).
 
--export([credit/2, debit/2, init/2, getbalance/1, buyvoucher/2, usevoucher/2, readvouchers/1, createuser/2]).
+-export([credit/2, debit/2, init/2, getbalance/1, buyvoucher/2, usevoucher/2, readvouchers/1]).
 
-%% walletapp uses floppystore apis - create, update, get
+-define(SERVER, 'floppy@127.0.0.1').
+%% @doc Initializes the application by setting a cookie.
+init(Nodename, Cookie) ->
+    net_kernel:start([Nodename, longnames]),
+    erlang:set_cookie(node(),Cookie).
 
-%specify separate key for bal and voucher, could be put under same object later
-createuser(Keybal, Keyvoucher) ->
-    Result1 = init(Keybal, riak_dt_pncounter),
-    Result2 = init(Keyvoucher, riak_dt_orset), %which type to use for vouchers
-    [Result1 | Result2].
-
-init(Key, Type) ->
-    rpc:call('floppy1@127.0.0.1', floppy, create, [Key, Type]).
-    
+%% @doc Increases the available credit for a customer.
+-spec credit(Key::term(), Amount::non_neg_integer()) -> ok | {error, string()}.  
 credit(Key, Amount) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, update, [Key,{{increment,Amount}, actor1}]) of
+    case rpc:call(?SERVER, floppy, append, [Key,{{increment,Amount}, actor1}]) of
 	{ok, _} ->
 	    ok;
 	{error, Reason} ->
 	    {error, Reason}
     end.
 
+%% @doc Decreases the available credit for a customer.
+-spec debit(Key::term(), Amount::non_neg_integer()) -> ok | {error, string()}.
 debit(Key, Amount) ->
-    case rpc:call('floppy1@127.0.0.1', floppy,  update, [Key,{{decrement,Amount}, actor1}]) of
+    case rpc:call(?SERVER, floppy,  append, [Key,{{decrement,Amount}, actor1}]) of
 	{ok, _} ->
 	    ok;
 	{error, Reason} ->
 	    {error, Reason}
     end.
 
+%% @doc Returns the current balance for a customer.
+-spec getbalance(Key::term()) -> error | number().				  
 getbalance(Key) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, read, [Key, riak_dt_pncounter]) of
-	{ok, Val} ->
-	    Val;
-	{error, Reason} ->
-	    {error, Reason}
+    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_pncounter]) of	
+	{error} ->
+	    {error};
+        Val ->
+            Val
     end. 
-							      
-buyvoucher(Key, Voucher) ->
-    rpc:call('floppy1@127.0.0.1',floppy,  update, [Key, {{add, Voucher},actor1}]).
 
+%% @doc Increases the number of available vouchers for a customer.
+-spec buyvoucher(Key::term(),Voucher::term()) -> ok | {error, string()}.		  buyvoucher(Key, Voucher) ->
+    rpc:call(?SERVER,floppy,  append, [Key, {{add, Voucher},actor1}]).
+
+%% @doc Decreases the number of available vouchers for a customer.
+-spec usevoucher(Key::term(),Voucher::term()) -> ok | {error, string()}.
 usevoucher(Key, Voucher) ->
-    rpc:call('floppy1@127.0.0.1', floppy, update, [Key, {{remove, Voucher},actor1}]).
+    rpc:call(?SERVER, floppy, append, [Key, {{remove, Voucher},actor1}]).
 
+%% @doc Returns the number of currently available vouchers for a customer.
+-spec readvouchers(Key::term()) -> number() | {error, string()}.
 readvouchers(Key) ->
-    case rpc:call('floppy1@127.0.0.1', floppy, read, [Key, riak_dt_orset]) of
-	{ok, Val} ->
-	    Val;
+    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_orset]) of
 	{error, Reason} ->
-	    {error, Reason}
+	    {error, Reason};
+        Val ->
+	    Val
     end.
     
-
-%% TODO - Add transaction like operations - buy voucher and reduce balance
     
