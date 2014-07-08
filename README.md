@@ -164,7 +164,8 @@ Start a node (if you haven't done it yet):
 
 Perform a write operation (example):
 
-	ok = rpc:call('dev1@127.0.0.1', floppy, append, [abc, {increment, 4}]),
+    (client@127.0.0.1)1> rpc:call('dev1@127.0.0.1', floppy, append, [myKey, {increment, 4}]).
+    {ok,{1,'dev1@127.0.0.1'}}
 
 The above rpc calls the function append from the module floppy:
 
@@ -178,10 +179,10 @@ where
 
 In the particular call we have just used as an example, 
 
-* `abc` = the key to write to.
+* `myKey` = the key to write to.
 * `{increment,4}` = the parameters of the update:
 	* `increment` = an operation type, as defined in the riak_dt definition of the data type that is being written (in this case a gcounter), and
-	* `4` = the operation's actor. 
+	* `4` = the operation's actor id. 
 	
 
 	IMPORTANT: the update operation will execute no operation on the CRDT, will just store the operation in floppystore. The execution of operations to a key occur when the CRDT is read.
@@ -195,8 +196,9 @@ Start a node (if you haven't done it yet):
 
 Perform a read operation (example):
 
-	{ok, ReadResult} = rpc:call('dev1@127.0.0.1', floppy, read, [abc, riak_dt_gcounter]),
-
+	(client@127.0.0.1)1> rpc:call('dev1@127.0.0.1', floppy, read, [myKey, riak_dt_gcounter]).
+    1
+    
 The above rpc calls the function read from the module floppy:
 
 	read(Key, Type)
@@ -208,7 +210,7 @@ where
 
 In the particular call we have just used as an example, 
 
-* `abc` = the key to read from.
+* `myKey` = the key to read from.
 * `riak_dt_gcounter` = the CRDT type, a gcounter
 
 The read operation will materialise (i.e., apply the operations that have been stored since the last materialisation, if any) the CRDT and return the result as an {ok, Result} tuple.
