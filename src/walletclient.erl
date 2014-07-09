@@ -44,16 +44,16 @@ testbalance(Key, N, Result) ->
 testcredit(Key, Amount) ->
     {ok, Balbefore} = walletapp:getbalance(Key),
     case walletapp:credit(Key, Amount) of
-	{error, Reason} ->
+        {error, Reason} ->
             {error, Reason};
-	ok ->  
-	    case walletapp:getbalance(Key) of
-		{error, Reason} ->
-		    {error, Reason};
-		{ok, Val} ->
-		    ?assert(Val =:= Balbefore + Amount),
-		    ok
-	    end
+        ok ->
+            case walletapp:getbalance(Key) of
+                {error, Reason} ->
+                    {error, Reason};
+                {ok, Val} ->
+                    ?assert(Val =:= Balbefore + Amount),
+                    ok
+            end
     end.
 
 -spec testdebit(key(), pos_integer()) -> ok | {error, reason()}.
