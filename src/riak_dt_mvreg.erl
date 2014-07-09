@@ -396,7 +396,7 @@ propagate_test() ->
 update_assign_diverge_test() ->
     VC0 = riak_dt_vclock:fresh(),
     VC1 = riak_dt_vclock:increment(actor1, VC0),
-    VC2 = riak_dt_vclock:increment(actor2, VC1),
+    VC2 = riak_dt_vclock:increment(actor2, VC0),
     %% This represents a MVReg that have two concurrent assignment (one propagated).
     MVR0 = [{value1, VC1}, {value2, VC2}],
     {ok, MVR1} = update({assign, value3}, actor1, MVR0),
