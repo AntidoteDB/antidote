@@ -19,16 +19,22 @@
 %% States
 -export([prepare/2, execute/2, waitAppend/2, waitRead/2, repairRest/2 ]).
 
+%% The threshold of number of error messages for read/write. When error
+%% message reaches this limit, the operation can not succeed.
+-define(W_ERROR_THRESHOLD, ?N-?NUM_W+1).
+-define(R_ERROR_THRESHOLD, ?N-?NUM_R+1).
+
 -record(state, {
                 from :: pid(),
                 op :: atom(),
                 key,
                 param = undefined :: term() | undefined,
-		readresult,
+		        readresult,
+                error_msg = [],
                 preflist :: riak_core_apl:preflist(),
-		num_to_ack = 0 :: non_neg_integer(),
-		opid,
-		nodeOps}).
+		        num_to_ack = 0 :: non_neg_integer(),
+		        opid,
+		        nodeOps}).
 
 %%%===================================================================
 %%% API
@@ -51,9 +57,9 @@ init([From, Op,  Key, Param, OpId]) ->
                 op=Op,
                 key=Key,
                 param=Param,
-		opid= OpId,
-		readresult=[],
-		nodeOps =[]},
+		        opid= OpId,
+		        readresult=[],
+		        nodeOps =[]},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
@@ -71,41 +77,54 @@ execute(timeout, SD0=#state{op=Op,
                             key=Key,
                             param=Param,
                             preflist=Preflist,
-			    opid=OpId}) ->
+                            from=From,
+			                opid=OpId}) ->
     case Op of 
-	append ->
-	    lager:info("FSM: Replicate append ~n"),
-	    logging_vnode:dappend(Preflist, Key, Param, OpId),
-	    SD1 = SD0#state{num_to_ack=?NUM_W},
-	    {next_state, waitAppend, SD1};
-%	create ->
-%	    lager:info("replication propagating create!~w~n",[Preflist]),
-%	    logging_vnode:dcreate(Preflist, Key, Param, OpClock),
-%	    Num_w = SD0#state.num_w,
-%	    SD1 = SD0#state{num_to_ack=Num_w},
-%	    {next_state, waiting, SD1};
-	read ->
-	    lager:info("FSM: Replication read ~n"),
-	    logging_vnode:dread(Preflist, Key),
-	    SD1 = SD0#state{num_to_ack=?NUM_R},
-	    {next_state, waitRead, SD1};
-	_ ->
-	    lager:info("FSM: Wrong command ~n"),
-	   %%reply message to user
-	    {stop, normal, SD0}
+	    append ->
+	        lager:info("FSM: Replicate append ~n"),
+	        logging_vnode:dappend(Preflist, Key, Param, OpId),
+	        SD1 = SD0#state{num_to_ack=?NUM_W},
+	        {next_state, waitAppend, SD1, ?COMM_TIMEOUT};
+	    read ->
+	        lager:info("FSM: Replication read ~n"),
+	        logging_vnode:dread(Preflist, Key),
+	        SD1 = SD0#state{num_to_ack=?NUM_R},
+	        {next_state, waitRead, SD1, ?COMM_TIMEOUT};
+	    _ ->
+	        lager:info("FSM: Wrong command ~n"),
+	        floppy_coord_fsm:finishOp(From, error, wrong_command),	
+	        %%reply message to user
+	        {stop, normal, SD0}
     end.
 
 
 %% @doc Waits for W write reqs to respond.
 waitAppend({ok,{_Node, Result}}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
-	floppy_coord_fsm:finishOp(From,  ok,{Key, Result}),	
-	{stop, normal, SD};
-	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }}
-    end.
+    case NumToAck of
+        1 -> 
+    	    lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
+	        floppy_coord_fsm:finishOp(From, ok, {Key, Result}),	
+	        {stop, normal, SD};
+	    _ ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, waitAppend, SD#state{num_to_ack= NumToAck-1 }, ?COMM_TIMEOUT}
+    end;
+
+waitAppend({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
+    ErrorMsg1 = [Reason|ErrorMsg],
+    lager:info("FSM: Error in append: ~w", [Reason]),
+    case length(ErrorMsg1) of
+        ?W_ERROR_THRESHOLD ->
+	        floppy_coord_fsm:finishOp(From, error, ErrorMsg1),
+	        {stop, normal, SD};
+        _ ->
+	        {next_state, waitAppend, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
+    end;
+
+waitAppend(timeout, SD=#state{from=From}) ->
+    lager:info("FSM: Error in append: timeout"),
+    floppy_coord_fsm:finishOp(From, error, quorum_unreachable),
+    {stop, normal, SD}.
 
 %% @doc Waits for R read reqs to respond and union returned operations.
 %% Then send vnodes operations if they haven't seen some.
@@ -114,18 +133,31 @@ waitRead({ok,{Node, Result}}, SD=#state{op=Op, from= From, nodeOps = NodeOps, ke
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
     %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
-	repair(NodeOps1, Result1),
-	floppy_coord_fsm:finishOp(From, ok,{Key, Result1}),	
-	{next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?INDC_TIMEOUT};
-	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}}
+    case NumToAck of 
+        1 -> 
+    	    lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
+	        repair(NodeOps1, Result1),
+	        floppy_coord_fsm:finishOp(From, ok, {Key, Result1}),	
+	        {next_state, repairRest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?COMM_TIMEOUT};
+	    _ ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, waitRead, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
     end;
 
-waitRead({error, no_key}, SD) ->
-    lager:info("FSM: No key!~n"),
+waitRead({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
+    ErrorMsg1 = [Reason|ErrorMsg],
+    lager:info("FSM: Error in read: ~w", [Reason]),
+    case length(ErrorMsg1) of
+        ?R_ERROR_THRESHOLD ->
+	        floppy_coord_fsm:finishOp(From, error, ErrorMsg1),
+	        {stop, normal, SD};
+        _ ->
+	        {next_state, waitRead, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
+    end;
+
+waitRead(timeout, SD=#state{from=From}) ->
+    lager:info("FSM: Error in read: timeout"),
+    floppy_coord_fsm:finishOp(From, error, quorum_unreachable),
     {stop, normal, SD}.
 
 %% @doc Keeps waiting for read replies from vnodes after replying to coord fsm.
@@ -138,15 +170,19 @@ repairRest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
 repairRest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
-    %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
-    if NumToAck == 1 -> 
-    	lager:info("FSM: Finish collecting replies, start read repair ~n"),
-	repair(NodeOps, ReadResult),
-	{stop, normal, SD};
-    	true ->
-         lager:info("FSM: Keep collecting replies~n"),
-	{next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?INDC_TIMEOUT}
-    end.
+    case NumToAck of 
+        1 -> 
+    	    lager:info("FSM: Finish collecting replies, start read repair ~n"),
+	        repair(NodeOps, ReadResult),
+	        {stop, normal, SD};
+    	_ ->
+            lager:info("FSM: Keep collecting replies~n"),
+	        {next_state, repairRest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
+    end;
+
+repairRest({error, Reason}, SD) ->
+    lager:info("FSM: Error in read repair: ~w", [Reason]),
+	{next_state, repairRest, SD, ?COMM_TIMEOUT}.
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -199,11 +235,9 @@ remove_dup([], _OpId, Set2) ->
     Set2;
 remove_dup([H|T], OpId, Set2) ->
     {_, #operation{op_number= OpNum}} = H,
-    if OpNum /= OpId ->
-	Set3 = lists:append(Set2, [H]);
-       true ->
-	Set3 = Set2
-    end,
+    Set3 = if OpNum /= OpId -> lists:append(Set2, [H]);
+            true -> Set2
+           end,
     remove_dup(T, OpId, Set3).
 
 

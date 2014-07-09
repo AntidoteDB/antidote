@@ -11,8 +11,8 @@ src/*.swo
 dialyzer_unhandled_warnings
 .local_dialyzer_plt
 dialyzer_warnings
-rel/vars
 doc/
 .DS_Store
 log/
 tags
+rel/vars/*.config

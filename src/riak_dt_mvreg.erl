@@ -39,15 +39,14 @@
          equal/2, to_binary/1, from_binary/1, stats/1, stat/2]).
 -export([parent_clock/2, update/4]).
 
-%% EQC API
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
--export([gen_op/0, update_expected/3, eqc_state_value/1, init_state/0, generate/0]).
--endif.
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+-include_lib("riak_dt/include/riak_dt_tags.hrl").
+-define(DT_MVREG_TAG, 85).
+-define(TAG, ?DT_MVREG_TAG).
+-define(V1_VERS, 1).
 
 -export_type([mvreg/0, mvreg_op/0]).
 
@@ -229,10 +228,6 @@ stat(value_size, MVReg) ->
     Size;
 stat(_, _) -> undefined. 
 
--include("riak_dt_tags.hrl").
--define(TAG, ?DT_MVREG_TAG).
--define(V1_VERS, 1).
-
 %% @doc Encode an effecient binary representation of an `mvreg()'
 %% Not working yet...
 -spec to_binary(mvreg()) -> binary().
@@ -248,9 +243,6 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
-
--ifdef(EQC).
--endif.
 
 init_state() ->
     [{<<>>, []}].
