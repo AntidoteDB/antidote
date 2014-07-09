@@ -29,6 +29,13 @@ stage : rel
 	$(foreach dep,$(wildcard deps/*), rm -rf rel/floppy/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/floppy/lib;)
 	$(foreach app,$(wildcard apps/*), rm -rf rel/floppy/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/floppy/lib;)
 
+currentdevrel: stagedevrel
+	riak_test/bin/floppystore-current.sh
+
+riak-test: currentdevrel
+	$(foreach dep,$(wildcard riak_test/*.erl), ../riak_test/riak_test -v -c floppystore -t $(dep);)
+
+
 ##
 ## Developer targets
 ##

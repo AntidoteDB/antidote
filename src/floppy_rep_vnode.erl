@@ -48,14 +48,18 @@ init([Partition]) ->
 %% Returns: {ok, Result} if success; {error, timeout} if operation failed.
 append(Key, Op) ->
     lager:info("Append ~w ~w ~n", [Key, Op]),
-    floppy_coord_sup:start_fsm([self(), append, Key, Op]),
+    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, Key, Op]),
     receive
         {ok,{_, Result}} ->
-	    lager:info("Append completed!~w~n",[Result]),
-	    {ok, Result}
-    after 5000 ->
-	    lager:info("Append failed!~n"),
-	    {error, timeout}
+	        lager:info("Append completed!~w~n",[Result]),
+	        {ok, Result};
+        {error, Reason} ->
+	        lager:info("Append failed!~n"),
+	        {error, Reason}
+    after 
+        ?OP_TIMEOUT ->
+	        lager:info("Append failed!~n"),
+	        {error, timeout}
     end.
 
 %% @doc Function: read/2 
@@ -64,21 +68,25 @@ append(Key, Op) ->
 %% Returns: {ok, Ops} if succeeded, Ops is the union of operations; {error, nothing} if operation failed.
 read(Key, Type) ->
     lager:info("Read ~w ~w", [Key, Type]),
-    floppy_coord_sup:start_fsm([self(), read, Key, noop]),
+    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
         {ok,{_, Ops}} ->
-	    lager:info("Read completed!~n"),
-	    {ok,Ops}
-    after 5000 ->
-	    lager:info("Read failed!~n"),
-	    {error, nothing}
+	        lager:info("Read completed!~n"),
+	        {ok,Ops};
+        {error, Reason} ->
+	        lager:info("Read failed!~n"),
+	        {error, Reason}
+    after 
+        ?OP_TIMEOUT ->
+	        lager:info("Read failed!~n"),
+	        {error, timeout}
     end.
 
 %% @doc Function: handleOp/5
 %% Purpose: Handles `read' or `append' operations. Tne vnode must be in the replication group
 %% of the corresponding key. 
 handleOp(Preflist, ToReply, Op, Key, Param) ->
-    	riak_core_vnode_master:command(Preflist,
+   riak_core_vnode_master:command(Preflist,
                                    {operate, ToReply, Op, Key, Param},
                                    ?REPMASTER).
 
@@ -87,18 +95,16 @@ handleOp(Preflist, ToReply, Op, Key, Param) ->
 %% If the operation is `read', there is no such need.
 %% Then start a rep fsm to perform quorum read/append.  
 handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Partition,lclock=LC}) ->
-      case Op of append ->
-      	OpId = generate_op_id(LC);
-	read  ->
-	OpId = current_op_id(LC);
-	_ ->
-	lager:info("RepVNode: Wrong operations!~w~n", [Op]),
-	OpId = current_op_id(LC)
-      end,
-      {NewClock,_} = OpId,
-      lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
-      floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
-      {noreply, #state{lclock=NewClock, partition= Partition}};
+    OpId = case Op of 
+                append -> generate_op_id(LC);
+	            read  -> current_op_id(LC);
+	            _ ->  lager:info("RepVNode: Wrong operations!~w~n", [Op]), 
+                    current_op_id(LC)
+           end,
+    {NewClock,_} = OpId,
+    lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
+    {ok,_Pid} = floppy_rep_sup:start_fsm([ToReply, Op, Key, Param, OpId]),
+    {noreply, #state{lclock=NewClock, partition= Partition}};
 
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command, Message}),
