@@ -89,17 +89,17 @@ testvoucher(Key, N, Result) ->
 -spec testadd(key(), pos_integer()) -> ok | {error, reason()}.
 testadd(Key, Voucher) ->
     case walletapp:readvouchers(Key) of
-	{error, Reason} ->
-	    {error, Reason};
-	{ok, Init} ->  
-	    case walletapp:buyvoucher(Key,Voucher) of
-		{error, Reason} ->
-		    {error, Reason};
-		ok ->
-		    {ok, After} = walletapp:readvouchers(Key),
-		    ?assert(lists:usort([Voucher | Init]) =:= lists:sort(After)),
-		    ok
-	    end
+        {error, Reason} ->
+            {error, Reason};
+        {ok, Init} ->
+            case walletapp:buyvoucher(Key,Voucher) of
+                {error, Reason} ->
+                    {error, Reason};
+                ok ->
+                    {ok, After} = walletapp:readvouchers(Key),
+                    UniqueSorted = lists:usort([Voucher|Init]),
+                    Sorted = lists:sort(After),
+                    UniqueSorted = Sorted,
+                    ok
+            end
     end.
-
-    
