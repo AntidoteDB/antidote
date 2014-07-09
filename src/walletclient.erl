@@ -51,7 +51,7 @@ testcredit(Key, Amount) ->
                 {error, Reason} ->
                     {error, Reason};
                 {ok, Val} ->
-                    ?assert(Val =:= Balbefore + Amount),
+                    Val = Balbefore + Amount,
                     ok
             end
     end.
@@ -59,21 +59,21 @@ testcredit(Key, Amount) ->
 -spec testdebit(key(), pos_integer()) -> ok | {error, reason()}.
 testdebit(Key, Amount) ->
     case walletapp:getbalance(Key) of
-	{ok, Balbefore} ->
-	    case walletapp:debit(Key, Amount) of
-		ok ->
-		    case walletapp:getbalance(Key) of
-			{error, Reason} ->
-			    {error, Reason};
-			{ok, Val} ->
-			    ?assert(Val =:= Balbefore - Amount),
-			    ok
-		    end;
-		{error, Reason} ->
-		    {error, Reason}
-	    end;
-	{error, Reason} ->
-	    {error, Reason}
+        {ok, Balbefore} ->
+            case walletapp:debit(Key, Amount) of
+                ok ->
+                    case walletapp:getbalance(Key) of
+                        {error, Reason} ->
+                            {error, Reason};
+                        {ok, Val} ->
+                            Val = Balbefore - Amount,
+                            ok
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
+                end;
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 -spec testvoucher(key(), pos_integer(), [any()]) -> [any()].
