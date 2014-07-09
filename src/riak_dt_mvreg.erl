@@ -22,11 +22,12 @@
 
 %% @doc
 %% An Multi-Value Register CRDT.
-%% There are two kinds of updates: assign and propagate.
-%% Assign is used for a single replica of MVReg where updates are linealizable.
-%% Propagate is used to propagate update from a replica to other replicas. It is similar to the 'merge' operation
-%% of the state-based specifiction of MVReg.
-%% Detailed usage is explained later. 
+%% There are two kinds of updates: assign and propagate.  Assign is used
+%% for a single replica of MVReg where updates are linealizable.
+%% Propagate is used to propagate update from a replica to other
+%% replicas. It is similar to the 'merge' operation of the state-based
+%% specifiction of MVReg.  Detailed usage is explained later.
+%%
 %% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
@@ -43,17 +44,14 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("riak_dt/include/riak_dt_tags.hrl").
--define(DT_MVREG_TAG, 85).
--define(TAG, ?DT_MVREG_TAG).
--define(V1_VERS, 1).
-
 -export_type([mvreg/0, mvreg_op/0]).
 
--opaque mvreg() :: [{term(), riak_dt_vclock:vclock()}]. %[register_entry].
+%% TODO: make opaque
+-type mvreg() :: [{term(), riak_dt_vclock:vclock()}].
 
-%%-type register_entry() :: {term(), riak_dt_vclock:vclock()}.
--type mvreg_op() :: {assign, term(), non_neg_integer()}  | {assign, term()} | {propagate, term(), term()}.
+-type mvreg_op() :: {assign, term(), non_neg_integer()}
+                  | {assign, term()}
+                  | {propagate, term(), term()}.
 
 -type mv_q() :: timestamp.
 
@@ -82,44 +80,43 @@ value(MVReg) ->
 value(timestamp, MVReg) ->
     [TS || {_Val, TS} <- MVReg].
 
-
-%% @doc Assign `Value' to this register. The vector clock
-%% of this register will be incremented by one for the corresponding `Actor'.
-%% In case the register has multiple diverged values, firstly a vector clock that dominates 
-%% all of them is calculated, then incrementation for `Actor' is applied. 
-%% 
-%% This kind of update is supposed to be
-%% linealizable so the operation issuer does not need to provide the
-%% vector clock it has observed.
+%% @doc Assign `Value' to this register. The vector clock of this
+%% register will be incremented by one for the corresponding `Actor'.
+%% In case the register has multiple diverged values, firstly a vector
+%% clock that dominates all of them is calculated, then incrementation
+%% for `Actor' is applied.
+%%
+%% This kind of update is supposed to be linealizable so the operation
+%% issuer does not need to provide the vector clock it has observed.
 -spec update(mvreg_op(), term(), mvreg()) ->
                     {ok, mvreg()}.
 update({assign, Value}, Actor, MVReg) ->
-    VV = incVV(MVReg, Actor),
+    VV = inc_vv(MVReg, Actor),
     NewMVReg = [{Value, VV}],
     {ok, NewMVReg};
 
-%% @doc Assign a `Value' to the `mvreg()'
-%% associating the update with time `TS', if `TS' is larger than the current timestamp for 
-%% `Actor'.
+%% @doc Assign a `Value' to the `mvreg()' associating the update with
+%% time `TS', if `TS' is larger than the current timestamp for `Actor'.
 update({assign, Value, TS}, Actor, MVReg) ->
-    case larger_than(TS, Actor, MVReg) of 
+    case larger_than(TS, Actor, MVReg) of
         true ->
-            VV = incVV(MVReg, Actor),
+            VV = inc_vv(MVReg, Actor),
             NewMVReg = init(Value, VV),
-            update({assign, Value, TS}, Actor, NewMVReg); 
+            update({assign, Value, TS}, Actor, NewMVReg);
         false ->
             {ok, MVReg}
     end;
 
-%% @doc Propagate the `Value' of a `mvreg()' to other replicas. 
-%% The `Value' and its vector clock `TS' is the parameter. It is assumed that
-%% propagation only happens after one update is applied, therefore `Value' is a single term and 
-%% `TS' can only be one vector clock.
-%% All compatible vector clocks (being descendent of another) will be merged;
-%% non-compatible vector clocks will be kept in a list. 
-%% Corresponding values of non-compatible vector clocks will also be kept.
+%% @doc Propagate the `Value' of a `mvreg()' to other replicas.  The
+%% `Value' and its vector clock `TS' is the parameter. It is assumed
+%% that propagation only happens after one update is applied, therefore
+%% `Value' is a single term and `TS' can only be one vector clock.  All
+%% compatible vector clocks (being descendent of another) will be
+%% merged; non-compatible vector clocks will be kept in a list.
+%% Corresponding values of non-compatible vector clocks will also be
+%% kept.
 update({propagate, Value, TS}, _, MVReg ) ->
-    case if_dominate(value(timestamp, MVReg), TS) of 
+    case if_dominate(value(timestamp, MVReg), TS) of
         true ->
             {ok, MVReg};
         false ->
@@ -130,17 +127,19 @@ update({propagate, Value, TS}, _, MVReg ) ->
 update(Op, Actor, Reg, _Ctx) ->
     update(Op, Actor, Reg).
 
-%% @doc Find a least-uppder bound for all non-compatible vector clocks in MVReg 
-%% (if there is any) and then increment timestamp for `Actor' by one.
--spec incVV(mvreg(), term()) -> riak_dt_vclock:vclock().
-incVV(MVReg, Actor) ->
+%% @doc Find a least-uppder bound for all non-compatible vector clocks
+%% in MVReg (if there is any) and then increment timestamp for `Actor'
+%% by one.
+-spec inc_vv(mvreg(), term()) -> riak_dt_vclock:vclock().
+inc_vv(MVReg, Actor) ->
     TSL = [TS || {_Val, TS}<- MVReg],
     [H|T] = TSL,
     MaxVC = lists:foldl(fun(VC, Acc) -> riak_dt_vclock:merge([VC, Acc]) end, H, T),
     NewVC = riak_dt_vclock:increment(Actor, MaxVC),
     NewVC.
 
-%% @doc If `TS'(timestamp) is larger than all entries of `Actor' for the MVReg.
+%% @doc If `TS'(timestamp) is larger than all entries of `Actor' for the
+%% MVReg.
 -spec larger_than(pos_integer(), term(), mvreg()) -> boolean().
 larger_than(_TS, _Actor, []) ->
     true;
@@ -153,11 +152,10 @@ larger_than(TS, Actor, [H|T]) ->
         false
     end.
 
-
-%% @doc Merge the first `mvreg()' to the second `mvreg()'. Note that the first `mvreg()' 
-%% is local and can have multiple vector clocks, while the second one is from remote and 
-%% only has one vector clock, since before propagating its multiple VCs should have been 
-%% merged.
+%% @doc Merge the first `mvreg()' to the second `mvreg()'. Note that the
+%% first `mvreg()' is local and can have multiple vector clocks, while
+%% the second one is from remote and only has one vector clock, since
+%% before propagating its multiple VCs should have been merged.
 -spec merge_to(mvreg(), mvreg()) -> mvreg().
 merge_to([], MVReg2) ->
     MVReg2;
@@ -166,20 +164,18 @@ merge_to([H|T], MVReg2) ->
     {_, TS1} = H,
     {_, TS2} = First,
     D1 = riak_dt_vclock:dominates(TS2, TS1),
-    case D1 of 
+    case D1 of
         true ->
             merge_to(T, MVReg2);
         false ->
             merge_to(T, MVReg2++[H])
-    end;
-merge_to(_, _) ->
-    [].
+    end.
 
 %% @doc If any vector clock in the first list dominates the second vector clock.
 if_dominate([], _VC) ->
     false;
 if_dominate([H|T], VC) ->
-    case riak_dt_vclock:dominates(H, VC) of 
+    case riak_dt_vclock:dominates(H, VC) of
         true ->
             true;
         false ->
@@ -228,6 +224,11 @@ stat(value_size, MVReg) ->
     Size;
 stat(_, _) -> undefined. 
 
+-include_lib("riak_dt/include/riak_dt_tags.hrl").
+-define(DT_MVREG_TAG, 85).
+-define(TAG, ?DT_MVREG_TAG).
+-define(V1_VERS, 1).
+
 %% @doc Encode an effecient binary representation of an `mvreg()'
 %% Not working yet...
 -spec to_binary(mvreg()) -> binary().
@@ -247,12 +248,14 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 init_state() ->
     [{<<>>, []}].
 
-%% @doc Check if `new()' returns an empty string and an empty vector clock.
+%% @doc Check if `new()' returns an empty string and an empty vector
+%% clock.
 new_test() ->
     ?assertEqual(init_state(), new()).
 
-%% @doc Check if `value()' properly returns a list of value or a list of timestamp of MVReg.
-%% Checks for an empty register, a register with two values and a register with only one value.
+%% @doc Check if `value()' properly returns a list of value or a list of
+%% timestamp of MVReg.  Checks for an empty register, a register with
+%% two values and a register with only one value.
 value_test() ->
     Val1 = "the rain in spain falls mainly on the plane",
     Val2 = "there is no rain",
@@ -286,7 +289,6 @@ equal_test() ->
     %% MVReg5 has a value different from MVReg1
     ?assertNot(equal(MVReg1, MVReg5)).
 
-
 %% @doc Check if `merge_to()' works.
 merge_to_test() ->
     VC = riak_dt_vclock:fresh(),
@@ -318,8 +320,8 @@ if_dominate_test() ->
     ?assert(if_dominate(VC1, VC3)),
     VC4 = [{actor3, 1}, {actor4,1}],
     ?assertNot(if_dominate(VC1, VC4)).
-     
-% @doc Check if `update()' by assign without providing timestamp works.    
+
+% @doc Check if `update()' by assign without providing timestamp works.
 basic_assign_test() ->
     MVReg0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -353,7 +355,7 @@ update_assign_withts_test() ->
     {ok, MVReg4} = update({assign, value3, 2}, actor2, MVReg3),
     ?assertEqual([{value3, VC6}], MVReg4).
 
-%% @doc Update a MVReg with two different actors. Check if both actors are kept in the vector clock. 
+%% @doc Update a MVReg with two different actors. Check if both actors are kept in the vector clock.
 update_diff_actor_test() ->
     MVR0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -386,7 +388,7 @@ propagate_test() ->
     {ok, MVRMerge3} = update({propagate, value3, VC1}, nothing, MVRMerge2),
     ?assertEqual([value2], value(MVRMerge3)),
     ?assertEqual([VC12], value(timestamp, MVRMerge3)).
-    
+
 %% @doc Check if a diverged MVReg merges all vector clocks after being updated.
 update_assign_diverge_test() ->
     VC0 = riak_dt_vclock:fresh(),
@@ -397,14 +399,14 @@ update_assign_diverge_test() ->
     {ok, MVReg1} = update({assign, value3}, actor1, MVReg0),
     VC1_2 = riak_dt_vclock:increment(actor2, VC1),
     VC1_3 = riak_dt_vclock:increment(actor1, VC1_2),
-    %% After updating, the MVReg should only have one vector clock, having the maximum count of actors from each vector clock.
+    %% After updating, the MVReg should only have one vector clock,
+    %% having the maximum count of actors from each vector clock.
     %% Update with actor1 (existing)
     ?assert(equal([{value3, VC1_3}], MVReg1)),
     {ok, MVReg2} = update({assign, value4}, actor3, MVReg0),
     VC1_4 = riak_dt_vclock:increment(actor3, VC1_2),
-    %% Check when updated with actor3, which was not in MVReg 
+    %% Check when updated with actor3, which was not in MVReg
     ?assert(equal([{value4, VC1_4}], MVReg2)).
-    
 
 %% Do we need a merge? Anyway its functionality is very similar to propagate.
 %merge_test() ->
@@ -433,4 +435,5 @@ stat_test() ->
     ?assertEqual([{value_size, 40}], stats(MVReg1)),
     ?assertEqual(40, stat(value_size, MVReg1)),
     ?assertEqual(undefined, stat(actor_count, MVReg1)).
+
 -endif.
