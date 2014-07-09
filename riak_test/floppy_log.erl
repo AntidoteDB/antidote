@@ -15,8 +15,16 @@ confirm() ->
 
     mult_writes_one_read(N, Nodes).
 
+%% @doc mult_writes_one_read: Test that perform NumWrites increments to the key:abc.
+%%      Each increment is sent to a random node of the cluster.
+%%      Test norml behaviour of the logging layer
+%%      Perflorms a read to the first node of the cluster to check whether all the
+%%      increment operations where successfully applied.
+%%  Input:  N:  Number of nodes
+%%          Nodes: List of the nodes that belong to the built cluster.
 mult_writes_one_read(N, Nodes) ->
-    ListIds = [random:uniform(N) || _ <- lists:seq(1, 120)],
+    NumWrites = 120,
+    ListIds = [random:uniform(N) || _ <- lists:seq(1, NumWrites)],
 
     F = fun(Elem, Acc) ->
             Node = lists:nth(Elem, Nodes),

@@ -15,8 +15,15 @@ confirm() ->
 
     append_list_test(Nodes).
 
-%% @doc Tests the append_list operation of the logging vnode
-%%      by triggering read repair.
+%% @doc append_list_test: Test that check whether append_list works
+%% properly.  It creates a network partition so read_repair is
+%% triggered. Read repair uses append_list to repair the replicas With a
+%% cluster of 6 nodes, the key:key1 is replicated in N2, N3 and N4.  The
+%% network partition is intentionally created in a way that the append
+%% ops succeed without reaching all the replicas. Thus, when the cluster
+%% is healed and a read is issues. The stale replica is repaired.
+%%  Input:  Nodes:  List of the nodes of the cluster
+%%
 append_list_test(Nodes) ->
     [N1, _N2, N3, _N4, _N5, _N6] = Nodes,
     Key = key1,

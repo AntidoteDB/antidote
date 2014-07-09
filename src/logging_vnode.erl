@@ -149,12 +149,12 @@ handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->
                             Acc;
                         {error, Reason} ->
                             [{error, Reason}|Acc]
-                    end;        
+                    end;
                 {error, Reason} ->
                     [{error, Reason}|Acc]
-            end 
+            end
         end,
-    
+
     Result = lists:foldl(F, [], Ops),
     {reply, Result, State};
 
@@ -183,12 +183,13 @@ handle_command(Message, _Sender, State) ->
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
-
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
     Acc= join_logs(dict:to_list(Map), F, Acc0),
+    
     {reply, Acc, State}.
 
 handoff_starting(_TargetNode, State) ->
+    lager:info("Starting handoff"),
     {true, State}.
 
 handoff_cancelled(State) ->
@@ -200,24 +201,28 @@ handoff_finished(_TargetNode, State) ->
 handle_handoff_data(Data, #state{logs_map=Map}=State) ->
 
     {Key, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, ?N, replication),
-    lager:info("Receiving data from handoff ~w~n",[node()]),
+    Preflist = get_primaries_preflist(Key),
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
-            Response = insert_operation(Log, Key, OpId, Payload),
-            {reply, Response, State};
+            {ok, _OpId} = insert_operation(Log, Key, OpId, Payload),
+            {reply, ok, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end.
+    %{reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
 
-is_empty(State) ->
-    {true, State}.
-
+is_empty(State=#state{logs_map=Map}) ->
+    Preflists = dict:fetch_keys(Map),
+    case no_elements(Preflists, Map) of
+        true ->
+            {true, State};
+        false ->
+            {false, State}
+    end.
+    
 delete(State) ->
     {ok, State}.
 
@@ -233,6 +238,28 @@ terminate(_Reason, _State) ->
 %%====================%%
 %% Internal Functions %%
 %%====================%%
+
+%% @doc no_elements: checks whether any of the logs contains any data
+%%  Input:  Preflists: Each preflist is the represents one log
+%%          Map: the dictionary that relates the preflist with the actual log
+%%  Return: true if all logs are empty. false if at least one log contains data.
+-spec no_elements(Preflists::[[Partition::non_neg_integer()]], Map::dict()) -> boolean().
+no_elements([], _Map) ->
+    true;
+no_elements([Preflist|Rest], Map) ->
+	case dict:find(Preflist, Map) of
+		{ok, Log} ->
+            case dets:first(Log) of
+                '$end_of_table' ->
+                    no_elements(Rest, Map);
+                _ ->
+                    false
+            end; 
+		error ->
+			lager:info("Preflist to map return: no_log_for_preflist: ~w~n",[Preflist]),
+			{error, no_log_for_preflist}
+	end.
+
 %% @doc threshold_prune: returns the operations that are not onlder than the specified op_id
 %%  Assump:	The operations are retrieved in the order of insertion
 %%			If the order of insertion was Op1 -> Op2 -> Op4 -> Op3, the expected list of operations would be: [Op1, Op2, Op4, Op3]
