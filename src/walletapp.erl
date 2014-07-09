@@ -10,8 +10,12 @@
 -define(SERVER, 'floppy@127.0.0.1').
 %% @doc Initializes the application by setting a cookie.
 init(Nodename, Cookie) ->
-    net_kernel:start([Nodename, longnames]),
-    erlang:set_cookie(node(),Cookie).
+    case net_kernel:start([Nodename, longnames]) of
+	{ok, _ } -> 
+	    erlang:set_cookie(node(),Cookie);
+	 {error, reason} ->
+	    {error, reason}
+    end.
 
 %% @doc Increases the available credit for a customer.
 -spec credit(Key::term(), Amount::non_neg_integer()) -> ok | {error, string()}.  
@@ -44,7 +48,8 @@ getbalance(Key) ->
     end. 
 
 %% @doc Increases the number of available vouchers for a customer.
--spec buyvoucher(Key::term(),Voucher::term()) -> ok | {error, string()}.		  buyvoucher(Key, Voucher) ->
+-spec buyvoucher(Key::term(),Voucher::term()) -> ok | {error, string()}.		  
+buyvoucher(Key, Voucher) ->
     rpc:call(?SERVER,floppy,  append, [Key, {{add, Voucher},actor1}]).
 
 %% @doc Decreases the number of available vouchers for a customer.
