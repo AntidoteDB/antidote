@@ -11,7 +11,7 @@
 -type key() :: term().
 -type reason() :: atom().
 
-start(Args) ->    
+start(Args) ->
     [Key1, Key2] = Args,
     run([Key1,Key2]).
 
@@ -19,15 +19,15 @@ start(Args) ->
 run([Key_bal,Key_voucher])->
     io:format("Starting Wallet Client~n"),
     case walletapp:init('wallet1@127.0.0.1', floppy) of
-	true ->
-	    Result1 = testbalance(Key_bal, 10, []),
-	    io:format("~nTesting credit and debit operations: ~p ~n ", [Result1]),
-	    Result2 = testvoucher(Key_voucher,10,[]),
-	    io:format("~nTesting voucher use and buy operations: ~p ~n", [Result2]),
-	    ok;
-	{error, Reason} ->
-	    {error, Reason}
-	end.
+        true ->
+            Result1 = testbalance(Key_bal, 10, []),
+            io:format("~nTesting credit and debit operations: ~p ~n ", [Result1]),
+            Result2 = testvoucher(Key_voucher,10,[]),
+            io:format("~nTesting voucher use and buy operations: ~p ~n", [Result2]),
+            ok;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 -spec testbalance(key(), pos_integer(), [any()]) -> [any()].
 testbalance(_, 0, Result) ->
@@ -36,7 +36,7 @@ testbalance(Key, N, Result) ->
     {A1, A2, A3} = now(),
     _ = random:seed(A1, A2, A3),
     Result1 = testcredit(Key, random:uniform(100)),
-    Result2 = testdebit(Key, random:uniform(100)),    
+    Result2 = testdebit(Key, random:uniform(100)),
     timer:sleep(10),
     testbalance(Key, N-1, [Result2 | [Result1 | Result]]).
 
