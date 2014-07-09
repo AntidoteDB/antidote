@@ -61,7 +61,7 @@ usevoucher(Key, Voucher) ->
     rpc:call(?SERVER, floppy, append, [Key, {{remove, Voucher},actor1}]).
 
 %% @doc Returns the number of currently available vouchers for a customer.
--spec readvouchers(Key::term()) -> {ok, number()} | {error, reason()}.
+-spec readvouchers(Key::term()) -> {ok, list()} | {error, reason()}.
 readvouchers(Key) ->
     case rpc:call(?SERVER, floppy, read, [Key, riak_dt_orset]) of
 	{error, Reason} ->

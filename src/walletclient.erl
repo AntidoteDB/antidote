@@ -40,7 +40,7 @@ testbalance(Key, N, Result) ->
     timer:sleep(10),
     testbalance(Key, N-1, [Result2 | [Result1 | Result]]).
 
--spec testcredit(key(), pos_integer()) -> ok.
+-spec testcredit(key(), pos_integer()) -> ok | {error, reason()}.
 testcredit(Key, Amount) ->
     {ok, Balbefore} = walletapp:getbalance(Key),
     case walletapp:credit(Key, Amount) of
