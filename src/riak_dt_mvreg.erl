@@ -47,11 +47,13 @@
 -export_type([mvreg/0, mvreg_op/0]).
 
 %% TODO: make opaque
+-type actor() :: term().
+-type ts()    :: non_neg_integer().
 -type mvreg() :: [{term(), riak_dt_vclock:vclock()}].
 
--type mvreg_op() :: {assign, term(), non_neg_integer()}
+-type mvreg_op() :: {assign, term(), ts()}
                   | {assign, term()}
-                  | {propagate, term(), term()}.
+                  | {propagate, term(), ts()}.
 
 -type mv_q() :: timestamp.
 
@@ -72,13 +74,13 @@ parent_clock(_Clock, Reg) ->
 %% since there can be diverged value in this register.
 -spec value(mvreg()) -> [term()].
 value(MVReg) ->
-    [Val || {Val, _TS} <- MVReg].
+    [Val || {Val, _VC} <- MVReg].
 
 %% @doc query for this `mvreg()' of its timestamp.
 %% `timestamp' is the only query option.
--spec value(mv_q(), mvreg()) -> [term()].
+-spec value(mv_q(), mvreg()) -> [riak_dt_vclock:vclock()].
 value(timestamp, MVReg) ->
-    [TS || {_Val, TS} <- MVReg].
+    [VC || {_Val, VC} <- MVReg].
 
 %% @doc Assign `Value' to this register. The vector clock of this
 %% register will be incremented by one for the corresponding `Actor'.
@@ -88,8 +90,7 @@ value(timestamp, MVReg) ->
 %%
 %% This kind of update is supposed to be linealizable so the operation
 %% issuer does not need to provide the vector clock it has observed.
--spec update(mvreg_op(), term(), mvreg()) ->
-                    {ok, mvreg()}.
+-spec update(mvreg_op(), actor(), mvreg()) -> {ok, mvreg()}.
 update({assign, Value}, Actor, MVReg) ->
     VV = inc_vv(MVReg, Actor),
     NewMVReg = [{Value, VV}],
@@ -130,27 +131,29 @@ update(Op, Actor, Reg, _Ctx) ->
 %% @doc Find a least-uppder bound for all non-compatible vector clocks
 %% in MVReg (if there is any) and then increment timestamp for `Actor'
 %% by one.
--spec inc_vv(mvreg(), term()) -> riak_dt_vclock:vclock().
+-spec inc_vv(mvreg(), actor()) -> riak_dt_vclock:vclock().
 inc_vv(MVReg, Actor) ->
-    TSL = [TS || {_Val, TS}<- MVReg],
-    [H|T] = TSL,
+    VCL = [VC || {_Val, VC} <- MVReg],
+    [H|T] = VCL,
     MaxVC = lists:foldl(fun(VC, Acc) -> riak_dt_vclock:merge([VC, Acc]) end, H, T),
     NewVC = riak_dt_vclock:increment(Actor, MaxVC),
     NewVC.
 
 %% @doc If `TS'(timestamp) is larger than all entries of `Actor' for the
 %% MVReg.
--spec larger_than(pos_integer(), term(), mvreg()) -> boolean().
+-spec larger_than(ts(), actor(), mvreg()) -> boolean().
 larger_than(_TS, _Actor, []) ->
     true;
 larger_than(TS, Actor, [H|T]) ->
     {_Value, VC} = H,
     OldTS = riak_dt_vclock:get_counter(Actor, VC),
-    if  TS > OldTS ->
-        larger_than(TS, Actor, T);
-    true ->
-        false
+    case  TS > OldTS of
+	true ->
+	    larger_than(TS, Actor, T);
+	false ->
+	    false
     end.
+
 
 %% @doc Merge the first `mvreg()' to the second `mvreg()'. Note that the
 %% first `mvreg()' is local and can have multiple vector clocks, while
@@ -171,7 +174,8 @@ merge_to([H|T], MVReg2) ->
             merge_to(T, MVReg2++[H])
     end.
 
-%% @doc If any vector clock in the first list dominates the second vector clock.
+%% @doc If any timestamp in the first list dominates the second vector clock.
+-spec if_dominate(riak_dt_vclock:vclock(), riak_dt_vclock:vclock()) -> boolean().
 if_dominate([], _VC) ->
     false;
 if_dominate([H|T], VC) ->
@@ -204,9 +208,10 @@ eq([H1|T1], [H2|T2]) ->
     {V2, TS2} = H2,
     VEqual = V1 =:= V2,
     TSEqual = riak_dt_vclock:equal(TS1, TS2),
-    if VEqual andalso TSEqual ->
+    case VEqual andalso TSEqual of
+	true ->
             eq(T1, T2);
-        true ->
+        false ->
             false
     end;
 eq(_, _) ->
