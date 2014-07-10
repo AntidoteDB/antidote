@@ -11,7 +11,6 @@
 
 %% TODO Refine types!
 -type preflist() :: [{integer(), node()}] .
--type key() :: term().
 -type log() :: term().
 -type reason() :: term().
 
@@ -228,7 +227,7 @@ terminate(_Reason, _State) ->
 %%====================%%
 
 %% @doc no_elements: checks whether any of the logs contains any data
-%%  Input:  Preflists: Each preflist is the represents one log
+%%  Input:  LogIds: Each logId is a preflist that represents one log
 %%          Map: the dictionary that relates the preflist with the actual log
 %%  Return: true if all logs are empty. false if at least one log contains data.
 -spec no_elements(LogIds::[[Partition::non_neg_integer()]], Map::dict()) -> boolean().
@@ -248,7 +247,7 @@ no_elements([LogId|Rest], Map) ->
 			{error, no_log_for_preflist}
 	end.
 
-%% @doc threshold_prune: returns the operations that are not onlder than the specified op_id
+%% @doc threshold_prune: returns the operations that are not older than the specified op_id
 %%  Assump:	The operations are retrieved in the order of insertion
 %%			If the order of insertion was Op1 -> Op2 -> Op4 -> Op3, the expected list of operations would be: [Op1, Op2, Op4, Op3]
 %%	Input:	Operations: Operations to filter
@@ -289,7 +288,7 @@ open_logs(LogFile, [Next|Rest], Initial, Map)->
 %% @doc	get_log_from_map:	abstracts the get function of a key-value store
 %%							currently using dict
 %%		Input:	Map:	dict that representes the map
-%%				Preflist:	The key to search for.
+%%				LogId:	identifies the log.
 %%		Return:	The actual name of the log
 -spec get_log_from_map(Map::dict(), LogId::[Index::integer()]) -> {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, LogId) ->
@@ -315,11 +314,11 @@ join_logs([Element|Rest], F, Acc) ->
 
 %% @doc	insert_operation: Inserts an operation into the log only if the OpId is not already in the log
 %%		Input:	Log: The identifier log the log where the operation will be inserted
-%%				Preflist: Log identifier to which the operation belongs.
+%%				LogId: Log identifier to which the operation belongs.
 %%				OpId: Id of the operation to insert
 %%				Payload: The payload of the operation to insert
 %%		Return:	{ok, OpId} | {error, Reason}
--spec insert_operation(log(), key(), OpId::{Number::non_neg_integer(), node()}, Payload::term()) -> {ok, {Number::non_neg_integer(), node()}} | {error, reason()}.
+-spec insert_operation(log(), [Index::integer()], OpId::{Number::non_neg_integer(), node()}, Payload::term()) -> {ok, {Number::non_neg_integer(), node()}} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
@@ -339,9 +338,9 @@ insert_operation(Log, LogId, OpId, Payload) ->
 
 %% @doc get_log: Looks up for the operations logged in a particular log
 %%		Input:	Log: Table identifier of the log
-%%              Preflist: Identifier of the log
+%%              LogId: Identifier of the log
 %%		Return:	List of all the logged operations 
--spec get_log(Log::term(), LogId::[Index::integer()]) -> list() | {error, atom()}.
+-spec get_log(Log::term(), [Index::integer()]) -> list() | {error, atom()}.
 get_log(Log, LogId) ->
     dets:lookup(Log, LogId).
 
@@ -356,16 +355,16 @@ preflist_member(Partition,Preflist) ->
 -ifdef(TEST).
 
 %% @doc Testing threshold_prune works as expected
-%thresholdprune_test() ->
-%    Operations = [#operation{op_number=op1},#operation{op_number=op2},#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],
-%    Filtered = threshold_prune(Operations,op3),
-%    ?assertEqual([#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],Filtered).
+thresholdprune_test() ->
+    Operations = [{log1, #operation{op_number=op1}},{log1,#operation{op_number=op2}},{log1,#operation{op_number=op3}},{log1,#operation{op_number=op4}},{log1,#operation{op_number=op5}}],
+    Filtered = threshold_prune(Operations,op3),
+    ?assertEqual([{log1,#operation{op_number=op3}},{log1,#operation{op_number=op4}},{log1,#operation{op_number=op5}}],Filtered).
 
 %% @doc Testing threshold_prune works even when there is no matching op_id
-%thresholdprune_notmatching_test() ->
-%    Operations = [#operation{op_number=op1},#operation{op_number=op2},#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],
-%    Filtered = threshold_prune(Operations,op6),
-%    ?assertEqual([],Filtered).
+thresholdprune_notmatching_test() ->
+    Operations = [{log1, #operation{op_number=op1}},{log1,#operation{op_number=op2}},{log1,#operation{op_number=op3}},{log1,#operation{op_number=op4}},{log1,#operation{op_number=op5}}],
+    Filtered = threshold_prune(Operations,op6),
+    ?assertEqual([],Filtered).
 
 %% @doc Testing get_log_from_map works in both situations, when the key is in the map and when the key is not in the map
 get_log_from_map_test() ->
