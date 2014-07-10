@@ -39,7 +39,7 @@ get_logid_from_key(Key) ->
 %%      only primaries no matter down or up
 %%      Input:  A log id
 %%      Return: The primaries preflist
--spec   get_preflist_from_logid(logid()) -> preflist().  
+-spec get_preflist_from_logid(logid()) -> preflist().  
 get_preflist_from_logid(LogId) ->
     Partition = hd(LogId),
     HashedKey = get_hashedkey_from_partition(Partition),
@@ -50,7 +50,7 @@ get_preflist_from_logid(LogId) ->
 %%      Input:  LogId: A log id
 %%              Service: The service in the riak_core application
 %%      Return: The active primaries preflist
--spec   get_apl_from_logid(logid(), atom()) -> preflist().  
+-spec get_apl_from_logid(logid(), atom()) -> preflist().  
 get_apl_from_logid(LogId, Service) ->
     Partition = hd(LogId),
     HashedKey = get_hashedkey_from_partition(Partition),
@@ -64,7 +64,7 @@ get_apl_from_logid(LogId, Service) ->
 %%      used
 %%      Input:  A partition index
 %%      Return: An index that can be used as hashed key for retrieving the preflist
--spec get_hashedkey_from_partition(partition()) -> integer().
+-spec get_hashedkey_from_partition(partition()) -> number().
 get_hashedkey_from_partition(Partition) ->
     case Partition of
         0 ->
