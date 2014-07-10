@@ -35,26 +35,9 @@
          terminate/2]).
 
 -export([
-         increment/3,
-         decrement/3,
-         get_counter/2
+         store_crdt/2,
+         get_crdt/3
         ]).
-
-% Client interface... must abstract the different data-type operations
-
-increment(Key,Amount,Pid) ->
-    Req = #fpbincrementreq{key=Key, amount=Amount},
-    call_infinity(Pid, {req, Req, ?TIMEOUT}).
-
-decrement(Key,Amount,Pid) ->
-    Req = #fpbdecrementreq{key=Key, amount=Amount},
-    call_infinity(Pid, {req, Req, ?TIMEOUT}).
-
-get_counter(Key,Pid) ->
-    Req = #fpbgetcounterreq{key=Key},
-    call_infinity(Pid, {req, Req, ?TIMEOUT}).
-
-%% Callback functions
 
 %% @private
 init([Address, Port, _Options]) ->
@@ -200,5 +183,23 @@ cancel_req_timer(undefined) ->
 cancel_req_timer(Tref) ->
     _ = erlang:cancel_timer(Tref),
     ok.
+
+%Stores a client-side crdt to the storage by converting the object state to a
+%list of oeprations that will be appended to the log.
+store_crdt(Obj, Pid) ->
+    Mod = floppyc_datatype:module_for_term(Obj),
+    Ops = Mod:to_ops(Obj),
+    lists:foreach(fun(Op) ->
+                          ok = call_infinity(Pid, {req, Op, ?TIMEOUT})
+                  end, Ops).
+
+%Reads an object from the storage and returns a client-side 
+%representation of the CRDT.
+get_crdt(Key, Type, Pid) ->
+    Mod = floppyc_datatype:module_for_type(Type),
+    Op = Mod:value_op(Key),
+    {ok, Value} = call_infinity(Pid, {req, Op, ?TIMEOUT}),
+    Mod:new(Key,Value).
+
 
 
