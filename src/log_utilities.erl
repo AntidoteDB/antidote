@@ -76,7 +76,7 @@ get_hashedkey_from_partition(Partition) ->
 %% @doc get_primaries_preflist returns the preflist with the primary vnodes. No matter they are up or down.
 %%      Input:  A hashed key
 %%      Return: The primaries preflist
--spec get_primaries_preflist(term()) -> preflist().
+-spec get_primaries_preflist(integer()) -> preflist().
 get_primaries_preflist(HashedKey)->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     Itr = chashbin:iterator(HashedKey, CHBin),
