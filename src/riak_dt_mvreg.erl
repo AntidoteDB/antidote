@@ -201,6 +201,9 @@ merge(MVReg1, _MVReg2) ->
 equal(MVReg1, MVReg2) ->
     eq(lists:sort(MVReg1), lists:sort(MVReg2)).
 
+%% @doc Helper function for `equal/2'. It receives two sorted `mvreg()' as parameters and can do
+%% comparison directly without concerning about disorder. This is difficult to handle direclty by
+%% `equal/2' without adding extra parameter, thus `eq\2' is used.
 eq([], []) ->
     true;
 eq([H1|T1], [H2|T2]) ->
@@ -209,7 +212,7 @@ eq([H1|T1], [H2|T2]) ->
     VEqual = V1 =:= V2,
     TSEqual = riak_dt_vclock:equal(TS1, TS2),
     case VEqual andalso TSEqual of
-	true ->
+	    true ->
             eq(T1, T2);
         false ->
             false
@@ -217,6 +220,7 @@ eq([H1|T1], [H2|T2]) ->
 eq(_, _) ->
     false.
 
+%% @doc Return statistics of an `mvreg()'. Currently only `value_size' is returned.
 -spec stats(mvreg()) -> [{atom(), non_neg_integer()}].
 stats(MVReg) ->
     [{value_size, stat(value_size, MVReg)}].
