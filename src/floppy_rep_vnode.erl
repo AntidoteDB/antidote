@@ -105,7 +105,7 @@ handle_command({operate, ToReply, Type, LogId, Payload}, _Sender, #state{partiti
     end,
     {NewClock,_} = OpId,
     lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
-    floppy_rep_sup:start_fsm([ToReply, Type, LogId, Payload, OpId]),
+    {ok, _} = floppy_rep_sup:start_fsm([ToReply, Type, LogId, Payload, OpId]),
     {noreply, #state{lclock=NewClock, partition= Partition}};
 
 handle_command(Message, _Sender, State) ->
