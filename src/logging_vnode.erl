@@ -87,8 +87,8 @@ init([Partition]) ->
     end.
 
 %% @doc Read command: Returns the operations logged for Key
-%%	Input: Key of the object to read
-%%	Output: {vnode_id, Operations} | {error, Reason}
+%%	Input: The id of the log to be read
+%%	Output: {ok, {vnode_id, Operations}} | {error, Reason}
 handle_command({read, LogId}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, LogId) of
         {ok, Log} ->
@@ -106,7 +106,7 @@ handle_command({read, LogId}, _Sender, #state{partition=Partition, logs_map=Map}
 
 %% @doc Threshold read command: Returns the operations logged for Key from a specified op_id-based threshold
 %%	Input:  From: the oldest op_id to return
-%%          Preflist: Identifies the log to be read
+%%          LogId: Identifies the log to be read
 %%	Output: {vnode_id, Operations} | {error, Reason}
 handle_command({threshold_read, LogId, From}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, LogId) of
@@ -125,7 +125,8 @@ handle_command({threshold_read, LogId, From}, _Sender, #state{partition=Partitio
     end;
 
 %% @doc Repair command: Appends the Ops to the Log
-%%	Input: Ops: Operations to append
+%%  Input:  LogId: Indetifies which log the operations have to be appended to.
+%%	        Ops: Operations to append
 %%	Output: ok | {error, Reason}
 handle_command({append_list, LogId, Ops}, _Sender, #state{logs_map=Map}=State) ->	
 
@@ -148,10 +149,10 @@ handle_command({append_list, LogId, Ops}, _Sender, #state{logs_map=Map}=State) -
     
 
 %% @doc Append command: Appends a new op to the Log of Key
-%%	Input:	Key of the object
-%%		Payload of the operation
-%%		OpId: Unique operation id	      	
-%%	Output: {ok, op_id} | {error, Reason}
+%%	Input:	LogId: Indetifies which log the operation has to be appended to. 
+%%		    Payload of the operation
+%%		    OpId: Unique operation id	      	
+%%	Output: {ok, {vnode_id, op_id}} | {error, Reason}
 handle_command({append, LogId, OpId, Payload}, _Sender,
                #state{logs_map=Map, partition = Partition}=State) ->
     case get_log_from_map(Map, LogId) of
@@ -197,7 +198,6 @@ handle_handoff_data(Data, #state{logs_map=Map}=State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end.
-    %{reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
