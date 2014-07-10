@@ -14,7 +14,7 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([prepare/2, execute/2, waiting/2, finishOp/3]).
+-export([prepare/2, execute/2, waiting/2, finish_op/3]).
 
 
 -record(state, {
@@ -35,7 +35,7 @@ start_link(From, Op, Key, Param) ->
 %    lager:info('The worker is about to start~n'),
 %    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
 
-finishOp(From, Result, Message) ->
+finish_op(From, Result, Message) ->
    gen_fsm:send_event(From, {Result, Message}).
 %%%===================================================================
 %%% States
@@ -80,7 +80,7 @@ execute(timeout, SD0=#state{
 	        %% Will timeout if the vnode does not respond within COORD_TIMEOUT
 	        lager:info("Coord: Forward to node~w~n",[H]),
 	        {IndexNode, _} = H,
-	        floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
+	        floppy_rep_vnode:handle_op(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
             {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end.
@@ -101,7 +101,7 @@ waiting(timeout, SD0=#state{op=Op,
 	    [H|T] ->
 	        lager:info("Coord: Forward to node:~w~n",[H]),
 	        {IndexNode, _} = H,
-	        floppy_rep_vnode:handleOp(IndexNode, self(), Op, Key, Param), 
+	        floppy_rep_vnode:handle_op(IndexNode, self(), Op, Key, Param), 
             SD1 = SD0#state{preflist=T},
             {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end;

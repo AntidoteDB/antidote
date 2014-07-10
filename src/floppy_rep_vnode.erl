@@ -25,7 +25,7 @@
 -export([
 	append/2,
 	read/2,
-	handleOp/5
+	handle_op/5
         ]).
 
 %%------------------------
@@ -82,10 +82,10 @@ read(Key, Type) ->
 	        {error, timeout}
     end.
 
-%% @doc Function: handleOp/5
+%% @doc Function: handle_op/5
 %% Purpose: Handles `read' or `append' operations. Tne vnode must be in the replication group
 %% of the corresponding key. 
-handleOp(Preflist, ToReply, Op, Key, Param) ->
+handle_op(Preflist, ToReply, Op, Key, Param) ->
    riak_core_vnode_master:command(Preflist,
                                    {operate, ToReply, Op, Key, Param},
                                    ?REPMASTER).
