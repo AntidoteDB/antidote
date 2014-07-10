@@ -190,9 +190,9 @@ if_dominate([H|T], VC) ->
 %% @doc Merge two `mvreg()'s to a single `mvreg()'. This is the Least Upper Bound
 %% function described in the literature.
 %% !!! Not implemented !!! Propagate is basically doing merging. 
--spec merge(mvreg(), mvreg()) -> mvreg().
-merge(MVReg1, _MVReg2) ->
-    MVReg1.
+-spec merge(mvreg(), mvreg()) -> {error, term()}.
+merge(_MVReg1, _MVReg2) ->
+    {error, not_implemented}.
 
 %% @doc Are two `mvreg()'s structurally equal? This is not `value/1' equality.
 %% Two registers might represent the value `armchair', and not be `equal/2'. Equality here is
@@ -203,7 +203,7 @@ equal(MVReg1, MVReg2) ->
 
 %% @doc Helper function for `equal/2'. It receives two sorted `mvreg()' as parameters and can do
 %% comparison directly without concerning about disorder. This is difficult to handle direclty by
-%% `equal/2' without adding extra parameter, thus `eq\2' is used.
+%% `equal/2' without adding extra parameter, thus `eq/2' is used.
 eq([], []) ->
     true;
 eq([H1|T1], [H2|T2]) ->
@@ -262,7 +262,7 @@ init_state() ->
 new_test() ->
     ?assertEqual(init_state(), new()).
 
-%% @doc Check if `value()' properly returns a list of value or a list of
+%% @doc Check if `value/1' properly returns a list of value or a list of
 %% timestamp of MVReg.  Checks for an empty register, a register with
 %% two values and a register with only one value.
 value_test() ->
@@ -280,7 +280,7 @@ value_test() ->
     ?assertEqual([Val1], value(MVReg2)),
     ?assertEqual([VC1], value(timestamp, MVReg2)).
 
-%% @doc Check if `equal()' works.
+%% @doc Check if `equal/2' works.
 equal_test() ->
     %% Test equal for empty MVReg
     ?assert(equal(init_state(), new())),
@@ -298,7 +298,7 @@ equal_test() ->
     %% MVReg5 has a value different from MVReg1
     ?assertNot(equal(MVReg1, MVReg5)).
 
-%% @doc Check if `merge_to()' works.
+%% @doc Check if `merge_to/2' works.
 merge_to_test() ->
     VC = riak_dt_vclock:fresh(),
     VC0 = riak_dt_vclock:increment(actor0, VC),
@@ -320,7 +320,7 @@ merge_to_test() ->
     Result3 = merge_to(MVReg1, MVReg4),
     ?assert(equal(Result3,  [{value1, [{actor1, 2}, {actor2, 1}]}, {value5, [{actor4, 2}]}])).
 
-% @doc Check if `if_dominate()' works.
+% @doc Check if `if_dominate/2' works.
 if_dominate_test() ->
     VC1 = [[{actor1, 2}, {actor2, 3}, {actor3,2}], [{actor1,3}, {actor2,1}, {actor4,2}]],
     VC2 = [{actor1, 1}],
@@ -330,7 +330,7 @@ if_dominate_test() ->
     VC4 = [{actor3, 1}, {actor4,1}],
     ?assertNot(if_dominate(VC1, VC4)).
 
-% @doc Check if `update()' by assign without providing timestamp works.
+% @doc Check if `update/3' by assign without providing timestamp works.
 basic_assign_test() ->
     MVReg0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -341,7 +341,7 @@ basic_assign_test() ->
     {ok, MVReg2} = update({assign, value1}, actor0, MVReg1),
     ?assertEqual([{value1, VC2}], MVReg2).
 
-%% @doc Check if `update()' by assign with timestamp works.
+%% @doc Check if `update/3' by assign with timestamp works.
 update_assign_withts_test() ->
     MVReg0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -377,7 +377,7 @@ update_diff_actor_test() ->
     ?assertEqual([value2], Value),
     ?assertEqual([VC2], TS).
 
-%% @doc Check if `update()' with propagate works.
+%% @doc Check if `update/3' with propagate works.
 propagate_test() ->
     MVReg1_0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -425,7 +425,7 @@ update_assign_diverge_test() ->
 %    ?assertEqual({new_value, 4}, merge(MVReg1, MVReg2)),
 %    ?assertEqual({new_value, 4}, merge(MVReg2, MVReg1)).
 
-%% @doc Check if serialization (`to_binary()', `from_binary()') works.
+%% @doc Check if serialization (`to_binary/1', `from_binary/1') works.
 roundtrip_bin_test() ->
     MVReg = new(),
     {ok, MVReg1} = update({assign, 2}, a1, MVReg),
