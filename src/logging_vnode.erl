@@ -138,19 +138,18 @@ handle_command({append_list, LogId, Ops}, _Sender, #state{logs_map=Map}=State) -
                             Acc;
                         {error, Reason} ->
                             [{error, Reason}|Acc]
-                    end       
+                    end
                 end,
-            list:foldl(F, [], Ops);
+            lists:foldl(F, [], Ops);
         {error, Reason} ->
             {error, Reason}
     end,
     {reply, Result, State};
-    
 
 %% @doc Append command: Appends a new op to the Log of Key
 %%	Input:	LogId: Indetifies which log the operation has to be appended to. 
 %%		    Payload of the operation
-%%		    OpId: Unique operation id	      	
+%%		    OpId: Unique operation id
 %%	Output: {ok, {vnode_id, op_id}} | {error, Reason}
 handle_command({append, LogId, OpId, Payload}, _Sender,
                #state{logs_map=Map, partition = Partition}=State) ->
