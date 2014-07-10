@@ -9,6 +9,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+%% TODO Refine types!
+-type preflist() :: [{integer(), node()}] .
+-type key() :: term().
+-type log() :: term().
+-type reason() :: term().
+
 %% API
 -export([start_vnode/1,
          dread/2,
@@ -57,6 +63,7 @@ append_list(Node, Log, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {append_list, Log, Ops},
                                         ?LOGGINGMASTER).
+
 %% @doc Opens the persistent copy of the Log.
 %%	The name of the Log in disk is a combination of the the word `log' and
 %%	the partition identifier.
@@ -265,7 +272,7 @@ threshold_prune([Next|Rest], From) ->
 %%			Initial: Initial log identifier. Non negative integer. Consecutive ids for the logs. 
 %%			Map: The ongoing map of preflist->log. dict() type.
 %%	Return:	LogsMap: Maps the  preflist and actual name of the log in the system. dict() type.
--spec open_logs(LogFile::string(), Preflists::[{Index :: integer(), Node :: term()}], N::non_neg_integer(), Map::dict()) -> LogsMap::dict().
+-spec open_logs(LogFile::string(), [preflist()], N::non_neg_integer(), Map::dict()) -> LogsMap::dict() | {error,reason()}.
 open_logs(_LogFile, [], _Initial, Map) -> Map;
 open_logs(LogFile, [Next|Rest], Initial, Map)->
     LogId = string:concat(LogFile, integer_to_list(Initial)),
@@ -299,7 +306,7 @@ get_log_from_map(Map, LogId) ->
 %%				F: Function to apply when floding the log (dets)
 %%				Acc: Folded data
 %%		Return: Folded data of all the logs.
--spec join_logs(Map::[{[{Index::integer(), Node::term()}], Log::term()}], F::fun(), Acc::term()) -> term().
+-spec join_logs(Map::[{preflist(), log()}], F::fun(), Acc::term()) -> term().
 join_logs([], _F, Acc) -> Acc;
 join_logs([Element|Rest], F, Acc) ->
     {_Preflist, Log} = Element,
@@ -312,7 +319,7 @@ join_logs([Element|Rest], F, Acc) ->
 %%				OpId: Id of the operation to insert
 %%				Payload: The payload of the operation to insert
 %%		Return:	{ok, OpId} | {error, Reason}
--spec insert_operation(Log::term(), Key::term(), OpId::{Number::non_neg_integer(), Node::term()}, Payload::term()) -> {ok, {Number::non_neg_integer(), Node::term()}} | {error, term()}.
+-spec insert_operation(log(), key(), OpId::{Number::non_neg_integer(), node()}, Payload::term()) -> {ok, {Number::non_neg_integer(), node()}} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
@@ -334,24 +341,17 @@ insert_operation(Log, LogId, OpId, Payload) ->
 %%		Input:	Log: Table identifier of the log
 %%              Preflist: Identifier of the log
 %%		Return:	List of all the logged operations 
--spec get_log(Log::term(), LogId::[Index::integer()]) -> list().
+-spec get_log(Log::term(), LogId::[Index::integer()]) -> list() | {error, atom()}.
 get_log(Log, LogId) ->
     dets:lookup(Log, LogId).
 
 %% @doc preflist_member: Returns true if the Partition identifier is part of the Preflist
-%%      Input:  Partition: The partidion identifier to check
+%%      Input:  Partition: The partition identifier to check
 %%              Preflist: A list of pairs {Partition, Node}
 %%      Return: true | false
--spec preflist_member(Partition::non_neg_integer(), Preflist::[{Index::integer(), Node::term()}]) -> true | false.
-preflist_member(_Partition,[]) -> false;
-preflist_member(Partition,[Next|Rest]) ->
-    {PartitionB, _} = Next,
-    case PartitionB==Partition of
-        true ->
-            true;
-        false ->
-            preflist_member(Partition, Rest)
-    end.    
+-spec preflist_member(partition(), preflist()) -> boolean().
+preflist_member(Partition,Preflist) ->
+    lists:any(fun({P,_}) -> P == Partition end, Preflist).
 
 -ifdef(TEST).
 
