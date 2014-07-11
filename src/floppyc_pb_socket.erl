@@ -189,9 +189,13 @@ cancel_req_timer(Tref) ->
 store_crdt(Obj, Pid) ->
     Mod = floppyc_datatype:module_for_term(Obj),
     Ops = Mod:to_ops(Obj),
-    lists:foreach(fun(Op) ->
-                          ok = call_infinity(Pid, {req, Op, ?TIMEOUT})
-                  end, Ops).
+    case Ops of
+        undefined -> ok;
+        Ops -> 
+            lists:foreach(fun(Op) ->
+                                  ok = call_infinity(Pid, {req, Op, ?TIMEOUT})
+                          end, Ops)
+    end.
 
 %Reads an object from the storage and returns a client-side 
 %representation of the CRDT.
