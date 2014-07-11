@@ -1,4 +1,4 @@
--module(floppy_pb_dummy).
+-module(floppy_pb_counter).
 
 -ifdef(TEST).
 -compile([export_all]).
