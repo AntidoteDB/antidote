@@ -22,7 +22,7 @@
                 op :: atom(),
                 key,
                 param = undefined :: term() | undefined,
-                preflist :: riak_core_apl:preflist()}).
+                preflist :: riak_core_apl:preflist_ann()}).
 
 %%%===================================================================
 %%% API
