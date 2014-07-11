@@ -117,13 +117,7 @@ update({assign, Value, TS}, Actor, MVReg) ->
 %% Corresponding values of non-compatible vector clocks will also be
 %% kept.
 update({propagate, Value, TS}, _, MVReg ) ->
-    case if_dominate(value(timestamp, MVReg), TS) of
-        true ->
-            {ok, MVReg};
-        false ->
-            NewMVReg = merge_to(MVReg, init(Value, TS)),
-            {ok, NewMVReg}
-    end.
+    {ok, merge(MVReg, init(Value, TS))}.
 
 update(Op, Actor, Reg, _Ctx) ->
     update(Op, Actor, Reg).
@@ -154,45 +148,41 @@ larger_than(TS, Actor, [H|T]) ->
 	    false
     end.
 
-
-%% @doc Merge the first `mvreg()' to the second `mvreg()'. Note that the
-%% first `mvreg()' is local and can have multiple vector clocks, while
-%% the second one is from remote and only has one vector clock, since
-%% before propagating its multiple VCs should have been merged.
--spec merge_to(mvreg(), mvreg()) -> mvreg().
-merge_to([], MVReg2) ->
-    MVReg2;
-merge_to([H|T], MVReg2) ->
-    First = hd(MVReg2),
-    {_, TS1} = H,
-    {_, TS2} = First,
-    D1 = riak_dt_vclock:dominates(TS2, TS1),
-    case D1 of
-        true ->
-            merge_to(T, MVReg2);
-        false ->
-            merge_to(T, MVReg2++[H])
-    end.
-
-%% @doc If any timestamp in the first list dominates the second vector clock.
--spec if_dominate(riak_dt_vclock:vclock(), riak_dt_vclock:vclock()) -> boolean().
-if_dominate([], _VC) ->
+%% @doc If any timestamp in the first list descends the second vector clock.
+-spec if_descends([riak_dt_vclock:vclock()], riak_dt_vclock:vclock()) -> boolean().
+if_descends([], _VC) ->
     false;
-if_dominate([H|T], VC) ->
-    case riak_dt_vclock:dominates(H, VC) of
+if_descends([H|T], VC) ->
+    case riak_dt_vclock:descends(H, VC) of
         true ->
             true;
         false ->
-            if_dominate(T, VC)
+            if_descends(T, VC)
     end.
 
 
 %% @doc Merge two `mvreg()'s to a single `mvreg()'. This is the Least Upper Bound
 %% function described in the literature.
-%% !!! Not implemented !!! Propagate is basically doing merging. 
--spec merge(mvreg(), mvreg()) -> {error, term()}.
-merge(_MVReg1, _MVReg2) ->
-    {error, not_implemented}.
+-spec merge(mvreg(), mvreg()) -> mvreg().
+merge(MVReg1, MVReg2) ->
+    merge(MVReg1, MVReg2, []).
+
+%% @doc Helper function of `merge/2'. It removes value entries that are descendes of
+%% any other. Remainder are value entries whose vector clock is neither descendent of 
+%% any other entry nor being ascendent of any other.
+merge([], MVReg2, Remainder) ->
+    MVReg2++Remainder;
+merge(MVReg1, [], Remainder) ->
+    MVReg1++Remainder;
+merge(MVReg1, MVReg2, Remainder) ->
+    {_, HVC} = hd(MVReg2),
+    case if_descends(value(timestamp, MVReg1), HVC) of
+        true ->
+            merge(MVReg1, tl(MVReg2), Remainder);
+        false ->
+            NewMVReg1 = lists:filter(fun({_, ElemVC}) -> riak_dt_vclock:descends(HVC, ElemVC) == false end, MVReg1),
+            merge(NewMVReg1, tl(MVReg2), Remainder++[hd(MVReg2)])
+    end.
 
 %% @doc Are two `mvreg()'s structurally equal? This is not `value/1' equality.
 %% Two registers might represent the value `armchair', and not be `equal/2'. Equality here is
@@ -298,37 +288,38 @@ equal_test() ->
     %% MVReg5 has a value different from MVReg1
     ?assertNot(equal(MVReg1, MVReg5)).
 
-%% @doc Check if `merge_to/2' works.
-merge_to_test() ->
-    VC = riak_dt_vclock:fresh(),
-    VC0 = riak_dt_vclock:increment(actor0, VC),
-    VC1 = riak_dt_vclock:increment(actor1, VC),
-    %% Basic merge: merge two MVRegs that are not dominating any of them 
-    MVReg = merge_to([{value0, VC0}], [{value1, VC1}]),
-    ?assert(equal(lists:sort([{value1, VC1}, {value0, VC0}]), lists:sort(MVReg))),
-    MVReg1 = [{value1, [{actor1, 2}, {actor2, 1}]}, {value2, [{actor4, 1}]}],
-    MVReg2 = [{value3, [{actor1, 2}, {actor2, 1}, {actor4, 2}]}],
-    %% Merge one to another MVReg that totally dominates it
-    Result1 = merge_to(MVReg1, MVReg2),
-    ?assert(equal(Result1, MVReg2)),
-    %% Merge one to another that does not dominate it
-    MVReg3 = [{value4, [{actor1, 1}, {actor2, 1}]}],
-    Result2 = merge_to(MVReg1, MVReg3),
-    ?assert(equal(Result2,  [{value1, [{actor1, 2}, {actor2, 1}]}, {value2, [{actor4, 1}]}, {value4, [{actor1, 1}, {actor2, 1}]}])),
-    %% Merge one to another that dominates part of the left one
-    MVReg4 = [{value5, [{actor4, 2}]}],
-    Result3 = merge_to(MVReg1, MVReg4),
-    ?assert(equal(Result3,  [{value1, [{actor1, 2}, {actor2, 1}]}, {value5, [{actor4, 2}]}])).
+% @doc Check if `merge/2' works.
+merge_test() ->
+    MVReg1 = [{value1, [{actor1, 2}, {actor2, 1}]}, {value2, [{actor3, 2}, {actor4, 1}]}],
+    MVReg2 = [{value2, [{actor3, 2}, {actor4, 1}]}, {value1, [{actor1, 2}, {actor2, 1}]}],
+    MergedMVReg1 = merge(MVReg1, MVReg2),
+    %% Merge two MVRegs that are same should not change anything
+    ?assert(equal(MVReg1, MergedMVReg1)),
+    MVReg3 = [{value1, [{actor1, 2}, {actor2, 1}]}],
+    MVReg4 = [{value2, [{actor3, 2}, {actor4, 1}]}],
+    MergedMVReg2 = merge(MVReg3, MVReg4),
+    %% Merge two disjoint MVRegs should work
+    ?assert(equal(MVReg1, MergedMVReg2)),
+    MVReg5 = [{value1, [{actor1, 3}, {actor2, 1}]}, {value2, [{actor1, 2}, {actor2, 3}]}],
+    MVReg6 = [{value3, [{actor1, 1}, {actor2, 3}]}, {value4, [{actor1, 3}, {actor2, 2}]}],
+    MergedMVReg3 = merge(MVReg5, MVReg6),
+    %% Merge two MVRegs that have overlapping
+    ?assert(equal([{value2, [{actor1, 2}, {actor2, 3}]}, {value4, [{actor1, 3}, {actor2, 2}]}], MergedMVReg3)),
+    MVReg7 = [{value3, [{actor1, 3}, {actor2, 3}]}],
+    MergedMVReg4 = merge(MVReg5, MVReg7),
+    %% Merge two MVRegs that one dominates the other 
+    ?assert(equal(MVReg7, MergedMVReg4)).
+
 
 % @doc Check if `if_dominate/2' works.
-if_dominate_test() ->
+if_descends_test() ->
     VC1 = [[{actor1, 2}, {actor2, 3}, {actor3,2}], [{actor1,3}, {actor2,1}, {actor4,2}]],
     VC2 = [{actor1, 1}],
-    ?assert(if_dominate(VC1, VC2)),
+    ?assert(if_descends(VC1, VC2)),
     VC3 = [{actor1, 2}, {actor3,1}],
-    ?assert(if_dominate(VC1, VC3)),
+    ?assert(if_descends(VC1, VC3)),
     VC4 = [{actor3, 1}, {actor4,1}],
-    ?assertNot(if_dominate(VC1, VC4)).
+    ?assertNot(if_descends(VC1, VC4)).
 
 % @doc Check if `update/3' by assign without providing timestamp works.
 basic_assign_test() ->
