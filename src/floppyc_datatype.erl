@@ -32,12 +32,11 @@
 -callback dirty_value(datatype()) -> term().
 
 %% Returns the message to get an object of the type of this container.
--callback value_op(binary()) -> term().
+-callback message_for_get(binary()) -> term().
 
-%% Extracts an operation from the container that can be encoded
-%% into an update request. 'undefined' should be returned if the type
-%% is unmodified. This should be passed to
-%% riakc_pb_socket:update_type() to submit modifications.
+
+%% Extracts the list of operations to be append to the object's log.
+%% 'undefined' should be returned if the type is unmodified.
 -callback to_ops(datatype()) -> update().
 
 %% Determines whether the given term is the type managed by the

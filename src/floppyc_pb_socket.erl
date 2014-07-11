@@ -197,7 +197,7 @@ store_crdt(Obj, Pid) ->
 %representation of the CRDT.
 get_crdt(Key, Type, Pid) ->
     Mod = floppyc_datatype:module_for_type(Type),
-    Op = Mod:value_op(Key),
+    Op = Mod:message_for_get(Key),
     {ok, Value} = call_infinity(Pid, {req, Op, ?TIMEOUT}),
     Mod:new(Key,Value).
 
