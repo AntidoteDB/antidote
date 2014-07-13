@@ -56,7 +56,7 @@ decrement(Counter) ->
 %% @doc Decrements the counter by the passed amount.
 -spec decrement(integer(), counter()) -> counter().
 decrement(Amount, #counter{increment=Value}=Counter) ->
-   Counter#counter{increment=Value-Amount}.
+    Counter#counter{increment=Value-Amount}.
 
 %% @doc Determines whether the passed term is a counter container.
 -spec is_type(term()) -> boolean().

@@ -143,7 +143,8 @@ connect(State) when State#state.sock =:= undefined ->
 %% @private
 new_request(Msg, From, Timeout) ->
     Ref = make_ref(),
-    #request{ref = Ref, msg = Msg, from = From, timeout = Timeout, tref = create_req_timer(Timeout, Ref)}.
+    #request{ref = Ref, msg = Msg, from = From, timeout = Timeout, 
+             tref = create_req_timer(Timeout, Ref)}.
 
 %% @private
 %% Create a request timer if desired, otherwise return undefined.
@@ -192,6 +193,7 @@ cancel_req_timer(Tref) ->
 
 %Stores a client-side crdt to the storage by converting the object state to a
 %list of oeprations that will be appended to the log.
+%% @todo: propagate only one operation with the list of updates to ensure atomicity.
 store_crdt(Obj, Pid) ->
     Mod = floppyc_datatype:module_for_term(Obj),
     Ops = Mod:to_ops(Obj),
@@ -199,12 +201,12 @@ store_crdt(Obj, Pid) ->
         undefined -> ok;
         Ops -> 
             lists:foldl(fun(Op,Success) ->
-                                  Result = call_infinity(Pid, {req, Op, ?TIMEOUT}),
-                                  case Result of
-                                      ok -> Success;
-                                      Other -> Other
-                                  end
-                          end, ok, Ops)
+                                Result = call_infinity(Pid, {req, Op, ?TIMEOUT}),
+                                case Result of
+                                    ok -> Success;
+                                    Other -> Other
+                                end
+                        end, ok, Ops)
     end.
 
 %Reads an object from the storage and returns a client-side 
