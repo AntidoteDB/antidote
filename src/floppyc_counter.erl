@@ -70,7 +70,7 @@ type() -> counter.
 to_ops(#counter{key=_Key, increment=0}) -> undefined;
 
 to_ops(#counter{key=Key, increment=Amount}) when Amount < 0 ->
-    [#fpbdecrementreq{key=Key, amount=Amount}];
+    [#fpbdecrementreq{key=Key, amount=-Amount}];
 
 to_ops(#counter{key=Key, increment=Amount}) ->
     [#fpbincrementreq{key=Key, amount=Amount}].

@@ -87,7 +87,7 @@ handle_call({req, Msg, Timeout}, From, State) ->
 
 %% @private
 %% @todo handle timeout
-handle_info({_Proto, Sock, Data}, State=#state{active = Active}) ->
+handle_info({_Proto, Sock, Data}, State=#state{active = (Active = #request{})}) ->
     <<MsgCode:8, MsgData/binary>> = Data,
     Resp = riak_pb_codec:decode(MsgCode, MsgData),
     NewState = case Resp of
@@ -107,8 +107,14 @@ handle_info({_Proto, Sock, Data}, State=#state{active = Active}) ->
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, NewState};
 
-handle_info(_Msg, State) ->
-    State.
+handle_info({req_timeout, _Ref}, State=#state{active = Active}) ->
+    cancel_req_timer(Active#request.tref),
+    _ = send_caller({error, timeout}, Active),
+    {noreply, State#state{ active = undefined }};
+
+handle_info({_Proto, Sock, _Data}, State) ->
+    ok = inet:setopts(Sock, [{active, once}]),
+    {noreply, State}.
 
 %% @private
 handle_cast(_Msg, State) ->
@@ -156,7 +162,7 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
         ok ->
             maybe_reply({noreply,State#state{active = Request}});
         {error, Reason} ->
-            error_logger:warning_msg("Socket error while sending riakc request: ~p.", [Reason]),
+            lagger:warning("Socket error while sending riakc request: ~p.", [Reason]),
             gen_tcp:close(State#state.sock)
     end.
 
@@ -192,9 +198,13 @@ store_crdt(Obj, Pid) ->
     case Ops of
         undefined -> ok;
         Ops -> 
-            lists:foreach(fun(Op) ->
-                                  ok = call_infinity(Pid, {req, Op, ?TIMEOUT})
-                          end, Ops)
+            lists:foldl(fun(Op,Success) ->
+                                  Result = call_infinity(Pid, {req, Op, ?TIMEOUT}),
+                                  case Result of
+                                      ok -> Success;
+                                      Other -> Other
+                                  end
+                          end, ok, Ops)
     end.
 
 %Reads an object from the storage and returns a client-side 

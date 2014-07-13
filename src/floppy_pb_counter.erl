@@ -42,7 +42,6 @@ encode(Message) ->
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbincrementreq{key=Key, amount=Amount}, State) ->
     {ok,_Result} = floppy:append(Key,{increment,Amount}),
-    lager:info("processing increment on Key ~p, with amount ~p",[Key,Amount]),
     {reply, #fpboperationresp{success = true}, State};
 
 %% @doc process/2 callback. Handles an incoming request message.
