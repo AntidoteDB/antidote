@@ -23,9 +23,9 @@
 
 
 -export([
-	append/2,
-	read/2,
-	handle_op/5
+         append/2,
+         read/2,
+         handle_op/5
         ]).
 
 %%------------------------
@@ -51,15 +51,15 @@ append(Key, Op) ->
     {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, Key, Op]),
     receive
         {ok,{_, Result}} ->
-	        lager:info("Append completed!~w~n",[Result]),
-	        {ok, Result};
+            lager:info("Append completed!~w~n",[Result]),
+            {ok, Result};
         {error, Reason} ->
-	        lager:info("Append failed!~n"),
-	        {error, Reason}
+            lager:info("Append failed!~n"),
+            {error, Reason}
     after 
         ?OP_TIMEOUT ->
-	        lager:info("Append failed!~n"),
-	        {error, timeout}
+            lager:info("Append failed!~n"),
+            {error, timeout}
     end.
 
 %% @doc Function: read/2 
@@ -71,22 +71,22 @@ read(Key, Type) ->
     {ok,_Pid} = floppy_coord_sup:start_fsm([self(), read, Key, noop]),
     receive
         {ok,{_, Ops}} ->
-	        lager:info("Read completed!~n"),
-	        {ok,Ops};
+            lager:info("Read completed!~n"),
+            {ok,Ops};
         {error, Reason} ->
-	        lager:info("Read failed!~n"),
-	        {error, Reason}
+            lager:info("Read failed!~n"),
+            {error, Reason}
     after 
         ?OP_TIMEOUT ->
-	        lager:info("Read failed!~n"),
-	        {error, timeout}
+            lager:info("Read failed!~n"),
+            {error, timeout}
     end.
 
 %% @doc Function: handle_op/5
 %% Purpose: Handles `read' or `append' operations. Tne vnode must be in the replication group
 %% of the corresponding key. 
 handle_op(Preflist, ToReply, Op, Key, Param) ->
-   riak_core_vnode_master:command(Preflist,
+    riak_core_vnode_master:command(Preflist,
                                    {operate, ToReply, Op, Key, Param},
                                    ?REPMASTER).
 
@@ -96,10 +96,10 @@ handle_op(Preflist, ToReply, Op, Key, Param) ->
 %% Then start a rep fsm to perform quorum read/append.  
 handle_command({operate, ToReply, Op, Key, Param}, _Sender, #state{partition=Partition,lclock=LC}) ->
     OpId = case Op of 
-                append -> generate_op_id(LC);
-	            read  -> current_op_id(LC);
-	            _ ->  lager:info("RepVNode: Wrong operations!~w~n", [Op]), 
-                    current_op_id(LC)
+               append -> generate_op_id(LC);
+               read  -> current_op_id(LC);
+               _ ->  lager:info("RepVNode: Wrong operations!~w~n", [Op]), 
+                     current_op_id(LC)
            end,
     {NewClock,_} = OpId,
     lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
@@ -148,6 +148,5 @@ generate_op_id(Current) ->
     {Current + 1, node()}.
 
 current_op_id(Current) ->
-    {Current, node()}.    
-
+    {Current, node()}.
 

@@ -15,6 +15,6 @@ start_fsm(Args) ->
 
 init([]) ->
     Worker = {floppy_rep_fms,
-                {floppy_rep_fsm, start_link, []},
-                transient, 5000, worker, [floppy_rep_fms]},
+              {floppy_rep_fsm, start_link, []},
+              transient, 5000, worker, [floppy_rep_fms]},
     {ok, {{simple_one_for_one, 10, 10}, [Worker]}}.

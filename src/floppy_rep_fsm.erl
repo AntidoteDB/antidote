@@ -25,27 +25,23 @@
 -define(R_ERROR_THRESHOLD, ?N-?NUM_R+1).
 
 -record(state, {
-                from :: pid(),
-                op :: atom(),
-                key,
-                param = undefined :: term() | undefined,
-		        readresult,
-                error_msg = [],
-                preflist :: riak_core_apl:preflist(),
-		        num_to_ack = 0 :: non_neg_integer(),
-		        opid,
-		        nodeOps}).
+          from :: pid(),
+          op :: atom(),
+          key,
+          param = undefined :: term() | undefined,
+          readresult,
+          error_msg = [],
+          preflist :: riak_core_apl:preflist(),
+          num_to_ack = 0 :: non_neg_integer(),
+          opid,
+          nodeOps}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-%start_link(Key, Op) ->
-%    start_link(Key, Op).
-
 start_link(From, Op,  Key, Param, OpId) ->
     gen_fsm:start_link(?MODULE, [From, Op, Key, Param, OpId], []).
-
 
 %%%===================================================================
 %%% States
@@ -57,9 +53,9 @@ init([From, Op,  Key, Param, OpId]) ->
                 op=Op,
                 key=Key,
                 param=Param,
-		        opid= OpId,
-		        readresult=[],
-		        nodeOps =[]},
+                opid= OpId,
+                readresult=[],
+                nodeOps =[]},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
@@ -78,36 +74,36 @@ execute(timeout, SD0=#state{op=Op,
                             param=Param,
                             preflist=Preflist,
                             from=From,
-			                opid=OpId}) ->
-    case Op of 
-	    append ->
-	        lager:info("FSM: Replicate append ~n"),
-	        logging_vnode:dappend(Preflist, Key, Param, OpId),
-	        SD1 = SD0#state{num_to_ack=?NUM_W},
-	        {next_state, wait_append, SD1, ?COMM_TIMEOUT};
-	    read ->
-	        lager:info("FSM: Replication read ~n"),
-	        logging_vnode:dread(Preflist, Key),
-	        SD1 = SD0#state{num_to_ack=?NUM_R},
-	        {next_state, wait_read, SD1, ?COMM_TIMEOUT};
-	    _ ->
-	        lager:info("FSM: Wrong command ~n"),
-	        floppy_coord_fsm:finish_op(From, error, wrong_command),	
-	        %%reply message to user
-	        {stop, normal, SD0}
+                            opid=OpId}) ->
+    case Op of
+        append ->
+            lager:info("FSM: Replicate append ~n"),
+            logging_vnode:dappend(Preflist, Key, Param, OpId),
+            SD1 = SD0#state{num_to_ack=?NUM_W},
+            {next_state, wait_append, SD1, ?COMM_TIMEOUT};
+        read ->
+            lager:info("FSM: Replication read ~n"),
+            logging_vnode:dread(Preflist, Key),
+            SD1 = SD0#state{num_to_ack=?NUM_R},
+            {next_state, wait_read, SD1, ?COMM_TIMEOUT};
+        _ ->
+            lager:info("FSM: Wrong command ~n"),
+            floppy_coord_fsm:finish_op(From, error, wrong_command),
+            %%reply message to user
+            {stop, normal, SD0}
     end.
 
 
 %% @doc Waits for W write reqs to respond.
 wait_append({ok,{_Node, Result}}, SD=#state{op=Op, from= From, key=Key, num_to_ack= NumToAck}) ->
     case NumToAck of
-        1 -> 
-    	    lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
-	        floppy_coord_fsm:finish_op(From, ok, {Key, Result}),	
-	        {stop, normal, SD};
-	    _ ->
+        1 ->
+            lager:info("FSM: Finish collecting replies for ~w ~n", [Op]),
+            floppy_coord_fsm:finish_op(From, ok, {Key, Result}),
+            {stop, normal, SD};
+        _ ->
             lager:info("FSM: Keep collecting replies~n"),
-	        {next_state, wait_append, SD#state{num_to_ack= NumToAck-1 }, ?COMM_TIMEOUT}
+            {next_state, wait_append, SD#state{num_to_ack= NumToAck-1 }, ?COMM_TIMEOUT}
     end;
 
 wait_append({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
@@ -115,10 +111,10 @@ wait_append({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
     lager:info("FSM: Error in append: ~w", [Reason]),
     case length(ErrorMsg1) of
         ?W_ERROR_THRESHOLD ->
-	        floppy_coord_fsm:finish_op(From, error, ErrorMsg1),
-	        {stop, normal, SD};
+            floppy_coord_fsm:finish_op(From, error, ErrorMsg1),
+            {stop, normal, SD};
         _ ->
-	        {next_state, wait_append, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
+            {next_state, wait_append, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
     end;
 
 wait_append(timeout, SD=#state{from=From}) ->
@@ -132,16 +128,16 @@ wait_append(timeout, SD=#state{from=From}) ->
 wait_read({ok,{Node, Result}}, SD=#state{op=Op, from= From, nodeOps = NodeOps, key=Key, readresult= ReadResult , num_to_ack= NumToAck}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
-    %lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
-    case NumToAck of 
-        1 -> 
-    	    lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
-	        repair(NodeOps1, Result1),
-	        floppy_coord_fsm:finish_op(From, ok, {Key, Result1}),	
-	        {next_state, repair_rest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?COMM_TIMEOUT};
-	    _ ->
+    %%lager:info("FSM: Get reply ~w ~n, unioned reply ~w ~n",[Result,Result1]),
+    case NumToAck of
+        1 ->
+            lager:info("FSM: Finish reading for ~w ~w ~n", [Op, Key]),
+            repair(NodeOps1, Result1),
+            floppy_coord_fsm:finish_op(From, ok, {Key, Result1}),
+            {next_state, repair_rest, SD#state{num_to_ack = ?N-?NUM_R, nodeOps=NodeOps1, readresult = Result1}, ?COMM_TIMEOUT};
+        _ ->
             lager:info("FSM: Keep collecting replies~n"),
-	        {next_state, wait_read, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
+            {next_state, wait_read, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
     end;
 
 wait_read({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
@@ -149,10 +145,10 @@ wait_read({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
     lager:info("FSM: Error in read: ~w", [Reason]),
     case length(ErrorMsg1) of
         ?R_ERROR_THRESHOLD ->
-	        floppy_coord_fsm:finish_op(From, error, ErrorMsg1),
-	        {stop, normal, SD};
+            floppy_coord_fsm:finish_op(From, error, ErrorMsg1),
+            {stop, normal, SD};
         _ ->
-	        {next_state, wait_read, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
+            {next_state, wait_read, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
     end;
 
 wait_read(timeout, SD=#state{from=From}) ->
@@ -170,19 +166,19 @@ repair_rest(timeout, SD= #state{nodeOps=NodeOps, readresult = ReadResult}) ->
 repair_rest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, nodeOps = NodeOps, readresult = ReadResult}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
-    case NumToAck of 
-        1 -> 
-    	    lager:info("FSM: Finish collecting replies, start read repair ~n"),
-	        repair(NodeOps, ReadResult),
-	        {stop, normal, SD};
-    	_ ->
+    case NumToAck of
+        1 ->
+            lager:info("FSM: Finish collecting replies, start read repair ~n"),
+            repair(NodeOps, ReadResult),
+            {stop, normal, SD};
+        _ ->
             lager:info("FSM: Keep collecting replies~n"),
-	        {next_state, repair_rest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
+            {next_state, repair_rest, SD#state{num_to_ack= NumToAck-1, nodeOps= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
     end;
 
 repair_rest({error, Reason}, SD) ->
     lager:info("FSM: Error in read repair: ~w", [Reason]),
-	{next_state, repair_rest, SD, ?COMM_TIMEOUT}.
+    {next_state, repair_rest, SD, ?COMM_TIMEOUT}.
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -223,10 +219,10 @@ repair([H|T], FullOps) ->
     {Node, Ops} = H,
     DiffOps = find_diff_ops(Ops, FullOps),
     if DiffOps /= [] ->
-    	logging_vnode:append_list(Node, DiffOps),
-    	repair(T, FullOps);
-	true ->
-    	repair(T, FullOps)
+            logging_vnode:append_list(Node, DiffOps),
+            repair(T, FullOps);
+       true ->
+            repair(T, FullOps)
     end.
 
 %% @doc Remove duplicate ops with OpId from a list (the first param)
@@ -236,17 +232,17 @@ remove_dup([], _OpId, Set2) ->
 remove_dup([H|T], OpId, Set2) ->
     {_, #operation{op_number= OpNum}} = H,
     Set3 = if OpNum /= OpId -> lists:append(Set2, [H]);
-            true -> Set2
+              true -> Set2
            end,
     remove_dup(T, OpId, Set3).
 
 
 -ifdef(TEST).
-   union_test()-> 
-	Result = union_ops([{nothing, {operation,1,dwaf}}, {nothing, {operation,2,fasd}}],[],[{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
-	?assertEqual(Result, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
-	Result1 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
-	?assertEqual(Result1, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
-	Result2 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,2, fasd}}]),
-	?assertEqual(Result2, [{nothing, {operation, 2, fasd}}]).
--endif.    
+union_test()->
+    Result = union_ops([{nothing, {operation,1,dwaf}}, {nothing, {operation,2,fasd}}],[],[{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
+    ?assertEqual(Result, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
+    Result1 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
+    ?assertEqual(Result1, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
+    Result2 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,2, fasd}}]),
+    ?assertEqual(Result2, [{nothing, {operation, 2, fasd}}]).
+-endif.
