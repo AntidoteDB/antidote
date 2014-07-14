@@ -28,6 +28,8 @@
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
+%% @doc Read state of key at given snapshot time
+-spec read(Key::term(), Type::term(), Snapshot_time::vectorclock:vectorclock()) -> {ok, term()} | {error, term()}.
 read(Key, Type, Snapshot_time) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
@@ -35,6 +37,8 @@ read(Key, Type, Snapshot_time) ->
     [{NewPref,_}] = Preflist,
     riak_core_vnode_master:sync_command(NewPref, {read, Key, Type, Snapshot_time}, materializer_vnode_master).
 
+%%@doc write downstream operation to persistant log and cache it for future reads
+-spec update(Key::term(), DownstreamOp::#clocksi_payload{}) -> ok | {error, term()}.
 update(Key, DownstreamOp) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
