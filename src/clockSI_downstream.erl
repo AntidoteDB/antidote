@@ -23,8 +23,5 @@ generate_downstream_op(Update) ->
             {ok, Downstream_op};
         {error, Reason} -> 
             lager:info("Error ~p",[Reason]),
-            {error, Reason};
-        Other -> 
-            lager:info("Other Error ~p",[Other]),
-            {error, Other}
+            {error, Reason}
     end.

@@ -5,7 +5,7 @@
 -include("floppy.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
--record(dstate, {partition, preflist, last_commit_time, pending_operations}).
+-record(dstate, {partition, last_commit_time, pending_operations}).
 
 -export([start_vnode/1,
          trigger/2]).
@@ -46,26 +46,15 @@ trigger(Key, WriteSet) ->
             {error, timeout}
     end.     
 
-
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
-    Preflists = lists:foldl(fun(X, Filtered) -> 
-                                    case is_primary_preflist(Partition, X) of 
-                                        true ->
-                                            X;
-                                        false ->
-                                            Filtered
-                                    end
-                            end, [], GrossPreflists),
-    {ok, #dstate{partition = Partition, preflist = Preflists, last_commit_time = 0, pending_operations = []}}.
+    {ok, #dstate{partition = Partition, last_commit_time = 0, pending_operations = []}}.
 
 %% @doc Read client update operations, generate downstream operations and store it to persistent log.
 handle_command({trigger, WriteSet, From}, _Sender, 
-               State=#dstate{partition = Partition,preflist = _Preflist, last_commit_time = Last_commit_time, pending_operations = Pending}) ->
+               State=#dstate{partition = Partition,last_commit_time = Last_commit_time, pending_operations = Pending}) ->
 
     Pending_operations = add_to_pending_operations(Pending, WriteSet),
     lager:info("Pending Operations ~p",[Pending_operations]),
@@ -127,15 +116,7 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%% @doc preflist_member: Returns true if the Partition identifier is primary partition of the preflist
-%%      Input:  Partition: The partidion identifier to check
-%%              Preflist: A list of pairs {Partition, Node}
-%%      Return: true | false
--spec is_primary_preflist(Partition::non_neg_integer(), Preflist::[{Index::integer(), Node::term()}]) -> true | false.
-is_primary_preflist(Partition,[First|_Rest]) ->
-    {PartitionB, _} = First,
-    PartitionB==Partition.
-
+%% @doc Generate downstream for one update and write to log
 process_update(Update) ->
     case clockSI_downstream:generate_downstream_op(Update) of
         {ok, NewOp} ->
@@ -197,6 +178,7 @@ filter_operations(Ops, Before, After) ->
                             FilteredOps),
     SortedOps.
 
+%%@doc Add updates in writeset ot Pending operations to process downstream
 add_to_pending_operations(Pending, WriteSet) -> 
     lager:info("Writeset : ~p",[WriteSet]),
     case WriteSet of 
