@@ -45,8 +45,8 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Sends a `threshold read' asyncrhonous command to the Logs in `Preflist'
-%%	From is the operation id form which the caller wants to retrieve the operations.
-%%	The operations are retrieved in inserted order and the From operation is also included.
+%%      From is the operation id form which the caller wants to retrieve the operations.
+%%      The operations are retrieved in inserted order and the From operation is also included.
 threshold_read(Preflist, Key, From) ->
     Primaries = get_primaries_preflist(Key),
     riak_core_vnode_master:command(Preflist, {threshold_read, Key, From, Primaries}, {fsm, undefined, self()},?LOGGINGMASTER).
@@ -75,8 +75,8 @@ get_primaries_preflist(Key) ->
     Primaries.
 
 %% @doc Opens the persistent copy of the Log.
-%%	The name of the Log in disk is a combination of the the word `log' and
-%%	the partition identifier.
+%%      The name of the Log in disk is a combination of the the word `log' and
+%%      the partition identifier.
 init([Partition]) ->
     LogFile = string:concat(integer_to_list(Partition), "log"),
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -97,8 +97,8 @@ init([Partition]) ->
     end.
 
 %% @doc Read command: Returns the operations logged for Key
-%%	Input: Key of the object to read
-%%	Output: {vnode_id, Operations} | {error, Reason}
+%%     Input: Key of the object to read
+%%     Output: {vnode_id, Operations} | {error, Reason}
 handle_command({read, Key, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
@@ -115,9 +115,9 @@ handle_command({read, Key, Preflist}, _Sender, #state{partition=Partition, logs_
     end;
 
 %% @doc Threshold read command: Returns the operations logged for Key from a specified op_id-based threshold
-%%	Input:  Key of the object to read
-%%		From: the oldest op_id to return
-%%	Output: {vnode_id, Operations} | {error, Reason}
+%%      Input:  Key of the object to read
+%%              From: the oldest op_id to return
+%%      Output: {vnode_id, Operations} | {error, Reason}
 handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
@@ -136,9 +136,9 @@ handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=
     end;
 
 %% @doc Repair command: Appends the Ops to the Log
-%%	Input: Ops: Operations to append
-%%	Output: ok | {error, Reason}
-handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->	
+%%      Input: Ops: Operations to append
+%%      Output: ok | {error, Reason}
+handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->      
     F = fun(Elem, Acc) ->
             {Key, #operation{op_number=OpId, payload=Payload}} = Elem,
             Preflist = get_primaries_preflist(Key),
@@ -159,10 +159,10 @@ handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->
     {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
-%%	Input:	Key of the object
-%%		Payload of the operation
-%%		OpId: Unique operation id	      	
-%%	Output: {ok, op_id} | {error, Reason}
+%%      Input:  Key of the object
+%%              Payload of the operation
+%%              OpId: Unique operation id               
+%%      Output: {ok, op_id} | {error, Reason}
 handle_command({append, Key, Payload, OpId, Preflist}, _Sender,
                #state{logs_map=Map, partition = Partition}=State) ->
     case get_log_from_map(Map, Preflist) of
@@ -247,26 +247,26 @@ terminate(_Reason, _State) ->
 no_elements([], _Map) ->
     true;
 no_elements([Preflist|Rest], Map) ->
-	case dict:find(Preflist, Map) of
-		{ok, Log} ->
+        case dict:find(Preflist, Map) of
+                {ok, Log} ->
             case dets:first(Log) of
                 '$end_of_table' ->
                     no_elements(Rest, Map);
                 _ ->
                     false
             end; 
-		error ->
-			lager:info("Preflist to map return: no_log_for_preflist: ~w~n",[Preflist]),
-			{error, no_log_for_preflist}
-	end.
+                error ->
+                        lager:info("Preflist to map return: no_log_for_preflist: ~w~n",[Preflist]),
+                        {error, no_log_for_preflist}
+        end.
 
 %% @doc threshold_prune: returns the operations that are not onlder than the specified op_id
-%%  Assump:	The operations are retrieved in the order of insertion
-%%			If the order of insertion was Op1 -> Op2 -> Op4 -> Op3, the expected list of operations would be: [Op1, Op2, Op4, Op3]
-%%	Input:	Operations: Operations to filter
-%%			From: Oldest op_id to return
-%%			Filtered: List of filetered operations
-%%	Return:	The filtered list of operations
+%%  Assump:     The operations are retrieved in the order of insertion
+%%                      If the order of insertion was Op1 -> Op2 -> Op4 -> Op3, the expected list of operations would be: [Op1, Op2, Op4, Op3]
+%%      Input:  Operations: Operations to filter
+%%                      From: Oldest op_id to return
+%%                      Filtered: List of filetered operations
+%%      Return:         The filtered list of operations
 -spec threshold_prune(Operations::list(), From::atom()) -> list().
 threshold_prune([], _From) -> [];
 threshold_prune([Next|Rest], From) ->
@@ -278,11 +278,11 @@ threshold_prune([Next|Rest], From) ->
     end.
 
 %% @doc open_logs: open one log per partition in which the vnode is primary
-%%	Input:	LogFile: Partition concat with the atom log
-%%			Preflists: A list with the preflist in which the vnode is involved
-%%			Initial: Initial log identifier. Non negative integer. Consecutive ids for the logs. 
-%%			Map: The ongoing map of preflist->log. dict() type.
-%%	Return:	LogsMap: Maps the  preflist and actual name of the log in the system. dict() type.
+%%      Input:  LogFile: Partition concat with the atom log
+%%                      Preflists: A list with the preflist in which the vnode is involved
+%%                      Initial: Initial log identifier. Non negative integer. Consecutive ids for the logs. 
+%%                      Map: The ongoing map of preflist->log. dict() type.
+%%      Return:         LogsMap: Maps the  preflist and actual name of the log in the system. dict() type.
 -spec open_logs(LogFile::string(), [preflist()], N::non_neg_integer(), Map::dict()) -> LogsMap::dict() | {error,reason()}.
 open_logs(_LogFile, [], _Initial, Map) -> Map;
 open_logs(LogFile, [Next|Rest], Initial, Map)->
@@ -308,11 +308,11 @@ remove_node_from_preflist(Preflist) ->
         end,
     lists:foldl(F, [], Preflist).
 
-%% @doc	get_log_from_map:	abstracts the get function of a key-value store
-%%							currently using dict
-%%		Input:	Map:	dict that representes the map
-%%				Preflist:	The key to search for.
-%%		Return:	The actual name of the log
+%% @doc         get_log_from_map:       abstracts the get function of a key-value store
+%%                                                      currently using dict
+%%              Input:  Map:    dict that representes the map
+%%                              Preflist:       The key to search for.
+%%              Return:         The actual name of the log
 -spec get_log_from_map(dict(), preflist()) -> {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, FullPreflist) ->
     Preflist = remove_node_from_preflist(FullPreflist),
@@ -326,11 +326,11 @@ get_log_from_map(Map, FullPreflist) ->
             {error, no_log_for_preflist}
     end.
 
-%% @doc	join_logs: Recursive fold of all the logs stored in the vnode
-%%		Input:	Logs: A list of pairs {Preflist, Log}
-%%				F: Function to apply when floding the log (dets)
-%%				Acc: Folded data
-%%		Return: Folded data of all the logs.
+%% @doc         join_logs: Recursive fold of all the logs stored in the vnode
+%%              Input:  Logs: A list of pairs {Preflist, Log}
+%%                              F: Function to apply when floding the log (dets)
+%%                              Acc: Folded data
+%%              Return: Folded data of all the logs.
 -spec join_logs(Map::[{preflist(), log()}], F::fun(), Acc::term()) -> term().
 join_logs([], _F, Acc) -> Acc;
 join_logs([Element|Rest], F, Acc) ->
@@ -338,12 +338,12 @@ join_logs([Element|Rest], F, Acc) ->
     JointAcc = dets:foldl(F, Acc, Log),
     join_logs(Rest, F, JointAcc).
 
-%% @doc	insert_operation: Inserts an operation into the log only if the OpId is not already in the log
-%%		Input:	Log: The identifier log the log where the operation will be inserted
-%%				Key: Key to which the operation belongs.
-%%				OpId: Id of the operation to insert
-%%				Payload: The payload of the operation to insert
-%%		Return:	{ok, OpId} | {error, Reason}
+%% @doc         insert_operation: Inserts an operation into the log only if the OpId is not already in the log
+%%              Input:  Log: The identifier log the log where the operation will be inserted
+%%                              Key: Key to which the operation belongs.
+%%                              OpId: Id of the operation to insert
+%%                              Payload: The payload of the operation to insert
+%%              Return:         {ok, OpId} | {error, Reason}
 -spec insert_operation(log(), key(), OpId::{Number::non_neg_integer(), node()}, Payload::term()) -> {ok, {Number::non_neg_integer(), node()}} | {error, reason()}.
 insert_operation(Log, Key, OpId, Payload) ->
     case dets:match(Log, {Key, #operation{op_number=OpId, payload='$1'}}) of
@@ -363,9 +363,9 @@ insert_operation(Log, Key, OpId, Payload) ->
     end.
 
 %% @doc lookup_operations: Looks up for the operations logged for a particular key
-%%		Input:	Log: Identifier of the log
-%%				Key: Key to shich the operation belongs
-%%		Return:	List of all the logged operations 
+%%              Input:  Log: Identifier of the log
+%%                              Key: Key to shich the operation belongs
+%%              Return:         List of all the logged operations 
 -spec lookup_operations(Log::term(), Key::term()) -> list() | {error, atom()}.
 lookup_operations(Log, Key) ->
     dets:lookup(Log, Key).
