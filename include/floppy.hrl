@@ -6,7 +6,9 @@
 -define(CLOCKSIMASTER, clockSI_vnode_master).
 -define(CLOCKSI, clockSI).
 -define(REPMASTER, floppy_rep_vnode_master).
--define(INDC_TIMEOUT, 1000).
+-define(OP_TIMEOUT, 5000).
+-define(COORD_TIMEOUT, 2500).
+-define(COMM_TIMEOUT, 500).
 -define(N, 3).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
