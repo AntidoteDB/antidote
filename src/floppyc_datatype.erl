@@ -50,7 +50,7 @@
 %% Returns the module that is a container for the given abstract
 %% type.
 -spec module_for_type(Type::atom()) -> module().
-module_for_type(set)      -> floppyc_set;
+module_for_type(floppy_set) -> floppyc_set;
 module_for_type(counter)  -> floppyc_counter;
 module_for_type(flag)     -> floppyc_flag;
 module_for_type(register) -> floppyc_register;

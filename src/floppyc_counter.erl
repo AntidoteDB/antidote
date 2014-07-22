@@ -4,7 +4,8 @@
 
 -behaviour(floppyc_datatype).
 
--export([new/2,
+-export([new/1,
+         new/2,
          message_for_get/1,
          value/1,
          to_ops/1,
@@ -27,6 +28,10 @@
 
 -export_type([counter/0]).
 -opaque counter() :: #counter{}.
+
+-spec new(Key::binary()) -> counter().
+new(Key) ->
+    #counter{key=Key, value=0, increment=0}.
 
 -spec new(Key::binary(), Value::term()) -> counter().
 new(Key, Value) ->
