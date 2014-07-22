@@ -3,8 +3,8 @@
 -define(BUCKET, <<"floppy">>).
 -define(MASTER, floppy_vnode_master).
 -define(LOGGINGMASTER, logging_vnode_master).
--define(CLOCKSIMASTER, clockSI_vnode_master).
--define(CLOCKSI, clockSI).
+-define(CLOCKSIMASTER, clocksi_vnode_master).
+-define(CLOCKSI, clocksi).
 -define(REPMASTER, floppy_rep_vnode_master).
 -define(OP_TIMEOUT, 5000).
 -define(COORD_TIMEOUT, 2500).

@@ -29,48 +29,56 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(Key::term(), Type::term(), Snapshot_time::vectorclock:vectorclock()) -> {ok, term()} | {error, term()}.
+-spec read(Key::term(), Type::term(), Snapshot_time::vectorclock:vectorclock())
+          -> {ok, term()} | {error, term()}.
 read(Key, Type, Snapshot_time) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
     [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref, {read, Key, Type, Snapshot_time}, materializer_vnode_master).
+    riak_core_vnode_master:sync_command(
+      NewPref, {read, Key, Type, Snapshot_time}, materializer_vnode_master).
 
-%%@doc write downstream operation to persistant log and cache it for future reads
--spec update(Key::term(), DownstreamOp::#clocksi_payload{}) -> ok | {error, term()}.
+%%@doc write downstream operation to persistant log and cache it for future read
+-spec update(Key::term(), DownstreamOp::#clocksi_payload{})
+            -> ok | {error, term()}.
 update(Key, DownstreamOp) ->
     DocIdx = riak_core_util:chash_key({?BUCKET,
                                        term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
     [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref, {update, Key, DownstreamOp}, materializer_vnode_master).
+    riak_core_vnode_master:sync_command(NewPref, {update, Key, DownstreamOp},
+                                        materializer_vnode_master).
 
-init([Partition]) -> 
+init([Partition]) ->
     Cache = ets:new(cache, [bag]),
     {ok,#state{partition = Partition, cache = Cache}}.
 
-handle_command({read, Key, Type, Snapshot_time}, _Sender, State = #state{cache= Cache}) ->     
-    Operations = ets:lookup(Cache, Key),        
+handle_command({read, Key, Type, Snapshot_time}, _Sender,
+               State = #state{cache= Cache}) ->
+    Operations = ets:lookup(Cache, Key),
     %% Operations are in the order which it is inserted
     lager:info(" Operations ~p", Operations),
     ListofOps = filter_ops(Operations),
-    {ok, Snapshot} = clockSI_materializer:get_snapshot(Type, Snapshot_time, ListofOps),
+    {ok, Snapshot} = clocksi_materializer:get_snapshot(
+                       Type, Snapshot_time, ListofOps),
     lager:info("Snapshot ~p", Snapshot),
     %% TODO: Store Snapshots in Cache
-    {reply, {ok, Snapshot}, State};       
+    {reply, {ok, Snapshot}, State};
 
-handle_command({update, Key, DownstreamOp}, _Sender, State = #state{cache = Cache})->    
-    LogId = log_utilities:get_logid_from_key(Key),    
+handle_command({update, Key, DownstreamOp}, _Sender,
+               State = #state{cache = Cache})->
+    LogId = log_utilities:get_logid_from_key(Key),
     %%TODO: Remove unnecessary information from op_payload in log_Record
-    LogRecord = #log_record{tx_id = DownstreamOp#clocksi_payload.txid, op_type=downstreamop, op_payload = DownstreamOp},
+    LogRecord = #log_record{tx_id = DownstreamOp#clocksi_payload.txid,
+                            op_type=downstreamop, op_payload = DownstreamOp},
     case floppy_rep_vnode:append(LogId, LogRecord) of
-        {ok, _} -> 
+        {ok, _} ->
             true = ets:insert(Cache, {Key, DownstreamOp}),
-            {reply, ok, State};              
+            {reply, ok, State};
         {error, Reason} ->
-            {reply, {error, Reason}, State} 
-    end;    
+            {reply, {error, Reason}, State}
+    end;
 
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command_logging, Message}),
@@ -110,5 +118,5 @@ terminate(_Reason, _State) ->
     ok.
 
 filter_ops(Ops) ->
-    %% TODO: Filter out only downstream update operations from log 
+    %% TODO: Filter out only downstream update operations from log
     [ Op || { _Key, Op } <- Ops ].

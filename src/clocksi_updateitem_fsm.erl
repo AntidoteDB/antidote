@@ -1,4 +1,4 @@
--module(clockSI_updateitem_fsm).
+-module(clocksi_updateitem_fsm).
 -behavior(gen_fsm).
 -include("floppy.hrl").
 
@@ -12,8 +12,8 @@
 %% States
 -export([check_clock/2, update_item/2, waiting/2]).
 
--record(state, 
-        { partition,          
+-record(state,
+        { partition,
           vclock,
           coordinator}).
 
@@ -25,14 +25,14 @@ start_link(Coordinator, Tx, Vclock) ->
     gen_fsm:start_link(?MODULE, [Coordinator, Tx, Vclock], []).
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
-	(MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
+    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 init([Coordinator, Vec_snapshot_time, Partition]) ->
     SD = #state{
-            partition = Partition,    
+            partition = Partition,
             coordinator=Coordinator,
             vclock=Vec_snapshot_time},
     {ok, check_clock, SD, 0}.
@@ -42,20 +42,19 @@ init([Coordinator, Vec_snapshot_time, Partition]) ->
 %%      catches up. CLOCK-SI: clock scew.
 check_clock(timeout, SD0=#state{vclock = Vclock}) ->
     Dc_id = dc_utilities:get_my_dc_id(),
-    {ok, T_TS} = vectorclock:get_clock_of_dc(Dc_id, Vclock), %%TODO: Find my dc_id
-    Time = now_milisec(erlang:now()),    
-    Newclock = dict:erase(Dc_id, Vclock), %% No need to check current DCs clock in vector clock. Only check the clock from other DCs
+    {ok, T_TS} = vectorclock:get_clock_of_dc(Dc_id, Vclock),
+    Time = now_milisec(erlang:now()),
+    Newclock = dict:erase(Dc_id, Vclock), %% Only check the clock from other DCs
     case T_TS > Time of
-	true -> 
-	    timer:sleep(T_TS - Time),
-    	    {next_state, waiting, SD0#state{vclock = Newclock}, 0};
-	false ->
-    	    {next_state, waiting, SD0#state{vclock = Newclock}, 0}
-    end.    
-
+        true ->
+            timer:sleep(T_TS - Time),
+            {next_state, waiting, SD0#state{vclock = Newclock}, 0};
+        false ->
+            {next_state, waiting, SD0#state{vclock = Newclock}, 0}
+    end.
 waiting(timeout, SD0 = #state{vclock = Vclock, partition = Partition}) ->
-    Local_vclock = vectorclock:get_clock(Partition),               
-    case vectorclock:is_greater_than(Local_vclock, Vclock) of 
+    Local_vclock = vectorclock:get_clock(Partition),
+    case vectorclock:is_greater_than(Local_vclock, Vclock) of
         true ->
             %% Localclock is greater than updates snapshot time. No need to wait
             {next_state, update_item, SD0, 0};
