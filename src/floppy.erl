@@ -5,14 +5,14 @@
 -export([
 	 append/2,
 	 read/2,
-	 clockSI_execute_TX/2,
-	 clockSI_read/3,
-	 clockSI_bulk_update/2,
-	 clockSI_istart_tx/1,
-	 clockSI_iread/3,
-	 clockSI_iupdate/3,	 
-	 clockSI_iprepare/1,	 
-	 clockSI_icommit/1]).
+	 clocksi_execute_tx/2,
+	 clocksi_read/3,
+	 clocksi_bulk_update/2,
+	 clocksi_istart_tx/1,
+	 clocksi_iread/3,
+	 clocksi_iupdate/3,	 
+	 clocksi_iprepare/1,	 
+	 clocksi_icommit/1]).
 
 -type key() :: term().
 -type op()  :: term().
@@ -61,7 +61,7 @@ read(Key, Type) ->
 %%	an ok message along with the result of the read operations involved in the transaction, 
 %%	in case the tx ends successfully. 
 %%	error message in case of a failure.
-clockSI_execute_TX(ClientClock, Operations) ->
+clocksi_execute_tx(ClientClock, Operations) ->
     lager:info("FLOPPY: Received order to execute transaction with clock: ~w for the list of operations ~w ~n",
     [ClientClock, Operations]),
     {ok, _PID} = clocksi_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
@@ -80,7 +80,7 @@ clockSI_execute_TX(ClientClock, Operations) ->
 %%	ClientClock: the last clock the client has seen from a successful transaction.
 %% Returns:
 %%	an ok message along with the new TxId. 
-clockSI_istart_tx(Clock) ->
+clocksi_istart_tx(Clock) ->
     lager:info("FLOPPY: Starting FSM for interactive transaction.~n"),
     case Clock of
         {Mega,Sec,Micro} ->
@@ -97,26 +97,26 @@ clockSI_istart_tx(Clock) ->
     end.
     
     
-clockSI_bulk_update(ClientClock, Operations) ->
-    clockSI_execute_TX(ClientClock, Operations).
+clocksi_bulk_update(ClientClock, Operations) ->
+    clocksi_execute_tx(ClientClock, Operations).
 
-clockSI_read(ClientClock, Key, Type) ->
+clocksi_read(ClientClock, Key, Type) ->
 	Operation={read, Key, Type},
-    clockSI_execute_TX(ClientClock, [Operation]).
+    clocksi_execute_tx(ClientClock, [Operation]).
     
-clockSI_iread(TxId=#tx_id{}, Key, Type) ->
+clocksi_iread(TxId=#tx_id{}, Key, Type) ->
 	{_, _, CoordFsmPid}=TxId,
 	gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
     
-clockSI_iupdate(TxId=#tx_id{}, Key, OpParams) ->
+clocksi_iupdate(TxId=#tx_id{}, Key, OpParams) ->
 	{_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, OpParams}}).
 
-clockSI_iprepare(TxId=#tx_id{})->
+clocksi_iprepare(TxId=#tx_id{})->
 	{_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
 
-clockSI_icommit(TxId=#tx_id{})->
+clocksi_icommit(TxId=#tx_id{})->
 	{_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, commit).
         
