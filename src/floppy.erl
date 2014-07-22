@@ -25,11 +25,9 @@
 %% @doc The append/2 function adds an operation to the log of the CRDT object stored at some key.
 %% TODO What is returned in case of success?!
 -spec append(key(), op()) -> {ok, term()} | {error, timeout}.
-append(Key, {OpParam, Actor}) ->
+append(Key, Op) ->
     lager:info("Append called!"),
-    LogId = log_utilities:get_logid_from_key(Key),
-    Payload = #payload{key=Key, op_param=OpParam, actor=Actor},
-    case floppy_rep_vnode:append(LogId, Payload) of
+    case clocksi_bulk_update(now(), [{update, Key, Op}]) of   
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
@@ -41,16 +39,13 @@ append(Key, {OpParam, Actor}) ->
 %% TODO Which state is exactly returned? Related to some snapshot? What is current?
 -spec read(key(), crdt()) -> val() | {error,reason()}.
 read(Key, Type) ->
-    LogId = log_utilities:get_logid_from_key(Key),
-    case floppy_rep_vnode:read(LogId) of
-        {ok, Ops} ->
-            Init=materializer:create_snapshot(Type),
-            Snapshot=materializer:update_snapshot(Key, Type, Init, Ops),
-            Type:value(Snapshot);
+    case clocksi_read(now(), Key, Type) of
+        {ok, {_, [Val], _}} ->
+            Val;
         {error, Reason} ->
-            lager:info("Read failed: ~w~n", Reason),
             {error, Reason}
     end.
+
 %% Clock SI API
 
 %% @doc Starts a new ClockSI transaction.
@@ -63,7 +58,7 @@ read(Key, Type) ->
 %%	error message in case of a failure.
 clocksi_execute_tx(ClientClock, Operations) ->
     lager:info("FLOPPY: Received order to execute transaction with clock: ~w for the list of operations ~w ~n",
-    [ClientClock, Operations]),
+               [ClientClock, Operations]),
     {ok, _PID} = clocksi_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
     receive
         EndOfTx ->
@@ -73,7 +68,7 @@ clocksi_execute_tx(ClientClock, Operations) ->
 	    lager:info("FLOPPY: Tx failed!~n"),
 	    {error}
     end.
-    
+
 
 %% @doc Starts a new ClockSI interactive transaction.
 %% Input:
@@ -95,31 +90,31 @@ clocksi_istart_tx(Clock) ->
 	    lager:info("FLOPPY: Tx was not started!~n"),
 	    {error, timeout}
     end.
-    
-    
+
+
 clocksi_bulk_update(ClientClock, Operations) ->
     clocksi_execute_tx(ClientClock, Operations).
 
 clocksi_read(ClientClock, Key, Type) ->
-	Operation={read, Key, Type},
+    Operation={read, Key, Type},
     clocksi_execute_tx(ClientClock, [Operation]).
-    
+
 clocksi_iread(TxId=#tx_id{}, Key, Type) ->
-	{_, _, CoordFsmPid}=TxId,
-	gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
-    
+    {_, _, CoordFsmPid}=TxId,
+    gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
+
 clocksi_iupdate(TxId=#tx_id{}, Key, OpParams) ->
-	{_, _, CoordFsmPid}=TxId,
+    {_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, OpParams}}).
 
 clocksi_iprepare(TxId=#tx_id{})->
-	{_, _, CoordFsmPid}=TxId,
+    {_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
 
 clocksi_icommit(TxId=#tx_id{})->
-	{_, _, CoordFsmPid}=TxId,
+    {_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, commit).
-        
-    
-    
-    
+
+
+
+
