@@ -100,6 +100,10 @@ handle_info({_Proto, Sock, Data}, State=#state{active = (Active = #request{})}) 
                        cancel_req_timer(Active#request.tref),
                        _ = send_caller({ok,Val}, Active),
                        State#state{ active = undefined };
+                   #fpbgetsetresp{value = Val} ->
+                       cancel_req_timer(Active#request.tref),
+                       _ = send_caller({ok,binary:bin_to_list(Val)}, Active),
+                       State#state{ active = undefined };
                    _ ->
                        lager:warning("Unexpected Message ~p",[Resp]),
                        State#state{ active = undefined }

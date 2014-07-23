@@ -73,7 +73,7 @@ to_ops(#floppy_set{key=Key, adds=Adds, rems=Rems}) ->
             #fpbsetupdatereq{key=Key, adds=sets:to_list(Adds), rems=sets:to_list(Rems)}
     end.
 
-message_for_get(Key) -> #fpbgetcounterreq{key=Key}.
+message_for_get(Key) -> #fpbgetsetreq{key=Key}.
 
 
 %% ===================================================================

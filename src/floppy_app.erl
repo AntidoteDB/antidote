@@ -7,7 +7,8 @@
 
 %% PB Services
 -define(SERVICES, [
-                   {floppy_pb_counter, 94, 98}
+                   {floppy_pb_counter, 94, 98},
+                   {floppy_pb_set, 99, 101}
                   ]).
 
 
