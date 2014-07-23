@@ -24,6 +24,7 @@
 
 -export([
 	append/2,
+    threshold_read/2,
 	read/1,
 	operate/5
         ]).
@@ -57,6 +58,20 @@ append(LogId, Payload) ->
 	        {error, timeout}
     end.
 
+%% @doc Function: threshold_read/2 
+%% Purpose: Start a fsm to coordinate the `threshold_read' operation to be performed in the object's replicaiton group
+%% Args: Log identifier and the op id threshold.
+%% Returns: {ok, Ops} if success, Ops is the union of operations; {error, nothing} if operation failed.
+threshold_read(LogId, From) ->
+    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), threshold_read, LogId, From]),
+    receive
+        {ok, Ops} ->
+	        lager:info("threshold_read completed!~w~n",[Ops]),
+	        {ok, Ops}
+        after 5000 ->
+	        lager:info("threshold_read failed!~n"),
+	        {error, nothing}
+    end.
 %% @doc Function: read/2 
 %% Purpose: Start a fsm to `read' from the replication group of the object specified by Key
 %% Args: Key of the object and its type, which should be supported by the riak_dt.
@@ -89,6 +104,8 @@ handle_command({operate, ToReply, Type, LogId, Payload}, _Sender, #state{partiti
     case Type  of
         append ->
       	    OpId = generate_op_id(LC);
+        read_threshold ->
+	        OpId = current_op_id(LC);
 	    read  ->
 	        OpId = current_op_id(LC);
 	    _ ->

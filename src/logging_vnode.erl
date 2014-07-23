@@ -39,8 +39,8 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Sends a `threshold read' asyncrhonous command to the Logs in `Preflist'
-%%	From is the operation id form which the caller wants to retrieve the operations.
-%%	The operations are retrieved in inserted order and the From operation is also included.
+%%	From is the operation id from which the caller wants to retrieve the operations.
+%%	The operations are retrieved in inserted order and the From operation is excluded.
 threshold_read(Preflist, Log, From) ->
     riak_core_vnode_master:command(Preflist, {threshold_read, Log, From}, {fsm, undefined, self()},?LOGGINGMASTER).
 
@@ -98,7 +98,7 @@ handle_command({read, LogId}, _Sender, #state{partition=Partition, logs_map=Map}
     end;
 
 %% @doc Threshold read command: Returns the operations logged for Key from a specified op_id-based threshold
-%%	Input:  From: the oldest op_id to return
+%%	Input:  From: The operation threshold. This operation is never returned.
 %%          Preflist: Identifies the log to be read
 %%	Output: {vnode_id, Operations} | {error, Reason}
 handle_command({threshold_read, LogId, From}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
@@ -241,20 +241,21 @@ no_elements([LogId|Rest], Map) ->
 			{error, no_log_for_preflist}
 	end.
 
-%% @doc threshold_prune: returns the operations that are not onlder than the specified op_id
+%% @doc threshold_prune: returns the operations that were inserted after the operation specified by From
 %%  Assump:	The operations are retrieved in the order of insertion
 %%			If the order of insertion was Op1 -> Op2 -> Op4 -> Op3, the expected list of operations would be: [Op1, Op2, Op4, Op3]
 %%	Input:	Operations: Operations to filter
-%%			From: Oldest op_id to return
+%%			From: Oldest op_id seen.
 %%			Filtered: List of filetered operations
-%%	Return:	The filtered list of operations
--spec threshold_prune(Operations::list(), From::atom()) -> list().
+%%	Return:	The filtered list of operations. It will not include the operations represented by From. If From does not match any, empty list
+%%          is returned, as it is assumed that the operation as not being seen yet.
+-spec threshold_prune(Operations::list(), From::atom()) -> list() | no_match.
 threshold_prune([], _From) -> [];
 threshold_prune([Next|Rest], From) ->
     {_LogId, Operation} = Next,
     case Operation#operation.op_number == From of
         true ->
-            [Next|Rest];
+            Rest;
         false ->
             threshold_prune(Rest, From)
     end.

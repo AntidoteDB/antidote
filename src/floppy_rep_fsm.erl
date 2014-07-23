@@ -75,12 +75,12 @@ execute(timeout, SD0=#state{type=Type,
 	    logging_vnode:dappend(Preflist, LogId, OpId, Payload),
 	    SD1 = SD0#state{num_to_ack=?NUM_W},
 	    {next_state, waitAppend, SD1};
-%	create ->
-%	    lager:info("replication propagating create!~w~n",[Preflist]),
-%	    logging_vnode:dcreate(Preflist, Key, Param, OpClock),
-%	    Num_w = SD0#state.num_w,
-%	    SD1 = SD0#state{num_to_ack=Num_w},
-%	    {next_state, waiting, SD1};
+    threshold_read ->
+	    lager:info("FSM: Replicate threshold_read ~n"),
+        %% Payload identifies the op from which the threshold_read has to read from
+	    logging_vnode:threshold_read(Preflist, LogId, Payload),
+	    SD1 = SD0#state{num_to_ack=?NUM_R},
+	    {next_state, waitRead, SD1};
 	read ->
 	    lager:info("FSM: Replication read ~n"),
 	    logging_vnode:dread(Preflist, LogId),

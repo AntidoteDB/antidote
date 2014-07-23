@@ -34,26 +34,28 @@ trigger(IndexNode) ->
 
 %% riak_core_vnode call backs
 init([Partition]) ->
-    {ok, #state{partition=Partition}.
+    {ok, #state{partition=Partition}}.
 
 handle_command({trigger}, _Sender, State=#state{partition=Partition, last_op=Last}) ->
     Log = log_utilities:get_logid_from_partition(Partition),
     case Last of
         empty ->
-            case floppy_read_vnode:read(Log) of
+            case floppy_rep_vnode:read(Log) of
                 {ok, Ops} ->
-                    Last2 = inter_dc_repl:propagate_sync(Ops),
+                    Last2 = inter_dc_repl:propagate_sync(Ops);
                 {error, nothing} ->
+                    Last2 = Last,
                     timer:sleep(?RETRY_TIME),
-                    trigger({Partition, node()}),
+                    trigger({Partition, node()})
             end;
         _ ->
-            case floppy_read_vnode:threshold_read(Log, Last) of
+            case floppy_rep_vnode:threshold_read(Log, Last) of
                 {ok, Ops} ->
-                    Last2 = inter_dc_repl:propagate_sync(Ops),
+                    Last2 = inter_dc_repl:propagate_sync(Ops);
                 {error, nothing} ->
+                    Last2 = Last,
                     timer:sleep(?RETRY_TIME),
-                    trigger({Partition, node()}),
+                    trigger({Partition, node()})
             end
     end,
     {noreply, State#state{last_op=Last2}}.

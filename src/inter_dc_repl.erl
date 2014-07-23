@@ -58,13 +58,18 @@ await_ack({ok,Payload}, StateData=#state{ackrecvd = AckRecvd , otherdcs = OtherD
     TotalAck = AckRecvd+1,
     NoDcs = length(OtherDCs),
     case TotalAck of
-        NoDcs ->  {stop, normal, StateData#state{ackrecvd = TotalAck}};
-    _ -> {next_state, await_ack, StateData#state{ackrecvd = TotalAck}, ?TIMEOUT}
+        NoDcs ->
+            {stop, normal, StateData#state{ackrecvd = TotalAck}};
+        _ -> 
+            {next_state, await_ack, StateData#state{ackrecvd = TotalAck}, ?TIMEOUT}
     end;
+
 await_ack(timeout,StateData=#state{ackrecvd = AckRecvd}) ->
     case AckRecvd of
-    0 -> {stop, request_timeout, StateData};
-    _ -> {stop, normal, StateData}  %TODO: Handle the case when not all DCs recieve updates
+        0 ->
+            {stop, request_timeout, StateData};
+        _ ->
+            {stop, normal, StateData}  %TODO: Handle the case when not all DCs recieve updates
     end.
 
 %% @private
