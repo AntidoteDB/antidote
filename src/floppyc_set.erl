@@ -15,7 +15,8 @@
         ]).
 
 -export([add/2,
-         remove/2
+         remove/2,
+         contains/2
         ]).
 
 -record(floppy_set, {
@@ -74,6 +75,18 @@ remove(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}=Fset) ->
                 false -> Fset
             end
     end.
+
+contains(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}) ->
+    case sets:is_element(Elem, Adds) of
+        true -> true;
+        false ->
+            case sets:is_element(Elem, Set) of
+                true -> sets:is_element(Elem, Rems);
+                false -> false
+            end
+    end.
+
+
 
 %% @doc Determines whether the passed term is a counter container.
 is_type(T) ->
