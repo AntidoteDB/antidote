@@ -40,10 +40,10 @@ encode(Message) ->
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbsetupdatereq{key=Key, adds=Adds, rems=Rems}, State) ->
     lists:foreach(fun(Elem) -> 
-                         floppy:append(Key,{add,Elem})
+                         floppy:append(Key,{{add,Elem},node()})
                   end,Adds),
     lists:foreach(fun(Elem) -> 
-                         floppy:append(Key,{remove,Elem})
+                         floppy:append(Key,{{remove,Elem},node()})
                   end,Rems),
     {reply, #fpboperationresp{success = true}, State};
 
@@ -51,8 +51,7 @@ process(#fpbsetupdatereq{key=Key, adds=Adds, rems=Rems}, State) ->
 %% @todo accept different types of counters.
 process(#fpbgetsetreq{key=Key}, State) ->
     Result = floppy:read(Key,riak_dt_orset),
-    io:format("result is ~p ~n",[Result]),
-    {reply, #fpbgetsetresp{value = binary:list_to_bin(Result)}, State}.
+    {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State}.
 
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.

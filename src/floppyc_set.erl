@@ -38,6 +38,16 @@
 new(Key) ->
     #floppy_set{key=Key, set=sets:new(), adds=sets:new(), rems=sets:new()}.
 
+new(Key,[]) ->
+    #floppy_set{key=Key, set=sets:new(), adds=sets:new(), rems=sets:new()};
+
+new(Key, [_H | _] = List) ->
+    Set = lists:foldl(fun(E,S) ->
+                        sets:add_element(E,S)
+                end,sets:new(),List),
+    #floppy_set{key=Key, set=Set, adds=sets:new(), rems=sets:new()};
+
+
 new(Key, Set) ->
     #floppy_set{key=Key, set=Set, adds=sets:new(), rems=sets:new()}.
 
@@ -49,13 +59,20 @@ dirty_value(#floppy_set{set=Set, adds=Adds}) ->
     sets:union(Set,Adds).
 
 %% @doc Adds an element to the local set.
-add(Elem, #floppy_set{set=Local}) ->
-    #floppy_set{adds=sets:add_element(Elem,Local)}.
+add(Elem, #floppy_set{set=Set, adds=Adds}=Fset) ->
+     case sets:is_element(Elem, Set) of
+        false -> Fset#floppy_set{adds=sets:add_element(Elem,Adds)};
+        true -> Fset
+     end.
 
-remove(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}) ->
+remove(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}=Fset) ->
     case sets:is_element(Elem, Adds) of
-        true ->  #floppy_set{set=Set, adds=sets:del_element(Elem,Adds), rems=Rems};
-        false ->  #floppy_set{set=Set, adds=Adds, rems=sets:add_element(Elem,Rems)}
+        true ->  Fset#floppy_set{adds=sets:del_element(Elem,Adds)};
+        false -> 
+            case sets:is_element(Elem, Set) of
+                true -> Fset#floppy_set{rems=sets:add_element(Elem,Rems)};
+                false -> Fset
+            end
     end.
 
 %% @doc Determines whether the passed term is a counter container.
@@ -70,7 +87,7 @@ to_ops(#floppy_set{key=Key, adds=Adds, rems=Rems}) ->
     case sets:size(Adds) =:= 0 andalso sets:size(Rems) =:= 0 of
         true -> undefined;
         false -> 
-            #fpbsetupdatereq{key=Key, adds=sets:to_list(Adds), rems=sets:to_list(Rems)}
+            [#fpbsetupdatereq{key=Key, adds=sets:to_list(Adds), rems=sets:to_list(Rems)}]
     end.
 
 message_for_get(Key) -> #fpbgetsetreq{key=Key}.
@@ -82,8 +99,20 @@ message_for_get(Key) -> #fpbgetsetreq{key=Key}.
 -ifdef(TEST).
 add_op_test() ->
     New = floppyc_set:new(dumb_key),
-    EmptySet = sets:size(floppyc_set:value(New)),
-    [?_assert(EmptySet =:= 0)].
+    EmptySet = sets:size(floppyc_set:dirty_value(New)),
+    OneElement = floppyc_set:add(atom1,New),
+    Size1Set = sets:size(floppyc_set:dirty_value(OneElement)),
+    [?_assert(EmptySet =:= 0),
+     ?_assert(Size1Set =:= 1)].
 
+add_op_existing_set_test() ->
+    New = floppyc_set:new(dumb_key,[elem1,elem2,elem3]),
+    ThreeElemSet = sets:size(floppyc_set:dirty_value(New)),
+    AddElem = floppyc_set:add(elem4,New),
+    S1 = floppyc_set:remove(elem4,AddElem),
+    S2 = floppyc_set:remove(elem2,S1),
+    TwoElemSet = sets:size(floppyc_set:dirty_value(S2)),
+    [?_assert(ThreeElemSet =:= 3),
+     ?_assert(TwoElemSet =:= 2)].
 -endif.
 

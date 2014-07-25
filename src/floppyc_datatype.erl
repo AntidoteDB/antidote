@@ -8,7 +8,7 @@
 -endif.
 
 
--define(MODULES, [floppyc_counter]).
+-define(MODULES, [floppyc_counter, floppyc_set]).
 
 -export([module_for_type/1,
          module_for_term/1]).
