@@ -215,11 +215,12 @@ store_crdt(Obj, Pid) ->
 
 %Reads an object from the storage and returns a client-side 
 %representation of the CRDT.
+%% @todo Handle different return messages
 get_crdt(Key, Type, Pid) ->
     Mod = floppyc_datatype:module_for_type(Type),
     Op = Mod:message_for_get(Key),
     {ok, Value} = call_infinity(Pid, {req, Op, ?TIMEOUT}),
-    Mod:new(Key,Value).
+    {ok,Mod:new(Key,Value)}.
 
 
 
