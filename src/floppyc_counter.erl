@@ -70,7 +70,7 @@ is_type(T) ->
 
 %% @doc Returns the symbolic name of this container.
 -spec type() -> atom().
-type() -> counter.
+type() -> riak_dt_pncounter.
 
 to_ops(#counter{key=_Key, increment=0}) -> undefined;
 

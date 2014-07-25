@@ -88,13 +88,13 @@ contains(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}) ->
 
 
 
-%% @doc Determines whether the passed term is a counter container.
+%% @doc Determines whether the passed term is a set container.
 is_type(T) ->
     is_record(T, floppy_set).
 
 
 %% @doc Returns the symbolic name of this container.
-type() -> floppy_set.
+type() -> riak_dt_orset.
 
 to_ops(#floppy_set{key=Key, adds=Adds, rems=Rems}) -> 
     case sets:size(Adds) =:= 0 andalso sets:size(Rems) =:= 0 of

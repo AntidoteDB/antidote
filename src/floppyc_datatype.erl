@@ -50,11 +50,8 @@
 %% Returns the module that is a container for the given abstract
 %% type.
 -spec module_for_type(Type::atom()) -> module().
-module_for_type(floppy_set) -> floppyc_set;
-module_for_type(counter)  -> floppyc_counter;
-module_for_type(flag)     -> floppyc_flag;
-module_for_type(register) -> floppyc_register;
-module_for_type(map)      -> floppyc_map.
+module_for_type(riak_dt_orset) -> floppyc_set;
+module_for_type(riak_dt_pncounter)  -> floppyc_counter.
 
 %% @doc Returns the appropriate container module for the given term,
 %% if possible.
