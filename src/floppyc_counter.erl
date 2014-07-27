@@ -45,11 +45,12 @@ value(#counter{value=Value}) ->
 dirty_value(#counter{value=Value, increment=Increment}) ->
     Value + Increment.
 
-%% @doc Increments the counter by 1.
+%% @doc Increments the counter with 1 unit.
 -spec increment(counter()) -> counter().
 increment(Counter) ->
     increment(1, Counter).
 
+%% @doc Increments the counter with Amount units.
 increment(Amount, #counter{increment=Value}=Counter) when is_integer(Amount) ->
     Counter#counter{increment=Value+Amount}.
 
@@ -63,12 +64,10 @@ decrement(Counter) ->
 decrement(Amount, #counter{increment=Value}=Counter) ->
     Counter#counter{increment=Value-Amount}.
 
-%% @doc Determines whether the passed term is a counter container.
 -spec is_type(term()) -> boolean().
 is_type(T) ->
     is_record(T, counter).
 
-%% @doc Returns the symbolic name of this container.
 -spec type() -> atom().
 type() -> riak_dt_pncounter.
 

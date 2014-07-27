@@ -38,17 +38,18 @@ encode(Message) ->
     {ok, riak_pb_codec:encode(Message)}.
 
 %% @doc process/2 callback. Handles an incoming request message.
-process(#fpbsetupdatereq{key=Key, adds=Adds, rems=Rems}, State) ->
-    lists:foreach(fun(Elem) -> 
-                         floppy:append(Key,{{add,Elem},node()})
-                  end,Adds),
-    lists:foreach(fun(Elem) -> 
-                         floppy:append(Key,{{remove,Elem},node()})
-                  end,Rems),
+process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
+    lists:foreach(fun(X) ->
+                          Elem = erlang:binary_to_term(X),
+                          floppy:append(Key,{{add,Elem},node()})
+                  end,AddsBin),
+    lists:foreach(fun(X) ->
+                          Elem = erlang:binary_to_term(X),
+                          floppy:append(Key,{{remove,Elem},node()})
+                  end,RemsBin),
     {reply, #fpboperationresp{success = true}, State};
 
 %% @doc process/2 callback. Handles an incoming request message.
-%% @todo accept different types of counters.
 process(#fpbgetsetreq{key=Key}, State) ->
     Result = floppy:read(Key,riak_dt_orset),
     {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State}.

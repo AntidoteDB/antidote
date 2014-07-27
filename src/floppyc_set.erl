@@ -44,28 +44,26 @@ new(Key,[]) ->
 
 new(Key, [_H | _] = List) ->
     Set = lists:foldl(fun(E,S) ->
-                        sets:add_element(E,S)
-                end,sets:new(),List),
+                              sets:add_element(E,S)
+                      end,sets:new(),List),
     #floppy_set{key=Key, set=Set, adds=sets:new(), rems=sets:new()};
-
 
 new(Key, Set) ->
     #floppy_set{key=Key, set=Set, adds=sets:new(), rems=sets:new()}.
 
--spec value(floppy_set()) -> set().
 value(#floppy_set{set=Set}) -> Set.
 
--spec dirty_value(floppy_set()) -> set().
 dirty_value(#floppy_set{set=Set, adds=Adds}) ->
     sets:union(Set,Adds).
 
 %% @doc Adds an element to the local set.
 add(Elem, #floppy_set{set=Set, adds=Adds}=Fset) ->
-     case sets:is_element(Elem, Set) of
+    case sets:is_element(Elem, Set) of
         false -> Fset#floppy_set{adds=sets:add_element(Elem,Adds)};
         true -> Fset
-     end.
+    end.
 
+%% @doc Removes an element to the local set.
 remove(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}=Fset) ->
     case sets:is_element(Elem, Adds) of
         true ->  Fset#floppy_set{adds=sets:del_element(Elem,Adds)};
@@ -76,6 +74,7 @@ remove(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}=Fset) ->
             end
     end.
 
+%% @doc Checks if the set contains the given element.
 contains(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}) ->
     case sets:is_element(Elem, Adds) of
         true -> true;
@@ -86,17 +85,13 @@ contains(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}) ->
             end
     end.
 
-
-
-%% @doc Determines whether the passed term is a set container.
 is_type(T) ->
     is_record(T, floppy_set).
 
-
-%% @doc Returns the symbolic name of this container.
 type() -> riak_dt_orset.
 
-to_ops(#floppy_set{key=Key, adds=Adds, rems=Rems}) -> 
+to_ops(#floppy_set{key=Key, adds=Adds, rems=Rems}=Ops) -> 
+    io:format("to ops ~p ~n",[Ops]),
     case sets:size(Adds) =:= 0 andalso sets:size(Rems) =:= 0 of
         true -> undefined;
         false -> 

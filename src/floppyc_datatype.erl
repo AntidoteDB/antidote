@@ -20,41 +20,39 @@
 -type typename() :: atom().
 -type update() :: [term()].
 
-%% Constructs a new container for the type with the specified
+%% @doc Constructs a new container for the type with the specified
 %% value and key. This should only be used internally by the client code.
 -callback new(Key::binary(), Value::term()) -> datatype().
 
-%% Returns the original, unmodified value of the type. This does
-%% not include the application of any locally-queued operations.
+%% @doc Returns the original, unmodified value of the object. This does
+%% not include the execution of any locally-queued operations.
 -callback value(datatype()) -> term().
 
-%% Returns the local value of the object.
+%% @doc Returns the local value of the object, with the local operations applied.
 -callback dirty_value(datatype()) -> term().
 
-%% Returns the message to get an object of the type of this container.
+%% @doc Returns the message to get an object of the type of this container.
 -callback message_for_get(binary()) -> term().
 
-
-%% Extracts the list of operations to be append to the object's log.
+%% @doc Extracts the list of operations to be append to the object's log.
 %% 'undefined' should be returned if the type is unmodified.
 -callback to_ops(datatype()) -> update().
 
-%% Determines whether the given term is the type managed by the
+%% @doc Determines whether the given term is the type managed by the
 %% container module.
 -callback is_type(datatype()) -> boolean().
 
-%% Determines the symbolic name of the container's type, e.g.
-%% set, map, counter.
+%% @doc Determines the symbolic name of the container's type, e.g.
+%% floppy_set, floppy_map, floppy_counter.
 -callback type() -> typename().
 
-%% Returns the module that is a container for the given abstract
-%% type.
+%% @doc Returns the module name for the container of the given CRDT data-type.
 -spec module_for_type(Type::atom()) -> module().
 module_for_type(riak_dt_orset) -> floppyc_set;
 module_for_type(riak_dt_pncounter)  -> floppyc_counter.
 
-%% @doc Returns the appropriate container module for the given term,
-%% if possible.
+%% @doc Returns the container module name for the given term. 
+%% Returns undefined if the module is not known.
 -spec module_for_term(datatype()) -> maybe(module()).
 module_for_term(T) ->
     lists:foldl(fun(Mod, undefined) ->
