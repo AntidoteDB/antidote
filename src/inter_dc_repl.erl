@@ -22,7 +22,6 @@
 -define(TIMEOUT,60000).
 
 %%public api
-
 propogate_sync(Payload) ->
     Me = self(),
     ReqId = 1, %Generate reqID here

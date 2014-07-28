@@ -13,11 +13,12 @@
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
 -record(operation, {op_number, payload}).
+-type operation() :: #operation{}.
 
 
 % Clock SI
 
-% MIN is Used for generating the timeStamp of a new snapshot
+% MIN is used for generating the timestamp of a new snapshot
 % in the case that a client has already seen a snapshot time
 % greater than the current time at the replica it is starting
 % a new transaction.
@@ -29,3 +30,16 @@
 -define(CLOCKSI_TIMEOUT, 1000).
 
 -record(tx, {snapshot_time, commit_time, prepare_time, state, write_set, operations}).
+-type tx() :: #tx{}.
+
+-type key() :: term().
+-type op()  :: term().
+-type crdt() :: term().
+-type val() :: term().
+-type reason() :: atom().
+-type preflist() :: riak_core_apl:preflist().
+-type log() :: term().
+-type op_id() :: {Number::non_neg_integer(), node()}.
+
+
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, operation/0, tx/0]).

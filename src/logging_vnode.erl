@@ -9,11 +9,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-%% TODO Refine types!
--type preflist() :: [{integer(), node()}] .
--type key() :: term().
--type log() :: term().
--type reason() :: term().
 
 %% API
 -export([start_vnode/1,
@@ -47,26 +42,33 @@ start_vnode(I) ->
 %% @doc Sends a `threshold read' asyncrhonous command to the Logs in `Preflist'
 %%      From is the operation id form which the caller wants to retrieve the operations.
 %%      The operations are retrieved in inserted order and the From operation is also included.
+-spec threshold_read(preflist(), key(), node()) -> term().
 threshold_read(Preflist, Key, From) ->
     Primaries = get_primaries_preflist(Key),
     riak_core_vnode_master:command(Preflist, {threshold_read, Key, From, Primaries}, {fsm, undefined, self()},?LOGGINGMASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist' 
+-spec dread(preflist(), key()) -> term().
 dread(Preflist, Key) ->
     Primaries = get_primaries_preflist(Key),
     riak_core_vnode_master:command(Preflist, {read, Key, Primaries}, {fsm, undefined, self()},?LOGGINGMASTER).
 
-%% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist' 
+%% @doc Sends an `append' asynchronous command to the Logs in `Preflist' 
+-spec dappend(preflist(), key(), op(), op_id()) -> term(). 
 dappend(Preflist, Key, Op, OpId) ->
     Primaries = get_primaries_preflist(Key),
     riak_core_vnode_master:command(Preflist, {append, Key, Op, OpId, Primaries},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
-%% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
+%% @doc Sends a `append_list' synchronous command to the Log in `Node'.
+%% TODO Fix type spec!
+%%-spec append_list(node(), [op()]) -> term().
 append_list(Node, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {append_list, Ops},
                                         ?LOGGINGMASTER).
+
 %% @doc Returns the preflist with the primary vnodes. No matter they are up or down.
+-spec get_primaries_preflist(key()) -> preflist().
 get_primaries_preflist(Key) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     DocIdx = riak_core_util:chash_key({?BUCKET,term_to_binary(Key)}),
@@ -199,7 +201,6 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, #state{logs_map=Map}=State) ->
-
     {Key, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
     Preflist = get_primaries_preflist(Key),
     case get_log_from_map(Map, Preflist) of
@@ -209,7 +210,6 @@ handle_handoff_data(Data, #state{logs_map=Map}=State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end.
-    %{reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
@@ -243,7 +243,7 @@ terminate(_Reason, _State) ->
 %%  Input:  Preflists: Each preflist is the represents one log
 %%          Map: the dictionary that relates the preflist with the actual log
 %%  Return: true if all logs are empty. false if at least one log contains data.
--spec no_elements(Preflists::[[Partition::non_neg_integer()]], Map::dict()) -> boolean().
+-spec no_elements([preflist()], dict()) -> boolean().
 no_elements([], _Map) ->
     true;
 no_elements([Preflist|Rest], Map) ->
@@ -267,7 +267,7 @@ no_elements([Preflist|Rest], Map) ->
 %%                      From: Oldest op_id to return
 %%                      Filtered: List of filetered operations
 %%      Return:         The filtered list of operations
--spec threshold_prune(Operations::list(), From::atom()) -> list().
+-spec threshold_prune(Operations::list(op()), From::atom()) -> list().
 threshold_prune([], _From) -> [];
 threshold_prune([Next|Rest], From) ->
     case Next#operation.op_number == From of
@@ -297,7 +297,7 @@ open_logs(LogFile, [Next|Rest], Initial, Map)->
             {error, Reason}
     end.
 
-%% @doc remove_node_from_preflist:  From each element of the input preflist, the node identifier is removed
+%% @doc remove_node_from_preflist: From each element of the input preflist, the node identifier is removed
 %%      Input:  Preflist: list of pairs {Partition, Node}
 %%      Return: List of Partition identifiers
 -spec remove_node_from_preflist(preflist()) -> [integer()].
@@ -308,9 +308,8 @@ remove_node_from_preflist(Preflist) ->
         end,
     lists:foldl(F, [], Preflist).
 
-%% @doc         get_log_from_map:       abstracts the get function of a key-value store
-%%                                                      currently using dict
-%%              Input:  Map:    dict that representes the map
+%% @doc get_log_from_map: abstracts the get function of a key-value store currently using dict
+%%             Input:  Map:    dict that representes the map
 %%                              Preflist:       The key to search for.
 %%              Return:         The actual name of the log
 -spec get_log_from_map(dict(), preflist()) -> {ok, term()} | {error, no_log_for_preflist}.
@@ -344,7 +343,7 @@ join_logs([Element|Rest], F, Acc) ->
 %%                              OpId: Id of the operation to insert
 %%                              Payload: The payload of the operation to insert
 %%              Return:         {ok, OpId} | {error, Reason}
--spec insert_operation(log(), key(), OpId::{Number::non_neg_integer(), node()}, Payload::term()) -> {ok, {Number::non_neg_integer(), node()}} | {error, reason()}.
+-spec insert_operation(log(), key(), op_id(), Payload::term()) -> {ok, op_id()} | {error, reason()}.
 insert_operation(Log, Key, OpId, Payload) ->
     case dets:match(Log, {Key, #operation{op_number=OpId, payload='$1'}}) of
         [] ->
@@ -366,7 +365,7 @@ insert_operation(Log, Key, OpId, Payload) ->
 %%              Input:  Log: Identifier of the log
 %%                              Key: Key to shich the operation belongs
 %%              Return:         List of all the logged operations 
--spec lookup_operations(Log::term(), Key::term()) -> list() | {error, atom()}.
+-spec lookup_operations(log(), key()) -> list() | {error, atom()}.
 lookup_operations(Log, Key) ->
     dets:lookup(Log, Key).
 

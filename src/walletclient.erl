@@ -8,9 +8,6 @@
 
 -export([run/1, start/1]).
 
--type key() :: term().
--type reason() :: atom().
-
 start(Args) ->
     [Key1, Key2] = Args,
     run([Key1,Key2]).
