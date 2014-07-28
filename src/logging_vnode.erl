@@ -33,7 +33,8 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(state, {partition, logs_map}).
+-record(log_state, {partition, logs_map}).
+
 
 %% API
 start_vnode(I) ->
@@ -95,13 +96,13 @@ init([Partition]) ->
         {error, Reason} ->
             {error, Reason};
         Map ->
-            {ok, #state{partition=Partition, logs_map=Map}}
+            {ok, #log_state{partition=Partition, logs_map=Map}}
     end.
 
 %% @doc Read command: Returns the operations logged for Key
 %%     Input: Key of the object to read
 %%     Output: {vnode_id, Operations} | {error, Reason}
-handle_command({read, Key, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
+handle_command({read, Key, Preflist}, _Sender, #log_state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
             case lookup_operations(Log, Key) of
@@ -120,7 +121,7 @@ handle_command({read, Key, Preflist}, _Sender, #state{partition=Partition, logs_
 %%      Input:  Key of the object to read
 %%              From: the oldest op_id to return
 %%      Output: {vnode_id, Operations} | {error, Reason}
-handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
+handle_command({threshold_read, Key, From, Preflist}, _Sender, #log_state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
             case lookup_operations(Log, Key) of
@@ -140,7 +141,7 @@ handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=
 %% @doc Repair command: Appends the Ops to the Log
 %%      Input: Ops: Operations to append
 %%      Output: ok | {error, Reason}
-handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->      
+handle_command({append_list, Ops}, _Sender, #log_state{logs_map=Map}=State) ->      
     F = fun(Elem, Acc) ->
             {Key, #operation{op_number=OpId, payload=Payload}} = Elem,
             Preflist = get_primaries_preflist(Key),
@@ -166,7 +167,7 @@ handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->
 %%              OpId: Unique operation id               
 %%      Output: {ok, op_id} | {error, Reason}
 handle_command({append, Key, Payload, OpId, Preflist}, _Sender,
-               #state{logs_map=Map, partition = Partition}=State) ->
+               #log_state{logs_map=Map, partition = Partition}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
             case insert_operation(Log, Key, OpId, Payload) of
@@ -184,7 +185,7 @@ handle_command(Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
-                       #state{logs_map=Map}=State) ->
+                       #log_state{logs_map=Map}=State) ->
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
     Acc= join_logs(dict:to_list(Map), F, Acc0),
     
@@ -200,7 +201,7 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(Data, #state{logs_map=Map}=State) ->
+handle_handoff_data(Data, #log_state{logs_map=Map}=State) ->
     {Key, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
     Preflist = get_primaries_preflist(Key),
     case get_log_from_map(Map, Preflist) of
@@ -214,7 +215,7 @@ handle_handoff_data(Data, #state{logs_map=Map}=State) ->
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
 
-is_empty(State=#state{logs_map=Map}) ->
+is_empty(State=#log_state{logs_map=Map}) ->
     Preflists = dict:fetch_keys(Map),
     case no_elements(Preflists, Map) of
         true ->
@@ -267,7 +268,7 @@ no_elements([Preflist|Rest], Map) ->
 %%                      From: Oldest op_id to return
 %%                      Filtered: List of filetered operations
 %%      Return:         The filtered list of operations
--spec threshold_prune(Operations::list(op()), From::atom()) -> list().
+-spec threshold_prune(Operations::[op()], From::atom()) -> list().
 threshold_prune([], _From) -> [];
 threshold_prune([Next|Rest], From) ->
     case Next#operation.op_number == From of
@@ -312,7 +313,7 @@ remove_node_from_preflist(Preflist) ->
 %%             Input:  Map:    dict that representes the map
 %%                              Preflist:       The key to search for.
 %%              Return:         The actual name of the log
--spec get_log_from_map(dict(), preflist()) -> {ok, term()} | {error, no_log_for_preflist}.
+-spec get_log_from_map(dict(), preflist()) -> {ok, val()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, FullPreflist) ->
     Preflist = remove_node_from_preflist(FullPreflist),
     lager:info("Preflist to map: ~w~n",[Preflist]),
@@ -343,7 +344,7 @@ join_logs([Element|Rest], F, Acc) ->
 %%                              OpId: Id of the operation to insert
 %%                              Payload: The payload of the operation to insert
 %%              Return:         {ok, OpId} | {error, Reason}
--spec insert_operation(log(), key(), op_id(), Payload::term()) -> {ok, op_id()} | {error, reason()}.
+-spec insert_operation(log(), key(), op_id(), payload()) -> {ok, op_id()} | {error, reason()}.
 insert_operation(Log, Key, OpId, Payload) ->
     case dets:match(Log, {Key, #operation{op_number=OpId, payload='$1'}}) of
         [] ->
@@ -365,7 +366,7 @@ insert_operation(Log, Key, OpId, Payload) ->
 %%              Input:  Log: Identifier of the log
 %%                              Key: Key to shich the operation belongs
 %%              Return:         List of all the logged operations 
--spec lookup_operations(log(), key()) -> list() | {error, atom()}.
+-spec lookup_operations(log(), key()) -> [log()] | {error, reason()}.
 lookup_operations(Log, Key) ->
     dets:lookup(Log, Key).
 

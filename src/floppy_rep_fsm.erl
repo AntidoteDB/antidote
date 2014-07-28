@@ -197,7 +197,8 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
-code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+code_change(_OldVsn, StateName, State, _Extra) -> 
+    {ok, StateName, State}.
 
 terminate(_Reason, _StateName, _StateData) ->
     ok.
