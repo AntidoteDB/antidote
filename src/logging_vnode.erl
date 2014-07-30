@@ -9,6 +9,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+%% TODO Refine types!
+-type preflist() :: [{integer(), node()}] .
+-type log() :: term().
+-type reason() :: term().
+
 %% API
 -export([start_vnode/1,
          dread/2,
@@ -57,6 +62,7 @@ append_list(Node, Log, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {append_list, Log, Ops},
                                         ?LOGGINGMASTER).
+
 %% @doc Opens the persistent copy of the Log.
 %%	The name of the Log in disk is a combination of the the word `log' and
 %%	the partition identifier.
@@ -80,8 +86,8 @@ init([Partition]) ->
     end.
 
 %% @doc Read command: Returns the operations logged for Key
-%%	Input: Key of the object to read
-%%	Output: {vnode_id, Operations} | {error, Reason}
+%%	Input: The id of the log to be read
+%%	Output: {ok, {vnode_id, Operations}} | {error, Reason}
 handle_command({read, LogId}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, LogId) of
         {ok, Log} ->
@@ -99,7 +105,7 @@ handle_command({read, LogId}, _Sender, #state{partition=Partition, logs_map=Map}
 
 %% @doc Threshold read command: Returns the operations logged for Key from a specified op_id-based threshold
 %%	Input:  From: The operation threshold. This operation is never returned.
-%%          Preflist: Identifies the log to be read
+%%          LogId: Identifies the log to be read
 %%	Output: {vnode_id, Operations} | {error, Reason}
 handle_command({threshold_read, LogId, From}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, LogId) of
@@ -118,7 +124,8 @@ handle_command({threshold_read, LogId, From}, _Sender, #state{partition=Partitio
     end;
 
 %% @doc Repair command: Appends the Ops to the Log
-%%	Input: Ops: Operations to append
+%%  Input:  LogId: Indetifies which log the operations have to be appended to.
+%%	        Ops: Operations to append
 %%	Output: ok | {error, Reason}
 handle_command({append_list, LogId, Ops}, _Sender, #state{logs_map=Map}=State) ->	
 
@@ -131,20 +138,19 @@ handle_command({append_list, LogId, Ops}, _Sender, #state{logs_map=Map}=State) -
                             Acc;
                         {error, Reason} ->
                             [{error, Reason}|Acc]
-                    end       
+                    end
                 end,
-            list:foldl(F, [], Ops);
+            lists:foldl(F, [], Ops);
         {error, Reason} ->
             {error, Reason}
     end,
     {reply, Result, State};
-    
 
 %% @doc Append command: Appends a new op to the Log of Key
-%%	Input:	Key of the object
-%%		Payload of the operation
-%%		OpId: Unique operation id	      	
-%%	Output: {ok, op_id} | {error, Reason}
+%%	Input:	LogId: Indetifies which log the operation has to be appended to. 
+%%		    Payload of the operation
+%%		    OpId: Unique operation id
+%%	Output: {ok, {vnode_id, op_id}} | {error, Reason}
 handle_command({append, LogId, OpId, Payload}, _Sender,
                #state{logs_map=Map, partition = Partition}=State) ->
     case get_log_from_map(Map, LogId) of
@@ -190,7 +196,6 @@ handle_handoff_data(Data, #state{logs_map=Map}=State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end.
-    %{reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
@@ -221,7 +226,7 @@ terminate(_Reason, _State) ->
 %%====================%%
 
 %% @doc no_elements: checks whether any of the logs contains any data
-%%  Input:  Preflists: Each preflist is the represents one log
+%%  Input:  LogIds: Each logId is a preflist that represents one log
 %%          Map: the dictionary that relates the preflist with the actual log
 %%  Return: true if all logs are empty. false if at least one log contains data.
 -spec no_elements(LogIds::[[Partition::non_neg_integer()]], Map::dict()) -> boolean().
@@ -266,7 +271,7 @@ threshold_prune([Next|Rest], From) ->
 %%			Initial: Initial log identifier. Non negative integer. Consecutive ids for the logs. 
 %%			Map: The ongoing map of preflist->log. dict() type.
 %%	Return:	LogsMap: Maps the  preflist and actual name of the log in the system. dict() type.
--spec open_logs(LogFile::string(), Preflists::[{Index :: integer(), Node :: term()}], N::non_neg_integer(), Map::dict()) -> LogsMap::dict().
+-spec open_logs(LogFile::string(), [preflist()], N::non_neg_integer(), Map::dict()) -> LogsMap::dict() | {error,reason()}.
 open_logs(_LogFile, [], _Initial, Map) -> Map;
 open_logs(LogFile, [Next|Rest], Initial, Map)->
     LogId = string:concat(LogFile, integer_to_list(Initial)),
@@ -283,7 +288,7 @@ open_logs(LogFile, [Next|Rest], Initial, Map)->
 %% @doc	get_log_from_map:	abstracts the get function of a key-value store
 %%							currently using dict
 %%		Input:	Map:	dict that representes the map
-%%				Preflist:	The key to search for.
+%%				LogId:	identifies the log.
 %%		Return:	The actual name of the log
 -spec get_log_from_map(Map::dict(), LogId::[Index::integer()]) -> {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, LogId) ->
@@ -300,7 +305,7 @@ get_log_from_map(Map, LogId) ->
 %%				F: Function to apply when floding the log (dets)
 %%				Acc: Folded data
 %%		Return: Folded data of all the logs.
--spec join_logs(Map::[{[{Index::integer(), Node::term()}], Log::term()}], F::fun(), Acc::term()) -> term().
+-spec join_logs(Map::[{preflist(), log()}], F::fun(), Acc::term()) -> term().
 join_logs([], _F, Acc) -> Acc;
 join_logs([Element|Rest], F, Acc) ->
     {_Preflist, Log} = Element,
@@ -309,11 +314,11 @@ join_logs([Element|Rest], F, Acc) ->
 
 %% @doc	insert_operation: Inserts an operation into the log only if the OpId is not already in the log
 %%		Input:	Log: The identifier log the log where the operation will be inserted
-%%				Preflist: Log identifier to which the operation belongs.
+%%				LogId: Log identifier to which the operation belongs.
 %%				OpId: Id of the operation to insert
 %%				Payload: The payload of the operation to insert
 %%		Return:	{ok, OpId} | {error, Reason}
--spec insert_operation(Log::term(), Key::term(), OpId::{Number::non_neg_integer(), Node::term()}, Payload::term()) -> {ok, {Number::non_neg_integer(), Node::term()}} | {error, term()}.
+-spec insert_operation(log(), [Index::integer()], OpId::{Number::non_neg_integer(), node()}, Payload::term()) -> {ok, {Number::non_neg_integer(), node()}} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
@@ -333,40 +338,33 @@ insert_operation(Log, LogId, OpId, Payload) ->
 
 %% @doc get_log: Looks up for the operations logged in a particular log
 %%		Input:	Log: Table identifier of the log
-%%              Preflist: Identifier of the log
+%%              LogId: Identifier of the log
 %%		Return:	List of all the logged operations 
--spec get_log(Log::term(), LogId::[Index::integer()]) -> list().
+-spec get_log(Log::term(), [Index::integer()]) -> list() | {error, atom()}.
 get_log(Log, LogId) ->
     dets:lookup(Log, LogId).
 
 %% @doc preflist_member: Returns true if the Partition identifier is part of the Preflist
-%%      Input:  Partition: The partidion identifier to check
+%%      Input:  Partition: The partition identifier to check
 %%              Preflist: A list of pairs {Partition, Node}
 %%      Return: true | false
--spec preflist_member(Partition::non_neg_integer(), Preflist::[{Index::integer(), Node::term()}]) -> true | false.
-preflist_member(_Partition,[]) -> false;
-preflist_member(Partition,[Next|Rest]) ->
-    {PartitionB, _} = Next,
-    case PartitionB==Partition of
-        true ->
-            true;
-        false ->
-            preflist_member(Partition, Rest)
-    end.    
+-spec preflist_member(partition(), preflist()) -> boolean().
+preflist_member(Partition,Preflist) ->
+    lists:any(fun({P,_}) -> P == Partition end, Preflist).
 
 -ifdef(TEST).
 
 %% @doc Testing threshold_prune works as expected
-%thresholdprune_test() ->
-%    Operations = [#operation{op_number=op1},#operation{op_number=op2},#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],
-%    Filtered = threshold_prune(Operations,op3),
-%    ?assertEqual([#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],Filtered).
+thresholdprune_test() ->
+    Operations = [{log1, #operation{op_number=op1}},{log1,#operation{op_number=op2}},{log1,#operation{op_number=op3}},{log1,#operation{op_number=op4}},{log1,#operation{op_number=op5}}],
+    Filtered = threshold_prune(Operations,op3),
+    ?assertEqual([{log1,#operation{op_number=op3}},{log1,#operation{op_number=op4}},{log1,#operation{op_number=op5}}],Filtered).
 
 %% @doc Testing threshold_prune works even when there is no matching op_id
-%thresholdprune_notmatching_test() ->
-%    Operations = [#operation{op_number=op1},#operation{op_number=op2},#operation{op_number=op3},#operation{op_number=op4},#operation{op_number=op5}],
-%    Filtered = threshold_prune(Operations,op6),
-%    ?assertEqual([],Filtered).
+thresholdprune_notmatching_test() ->
+    Operations = [{log1, #operation{op_number=op1}},{log1,#operation{op_number=op2}},{log1,#operation{op_number=op3}},{log1,#operation{op_number=op4}},{log1,#operation{op_number=op5}}],
+    Filtered = threshold_prune(Operations,op6),
+    ?assertEqual([],Filtered).
 
 %% @doc Testing get_log_from_map works in both situations, when the key is in the map and when the key is not in the map
 get_log_from_map_test() ->

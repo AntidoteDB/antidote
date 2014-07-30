@@ -6,12 +6,13 @@
 %%
 {ring_state_dir,    "data/ring"}.
 {web_ip,            "127.0.0.1"}.
-{web_port,          10018}.
-{handoff_port,      10019}.
+{web_port,          @WEBPORT@}.
+{handoff_port,      @HANDOFFPORT@}.
+{ring_creation_size, 16}.
 
 %%
 %% etc/vm.args
 %%
-{node,         "dev1@127.0.0.1"}.
+{node,         "@NODE@"}.
 {cookie, "floppy"}.
 

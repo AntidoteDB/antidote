@@ -52,8 +52,12 @@ append(LogId, Payload) ->
     receive
         {ok, Result} ->
 	        lager:info("Append completed!~w~n",[Result]),
-	        {ok, Result}
-        after 5000 ->
+	        {ok, Result};
+        {error, Reason} ->
+	        lager:info("Append failed!~n"),
+	        {error, Reason}
+    after 
+        ?OP_TIMEOUT ->
 	        lager:info("Append failed!~n"),
 	        {error, timeout}
     end.
@@ -82,10 +86,14 @@ read(LogId) ->
     receive
         {ok, Ops} ->
 	        lager:info("Read completed!~n"),
-	        {ok, Ops}
-        after 5000 ->
+	        {ok, Ops};
+        {error, Reason} ->
 	        lager:info("Read failed!~n"),
-	        {error, nothing}
+	        {error, Reason}
+    after 
+        ?OP_TIMEOUT ->
+	        lager:info("Read failed!~n"),
+	        {error, timeout}
     end.
 
 %% @doc Function: operate/5
@@ -114,7 +122,7 @@ handle_command({operate, ToReply, Type, LogId, Payload}, _Sender, #state{partiti
     end,
     {NewClock,_} = OpId,
     lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
-    floppy_rep_sup:start_fsm([ToReply, Type, LogId, Payload, OpId]),
+    {ok, _} = floppy_rep_sup:start_fsm([ToReply, Type, LogId, Payload, OpId]),
     {noreply, #state{lclock=NewClock, partition= Partition}};
 
 handle_command(Message, _Sender, State) ->

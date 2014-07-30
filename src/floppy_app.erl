@@ -12,6 +12,7 @@
 start(_StartType, _StartArgs) ->
     case floppy_sup:start_link() of
         {ok, Pid} ->
+<<<<<<< HEAD
 	        %Log layer
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
@@ -19,15 +20,28 @@ start(_StartType, _StartArgs) ->
        	    %ClockSI layer
 	        ok = riak_core:register([{vnode_module, clockSI_vnode}]),
 	        ok = riak_core_node_watcher:service_up(clockSI, self()),
+=======
+            %%Log layer
+            ok = riak_core:register([{vnode_module, logging_vnode}]),
+            ok = riak_core_node_watcher:service_up(logging, self()),
+>>>>>>> refs/remotes/origin/causality
 
-            ok = riak_core:register([{vnode_module, clockSI_downstream_generator_vnode}]),
-            ok = riak_core_node_watcher:service_up(clockSI_downstream_generator, self()),
+            %%ClockSI layer
+
+            ok = riak_core:register([{vnode_module, clocksi_vnode}]),
+            ok = riak_core_node_watcher:service_up(clocksi, self()),
+
+            ok = riak_core:register(
+                   [{vnode_module, clocksi_downstream_generator_vnode}]),
+            ok = riak_core_node_watcher:service_up(
+                   clocksi_downstream_generator, self()),
 
             ok = riak_core:register([{vnode_module, vectorclock_vnode}]),
             ok = riak_core_node_watcher:service_up(vectorclock, self()),
 
             ok = riak_core:register([{vnode_module, materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(materializer, self()),
+<<<<<<< HEAD
                 
 	        %Within DC replication layer
 	        ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
@@ -42,6 +56,21 @@ start(_StartType, _StartArgs) ->
 
             ok = riak_core_ring_events:add_guarded_handler(floppy_ring_event_handler, []),
             ok = riak_core_node_watcher_events:add_guarded_handler(floppy_node_event_handler, []),
+=======
+
+            %%Within DC replication layer
+            ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
+            ok = riak_core_node_watcher:service_up(replication, self()),
+
+            %%Inter DC replication layer
+            ok = riak_core:register([{vnode_module, inter_dc_repl_vnode}]),
+            ok = riak_core_node_watcher:service_up(interdcreplication, self()),
+
+            ok = riak_core_ring_events:add_guarded_handler(
+                   floppy_ring_event_handler, []),
+            ok = riak_core_node_watcher_events:add_guarded_handler(
+                   floppy_node_event_handler, []),
+>>>>>>> refs/remotes/origin/causality
 
             {ok, Pid};
         {error, Reason} ->

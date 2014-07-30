@@ -5,4 +5,4 @@
                       dcs,
                       statestore}).
 
--define(OTHER_DC, ['floppy1@127.0.0.1', 'floppy2@127.0.0.1', 'floppy3@127.0.0.1']).
+-define(OTHER_DC, ['dev31@127.0.0.1']).

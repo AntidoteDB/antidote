@@ -18,11 +18,11 @@
 
 
 -record(state, {
-                from :: pid(),
+          from :: pid(),
                 type :: atom(),
                 log_id,
                 payload = undefined :: term() | undefined,
-                preflist :: riak_core_apl:preflist()}).
+          preflist :: riak_core_apl:preflist_ann()}).
 
 %%%===================================================================
 %%% API
@@ -31,9 +31,9 @@
 start_link(From, Type, LogId, Payload) ->
     gen_fsm:start_link(?MODULE, [From, Type, LogId, Payload], []).
 
-%start_link(Key, Op) ->
-%    lager:info('The worker is about to start~n'),
-%    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
+%%start_link(Key, Op) ->
+%%    lager:info('The worker is about to start~n'),
+%%    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
 
 finish_op(From, Result, Messages) ->
    gen_fsm:send_event(From, {Result, Messages}).
@@ -44,12 +44,12 @@ finish_op(From, Result, Messages) ->
 %% @doc Initialize the state data.
 init([From, Type, LogId, Payload]) ->
     SD = #state{
-                from=From,
-                type=Type, 
+            from=From,
+                type=Type,
                 log_id=LogId,
                 payload=Payload
-		},
-		%num_w=1},
+           },
+    %%num_w=1},
     {ok, prepare, SD, 0}.
 
 
@@ -65,19 +65,21 @@ execute(timeout, SD0=#state{
                             type=Type,
                             log_id=LogId,
                             payload=Payload,
-                            preflist=Preflist}) ->
+                        from=From,
+                        preflist=Preflist}) ->
     lager:info("Coord: Execute operation ~w ~w ~w~n",[Type, LogId, Payload]),
-    case Preflist of 
-	[] ->
-	    lager:info("Coord: Nothing in pref list~n"),
-	    {stop, normal, SD0};
-	[H|T] ->
-	    %% Send the operation to the first vnode in the preflist;
-	    %% Will timeout if the vnode does not respond within INDC_TIMEOUT
-	    lager:info("Coord: Forward to node~w~n",[H]),
-	    floppy_rep_vnode:operate(H, self(), Type, LogId, Payload), 
+    case Preflist of
+        [] ->
+            lager:info("Coord: Nothing in pref list~n"),
+            From ! {error, can_not_reach_vnode},
+            {stop, normal, SD0};
+        [H|T] ->
+            %% Send the operation to the first vnode in the preflist;
+	        %% Will timeout if the vnode does not respond within INDC_TIMEOUT
+            lager:info("Coord: Forward to node~w~n",[H]),
+	        floppy_rep_vnode:operate(H, self(), Type, LogId, Payload), 
             SD1 = SD0#state{preflist=T},
-            {next_state, waiting, SD1, ?INDC_TIMEOUT}
+            {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end.
 
 %% @doc The contacted vnode failed to respond within timeout. So contact
@@ -85,28 +87,25 @@ execute(timeout, SD0=#state{
 waiting(timeout, SD0=#state{type=Type,
 			   log_id=LogId,
 			   payload=Payload,
-			   preflist=Preflist}) ->
-    lager:info("Coord: INDC_TIMEOUT, retry...~n"),
-    case Preflist of 
-	[] ->
-	    lager:info("Coord: Nothing in pref list~n"),
-	    {stop, normal, SD0};
-	[H|T] ->
-	    lager:info("Coord: Forward to node:~w~n",[H]),
-	    floppy_rep_vnode:operate(H, self(), Type, LogId, Payload), 
+                            from=From,
+                            preflist=Preflist}) ->
+    lager:info("Coord: COORD_TIMEOUT, retry...~n"),
+    case Preflist of
+        [] ->
+            lager:info("Coord: Nothing in pref list~n"),
+            From ! {error, can_not_reach_vnode},
+            {stop, normal, SD0};
+        [H|T] ->
+            lager:info("Coord: Forward to node:~w~n",[H]),
+	        floppy_rep_vnode:operate(H, self(), Type, LogId, Payload), 
             SD1 = SD0#state{preflist=T},
-            {next_state, waiting, SD1, ?INDC_TIMEOUT}
+            {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end;
 
-%% @doc Receive result and reply the result to the process that started the fsm (From). 
+%% @doc Receive result and reply the result to the process that started the fsm (From).
 waiting({Result, Message}, SD=#state{from=From}) ->
     lager:info("Coord: Finish operation ~w ~w ~n",[Result, Message]),
-    %proxy:returnResult(Key, Val, Client),
-    From ! {Result, Message},   
-    {stop, normal, SD};
-
-
-waiting({error, no_key}, SD) ->
+    From! {Result, Message},
     {stop, normal, SD}.
 
 handle_info(_Info, _StateName, StateData) ->
@@ -126,5 +125,3 @@ terminate(_Reason, _SN, _SD) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-
-

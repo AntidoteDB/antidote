@@ -63,6 +63,7 @@ handle_command({store_update, {Key, {Op, Ts, DepV}, Dc}}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:enqueue_update({Key, {Op, Ts, DepV}, Dc}, State),
     dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {reply, ok, NewState};
+
 handle_command({process_queue}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:process_queue(State),
     dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),

@@ -1,0 +1,4 @@
+*.dump
+/README.md~
+/runclient.sh~
+/runwallet~

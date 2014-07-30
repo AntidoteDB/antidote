@@ -20,60 +20,62 @@ start_link() ->
 %% ===================================================================
 
 init(_Args) ->
-    LoggingMaster = { logging_vnode_master,
-                  {riak_core_vnode_master, start_link, [logging_vnode]},
-                  permanent, 5000, worker, [riak_core_vnode_master]},
+    LoggingMaster = {logging_vnode_master,
+                     {riak_core_vnode_master, start_link, [logging_vnode]},
+                     permanent, 5000, worker, [riak_core_vnode_master]},
+    RepMaster = {floppy_rep_vnode_master,
+                 {riak_core_vnode_master, start_link, [floppy_rep_vnode]},
+                 permanent, 5000, worker, [riak_core_vnode_master]},
+    ClockSIMaster = { clocksi_vnode_master,
+                      {riak_core_vnode_master, start_link, [clocksi_vnode]},
+                      permanent, 5000, worker, [riak_core_vnode_master]},
 
-    RepMaster = { floppy_rep_vnode_master,
-                  {riak_core_vnode_master, start_link, [floppy_rep_vnode]},
-                  permanent, 5000, worker, [riak_core_vnode_master]},
+    InterDcRepMaster = {inter_dc_repl_vnode_master,
+                        {riak_core_vnode_master, start_link,
+                         [inter_dc_repl_vnode]},
+                        permanent, 5000, worker, [riak_core_vnode_master]},
 
-    ClockSIMaster = { clockSI_vnode_master,
-                  {riak_core_vnode_master, start_link, [clockSI_vnode]},
-                  permanent, 5000, worker, [riak_core_vnode_master]},
-
-    InterDcRepMaster = { inter_dc_repl_vnode_master,
-                  {riak_core_vnode_master, start_link, [inter_dc_repl_vnode]},
-                  permanent, 5000, worker, [riak_core_vnode_master]},
-
+   
     InterDcRecvrMaster = { inter_dc_recvr_vnode_master,
                   {riak_core_vnode_master, start_link, [inter_dc_recvr_vnode]},
                   permanent, 5000, worker, [riak_core_vnode_master]},
     
-    ClockSITxCoordSup =  { clockSI_tx_coord_sup,
-                  {clockSI_tx_coord_sup, start_link, []},
-                  permanent, 5000, supervisor, [clockSI_tx_coord_sup]},
-    
-    ClockSIiTxCoordSup =  { clockSI_interactive_tx_coord_sup,
-                  {clockSI_interactive_tx_coord_sup, start_link, []},
-                  permanent, 5000, supervisor, [clockSI_interactive_tx_coord_sup]},
+ 	ClockSITxCoordSup =  { clocksi_tx_coord_sup,
+                           {clocksi_tx_coord_sup, start_link, []},
 
-    ClockSIDSGenMaster = { clockSI_downstream_generator_vnode_master,
-                           {riak_core_vnode_master,  start_link, [clockSI_downstream_generator_vnode]},
-                  permanent, 5000, worker, [riak_core_vnode_master]},
+                           permanent, 5000, supervisor, [clockSI_tx_coord_sup]},
+
+    ClockSIiTxCoordSup =  { clocksi_interactive_tx_coord_sup,
+                            {clocksi_interactive_tx_coord_sup, start_link, []},
+                            permanent, 5000, supervisor,
+                            [clockSI_interactive_tx_coord_sup]},
+
+    ClockSIDSGenMaster = { clocksi_downstream_generator_vnode_master,
+                           {riak_core_vnode_master,  start_link,
+                            [clocksi_downstream_generator_vnode]},
+                           permanent, 5000, worker, [riak_core_vnode_master]},
 
     VectorClockMaster = {vectorclock_vnode_master,
-                         {riak_core_vnode_master,  start_link, [vectorclock_vnode]},
+                         {riak_core_vnode_master,  start_link,
+                          [vectorclock_vnode]},
                          permanent, 5000, worker, [riak_core_vnode_master]},
 
     MaterializerMaster = {materializer_vnode_master,
-                         {riak_core_vnode_master,  start_link, [materializer_vnode]},
-                         permanent, 5000, worker, [riak_core_vnode_master]},
-    
-    CoordSup =  { floppy_coord_sup,
-                  {floppy_coord_sup, start_link, []},
-                  permanent, 5000, supervisor, [floppy_coord_sup]},
+                          {riak_core_vnode_master,  start_link,
+                           [materializer_vnode]},
+                          permanent, 5000, worker, [riak_core_vnode_master]},
 
-    RepSup = {   floppy_rep_sup,
-                  {floppy_rep_sup, start_link, []},
-                  permanent, 5000, supervisor, [floppy_rep_sup]},
-
-    InterDcRecvr = { inter_dc_recvr, 
-		     {inter_dc_recvr, start_link, []},
-		     permanent, 5000, worker, [inter_dc_recvr]},
-
-    { ok,
-        { {one_for_one, 5, 10},
+    CoordSup =  {floppy_coord_sup,
+                 {floppy_coord_sup, start_link, []},
+                 permanent, 5000, supervisor, [floppy_coord_sup]},
+    RepSup = {floppy_rep_sup,
+              {floppy_rep_sup, start_link, []},
+              permanent, 5000, supervisor, [floppy_rep_sup]},
+    InterDcRecvr = {inter_dc_recvr,
+                    {inter_dc_recvr, start_link, []},
+                    permanent, 5000, worker, [inter_dc_recvr]},
+    {ok,
+     {{one_for_one, 5, 10},
           [LoggingMaster,
            RepMaster,
            ClockSIMaster,
@@ -84,6 +86,6 @@ init(_Args) ->
            CoordSup,
            RepSup,
            InterDcRecvr,
-           ClockSIDSGenMaster,
-           VectorClockMaster,
-           MaterializerMaster]}}.
+       ClockSIDSGenMaster,
+       VectorClockMaster,
+       MaterializerMaster]}}.
