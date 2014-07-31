@@ -21,46 +21,47 @@
         ]).
 
 -record(counter, {
-          key :: binary(),
+          key :: term(),
           value :: integer(),
           increment :: integer()
          }).
 
--export_type([counter/0]).
--opaque counter() :: #counter{}.
+-export_type([floppy_counter/0]).
+-opaque floppy_counter() :: #counter{}.
 
--spec new(Key::binary()) -> counter().
+-spec new(term()) -> floppy_counter().
 new(Key) ->
     #counter{key=Key, value=0, increment=0}.
 
--spec new(Key::binary(), Value::term()) -> counter().
+-spec new(term(), integer()) -> floppy_counter().
 new(Key, Value) ->
     #counter{key=Key, value=Value, increment=0}.
 
--spec value(counter()) -> integer().
+-spec value(floppy_counter()) -> integer().
 value(#counter{value=Value}) ->
     Value.
 
--spec dirty_value(counter()) -> integer().
+-spec dirty_value(floppy_counter()) -> integer().
 dirty_value(#counter{value=Value, increment=Increment}) ->
     Value + Increment.
 
 %% @doc Increments the counter with 1 unit.
--spec increment(counter()) -> counter().
+-spec increment(floppy_counter()) -> floppy_counter().
 increment(Counter) ->
     increment(1, Counter).
 
 %% @doc Increments the counter with Amount units.
+-spec increment(integer(), floppy_counter()) -> floppy_counter().
 increment(Amount, #counter{increment=Value}=Counter) when is_integer(Amount) ->
     Counter#counter{increment=Value+Amount}.
 
 %% @doc Decrements the counter by 1.
--spec decrement(counter()) -> counter().
+-spec decrement(floppy_counter()) -> floppy_counter().
 decrement(Counter) ->
     increment(-1, Counter).
 
 %% @doc Decrements the counter by the passed amount.
--spec decrement(integer(), counter()) -> counter().
+-spec decrement(integer(), floppy_counter()) -> floppy_counter().
 decrement(Amount, #counter{increment=Value}=Counter) ->
     Counter#counter{increment=Value-Amount}.
 

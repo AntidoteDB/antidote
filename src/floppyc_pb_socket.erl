@@ -7,8 +7,10 @@
 -define(FIRST_RECONNECT_INTERVAL, 100).
 -define(TIMEOUT, 1000).
 
--type address() :: string() | atom() | inet:ip_address(). %% The TCP/IP host name or address of the Riak node
--type portnum() :: non_neg_integer(). %% The TCP port number of the Riak node's Protocol Buffers interface
+%% The TCP/IP host name or address of the Riak node
+-type address() :: string() | atom() | inet:ip_address(). 
+ %% The TCP port number of the Riak node's Protocol Buffers interface
+-type portnum() :: non_neg_integer().
 -type msg_id() :: non_neg_integer().
 -type rpb_req() :: {tunneled, msg_id(), binary()} | atom() | tuple().
 

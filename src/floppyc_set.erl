@@ -20,7 +20,7 @@
         ]).
 
 -record(floppy_set, {
-          key :: binary(),
+          key :: term(),
           set :: sets:sets(),
           adds :: sets:sets(),
           rems :: sets:sets()
@@ -35,10 +35,11 @@
 -endif.
 
 
-
+-spec new(term()) -> floppy_set().
 new(Key) ->
     #floppy_set{key=Key, set=sets:new(), adds=sets:new(), rems=sets:new()}.
 
+-spec new(term(), list()) -> floppy_set().
 new(Key,[]) ->
     #floppy_set{key=Key, set=sets:new(), adds=sets:new(), rems=sets:new()};
 
@@ -59,13 +60,14 @@ value(#floppy_set{set=Set}) -> Set.
 dirty_value(#floppy_set{set=Set, adds=Adds}) ->
     sets:union(Set,Adds).
 
-%% @doc Adds an element to the local set.
+%% @doc Adds an element to the local set container.
+-spec add(term(), floppy_set()) -> floppy_set().
 add(Elem, #floppy_set{set=Set, adds=Adds}=Fset) ->
      case sets:is_element(Elem, Set) of
         false -> Fset#floppy_set{adds=sets:add_element(Elem,Adds)};
         true -> Fset
      end.
-
+-spec remove(term(), floppy_set()) -> floppy_set().
 remove(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}=Fset) ->
     case sets:is_element(Elem, Adds) of
         true ->  Fset#floppy_set{adds=sets:del_element(Elem,Adds)};
@@ -76,6 +78,7 @@ remove(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}=Fset) ->
             end
     end.
 
+-spec contains(term(), floppy_set()) -> boolean().
 contains(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}) ->
     case sets:is_element(Elem, Adds) of
         true -> true;
@@ -86,14 +89,14 @@ contains(Elem, #floppy_set{set=Set, adds=Adds, rems=Rems}) ->
             end
     end.
 
-
-
 %% @doc Determines whether the passed term is a set container.
+-spec is_type(term()) -> boolean().
 is_type(T) ->
     is_record(T, floppy_set).
 
 
 %% @doc Returns the symbolic name of this container.
+-spec type() -> atom().
 type() -> riak_dt_orset.
 
 to_ops(#floppy_set{key=Key, adds=Adds, rems=Rems}) -> 
