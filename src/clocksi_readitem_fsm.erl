@@ -14,8 +14,6 @@
 
 %% States
 -export([check_clock/2,
-         get_txs_to_check/2,
-         commit_notification/2,
          waiting/2,
          return/2]).
 
@@ -68,7 +66,8 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
             {next_state, waiting, SD0, 0};
 
         false ->
-            lager:info("ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
+            lager:info(
+              "ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
             {next_state, waiting, SD0, 0}
     end.
 
@@ -79,55 +78,11 @@ waiting(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
         false ->
             _Result = clocksi_downstream_generator_vnode:trigger
                         (Key, {dummytx, [], vectorclock:from_list([]), 0}),
-            %%TODO change this, add a heartbeat to increase vectorclock if
+            %% TODO change this, add a heartbeat to increase vectorclock if
             %%     there are no pending txns in downstream generator
-            {next_state, waiting, SDO, 10};
+            {next_state, waiting, SDO, 1};
         true ->
             {next_state, return, SDO, 0}
-    end.
-
-%% @doc get_txs_to_check:
-%%	- Asks the Vnode for pending txs conflicting the cyrrent one
-%%	- If none, goes to return state
-%%	- Otherwise, goes to commit_notification
-get_txs_to_check(timeout, SD0=#state{transaction= Transaction,
-                                     vnode=Vnode, key=Key}) ->
-    lager:info
-      ("ClockSI ReadItemFSM: Calling vnode ~w to get pending txs for Key ~w ~n",
-       [Vnode, Key]),
-    TxId = Transaction#transaction.txn_id,
-    case clocksi_vnode:get_pending_txs(Vnode, {Key, TxId}) of
-        {ok, empty} ->
-            lager:info("ClockSI ReadItemFSM: no txs to wait for ~w ~n", [Key]),
-            {next_state, return, SD0, 0};
-        {ok, Pending} ->
-            lager:info("ClockSI ReadItemFSM: txs to wait for ~w. Pendings ~w~n",
-                       [Key, Pending]),
-            {next_state, commit_notification, SD0#state{pending_txs=Pending}};
-        {error, _Reason} ->
-            lager:error
-              ("ClockSI ReadItemFSM: error retrieving pending txs for Key: ~w, Reason: ~w~n",
-               [Key, _Reason]),
-            {stop, normal, SD0}
-    end.
-
-%% @doc commit_notification:
-%%	- The fsm stays in this state until the list of pending txs is empty.
-%%	- The commit notifications are sent by the vnode.
-commit_notification({committed, TxId}, SD0=#state{pending_txs=Left, key=Key}) ->
-    Left2=lists:delete({Key, TxId}, Left),
-    lager:info
-      ("ClockSI ReadItemFSM: tx ~w has committed, remov from pending txs.",
-       [TxId]),
-    case Left2 of [] ->
-            lager:info("ClockSI ReadItemFSM: no further txs to wait for"),
-            {next_state, return, SD0#state{pending_txs=Left2}, 0};
-        [H|T] ->
-            lager:info
-              ("ClockSI ReadItemFSM: still waiting for txs ~w ~n", [Left2]),
-            {next_state, commit_notification, SD0#state{pending_txs=[H|T]}};
-        _->
-            lager:info("ClockSI ReadItemFSM: tx ~w has committed ~n", [TxId])
     end.
 
 %% @doc return:
@@ -136,9 +91,8 @@ return(timeout, SD0=#state{key=Key,
                            tx_coordinator = Coordinator,
                            transaction = Transaction,type=Type,
                            updates=Updates}) ->
-    lager:info
-      ("ClockSI ReadItemFSM: reading key from the materialiser ~w", [Key]),
-                                                %TxId = Transaction#transaction.txn_id,
+    lager:info(
+      "ClockSI ReadItemFSM: reading key from the materialiser ~w", [Key]),
     Vec_snapshot_time = Transaction#transaction.vec_snapshot_time,
     case materializer_vnode:read(Key, Type, Vec_snapshot_time) of
         {ok, Snapshot} ->
