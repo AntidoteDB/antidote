@@ -72,18 +72,27 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     end.
 
 waiting(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
-    {ok, LocalClock} = vectorclock:get_clock_by_key(Key),
-    Snapshottime = Transaction#transaction.vec_snapshot_time,
-    case vectorclock:is_greater_than(LocalClock, Snapshottime) of
-        false ->
-            _Result = clocksi_downstream_generator_vnode:trigger
-                        (Key, {dummytx, [], vectorclock:from_list([]), 0}),
-            %% TODO change this, add a heartbeat to increase vectorclock if
-            %%     there are no pending txns in downstream generator
-            {next_state, waiting, SDO, 1};
-        true ->
-            {next_state, return, SDO, 0}
-    end.
+    case  vectorclock:get_clock_by_key(Key) of
+        {ok, LocalClock} ->
+            Snapshottime = Transaction#transaction.vec_snapshot_time,
+            case vectorclock:is_greater_than(LocalClock, Snapshottime) of
+                false ->
+                    lager:info("Trigger downstream"),
+                    _Result = clocksi_downstream_generator_vnode:trigger
+                                (Key,
+                                 {dummytx, [], vectorclock:from_list([]), 0}),
+                    %% TODO change this, add a heartbeat to increase vectorclock if
+                    %%     there are no pending txns in downstream generator
+                    lager:info("Return from DS ~p",[_Result]),
+                    {next_state, waiting, SDO, 1};
+                true ->
+                    {next_state, return, SDO, 0}
+            end;
+        _ ->
+            {next_state, waiting, SDO, 5}
+    end;
+waiting(_SomeMessage, SDO) ->
+    {next_state, waiting, SDO,0}.
 
 %% @doc return:
 %%	- Reads adn returns the log of specified Key using replication layer.
@@ -113,7 +122,9 @@ return(timeout, SD0=#state{key=Key,
                [Coordinator]),
     riak_core_vnode:reply(Coordinator, Reply),
     lager:info("ClockSI ReadItemFSM: finished fsm for key ~w", [Key]),
-    {stop, normal, SD0}.
+    {stop, normal, SD0};
+return(_SomeMessage, SDO) ->
+    {next_state, return, SDO,0}.
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
