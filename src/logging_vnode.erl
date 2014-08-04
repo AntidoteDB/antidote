@@ -327,7 +327,7 @@ join_logs([Element|Rest], F, Acc) ->
 %%				OpId: Id of the operation to insert
 %%				Payload: The payload of the operation to insert
 %%		Return:	{ok, OpId} | {error, Reason}
--spec insert_operation(log(), [Index::integer()], op_id(), payload()) -> {ok, op_id() | {error, reason()}}.
+-spec insert_operation(log(), [Index::integer()], op_id(), payload()) -> {ok, op_id()} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
