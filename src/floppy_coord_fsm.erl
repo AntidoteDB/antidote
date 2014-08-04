@@ -22,14 +22,14 @@
           type :: atom(),
           log_id,
           payload = undefined :: term() | undefined,
-          preflist :: riak_core_apl:preflist_ann()}).
+          preflist :: preflist()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 start_link(From, Type, LogId, Payload) ->
-    gen_fsm:start_link(?MODULE, [From, Type, LogId, Payload], []).
+    gen_fsm:start_link(?MODULE, {From, Type, LogId, Payload}, []).
 
 %%start_link(Key, Op) ->
 %%    lager:info('The worker is about to start~n'),
@@ -42,7 +42,7 @@ finish_op(From, Result, Message) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init([From, Type, LogId, Payload]) ->
+init({From, Type, LogId, Payload}) ->
     SD = #state{
             from=From,
             type=Type, 
@@ -96,8 +96,7 @@ waiting(timeout, SD0=#state{type=Type,
 	        {stop, normal, SD0};
 	    [H|T] ->
 	        lager:info("Coord: Forward to node:~w~n",[H]),
-            {IndexNode, _} = H,
-	        floppy_rep_vnode:operate(IndexNode, self(), Type, LogId, Payload), 
+	        floppy_rep_vnode:operate(H, self(), Type, LogId, Payload), 
             SD1 = SD0#state{preflist=T},
             {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end;

@@ -44,7 +44,7 @@
 
 -spec start_link(pid(), op(), logid(), term(), op_id()) -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link(From, Type,  LogId, Payload, OpId) ->
-    gen_fsm:start_link(?MODULE, [From, Type, LogId, Payload, OpId], []).
+    gen_fsm:start_link(?MODULE, {From, Type, LogId, Payload, OpId}, []).
 
 %%%===================================================================
 %%% States
@@ -52,7 +52,7 @@ start_link(From, Type,  LogId, Payload, OpId) ->
 
 %% @doc Initialize the state data.
 -spec init({pid(), op(), logid(), term(), op_id()}) -> {ok,prepare,state(),non_neg_integer()}.
-init([From, Type, LogId, Payload, OpId]) ->
+init({From, Type, LogId, Payload, OpId}) ->
     SD = #state{from=From,
                 type=Type,
                 log_id=LogId,
@@ -63,7 +63,7 @@ init([From, Type, LogId, Payload, OpId]) ->
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
--spec prepare(timeout, state()) -> {next_state,execute,state(),0}.
+-spec prepare(timeout, state()) -> {next_state, execute, state(), 0}.
 prepare(timeout, SD0=#state{log_id=LogId}) ->
     Preflist = log_utilities:get_apl_from_logid(LogId, logging),
     SD = SD0#state{preflist=Preflist},
