@@ -5,10 +5,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type logid() :: [integer()].
--type key() :: term().
--type partition() :: integer().
--type preflist() :: [{integer(), node()}].
+-type partition()  :: integer().
 
 -export([get_logid_from_partition/1,
          get_logid_from_key/1,

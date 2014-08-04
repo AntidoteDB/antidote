@@ -10,9 +10,6 @@
 -endif.
 
 %% TODO Refine types!
--type preflist() :: [{integer(), node()}] .
--type log() :: term().
--type reason() :: term().
 
 %% API
 -export([start_vnode/1,
@@ -37,7 +34,8 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(state, {partition, logs_map}).
+-record(log_state, {partition, logs_map}).
+
 
 %% API
 start_vnode(I) ->
@@ -46,26 +44,39 @@ start_vnode(I) ->
 %% @doc Sends a `threshold read' asyncrhonous command to the Logs in `Preflist'
 %%	From is the operation id form which the caller wants to retrieve the operations.
 %%	The operations are retrieved in inserted order and the From operation is also included.
+-spec threshold_read(preflist(), key(), node()) -> term().
 threshold_read(Preflist, Log, From) ->
     riak_core_vnode_master:command(Preflist, {threshold_read, Log, From}, {fsm, undefined, self()},?LOGGINGMASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist' 
+-spec dread(preflist(), key()) -> term().
 dread(Preflist, Log) ->
     riak_core_vnode_master:command(Preflist, {read, Log}, {fsm, undefined, self()},?LOGGINGMASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist' 
+-spec dappend(preflist(), key(), op(), op_id()) -> term(). 
 dappend(Preflist, Log, OpId, Payload) ->
     riak_core_vnode_master:command(Preflist, {append, Log, OpId, Payload},{fsm, undefined, self()}, ?LOGGINGMASTER).
 
 %% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
+%%-spec append_list(node(), [op()]) -> term().
 append_list(Node, Log, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {append_list, Log, Ops},
                                         ?LOGGINGMASTER).
 
+%% @doc Returns the preflist with the primary vnodes. No matter they are up or down.
+%-spec get_primaries_preflist(key()) -> preflist().
+%get_primaries_preflist(Key) ->
+%    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+%    DocIdx = riak_core_util:chash_key({?BUCKET,term_to_binary(Key)}),
+%    Preflist = riak_core_ring:preflist(DocIdx, Ring),
+%   {Primaries, _} = lists:split(?N, Preflist),
+%    Primaries.
+
 %% @doc Opens the persistent copy of the Log.
-%%	The name of the Log in disk is a combination of the the word `log' and
-%%	the partition identifier.
+%%      The name of the Log in disk is a combination of the the word `log' and
+%%      the partition identifier.
 init([Partition]) ->
     LogFile = string:concat(integer_to_list(Partition), "log"),
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -82,13 +93,13 @@ init([Partition]) ->
         {error, Reason} ->
             {error, Reason};
         Map ->
-            {ok, #state{partition=Partition, logs_map=Map}}
+            {ok, #log_state{partition=Partition, logs_map=Map}}
     end.
 
 %% @doc Read command: Returns the operations logged for Key
-%%	Input: The id of the log to be read
-%%	Output: {ok, {vnode_id, Operations}} | {error, Reason}
-handle_command({read, LogId}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
+%%	    Input: The id of the log to be read
+%%      Output: {ok, {vnode_id, Operations}} | {error, Reason}
+handle_command({read, LogId}, _Sender, #log_state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, LogId) of
         {ok, Log} ->
             case get_log(Log, LogId) of
@@ -104,10 +115,10 @@ handle_command({read, LogId}, _Sender, #state{partition=Partition, logs_map=Map}
     end;
 
 %% @doc Threshold read command: Returns the operations logged for Key from a specified op_id-based threshold
-%%	Input:  From: the oldest op_id to return
-%%          LogId: Identifies the log to be read
-%%	Output: {vnode_id, Operations} | {error, Reason}
-handle_command({threshold_read, LogId, From}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
+%%	    Input:  From: the oldest op_id to return
+%%              LogId: Identifies the log to be read
+%%	    Output: {vnode_id, Operations} | {error, Reason}
+handle_command({threshold_read, LogId, From}, _Sender, #log_state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, LogId) of
         {ok, Log} ->
             case get_log(Log, LogId) of
@@ -124,11 +135,10 @@ handle_command({threshold_read, LogId, From}, _Sender, #state{partition=Partitio
     end;
 
 %% @doc Repair command: Appends the Ops to the Log
-%%  Input:  LogId: Indetifies which log the operations have to be appended to.
-%%	        Ops: Operations to append
-%%	Output: ok | {error, Reason}
-handle_command({append_list, LogId, Ops}, _Sender, #state{logs_map=Map}=State) ->	
-
+%%      Input:  LogId: Indetifies which log the operations have to be appended to.
+%%	            Ops: Operations to append
+%%	    Output: ok | {error, Reason}
+handle_command({append_list, LogId, Ops}, _Sender, #log_state{logs_map=Map}=State) ->	
     Result = case get_log_from_map(Map, LogId) of
         {ok, Log} ->
             F = fun(Operation, Acc) ->
@@ -147,12 +157,12 @@ handle_command({append_list, LogId, Ops}, _Sender, #state{logs_map=Map}=State) -
     {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
-%%	Input:	LogId: Indetifies which log the operation has to be appended to. 
-%%		    Payload of the operation
-%%		    OpId: Unique operation id
-%%	Output: {ok, {vnode_id, op_id}} | {error, Reason}
+%%	    Input:	LogId: Indetifies which log the operation has to be appended to. 
+%%		        Payload of the operation
+%%		        OpId: Unique operation id
+%%	    Output: {ok, {vnode_id, op_id}} | {error, Reason}
 handle_command({append, LogId, OpId, Payload}, _Sender,
-               #state{logs_map=Map, partition = Partition}=State) ->
+               #log_state{logs_map=Map, partition = Partition}=State) ->
     case get_log_from_map(Map, LogId) of
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
@@ -170,7 +180,7 @@ handle_command(Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
-                       #state{logs_map=Map}=State) ->
+                       #log_state{logs_map=Map}=State) ->
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
     Acc= join_logs(dict:to_list(Map), F, Acc0),
     
@@ -186,7 +196,7 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(Data, #state{logs_map=Map}=State) ->
+handle_handoff_data(Data, #log_state{logs_map=Map}=State) ->
 
     {LogId, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
     case get_log_from_map(Map, LogId) of
@@ -200,7 +210,7 @@ handle_handoff_data(Data, #state{logs_map=Map}=State) ->
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
 
-is_empty(State=#state{logs_map=Map}) ->
+is_empty(State=#log_state{logs_map=Map}) ->
     LogIds = dict:fetch_keys(Map),
     case no_elements(LogIds, Map) of
         true ->
@@ -253,7 +263,7 @@ no_elements([LogId|Rest], Map) ->
 %%			From: Oldest op_id to return
 %%			Filtered: List of filetered operations
 %%	Return:	The filtered list of operations
--spec threshold_prune(Operations::list(), From::atom()) -> list().
+-spec threshold_prune(Operations::[op()], From::atom()) -> list().
 threshold_prune([], _From) -> [];
 threshold_prune([Next|Rest], From) ->
     {_LogId, Operation} = Next,
@@ -265,11 +275,11 @@ threshold_prune([Next|Rest], From) ->
     end.
 
 %% @doc open_logs: open one log per partition in which the vnode is primary
-%%	Input:	LogFile: Partition concat with the atom log
-%%			Preflists: A list with the preflist in which the vnode is involved
-%%			Initial: Initial log identifier. Non negative integer. Consecutive ids for the logs. 
-%%			Map: The ongoing map of preflist->log. dict() type.
-%%	Return:	LogsMap: Maps the  preflist and actual name of the log in the system. dict() type.
+%%      Input:  LogFile: Partition concat with the atom log
+%%                      Preflists: A list with the preflist in which the vnode is involved
+%%                      Initial: Initial log identifier. Non negative integer. Consecutive ids for the logs. 
+%%                      Map: The ongoing map of preflist->log. dict() type.
+%%      Return:         LogsMap: Maps the  preflist and actual name of the log in the system. dict() type.
 -spec open_logs(LogFile::string(), [preflist()], N::non_neg_integer(), Map::dict()) -> LogsMap::dict() | {error,reason()}.
 open_logs(_LogFile, [], _Initial, Map) -> Map;
 open_logs(LogFile, [Next|Rest], Initial, Map)->
@@ -289,7 +299,7 @@ open_logs(LogFile, [Next|Rest], Initial, Map)->
 %%		Input:	Map:	dict that representes the map
 %%				LogId:	identifies the log.
 %%		Return:	The actual name of the log
--spec get_log_from_map(Map::dict(), LogId::[Index::integer()]) -> {ok, term()} | {error, no_log_for_preflist}.
+-spec get_log_from_map(dict(), LogId::[Index::integer()]) -> {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, LogId) ->
 	case dict:find(LogId, Map) of
 		{ok, Log} ->
@@ -299,11 +309,11 @@ get_log_from_map(Map, LogId) ->
 			{error, no_log_for_preflist}
 	end.
 
-%% @doc	join_logs: Recursive fold of all the logs stored in the vnode
-%%		Input:	Logs: A list of pairs {Preflist, Log}
-%%				F: Function to apply when floding the log (dets)
-%%				Acc: Folded data
-%%		Return: Folded data of all the logs.
+%% @doc         join_logs: Recursive fold of all the logs stored in the vnode
+%%              Input:  Logs: A list of pairs {Preflist, Log}
+%%                              F: Function to apply when floding the log (dets)
+%%                              Acc: Folded data
+%%              Return: Folded data of all the logs.
 -spec join_logs(Map::[{preflist(), log()}], F::fun(), Acc::term()) -> term().
 join_logs([], _F, Acc) -> Acc;
 join_logs([Element|Rest], F, Acc) ->
@@ -317,7 +327,7 @@ join_logs([Element|Rest], F, Acc) ->
 %%				OpId: Id of the operation to insert
 %%				Payload: The payload of the operation to insert
 %%		Return:	{ok, OpId} | {error, Reason}
--spec insert_operation(log(), [Index::integer()], OpId::{Number::non_neg_integer(), node()}, Payload::term()) -> {ok, {Number::non_neg_integer(), node()}} | {error, reason()}.
+-spec insert_operation(log(), [Index::integer()], op_id(), payload()) -> {ok, op_id() | {error, reason()}}.
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
@@ -342,6 +352,7 @@ insert_operation(Log, LogId, OpId, Payload) ->
 -spec get_log(Log::term(), [Index::integer()]) -> list() | {error, atom()}.
 get_log(Log, LogId) ->
     dets:lookup(Log, LogId).
+
 
 %% @doc preflist_member: Returns true if the Partition identifier is part of the Preflist
 %%      Input:  Partition: The partition identifier to check

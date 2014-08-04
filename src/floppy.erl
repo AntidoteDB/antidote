@@ -5,11 +5,6 @@
 -export([append/2,
          read/2]).
 
--type key() :: term().
--type op()  :: term().
--type crdt() :: term().
--type val() :: term().
--type reason() :: term().
 
 %% Public API
 

@@ -47,11 +47,13 @@
 -export_type([mvreg/0, mvreg_op/0]).
 
 %% TODO: make opaque
+-type actor() :: term().
+-type ts()    :: non_neg_integer().
 -type mvreg() :: [{term(), riak_dt_vclock:vclock()}].
 
--type mvreg_op() :: {assign, term(), non_neg_integer()}
+-type mvreg_op() :: {assign, term(), ts()}
                   | {assign, term()}
-                  | {propagate, term(), term()}.
+                  | {propagate, term(), ts()}.
 
 -type mv_q() :: timestamp.
 
@@ -72,13 +74,13 @@ parent_clock(_Clock, Reg) ->
 %% since there can be diverged value in this register.
 -spec value(mvreg()) -> [term()].
 value(MVReg) ->
-    [Val || {Val, _TS} <- MVReg].
+    [Val || {Val, _VC} <- MVReg].
 
 %% @doc query for this `mvreg()' of its timestamp.
 %% `timestamp' is the only query option.
--spec value(mv_q(), mvreg()) -> [term()].
+-spec value(mv_q(), mvreg()) -> [riak_dt_vclock:vclock()].
 value(timestamp, MVReg) ->
-    [TS || {_Val, TS} <- MVReg].
+    [VC || {_Val, VC} <- MVReg].
 
 %% @doc Assign `Value' to this register. The vector clock of this
 %% register will be incremented by one for the corresponding `Actor'.
@@ -88,8 +90,7 @@ value(timestamp, MVReg) ->
 %%
 %% This kind of update is supposed to be linealizable so the operation
 %% issuer does not need to provide the vector clock it has observed.
--spec update(mvreg_op(), term(), mvreg()) ->
-                    {ok, mvreg()}.
+-spec update(mvreg_op(), actor(), mvreg()) -> {ok, mvreg()}.
 update({assign, Value}, Actor, MVReg) ->
     VV = inc_vv(MVReg, Actor),
     NewMVReg = [{Value, VV}],
@@ -116,13 +117,7 @@ update({assign, Value, TS}, Actor, MVReg) ->
 %% Corresponding values of non-compatible vector clocks will also be
 %% kept.
 update({propagate, Value, TS}, _, MVReg ) ->
-    case if_dominate(value(timestamp, MVReg), TS) of
-        true ->
-            {ok, MVReg};
-        false ->
-            NewMVReg = merge_to(MVReg, init(Value, TS)),
-            {ok, NewMVReg}
-    end.
+    {ok, merge(MVReg, init(Value, TS))}.
 
 update(Op, Actor, Reg, _Ctx) ->
     update(Op, Actor, Reg).
@@ -130,65 +125,64 @@ update(Op, Actor, Reg, _Ctx) ->
 %% @doc Find a least-uppder bound for all non-compatible vector clocks
 %% in MVReg (if there is any) and then increment timestamp for `Actor'
 %% by one.
--spec inc_vv(mvreg(), term()) -> riak_dt_vclock:vclock().
+-spec inc_vv(mvreg(), actor()) -> riak_dt_vclock:vclock().
 inc_vv(MVReg, Actor) ->
-    TSL = [TS || {_Val, TS}<- MVReg],
-    [H|T] = TSL,
+    VCL = [VC || {_Val, VC} <- MVReg],
+    [H|T] = VCL,
     MaxVC = lists:foldl(fun(VC, Acc) -> riak_dt_vclock:merge([VC, Acc]) end, H, T),
     NewVC = riak_dt_vclock:increment(Actor, MaxVC),
     NewVC.
 
 %% @doc If `TS'(timestamp) is larger than all entries of `Actor' for the
 %% MVReg.
--spec larger_than(pos_integer(), term(), mvreg()) -> boolean().
+-spec larger_than(ts(), actor(), mvreg()) -> boolean().
 larger_than(_TS, _Actor, []) ->
     true;
 larger_than(TS, Actor, [H|T]) ->
     {_Value, VC} = H,
     OldTS = riak_dt_vclock:get_counter(Actor, VC),
-    if  TS > OldTS ->
-        larger_than(TS, Actor, T);
-    true ->
-        false
+    case  TS > OldTS of
+	true ->
+	    larger_than(TS, Actor, T);
+	false ->
+	    false
     end.
 
-%% @doc Merge the first `mvreg()' to the second `mvreg()'. Note that the
-%% first `mvreg()' is local and can have multiple vector clocks, while
-%% the second one is from remote and only has one vector clock, since
-%% before propagating its multiple VCs should have been merged.
--spec merge_to(mvreg(), mvreg()) -> mvreg().
-merge_to([], MVReg2) ->
-    MVReg2;
-merge_to([H|T], MVReg2) ->
-    First = hd(MVReg2),
-    {_, TS1} = H,
-    {_, TS2} = First,
-    D1 = riak_dt_vclock:dominates(TS2, TS1),
-    case D1 of
-        true ->
-            merge_to(T, MVReg2);
-        false ->
-            merge_to(T, MVReg2++[H])
-    end.
-
-%% @doc If any vector clock in the first list dominates the second vector clock.
-if_dominate([], _VC) ->
+%% @doc If any timestamp in the first list descends the second vector clock.
+-spec if_descends([riak_dt_vclock:vclock()], riak_dt_vclock:vclock()) -> boolean().
+if_descends([], _VC) ->
     false;
-if_dominate([H|T], VC) ->
-    case riak_dt_vclock:dominates(H, VC) of
+if_descends([H|T], VC) ->
+    case riak_dt_vclock:descends(H, VC) of
         true ->
             true;
         false ->
-            if_dominate(T, VC)
+            if_descends(T, VC)
     end.
 
 
 %% @doc Merge two `mvreg()'s to a single `mvreg()'. This is the Least Upper Bound
 %% function described in the literature.
-%% !!! Not implemented !!! Propagate is basically doing merging. 
 -spec merge(mvreg(), mvreg()) -> mvreg().
-merge(MVReg1, _MVReg2) ->
-    MVReg1.
+merge(MVReg1, MVReg2) ->
+    merge(MVReg1, MVReg2, []).
+
+%% @doc Helper function of `merge/2'. It removes value entries that are descendes of
+%% any other. Remainder are value entries whose vector clock is neither descendent of 
+%% any other entry nor being ascendent of any other.
+merge([], MVReg2, Remainder) ->
+    MVReg2++Remainder;
+merge(MVReg1, [], Remainder) ->
+    MVReg1++Remainder;
+merge(MVReg1, MVReg2, Remainder) ->
+    {_, HVC} = hd(MVReg2),
+    case if_descends(value(timestamp, MVReg1), HVC) of
+        true ->
+            merge(MVReg1, tl(MVReg2), Remainder);
+        false ->
+            NewMVReg1 = lists:filter(fun({_, ElemVC}) -> riak_dt_vclock:descends(HVC, ElemVC) == false end, MVReg1),
+            merge(NewMVReg1, tl(MVReg2), Remainder++[hd(MVReg2)])
+    end.
 
 %% @doc Are two `mvreg()'s structurally equal? This is not `value/1' equality.
 %% Two registers might represent the value `armchair', and not be `equal/2'. Equality here is
@@ -197,6 +191,9 @@ merge(MVReg1, _MVReg2) ->
 equal(MVReg1, MVReg2) ->
     eq(lists:sort(MVReg1), lists:sort(MVReg2)).
 
+%% @doc Helper function for `equal/2'. It receives two sorted `mvreg()' as parameters and can do
+%% comparison directly without concerning about disorder. This is difficult to handle direclty by
+%% `equal/2' without adding extra parameter, thus `eq/2' is used.
 eq([], []) ->
     true;
 eq([H1|T1], [H2|T2]) ->
@@ -204,14 +201,16 @@ eq([H1|T1], [H2|T2]) ->
     {V2, TS2} = H2,
     VEqual = V1 =:= V2,
     TSEqual = riak_dt_vclock:equal(TS1, TS2),
-    if VEqual andalso TSEqual ->
+    case VEqual andalso TSEqual of
+	    true ->
             eq(T1, T2);
-        true ->
+        false ->
             false
     end;
 eq(_, _) ->
     false.
 
+%% @doc Return statistics of an `mvreg()'. Currently only `value_size' is returned.
 -spec stats(mvreg()) -> [{atom(), non_neg_integer()}].
 stats(MVReg) ->
     [{value_size, stat(value_size, MVReg)}].
@@ -253,7 +252,7 @@ init_state() ->
 new_test() ->
     ?assertEqual(init_state(), new()).
 
-%% @doc Check if `value()' properly returns a list of value or a list of
+%% @doc Check if `value/1' properly returns a list of value or a list of
 %% timestamp of MVReg.  Checks for an empty register, a register with
 %% two values and a register with only one value.
 value_test() ->
@@ -271,7 +270,7 @@ value_test() ->
     ?assertEqual([Val1], value(MVReg2)),
     ?assertEqual([VC1], value(timestamp, MVReg2)).
 
-%% @doc Check if `equal()' works.
+%% @doc Check if `equal/2' works.
 equal_test() ->
     %% Test equal for empty MVReg
     ?assert(equal(init_state(), new())),
@@ -289,39 +288,40 @@ equal_test() ->
     %% MVReg5 has a value different from MVReg1
     ?assertNot(equal(MVReg1, MVReg5)).
 
-%% @doc Check if `merge_to()' works.
-merge_to_test() ->
-    VC = riak_dt_vclock:fresh(),
-    VC0 = riak_dt_vclock:increment(actor0, VC),
-    VC1 = riak_dt_vclock:increment(actor1, VC),
-    %% Basic merge: merge two MVRegs that are not dominating any of them 
-    MVReg = merge_to([{value0, VC0}], [{value1, VC1}]),
-    ?assert(equal(lists:sort([{value1, VC1}, {value0, VC0}]), lists:sort(MVReg))),
-    MVReg1 = [{value1, [{actor1, 2}, {actor2, 1}]}, {value2, [{actor4, 1}]}],
-    MVReg2 = [{value3, [{actor1, 2}, {actor2, 1}, {actor4, 2}]}],
-    %% Merge one to another MVReg that totally dominates it
-    Result1 = merge_to(MVReg1, MVReg2),
-    ?assert(equal(Result1, MVReg2)),
-    %% Merge one to another that does not dominate it
-    MVReg3 = [{value4, [{actor1, 1}, {actor2, 1}]}],
-    Result2 = merge_to(MVReg1, MVReg3),
-    ?assert(equal(Result2,  [{value1, [{actor1, 2}, {actor2, 1}]}, {value2, [{actor4, 1}]}, {value4, [{actor1, 1}, {actor2, 1}]}])),
-    %% Merge one to another that dominates part of the left one
-    MVReg4 = [{value5, [{actor4, 2}]}],
-    Result3 = merge_to(MVReg1, MVReg4),
-    ?assert(equal(Result3,  [{value1, [{actor1, 2}, {actor2, 1}]}, {value5, [{actor4, 2}]}])).
+% @doc Check if `merge/2' works.
+merge_test() ->
+    MVReg1 = [{value1, [{actor1, 2}, {actor2, 1}]}, {value2, [{actor3, 2}, {actor4, 1}]}],
+    MVReg2 = [{value2, [{actor3, 2}, {actor4, 1}]}, {value1, [{actor1, 2}, {actor2, 1}]}],
+    MergedMVReg1 = merge(MVReg1, MVReg2),
+    %% Merge two MVRegs that are same should not change anything
+    ?assert(equal(MVReg1, MergedMVReg1)),
+    MVReg3 = [{value1, [{actor1, 2}, {actor2, 1}]}],
+    MVReg4 = [{value2, [{actor3, 2}, {actor4, 1}]}],
+    MergedMVReg2 = merge(MVReg3, MVReg4),
+    %% Merge two disjoint MVRegs should work
+    ?assert(equal(MVReg1, MergedMVReg2)),
+    MVReg5 = [{value1, [{actor1, 3}, {actor2, 1}]}, {value2, [{actor1, 2}, {actor2, 3}]}],
+    MVReg6 = [{value3, [{actor1, 1}, {actor2, 3}]}, {value4, [{actor1, 3}, {actor2, 2}]}],
+    MergedMVReg3 = merge(MVReg5, MVReg6),
+    %% Merge two MVRegs that have overlapping
+    ?assert(equal([{value2, [{actor1, 2}, {actor2, 3}]}, {value4, [{actor1, 3}, {actor2, 2}]}], MergedMVReg3)),
+    MVReg7 = [{value3, [{actor1, 3}, {actor2, 3}]}],
+    MergedMVReg4 = merge(MVReg5, MVReg7),
+    %% Merge two MVRegs that one dominates the other 
+    ?assert(equal(MVReg7, MergedMVReg4)).
 
-% @doc Check if `if_dominate()' works.
-if_dominate_test() ->
+
+% @doc Check if `if_dominate/2' works.
+if_descends_test() ->
     VC1 = [[{actor1, 2}, {actor2, 3}, {actor3,2}], [{actor1,3}, {actor2,1}, {actor4,2}]],
     VC2 = [{actor1, 1}],
-    ?assert(if_dominate(VC1, VC2)),
+    ?assert(if_descends(VC1, VC2)),
     VC3 = [{actor1, 2}, {actor3,1}],
-    ?assert(if_dominate(VC1, VC3)),
+    ?assert(if_descends(VC1, VC3)),
     VC4 = [{actor3, 1}, {actor4,1}],
-    ?assertNot(if_dominate(VC1, VC4)).
+    ?assertNot(if_descends(VC1, VC4)).
 
-% @doc Check if `update()' by assign without providing timestamp works.
+% @doc Check if `update/3' by assign without providing timestamp works.
 basic_assign_test() ->
     MVReg0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -332,7 +332,7 @@ basic_assign_test() ->
     {ok, MVReg2} = update({assign, value1}, actor0, MVReg1),
     ?assertEqual([{value1, VC2}], MVReg2).
 
-%% @doc Check if `update()' by assign with timestamp works.
+%% @doc Check if `update/3' by assign with timestamp works.
 update_assign_withts_test() ->
     MVReg0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -368,7 +368,7 @@ update_diff_actor_test() ->
     ?assertEqual([value2], Value),
     ?assertEqual([VC2], TS).
 
-%% @doc Check if `update()' with propagate works.
+%% @doc Check if `update/3' with propagate works.
 propagate_test() ->
     MVReg1_0 = new(),
     VC0 = riak_dt_vclock:fresh(),
@@ -416,7 +416,7 @@ update_assign_diverge_test() ->
 %    ?assertEqual({new_value, 4}, merge(MVReg1, MVReg2)),
 %    ?assertEqual({new_value, 4}, merge(MVReg2, MVReg1)).
 
-%% @doc Check if serialization (`to_binary()', `from_binary()') works.
+%% @doc Check if serialization (`to_binary/1', `from_binary/1') works.
 roundtrip_bin_test() ->
     MVReg = new(),
     {ok, MVReg1} = update({assign, 2}, a1, MVReg),
