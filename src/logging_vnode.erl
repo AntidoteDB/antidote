@@ -33,17 +33,18 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(log_state, {partition, logs_map}).
+-record(state, {partition, logs_map}).
 
 
 %% API
+-spec start_vnode(integer()) -> any().
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-%% @doc Sends a `threshold read' asyncrhonous command to the Logs in `Preflist'
+%% @doc Sends a `threshold read' asynchronous command to the Logs in `Preflist'
 %%      From is the operation id form which the caller wants to retrieve the operations.
 %%      The operations are retrieved in inserted order and the From operation is also included.
--spec threshold_read(preflist(), key(), node()) -> term().
+-spec threshold_read(preflist(), key(), op_id()) -> term().
 threshold_read(Preflist, Key, From) ->
     Primaries = get_primaries_preflist(Key),
     riak_core_vnode_master:command(Preflist, {threshold_read, Key, From, Primaries}, {fsm, undefined, self()},?LOGGINGMASTER).
@@ -96,13 +97,13 @@ init([Partition]) ->
         {error, Reason} ->
             {error, Reason};
         Map ->
-            {ok, #log_state{partition=Partition, logs_map=Map}}
+            {ok, #state{partition=Partition, logs_map=Map}}
     end.
 
 %% @doc Read command: Returns the operations logged for Key
 %%     Input: Key of the object to read
 %%     Output: {vnode_id, Operations} | {error, Reason}
-handle_command({read, Key, Preflist}, _Sender, #log_state{partition=Partition, logs_map=Map}=State) ->
+handle_command({read, Key, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
             case lookup_operations(Log, Key) of
@@ -121,7 +122,7 @@ handle_command({read, Key, Preflist}, _Sender, #log_state{partition=Partition, l
 %%      Input:  Key of the object to read
 %%              From: the oldest op_id to return
 %%      Output: {vnode_id, Operations} | {error, Reason}
-handle_command({threshold_read, Key, From, Preflist}, _Sender, #log_state{partition=Partition, logs_map=Map}=State) ->
+handle_command({threshold_read, Key, From, Preflist}, _Sender, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
             case lookup_operations(Log, Key) of
@@ -141,7 +142,7 @@ handle_command({threshold_read, Key, From, Preflist}, _Sender, #log_state{partit
 %% @doc Repair command: Appends the Ops to the Log
 %%      Input: Ops: Operations to append
 %%      Output: ok | {error, Reason}
-handle_command({append_list, Ops}, _Sender, #log_state{logs_map=Map}=State) ->      
+handle_command({append_list, Ops}, _Sender, #state{logs_map=Map}=State) ->      
     F = fun(Elem, Acc) ->
             {Key, #operation{op_number=OpId, payload=Payload}} = Elem,
             Preflist = get_primaries_preflist(Key),
@@ -167,7 +168,7 @@ handle_command({append_list, Ops}, _Sender, #log_state{logs_map=Map}=State) ->
 %%              OpId: Unique operation id               
 %%      Output: {ok, op_id} | {error, Reason}
 handle_command({append, Key, Payload, OpId, Preflist}, _Sender,
-               #log_state{logs_map=Map, partition = Partition}=State) ->
+               #state{logs_map=Map, partition = Partition}=State) ->
     case get_log_from_map(Map, Preflist) of
         {ok, Log} ->
             case insert_operation(Log, Key, OpId, Payload) of
@@ -185,7 +186,7 @@ handle_command(Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
-                       #log_state{logs_map=Map}=State) ->
+                       #state{logs_map=Map}=State) ->
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
     Acc= join_logs(dict:to_list(Map), F, Acc0),
     
@@ -201,7 +202,7 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(Data, #log_state{logs_map=Map}=State) ->
+handle_handoff_data(Data, #state{logs_map=Map}=State) ->
     {Key, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
     Preflist = get_primaries_preflist(Key),
     case get_log_from_map(Map, Preflist) of
@@ -215,7 +216,7 @@ handle_handoff_data(Data, #log_state{logs_map=Map}=State) ->
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
 
-is_empty(State=#log_state{logs_map=Map}) ->
+is_empty(State=#state{logs_map=Map}) ->
     Preflists = dict:fetch_keys(Map),
     case no_elements(Preflists, Map) of
         true ->
