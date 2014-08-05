@@ -29,12 +29,12 @@
                 type :: op(),
                 log_id :: logid(),
                 payload = undefined :: term() | undefined,
-		        readresult,
+                readresult,
                 error_msg = [],
                 preflist :: preflist(), 
-		        num_to_ack = 0 :: non_neg_integer(),
-		        opid :: op_id(),
-		        node_ops}).
+                num_to_ack = 0 :: non_neg_integer(),
+                opid :: op_id(),
+                node_ops}).
 
 -type state() :: #state{}.
 %%%===================================================================
@@ -57,9 +57,9 @@ init({From, Type, LogId, Payload, OpId}) ->
                 type=Type,
                 log_id=LogId,
                 payload=Payload,
-		        opid= OpId,
-		        readresult=[],
-		        node_ops =[]},
+                opid= OpId,
+                readresult=[],
+                node_ops =[]},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
@@ -135,11 +135,11 @@ wait_read({ok, {Node, Result}}, SD=#state{type=Type, from= From, node_ops = Node
     Result1 = union_ops(ReadResult, [], Result),
     case NumToAck of 
         1 -> 
-    	    lager:info("FSM: Finish reading for ~w ~w ~n", [Type, LogId]),
-	        repair(NodeOps1, Result1, LogId),
-	        floppy_coord_fsm:finish_op(From, ok, Result1),	
-	        {next_state, repair_rest, SD#state{num_to_ack = ?N-?NUM_R, node_ops=NodeOps1, readresult = Result1}, ?COMM_TIMEOUT};
-	    _ ->
+            lager:info("FSM: Finish reading for ~w ~w ~n", [Type, LogId]),
+                repair(NodeOps1, Result1, LogId),
+                floppy_coord_fsm:finish_op(From, ok, Result1),	
+                {next_state, repair_rest, SD#state{num_to_ack = ?N-?NUM_R, node_ops=NodeOps1, readresult = Result1}, ?COMM_TIMEOUT};
+            _ ->
             lager:info("FSM: Keep collecting replies~n"),
             {next_state, wait_read, SD#state{num_to_ack= NumToAck-1, node_ops= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
     end;
@@ -149,8 +149,8 @@ wait_read({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
     lager:info("FSM: Error in read: ~w", [Reason]),
     case length(ErrorMsg1) of
         ?R_ERROR_THRESHOLD ->
-	        floppy_coord_fsm:finish_op(From, error, ErrorMsg1),
-	        {stop, normal, SD};
+                floppy_coord_fsm:finish_op(From, error, ErrorMsg1),
+                {stop, normal, SD};
         _ ->
             {next_state, wait_read, SD#state{error_msg=ErrorMsg}, ?COMM_TIMEOUT}
     end;
@@ -173,9 +173,9 @@ repair_rest({ok, {Node, Result}}, SD=#state{num_to_ack = NumToAck, node_ops = No
     Result1 = union_ops(ReadResult, [], Result),
     case NumToAck of 
         1 -> 
-    	    lager:info("FSM: Finish collecting replies, start read repair ~n"),
-	        repair(NodeOps, ReadResult, LogId),
-	        {stop, normal, SD};
+            lager:info("FSM: Finish collecting replies, start read repair ~n"),
+                repair(NodeOps, ReadResult, LogId),
+                {stop, normal, SD};
         _ ->
             lager:info("FSM: Keep collecting replies~n"),
             {next_state, repair_rest, SD#state{num_to_ack= NumToAck-1, node_ops= NodeOps1, readresult = Result1}, ?COMM_TIMEOUT}
