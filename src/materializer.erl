@@ -14,7 +14,7 @@ create_snapshot(Type) ->
     Type:new().
 
 %% @doc Applies all the operations of a list to a CRDT.
--spec update_snapshot(Type::atom(), Snapshot::term(), Ops::list()) -> term().
+-spec update_snapshot(Type::atom(), Snapshot::term(), [op]) -> term().
 update_snapshot(_, Snapshot, []) ->
     Snapshot;
 update_snapshot(Type, Snapshot, [Op|Rest]) ->
@@ -31,6 +31,7 @@ materializer_gcounter_withlog_test() ->
     GCounter = create_snapshot(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
     Ops = [{1,#operation{payload={increment, actor1}}},{2,#operation{payload={increment, actor2}}},{3,#operation{payload={{increment, 3}, actor1}}},{4,#operation{payload={increment, actor3}}}],
+
     GCounter2 = update_snapshot(riak_dt_gcounter, GCounter, Ops),
     ?assertEqual(6,riak_dt_gcounter:value(GCounter2)).
 
