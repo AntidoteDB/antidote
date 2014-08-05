@@ -14,6 +14,7 @@
 %% API
 -export([start_vnode/1,
          dread/2,
+         read/2,
          dappend/4,
          append_list/3,
          threshold_read/3]).
@@ -52,6 +53,11 @@ threshold_read(Preflist, Log, From) ->
 -spec dread(preflist(), key()) -> term().
 dread(Preflist, Log) ->
     riak_core_vnode_master:command(Preflist, {read, Log}, {fsm, undefined, self()},?LOGGINGMASTER).
+
+%% @doc Sends a `read' synchronous command to the Logs in `Node' 
+-spec read(node(), key()) -> term().
+read(Node, Log) ->
+    riak_core_vnode_master:sync_command(Node, {read, Log}, ?LOGGINGMASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist' 
 -spec dappend(preflist(), key(), op(), op_id()) -> term(). 

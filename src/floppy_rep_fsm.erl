@@ -99,11 +99,11 @@ execute(timeout, SD0=#state{type=Type,
 
 %% @doc Waits for W write reqs to respond.
 -spec wait_append({ok, {node(),term()}} | {error,reason()} | timeout,state()) -> {stop,normal,state()} | {next_state,wait_append,state(),500}.
-wait_append({ok,{_Node, Result}}, SD=#state{type=Type, from=From, num_to_ack= NumToAck}) ->
+wait_append({ok,{_Node, OpId}}, SD=#state{type=Type, from=From, num_to_ack= NumToAck}) ->
     case NumToAck of
         1 ->
             lager:info("FSM: Finish collecting replies for ~w ~n", [Type]),
-            floppy_coord_fsm:finish_op(From, ok, Result),
+            floppy_coord_fsm:finish_op(From, ok, OpId),
             {stop, normal, SD};
         _ ->
             lager:info("FSM: Keep collecting replies~n"),

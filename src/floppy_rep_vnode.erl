@@ -49,9 +49,9 @@ init([Partition]) ->
 append(LogId, Payload) ->
     {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, LogId, Payload]),
     receive
-        {ok,{_, Result}} ->
-            lager:info("Append completed!~w~n",[Result]),
-            {ok, Result};
+        {ok, OpId} ->
+            lager:info("Append completed!~w~n",[OpId]),
+            {ok, OpId};
         {error, Reason} ->
             lager:info("Append failed!~n"),
             {error, Reason}
