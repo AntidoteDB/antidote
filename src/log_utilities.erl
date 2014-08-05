@@ -11,6 +11,7 @@
          get_logid_from_key/1,
          get_preflist_from_logid/1,
          get_apl_from_logid/2,
+         get_partition/1,
          remove_node_from_preflist/1]).
 
 %% @doc get_logid_from_partition computes the log identifier from the partition id.
@@ -18,8 +19,8 @@
 %%      Return: Log id
 -spec get_logid_from_partition(partition()) -> logid().
 get_logid_from_partition(Partition) ->
-    HashedKey = get_hashedkey_from_partition(Partition),
-    Preflist = get_primaries_preflist(HashedKey),
+%%    HashedKey = get_hashedkey_from_partition(Partition),
+    Preflist = get_primaries_preflist(Partition),
     remove_node_from_preflist(Preflist).
 
 %% @doc get_logid_from_key computes the log identifier from a key
@@ -39,8 +40,8 @@ get_logid_from_key(Key) ->
 -spec get_preflist_from_logid(logid()) -> preflist().  
 get_preflist_from_logid(LogId) ->
     Partition = hd(LogId),
-    HashedKey = get_hashedkey_from_partition(Partition),
-    get_primaries_preflist(HashedKey).
+%%    HashedKey = get_hashedkey_from_partition(Partition),
+    get_primaries_preflist(Partition).
 
 %% @doc get_apl_from_logid computes the preflist to which a logId belongs
 %%      only primaries and active nodes
@@ -50,8 +51,8 @@ get_preflist_from_logid(LogId) ->
 -spec get_apl_from_logid(logid(), atom()) -> preflist().  
 get_apl_from_logid(LogId, Service) ->
     Partition = hd(LogId),
-    HashedKey = get_hashedkey_from_partition(Partition),
-    PreflistAnn = riak_core_apl:get_primary_apl(HashedKey, ?N, Service),
+%%    HashedKey = get_hashedkey_from_partition(Partition),
+    PreflistAnn = riak_core_apl:get_primary_apl(Partition, ?N, Service),
     [IndexNode || {IndexNode, _} <- PreflistAnn].
  
 %% @doc get_hashedkey_from_partition transform a partition index into an index
@@ -61,13 +62,27 @@ get_apl_from_logid(LogId, Service) ->
 %%      used
 %%      Input:  A partition index
 %%      Return: An index that can be used as hashed key for retrieving the preflist
--spec get_hashedkey_from_partition(partition()) -> number().
-get_hashedkey_from_partition(Partition) ->
+%%-spec get_hashedkey_from_partition(partition()) -> number().
+%%get_hashedkey_from_partition(Partition) ->
+%%    case Partition of
+%%        0 ->
+%%            ?MAXRING;
+%%        _ ->
+%%            Partition - 1
+%%    end.
+
+
+%% @doc get_partition partition index the position of the vnode holding that partition
+%%      in the ring.
+%%      Input:  A partition index
+%%      Return: An index that can be used as the log name
+-spec get_partition(partition()) -> number().   
+get_partition(Partition) ->
     case Partition of
-        0 ->
-            ?MAXRING;
+        ?MAXRING ->
+            0;
         _ ->
-            Partition - 1
+            Partition + 1
     end.
 
 %% @doc get_primaries_preflist returns the preflist with the primary vnodes. No matter they are up or down.
@@ -95,11 +110,11 @@ remove_node_from_preflist(Preflist) ->
 
 %% @doc Testing that get_hashedkey_from_partition works when the index is 0
 %%      and when the index is different to 0
-get_hashedkey_from_partition_test()->
-    Partition0 = 0,
-    ?assertEqual(?MAXRING, get_hashedkey_from_partition(Partition0)),
+get_partition_test()->
+    PartitionMax = ?MAXRING,
+    ?assertEqual(0, get_partition(PartitionMax)),
     Partition = 100,
-    ?assertEqual(99, get_hashedkey_from_partition(Partition)).
+    ?assertEqual(101, get_partition(Partition)).
 
 %% @doc Testing remove_node_from_preflist
 remove_node_from_preflist_test()->
