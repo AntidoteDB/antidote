@@ -78,7 +78,7 @@ append_list(Node, Log, Ops) ->
 %%      The name of the Log in disk is a combination of the the word `log' and
 %%      the partition identifier.
 init([Partition]) ->
-    LogFile = string:concat(integer_to_list(Partition), "log"),
+    LogFile = string:concat(integer_to_list(log_utilities:get_partition(Partition)), "log"),
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     Preflists = lists:foldl(fun(X, Filtered) -> 
