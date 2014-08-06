@@ -85,7 +85,11 @@ call_infinity(Pid, Msg) ->
 
 %% @private
 handle_call({req, Msg, Timeout}, From, State) ->
-    {noreply, send_request(new_request(Msg, From, Timeout), State)}.
+    {noreply, send_request(new_request(Msg, From, Timeout), State)};
+
+handle_call(stop, _From, State) ->
+    _ = disconnect(State),
+    {stop, normal, ok, State}.
 
 %% @private
 %% @todo handle timeout
@@ -118,6 +122,9 @@ handle_info({req_timeout, _Ref}, State=#state{active = Active}) ->
     _ = send_caller({error, timeout}, Active),
     {noreply, State#state{ active = undefined }};
 
+handle_info({tcp_closed, _Socket}, State) ->
+    disconnect(State);
+
 handle_info({_Proto, Sock, _Data}, State) ->
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, State}.
@@ -144,6 +151,26 @@ connect(State) when State#state.sock =:= undefined ->
             {ok, State#state{sock = Sock}};
         Error -> Error
     end.
+
+
+disconnect(State) ->
+    %% Tell any pending requests we've disconnected
+    _ = case State#state.active of
+            undefined ->
+                ok;
+            Request ->
+                send_caller({error, disconnected}, Request)
+        end,
+
+    %% Make sure the connection is really closed
+    case State#state.sock of
+        undefined ->
+            ok;
+        Sock ->
+            gen_tcp:close(Sock)
+    end,
+    NewState = State#state{sock = undefined, active = undefined},
+    {stop, disconnected, NewState}.
 
 
 %% @private
