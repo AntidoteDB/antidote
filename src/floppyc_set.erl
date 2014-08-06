@@ -21,9 +21,9 @@
 
 -record(floppy_set, {
           key :: term(),
-          set :: sets:sets(),
-          adds :: sets:sets(),
-          rems :: sets:sets()
+          set :: set(),
+          adds :: set(),
+          rems :: set()
          }).
 
 -export_type([floppy_set/0]).
@@ -96,7 +96,7 @@ is_type(T) ->
 
 
 %% @doc Returns the symbolic name of this container.
--spec type() -> atom().
+-spec type() -> riak_dt_orset.
 type() -> riak_dt_orset.
 
 to_ops(#floppy_set{key=Key, adds=Adds, rems=Rems}) -> 

@@ -47,7 +47,7 @@
 -callback type() -> typename().
 
 %% @doc Returns the module name for the container of the given CRDT data-type.
--spec module_for_type(Type::atom()) -> module().
+-spec module_for_type(riak_dt_orset | riak_dt_pncounter) -> floppyc_counter | floppyc_set.
 module_for_type(riak_dt_orset) -> floppyc_set;
 module_for_type(riak_dt_pncounter)  -> floppyc_counter.
 

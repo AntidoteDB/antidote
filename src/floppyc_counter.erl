@@ -69,7 +69,7 @@ decrement(Amount, #counter{increment=Value}=Counter) ->
 is_type(T) ->
     is_record(T, counter).
 
--spec type() -> atom().
+-spec type() -> riak_dt_pncounter.
 type() -> riak_dt_pncounter.
 
 to_ops(#counter{key=_Key, increment=0}) -> undefined;

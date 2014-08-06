@@ -58,23 +58,19 @@ start_link(Address, Port) ->
 
 %% @doc Create a linked process to talk with the riak server on Address:Port with Options.
 %%      Client id will be assigned by the server.
-%-spec start_link(address(), portnum(), client_options()) -> {ok, pid()} | {error, term()}.
 start_link(Address, Port, Options) when is_list(Options) ->
     gen_server:start_link(?MODULE, [Address, Port, Options], []).
 
 %% @doc Create a process to talk with the riak server on Address:Port.
 %%      Client id will be assigned by the server.
--spec start(address(), portnum()) -> {ok, pid()} | {error, term()}.
 start(Address, Port) ->
     start(Address, Port, []).
 
 %% @doc Create a process to talk with the riak server on Address:Port with Options.
-%-spec start(address(), portnum(), client_options()) -> {ok, pid()} | {error, term()}.
 start(Address, Port, Options) when is_list(Options) ->
     gen_server:start(?MODULE, [Address, Port, Options], []).
 
 %% @doc Disconnect the socket and stop the process.
--spec stop(pid()) -> ok.
 stop(Pid) ->
     call_infinity(Pid, stop).
 
@@ -196,7 +192,7 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
         ok ->
             maybe_reply({noreply,State#state{active = Request}});
         {error, Reason} ->
-            lagger:warning("Socket error while sending riakc request: ~p.", [Reason]),
+            lager:warning("Socket error while sending riakc request: ~p.", [Reason]),
             gen_tcp:close(State#state.sock)
     end.
 
@@ -204,12 +200,13 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
 encode_request_message(#request{msg=Msg}=Req) ->
     {Req, riak_pb_codec:encode(Msg)}.
 
-maybe_reply({reply, Reply, State}) ->
-    Request = State#state.active,
-    NewRequest = send_caller(Reply, Request),
-    State#state{active = NewRequest};
-maybe_reply({noreply, State}) ->
+%maybe_reply({reply, Reply, State = #state{active = Request}}) ->
+%    NewRequest = send_caller(Reply, Request),
+%    State#state{active = NewRequest};
+
+maybe_reply({noreply, State = #state{}}) ->
     State.
+
 
 % Replies the message and clears the requester id
 send_caller(Msg, #request{from = From}=Request) when From /= undefined ->
@@ -245,11 +242,15 @@ store_crdt(Obj, Pid) ->
 %Reads an object from the storage and returns a client-side 
 %representation of the CRDT.
 %% @todo Handle different return messages
+-spec get_crdt(term(), atom(), pid()) -> {ok, term()} | {error, term()}.
 get_crdt(Key, Type, Pid) ->
     Mod = floppyc_datatype:module_for_type(Type),
     Op = Mod:message_for_get(Key),
-    {ok, Value} = call_infinity(Pid, {req, Op, ?TIMEOUT}),
-    {ok,Mod:new(Key,Value)}.
+    case call_infinity(Pid, {req, Op, ?TIMEOUT}) of
+        {ok, Value} ->
+            {ok, Mod:new(Key,Value)};
+        {error, Reason} -> {error, Reason}
+    end.
 
 
 
