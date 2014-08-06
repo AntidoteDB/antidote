@@ -71,12 +71,11 @@ get_apl_from_logid(LogId, Service) ->
 %%            Partition - 1
 %%    end.
 
-
-%% @doc get_partition partition index the position of the vnode holding that partition
-%%      in the ring.
+%% @doc get_partition partition index the position of the vnode holding 
+%%      that partition in the ring.
 %%      Input:  A partition index
 %%      Return: An index that can be used as the log name
--spec get_partition(partition()) -> number().   
+-spec get_partition(partition()) -> number().
 get_partition(Partition) ->
     case Partition of
         ?MAXRING ->
