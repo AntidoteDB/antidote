@@ -21,6 +21,7 @@
           from :: pid(),
           type :: atom(),
           log_id,
+          error :: [term()],
           payload = undefined :: term() | undefined,
           preflist :: preflist()}).
 
@@ -47,6 +48,7 @@ init({From, Type, LogId, Payload}) ->
             from=From,
             type=Type, 
             log_id=LogId,
+            error=[],
             payload=Payload
 		    },
     {ok, prepare, SD, 0}.
@@ -66,11 +68,11 @@ execute(timeout, SD0=#state{
                         payload=Payload,
                         from=From,
                         preflist=Preflist}) ->
-    lager:info("Coord: Execute operation ~w ~w ~w~n",[Type, LogId, Payload]),
+    lager:info("Coord: Execute operation ~w ~w ~w Preflist:~w ~n",[Type, LogId, Payload, Preflist]),
     case Preflist of 
 	    [] ->
 	        lager:info("Coord: Nothing in pref list~n"),
-            From ! {error, can_not_reach_vnode},
+            From ! {error, no_alive_vnode},
 	        {stop, normal, SD0};
 	    [H|T] ->
 	        %% Send the operation to the first vnode in the preflist;
@@ -87,12 +89,18 @@ waiting(timeout, SD0=#state{type=Type,
 			                log_id=LogId,
 			                payload=Payload,
                             from=From,
+                            error=Error,
 			                preflist=Preflist}) ->
     lager:info("Coord: COORD_TIMEOUT, retry...~n"),
     case Preflist of
         [] ->
             lager:info("Coord: Nothing in pref list~n"),
-            From ! {error, can_not_reach_vnode},
+            case Error of
+                [] ->
+                    From ! {error, can_not_reach_vnode};
+                _ ->
+                    From ! {error, Error}
+            end,
 	        {stop, normal, SD0};
 	    [H|T] ->
 	        lager:info("Coord: Forward to node:~w~n",[H]),
@@ -102,6 +110,10 @@ waiting(timeout, SD0=#state{type=Type,
     end;
 
 %% @doc Receive result and reply the result to the process that started the fsm (From).
+waiting({error, Message}, SD=#state{error=Error0}) ->
+    lager:info("Coord: Got error message ~w ~n",[Message]),
+    Error1 = Error0++[Message],
+    {next_state, waiting, SD#state{error=Error1}, ?COORD_TIMEOUT};
 waiting({Result, Message}, SD=#state{from=From}) ->
     lager:info("Coord: Finish operation ~w ~w ~n",[Result, Message]),
     From! {Result, Message},   
