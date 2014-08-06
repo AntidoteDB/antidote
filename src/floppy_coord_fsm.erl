@@ -62,23 +62,23 @@ prepare(timeout, SD0=#state{log_id=LogId}) ->
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
-execute(timeout, SD0=#state{
-                        type=Type,
-                        log_id=LogId,
-                        payload=Payload,
-                        from=From,
-                        preflist=Preflist}) ->
-    lager:info("Coord: Execute operation ~w ~w ~w Preflist:~w ~n",[Type, LogId, Payload, Preflist]),
-    case Preflist of 
-	    [] ->
-	        lager:info("Coord: Nothing in pref list~n"),
+execute(timeout, SD0=#state{type=Type,
+                            log_id=LogId,
+                            payload=Payload,
+                            from=From,
+                            preflist=Preflist}) ->
+    lager:info("Coord: Execute operation ~w ~w ~w Preflist:~w ~n",
+               [Type, LogId, Payload, Preflist]),
+    case Preflist of
+        [] ->
+            lager:info("Coord: Nothing in pref list~n"),
             From ! {error, no_alive_vnode},
-	        {stop, normal, SD0};
-	    [H|T] ->
-	        %% Send the operation to the first vnode in the preflist;
-	        %% Will timeout if the vnode does not respond within INDC_TIMEOUT
-	        lager:info("Coord: Forward to node~w~n",[H]),
-	        floppy_rep_vnode:operate(H, self(), Type, LogId, Payload), 
+            {stop, normal, SD0};
+        [H|T] ->
+            %% Send the operation to the first vnode in the preflist;
+            %% Will timeout if the vnode does not respond within INDC_TIMEOUT
+            lager:info("Coord: Forward to node~w~n",[H]),
+            floppy_rep_vnode:operate(H, self(), Type, LogId, Payload),
             SD1 = SD0#state{preflist=T},
             {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end.
@@ -86,11 +86,11 @@ execute(timeout, SD0=#state{
 %% @doc The contacted vnode failed to respond within timeout. So contact
 %% the next one in the preflist
 waiting(timeout, SD0=#state{type=Type,
-			                log_id=LogId,
-			                payload=Payload,
+                            log_id=LogId,
+                            payload=Payload,
                             from=From,
                             error=Error,
-			                preflist=Preflist}) ->
+                            preflist=Preflist}) ->
     lager:info("Coord: COORD_TIMEOUT, retry...~n"),
     case Preflist of
         [] ->
@@ -101,10 +101,10 @@ waiting(timeout, SD0=#state{type=Type,
                 _ ->
                     From ! {error, Error}
             end,
-	        {stop, normal, SD0};
-	    [H|T] ->
-	        lager:info("Coord: Forward to node:~w~n",[H]),
-	        floppy_rep_vnode:operate(H, self(), Type, LogId, Payload), 
+            {stop, normal, SD0};
+      [H|T] ->
+            lager:info("Coord: Forward to node:~w~n",[H]),
+            floppy_rep_vnode:operate(H, self(), Type, LogId, Payload),
             SD1 = SD0#state{preflist=T},
             {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end;
