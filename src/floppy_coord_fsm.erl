@@ -32,36 +32,30 @@
 start_link(From, Type, LogId, Payload) ->
     gen_fsm:start_link(?MODULE, {From, Type, LogId, Payload}, []).
 
-%%start_link(Key, Op) ->
-%%    lager:info('The worker is about to start~n'),
-%%    gen_fsm:start_link(?MODULE, [Key, , Op, ], []).
-
 finish_op(From, Result, Message) ->
     gen_fsm:send_event(From, {Result, Message}).
+
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 %% @doc Initialize the state data.
 init({From, Type, LogId, Payload}) ->
-    SD = #state{
-            from=From,
-            type=Type, 
-            log_id=LogId,
-            error=[],
-            payload=Payload
-		    },
+    SD = #state{from=From,
+                type=Type,
+                log_id=LogId,
+                error=[],
+                payload=Payload},
     {ok, prepare, SD, 0}.
 
 
 %% @doc Prepare the write by calculating the _preference list_.
 prepare(timeout, SD0=#state{log_id=LogId}) ->
     Preflist = log_utilities:get_apl_from_logid(LogId, replication),
-    SD = SD0#state{preflist=Preflist},
-    {next_state, execute, SD, 0}.
+    {next_state, execute, SD0#state{preflist=Preflist}, 0}.
 
 %% @doc Execute the write request and then go into waiting state to
-%% verify it has meets consistency requirements.
+%%      verify it has meets consistency requirements.
 execute(timeout, SD0=#state{type=Type,
                             log_id=LogId,
                             payload=Payload,
