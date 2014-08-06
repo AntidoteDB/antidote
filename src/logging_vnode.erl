@@ -153,8 +153,9 @@ handle_command({threshold_read, LogId, From}, _Sender,
 %% @doc Repair command: Appends the Ops to the Log
 %%      Input:  LogId: Indetifies which log the operations have
 %%              to be appended to.
-%%	            Ops: Operations to append
-%%	    Output: ok | {error, Reason}
+%%              Ops: Operations to append
+%%      Output: ok | {error, Reason}
+%%
 handle_command({append_list, LogId, Ops}, _Sender,
                #state{logs_map=Map}=State) ->
     Result = case get_log_from_map(Map, LogId) of
@@ -180,6 +181,7 @@ handle_command({append_list, LogId, Ops}, _Sender,
 %%              Payload of the operation
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
+%%
 handle_command({append, LogId, OpId, Payload}, _Sender,
                #state{logs_map=Map, partition=Partition}=State) ->
     case get_log_from_map(Map, LogId) of
@@ -205,7 +207,6 @@ handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
     {reply, Acc, State}.
 
 handoff_starting(_TargetNode, State) ->
-    lager:info("Starting handoff"),
     {true, State}.
 
 handoff_cancelled(State) ->
@@ -258,6 +259,7 @@ terminate(_Reason, _State) ->
 %%              actual log
 %%      Return: true if all logs are empty. false if at least one log
 %%              contains data.
+%%
 -spec no_elements(LogIds::[[Partition::non_neg_integer()]], Map::dict()) -> boolean().
 no_elements([], _Map) ->
     true;
@@ -286,6 +288,7 @@ no_elements([LogId|Rest], Map) ->
 %%              From: Oldest op_id to return
 %%              Filtered: List of filetered operations
 %%      Return: The filtered list of operations
+%%
 -spec threshold_prune([op()], atom()) -> [op()].
 threshold_prune([], _From) ->
     [];
@@ -307,6 +310,7 @@ threshold_prune([{_LogId, Operation}=H|T], From) ->
 %%                           type.
 %%      Return:         LogsMap: Maps the  preflist and actual name of
 %%                               the log in the system. dict() type.
+%%
 -spec open_logs(string(), [preflist()], non_neg_integer(), dict()) ->
     dict() | {error, reason()}.
 open_logs(_LogFile, [], _Initial, Map) ->
@@ -328,6 +332,7 @@ open_logs(LogFile, [Next|Rest], Initial, Map)->
 %%      Input:  Map:  dict that representes the map
 %%              LogId:  identifies the log.
 %%      Return: The actual name of the log
+%%
 -spec get_log_from_map(dict(), [integer()]) ->
     {ok, term()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, LogId) ->
@@ -345,6 +350,7 @@ get_log_from_map(Map, LogId) ->
 %%                      F: Function to apply when floding the log (dets)
 %%                      Acc: Folded data
 %%      Return: Folded data of all the logs.
+%%
 -spec join_logs([{preflist(), log()}], fun(), term()) -> term().
 join_logs([], _F, Acc) ->
     Acc;
@@ -361,6 +367,7 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
 %%          OpId: Id of the operation to insert
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
+%%
 -spec insert_operation(log(), [integer()], op_id(), payload()) ->
     {ok, op_id()} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
@@ -384,6 +391,7 @@ insert_operation(Log, LogId, OpId, Payload) ->
 %%    Input:  Log: Table identifier of the log
 %%            LogId: Identifier of the log
 %%    Return: List of all the logged operations
+%%
 -spec get_log(log(), [integer()]) -> [op()] | {error, atom()}.
 get_log(Log, LogId) ->
     dets:lookup(Log, LogId).
@@ -393,6 +401,7 @@ get_log(Log, LogId) ->
 %%      Input:  Partition: The partition identifier to check
 %%              Preflist: A list of pairs {Partition, Node}
 %%      Return: true | false
+%%
 -spec preflist_member(partition(), preflist()) -> boolean().
 preflist_member(Partition,Preflist) ->
     lists:any(fun({P, _}) -> P =:= Partition end, Preflist).
