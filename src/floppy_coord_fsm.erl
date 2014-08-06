@@ -83,18 +83,12 @@ waiting(timeout, SD0=#state{type=Type,
                             log_id=LogId,
                             payload=Payload,
                             from=From,
-                            error=Error,
                             preflist=Preflist}) ->
     lager:info("Coord: COORD_TIMEOUT, retry...~n"),
     case Preflist of
         [] ->
             lager:info("Coord: Nothing in pref list~n"),
-            case Error of
-                [] ->
-                    From ! {error, can_not_reach_vnode};
-                _ ->
-                    From ! {error, Error}
-            end,
+            From ! {error, no_alive_vnode},
             {stop, normal, SD0};
       [H|T] ->
             lager:info("Coord: Forward to node:~w~n",[H]),
