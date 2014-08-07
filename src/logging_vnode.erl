@@ -100,7 +100,8 @@ init([Partition]) ->
                             Filtered
                     end
                     end, [], GrossPreflists),
-    case open_logs(LogFile, Preflists, 1, dict:new()) of
+    lager:info("preflists: ~p", [Preflists]),
+    case open_logs(LogFile, Preflists, dict:new()) of
         {error, Reason} ->
             {error, Reason};
         Map ->
@@ -311,23 +312,26 @@ threshold_prune([{_LogId, Operation}=H|T], From) ->
 %%      Return:         LogsMap: Maps the  preflist and actual name of
 %%                               the log in the system. dict() type.
 %%
--spec open_logs(string(), [preflist()], non_neg_integer(), dict()) ->
-    dict() | {error, reason()}.
-open_logs(_LogFile, [], _Initial, Map) ->
+-spec open_logs(string(), [preflist()], dict()) -> dict() | {error, reason()}.
+open_logs(_LogFile, [], Map) ->
     Map;
-open_logs(LogFile, [Next|Rest], Initial, Map)->
-    LogId = string:concat(LogFile, integer_to_list(Initial)),
+open_logs(LogFile, [Next|Rest], Map)->
+    PartitionList = log_utilities:remove_node_from_preflist(Next),
+    PreflistString = string:join(
+            lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
+    LogId = LogFile ++ "--" ++ PreflistString,
     LogPath = filename:join(
                 app_helper:get_env(riak_core, platform_data_dir), LogId),
     case dets:open_file(LogId, [{file, LogPath}, {type, bag}]) of
         {ok, Log} ->
-            Map2 = dict:store(log_utilities:remove_node_from_preflist(Next), Log, Map),
-            open_logs(LogFile, Rest, Initial+1, Map2);
+            lager:info("Opened log: ~p", [LogId]),
+            Map2 = dict:store(PartitionList, Log, Map),
+            open_logs(LogFile, Rest, Map2);
         {error, Reason} ->
             {error, Reason}
     end.
 
-%% @doc	get_log_from_map:	abstracts the get function of a key-value store
+%% @doc get_log_from_map: abstracts the get function of a key-value store
 %%              currently using dict
 %%      Input:  Map:  dict that representes the map
 %%              LogId:  identifies the log.
@@ -340,8 +344,7 @@ get_log_from_map(Map, LogId) ->
         {ok, Log} ->
             {ok, Log};
         error ->
-            lager:info("Preflist to map return: no_log_for_preflist: ~w~n",
-                       [LogId]),
+            lager:info("no_log_for_preflist: ~w", [LogId]),
             {error, no_log_for_preflist}
     end.
 
