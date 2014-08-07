@@ -14,9 +14,18 @@ confirm() ->
 
     Node = hd(Nodes),
 
+    rt:log_to_nodes(Nodes, "Starting write operation"),
+
     WriteResult = rpc:call(Node,
                            floppy, append,
                            [key, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult),
+
+    rt:log_to_nodes(Nodes, "Starting read operation"),
+
+    Result = rpc:call(Node,
+                      floppy, read,
+                      [key, riak_dt_gcounter]),
+    ?assertEqual(1, Result),
 
     pass.
