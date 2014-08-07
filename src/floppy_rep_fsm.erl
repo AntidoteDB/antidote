@@ -1,8 +1,11 @@
 %% @doc The coordinator for stat write operations.  This example will
-%% show how to properly replicate your data in Riak Core by making use
-%% of the _preflist_.
+%%      show how to properly replicate your data in Riak Core by making 
+%%      use of the _preflist_.
+
 -module(floppy_rep_fsm).
+
 -behavior(gen_fsm).
+
 -include("floppy.hrl").
 
 -ifdef(TEST).
@@ -31,16 +34,16 @@
                 payload = undefined :: term() | undefined,
                 readresult,
                 error_msg = [],
-                preflist :: preflist(), 
+                preflist :: preflist(),
                 num_to_ack = 0 :: non_neg_integer(),
                 opid :: op_id(),
                 node_ops}).
 
 -type state() :: #state{}.
+
 %%%===================================================================
 %%% API
 %%%===================================================================
-
 
 -spec start_link(pid(), op(), logid(), term(), op_id()) -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link(From, Type,  LogId, Payload, OpId) ->
