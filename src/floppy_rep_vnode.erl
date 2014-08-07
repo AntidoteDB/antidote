@@ -1,8 +1,9 @@
-%% floppy_rep_vnode: coordinates an operation to be performed 
-%% to the replication group of that object
+%% @doc floppy_rep_vnode: coordinates an operation to be performed to
+%%      the replication group of that object
 
 -module(floppy_rep_vnode).
 -behaviour(riak_core_vnode).
+
 -include("floppy.hrl").
 
 %% API
@@ -22,18 +23,11 @@
          handle_exit/3]).
 
 
--export([
-         append/2,
+-export([append/2,
          read/1,
-         operate/5
-        ]).
+         operate/5]).
 
-%%------------------------
-%% Data type: state
-%%   partition: an integer (default is undefined).
-%%   lclock: an integer (default is undefined).
-%%------------------------
--record(state, {partition,lclock}).
+-record(state, {partition, lclock}).
 
 %% API
 start_vnode(I) ->
@@ -47,7 +41,7 @@ init([Partition]) ->
 %% Args: Key of the object and operation parameters
 %% Returns: {ok, Result} if success; {error, timeout} if operation failed.
 append(LogId, Payload) ->
-    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, LogId, Payload]),
+    {ok, _Pid} = floppy_coord_sup:start_fsm([self(), append, LogId, Payload]),
     receive
         {ok, OpId} ->
             lager:info("Append completed!~w~n",[OpId]),
@@ -55,9 +49,10 @@ append(LogId, Payload) ->
         {error, Reason} ->
             lager:info("Append failed!~n"),
             {error, Reason}
-    after 
+    after
         ?OP_TIMEOUT ->
-            lager:info("Append failed!~n"),
+            lager:info("Append failed, timeout exceeded: ~p~n",
+                       [?OP_TIMEOUT]),
             {error, timeout}
     end.
 
@@ -142,10 +137,8 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%% private
 generate_op_id(Current) ->
     {Current + 1, node()}.
 
 current_op_id(Current) ->
     {Current, node()}.
-
