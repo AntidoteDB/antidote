@@ -18,26 +18,27 @@ create_snapshot(Type) ->
 update_snapshot(_, _, Snapshot, []) ->
     Snapshot;
 update_snapshot(Key, Type, Snapshot, [LogEntry|Rest]) ->
-	%case Op#log_record.op_type of
-	%update ->
-		%case Op#log_record.op_payload of
-	case LogEntry of
-	{_, Operation}->
-		Payload=Operation#operation.payload,
-		case Payload#payload.key of 
-		Key->
-			OpParam=Payload#payload.op_param, 
-			Actor=Payload#payload.actor,
-			lager:info("OpParam: ~w, Actor: ~w and Snapshot: ~w",
-					   [OpParam, Actor, Snapshot]),
-			{ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot)
-		end,
-		update_snapshot(Key, Type, NewSnapshot, Rest);
-	_->
-		lager:info("Unexpected log record: ~w, Actor: ~w and Snapshot: ~w",[LogEntry]),
-		{error, unexpected_format, LogEntry}
-	end.
-	
+    case LogEntry of
+        {_, Operation}->
+            Payload = Operation#operation.payload,
+            NewSnapshot = case Payload#payload.key of
+                Key ->
+                    OpParam = Payload#payload.op_param,
+                    Actor = Payload#payload.actor,
+                    lager:info("OpParam: ~p, Actor: ~p and Snapshot: ~p",
+                               [OpParam, Actor, Snapshot]),
+                    {ok, Value} = Type:update(OpParam, Actor, Snapshot),
+                    Value;
+                _ ->
+                    Snapshot
+            end,
+            update_snapshot(Key, Type, NewSnapshot, Rest);
+        _ ->
+            lager:info("Unexpected log record: ~p, Actor: ~p and Snapshot: ~p",
+                       [LogEntry]),
+            {error, unexpected_format, LogEntry}
+    end.
+
 -ifdef(TEST).
 
 %% @doc Testing gcounter with update log
