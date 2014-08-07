@@ -61,20 +61,18 @@ execute(timeout, SD0=#state{type=Type,
                             payload=Payload,
                             from=From,
                             preflist=Preflist}) ->
-    lager:info("Coord: Execute operation ~w ~w ~w Preflist:~w ~n",
+    lager:info("Execute operation ~p ~p ~p Preflist: ~p",
                [Type, LogId, Payload, Preflist]),
     case Preflist of
         [] ->
-            lager:info("Coord: Nothing in pref list~n"),
+            lager:info("No nodes online; primary preference list empty."),
             From ! {error, no_alive_vnode},
             {stop, normal, SD0};
         [H|T] ->
-            %% Send the operation to the first vnode in the preflist;
-            %% Will timeout if the vnode does not respond within INDC_TIMEOUT
-            lager:info("Coord: Forward to node~w~n",[H]),
+            lager:info("Forward to first node in preflist: ~p",
+                       [H]),
             floppy_rep_vnode:operate(H, self(), Type, LogId, Payload),
-            SD1 = SD0#state{preflist=T},
-            {next_state, waiting, SD1, ?COORD_TIMEOUT}
+            {next_state, waiting, SD0#state{preflist=T}, ?COORD_TIMEOUT}
     end.
 
 %% @doc The contacted vnode failed to respond within timeout. So contact
@@ -84,14 +82,14 @@ waiting(timeout, SD0=#state{type=Type,
                             payload=Payload,
                             from=From,
                             preflist=Preflist}) ->
-    lager:info("Coord: COORD_TIMEOUT, retry...~n"),
+    lager:info("Coord: COORD_TIMEOUT, retry..."),
     case Preflist of
         [] ->
-            lager:info("Coord: Nothing in pref list~n"),
+            lager:info("Coord: Nothing in pref list"),
             From ! {error, no_alive_vnode},
             {stop, normal, SD0};
       [H|T] ->
-            lager:info("Coord: Forward to node:~w~n",[H]),
+            lager:info("Coord: Forward to node:~w",[H]),
             floppy_rep_vnode:operate(H, self(), Type, LogId, Payload),
             SD1 = SD0#state{preflist=T},
             {next_state, waiting, SD1, ?COORD_TIMEOUT}
@@ -99,11 +97,11 @@ waiting(timeout, SD0=#state{type=Type,
 
 %% @doc Receive result and reply the result to the process that started the fsm (From).
 waiting({error, Message}, SD=#state{error=Error0}) ->
-    lager:info("Coord: Got error message ~w ~n",[Message]),
+    lager:info("Coord: Got error message ~w",[Message]),
     Error1 = Error0++[Message],
     {next_state, waiting, SD#state{error=Error1}, ?COORD_TIMEOUT};
 waiting({Result, Message}, SD=#state{from=From}) ->
-    lager:info("Coord: Finish operation ~w ~w ~n",[Result, Message]),
+    lager:info("Coord: Finish operation ~w ~w",[Result, Message]),
     From! {Result, Message},   
     {stop, normal, SD}.
 
