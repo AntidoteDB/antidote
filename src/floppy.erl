@@ -10,7 +10,6 @@
 %%      object stored at some key.
 -spec append(key(), op()) -> {ok, term()} | {error, timeout}.
 append(Key, {OpParam, Actor}) ->
-    lager:info("Append called!"),
     LogId = log_utilities:get_logid_from_key(Key),
     Payload = #payload{key=Key, op_param=OpParam, actor=Actor},
     case floppy_rep_vnode:append(LogId, Payload) of
