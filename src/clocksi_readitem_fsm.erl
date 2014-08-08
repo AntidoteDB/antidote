@@ -14,7 +14,8 @@
 
 %% States
 -export([check_clock/2,
-         waiting/2,
+         waiting1/2,
+         waiting2/2,
          return/2]).
 
 %% Spawn
@@ -63,36 +64,55 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
             lager:info("ClockSI ReadItemFSM: waiting for clock to catchUp ~n"),
             timer:sleep(T_TS - Time),
             lager:info("ClockSI ReadItemFSM: done waiting... ~n"),
-            {next_state, waiting, SD0, 0};
+            {next_state, waiting1, SD0, 0};
 
         false ->
             lager:info(
               "ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
-            {next_state, waiting, SD0, 0}
+            {next_state, waiting1, SD0, 0}
     end.
 
-waiting(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
+waiting1(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
     case  vectorclock:get_clock_by_key(Key) of
         {ok, LocalClock} ->
             Snapshottime = Transaction#transaction.vec_snapshot_time,
+            lager:info("Compare clocks: ~p ~p",[LocalClock, Snapshottime]),
             case vectorclock:is_greater_than(LocalClock, Snapshottime) of
                 false ->
                     lager:info("Trigger downstream"),
                     _Result = clocksi_downstream_generator_vnode:trigger
                                 (Key,
-                                 {dummytx, [], vectorclock:from_list([]), 0}),
+                                {dummytx, [], vectorclock:from_list([]), 0}),
                     %% TODO change this, add a heartbeat to increase vectorclock if
                     %%     there are no pending txns in downstream generator
                     lager:info("Return from DS ~p",[_Result]),
-                    {next_state, waiting, SDO, 1};
+                    {next_state, waiting2, SDO, 1};
                 true ->
                     {next_state, return, SDO, 0}
             end;
         _ ->
-            {next_state, waiting, SDO, 5}
+            {next_state, waiting1, SDO, 5}
     end;
-waiting(_SomeMessage, SDO) ->
-    {next_state, waiting, SDO,0}.
+waiting1(_SomeMessage, SDO) ->
+    {next_state, waiting1, SDO,0}.
+
+waiting2(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
+    case  vectorclock:get_clock_by_key(Key) of
+        {ok, LocalClock} ->
+            Snapshottime = Transaction#transaction.vec_snapshot_time,
+            lager:info("Compare clocks: ~p ~p",[LocalClock, Snapshottime]),
+            case vectorclock:is_greater_than(LocalClock, Snapshottime) of
+                false ->
+                    lager:info("Wait of vectoclock to catch up"),
+                    {next_state, waiting2, SDO, 1};
+                true ->
+                    {next_state, return, SDO, 0}
+            end;
+        _ ->
+            {next_state, waiting2, SDO, 5}
+    end;
+waiting2(_SomeMessage, SDO) ->
+    {next_state, waiting2, SDO,0}.
 
 %% @doc return:
 %%	- Reads adn returns the log of specified Key using replication layer.
