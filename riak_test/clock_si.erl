@@ -1,5 +1,5 @@
 -module(clock_si).
--export([confirm/0, clockSI_test1/1, clockSI_test2/1, clockSI_test3/1,
+-export([confirm/0, clockSI_test1/1, clockSI_test2/1,
          clockSI_test_read_wait/1, clockSI_test4/1, clockSI_test_read_time/1,
          clockSI_test_certification_check/1,
          clockSI_multiple_test_certification_check/1, spawn_read/3]).
@@ -11,12 +11,14 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     clockSI_test1(Nodes),
     clockSI_test2 (Nodes),
-    clockSI_test3 (Nodes),
+    clocksi_single_key_update_read_test(Nodes),
+    clocksi_multiple_key_update_read_test(Nodes),
     clockSI_test4 (Nodes),
     clockSI_test_read_time(Nodes),
     clockSI_test_read_wait(Nodes),
     clockSI_test_certification_check(Nodes),
     clockSI_multiple_test_certification_check(Nodes),
+    clocksi_multiple_read_update_test(Nodes),
     rt:clean_cluster(Nodes),
     ok.
 
@@ -77,7 +79,7 @@ clockSI_test2(Nodes) ->
 
 %% The following function tests that ClockSI can run both a
 %% single read and a bulk-update tx.
-clockSI_test3(Nodes) ->
+clocksi_single_key_update_read_test(Nodes) ->
     lager:info("Test3 started"),
     FirstNode = hd(Nodes),
     Key = k3,
@@ -91,6 +93,29 @@ clockSI_test3(Nodes) ->
     {ok, {_, ReadSet, _}}=Result2,
     ?assertMatch([2], ReadSet),
     lager:info("Test3 passed"),
+    ok.
+
+clocksi_multiple_key_update_read_test(Nodes) ->
+    Firstnode = hd(Nodes),
+    Key1 = keym1,
+    Key2 = keym2,
+    Key3 = keym3,
+    Ops = [{update,Key1, {increment,a}},
+           {update,Key2,{{increment,10},a}},
+           {update,Key3, {increment,a}}],
+    Writeresult = rpc:call(Firstnode, floppy, clocksi_bulk_update,
+                           [now(), Ops]),
+    ?assertMatch({ok,{_Txid, _Readset, _Committime}}, Writeresult),
+
+    {ok,{_,[ReadResult1],_}} = rpc:call(Firstnode, floppy, clocksi_read,
+                                        [now(), Key1, riak_dt_pncounter]),
+    {ok,{_,[ReadResult2],_}} = rpc:call(Firstnode, floppy, clocksi_read,
+                                        [now(), Key2, riak_dt_pncounter]),
+    {ok,{_,[ReadResult3],_}} = rpc:call(Firstnode, floppy, clocksi_read,
+                                        [now(), Key3, riak_dt_pncounter]),
+    ?assertMatch(ReadResult1,1),
+    ?assertMatch(ReadResult2,10),
+    ?assertMatch(ReadResult3,1),
     ok.
 
 %% The following function tests that ClockSI can excute a
@@ -181,9 +206,11 @@ clockSI_test_read_wait(Nodes) ->
     CommitTime=rpc:call(FirstNode, floppy, clocksi_iprepare, [TxId]),
     ?assertMatch({ok, _}, CommitTime),
     lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]),
-
+    timer:sleep(1000),
     %% start a different tx and try to read key read_wait_test.
     {ok,TxId1}=rpc:call(LastNode, floppy, clocksi_istart_tx, [now()]),
+
+    timer:sleep(100),
 
     lager:info("Tx2 Started, id : ~p", [TxId1]),
     lager:info("Tx2 Reading..."),
@@ -309,3 +336,33 @@ clockSI_multiple_test_certification_check(Nodes) ->
     lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
     lager:info("Tx1 aborted. Test passed!"),
     ok.
+
+%% Read an udpate a key multiple times
+clocksi_multiple_read_update_test(Nodes) ->
+    Node = hd(Nodes),
+    _Key = get_random_key(),
+    Key = newkey,
+    NTimes = 100,
+    Result1 = rpc:call(Node, floppy, read,
+                       [Key, riak_dt_pncounter]),
+    lists:foreach(fun(_)->
+                          read_update_test(Node, Key) end, 
+                  lists:seq(1,NTimes)),
+    Result2 = rpc:call(Node, floppy, read,
+                       [Key, riak_dt_pncounter]),
+    ?assertEqual(Result1+NTimes, Result2),
+    ok.
+
+read_update_test(Node, Key) ->
+    Result1 = rpc:call(Node, floppy, read,
+                       [Key, riak_dt_pncounter]),
+    {ok,_} = rpc:call(Node, floppy, clocksi_bulk_update,
+                      [now(), [{update, Key, {increment,a}}]]),
+    Result2 = rpc:call(Node, floppy, read,
+                       [Key, riak_dt_pncounter]),
+    ?assertEqual(Result1+1,Result2).
+
+
+get_random_key() ->
+    random:seed(now()),
+    random:uniform(100).
