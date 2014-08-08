@@ -9,6 +9,7 @@
 -type partition()  :: integer().
 
 -export([get_logid_from_partition/1,
+         get_preflist_from_key/1,
          get_logid_from_key/1,
          get_preflist_from_logid/1,
          get_apl_from_logid/2,
@@ -33,6 +34,13 @@ get_logid_from_key(Key) ->
     HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PreflistAnn = get_primaries_preflist(HashedKey),
     remove_node_from_preflist(PreflistAnn).
+
+%% @doc get_preflist_from_key returns a preference list where a given
+%%      key's logfile will be located.
+-spec get_preflist_from_key(key()) -> preflist().
+get_preflist_from_key(Key) ->
+    HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+    get_primaries_preflist(HashedKey).
 
 %% @doc get_preflist_from_logid computes the preflist to which a logId belongs
 %%      only primaries no matter down or up

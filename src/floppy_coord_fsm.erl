@@ -42,29 +42,27 @@ finish_op(From, Result, Message) ->
 
 %% @doc Initialize the state data.
 init({From, Type, Key, Payload}) ->
-    LogId = log_utilities:get_logid_from_key(Key),
     SD = #state{from=From,
                 type=Type,
                 key=Key,
-                log_id=LogId,
                 error=[],
                 payload=Payload},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
-prepare(timeout, SD0=#state{key=_Key, log_id=LogId}) ->
-    Preflist = log_utilities:get_apl_from_logid(LogId, logging),
+prepare(timeout, SD0=#state{key=Key}) ->
+    Preflist = log_utilities:get_preflist_from_key(Key),
     {next_state, execute, SD0#state{preflist=Preflist}, 0}.
 
 %% @doc Execute the write request and then go into waiting state to
 %%      verify it has meets consistency requirements.
 execute(timeout, SD0=#state{type=Type,
-                            log_id=LogId,
+                            key=Key,
                             payload=Payload,
                             from=From,
                             preflist=Preflist}) ->
-    lager:info("Execute operation ~p ~p ~p Preflist: ~p",
-               [Type, LogId, Payload, Preflist]),
+    lager:info("Execute operation ~p ~p Preflist: ~p",
+               [Type, Payload, Preflist]),
     case Preflist of
         [] ->
             lager:info("No nodes online; primary preference list empty."),
@@ -73,14 +71,14 @@ execute(timeout, SD0=#state{type=Type,
         [H|T] ->
             lager:info("Forward to first node in preflist: ~p",
                        [H]),
-            floppy_rep_vnode:operate(H, self(), Type, LogId, Payload),
+            floppy_rep_vnode:operate(H, self(), Type, Key, Payload),
             {next_state, waiting, SD0#state{preflist=T}, ?COORD_TIMEOUT}
     end.
 
 %% @doc The contacted vnode failed to respond within timeout. So contact
 %% the next one in the preflist
 waiting(timeout, SD0=#state{type=Type,
-                            log_id=LogId,
+                            key=Key,
                             payload=Payload,
                             from=From,
                             preflist=Preflist}) ->
@@ -92,31 +90,31 @@ waiting(timeout, SD0=#state{type=Type,
             {stop, normal, SD0};
       [H|T] ->
             lager:info("Coord: Forward to node:~w",[H]),
-            floppy_rep_vnode:operate(H, self(), Type, LogId, Payload),
+            floppy_rep_vnode:operate(H, self(), Type, Key, Payload),
             SD1 = SD0#state{preflist=T},
             {next_state, waiting, SD1, ?COORD_TIMEOUT}
     end;
 
 %% @doc Receive result and reply the result to the process that started the fsm (From).
 waiting({error, Message}, SD=#state{error=Error0}) ->
-    lager:info("Coord: Got error message ~w",[Message]),
-    Error1 = Error0++[Message],
+    lager:info("Error received: ~p", [Message]),
+    Error1 = Error0 ++ [Message],
     {next_state, waiting, SD#state{error=Error1}, ?COORD_TIMEOUT};
 waiting({Result, Message}, SD=#state{from=From}) ->
-    lager:info("Coord: Finish operation ~w ~w",[Result, Message]),
-    From! {Result, Message},   
+    From ! {Result, Message},
     {stop, normal, SD}.
 
 handle_info(_Info, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 handle_sync_event(_Event, _From, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
-code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
     ok.

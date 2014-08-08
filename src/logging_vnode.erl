@@ -71,6 +71,7 @@ read(Node, Log) ->
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
 -spec dappend(preflist(), key(), op(), op_id()) -> term().
 dappend(Preflist, Log, OpId, Payload) ->
+    lager:info("Append triggered with preference list: ~p", [Preflist]),
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, OpId, Payload},
                                    {fsm, undefined, self()},
@@ -110,7 +111,7 @@ init([Partition]) ->
 %%      Output: {ok, {vnode_id, Operations}} | {error, Reason}
 handle_command({read, LogId}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
-    case get_log_from_map(Map, LogId) of
+    case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             case get_log(Log, LogId) of
                 [] ->
@@ -133,7 +134,7 @@ handle_command({read, LogId}, _Sender,
 %%
 handle_command({threshold_read, LogId, From}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
-    case get_log_from_map(Map, LogId) of
+    case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             case get_log(Log, LogId) of
                 [] ->
@@ -155,8 +156,8 @@ handle_command({threshold_read, LogId, From}, _Sender,
 %%      Output: ok | {error, Reason}
 %%
 handle_command({append_list, LogId, Ops}, _Sender,
-               #state{logs_map=Map}=State) ->
-    Result = case get_log_from_map(Map, LogId) of
+               #state{partition=Partition, logs_map=Map}=State) ->
+    Result = case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             F = fun(Operation, Acc) ->
                     #operation{op_number=OpId, payload=Payload} = Operation,
@@ -182,7 +183,9 @@ handle_command({append_list, LogId, Ops}, _Sender,
 %%
 handle_command({append, LogId, OpId, Payload}, _Sender,
                #state{logs_map=Map, partition=Partition}=State) ->
-    case get_log_from_map(Map, LogId) of
+    lager:info("Issuing append operation at partition: ~p",
+               [Partition]),
+    case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
                 {ok, OpId} ->
@@ -213,9 +216,9 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(Data, #state{logs_map=Map}=State) ->
+handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
     {LogId, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
-    case get_log_from_map(Map, LogId) of
+    case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             {ok, _OpId} = insert_operation(Log, LogId, OpId, Payload),
             {reply, ok, State};
@@ -333,14 +336,15 @@ open_logs(LogFile, [Next|Rest], Map)->
 %%              LogId:  identifies the log.
 %%      Return: The actual name of the log
 %%
--spec get_log_from_map(dict(), [integer()]) ->
+-spec get_log_from_map(dict(), partition(), [integer()]) ->
     {ok, term()} | {error, no_log_for_preflist}.
-get_log_from_map(Map, LogId) ->
+get_log_from_map(Map, Partition, LogId) ->
     case dict:find(LogId, Map) of
         {ok, Log} ->
             {ok, Log};
         error ->
-            lager:info("no_log_for_preflist: ~w", [LogId]),
+            lager:info("partition: ~p, no_log_for_preflist: ~p",
+                       [Partition, LogId]),
             {error, no_log_for_preflist}
     end.
 
@@ -438,8 +442,8 @@ get_log_from_map_test() ->
     Dict3 = dict:store([floppy2, c], value2, Dict2),
     Dict4 = dict:store([floppy3, c], value3, Dict3),
     Dict5 = dict:store([floppy4, c], value4, Dict4),
-    ?assertEqual({ok, value3}, get_log_from_map(Dict5, [floppy3,c])),
-    ?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5, [floppy5, c])).
+    ?assertEqual({ok, value3}, get_log_from_map(Dict5, undefined, [floppy3,c])),
+    ?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5, undefined, [floppy5, c])).
 
 %% @doc Testing that preflist_member returns true when there is a
 %%      match.

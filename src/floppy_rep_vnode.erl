@@ -100,7 +100,7 @@ operate(Preflist, ToReply, Op, Key, Param) ->
 %%      `read', there is no such need.  Then start a rep fsm to perform
 %%      quorum read/append.
 %%
-handle_command({operate, ToReply, Type, LogId, Payload},
+handle_command({operate, ToReply, Type, Key, Payload},
                _Sender, #state{partition=Partition, lclock=LC}) ->
     OpId = case Type of
         append ->
@@ -112,7 +112,7 @@ handle_command({operate, ToReply, Type, LogId, Payload},
             current_op_id(LC)
     end,
     {NewClock, _} = OpId,
-    {ok, _} = floppy_rep_sup:start_fsm([ToReply, Type, LogId, Payload, OpId]),
+    {ok, _} = floppy_rep_sup:start_fsm([ToReply, Type, Key, Payload, OpId]),
     {noreply, #state{lclock=NewClock, partition=Partition}};
 
 handle_command(Message, _Sender, State) ->

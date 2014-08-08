@@ -38,6 +38,7 @@
 -record(state, {from :: pid(),
                 type :: term(),
                 log_id :: logid(),
+                key,
                 payload :: payload(),
                 readresult,
                 error_msg = [],
@@ -50,18 +51,18 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Type,  LogId, Payload, OpId) ->
-    gen_fsm:start_link(?MODULE, {From, Type, LogId, Payload, OpId}, []).
+start_link(From, Type, Key, Payload, OpId) ->
+    gen_fsm:start_link(?MODULE, {From, Type, Key, Payload, OpId}, []).
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init({From, Type, LogId, Payload, OpId}) ->
+init({From, Type, Key, Payload, OpId}) ->
     SD = #state{from=From,
                 type=Type,
-                log_id=LogId,
+                key=Key,
                 payload=Payload,
                 opid=OpId,
                 readresult=[],
@@ -69,10 +70,10 @@ init({From, Type, LogId, Payload, OpId}) ->
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
-prepare(timeout, SD0=#state{log_id=LogId}) ->
-    Preflist = log_utilities:get_apl_from_logid(LogId, logging),
-    SD = SD0#state{preflist=Preflist},
-    {next_state, execute, SD, 0}.
+prepare(timeout, SD0=#state{key=Key}) ->
+    LogId = log_utilities:get_logid_from_key(Key),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    {next_state, execute, SD0#state{log_id=LogId, preflist=Preflist}, 0}.
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
