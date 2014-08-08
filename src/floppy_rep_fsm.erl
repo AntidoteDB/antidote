@@ -29,7 +29,7 @@
 
 -record(state, {
                 from :: pid(),
-                type :: op(),
+                type :: term(),
                 log_id :: logid(),
                 payload = undefined :: term() | undefined,
                 readresult,
@@ -39,13 +39,10 @@
                 opid :: op_id(),
                 node_ops}).
 
--type state() :: #state{}.
-
 %%%===================================================================
 %%% API
 %%%===================================================================
 
--spec start_link(pid(), op(), logid(), term(), op_id()) -> 'ignore' | {'error',_} | {'ok',pid()}.
 start_link(From, Type,  LogId, Payload, OpId) ->
     gen_fsm:start_link(?MODULE, {From, Type, LogId, Payload, OpId}, []).
 
@@ -54,7 +51,6 @@ start_link(From, Type,  LogId, Payload, OpId) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
--spec init({pid(), op(), logid(), term(), op_id()}) -> {ok,prepare,state(),non_neg_integer()}.
 init({From, Type, LogId, Payload, OpId}) ->
     SD = #state{from=From,
                 type=Type,
@@ -66,7 +62,6 @@ init({From, Type, LogId, Payload, OpId}) ->
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
--spec prepare(timeout, state()) -> {next_state, execute, state(), 0}.
 prepare(timeout, SD0=#state{log_id=LogId}) ->
     Preflist = log_utilities:get_apl_from_logid(LogId, logging),
     SD = SD0#state{preflist=Preflist},
@@ -74,7 +69,6 @@ prepare(timeout, SD0=#state{log_id=LogId}) ->
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
--spec execute(timeout,state()) -> {next_state,wait_append | wait_read,state(), 500} | {stop,normal,state()}.
 execute(timeout, SD0=#state{type=Type,
                             log_id=LogId,
                             payload=Payload,
@@ -101,7 +95,6 @@ execute(timeout, SD0=#state{type=Type,
 
 
 %% @doc Waits for W write reqs to respond.
--spec wait_append({ok, {node(),term()}} | {error,reason()} | timeout,state()) -> {stop,normal,state()} | {next_state,wait_append,state(),500}.
 wait_append({ok,{_Node, OpId}}, SD=#state{type=Type, from=From, num_to_ack= NumToAck}) ->
     case NumToAck of
         1 ->
@@ -132,7 +125,6 @@ wait_append(timeout, SD=#state{from=From}) ->
 %% @doc Waits for R read reqs to respond and union returned operations.
 %% Then send vnodes operations if they haven't seen some.
 %% Finally reply the unioned operation list to the coord fsm.
--spec wait_read({ok,{node(),term()}} | {error,reason()} | timeout, state()) -> {next_state, repair_rest|wait_read,state(),500} | {stop,normal,state()}. 
 wait_read({ok, {Node, Result}}, SD=#state{type=Type, from= From, node_ops = NodeOps, log_id=LogId, readresult= ReadResult , num_to_ack= NumToAck}) ->
     NodeOps1 = lists:append([{Node, Result}], NodeOps),
     Result1 = union_ops(ReadResult, [], Result),
@@ -165,7 +157,6 @@ wait_read(timeout, SD=#state{from=From}) ->
 
 %% @doc Keeps waiting for read replies from vnodes after replying to coord fsm.
 %% Do read repair if any of them haven't seen some ops.
--spec repair_rest(timeout | {ok,{node(),term()}} | {error,reason()}, state()) -> {next_state,repair_rest,state(),500} | {stop,normal,state()}.
 repair_rest(timeout, SD= #state{node_ops=NodeOps, readresult = ReadResult, log_id=LogId}) ->
     lager:info("FSM: read repair timeout! Start repair anyway~n"),
     repair(NodeOps, ReadResult, LogId),
