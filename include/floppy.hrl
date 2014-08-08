@@ -34,13 +34,13 @@
 -type tx() :: #tx{}.
 
 -type key() :: term().
--type op()  :: term().
+-type op()  :: {term(), term()}.
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
--type op_id() :: {Number::non_neg_integer(), node()}.
+-type op_id() :: {non_neg_integer(), node()}.
 -type payload() :: term().
 -type logid() :: [integer()].
 
