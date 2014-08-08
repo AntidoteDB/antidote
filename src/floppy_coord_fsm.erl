@@ -1,10 +1,12 @@
 %% @doc The coordinator for stat write opeartions.  This example will
-%% show how to properly replicate your data in Riak Core by making use
-%% of the _preflist_.
+%%      show how to properly replicate your data in Riak Core by making 
+%%      use of the _preflist_.
+%%
 -module(floppy_coord_fsm).
--behavior(gen_fsm).
--include("floppy.hrl").
 
+-behavior(gen_fsm).
+
+-include("floppy.hrl").
 
 %% API
 -export([start_link/4]).
@@ -16,21 +18,20 @@
 %% States
 -export([prepare/2, execute/2, waiting/2, finish_op/3]).
 
-
--record(state, {
-          from :: pid(),
-          type :: atom(),
-          log_id,
-          error :: [term()],
-          payload = undefined :: term() | undefined,
-          preflist :: preflist()}).
+-record(state, {from :: pid(),
+                type :: atom(),
+                log_id,
+                key,
+                error :: [term()],
+                payload = undefined :: term() | undefined,
+                preflist :: preflist()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(From, Type, LogId, Payload) ->
-    gen_fsm:start_link(?MODULE, {From, Type, LogId, Payload}, []).
+start_link(From, Type, Key, Payload) ->
+    gen_fsm:start_link(?MODULE, {From, Type, Key, Payload}, []).
 
 finish_op(From, Result, Message) ->
     gen_fsm:send_event(From, {Result, Message}).
@@ -40,18 +41,19 @@ finish_op(From, Result, Message) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init({From, Type, LogId, Payload}) ->
+init({From, Type, Key, Payload}) ->
+    LogId = log_utilities:get_logid_from_key(Key),
     SD = #state{from=From,
                 type=Type,
+                key=Key,
                 log_id=LogId,
                 error=[],
                 payload=Payload},
     {ok, prepare, SD, 0}.
 
-
 %% @doc Prepare the write by calculating the _preference list_.
-prepare(timeout, SD0=#state{log_id=LogId}) ->
-    Preflist = log_utilities:get_apl_from_logid(LogId, replication),
+prepare(timeout, SD0=#state{key=_Key, log_id=LogId}) ->
+    Preflist = log_utilities:get_apl_from_logid(LogId, logging),
     {next_state, execute, SD0#state{preflist=Preflist}, 0}.
 
 %% @doc Execute the write request and then go into waiting state to

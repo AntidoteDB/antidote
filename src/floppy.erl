@@ -8,11 +8,10 @@
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), op()) -> {ok, term()} | {error, timeout}.
+-spec append(key(), op()) -> {ok, op_id()} | {error, timeout}.
 append(Key, {OpParam, Actor}) ->
-    LogId = log_utilities:get_logid_from_key(Key),
     Payload = #payload{key=Key, op_param=OpParam, actor=Actor},
-    case floppy_rep_vnode:append(LogId, Payload) of
+    case floppy_rep_vnode:append(Key, Payload) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
@@ -23,8 +22,7 @@ append(Key, {OpParam, Actor}) ->
 %%      object stored at some key.
 -spec read(key(), crdt()) -> val() | {error, reason()}.
 read(Key, Type) ->
-    LogId = log_utilities:get_logid_from_key(Key),
-    case floppy_rep_vnode:read(LogId) of
+    case floppy_rep_vnode:read(Key) of
         {ok, Ops} ->
             Init = materializer:create_snapshot(Type),
             Snapshot = materializer:update_snapshot(Key, Type, Init, Ops),
