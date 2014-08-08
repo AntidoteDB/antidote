@@ -65,10 +65,7 @@ handle_command({trigger, Write_set, From}, _Sender,
                              pending_operations = Pending}) ->
     Pending_operations = add_to_pending_operations(Pending, Write_set),
     lager:info("Pending Operations ~p",[Pending_operations]),
-    case From of
-        ignore -> _donothing = 0;
-        _ ->  From ! {ok, trigger_received}
-    end,
+    From ! {ok, trigger_received},
     Node = {Partition, node()}, %% Send ack to caller and continue processing
 
     Stable_time = get_stable_time(Node),
@@ -90,10 +87,6 @@ handle_command({trigger, Write_set, From}, _Sender,
     Dc_id = dc_utilities:get_my_dc_id(),
     vectorclock:update_clock(Partition, Dc_id, Stable_time),
 
-    %%Trigger Myself
-    riak_core_vnode_master:command(
-      [Node], {trigger, {dummytx, [], vectorclock:from_list([]), 0}, ignore},
-      clocksi_downstream_generator_vnode_master),
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 
