@@ -33,6 +33,7 @@ Using FloppyStore
 ### Prerequisites ###
 1. An unix-based OS.
 2. Erlang R16B02 (read https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang).
+	
 	NOTE: use this Erlang version in order not to have problems.
 	
 ### Getting floppystore ###
