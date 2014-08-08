@@ -98,7 +98,6 @@ init([Partition]) ->
                             Filtered
                     end
                     end, [], GrossPreflists),
-    lager:info("preflists: ~p", [Preflists]),
     case open_logs(LogFile, Preflists, dict:new()) of
         {error, Reason} ->
             {error, Reason};
@@ -322,7 +321,6 @@ open_logs(LogFile, [Next|Rest], Map)->
                 app_helper:get_env(riak_core, platform_data_dir), LogId),
     case dets:open_file(LogId, [{file, LogPath}, {type, bag}]) of
         {ok, Log} ->
-            lager:info("Opened log: ~p", [LogId]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2);
         {error, Reason} ->
