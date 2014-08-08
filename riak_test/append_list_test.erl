@@ -1,20 +1,3 @@
--module(append_list_test).
-
--export([confirm/0]).
-
--include_lib("eunit/include/eunit.hrl").
-
--define(HARNESS, (rt_config:get(rt_harness))).
-
-confirm() ->
-    N=6,
-    [Nodes] = rt:build_clusters([N]),
-
-    lager:info("Waiting for ring to converge."),
-    rt:wait_until_ring_converged(Nodes),
-
-    append_list_test(Nodes).
-
 %% @doc append_list_test: Test that check whether append_list works
 %% properly.  It creates a network partition so read_repair is
 %% triggered. Read repair uses append_list to repair the replicas With a
@@ -24,6 +7,23 @@ confirm() ->
 %% is healed and a read is issues. The stale replica is repaired.
 %%  Input:  Nodes:  List of the nodes of the cluster
 %%
+
+-module(append_list_test).
+
+-export([confirm/0]).
+
+-include_lib("eunit/include/eunit.hrl").
+
+-define(HARNESS, (rt_config:get(rt_harness))).
+
+confirm() ->
+    [Nodes] = rt:build_clusters([6]),
+
+    lager:info("Waiting for ring to converge."),
+    rt:wait_until_ring_converged(Nodes),
+
+    append_list_test(Nodes).
+
 append_list_test(Nodes) ->
     [N1, _N2, N3, _N4, _N5, _N6] = Nodes,
     Key = key1,

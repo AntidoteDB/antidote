@@ -12,9 +12,10 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
+-define(MAXRING,1461501637330902918203684832716283019655932542975).
+-record (payload, {key, op_param, actor}).
 -record(operation, {op_number, payload}).
 -type operation() :: #operation{}.
-
 
 % Clock SI
 
@@ -26,20 +27,21 @@
 % DELTA has the same meaning as in the clock-SI paper.
 
 -define(MIN, 1).
--define(DELTA, 10000). 
+-define(DELTA, 10000).
 -define(CLOCKSI_TIMEOUT, 1000).
 
 -record(tx, {snapshot_time, commit_time, prepare_time, state, write_set, operations}).
 -type tx() :: #tx{}.
 
 -type key() :: term().
--type op()  :: term().
+-type op()  :: {term(), term()}.
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
--type op_id() :: {Number::non_neg_integer(), node()}.
+-type op_id() :: {non_neg_integer(), node()}.
 -type payload() :: term().
+-type logid() :: [integer()].
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, tx/0]).

@@ -6,23 +6,38 @@
 -endif.
 
 -export([create_snapshot/1,
-   update_snapshot/3]).
+   update_snapshot/4]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(Type::atom()) -> term().
 create_snapshot(Type) ->
     Type:new().
 
-%% @doc Applies all the operations of a list to a CRDT.
--spec update_snapshot(Type::atom(), Snapshot::term(), [op]) -> term().
-update_snapshot(_, Snapshot, []) ->
+%% @doc Applies all the operations of key from a list of log entriesto a CRDT.
+-spec update_snapshot(Key::term(), Type::atom(), Snapshot::term(), [op]) -> term().
+update_snapshot(_, _, Snapshot, []) ->
     Snapshot;
-update_snapshot(Type, Snapshot, [Op|Rest]) ->
-    {_, #operation{payload={OpParam, Actor}}} = Op,
-    lager:info("OpParam: ~w, Actor: ~w and Snapshot: ~w~n",
-               [OpParam, Actor, Snapshot]),
-    {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
-    update_snapshot(Type, NewSnapshot, Rest).
+update_snapshot(Key, Type, Snapshot, [LogEntry|Rest]) ->
+    case LogEntry of
+        {_, Operation}->
+            Payload = Operation#operation.payload,
+            NewSnapshot = case Payload#payload.key of
+                Key ->
+                    OpParam = Payload#payload.op_param,
+                    Actor = Payload#payload.actor,
+                    lager:info("OpParam: ~p, Actor: ~p and Snapshot: ~p",
+                               [OpParam, Actor, Snapshot]),
+                    {ok, Value} = Type:update(OpParam, Actor, Snapshot),
+                    Value;
+                _ ->
+                    Snapshot
+            end,
+            update_snapshot(Key, Type, NewSnapshot, Rest);
+        _ ->
+            lager:info("Unexpected log record: ~p, Actor: ~p and Snapshot: ~p",
+                       [LogEntry]),
+            {error, unexpected_format, LogEntry}
+    end.
 
 -ifdef(TEST).
 
@@ -30,9 +45,11 @@ update_snapshot(Type, Snapshot, [Op|Rest]) ->
 materializer_gcounter_withlog_test() ->
     GCounter = create_snapshot(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
-    Ops = [{1,#operation{payload={increment, actor1}}},{2,#operation{payload={increment, actor2}}},{3,#operation{payload={{increment, 3}, actor1}}},{4,#operation{payload={increment, actor3}}}],
-
-    GCounter2 = update_snapshot(riak_dt_gcounter, GCounter, Ops),
+    Ops = [{1,#operation{payload = #payload{key=key, op_param=increment, actor=actor1}}}, 
+    {2,#operation{payload =#payload{key=key, op_param=increment, actor=actor2}}}, 
+    {3,#operation{payload =#payload{key=key, op_param=increment, actor=actor3}}}, 
+    {4,#operation{payload =#payload{key=key, op_param={increment,3}, actor=actor4}}}],
+    GCounter2 = update_snapshot(key, riak_dt_gcounter, GCounter, Ops),
     ?assertEqual(6,riak_dt_gcounter:value(GCounter2)).
 
 %% @doc Testing gcounter with empty update log
@@ -40,7 +57,7 @@ materializer_gcounter_emptylog_test() ->
     GCounter = create_snapshot(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
     Ops = [],
-    GCounter2 = update_snapshot(riak_dt_gcounter, GCounter, Ops),
+    GCounter2 = update_snapshot(key, riak_dt_gcounter, GCounter, Ops),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter2)).
 
 %% @doc Testing non-existing crdt
@@ -51,7 +68,7 @@ materializer_error_nocreate_test() ->
 materializer_error_invalidupdate_test() ->
     GCounter = create_snapshot(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
-    Ops = [{1,#operation{payload={decrement, actor1}}}],
-    ?assertException(error, function_clause, update_snapshot(riak_dt_gcounter, GCounter, Ops)).
+    Ops = [{1,#operation{payload =#payload{key=key, op_param=decrement, actor=actor1}}}],
+    ?assertException(error, function_clause, update_snapshot(key, riak_dt_gcounter, GCounter, Ops)).
 
 -endif.
