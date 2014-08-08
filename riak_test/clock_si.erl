@@ -206,6 +206,7 @@ clockSI_test_read_wait(Nodes) ->
     CommitTime=rpc:call(FirstNode, floppy, clocksi_iprepare, [TxId]),
     ?assertMatch({ok, _}, CommitTime),
     lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]),
+    timer:sleep(1000),
     %% start a different tx and try to read key read_wait_test.
     {ok,TxId1}=rpc:call(LastNode, floppy, clocksi_istart_tx, [now()]),
     lager:info("Tx2 Started, id : ~p", [TxId1]),
