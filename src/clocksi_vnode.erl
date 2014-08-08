@@ -156,11 +156,11 @@ handle_command({prepare, Transaction}, _Sender,
               "ClockSI_Vnode: logging the following operation: ~p.",
               [LogRecord]),
             LogId=log_utilities:get_logid_from_partition(Partition),
-            ets:insert(PreparedTx, {TxId, PrepareTime}),
+            ets:insert(PreparedTx, {active,{TxId, PrepareTime}}),
             Result = floppy_rep_vnode:append(LogId, LogRecord),
             case Result of
                 {ok,_} ->
-                    %ets:insert(PreparedTx, {TxId, PrepareTime}),
+                    %%ets:insert(PreparedTx, {TxId, PrepareTime}),
                     {reply, {prepared, PrepareTime}, State};
                 {error, timeout} ->
                     {reply, {error, timeout}, State}
@@ -287,7 +287,7 @@ clean_and_notify(TxId, #state{%%active_tx=ActiveTx,
                           %%,waiting_fsms=WaitingFsms
                          }) ->
     lager:info("ClockSI_Vnode: cleanning tx state on the vnode."),
-    ets:delete(PreparedTx, TxId),
+    ets:match_delete(PreparedTx, {active,{TxId,'_'}}),
     ets:delete(WriteSet, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds

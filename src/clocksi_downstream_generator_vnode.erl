@@ -68,7 +68,7 @@ handle_command({trigger, Write_set, From}, _Sender,
     From ! {ok, trigger_received},
     Node = {Partition, node()}, %% Send ack to caller and continue processing
 
-    Stable_time = get_stable_time(Node),
+    Stable_time = get_stable_time(Node, Last_commit_time),
     lager:info("Take updates before time : ~p",[Stable_time]),
     Sorted_ops = filter_operations(Pending_operations,
                                    Stable_time, Last_commit_time),
@@ -85,6 +85,7 @@ handle_command({trigger, Write_set, From}, _Sender,
                              end
                      end, {Pending_operations, Last_commit_time}, Sorted_ops),
     Dc_id = dc_utilities:get_my_dc_id(),
+    lager:info("Updating vector clock"),
     vectorclock:update_clock(Partition, Dc_id, Stable_time),
 
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
@@ -145,12 +146,13 @@ process_update(Update) ->
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
-get_stable_time(Node) ->
+get_stable_time(Node, Prev_stable_time) ->
     lager:info("In get_stable_time"),
-    {ok, Active_txns} = riak_core_vnode_master:sync_command(
-                         Node, {get_active_txns}, ?CLOCKSIMASTER),
-    lager:info("Active txns before filtering"),
-    lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
+    case riak_core_vnode_master:sync_command(
+                         Node, {get_active_txns}, ?CLOCKSIMASTER) of
+{ok, Active_txns} ->
+    lager:info("Active txns before filtering ~p",[Active_txns]),
+    lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
                         case Min_time > Snapshot_time of
                             true ->
                                 Snapshot_time;
@@ -159,7 +161,9 @@ get_stable_time(Node) ->
                         end
                 end,
                 now_milisec(erlang:now()),
-                Active_txns).
+                Active_txns);
+     _ -> Prev_stable_time
+end.
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
     (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
