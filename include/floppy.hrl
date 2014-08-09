@@ -42,6 +42,10 @@
 -type log() :: term().
 -type op_id() :: {non_neg_integer(), node()}.
 -type payload() :: term().
--type logid() :: [integer()].
+-type partition_id()  :: non_neg_integer().
+-type log_id() :: [partition_id()].
+-type type() :: atom().
+-type snapshot() :: term().
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, tx/0]).
+
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, tx/0, type/0, snapshot/0]).

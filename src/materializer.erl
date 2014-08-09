@@ -9,17 +9,17 @@
    update_snapshot/4]).
 
 %% @doc Creates an empty CRDT
--spec create_snapshot(Type::atom()) -> term().
+-spec create_snapshot(type()) -> snapshot().
 create_snapshot(Type) ->
     Type:new().
 
-%% @doc Applies all the operations of key from a list of log entriesto a CRDT.
--spec update_snapshot(Key::term(), Type::atom(), Snapshot::term(), [op]) -> term().
+%% @doc Applies all the operations of key from a list of log entries to a CRDT.
+-spec update_snapshot(key(), type(), snapshot(), [op]) -> snapshot() | {error,unexpected_format,op()}.
 update_snapshot(_, _, Snapshot, []) ->
     Snapshot;
 update_snapshot(Key, Type, Snapshot, [LogEntry|Rest]) ->
     case LogEntry of
-        {_, Operation}->
+        {_, Operation} ->
             Payload = Operation#operation.payload,
             NewSnapshot = case Payload#payload.key of
                 Key ->
