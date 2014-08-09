@@ -9,4 +9,6 @@
 confirm() ->
     Nodes = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
+    lager:info("Test run where nothing really happens."),
+
     pass.

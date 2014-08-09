@@ -9,8 +9,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-%% TODO Refine types!
-
 %% API
 -export([start_vnode/1,
          dread/2,
@@ -261,7 +259,7 @@ terminate(_Reason, _State) ->
 %%      Return: true if all logs are empty. false if at least one log
 %%              contains data.
 %%
--spec no_elements(LogIds::[[Partition::non_neg_integer()]], Map::dict()) -> boolean().
+-spec no_elements([log_id()], dict()) -> boolean().
 no_elements([], _Map) ->
     true;
 no_elements([LogId|Rest], Map) ->
@@ -290,7 +288,7 @@ no_elements([LogId|Rest], Map) ->
 %%              Filtered: List of filetered operations
 %%      Return: The filtered list of operations
 %%
--spec threshold_prune([op()], atom()) -> [op()].
+-spec threshold_prune([op()], op_id()) -> [op()].
 threshold_prune([], _From) ->
     [];
 threshold_prune([{_LogId, Operation}=H|T], From) ->
@@ -336,8 +334,8 @@ open_logs(LogFile, [Next|Rest], Map)->
 %%              LogId:  identifies the log.
 %%      Return: The actual name of the log
 %%
--spec get_log_from_map(dict(), partition(), [integer()]) ->
-    {ok, term()} | {error, no_log_for_preflist}.
+-spec get_log_from_map(dict(), partition(), log_id()) ->
+    {ok, log()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, Partition, LogId) ->
     case dict:find(LogId, Map) of
         {ok, Log} ->
@@ -371,7 +369,7 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), [integer()], op_id(), payload()) ->
+-spec insert_operation(log(), log_id(), op_id(), payload()) ->
     {ok, op_id()} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
@@ -395,7 +393,7 @@ insert_operation(Log, LogId, OpId, Payload) ->
 %%            LogId: Identifier of the log
 %%    Return: List of all the logged operations
 %%
--spec get_log(log(), [integer()]) -> [op()] | {error, atom()}.
+-spec get_log(log(), log_id()) -> [op()] | {error, atom()}.
 get_log(Log, LogId) ->
     dets:lookup(Log, LogId).
 

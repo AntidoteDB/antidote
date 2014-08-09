@@ -36,8 +36,8 @@
 -define(R_ERROR_THRESHOLD, ?N-?NUM_R+1).
 
 -record(state, {from :: pid(),
-                type :: term(),
-                log_id :: logid(),
+                type :: type(),
+                log_id :: log_id(),
                 key,
                 payload :: payload(),
                 readresult,
@@ -234,7 +234,7 @@ union_ops(L1, L2, [Op|T]) ->
     union_ops(L3, L4, T).
 
 %% @doc Send logging vnodes with operations that they havn't seen
--spec repair([{node(),[operation()]}],[operation()], logid()) -> ok.
+-spec repair([{node(),[operation()]}],[operation()], log_id()) -> ok.
 repair([], _, _) ->
     ok;
 repair([H|T], FullOps, LogId) ->
