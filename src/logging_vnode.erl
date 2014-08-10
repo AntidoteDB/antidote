@@ -54,6 +54,7 @@ threshold_read(Preflist, Log, From) ->
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
 -spec dread(preflist(), key()) -> term().
 dread(Preflist, Log) ->
+    lager:info("Read triggered with preference list: ~p", [Preflist]),
     riak_core_vnode_master:command(Preflist,
                                    {read, Log},
                                    {fsm, undefined, self()},
@@ -157,7 +158,8 @@ handle_command({append_list, LogId, Ops}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     Result = case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            F = fun(Operation, Acc) ->
+            F = fun({_, Operation}, Acc) ->
+                    lager:info("Operation: ~p", [Operation]),
                     #operation{op_number=OpId, payload=Payload} = Operation,
                     case insert_operation(Log, LogId, OpId, Payload) of
                         {ok, _}->
@@ -373,8 +375,7 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
-            Result = dets:insert(Log, {LogId, #operation{op_number=OpId,
-                                                         payload=Payload}}),
+            Result = dets:insert(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
             case Result of
                 ok ->
                     {ok, OpId};
