@@ -5,7 +5,7 @@
 -include("floppy.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
--record(dstate, {partition, last_commit_time, pending_operations}).
+-record(dstate, {partition, last_commit_time, pending_operations, stable_time}).
 
 -export([start_vnode/1,
          trigger/2]).
@@ -65,10 +65,24 @@ handle_command({trigger, Write_set, From}, _Sender,
                              pending_operations = Pending}) ->
     Pending_operations = add_to_pending_operations(Pending, Write_set),
     lager:info("Pending Operations ~p",[Pending_operations]),
+    %% reply to the caller
     From ! {ok, trigger_received},
+    %% Calculate stable commit time to order operations
     Node = {Partition, node()}, %% Send ack to caller and continue processing
-
     Stable_time = get_stable_time(Node, Last_commit_time),
+    %% Send a message to itself to process operations
+    riak_core_vnode_master:command([{Partition,node()}],
+                                   {process},
+                                   clocksi_downstream_generator_vnode_master),
+    {reply, {ok, trigger_received}, State#dstate{
+                                      pending_operations = Pending_operations,
+                                      stable_time = Stable_time}};
+
+handle_command({process}, _Sender,
+               State=#dstate{partition = Partition,
+                             last_commit_time = Last_commit_time,
+                             pending_operations = Pending_operations,
+                             stable_time = Stable_time}) ->
     lager:info("Take updates before time : ~p",[Stable_time]),
     Sorted_ops = filter_operations(Pending_operations,
                                    Stable_time, Last_commit_time),
@@ -149,21 +163,21 @@ process_update(Update) ->
 get_stable_time(Node, Prev_stable_time) ->
     lager:info("In get_stable_time"),
     case riak_core_vnode_master:sync_command(
-                         Node, {get_active_txns}, ?CLOCKSIMASTER) of
-{ok, Active_txns} ->
-    lager:info("Active txns before filtering ~p",[Active_txns]),
-    lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
-                        case Min_time > Snapshot_time of
-                            true ->
-                                Snapshot_time;
-                            false ->
-                                Min_time
-                        end
-                end,
-                now_milisec(erlang:now()),
-                Active_txns);
-     _ -> Prev_stable_time
-end.
+           Node, {get_active_txns}, ?CLOCKSIMASTER) of
+        {ok, Active_txns} ->
+            lager:info("Active txns before filtering ~p",[Active_txns]),
+            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
+                                case Min_time > Snapshot_time of
+                                    true ->
+                                        Snapshot_time;
+                                    false ->
+                                        Min_time
+                                end
+                        end,
+                        now_milisec(erlang:now()),
+                        Active_txns);
+        _ -> Prev_stable_time
+    end.
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
     (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
@@ -211,11 +225,11 @@ add_to_pending_operations(Pending, Write_set) ->
                                  {_,{Key,{Op,Actor}}} = Update,
                                  Dc_id = dc_utilities:get_my_dc_id(),
                                  New_op = #clocksi_payload{
-                                            key = Key, type = riak_dt_pncounter,
-                                            op_param = {Op, Actor},
-                                            snapshot_time = Vec_snapshot_time,
-                                            commit_time = {Dc_id,Commit_time},
-                                            txid = TxId},
+                                             key = Key, type = riak_dt_pncounter,
+                                             op_param = {Op, Actor},
+                                             snapshot_time = Vec_snapshot_time,
+                                             commit_time = {Dc_id,Commit_time},
+                                             txid = TxId},
                                  lists:append(Operations, [New_op])
                          end,
                          Pending, Updates);
