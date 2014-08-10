@@ -82,7 +82,9 @@ clocksi_istart_tx(Clock) ->
     lager:info("FLOPPY: Starting FSM for interactive transaction.~n"),
     case Clock of
         {Mega,Sec,Micro} ->
-            ClientClock= clocksi_vnode:now_milisec({Mega,Sec,Micro})
+            ClientClock= clocksi_vnode:now_milisec({Mega,Sec,Micro});
+        _ ->
+            ClientClock = Clock
     end,
     {ok, _PID} = clocksi_interactive_tx_coord_sup:start_fsm(
                    [self(), ClientClock]),
