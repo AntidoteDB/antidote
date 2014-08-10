@@ -24,7 +24,7 @@ read(Key, Type) ->
         {ok, Ops} ->
             Init = materializer:create_snapshot(Type),
             Snapshot = materializer:update_snapshot(Key, Type, Init, Ops),
-            Type:value(Snapshot);
+            {ok, Type:value(Snapshot)};
         {error, Reason} ->
             {error, Reason}
     end.
