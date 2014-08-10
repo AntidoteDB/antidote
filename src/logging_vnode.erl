@@ -195,8 +195,7 @@ handle_command({append, LogId, OpId, Payload}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command_logging, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,

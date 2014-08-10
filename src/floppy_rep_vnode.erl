@@ -115,8 +115,7 @@ handle_command({operate, ToReply, Type, Key, Payload},
     {ok, _} = floppy_rep_sup:start_fsm([ToReply, Type, Key, Payload, OpId]),
     {noreply, #state{lclock=NewClock, partition=Partition}};
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->

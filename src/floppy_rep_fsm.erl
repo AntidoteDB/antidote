@@ -123,6 +123,7 @@ wait_append({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
     end;
 
 wait_append(timeout, SD=#state{from=From}) ->
+    lager:info("Timeout triggered on append!"),
     floppy_coord_fsm:finish_op(From, error, quorum_unreachable),
     {stop, normal, SD}.
 
@@ -164,7 +165,7 @@ wait_read({error, Reason}, SD=#state{from=From, error_msg=ErrorMsg}) ->
     end;
 
 wait_read(timeout, SD=#state{from=From}) ->
-    lager:info("Read timeout!"),
+    lager:info("Timeout triggered on read!"),
     floppy_coord_fsm:finish_op(From, error, quorum_unreachable),
     {stop, normal, SD}.
 

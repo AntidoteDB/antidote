@@ -30,7 +30,7 @@
 -record(state, {from :: pid(),
                 type :: atom(),
                 key :: key(),
-                error :: [term()],
+                errors :: [term()],
                 payload = undefined :: term() | undefined,
                 preflist :: preflist()}).
 
@@ -53,7 +53,7 @@ init({From, Type, Key, Payload}) ->
     SD = #state{from=From,
                 type=Type,
                 key=Key,
-                error=[],
+                errors=[],
                 payload=Payload},
     {ok, prepare, SD, 0}.
 
@@ -77,8 +77,7 @@ execute(timeout, SD0=#state{type=Type,
             From ! {error, no_alive_vnode},
             {stop, normal, SD0};
         [H|T] ->
-            lager:info("Forward to first node in preflist: ~p",
-                       [H]),
+            lager:info("Forward to first node in preflist: ~p", [H]),
             floppy_rep_vnode:operate(H, self(), Type, Key, Payload),
             {next_state, waiting, SD0#state{preflist=T}, ?COORD_TIMEOUT}
     end.
@@ -92,8 +91,9 @@ waiting(timeout, SD0=#state{type=Type,
                             preflist=Preflist}) ->
     case Preflist of
         [] ->
-            lager:info("Empty preference list!"),
-            From ! {error, no_alive_vnode},
+            lager:info("Empty preference list; sending message to: ~p!",
+                       [From]),
+            From ! {error, quorum_unreachable},
             {stop, normal, SD0};
         [H|T] ->
             lager:info("Forwarding to node: ~p", [H]),
@@ -102,10 +102,10 @@ waiting(timeout, SD0=#state{type=Type,
     end;
 
 %% @doc Receive result and reply the result to the process that started the fsm (From).
-waiting({error, Message}, SD=#state{error=Error0}) ->
+waiting({error, Message}, SD=#state{errors=Errors0}) ->
     lager:info("Error received: ~p", [Message]),
-    Error1 = Error0 ++ [Message],
-    {next_state, waiting, SD#state{error=Error1}, ?COORD_TIMEOUT};
+    Errors = Errors0 ++ [Message],
+    {next_state, waiting, SD#state{errors=Errors}, ?COORD_TIMEOUT};
 waiting({Result, Message}, SD=#state{from=From}) ->
     lager:info("Result received: ~p", [{Result, Message}]),
     From ! {Result, Message},
