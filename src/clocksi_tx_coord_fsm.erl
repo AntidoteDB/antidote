@@ -1,6 +1,6 @@
 %%@doc The coordinator for a given Clock SI transaction.
 %%     It handles the state of the tx and executes the operations sequentially
-%%     by sending each operation to the responsible clocksi_vnode of the 
+%%     by sending each operation to the responsible clocksi_vnode of the
 %%     involved key. when a tx is finalized (committed or aborted, the fsm
 %%     also finishes.
 
@@ -9,7 +9,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/3]).
+-export([start_link/3, start_link/2]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -62,6 +62,9 @@
 start_link(From, Clientclock, Operations) ->
     gen_fsm:start_link(?MODULE, [From, Clientclock, Operations], []).
 
+start_link(From, Operations) ->
+    gen_fsm:start_link(?MODULE, [From, ignore, Operations], []).
+
 finish_op(From, Key,Result) ->
     gen_fsm:send_event(From, {Key, Result}).
 
@@ -72,9 +75,10 @@ finish_op(From, Key,Result) ->
 %% @doc Initialize the state.
 
 init([From, ClientClock, Operations]) ->
-
-    {ok, SnapshotTime}= get_snapshot_time(ClientClock),
-    Local_clock = clocksi_vnode:now_milisec(SnapshotTime),
+    case ClientClock of
+        ignore -> {ok, Local_clock} = get_snapshot_time();
+        _ ->  {ok, Local_clock}= get_snapshot_time(ClientClock)
+    end,
     TransactionId=#tx_id{snapshot_time=Local_clock, server_pid=self()},
     {ok, Vec_snapshot_time} = vectorclock:get_clock_node(node()),
     Dc_id = dc_utilities:get_my_dc_id(),
@@ -307,21 +311,24 @@ terminate(_Reason, _SN, _SD) ->
 %%% Internal Functions
 %%%===================================================================
 
-
-%%Set the transaction Snapshot Time to the maximum value of:
-%%1.ClientClock, which is the last clock of the system the client
-%%   starting this transaction has seen, and
-%%2.machine's local time, as returned by erlang:now().
+%%@doc Set the transaction Snapshot Time to the maximum value of:
+%%     1.ClientClock, which is the last clock of the system the client
+%%       starting this transaction has seen, and
+%%     2.machine's local time, as returned by erlang:now().
+-spec get_snapshot_time(ClientClock :: non_neg_integer()) ->
+                               {ok, non_neg_integer()}.
 get_snapshot_time(ClientClock) ->
-    {Megasecs, Secs, Microsecs}=erlang:now(),
-    case (ClientClock > {Megasecs, Secs, Microsecs - ?DELTA}) of
+    Now=clocksi_vnode: now_milisec(erlang:now()),
+    case (ClientClock > Now) of
         true->
-            %% should we wait until clock of this machine catches up
-            %% with this value?
-            {ClientMegasecs, ClientSecs, ClientMicrosecs}=ClientClock,
-            SnapshotTime = {ClientMegasecs, ClientSecs, ClientMicrosecs + ?MIN};
-
+            SnapshotTime = ClientClock + ?MIN;
         false ->
-            SnapshotTime = {Megasecs, Secs, Microsecs - ?DELTA}
+            SnapshotTime = Now
     end,
     {ok, SnapshotTime}.
+
+-spec get_snapshot_time() -> {ok, non_neg_integer()}.
+get_snapshot_time() ->
+    Now = clocksi_vnode:now_milisec(erlang:now()),
+    Snapshot_time  = Now - ?DELTA,
+    {ok, Snapshot_time}.

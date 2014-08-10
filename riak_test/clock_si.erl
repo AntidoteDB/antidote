@@ -11,6 +11,7 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     clockSI_test1(Nodes),
     clockSI_test2 (Nodes),
+    clocksi_tx_noclock_test(Nodes),
     clocksi_single_key_update_read_test(Nodes),
     clocksi_multiple_key_update_read_test(Nodes),
     clockSI_test4 (Nodes),
@@ -75,7 +76,36 @@ clockSI_test2(Nodes) ->
     lager:info("Test2 passed"),
     ok.
 
+%% Test to execute transaction with out explicit clock time
+clocksi_tx_noclock_test(Nodes) ->
+    FirstNode = hd(Nodes),
+    Key = itx,
+    {ok,TxId}=rpc:call(FirstNode, floppy, clocksi_istart_tx, []),
+    ReadResult0=rpc:call(FirstNode, floppy, clocksi_iread,
+                         [TxId, Key, riak_dt_pncounter]),
+    ?assertEqual({ok, 0}, ReadResult0),
+    WriteResult0=rpc:call(FirstNode, floppy, clocksi_iupdate,
+                          [TxId, Key, {increment, 4}]),
+    ?assertEqual(ok, WriteResult0),
+    CommitTime=rpc:call(FirstNode, floppy, clocksi_iprepare, [TxId]),
+    ?assertMatch({ok, _}, CommitTime),
+    End=rpc:call(FirstNode, floppy, clocksi_icommit, [TxId]),
+    ?assertMatch({ok, _}, End),
+    ReadResult1 = rpc:call(FirstNode, floppy, clocksi_read,
+                           [now(), Key, riak_dt_pncounter]),
+    {ok, {_, ReadSet1, _}}= ReadResult1,
+    ?assertMatch([1], ReadSet1),
 
+    FirstNode = hd(Nodes),
+    WriteResult1 = rpc:call(FirstNode, floppy, clocksi_bulk_update,
+                            [[{update, Key, {increment, a}}]]),
+    ?assertMatch({ok, _}, WriteResult1),
+    ReadResult2= rpc:call(FirstNode, floppy, clocksi_read,
+                          [now(), Key, riak_dt_pncounter]),
+    {ok, {_, ReadSet2, _}}=ReadResult2,
+    ?assertMatch([2], ReadSet2),
+    lager:info("Test3 passed"),
+    ok.
 
 %% The following function tests that ClockSI can run both a
 %% single read and a bulk-update tx.
@@ -203,17 +233,16 @@ clockSI_test_read_wait(Nodes) ->
                          [TxId, read_wait_test, {increment, 4}]),
     lager:info("Tx1 Writing..."),
     ?assertEqual(ok, WriteResult),
-    CommitTime=rpc:call(FirstNode, floppy, clocksi_iprepare, [TxId]),
-    ?assertMatch({ok, _}, CommitTime),
+    {ok, CommitTime}=rpc:call(FirstNode, floppy, clocksi_iprepare, [TxId]),
     lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]),
-    timer:sleep(1000),
     %% start a different tx and try to read key read_wait_test.
-    {ok,TxId1}=rpc:call(LastNode, floppy, clocksi_istart_tx, [now()]),
+    {ok,TxId1}=rpc:call(LastNode, floppy, clocksi_istart_tx,
+                        [CommitTime]),
     lager:info("Tx2 Started, id : ~p", [TxId1]),
     lager:info("Tx2 Reading..."),
     Pid=spawn(clock_si, spawn_read, [LastNode, TxId1, self()]),
     %% Delay first transaction
-    timer:sleep(1000),
+    timer:sleep(100),
     %% commit the first tx.
     End=rpc:call(FirstNode, floppy, clocksi_icommit, [TxId]),
     ?assertMatch({ok, _}, End),
@@ -343,7 +372,7 @@ clocksi_multiple_read_update_test(Nodes) ->
     Result1 = rpc:call(Node, floppy, read,
                        [Key, riak_dt_pncounter]),
     lists:foreach(fun(_)->
-                          read_update_test(Node, Key) end, 
+                          read_update_test(Node, Key) end,
                   lists:seq(1,NTimes)),
     Result2 = rpc:call(Node, floppy, read,
                        [Key, riak_dt_pncounter]),

@@ -9,7 +9,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/2]).
+-export([start_link/2, start_link/1]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -47,6 +47,8 @@
 
 start_link(From, Clientclock) ->
     gen_fsm:start_link(?MODULE, [From, Clientclock], []).
+start_link(From) ->
+    gen_fsm:start_link(?MODULE, [From, ignore], []).
 
 finish_op(From, Key,Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -58,7 +60,10 @@ finish_op(From, Key,Result) ->
 %% @doc Initialize the state.
 
 init([From, Clientclock]) ->
-    {ok, Snapshot_time}= get_snapshot_time(Clientclock),
+    case Clientclock of
+        ignore -> {ok, Snapshot_time} = get_snapshot_time();
+        _ -> {ok, Snapshot_time}= get_snapshot_time(Clientclock)
+    end,
     TxId=#tx_id{snapshot_time=Snapshot_time, server_pid=self()},
     {ok, Vec_clock} = vectorclock:get_clock_node(node()),
     Dc_id = dc_utilities:get_my_dc_id(),
@@ -81,8 +86,8 @@ init([From, Clientclock]) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
-          SD0=#state{transaction=Transaction, from=From,
-                     updated_partitions=Updated_partitions}) ->
+           SD0=#state{transaction=Transaction, from=From,
+                      updated_partitions=Updated_partitions}) ->
     case Op_type of
         prepare ->
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
@@ -281,12 +286,20 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
+-spec get_snapshot_time(ClientClock :: non_neg_integer()) ->
+                               {ok, non_neg_integer()}.
 get_snapshot_time(ClientClock) ->
     Now=clocksi_vnode: now_milisec(erlang:now()),
     case (ClientClock > Now) of
         true->
             SnapshotTime = ClientClock + ?MIN;
         false ->
-            SnapshotTime = Now - ?DELTA
+            SnapshotTime = Now
     end,
     {ok, SnapshotTime}.
+
+-spec get_snapshot_time() -> {ok, non_neg_integer()}.
+get_snapshot_time() ->
+    Now = clocksi_vnode:now_milisec(erlang:now()),
+    Snapshot_time  = Now - ?DELTA,
+    {ok, Snapshot_time}.
