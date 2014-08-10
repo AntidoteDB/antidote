@@ -363,11 +363,10 @@ clockSI_multiple_test_certification_check(Nodes) ->
     lager:info("Tx1 aborted. Test passed!"),
     ok.
 
-%% Read an udpate a key multiple times
+%% Read an update a key multiple times
 clocksi_multiple_read_update_test(Nodes) ->
     Node = hd(Nodes),
-    _Key = get_random_key(),
-    Key = newkey,
+    Key = get_random_key(),
     NTimes = 100,
     Result1 = rpc:call(Node, floppy, read,
                        [Key, riak_dt_pncounter]),
@@ -391,4 +390,4 @@ read_update_test(Node, Key) ->
 
 get_random_key() ->
     random:seed(now()),
-    random:uniform(100).
+    random:uniform(1000).
