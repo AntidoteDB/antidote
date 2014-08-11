@@ -1,4 +1,4 @@
--module(floppy_log_handoff).
+-module(floppy_log_handoff_test).
 
 -export([confirm/0]).
 

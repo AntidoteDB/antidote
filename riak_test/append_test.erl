@@ -33,13 +33,13 @@ confirm() ->
     ReadResult1 = rpc:call(Node,
                            floppy, read,
                            [key1, riak_dt_gcounter]),
-    ?assertEqual(1, ReadResult1),
+    ?assertEqual({ok, 1}, ReadResult1),
 
     rt:log_to_nodes(Nodes, "Starting read operation 2"),
 
     ReadResult2 = rpc:call(Node,
                            floppy, read,
                            [key2, riak_dt_gcounter]),
-    ?assertEqual(1, ReadResult2),
+    ?assertEqual({ok, 1}, ReadResult2),
 
     pass.

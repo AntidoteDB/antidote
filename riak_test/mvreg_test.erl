@@ -29,7 +29,7 @@ mvreg_test() ->
     Result = hd(lists:reverse(ListIds)),
     lager:info("Sending read to Node ~w~n",[FirstNode]),
     ReadResult = rpc:call(FirstNode, floppy, read, [abc, riak_dt_mvreg]),
-    ?assertEqual([Result], ReadResult),
+    ?assertEqual({ok, [Result]}, ReadResult),
 
     PropagateResult1 = rpc:call(FirstNode, floppy, append, [abc, {{propagate, value2, [{actor2, 5}]}, actor1}]),
     ?assertMatch({ok, _}, PropagateResult1),
