@@ -13,13 +13,14 @@
 -type vectorclock() :: dict().
 
 get_clock_by_key(Key) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, vectorclock),
-    lager:info("Preflist of vectorclokc ~p", [PrefList]),
-    [{IndexNode, _Type}] = PrefList,
+    Logid = log_utilities:get_logid_from_key(Key),
+    Preflist = log_utilities:get_preflist_from_logid(Logid),
+    Indexnode = hd(Preflist),
+    lager:info("Preflist of Key ~k vectorclock ~p", [Key, Indexnode]),
+    %[{Indexnode, _Type}] = PrefList,
     lager:info("Get Clock"),
     riak_core_vnode_master:sync_command(
-      IndexNode, {get_clock}, vectorclock_vnode_master).
+      Indexnode, {get_clock}, vectorclock_vnode_master).
 
 -spec get_clock(Partition :: non_neg_integer())
                -> {ok, vectorclock()} | {error, term()}.
@@ -53,9 +54,11 @@ get_clock_node(Node) ->
                    Dc_id :: term(), Timestamp :: non_neg_integer())
                   -> {ok, vectorclock()} | {error, term()}.
 update_clock(Partition, Dc_id, Timestamp) ->
-    Logid = log_utilities:get_logid_from_partition(Partition),
-    Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),
-    Indexnode = hd(Preflist),
+   % Logid = log_utilities:get_logid_from_partition(Partition),
+   % Preflist = log_utilities:get_preflist_from_logid(Logid),
+   % Indexnode = hd(Preflist),
+    Indexnode = {Partition, node()},
+    lager:info("Preflist of vectorclokc ~p", [Indexnode]),
     case riak_core_vnode_master:sync_command(Indexnode,
                                              {update_clock, Dc_id, Timestamp},
                                              vectorclock_vnode_master) of

@@ -6,7 +6,7 @@
 -export([start_vnode/1,
          %%API begin
          read_data_item/4,
-         update_data_item/4,
+         update_data_item/5,
          prepare/2,
          commit/3,
          abort/2,
@@ -60,9 +60,9 @@ read_data_item(Node, TxId, Key, Type) ->
                                         ?CLOCKSIMASTER).
 
 %% @doc Sends an update request to the Node that is responsible for the Key
-update_data_item(Node, TxId, Key, Op) ->
+update_data_item(Node, TxId, Key, Type, Op) ->
     lager:info("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
-    riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Op},
+    riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Type, Op},
                                         ?CLOCKSIMASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
@@ -110,23 +110,23 @@ handle_command({read_data_item, Txn, Key, Type}, Sender,
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, Txn, Key, Op}, Sender,
+handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                #state{partition = Partition, write_set=WriteSet,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
-    LogRecord=#log_record{tx_id=TxId, op_type=update, op_payload={Key, Op}},
+    LogRecord=#log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
     TxId = Txn#transaction.txn_id,
     lager:info("ClockSI_Vnode: logging the following operation: ~p.",
                [LogRecord]),
-    LogId=log_utilities:get_logid_from_key(Key),
-    Result = floppy_rep_vnode:append(LogId, LogRecord),
+                                                %LogId=log_utilities:get_logid_from_key(Key),
+    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
     case Result of
         {ok,_} ->
-            ets:insert(ActiveTxsPerKey, {Key, TxId}),
+            ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
             Check2=ets:lookup(ActiveTxsPerKey, Key),
             lager:info("ClockSI-Vnode: Inserted to ActiveTxsPerKey ~p",
                        [Check2]),
-            ets:insert(WriteSet, {TxId, {Key, Op}}),
+            ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
             Check3=ets:lookup(WriteSet, TxId),
             lager:info("ClockSI-Vnode: Inserted to WriteSet ~p",[Check3]),
             {ok, _Pid} = clocksi_updateitem_fsm:start_link(
@@ -138,7 +138,7 @@ handle_command({update_data_item, Txn, Key, Op}, Sender,
     end;
 
 handle_command({prepare, Transaction}, _Sender,
-               State = #state{ partition = Partition, %active_tx=ActiveTx,
+               State = #state{ partition = _Partition,
                                committed_tx=CommittedTx,
                                active_txs_per_key=ActiveTxPerKey,
                                prepared_tx=PreparedTx, write_set=WriteSet}) ->
@@ -155,12 +155,12 @@ handle_command({prepare, Transaction}, _Sender,
             lager:info(
               "ClockSI_Vnode: logging the following operation: ~p.",
               [LogRecord]),
-            LogId=log_utilities:get_logid_from_partition(Partition),
             ets:insert(PreparedTx, {active,{TxId, PrepareTime}}),
-            Result = floppy_rep_vnode:append(LogId, LogRecord),
+            Updates = ets:lookup(WriteSet, TxId),
+            [{_,{Key,Type,{_Op,_Actor}}} | _Rest] = Updates,
+            Result = floppy_rep_vnode:append(Key,Type,LogRecord),
             case Result of
                 {ok,_} ->
-                    %%ets:insert(PreparedTx, {TxId, PrepareTime}),
                     {reply, {prepared, PrepareTime}, State};
                 {error, timeout} ->
                     {reply, {error, timeout}, State}
@@ -172,7 +172,7 @@ handle_command({prepare, Transaction}, _Sender,
     end;
 
 handle_command({commit, Transaction, TxCommitTime}, _Sender,
-               #state{partition = Partition, committed_tx=CommittedTx,
+               #state{partition = _Partition, committed_tx=CommittedTx,
                       write_set=WriteSet}=State) ->
     lager:info("ClockSI_Vnode: got commit message."),
     TxId = Transaction#transaction.txn_id,
@@ -183,15 +183,14 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
     lager:info(
       "ClockSI_Vnode: logging the following operation: ~p.",
       [LogRecord]),
-    LogId=log_utilities:get_logid_from_partition(Partition),
-    Result = floppy_rep_vnode:append(LogId, LogRecord),
+    Updates = ets:lookup(WriteSet, TxId),
+    [{_,{Key,Type,{_Op,_Actor}}} | _Rest] = Updates,
+    Result = floppy_rep_vnode:append(Key,Type,LogRecord),
     case Result of
         {ok,_} ->
             %% gen_fsm:send_event(Sender, committed)
             %%TODO: Return results to caller here,
-            Updates = ets:lookup(WriteSet, TxId),
             ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            [{_,{Key,{_Op,_Actor}}} | _Rest] = Updates,
             lager:info(
               "ClockSI_Vnode: sending updates to downstream vnode layer: ~p",
               [Updates]),
@@ -208,9 +207,14 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
             {reply, {error, timeout}, State}
     end;
 
-handle_command({abort, TxId}, _Sender, #state{partition=Partition}=State) ->
-    LogId=log_utilities:get_logid_from_partition(Partition),
-    Result = floppy_rep_vnode:append(LogId, {TxId, aborted}),
+handle_command({abort, Transaction}, _Sender, State =
+                   #state{partition=_Partition, write_set = WriteSet}) ->
+    %LogId=log_utilities:get_logid_from_partition(Partition),
+    %Result = floppy_rep_vnode:append(LogId, {TxId, aborted}),
+    TxId = Transaction#transaction.txn_id,
+    Updates = ets:lookup(WriteSet, TxId),
+    [{_,{Key,Type,{_Op,_Actor}}} | _Rest] = Updates,
+    Result = floppy_rep_vnode:append(Key,Type,{TxId, aborted}),
     case Result of
         {ok,_} ->
             clean_and_notify(TxId, State),
@@ -225,14 +229,13 @@ handle_command({abort, TxId}, _Sender, #state{partition=Partition}=State) ->
     {reply, ack_abort, State};
 
 %% @doc Return active transactions in prepare state with their preparetime
-handle_command({get_active_txns},_Sender, #state{prepared_tx=Prepared}=State) ->
+handle_command({get_active_txns},_Sender, #state{prepared_tx=Prepared, partition = Partition}=State) ->
     %%ActiveTxs :: [{active,{TxId, Preparetime}}]
     ActiveTxs = ets:lookup(Prepared, active),
-    lager:info("ActiveTxs: ~p", [ActiveTxs]),
+    lager:info("ActiveTxs: ~p -> ~p", [Partition, ActiveTxs]),
     {reply, {ok, ActiveTxs}, State};
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command_logging, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
@@ -299,7 +302,7 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
 certification_check(_, [], _, _) -> true;
 certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
     lager:info("ClockSI_Vnode: getting key of operation: ~p.", [H]),
-    {_,{Key,_}}=H,
+    {_,{Key,_Type,_}}=H,
     lager:info("ClockSI_Vnode: checking key: ~p.", [Key]),
     TxsPerKey=ets:lookup(ActiveTxPerKey, Key),
     lager:info("ClockSI_Vnode: active txs for Key: ~p: ~p.", [Key, TxsPerKey]),
@@ -312,7 +315,7 @@ certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
 
 check_keylog(_, [], _) -> false;
 check_keylog(TxId, [H|T], CommittedTx)->
-    {_, ThisTxId}=H,
+    {_Key, _Type, ThisTxId}=H,
     lager:info("Checking if Tx ~p started after Tx to check ~w~n",
                [ThisTxId, TxId]),
     case ThisTxId > TxId of

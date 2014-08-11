@@ -9,7 +9,7 @@
          clocksi_istart_tx/1,
          clocksi_istart_tx/0,
          clocksi_iread/3,
-         clocksi_iupdate/3,
+         clocksi_iupdate/4,
          clocksi_iprepare/1,
          clocksi_icommit/1]).
 
@@ -18,8 +18,8 @@
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
 append(Key, Type, {OpParam, Actor}) ->
-    Payload = #payload{key=Key, type=Type, op_param=OpParam, actor=Actor},
-    case floppy_rep_vnode:append(Key, Type, Payload) of
+    Operations = [update, Key, Type, {OpParam, Actor}],
+    case clocksi_execute_tx(Operations) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
@@ -29,11 +29,9 @@ append(Key, Type, {OpParam, Actor}) ->
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 read(Key, Type) ->
-    case floppy_rep_vnode:read(Key, Type) of
-        {ok, Ops} ->
-            Init = materializer:create_snapshot(Type),
-            Snapshot = materializer:update_snapshot(Key, Type, Init, Ops),
-            {ok, Type:value(Snapshot)};
+    case clocksi_read(now(), Key, Type) of
+        {ok,{_,[Val],_ }} ->
+            {ok, Val};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -131,18 +129,18 @@ clocksi_read(ClientClock, Key, Type) ->
     Operation={read, Key, Type},
     clocksi_execute_tx(ClientClock, [Operation]).
 
-clocksi_iread(TxId=#tx_id{}, Key, Type) ->
+clocksi_iread(TxId, Key, Type) ->
     {_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
 
-clocksi_iupdate(TxId=#tx_id{}, Key, OpParams) ->
+clocksi_iupdate(TxId, Key, Type, OpParams) ->
     {_, _, CoordFsmPid}=TxId,
-    gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, OpParams}}).
+    gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
 
-clocksi_iprepare(TxId=#tx_id{})->
+clocksi_iprepare(TxId)->
     {_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
 
-clocksi_icommit(TxId=#tx_id{})->
+clocksi_icommit(TxId)->
     {_, _, CoordFsmPid}=TxId,
     gen_fsm:sync_send_event(CoordFsmPid, commit).

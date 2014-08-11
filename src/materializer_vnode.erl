@@ -68,11 +68,12 @@ handle_command({read, Key, Type, Snapshot_time}, _Sender,
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{cache = Cache})->
-    LogId = log_utilities:get_logid_from_key(Key),
+    %%LogId = log_utilities:get_logid_from_key(Key),
     %%TODO: Remove unnecessary information from op_payload in log_Record
     LogRecord = #log_record{tx_id = DownstreamOp#clocksi_payload.txid,
                             op_type=downstreamop, op_payload = DownstreamOp},
-    case floppy_rep_vnode:append(LogId, LogRecord) of
+    case floppy_rep_vnode:append(
+           Key, DownstreamOp#clocksi_payload.type, LogRecord) of
         {ok, _} ->
             true = ets:insert(Cache, {Key, DownstreamOp}),
             {reply, ok, State};
@@ -80,8 +81,7 @@ handle_command({update, Key, DownstreamOp}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command_logging, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command( _Message , _Sender, State) ->

@@ -169,7 +169,7 @@ int_filter_updates_key([], _Key, Updates2) ->
     Updates2;
 
 int_filter_updates_key([Next|Rest], Key, Updates2) ->
-    {_, {KeyPrime, Op}} = Next,
+    {_, {KeyPrime, _Type, Op}} = Next,
     lager:info("Comparing keys ~w==~w",[KeyPrime, Key]),
     case KeyPrime==Key of
         true ->

@@ -12,10 +12,10 @@
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
 -record (payload, {key, type, op_param, actor}).
--type operation() :: #operation{}.
 
 %% Used by the replication layer
 -record(operation, {op_number, payload}).
+-type operation() :: #operation{}.
 
 %% The way records are stored in the log.
 -record(log_record, {tx_id, op_type::atom(), op_payload}).
@@ -33,25 +33,6 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
-%%---------------------------------------------------------------------
--type tx() :: #tx{}.
-
--type key() :: term().
--type op()  :: {term(), term()}.
--type crdt() :: term().
--type val() :: term().
--type reason() :: atom().
--type preflist() :: riak_core_apl:preflist().
--type log() :: term().
--type op_id() :: {non_neg_integer(), node()}.
--type payload() :: term().
--type partition_id()  :: non_neg_integer().
--type log_id() :: [partition_id()].
--type type() :: atom().
--type snapshot() :: term().
-
-
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, tx/0, type/0, snapshot/0]).
 %% Data Type: tx
 %% where:
 %%    snapshot_time:
@@ -74,3 +55,22 @@
                           txid :: #tx_id{}
                          }).
 -record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
+
+%%---------------------------------------------------------------------
+-type key() :: term().
+-type op()  :: {term(), term()}.
+-type crdt() :: term().
+-type val() :: term().
+-type reason() :: atom().
+-type preflist() :: riak_core_apl:preflist().
+-type log() :: term().
+-type op_id() :: {non_neg_integer(), node()}.
+-type payload() :: term().
+-type partition_id()  :: non_neg_integer().
+-type log_id() :: [partition_id()].
+-type type() :: atom().
+-type snapshot() :: term().
+-type txid() :: #tx_id{}.
+
+
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0]).

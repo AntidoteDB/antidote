@@ -112,16 +112,22 @@ prepare_op(timeout, SD0=#state{operations=Operations}) ->
             {next_state, prepare_2pc, SD0, 0};
         [Op|TailOps] ->
             [Op|TailOps] = Operations,
-            {_, Key,_} = Op,
-            DocIdx = riak_core_util:chash_key({?BUCKET,
-                                               term_to_binary(Key)}),
+            case Op of
+                {update, Key,_Type,_} -> FormattedOp = Op;
+                {read, Key, Type} -> FormattedOp = {read, Key, Type, ignore}
+            end,
+            %DocIdx = riak_core_util:chash_key({?BUCKET,
+                                                % term_to_binary(Key)}),
             lager:info("ClockSI-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Coord: Op ~w ~n ", [Op]),
             lager:info("ClockSI-Coord: TailOps ~w ~n ", [TailOps]),
             lager:info("ClockSI-Coord: getting leader for Key ~w ~n", [Key]),
-            [Leader] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),
+            %[Leader] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),
+            Logid = log_utilities:get_logid_from_key(Key),
+            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            Leader = hd(Preflist),
             SD1 = SD0#state{operations=TailOps,
-                            current_op=Op, current_op_leader=Leader},
+                            current_op=FormattedOp, current_op_leader=Leader},
             {next_state, execute_op, SD1, 0}
     end.
 
@@ -135,13 +141,13 @@ execute_op(timeout, SD0=#state{
                            updated_partitions=UpdatedPartitions,
                            read_set=ReadSet,
                            current_op_leader=CurrentOpLeader}) ->
-    {OpType, Key, Param}=CurrentOp,
+    {OpType, Key, Type, Param}=CurrentOp,
     lager:info("ClockSI-Coord: Execute operation ~w ~n",[CurrentOp]),
-    {IndexNode, _} = CurrentOpLeader,
+    IndexNode = CurrentOpLeader,
     case OpType of
         read ->
             case clocksi_vnode:read_data_item(IndexNode,
-                                              Transaction, Key, Param) of
+                                              Transaction, Key, Type) of
                 error ->
                     SD1=SD0,
                     {next_state, abort, SD1};
@@ -154,7 +160,7 @@ execute_op(timeout, SD0=#state{
             end;
         update ->
             case clocksi_vnode:update_data_item(IndexNode,
-                                                Transaction, Key, Param) of
+                                                Transaction, Key, Type, Param) of
                 ok ->
                     case lists:member(IndexNode, UpdatedPartitions) of
                         false ->

@@ -93,18 +93,21 @@ execute_op({Op_type, Args}, Sender,
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             {next_state, prepare, SD0#state{from=Sender}, 0};
         read ->
-            {Key, Param}=Args,
-            DocIdx = riak_core_util:chash_key({?BUCKET,
-                                               term_to_binary(Key)}),
+            {Key, Type}=Args,
+            %DocIdx = riak_core_util:chash_key({?BUCKET,
+                                               %term_to_binary(Key)}),
             lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w",
                        [Key]),
-            [{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
-                                                            ?CLOCKSI),
+            %[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
+                                                           % ?CLOCKSI),
+            Logid = log_utilities:get_logid_from_key(Key),
+            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
-                                              Key, Param) of
+                                              Key, Type) of
                 error ->
                     {reply, error, abort, SD0};
                 Read_result ->
@@ -113,20 +116,22 @@ execute_op({Op_type, Args}, Sender,
                     {reply, {ok, Read_result}, execute_op, SD0}
             end;
         update ->
-            {Key, Param}=Args,
-            DocIdx = riak_core_util:chash_key({?BUCKET,
-                                               term_to_binary(Key)}),
+            {Key, Type, Param}=Args,
+            %DocIdx = riak_core_util:chash_key({?BUCKET,
+            %                                   term_to_binary(Key)}),
             lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
                        [Key]),
-            [{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
-                                                            ?CLOCKSI),
-
+           % [{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
+            %                                                ?CLOCKSI),
+            Logid = log_utilities:get_logid_from_key(Key),
+            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            IndexNode = hd(Preflist),
             case clocksi_vnode:update_data_item(IndexNode, Transaction,
-                                                Key, Param) of
+                                                Key, Type, Param) of
                 ok ->
                     case lists:member(IndexNode, Updated_partitions) of
                         false ->

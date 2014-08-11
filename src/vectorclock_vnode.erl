@@ -36,27 +36,26 @@ start_vnode(I) ->
 
 %% @doc Initialize the clock
 init([_Partition]) ->
-     {ok, #currentclock{clock = dict:new()}}.
+    {ok, #currentclock{clock = dict:new()}}.
 
-%% @doc 
+%% @doc
 handle_command({get_clock}, _Sender, #currentclock{clock = Clock} = State) ->
     {reply, {ok, Clock}, State};
 
-%% @doc 
+%% @doc
 handle_command({update_clock, Dc_id, Timestamp}, _Sender, #currentclock{clock = Clock} = State) ->
-    New_clock = dict:update(Dc_id, 
-                               fun(Value) -> 
-                                       case Timestamp > Value of 
-                                           true -> Timestamp;
-                                           false -> Value 
-                                           end
-                               end,
-                               Timestamp,
-                               Clock),
+    New_clock = dict:update(Dc_id,
+                            fun(Value) ->
+                                    case Timestamp > Value of
+                                        true -> Timestamp;
+                                        false -> Value
+                                    end
+                            end,
+                            Timestamp,
+                            Clock),
     {reply, {ok, New_clock}, State#currentclock{clock = New_clock}};
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command_logging, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command( _Message , _Sender, State) ->

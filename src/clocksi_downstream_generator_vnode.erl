@@ -31,17 +31,20 @@
 %%             Writeset -> set of updates
 -spec trigger(Key :: term(),
               Writeset :: {TxId :: term(),
-                           Updates :: [{term(), {Key :: term(), Op :: term()}}],
+                           Updates :: [{term(), {Key :: term(), Type:: term(), Op :: term()}}],
                            Vec_snapshot_time :: vectorclock:vectorclock(),
                            Commit_time :: non_neg_integer()})
              -> ok | {error, timeout}.
 trigger(Key, Writeset) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1,
-                                             clocksi_downstream_generator),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:command([NewPref], {trigger, Writeset, self()},
+    %% DocIdx = riak_core_util:chash_key({?BUCKET,
+    %%                                    term_to_binary(Key)}),
+    %% Preflist = riak_core_apl:get_primary_apl(DocIdx, 1,
+    %%                                          clocksi_downstream_generator),
+    %% [{NewPref,_}] = Preflist,
+    Logid = log_utilities:get_logid_from_key(Key),
+    Preflist = log_utilities:get_preflist_from_logid(Logid),
+    Indexnode = hd(Preflist),
+    riak_core_vnode_master:command([Indexnode], {trigger, Writeset, self()},
                                    clocksi_downstream_generator_vnode_master),
     receive
         {ok, trigger_received} ->
@@ -58,7 +61,7 @@ init([Partition]) ->
                  last_commit_time = 0, pending_operations = []}}.
 
 %% @doc Read client update operations,
-%%      generate downstream operations and store it to persistent log.
+%%      generate downstream operations and store it to persistent log.log
 handle_command({trigger, Write_set, From}, _Sender,
                State=#dstate{partition = Partition,
                              last_commit_time = Last_commit_time,
@@ -69,9 +72,12 @@ handle_command({trigger, Write_set, From}, _Sender,
     From ! {ok, trigger_received},
     %% Calculate stable commit time to order operations
     Node = {Partition, node()}, %% Send ack to caller and continue processing
+    %%Logid = log_utilities:get_logid_from_partition(Partition),
+    %%Preflist = log_utilities:get_preflist_from_logid(Logid),
+    %%Node = hd(Preflist),
     Stable_time = get_stable_time(Node, Last_commit_time),
     %% Send a message to itself to process operations
-    riak_core_vnode_master:command([{Partition,node()}],
+    riak_core_vnode_master:command([Node],
                                    {process},
                                    clocksi_downstream_generator_vnode_master),
     {reply, {ok, trigger_received}, State#dstate{
@@ -99,14 +105,14 @@ handle_command({process}, _Sender,
                              end
                      end, {Pending_operations, Last_commit_time}, Sorted_ops),
     Dc_id = dc_utilities:get_my_dc_id(),
-    lager:info("Updating vector clock"),
-    vectorclock:update_clock(Partition, Dc_id, Stable_time),
+    lager:info("Updating vector clock ~p",[Stable_time]),
+    Result = vectorclock:update_clock(Partition, Dc_id, Stable_time),
+    lager:info("Updated vc ~p",[Result]),
 
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command_logging, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command( _Message , _Sender, State) ->
@@ -222,10 +228,10 @@ add_to_pending_operations(Pending, Write_set) ->
     case Write_set of
         {TxId, Updates, Vec_snapshot_time, Commit_time} ->
             lists:foldl( fun(Update, Operations) ->
-                                 {_,{Key,{Op,Actor}}} = Update,
+                                 {_,{Key, Type, {Op,Actor}}} = Update,
                                  Dc_id = dc_utilities:get_my_dc_id(),
                                  New_op = #clocksi_payload{
-                                             key = Key, type = riak_dt_pncounter,
+                                             key = Key, type = Type,
                                              op_param = {Op, Actor},
                                              snapshot_time = Vec_snapshot_time,
                                              commit_time = {Dc_id,Commit_time},
