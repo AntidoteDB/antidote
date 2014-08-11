@@ -41,11 +41,11 @@ encode(Message) ->
 process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
     lists:foreach(fun(X) ->
                           Elem = erlang:binary_to_term(X),
-                          floppy:append(Key, {{add, Elem}, node()})
+                          floppy:append(Key, riak_dt_orset, {{add, Elem}, node()})
                   end,AddsBin),
     lists:foreach(fun(X) ->
                           Elem = erlang:binary_to_term(X),
-                          floppy:append(Key, {{remove, Elem}, node()})
+                          floppy:append(Key, riak_dt_orset, {{remove, Elem}, node()})
                   end,RemsBin),
     {reply, #fpboperationresp{success = true}, State};
 

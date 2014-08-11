@@ -41,12 +41,12 @@ encode(Message) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbincrementreq{key=Key, amount=Amount}, State) ->
-    {ok, _Result} = floppy:append(Key, {{increment, Amount}, node()}),
+    {ok, _Result} = floppy:append(Key, riak_dt_pncounter, {{increment, Amount}, node()}),
     {reply, #fpboperationresp{success = true}, State};
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbdecrementreq{key=Key, amount=Amount}, State) ->
-    {ok, _Result} = floppy:append(Key, {{decrement, Amount}, node()}),
+    {ok, _Result} = floppy:append(Key, riak_dt_pncounter, {{decrement, Amount}, node()}),
     {reply, #fpboperationresp{success = true}, State};
 
 %% @doc process/2 callback. Handles an incoming request message.

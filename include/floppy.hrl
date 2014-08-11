@@ -1,7 +1,6 @@
 -define(BUCKET, <<"floppy">>).
 -define(MASTER, floppy_vnode_master).
 -define(LOGGINGMASTER, logging_vnode_master).
-%-define(CLOCKSIMASTER, clocksi_vnode_master).
 -define(REPMASTER, floppy_rep_vnode_master).
 -define(OP_TIMEOUT, 25000).
 -define(COORD_TIMEOUT, 5000).
@@ -10,7 +9,7 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
--record (payload, {key, op_param, actor}).
+-record (payload, {key, type, op_param, actor}).
 -record(operation, {op_number, payload}).
 -type operation() :: #operation{}.
 

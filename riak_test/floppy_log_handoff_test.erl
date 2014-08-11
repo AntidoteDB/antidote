@@ -65,7 +65,7 @@ test_handoff(RootNode, NewNode, NTestItems) ->
 
 multiple_writes(Node, Start, End, Actor)->
     F = fun(N, Acc) ->
-            case rpc:call(Node, floppy, append, [N, {{increment, N}, Actor}]) of
+            case rpc:call(Node, floppy, append, [N, riak_dt_gcounter, {{increment, N}, Actor}]) of
                 {ok, _} ->
                     Acc;
                 Other ->
