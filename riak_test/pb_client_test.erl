@@ -1,4 +1,4 @@
--module(pb_client).
+-module(pb_client_test).
 
 -export([confirm/0]).
 
@@ -10,7 +10,6 @@
 
 -define(PORT, 10017).
 
-
 confirm() ->
     start_stop_test(),
     get_empty_crdt_test(<<"key0">>),
@@ -19,7 +18,7 @@ confirm() ->
 
 start_stop_test() ->
     [_Nodes] = rt:build_clusters([1]),
-    {ok,Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
     Disconnected = floppyc_pb_socket:stop(Pid),
     ?assertMatch(ok,Disconnected),
     ok.
