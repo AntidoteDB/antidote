@@ -52,7 +52,7 @@ process(#fpbdecrementreq{key=Key, amount=Amount}, State) ->
 %% @doc process/2 callback. Handles an incoming request message.
 %% @todo accept different types of counters.
 process(#fpbgetcounterreq{key=Key}, State) ->
-    Result = floppy:read(Key,riak_dt_pncounter),
+    {ok, Result} = floppy:read(Key,riak_dt_pncounter),
     {reply, #fpbgetcounterresp{value = Result}, State}.
 
 %% @doc process_stream/3 callback. This service does not create any

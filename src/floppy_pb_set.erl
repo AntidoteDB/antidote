@@ -51,7 +51,7 @@ process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbgetsetreq{key=Key}, State) ->
-    Result = floppy:read(Key,riak_dt_orset),
+    {ok, Result} = floppy:read(Key,riak_dt_orset),
     {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State}.
 
 %% @doc process_stream/3 callback. This service does not create any
