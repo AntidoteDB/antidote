@@ -31,6 +31,7 @@ start_stop_test() ->
     pass.
 
 get_empty_crdt_test(Key) ->
+    lager:info("Verifying retrieval of empty CRDT..."),
     {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
     {ok, Obj} = floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid),
     _Disconnected = floppyc_pb_socket:stop(Pid),
@@ -38,6 +39,7 @@ get_empty_crdt_test(Key) ->
     pass.
 
 update_counter_crdt_test(Key, Amount) ->
+    lager:info("Verifying retrieval of updated counter CRDT..."),
     {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
     {ok, Obj} = floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid),
     Obj2 = floppyc_counter:increment(Amount, Obj),
@@ -51,6 +53,7 @@ update_counter_crdt_and_read_test(Key, Amount) ->
     pass = get_crdt_check_value(Key, riak_dt_pncounter, Amount).
 
 get_crdt_check_value(Key, Type, Expected) ->
+    lager:info("Verifying value of updated CRDT..."),
     {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
     {ok, Obj} = floppyc_pb_socket:get_crdt(Key, Type, Pid),
     Mod = floppyc_datatype:module_for_type(Type),
