@@ -124,7 +124,6 @@ code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
-    lager:info("Terminating."),
     ok.
 
 %%%===================================================================
