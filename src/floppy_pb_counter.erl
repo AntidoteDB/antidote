@@ -16,7 +16,7 @@
          process_stream/3
         ]).
 
--record(state, {client}).  % local client
+-record(state, {client}).
 
 %% @doc init/0 callback. Returns the service internal start
 %% state.
@@ -41,23 +41,21 @@ encode(Message) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbincrementreq{key=Key, amount=Amount}, State) ->
-    {ok,_Result} = floppy:append(Key,{{increment,Amount},node()}),
+    {ok, _Result} = floppy:append(Key, {{increment, Amount}, node()}),
     {reply, #fpboperationresp{success = true}, State};
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbdecrementreq{key=Key, amount=Amount}, State) ->
-    {ok,_Result} = floppy:append(Key,{{decrement,Amount},node()}),
+    {ok, _Result} = floppy:append(Key, {{decrement, Amount}, node()}),
     {reply, #fpboperationresp{success = true}, State};
 
 %% @doc process/2 callback. Handles an incoming request message.
 %% @todo accept different types of counters.
 process(#fpbgetcounterreq{key=Key}, State) ->
-    {ok, Result} = floppy:read(Key,riak_dt_pncounter),
+    {ok, Result} = floppy:read(Key, riak_dt_pncounter),
     {reply, #fpbgetcounterresp{value = Result}, State}.
 
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.
 process_stream(_,_,State) ->
     {ignore, State}.
-
-

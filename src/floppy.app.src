@@ -9,7 +9,7 @@
                   stdlib,
                   riak_pb,
                   riak_api,
-                  riak_core                  
+                  riak_core
                  ]},
   {mod, { floppy_app, []}},
   {env, []}

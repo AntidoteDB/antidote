@@ -15,7 +15,7 @@
         ]).
 
 -export([increment/1,
-         increment/2, 
+         increment/2,
          decrement/1,
          decrement/2
         ]).
