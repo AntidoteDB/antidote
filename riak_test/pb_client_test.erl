@@ -21,14 +21,14 @@ start_stop_test() ->
     {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
     Disconnected = floppyc_pb_socket:stop(Pid),
     ?assertMatch(ok,Disconnected),
-    ok.
+    pass.
 
 get_empty_crdt_test(Key) ->
     {ok,Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
     {ok,Obj} = floppyc_pb_socket:get_crdt(Key,riak_dt_pncounter,Pid),
     _Disconnected = floppyc_pb_socket:stop(Pid),
     ?assertMatch(true,floppyc_counter:is_type(Obj)),
-    ok.
+    pass.
 
 update_counter_crdt_test(Key,Amount) ->
     {ok,Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
