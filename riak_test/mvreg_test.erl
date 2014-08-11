@@ -7,9 +7,6 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    mvreg_test().
-
-mvreg_test() ->
     N = 3,
     ListIds = [random:uniform(N) || _ <- lists:seq(1, 10)],
     [Nodes] = rt:build_clusters([N]),
@@ -28,18 +25,18 @@ mvreg_test() ->
     FirstNode = hd(Nodes),
     Result = hd(lists:reverse(ListIds)),
     lager:info("Sending read to Node ~w~n",[FirstNode]),
-    ReadResult = rpc:call(FirstNode, floppy, read, [abc, riak_dt_mvreg]),
+    {ok, ReadResult} = rpc:call(FirstNode, floppy, read, [abc, riak_dt_mvreg]),
     ?assertEqual([Result], ReadResult),
 
     PropagateResult1 = rpc:call(FirstNode, floppy, append, [abc, {{propagate, value2, [{actor2, 5}]}, actor1}]),
     ?assertMatch({ok, _}, PropagateResult1),
-    ReadResult1 = rpc:call(FirstNode, floppy, read, [abc, riak_dt_mvreg]),
+    {ok, ReadResult1} = rpc:call(FirstNode, floppy, read, [abc, riak_dt_mvreg]),
     Result1 = [Result, value2],
     ?assertEqual(lists:sort(Result1), lists:sort(ReadResult1)),
 
     PropagateResult2 = rpc:call(FirstNode, floppy, append, [abc, {{propagate, value3, [{actor2, 6}, {actor1, 11}]}, actor1}]),
     ?assertMatch({ok, _}, PropagateResult2),
-    ReadResult2 = rpc:call(FirstNode, floppy, read, [abc, riak_dt_mvreg]),
+    {ok, ReadResult2} = rpc:call(FirstNode, floppy, read, [abc, riak_dt_mvreg]),
     ?assertEqual([value3], ReadResult2),
+
     pass.
-    

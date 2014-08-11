@@ -1,4 +1,4 @@
--module(floppy_log_handoff).
+-module(floppy_log_handoff_test).
 
 -export([confirm/0]).
 
@@ -7,11 +7,8 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    run_test().
-
-run_test() ->
-    NTestItems    = 10,                                     %% How many test items to write/verify?
-    NTestNodes    = 3,                                      %% How many nodes to spin up for tests?
+    NTestItems    = 10,
+    NTestNodes    = 3,
 
     lager:info("Testing handoff (items ~p)", [NTestItems]),
 
@@ -20,7 +17,7 @@ run_test() ->
     rt:setup_harness(dummy, dummy),
 
     lager:info("Spinning up test nodes"),
-    Versions = [ current || _ <- lists:seq(1, NTestNodes)],
+    Versions = [current || _ <- lists:seq(1, NTestNodes)],
     [RootNode | TestNodes] = rt:deploy_nodes(Versions,[replication]),
     rt:wait_for_service(RootNode, replication),
 
@@ -29,9 +26,12 @@ run_test() ->
 
     %% Test handoff on each node:
     lager:info("Testing handoff for cluster."),
-    lists:foreach(fun(TestNode) -> test_handoff(RootNode, TestNode, NTestItems) end, TestNodes),
+    lists:foreach(fun(TestNode) ->
+                test_handoff(RootNode, TestNode, NTestItems)
+        end, TestNodes),
 
-    %% Prepare for the next call to our test (we aren't polite about it, it's faster that way):
+    %% Prepare for the next call to our test (we aren't polite about it,
+    %% it's faster that way):
     lager:info("Bringing down test nodes."),
     lists:foreach(fun(N) -> rt:brutal_kill(N) end, TestNodes),
 
@@ -52,37 +52,40 @@ test_handoff(RootNode, NewNode, NTestItems) ->
     ?assertEqual(ok, rt:wait_until_nodes_ready([RootNode, NewNode])),
     rt:wait_until_no_pending_changes([RootNode, NewNode]),
 
-    %% See if we get the same data back from the joined node that we added to the root node.
-    %%  Note: systest_read() returns /non-matching/ items, so getting nothing back is good:
+    %% See if we get the same data back from the joined node that we
+    %% added to the root node.  Note: systest_read() returns
+    %% /non-matching/ items, so getting nothing back is good:
     lager:info("Validating data after handoff:"),
     Results = multiple_reads(NewNode, 1, NTestItems),
-    lager:info("The read data looks like: ~w", [Results]),
+    lager:info("The read data looks like: ~p", [Results]),
     ?assertEqual(0, length(Results)),
-    lager:info("Data looks ok."). 
+    lager:info("Data looks ok."),
+
+    pass.
 
 multiple_writes(Node, Start, End, Actor)->
     F = fun(N, Acc) ->
-        case rpc:call(Node, floppy, append, [N, {{increment, N}, Actor}]) of
-            {ok, _} ->
-                Acc;
-            Other ->
-                [{N, Other} | Acc]
-        end
+            case rpc:call(Node, floppy, append, [N, {{increment, N}, Actor}]) of
+                {ok, _} ->
+                    Acc;
+                Other ->
+                    [{N, Other} | Acc]
+            end
     end,
     lists:foldl(F, [], lists:seq(Start, End)).
 
 multiple_reads(Node, Start, End) ->
     F = fun(N, Acc) ->
-        case rpc:call(Node, floppy, read, [N, riak_dt_gcounter]) of
-            error ->
-                [{N, error} | Acc];
-            Value ->
-                case Value==N of
-                    true ->
-                        Acc;
-                    false ->
-                        [{N, {wrong_val, Value}} | Acc]
-                end
-        end
+            case rpc:call(Node, floppy, read, [N, riak_dt_gcounter]) of
+                {error, _} ->
+                    [{N, error} | Acc];
+                {ok, Value} ->
+                    case Value =:= N of
+                        true ->
+                            Acc;
+                        false ->
+                            [{N, {wrong_val, Value}} | Acc]
+                    end
+            end
     end,
     lists:foldl(F, [], lists:seq(Start, End)).
