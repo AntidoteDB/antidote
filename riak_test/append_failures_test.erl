@@ -24,7 +24,7 @@ confirm() ->
     First = hd(A),
 
     %% Perform successful write and read.
-    WriteResult = rpc:call(First, floppy, append, [key1, {increment, ucl}]),
+    WriteResult = rpc:call(First, floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
     lager:info("WriteResult: ~p", [WriteResult]),
     ?assertMatch({ok, {1, _}}, WriteResult),
 
@@ -37,7 +37,7 @@ confirm() ->
     PartInfo = rt:partition(A, Nodes -- A),
 
     %% Write to the minority partition.
-    WriteResult2 = rpc:call(First, floppy, append, [key1, {increment, ucl}]),
+    WriteResult2 = rpc:call(First, floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
     lager:info("WriteResult2: ~p", [WriteResult2]),
     ?assertMatch({error, quorum_unreachable}, WriteResult2),
 

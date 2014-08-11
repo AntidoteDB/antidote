@@ -13,7 +13,7 @@
 -endif.
 
 %% API
--export([start_link/5]).
+-export([start_link/6]).
 
 %% Callbacks
 -export([init/1,
@@ -36,9 +36,10 @@
 -define(R_ERROR_THRESHOLD, ?N-?NUM_R+1).
 
 -record(state, {from :: pid(),
-                type :: type(),
+                operation :: atom(),
                 log_id :: log_id(),
-                key,
+                key :: key(),
+                type :: type(),
                 payload :: payload(),
                 readresult,
                 error_msg = [],
@@ -51,18 +52,19 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Type, Key, Payload, OpId) ->
-    gen_fsm:start_link(?MODULE, {From, Type, Key, Payload, OpId}, []).
+start_link(From, Operation, Key, Type, Payload, OpId) ->
+    gen_fsm:start_link(?MODULE, {From, Operation, Key, Type, Payload, OpId}, []).
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init({From, Type, Key, Payload, OpId}) ->
+init({From, Operation, Key, Type, Payload, OpId}) ->
     SD = #state{from=From,
-                type=Type,
+                operation=Operation,
                 key=Key,
+                type=Type,
                 payload=Payload,
                 opid=OpId,
                 readresult=[],
@@ -77,14 +79,14 @@ prepare(timeout, SD0=#state{key=Key}) ->
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
-execute(timeout, SD0=#state{type=Type,
+execute(timeout, SD0=#state{operation=Operation,
                             log_id=LogId,
                             payload=Payload,
                             preflist=Preflist,
                             from=From,
                             opid=OpId}) ->
-    lager:info("Executing operation: ~p", [Type]),
-    case Type of
+    lager:info("Executing operation: ~p", [Operation]),
+    case Operation of
         append ->
             logging_vnode:dappend(Preflist, LogId, OpId, Payload),
             {next_state, wait_append, SD0#state{num_to_ack=?NUM_W},

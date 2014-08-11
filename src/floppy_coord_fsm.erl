@@ -11,7 +11,7 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/4]).
+-export([start_link/5]).
 
 %% Callbacks
 -export([init/1,
@@ -28,8 +28,9 @@
          finish_op/3]).
 
 -record(state, {from :: pid(),
-                type :: atom(),
+                operation :: atom(),
                 key :: key(),
+                type :: type(),
                 errors :: [term()],
                 payload = undefined :: term() | undefined,
                 preflist :: preflist()}).
@@ -38,8 +39,8 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Type, Key, Payload) ->
-    gen_fsm:start_link(?MODULE, {From, Type, Key, Payload}, []).
+start_link(From, Operation, Key, Type, Payload) ->
+    gen_fsm:start_link(?MODULE, {From, Operation, Key, Type, Payload}, []).
 
 finish_op(From, Result, Message) ->
     gen_fsm:send_event(From, {Result, Message}).
@@ -49,10 +50,11 @@ finish_op(From, Result, Message) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init({From, Type, Key, Payload}) ->
+init({From, Operation, Key, Type, Payload}) ->
     SD = #state{from=From,
-                type=Type,
+                operation=Operation,
                 key=Key,
+                type=Type,
                 errors=[],
                 payload=Payload},
     {ok, prepare, SD, 0}.
@@ -64,13 +66,14 @@ prepare(timeout, SD0=#state{key=Key}) ->
 
 %% @doc Execute the write request and then go into waiting state to
 %%      verify it has meets consistency requirements.
-execute(timeout, SD0=#state{type=Type,
+execute(timeout, SD0=#state{operation=Operation,
                             key=Key,
+                            type=Type,
                             payload=Payload,
                             from=From,
                             preflist=Preflist}) ->
-    lager:info("Execute operation ~p ~p Preflist: ~p",
-               [Type, Payload, Preflist]),
+    lager:info("Execute operation ~p ~p ~p ~p Preflist: ~p",
+               [Key, Type, Operation, Payload, Preflist]),
     case Preflist of
         [] ->
             lager:info("No nodes online; primary preference list empty."),
@@ -78,14 +81,15 @@ execute(timeout, SD0=#state{type=Type,
             {stop, normal, SD0};
         [H|T] ->
             lager:info("Forward to first node in preflist: ~p", [H]),
-            floppy_rep_vnode:operate(H, self(), Type, Key, Payload),
+            floppy_rep_vnode:operate(H, self(), Operation, Key, Type, Payload),
             {next_state, waiting, SD0#state{preflist=T}, ?COORD_TIMEOUT}
     end.
 
 %% @doc The contacted vnode failed to respond within timeout. So contact
 %% the next one in the preflist
-waiting(timeout, SD0=#state{type=Type,
+waiting(timeout, SD0=#state{operation=Operation,
                             key=Key,
+                            type=Type,
                             payload=Payload,
                             from=From,
                             preflist=Preflist}) ->
@@ -97,7 +101,7 @@ waiting(timeout, SD0=#state{type=Type,
             {stop, normal, SD0};
         [H|T] ->
             lager:info("Forwarding to node: ~p", [H]),
-            floppy_rep_vnode:operate(H, self(), Type, Key, Payload),
+            floppy_rep_vnode:operate(H, self(), Operation, Key, Type, Payload),
             {next_state, waiting, SD0#state{preflist=T}, ?COORD_TIMEOUT}
     end;
 
