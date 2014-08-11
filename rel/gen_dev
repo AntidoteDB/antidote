@@ -17,8 +17,11 @@ BASE=$((10000 + 10 * $NUMBER))
 WEBPORT=$(($BASE + 8))
 HANDOFFPORT=$(($BASE + 9))
 NODENAME="dev$NUMBER@127.0.0.1"
+PBPORT=$(($BASE + 7))
 
-echo "Generating $NAME - node='$NODENAME' http=$WEBPORT handoff=$HANDOFFPORT"
+echo "Generating $NAME - node='$NODENAME' http=$WEBPORT handoff=$HANDOFFPORT pbport=$PBPORT"
 sed -e "s/@NODE@/$NODENAME/" \
     -e "s/@WEBPORT@/$WEBPORT/" \
-    -e "s/@HANDOFFPORT@/$HANDOFFPORT/" < $TEMPLATE > $VARFILE
+    -e "s/@HANDOFFPORT@/$HANDOFFPORT/" \
+    -e "s/@PBPORT@/$PBPORT/" < $TEMPLATE > $VARFILE \
+
