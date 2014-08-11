@@ -1,8 +1,10 @@
-%% floppy_rep_vnode: coordinates an operation to be performed 
-%% to the replication group of that object
+%% @doc floppy_rep_vnode: coordinates an operation to be performed to
+%%      the replication group of that object
 
 -module(floppy_rep_vnode).
+
 -behaviour(riak_core_vnode).
+
 -include("floppy.hrl").
 
 %% API
@@ -21,95 +23,97 @@
          handle_coverage/4,
          handle_exit/3]).
 
+-export([append/3,
+         read/2,
+         operate/6]).
 
--export([
-	append/2,
-	read/1,
-	operate/5
-        ]).
-
-%%------------------------
-%% Data type: state
-%%   partition: an integer (default is undefined).
-%%   lclock: an integer (default is undefined).
-%%------------------------
--record(state, {partition,lclock}).
+-record(state, {partition, lclock}).
 
 %% API
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-    {ok, #state{partition=Partition,lclock=0}}.
+    {ok, #state{partition=Partition, lclock=0}}.
 
-%% @doc Function: append/2 
-%% Purpose: Start a fsm to coordinate the `append' operation to be performed in the object's replicaiton group
-%% Args: Key of the object and operation parameters
-%% Returns: {ok, Result} if success; {error, timeout} if operation failed.
-append(LogId, Payload) ->
-    {ok,_Pid} = floppy_coord_sup:start_fsm([self(), append, LogId, Payload]),
+%% @doc Function: append/3
+%%      Purpose: Start a fsm to coordinate the `append' operation to be 
+%%               performed in the object's replicaiton group
+%%      Args: Key of the object and operation parameters
+%%      Returns: {ok, Result} if success; {error, timeout} if operation 
+%%               failed.
+%%
+-spec append(key(), type(), payload()) -> {ok, op_id()} | {error, timeout}.
+append(Key, Type, Payload) ->
+    {ok, _Pid} = floppy_coord_sup:start_fsm([self(), append, Key, Type, Payload]),
     receive
-        {ok, Result} ->
-	        lager:info("Append completed!~w~n",[Result]),
-	        {ok, Result};
+        {ok, OpId} ->
+            {ok, OpId};
         {error, Reason} ->
-	        lager:info("Append failed!~n"),
-	        {error, Reason}
-    after 
+            lager:info("Append failed; reason: ~p", [Reason]),
+            {error, Reason}
+    after
         ?OP_TIMEOUT ->
-	        lager:info("Append failed!~n"),
-	        {error, timeout}
+            lager:info("Append failed, timeout exceeded: ~p~n",
+                       [?OP_TIMEOUT]),
+            {error, timeout}
     end.
 
-%% @doc Function: read/2 
-%% Purpose: Start a fsm to `read' from the replication group of the object specified by Key
-%% Args: Key of the object and its type, which should be supported by the riak_dt.
-%% Returns: {ok, Ops} if succeeded, Ops is the union of operations; {error, nothing} if operation failed.
-read(LogId) ->
-    lager:info("Read ~w", [LogId]),
-    {ok,_Pid}=floppy_coord_sup:start_fsm([self(), read, LogId, noop]),
+%% @doc Function: read/1
+%%      Purpose: Start a fsm to `read' from the replication group of
+%%               the object specified by Key
+%%      Args: Key of the object and its type, which should be supported 
+%%            by the riak_dt.
+%%      Returns: {ok, Ops} if succeeded, Ops is the union of operations;
+%%               {error, nothing} if operation failed.
+%%
+-spec read(key(), type()) -> {ok, [op()]} | {error, nothing}.
+read(Key, Type) ->
+    {ok, _Pid} = floppy_coord_sup:start_fsm([self(), read, Key, Type, noop]),
     receive
         {ok, Ops} ->
-	        lager:info("Read completed!~n"),
-	        {ok, Ops};
+            {ok, Ops};
         {error, Reason} ->
-	        lager:info("Read failed!~n"),
-	        {error, Reason}
-    after 
+            lager:info("Read failed; reason: ~p", [Reason]),
+            {error, Reason}
+    after
         ?OP_TIMEOUT ->
-	        lager:info("Read failed!~n"),
-	        {error, timeout}
+            lager:info("Read failed; timeout exceeded: ~p",
+                       [?OP_TIMEOUT]),
+            {error, timeout}
     end.
 
 %% @doc Function: operate/5
-%% Purpose: Handles `read' or `append' operations. Tne vnode must be in the replication group
-%% of the corresponding key. 
-operate(Preflist, ToReply, Type, LogId, Payload) ->
-    	riak_core_vnode_master:command(Preflist,
-                                   {operate, ToReply, Type, LogId, Payload},
+%%      Purpose: Handles `read' or `append' operations. Tne vnode must
+%%               be in the replication group of the corresponding key.
+%%
+operate(Preflist, ToReply, Op, Key, Type, Param) ->
+    riak_core_vnode_master:command(Preflist,
+                                   {operate, ToReply, Op, Key, Type, Param},
                                    ?REPMASTER).
 
-%% @doc Handles `read' or `append' operations. 
-%% If the operation is `append', generate a unique id for this operation, in form of {integer, nodeid}.
-%% If the operation is `read', there is no such need.
-%% Then start a rep fsm to perform quorum read/append.  
-handle_command({operate, ToReply, Type, LogId, Payload}, _Sender, #state{partition=Partition,lclock=LC}) ->
-    case Type  of
+%% @doc Handles `read' or `append' operations.
+%%      If the operation is `append', generate a unique id for this
+%%      operation, in form of {integer, nodeid}.  If the operation is
+%%      `read', there is no such need.  Then start a rep fsm to perform
+%%      quorum read/append.
+%%
+handle_command({operate, ToReply, Operation, Key, Type, Payload},
+               _Sender, #state{partition=Partition, lclock=LC}) ->
+    OpId = case Operation of
         append ->
-      	    OpId = generate_op_id(LC);
-	    read  ->
-	        OpId = current_op_id(LC);
-	    _ ->
-	        lager:info("RepVNode: Wrong operations!~w~n", [Type]),
-	        OpId = current_op_id(LC)
+            generate_op_id(LC);
+        read  ->
+            current_op_id(LC);
+        _ ->
+            lager:info("Invalid operation; type: ~p", [Operation]),
+            current_op_id(LC)
     end,
-    {NewClock,_} = OpId,
-    lager:info("RepVNode: Start replication, clock: ~w~n",[NewClock]),
-    {ok, _} = floppy_rep_sup:start_fsm([ToReply, Type, LogId, Payload, OpId]),
-    {noreply, #state{lclock=NewClock, partition= Partition}};
+    {NewClock, _} = OpId,
+    {ok, _} = floppy_rep_sup:start_fsm([ToReply, Operation, Key, Type, Payload, OpId]),
+    {noreply, #state{lclock=NewClock, partition=Partition}};
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
@@ -145,11 +149,8 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%% private
 generate_op_id(Current) ->
     {Current + 1, node()}.
 
 current_op_id(Current) ->
-    {Current, node()}.    
-
-
+    {Current, node()}.

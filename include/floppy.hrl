@@ -1,20 +1,18 @@
--define(PRINT(Var),
-        io:format("DEBUG: ~p:~p - ~p~n~n ~p~n~n", [?MODULE, ?LINE, ??Var, Var])).
 -define(BUCKET, <<"floppy">>).
 -define(MASTER, floppy_vnode_master).
 -define(LOGGINGMASTER, logging_vnode_master).
 -define(CLOCKSIMASTER, clocksi_vnode_master).
 -define(CLOCKSI, clocksi).
 -define(REPMASTER, floppy_rep_vnode_master).
--define(OP_TIMEOUT, 5000).
--define(COORD_TIMEOUT, 2500).
--define(COMM_TIMEOUT, 500).
+-define(OP_TIMEOUT, 25000).
+-define(COORD_TIMEOUT, 5000).
+-define(COMM_TIMEOUT, 2500).
 -define(N, 3).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
--define(MAXRING,1461501637330902918203684832716283019655932542975).
--record (payload, {key, op_param, actor}).
+-record (payload, {key, type, op_param, actor}).
+-type operation() :: #operation{}.
 
 %% Used by the replication layer
 -record(operation, {op_number, payload}).
@@ -36,6 +34,24 @@
 -define(CLOCKSI_TIMEOUT, 1000).
 
 %%---------------------------------------------------------------------
+-type tx() :: #tx{}.
+
+-type key() :: term().
+-type op()  :: {term(), term()}.
+-type crdt() :: term().
+-type val() :: term().
+-type reason() :: atom().
+-type preflist() :: riak_core_apl:preflist().
+-type log() :: term().
+-type op_id() :: {non_neg_integer(), node()}.
+-type payload() :: term().
+-type partition_id()  :: non_neg_integer().
+-type log_id() :: [partition_id()].
+-type type() :: atom().
+-type snapshot() :: term().
+
+
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, tx/0, type/0, snapshot/0]).
 %% Data Type: tx
 %% where:
 %%    snapshot_time:

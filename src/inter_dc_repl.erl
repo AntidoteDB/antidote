@@ -12,45 +12,50 @@
 -export([propogate/1, propogate_sync/1, acknowledge/2]).
 
 -record(state,
-        { otherdc,
-          otherpid,
-          payload,
-          retries,
-          from
+        { otherdc :: node(),
+          otherpid :: pid(),
+          payload :: payload(),
+          retries :: integer(),
+          from :: {non_neg_integer(),pid()} | ignore
         }).
 
+-type state() :: #state{}.
+ 
 -define(TIMEOUT,60000).
 
 %%public api
-
 propogate_sync(Payload) ->
     Me = self(),
-    ReqId = 1, %Generate reqID here
-    _ = gen_fsm:start_link(?MODULE, [?OTHER_DC, inter_dc_recvr, Payload, {ReqId, Me}], []),
+    ReqId = 1, %Generate reqID here -> adapt then type in the state record!
+    _ = gen_fsm:start_link(?MODULE, {?OTHER_DC, inter_dc_recvr, Payload, {ReqId, Me}}, []),
     receive
         {ReqId, normal} -> done;
         {ReqId, Reason} -> Reason
     end.
 
 propogate(Payload) ->
-    gen_fsm:start_link(?MODULE, [?OTHER_DC, inter_dc_recvr, Payload, ignore], []).
+    gen_fsm:start_link(?MODULE, {?OTHER_DC, inter_dc_recvr, Payload, ignore}, []).
 
+-spec acknowledge(pid(),payload()) -> ok.
 acknowledge(Pid, Payload) ->
     gen_fsm:send_event(Pid, {ok, Payload}),
     ok.
 
 %% gen_fsm callbacks
-
-init([OtherDC, OtherPid, Payload, From]) ->
+-spec init({node(),pid(),payload(),{non_neg_integer(),pid()} | ignore}) -> {ok,ready,state(),0}.
+init({OtherDC, OtherPid, Payload, From}) ->
     StateData = #state{otherdc = OtherDC, otherpid = OtherPid, payload = Payload, retries = 5, from = From},
     {ok, ready, StateData, 0}.
 
+-spec ready(timeout,state()) -> {next_state, await_ack,state(),?TIMEOUT}.
 ready(timeout, StateData = #state{otherdc = Other, otherpid = PID, retries = RetryLeft, payload = Payload}) ->
     inter_dc_recvr:replicate({PID,Other}, Payload, {self(),node()}),
     {next_state, await_ack,
      StateData#state{retries = RetryLeft -1},
      ?TIMEOUT}.
 
+-spec await_ack({ok,payload()},state()) -> {stop,normal,state()};
+               (timeout,state()) -> {stop,request_timeout, state()} | {next_state, ready,state(),0}.
 await_ack({ok,Payload}, StateData) ->
     lager:info("Replicated ~p ~n",[Payload]),
     {stop, normal, StateData};
