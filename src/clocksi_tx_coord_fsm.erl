@@ -1,11 +1,13 @@
-%%@doc The coordinator for a given Clock SI transaction.
-%%     It handles the state of the tx and executes the operations sequentially
-%%     by sending each operation to the responsible clocksi_vnode of the
-%%     involved key. when a tx is finalized (committed or aborted, the fsm
-%%     also finishes.
+%% @doc The coordinator for a given Clock SI transaction.
+%%      It handles the state of the tx and executes the operations sequentially
+%%      by sending each operation to the responsible clocksi_vnode of the
+%%      involved key. when a tx is finalized (committed or aborted, the fsm
+%%      also finishes.
 
 -module(clocksi_tx_coord_fsm).
+
 -behavior(gen_fsm).
+
 -include("floppy.hrl").
 
 %% API
@@ -20,9 +22,6 @@
           receive_prepared/2, committing/2, receive_committed/2,
           abort/2, receive_aborted/2,
           reply_to_client/2]).
-
-
-%%-record(operationCSI, {opType, key, params}).
 
 %%---------------------------------------------------------------------
 %% Data Type: state
@@ -49,7 +48,7 @@
           updated_partitions :: list(),
           current_op = undefined :: term() | undefined,
           num_to_ack :: integer(),
-          current_op_leader :: riak_core_apl:preflist2(),
+          current_op_leader :: term(),
           prepare_time :: integer(),
           commit_time ::integer(),
           read_set :: list(),
@@ -73,20 +72,19 @@ finish_op(From, Key,Result) ->
 %%%===================================================================
 
 %% @doc Initialize the state.
-
 init([From, ClientClock, Operations]) ->
     case ClientClock of
-        ignore -> {ok, Local_clock} = get_snapshot_time();
-        _ ->  {ok, Local_clock}= get_snapshot_time(ClientClock)
+        ignore -> {ok, LocalClock} = get_snapshot_time();
+        _ ->  {ok, LocalClock}= get_snapshot_time(ClientClock)
     end,
-    TransactionId=#tx_id{snapshot_time=Local_clock, server_pid=self()},
-    {ok, Vec_snapshot_time} = vectorclock:get_clock_node(node()),
-    Dc_id = dc_utilities:get_my_dc_id(),
-    Snapshot_time = dict:update(Dc_id,
-                                fun (_Old) -> Local_clock end,
-                                Local_clock, Vec_snapshot_time),
-    Transaction = #transaction{snapshot_time = Local_clock,
-                               vec_snapshot_time = Snapshot_time,
+    TransactionId=#tx_id{snapshot_time=LocalClock, server_pid=self()},
+    {ok, VecSnapshotTime} = vectorclock:get_clock_node(node()),
+    DcId = dc_utilities:get_my_dc_id(),
+    SnapshotTime = dict:update(DcId,
+                                fun (_Old) -> LocalClock end,
+                                LocalClock, VecSnapshotTime),
+    Transaction = #transaction{snapshot_time = LocalClock,
+                               vec_snapshot_time = SnapshotTime,
                                txn_id = TransactionId},
     SD = #state{
             from=From,
@@ -102,10 +100,10 @@ init([From, ClientClock, Operations]) ->
 %% @doc Prepare the execution of the next operation. It calculates the
 %%      responsible vnode and sends the operation to it. When there are no more
 %%      operations to be executed there are three posibilities:
-%%      1.it finishes (read tx),
-%%      2.it starts a local_commit (tx that only updates a single partition)
-%%      3.it starts a two phase commit (when multiple partitions
-%%		are updated.
+%%      1. it finishes (read tx),
+%%      2. it starts a local_commit (tx that only updates a single partition)
+%%      3. it starts a two phase commit (when multiple partitions are updated.
+%%
 prepare_op(timeout, SD0=#state{operations=Operations}) ->
     case Operations of
         [] ->
@@ -132,14 +130,15 @@ prepare_op(timeout, SD0=#state{operations=Operations}) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%       operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
+%%
 execute_op(timeout, SD0=#state{
                            current_op=CurrentOp,
-                           transaction = Transaction,
+                           transaction=Transaction,
                            updated_partitions=UpdatedPartitions,
                            read_set=ReadSet,
                            current_op_leader=CurrentOpLeader}) ->
-    {OpType, Key, Type, Param}=CurrentOp,
-    lager:info("ClockSI-Coord: Execute operation ~w ~n",[CurrentOp]),
+    {OpType, Key, Type, Param} = CurrentOp,
+    lager:info("ClockSI-Coord: Execute operation ~w", [CurrentOp]),
     IndexNode = CurrentOpLeader,
     case OpType of
         read ->
@@ -179,10 +178,11 @@ execute_op(timeout, SD0=#state{
     end,
     {next_state, prepare_op, SD1, 0}.
 
-%%    when the tx updates multiple partitions, a two phase commit protocol
-%%    is started the prepare_2PC state sends a prepare message to all updated
-%%    partitions and goes to the "receive_prepared"state.
-prepare_2pc(timeout, SD0=#state{transaction = Transaction,
+%% @doc When the tx updates multiple partitions, a two phase commit
+%%      protocol is started the prepare_2PC state sends a prepare message to
+%%      all updated partitions and goes to the "receive_prepared" state.
+%%
+prepare_2pc(timeout, SD0=#state{transaction=Transaction,
                                 updated_partitions=UpdatedPartitions}) ->
     case length(UpdatedPartitions) of
         0->
@@ -191,40 +191,42 @@ prepare_2pc(timeout, SD0=#state{transaction = Transaction,
                                                commit_time=SnapshotTime}, 0};
         _->
             clocksi_vnode:prepare(UpdatedPartitions, Transaction),
-            NumToAck=length(UpdatedPartitions),
+            NumToAck = length(UpdatedPartitions),
             {next_state, receive_prepared,
              SD0#state{num_to_ack=NumToAck, state=prepared}}
     end.
 
-%% in this state, the fsm waits for prepare_time from each updated partitions in
-%% order to compute the commit time
+%% @doc In this state, the fsm waits for prepare_time from each updated
+%%      partitions in order to compute the commit time.
+%%
 receive_prepared({prepared, ReceivedPrepareTime},
-                 S0=#state{num_to_ack= NumToAck, prepare_time=PrepareTime}) ->
+                 S0=#state{num_to_ack=NumToAck, prepare_time=PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 ->
-            lager:info("ClockSI: start committing... Commit time: ~w~n",
+            lager:info("ClockSI: start committing... Commit time: ~w.",
                        [MaxPrepareTime]),
             {next_state, committing, S0#state{prepare_time=MaxPrepareTime,
                                               commit_time=MaxPrepareTime,
-                                              state=committing},0};
+                                              state=committing}, 0};
         _ ->
-            lager:info("ClockSI: Keep collecting prepare replies~n"),
+            lager:info("ClockSI: Keep collecting prepare replies."),
             {next_state, receive_prepared, S0#state
-             {num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
+             {num_to_ack=NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 
 receive_prepared(abort, S0) ->
     {next_state, abort, S0, 0};
 
 receive_prepared(timeout, S0) ->
-    {next_state, abort, S0 ,0}.
+    {next_state, abort, S0, 0}.
 
-%% after receiving all prepare_times, send the commit message to all updated
-%% partitions, and go to the "receive_committed" state.
-committing(timeout, SD0=#state{transaction = Transaction,
+%% @doc After receiving all prepare_times, send the commit message to
+%%      all updated partitions, and go to the "receive_committed" state.
+%%
+committing(timeout, SD0=#state{transaction=Transaction,
                                updated_partitions=UpdatedPartitions,
                                commit_time=CommitTime}) ->
-    NumToAck=length(UpdatedPartitions),
+    NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
             lager:info("ClockSI-Coord: Committing and replying to client."),
@@ -234,57 +236,62 @@ committing(timeout, SD0=#state{transaction = Transaction,
             {next_state, receive_committed, SD0#state{num_to_ack=NumToAck}}
     end.
 
-%% the fsm waits for acks indicating that each partition has successfully
-%% committed the tx and finishes operation.
-%% Should we retry sending the committed message if we don't receive a reply
-%% from every partition?
-%% What delivery guarantees does sending messages provide?
+%% @doc The fsm waits for acks indicating that each partition has successfully
+%%      committed the tx and finishes operation.
+%%      Should we retry sending the committed message if we don't
+%%      receive a reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+%%
 receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
     case NumToAck of
         1 ->
-            lager:info
-              ("ClockSI: Tx committed succesfully.~n"),
+            lager:info("ClockSI: Tx committed succesfully."),
             {next_state, reply_to_client, S0#state{state=committed}, 0};
         _ ->
-            lager:info("ClockSI: Keep collecting commit replies~n"),
-            {next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
+            lager:info("ClockSI: Keep collecting commit replies."),
+            {next_state, receive_committed, S0#state{num_to_ack=NumToAck-1}}
     end.
 
-%% when an updated partition does not pass the certification check,
-%% the transaction aborts.
+%% @doc When an updated partition does not pass the certification check,
+%%      the transaction aborts.
+%%
 abort(timeout, SD0=#state{transaction=Transaction,
                           updated_partitions=UpdatedPartitions}) ->
     clocksi_vnode:abort(UpdatedPartitions, Transaction#transaction.txn_id),
-    NumToAck=length(UpdatedPartitions),
+    NumToAck = length(UpdatedPartitions),
     {next_state, receive_aborted,
      SD0#state{state=aborted, num_to_ack=NumToAck}};
 
-abort(abort, SD0=#state{transaction= Transaction,
+abort(abort, SD0=#state{transaction=Transaction,
                         updated_partitions=UpdatedPartitions}) ->
     clocksi_vnode:abort(UpdatedPartitions, Transaction#transaction.txn_id),
-    NumToAck=length(UpdatedPartitions),
+    NumToAck = length(UpdatedPartitions),
     {next_state, receive_aborted,
      SD0#state{state=aborted, num_to_ack=NumToAck}}.
 
-%% the fsm waits for acks indicating that each partition has aborted the tx
-%% and finishes operation.
+%% @doc The fsm waits for acks indicating that each partition has
+%%      aborted the tx and finishes operation.
+%%
 receive_aborted(ack_abort, S0=#state{num_to_ack= NumToAck}) ->
-    case NumToAck of 1 ->
-            lager:info
-              ("ClockSI-coord-fsm: Tx aborted."),
+    case NumToAck of
+        1 ->
+            lager:info("ClockSI-coord-fsm: Tx aborted."),
             {next_state, reply_to_client, S0, 0};
         _ ->
-            lager:info("ClockSI-coord-fsm: Keep collecting abort replies~n"),
-            {next_state, receive_aborted, S0#state{num_to_ack= NumToAck-1}}
+            lager:info("ClockSI-coord-fsm: Keep collecting abort replies."),
+            {next_state, receive_aborted, S0#state{num_to_ack=NumToAck-1}}
     end.
 
-%% when the transaction has committed or aborted, a reply is sent to the client
-%% that started the transaction.
-reply_to_client(timeout, SD=#state{from=From, transaction = Transaction,
-                                   read_set=ReadSet, state=TxState,
+%% @doc When the transaction has committed or aborted, a reply is sent
+%%      to the client that started the transaction.
+%%
+reply_to_client(timeout, SD=#state{from=From,
+                                   transaction=Transaction,
+                                   read_set=ReadSet,
+                                   state=TxState,
                                    commit_time=CommitTime}) ->
     TxId = Transaction#transaction.txn_id,
-    case TxState of
+    _ = case TxState of
         committed->
             From ! {ok, {TxId, ReadSet, CommitTime}};
         aborted->
@@ -314,14 +321,14 @@ terminate(_Reason, _SN, _SD) ->
 %%% Internal Functions
 %%%===================================================================
 
-%%@doc Set the transaction Snapshot Time to the maximum value of:
-%%     1.ClientClock, which is the last clock of the system the client
-%%       starting this transaction has seen, and
-%%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(ClientClock :: non_neg_integer()) ->
-                               {ok, non_neg_integer()}.
+%% @doc Set the transaction Snapshot Time to the maximum value of:
+%%      1. ClientClock, which is the last clock of the system the client
+%%         starting this transaction has seen, and
+%%      2. machine's local time, as returned by erlang:now().
+%%
+-spec get_snapshot_time(non_neg_integer()) -> {ok, non_neg_integer()}.
 get_snapshot_time(ClientClock) ->
-    Now=clocksi_vnode: now_milisec(erlang:now()),
+    Now = clocksi_vnode:now_milisec(erlang:now()),
     case (ClientClock > Now) of
         true->
             SnapshotTime = ClientClock + ?MIN;
@@ -333,5 +340,5 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, non_neg_integer()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
-    Snapshot_time  = Now - ?DELTA,
-    {ok, Snapshot_time}.
+    SnapshotTime  = Now - ?DELTA,
+    {ok, SnapshotTime}.

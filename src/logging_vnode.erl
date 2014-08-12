@@ -49,7 +49,7 @@ threshold_read(Preflist, Log, From) ->
     riak_core_vnode_master:command(Preflist,
                                    {threshold_read, Log, From},
                                    {fsm, undefined, self()},
-                                   ?LOGGINGMASTER).
+                                   ?LOGGING_MASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
 -spec dread(preflist(), key()) -> term().
@@ -58,14 +58,14 @@ dread(Preflist, Log) ->
     riak_core_vnode_master:command(Preflist,
                                    {read, Log},
                                    {fsm, undefined, self()},
-                                   ?LOGGINGMASTER).
+                                   ?LOGGING_MASTER).
 
 %% @doc Sends a `read' synchronous command to the Logs in `Node'
 -spec read({partition(), node()}, key()) -> term().
 read(Node, Log) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read, Log},
-                                        ?LOGGINGMASTER).
+                                        ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
 -spec dappend(preflist(), key(), op(), op_id()) -> term().
@@ -74,14 +74,14 @@ dappend(Preflist, Log, OpId, Payload) ->
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, OpId, Payload},
                                    {fsm, undefined, self()},
-                                   ?LOGGINGMASTER).
+                                   ?LOGGING_MASTER).
 
 %% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
 -spec append_list({partition(), node()}, key(), [op()]) -> term().
 append_list(Node, Log, Ops) ->
     riak_core_vnode_master:sync_command(Node,
                                         {append_list, Log, Ops},
-                                        ?LOGGINGMASTER).
+                                        ?LOGGING_MASTER).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word

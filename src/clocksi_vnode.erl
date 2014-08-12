@@ -1,10 +1,11 @@
 -module(clocksi_vnode).
+
 -behaviour(riak_core_vnode).
+
 -include("floppy.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
-         %%API begin
          read_data_item/4,
          update_data_item/5,
          prepare/2,
@@ -25,9 +26,7 @@
          handle_coverage/4,
          handle_exit/3]).
 
--ignore_xref([
-              start_vnode/1
-             ]).
+-ignore_xref([start_vnode/1]).
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
@@ -42,9 +41,13 @@
 %%         have updated a key (but not yet finished).
 %%	write_set: a list of the write sets that the transactions generate.
 %%----------------------------------------------------------------------
--record(state, {partition, active_tx, prepared_tx, committed_tx,
-                waiting_fsms, active_txs_per_key, write_set}).
-
+-record(state, {partition,
+                active_tx,
+                prepared_tx,
+                committed_tx,
+                waiting_fsms,
+                active_txs_per_key,
+                write_set}).
 
 %%%===================================================================
 %%% API
@@ -57,31 +60,34 @@ start_vnode(I) ->
 read_data_item(Node, TxId, Key, Type) ->
     lager:info("ClockSI-Vnode: read key ~w for TxId ~w ~n",[Key, TxId]),
     riak_core_vnode_master:sync_command(Node, {read_data_item, TxId, Key, Type},
-                                        ?CLOCKSIMASTER).
+                                        ?CLOCKSI_MASTER).
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op) ->
     lager:info("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
     riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Type, Op},
-                                        ?CLOCKSIMASTER).
+                                        ?CLOCKSI_MASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, Txn) ->
     lager:info("ClockSI-Vnode: prepare TxId ~w ~n",[Txn]),
     riak_core_vnode_master:command(ListofNodes, {prepare, Txn},
-                                   {fsm, undefined, self()},?CLOCKSIMASTER).
+                                   {fsm, undefined, self()},
+                                   ?CLOCKSI_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
     lager:info("ClockSI-Vnode: commit TxId ~w ~n",[TxId]),
     riak_core_vnode_master:command(ListofNodes, {commit, TxId, CommitTime},
-                                   {fsm, undefined, self()},?CLOCKSIMASTER).
+                                   {fsm, undefined, self()},
+                                   ?CLOCKSI_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
     lager:info("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
     riak_core_vnode_master:command(ListofNodes, {abort, TxId},
-                                   {fsm, undefined, self()},?CLOCKSIMASTER),
+                                   {fsm, undefined, self()},
+                                   ?CLOCKSI_MASTER),
     lager:info("ClockSI-Vnode: sent command to abort TxId ~w ~n",[TxId]).
 
 %% @doc Initializes all data structures that vnode needs to track information
@@ -91,15 +97,16 @@ init([Partition]) ->
     CommittedTx=ets:new(committed_tx, [set]),
     ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
     WriteSet=ets:new(write_set, [duplicate_bag]),
-    {ok, #state{partition=Partition, %active_tx=ActiveTx,
+    {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
-                committed_tx=CommittedTx, write_set=WriteSet,
+                committed_tx=CommittedTx,
+                write_set=WriteSet,
                 active_txs_per_key=ActiveTxsPerKey}}.
 
 %% @doc starts a read_fsm to handle a read operation.
 handle_command({read_data_item, Txn, Key, Type}, Sender,
-               #state{write_set=WriteSet, partition= Partition}=State) ->
-    Vnode={Partition, node()},
+               #state{write_set=WriteSet, partition=Partition}=State) ->
+    Vnode = {Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
     lager:info
       ("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",
@@ -222,15 +229,12 @@ handle_command({abort, Transaction}, _Sender, State =
         {error, timeout} ->
             clean_and_notify(TxId, State),
             lager:info("Abort not written to all replica of log")
-
-            %% should we reply something here?
-            %%{reply, {error, timeout}, State},
     end,
     {reply, ack_abort, State};
 
 %% @doc Return active transactions in prepare state with their preparetime
-handle_command({get_active_txns},_Sender, #state{prepared_tx=Prepared, partition = Partition}=State) ->
-    %%ActiveTxs :: [{active,{TxId, Preparetime}}]
+handle_command({get_active_txns}, _Sender,
+               #state{prepared_tx=Prepared, partition=Partition}=State) ->
     ActiveTxs = ets:lookup(Prepared, active),
     lager:info("ActiveTxs: ~p -> ~p", [Partition, ActiveTxs]),
     {reply, {ok, ActiveTxs}, State};
