@@ -62,9 +62,10 @@ clocksi_execute_tx(Clock, Operations) ->
         EndOfTx ->
             lager:info("FLOPPY: TX completed!~n"),
             EndOfTx
-    after 10000 ->
+    after
+        10000 ->
             lager:info("FLOPPY: Tx failed!~n"),
-            error
+            {error, timeout}
     end.
 
 clocksi_execute_tx(Operations) ->
@@ -74,9 +75,10 @@ clocksi_execute_tx(Operations) ->
         EndOfTx ->
             lager:info("FLOPPY: TX completed!~n"),
             EndOfTx
-    after 10000 ->
+    after
+        10000 ->
             lager:info("FLOPPY: Tx failed!~n"),
-            error
+            {error, timeout}
     end.
 
 %% @doc Starts a new ClockSI interactive transaction.
@@ -97,7 +99,8 @@ clocksi_istart_tx(Clock) ->
         TxId ->
             lager:info("FLOPPY: TX started with TxId= ~w~n", [TxId]),
             TxId
-    after 10000 ->
+    after
+        10000 ->
             lager:info("FLOPPY: Tx was not started!~n"),
             {error, timeout}
     end.
