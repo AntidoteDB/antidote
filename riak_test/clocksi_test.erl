@@ -23,10 +23,10 @@ confirm() ->
     clocksi_multiple_test_certification_check(Nodes),
     clocksi_multiple_read_update_test(Nodes),
     rt:clean_cluster(Nodes),
-    ok.
+    pass.
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
-%% that updates multiple partitions.
+%%      that updates multiple partitions.
 clocksi_test1(Nodes) ->
     FirstNode = hd(Nodes),
     lager:info("Test1 started"),
@@ -42,12 +42,10 @@ clocksi_test1(Nodes) ->
     {ok, {_, ReadSet, _}}=Result,
     ?assertMatch([2,1], ReadSet),
     lager:info("Test1 passed"),
-    ok.
-
-
+    pass.
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
-%% that updates multiple partitions.
+%%      that updates multiple partitions.
 clocksi_test2(Nodes) ->
     FirstNode = hd(Nodes),
     lager:info("Test2 started"),
@@ -83,9 +81,9 @@ clocksi_test2(Nodes) ->
     {ok, {_,[ReadVal],_}} = ReadResult3,
     ?assertEqual(ReadVal, 1),
     lager:info("Test2 passed"),
-    ok.
+    pass.
 
-%% Test to execute transaction with out explicit clock time
+%% @doc Test to execute transaction with out explicit clock time
 clocksi_tx_noclock_test(Nodes) ->
     FirstNode = hd(Nodes),
     Key = itx,
@@ -115,10 +113,10 @@ clocksi_tx_noclock_test(Nodes) ->
     {ok, {_, ReadSet2, _}}=ReadResult2,
     ?assertMatch([2], ReadSet2),
     lager:info("Test3 passed"),
-    ok.
+    pass.
 
-%% The following function tests that ClockSI can run both a
-%% single read and a bulk-update tx.
+%% @doc The following function tests that ClockSI can run both a single
+%%      read and a bulk-update tx.
 clocksi_single_key_update_read_test(Nodes) ->
     lager:info("Test3 started"),
     FirstNode = hd(Nodes),
@@ -134,8 +132,9 @@ clocksi_single_key_update_read_test(Nodes) ->
     {ok, {_, ReadSet, _}}=Result2,
     ?assertMatch([2], ReadSet),
     lager:info("Test3 passed"),
-    ok.
+    pass.
 
+%% @doc Verify that multiple reads/writes are successful.
 clocksi_multiple_key_update_read_test(Nodes) ->
     Firstnode = hd(Nodes),
     Type = riak_dt_pncounter,
@@ -158,10 +157,10 @@ clocksi_multiple_key_update_read_test(Nodes) ->
     ?assertMatch(ReadResult1,1),
     ?assertMatch(ReadResult2,10),
     ?assertMatch(ReadResult3,1),
-    ok.
+    pass.
 
-%% The following function tests that ClockSI can excute a
-%% read-only interactive tx.
+%% @doc The following function tests that ClockSI can excute a
+%%      read-only interactive tx.
 clocksi_test4(Nodes) ->
     lager:info("Test4 started"),
     FirstNode = hd(Nodes),
@@ -181,11 +180,11 @@ clocksi_test4(Nodes) ->
     ?assertMatch({ok, _}, End1),
     lager:info("Tx Committed."),
     lager:info("Test 4 passed."),
-    ok.
+    pass.
 
-%% The following function tests that ClockSI waits, when reading, for a tx that
-%% has updated an element that it wants to read and has a smaller TxId,
-%% but has not yet committed.
+%% @doc The following function tests that ClockSI waits, when reading,
+%%      for a tx that has updated an element that it wants to read and
+%%      has a smaller TxId, but has not yet committed.
 clocksi_test_read_time(Nodes) ->
     %% Start a new tx,  perform an update over key abc, and send prepare.
     lager:info("Test read_time started"),
@@ -229,10 +228,11 @@ clocksi_test_read_time(Nodes) ->
     ?assertMatch({ok, _}, End1),
     lager:info("Tx2 Committed."),
     lager:info("Test read_time passed"),
-    ok.
+    pass.
 
-%% The following function tests that ClockSI does not read values inserted by a
-%% tx with higher commit timestamp than the snapshot time of the reading tx.
+%% @doc The following function tests that ClockSI does not read values
+%%      inserted by a tx with higher commit timestamp than the snapshot time
+%%      of the reading tx.
 clocksi_test_read_wait(Nodes) ->
     lager:info("Test read_wait started"),
     %% Start a new tx, update a key read_wait_test, and send prepare.
@@ -277,15 +277,15 @@ clocksi_test_read_wait(Nodes) ->
     ?assertMatch({ok, _}, End1),
     lager:info("Tx2 Committed."),
     lager:info("Test read_wait passed"),
-    ok.
+    pass.
 
 spawn_read(LastNode, TxId, Return) ->
     ReadResult=rpc:call(LastNode, floppy, clocksi_iread,
                         [TxId, read_wait_test, riak_dt_pncounter]),
     Return ! {self(), ReadResult}.
 
-%% The following function tests the certification check algorithm.
-%% when two concurrent txs modify a single object, one hast to abort.
+%% @doc The following function tests the certification check algorithm,
+%%      when two concurrent txs modify a single object, one hast to abort.
 clocksi_test_certification_check(Nodes) ->
     lager:info("clockSI_test_certification_check started"),
     FirstNode = hd(Nodes),
@@ -318,18 +318,16 @@ clocksi_test_certification_check(Nodes) ->
     ?assertMatch({ok, _}, End1),
     lager:info("Tx2 Committed."),
 
-
     %% commit the first tx.
     CommitTime=rpc:call(FirstNode, floppy, clocksi_iprepare, [TxId]),
     ?assertMatch({aborted, TxId}, CommitTime),
     lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
     lager:info("Tx1 aborted. Test passed!"),
-    ok.
+    pass.
 
-
-%% The following function tests the certification check algorithm.
-%% when two concurrent txs modify a single object, one hast to abort.
-%% Besides, it updates multiple partitions.
+%% @doc The following function tests the certification check algorithm.
+%%      when two concurrent txs modify a single object, one hast to abort.
+%%      Besides, it updates multiple partitions.
 clocksi_multiple_test_certification_check(Nodes) ->
     lager:info("clockSI_test_certification_check started"),
     FirstNode = hd(Nodes),
@@ -375,9 +373,9 @@ clocksi_multiple_test_certification_check(Nodes) ->
     ?assertMatch({aborted, TxId}, CommitTime),
     lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
     lager:info("Tx1 aborted. Test passed!"),
-    ok.
+    pass.
 
-%% Read an update a key multiple times
+%% @doc Read an update a key multiple times.
 clocksi_multiple_read_update_test(Nodes) ->
     Node = hd(Nodes),
     Key = get_random_key(),
@@ -390,8 +388,9 @@ clocksi_multiple_read_update_test(Nodes) ->
     {ok,Result2} = rpc:call(Node, floppy, read,
                        [Key, riak_dt_pncounter]),
     ?assertEqual(Result1+NTimes, Result2),
-    ok.
+    pass.
 
+%% @doc Test updating prior to a read.
 read_update_test(Node, Key) ->
     Type = riak_dt_pncounter,
     {ok,Result1} = rpc:call(Node, floppy, read,
@@ -400,7 +399,8 @@ read_update_test(Node, Key) ->
                       [now(), [{update, Key, Type, {increment,a}}]]),
     {ok,Result2} = rpc:call(Node, floppy, read,
                        [Key, Type]),
-    ?assertEqual(Result1+1,Result2).
+    ?assertEqual(Result1+1,Result2),
+    pass.
 
 get_random_key() ->
     random:seed(now()),
