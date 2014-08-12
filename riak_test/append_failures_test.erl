@@ -55,6 +55,6 @@ confirm() ->
     %% Read after the partition has been healed.
     ReadResult3 = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
     lager:info("ReadResult3: ~p", [ReadResult3]),
-    ?assertMatch({ok, 2}, ReadResult3),
+    ?assertMatch({ok, 1}, ReadResult3),
 
     pass.

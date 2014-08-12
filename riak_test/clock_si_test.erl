@@ -1,31 +1,33 @@
--module(clock_si).
--export([confirm/0, clockSI_test1/1, clockSI_test2/1,
-         clockSI_test_read_wait/1, clockSI_test4/1, clockSI_test_read_time/1,
-         clockSI_test_certification_check/1,
-         clockSI_multiple_test_certification_check/1, spawn_read/3]).
+-module(clock_si_test).
+
+-export([confirm/0, clocksi_test1/1, clocksi_test2/1,
+         clocksi_test_read_wait/1, clocksi_test4/1, clocksi_test_read_time/1,
+         clocksi_test_certification_check/1,
+         clocksi_multiple_test_certification_check/1, spawn_read/3]).
+
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
-    clockSI_test1(Nodes),
-    clockSI_test2 (Nodes),
+    clocksi_test1(Nodes),
+    clocksi_test2 (Nodes),
     clocksi_tx_noclock_test(Nodes),
     clocksi_single_key_update_read_test(Nodes),
     clocksi_multiple_key_update_read_test(Nodes),
-    clockSI_test4 (Nodes),
-    clockSI_test_read_time(Nodes),
-    clockSI_test_read_wait(Nodes),
-    clockSI_test_certification_check(Nodes),
-    clockSI_multiple_test_certification_check(Nodes),
+    clocksi_test4 (Nodes),
+    clocksi_test_read_time(Nodes),
+    clocksi_test_read_wait(Nodes),
+    clocksi_test_certification_check(Nodes),
+    clocksi_multiple_test_certification_check(Nodes),
     clocksi_multiple_read_update_test(Nodes),
     rt:clean_cluster(Nodes),
     ok.
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %% that updates multiple partitions.
-clockSI_test1(Nodes) ->
+clocksi_test1(Nodes) ->
     FirstNode = hd(Nodes),
     lager:info("Test1 started"),
     Type = riak_dt_pncounter,
@@ -46,7 +48,7 @@ clockSI_test1(Nodes) ->
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %% that updates multiple partitions.
-clockSI_test2(Nodes) ->
+clocksi_test2(Nodes) ->
     FirstNode = hd(Nodes),
     lager:info("Test2 started"),
     Type = riak_dt_pncounter,
@@ -160,7 +162,7 @@ clocksi_multiple_key_update_read_test(Nodes) ->
 
 %% The following function tests that ClockSI can excute a
 %% read-only interactive tx.
-clockSI_test4(Nodes) ->
+clocksi_test4(Nodes) ->
     lager:info("Test4 started"),
     FirstNode = hd(Nodes),
     lager:info("Node1: ~p", [FirstNode]),
@@ -184,7 +186,7 @@ clockSI_test4(Nodes) ->
 %% The following function tests that ClockSI waits, when reading, for a tx that
 %% has updated an element that it wants to read and has a smaller TxId,
 %% but has not yet committed.
-clockSI_test_read_time(Nodes) ->
+clocksi_test_read_time(Nodes) ->
     %% Start a new tx,  perform an update over key abc, and send prepare.
     lager:info("Test read_time started"),
     FirstNode = hd(Nodes),
@@ -231,7 +233,7 @@ clockSI_test_read_time(Nodes) ->
 
 %% The following function tests that ClockSI does not read values inserted by a
 %% tx with higher commit timestamp than the snapshot time of the reading tx.
-clockSI_test_read_wait(Nodes) ->
+clocksi_test_read_wait(Nodes) ->
     lager:info("Test read_wait started"),
     %% Start a new tx, update a key read_wait_test, and send prepare.
     FirstNode = hd(Nodes),
@@ -284,7 +286,7 @@ spawn_read(LastNode, TxId, Return) ->
 
 %% The following function tests the certification check algorithm.
 %% when two concurrent txs modify a single object, one hast to abort.
-clockSI_test_certification_check(Nodes) ->
+clocksi_test_certification_check(Nodes) ->
     lager:info("clockSI_test_certification_check started"),
     FirstNode = hd(Nodes),
     LastNode= lists:last(Nodes),
@@ -328,7 +330,7 @@ clockSI_test_certification_check(Nodes) ->
 %% The following function tests the certification check algorithm.
 %% when two concurrent txs modify a single object, one hast to abort.
 %% Besides, it updates multiple partitions.
-clockSI_multiple_test_certification_check(Nodes) ->
+clocksi_multiple_test_certification_check(Nodes) ->
     lager:info("clockSI_test_certification_check started"),
     FirstNode = hd(Nodes),
     LastNode= lists:last(Nodes),
