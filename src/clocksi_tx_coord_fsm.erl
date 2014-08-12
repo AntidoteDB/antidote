@@ -109,10 +109,13 @@ prepare_op(timeout, SD0=#state{operations=Operations}) ->
         [] ->
             {next_state, prepare_2pc, SD0, 0};
         [Op|TailOps] ->
+            lager:error("Received operation: ~p", [Op]),
             [Op|TailOps] = Operations,
-            case Op of
-                {update, Key,_Type,_} -> FormattedOp = Op;
-                {read, Key, Type} -> FormattedOp = {read, Key, Type, ignore}
+            FormattedOp = case Op of
+                {update, Key, _Type, _} ->
+                    Op;
+                {read, Key, Type} ->
+                    {read, Key, Type, ignore}
             end,
             lager:info("ClockSI-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Coord: Op ~w ~n ", [Op]),
