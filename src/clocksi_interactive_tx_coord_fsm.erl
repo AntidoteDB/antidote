@@ -94,15 +94,11 @@ execute_op({Op_type, Args}, Sender,
             {next_state, prepare, SD0#state{from=Sender}, 0};
         read ->
             {Key, Type}=Args,
-            %DocIdx = riak_core_util:chash_key({?BUCKET,
-                                               %term_to_binary(Key)}),
             lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w",
                        [Key]),
-            %[{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
-                                                           % ?CLOCKSI),
             Logid = log_utilities:get_logid_from_key(Key),
             Preflist = log_utilities:get_preflist_from_logid(Logid),
             IndexNode = hd(Preflist),
@@ -117,16 +113,12 @@ execute_op({Op_type, Args}, Sender,
             end;
         update ->
             {Key, Type, Param}=Args,
-            %DocIdx = riak_core_util:chash_key({?BUCKET,
-            %                                   term_to_binary(Key)}),
             lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
                        [Key]),
-           % [{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
-            %                                                ?CLOCKSI),
             Logid = log_utilities:get_logid_from_key(Key),
             Preflist = log_utilities:get_preflist_from_logid(Logid),
             IndexNode = hd(Preflist),
@@ -266,7 +258,7 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
 
 
 
-%% ====================================================================================
+%% =============================================================================
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
