@@ -1,4 +1,4 @@
--module(clock_si_test).
+-module(clocksi_test).
 
 -export([confirm/0, clocksi_test1/1, clocksi_test2/1,
          clocksi_test_read_wait/1, clocksi_test4/1, clocksi_test_read_time/1,
