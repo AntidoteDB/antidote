@@ -52,6 +52,7 @@ update(Key, DownstreamOp) ->
 
 init([Partition]) ->
     Cache = ets:new(cache, [bag]),
+    %% TODO: Construct cache from log
     {ok,#state{partition = Partition, cache = Cache}}.
 
 handle_command({read, Key, Type, Snapshot_time}, _Sender,

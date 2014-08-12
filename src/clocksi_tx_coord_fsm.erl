@@ -116,13 +116,10 @@ prepare_op(timeout, SD0=#state{operations=Operations}) ->
                 {update, Key,_Type,_} -> FormattedOp = Op;
                 {read, Key, Type} -> FormattedOp = {read, Key, Type, ignore}
             end,
-            %DocIdx = riak_core_util:chash_key({?BUCKET,
-                                                % term_to_binary(Key)}),
             lager:info("ClockSI-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Coord: Op ~w ~n ", [Op]),
             lager:info("ClockSI-Coord: TailOps ~w ~n ", [TailOps]),
             lager:info("ClockSI-Coord: getting leader for Key ~w ~n", [Key]),
-            %[Leader] = riak_core_apl:get_primary_apl(DocIdx, 1, ?CLOCKSI),
             Logid = log_utilities:get_logid_from_key(Key),
             Preflist = log_utilities:get_preflist_from_logid(Logid),
             Leader = hd(Preflist),
@@ -159,8 +156,8 @@ execute_op(timeout, SD0=#state{
                     SD1=SD0#state{read_set=NewReadSet}
             end;
         update ->
-            case clocksi_vnode:update_data_item(IndexNode,
-                                                Transaction, Key, Type, Param) of
+            case clocksi_vnode:update_data_item(
+                   IndexNode, Transaction, Key, Type, Param) of
                 ok ->
                     case lists:member(IndexNode, UpdatedPartitions) of
                         false ->
