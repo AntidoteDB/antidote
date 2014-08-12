@@ -59,33 +59,50 @@ start_vnode(I) ->
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
     lager:info("ClockSI-Vnode: read key ~w for TxId ~w ~n",[Key, TxId]),
-    riak_core_vnode_master:sync_command(Node, {read_data_item, TxId, Key, Type},
-                                        ?CLOCKSI_MASTER).
+    try
+        riak_core_vnode_master:sync_command(Node,
+                                            {read_data_item, TxId, Key, Type},
+                                            ?CLOCKSI_MASTER)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op) ->
     lager:info("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
-    riak_core_vnode_master:sync_command(Node, {update_data_item, TxId, Key, Type, Op},
-                                        ?CLOCKSI_MASTER).
+    try
+        riak_core_vnode_master:sync_command(Node,
+                                            {update_data_item, TxId, Key, Type, Op},
+                                            ?CLOCKSI_MASTER)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, Txn) ->
     lager:info("ClockSI-Vnode: prepare TxId ~w ~n",[Txn]),
-    riak_core_vnode_master:command(ListofNodes, {prepare, Txn},
+    riak_core_vnode_master:command(ListofNodes,
+                                   {prepare, Txn},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
     lager:info("ClockSI-Vnode: commit TxId ~w ~n",[TxId]),
-    riak_core_vnode_master:command(ListofNodes, {commit, TxId, CommitTime},
+    riak_core_vnode_master:command(ListofNodes,
+                                   {commit, TxId, CommitTime},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
     lager:info("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
-    riak_core_vnode_master:command(ListofNodes, {abort, TxId},
+    riak_core_vnode_master:command(ListofNodes,
+                                   {abort, TxId},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER),
     lager:info("ClockSI-Vnode: sent command to abort TxId ~w ~n",[TxId]).
