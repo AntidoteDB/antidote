@@ -41,12 +41,12 @@ confirm() ->
     WriteResult2 = rpc:call(First,
                             floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
     lager:info("WriteResult2: ~p", [WriteResult2]),
-    ?assertMatch(error, WriteResult2),
+    ?assertMatch({error, timeout}, WriteResult2),
 
     %% Read from the minority partition.
     ReadResult2 = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
     lager:info("ReadResult2: ~p", [ReadResult2]),
-    ?assertMatch(error, ReadResult2),
+    ?assertMatch({error, timeout}, ReadResult2),
 
     %% Heal the partition.
     rt:heal(PartInfo),
