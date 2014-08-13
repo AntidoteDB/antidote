@@ -79,8 +79,14 @@ handle_command({update, Key, DownstreamOp}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handle_handoff_command( _Message , _Sender, State) ->
-    {noreply, State}.
+handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0} ,
+                       _Sender,
+                       State = #state{cache = Cache}) ->
+    F = fun({Key,Operation}, A) ->
+                Fun(Key, Operation, A)
+        end,
+    Acc = ets:foldl(F, Acc0, Cache),
+    {reply, Acc, State}.
 
 handoff_starting(_TargetNode, State) ->
     {true, State}.
@@ -91,16 +97,24 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(_Data, State) ->
+handle_handoff_data(Data, State = #state{cache = Cache}) ->
+    {Key, Operation} = binary_to_term(Data),
+    true = ets:insert(Cache, {Key, Operation}),
     {reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
 
-is_empty(State) ->
-    {true, State}.
+is_empty(State=#state{cache = Cache}) ->
+    case ets:first(Cache) of
+        '$end_of_table' ->
+            {true, State};
+        _ ->
+            {false, State}
+    end.
 
-delete(State) ->
+delete(State=#state{cache=Cache}) ->
+    true = ets:delete(Cache),
     {ok, State}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) ->
