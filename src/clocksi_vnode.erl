@@ -120,135 +120,103 @@ handle_command({read_data_item, Txn, Key, Type}, Sender,
                #state{write_set=WriteSet, partition=Partition}=State) ->
     Vnode = {Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
-    lager:info
-      ("ClockSI-Vnode: start a read fsm for key ~w. Previous updates:~p",
-       [Key, Updates]),
-    {ok, _Pid} = clocksi_readitem_fsm:start_link
-                   (Vnode, Sender, Txn, Key, Type, Updates),
-    lager:info("ClockSI-Vnode: done. Reply to the coordinator."),
+    {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
+                                                 Key, Type, Updates),
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
 handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
-               #state{partition = Partition, write_set=WriteSet,
+               #state{partition=Partition,
+                      write_set=WriteSet,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
-    LogRecord=#log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
-    TxId = Txn#transaction.txn_id,
-    lager:info("ClockSI_Vnode: logging the following operation: ~p.",
-               [LogRecord]),
-                                                %LogId=log_utilities:get_logid_from_key(Key),
+    LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
     Result = floppy_rep_vnode:append(Key, Type, LogRecord),
     case Result of
-        {ok,_} ->
-            ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
-            Check2=ets:lookup(ActiveTxsPerKey, Key),
-            lager:info("ClockSI-Vnode: Inserted to ActiveTxsPerKey ~p",
-                       [Check2]),
-            ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
-            Check3=ets:lookup(WriteSet, TxId),
-            lager:info("ClockSI-Vnode: Inserted to WriteSet ~p",[Check3]),
+        {ok, _} ->
+            true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
+            true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
             {ok, _Pid} = clocksi_updateitem_fsm:start_link(
-                           Sender, Txn#transaction.vec_snapshot_time,
-                           Partition),
+                    Sender,
+                    Txn#transaction.vec_snapshot_time,
+                    Partition),
             {noreply, State};
         {error, timeout} ->
             {reply, {error, timeout}, State}
     end;
 
 handle_command({prepare, Transaction}, _Sender,
-               State = #state{ partition = _Partition,
-                               committed_tx=CommittedTx,
-                               active_txs_per_key=ActiveTxPerKey,
-                               prepared_tx=PreparedTx, write_set=WriteSet}) ->
+               State = #state{partition=_Partition,
+                              committed_tx=CommittedTx,
+                              active_txs_per_key=ActiveTxPerKey,
+                              prepared_tx=PreparedTx,
+                              write_set=WriteSet}) ->
     TxId = Transaction#transaction.txn_id,
-    lager:info("ClockSI_Vnode: got prepare message."),
-    TxWriteSet=ets:lookup(WriteSet, TxId),
-    lager:info("ClockSI_Vnode: starting certification check."),
+    TxWriteSet = ets:lookup(WriteSet, TxId),
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
         true ->
-            lager:info("ClockSI_Vnode: certification check passed."),
-            PrepareTime=now_milisec(erlang:now()),
-            LogRecord=#log_record{
-                         tx_id=TxId, op_type=prepare, op_payload=PrepareTime},
-            lager:info(
-              "ClockSI_Vnode: logging the following operation: ~p.",
-              [LogRecord]),
-            ets:insert(PreparedTx, {active,{TxId, PrepareTime}}),
+            PrepareTime = now_milisec(erlang:now()),
+            LogRecord = #log_record{tx_id=TxId,
+                                    op_type=prepare,
+                                    op_payload=PrepareTime},
+            true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
             Updates = ets:lookup(WriteSet, TxId),
-            [{_,{Key,Type,{_Op,_Actor}}} | _Rest] = Updates,
-            Result = floppy_rep_vnode:append(Key,Type,LogRecord),
+            [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
+            Result = floppy_rep_vnode:append(Key, Type, LogRecord),
             case Result of
-                {ok,_} ->
+                {ok, _} ->
                     {reply, {prepared, PrepareTime}, State};
                 {error, timeout} ->
                     {reply, {error, timeout}, State}
             end;
         false ->
-            lager:info(
-              "ClockSI_Vnode: certification_check failed,Aborting."),
             {reply, abort, State}
     end;
 
 handle_command({commit, Transaction, TxCommitTime}, _Sender,
-               #state{partition = _Partition, committed_tx=CommittedTx,
-                      write_set=WriteSet}=State) ->
-    lager:info("ClockSI_Vnode: got commit message."),
+               #state{partition=_Partition,
+                      committed_tx=CommittedTx,
+                      write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
-    LogRecord=#log_record{
-                 tx_id=TxId, op_type=commit,
-                 op_payload={TxCommitTime,
-                             Transaction#transaction.vec_snapshot_time}},
-    lager:info(
-      "ClockSI_Vnode: logging the following operation: ~p.",
-      [LogRecord]),
+    LogRecord=#log_record{tx_id=TxId,
+                          op_type=commit,
+                          op_payload={TxCommitTime,
+                                      Transaction#transaction.vec_snapshot_time}},
     Updates = ets:lookup(WriteSet, TxId),
-    [{_,{Key,Type,{_Op,_Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key,Type,LogRecord),
+    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
+    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
     case Result of
-        {ok,_} ->
-            %% gen_fsm:send_event(Sender, committed)
-            %%TODO: Return results to caller here,
-            ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            lager:info(
-              "ClockSI_Vnode: sending updates to downstream vnode layer: ~p",
-              [Updates]),
+        {ok, _} ->
+            true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             _Return = clocksi_downstream_generator_vnode:trigger(
-                        Key, {TxId, Updates,
-                              Transaction#transaction.vec_snapshot_time,
-                              TxCommitTime}),
-            lager:info(
-              "ClockSI_Vnode: clean state and Notifying pending read_FSMs"),
-            clean_and_notify(TxId, State),
-            lager:info("ClockSI_Vnode: done"),
+                    Key, {TxId,
+                          Updates,
+                          Transaction#transaction.vec_snapshot_time,
+                          TxCommitTime}),
+            clean_and_notify(TxId, Key, State),
             {reply, committed, State};
         {error, timeout} ->
             {reply, {error, timeout}, State}
     end;
 
-handle_command({abort, Transaction}, _Sender, State =
-                   #state{partition=_Partition, write_set = WriteSet}) ->
-    %LogId=log_utilities:get_logid_from_partition(Partition),
-    %Result = floppy_rep_vnode:append(LogId, {TxId, aborted}),
+handle_command({abort, Transaction}, _Sender,
+               #state{partition=_Partition, write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     Updates = ets:lookup(WriteSet, TxId),
-    [{_,{Key,Type,{_Op,_Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key,Type,{TxId, aborted}),
+    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
+    Result = floppy_rep_vnode:append(Key, Type, {TxId, aborted}),
     case Result of
-        {ok,_} ->
-            clean_and_notify(TxId, State),
-            lager:info("Vnode: Recieved abort. State cleaned.");
+        {ok, _} ->
+            clean_and_notify(TxId, Key, State);
         {error, timeout} ->
-            clean_and_notify(TxId, State),
-            lager:info("Abort not written to all replica of log")
+            clean_and_notify(TxId, Key, State)
     end,
     {reply, ack_abort, State};
 
 %% @doc Return active transactions in prepare state with their preparetime
 handle_command({get_active_txns}, _Sender,
-               #state{prepared_tx=Prepared, partition=Partition}=State) ->
+               #state{prepared_tx=Prepared, partition=_Partition} = State) ->
     ActiveTxs = ets:lookup(Prepared, active),
-    lager:info("ActiveTxs: ~p -> ~p", [Partition, ActiveTxs]),
     {reply, {ok, ActiveTxs}, State};
 
 handle_command(_Message, _Sender, State) ->
@@ -308,18 +276,16 @@ clean_and_notify(TxId, Key, #state{active_txs_per_key=ActiveTxsPerKey,
     true = ets:delete(ActiveTxsPerKey, Key).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
-now_milisec({MegaSecs,Secs,MicroSecs}) ->
-    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
+now_milisec({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
-%% @doc performs a certification check when a transaction wants to move
-%% to the prepared state.
-certification_check(_, [], _, _) -> true;
+%% @doc Performs a certification check when a transaction wants to move
+%%      to the prepared state.
+certification_check(_, [], _, _) ->
+    true;
 certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    lager:info("ClockSI_Vnode: getting key of operation: ~p.", [H]),
-    {_,{Key,_Type,_}}=H,
-    lager:info("ClockSI_Vnode: checking key: ~p.", [Key]),
-    TxsPerKey=ets:lookup(ActiveTxPerKey, Key),
-    lager:info("ClockSI_Vnode: active txs for Key: ~p: ~p.", [Key, TxsPerKey]),
+    {_, {Key, _Type, _}} = H,
+    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
     case check_keylog(TxId, TxsPerKey, CommittedTx) of
         true ->
             false;
@@ -327,28 +293,20 @@ certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
             certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
     end.
 
-check_keylog(_, [], _) -> false;
+check_keylog(_, [], _) ->
+    false;
 check_keylog(TxId, [H|T], CommittedTx)->
     {_Key, _Type, ThisTxId}=H,
-    lager:info("Checking if Tx ~p started after Tx to check ~w~n",
-               [ThisTxId, TxId]),
     case ThisTxId > TxId of
         true ->
-            lager:info("It did! Checking if it has committed..."),
-            CommitInfo=ets:lookup(CommittedTx, ThisTxId),
-            lager:info("got this from the lookup ~p", [CommitInfo]),
+            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
             timer:sleep(1000),
             case CommitInfo of
-                [{_,CommitTime}] ->
-                    lager:info(
-                      "Transaction has already committed with commit time: ~p",
-                      [CommitTime]),
+                [{_, _CommitTime}] ->
                     true;
-                []->
-                    lager:info("It did not... Continuing..."),
+                [] ->
                     check_keylog(TxId, T, CommittedTx)
             end;
         false ->
-            lager:info("It did not... Continuing..."),
             check_keylog(TxId, T, CommittedTx)
     end.
