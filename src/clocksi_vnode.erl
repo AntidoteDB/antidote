@@ -34,8 +34,6 @@
 %%          partition: the partition that the vnode is responsible for.
 %%          prepared_tx: a list of prepared transactions.
 %%          committed_tx: a list of committed transactions.
-%%          waiting_fsms: a list of the read_fsms that are currently
-%%              waiting for each tx to finish.
 %%          active_txs_per_key: a list of the active transactions that
 %%              have updated a key (but not yet finished).
 %%          write_set: a list of the write sets that the transactions
@@ -44,7 +42,6 @@
 -record(state, {partition,
                 prepared_tx,
                 committed_tx,
-                waiting_fsms,
                 active_txs_per_key,
                 write_set}).
 
@@ -301,8 +298,7 @@ terminate(_Reason, _State) ->
 %%      1. notify all read_fsms that are waiting for this transaction to finish
 %%      2. clean the state of the transaction. Namely:
 %%      a. ActiteTxsPerKey,
-%%      b. Waiting_Fsms,
-%%      c. PreparedTx
+%%      b. PreparedTx
 %%
 clean_and_notify(TxId, Key, #state{active_txs_per_key=ActiveTxsPerKey,
                                    prepared_tx=PreparedTx,
