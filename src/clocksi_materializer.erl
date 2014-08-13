@@ -95,14 +95,14 @@ update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
 %%      SnapshotTime: Threshold for the operations to be applied.
 %%      Ops: The list of operations to apply
 %%      Output: The value of the CRDT after appliying the operations
--spec get_snapshot(Type::atom(), SnapshotTime::vectorclock:vectorclock(),
-                   Ops::[#clocksi_payload{}]) -> term().
+-spec get_snapshot(type(), vectorclock:vectorclock(),
+                   [#clocksi_payload{}]) -> {ok, term()} | {error, atom()}.
 get_snapshot(Type, SnapshotTime, Ops) ->
     Init = create_snapshot(Type),
     update_snapshot(Type, Init, SnapshotTime, Ops, ignore).
 
--spec get_snapshot(Type::atom(), SnapshotTime::vectorclock:vectorclock(),
-                   Ops::[#clocksi_payload{}], TxId :: #tx_id{}) -> term().
+-spec get_snapshot(type(), vectorclock:vectorclock(),
+                   [#clocksi_payload{}], #tx_id{}) -> {ok, term()} | {error, atom()}.
 get_snapshot(Type, SnapshotTime, Ops, TxId) ->
     Init = create_snapshot(Type),
     update_snapshot(Type, Init, SnapshotTime, Ops, TxId).
