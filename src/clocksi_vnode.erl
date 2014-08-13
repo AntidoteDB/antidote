@@ -57,7 +57,7 @@ start_vnode(I) ->
 
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
-    lager:info("ClockSI-Vnode: read key ~w for TxId ~w ~n",[Key, TxId]),
+    lager:info("Read issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
                                             {read_data_item, TxId, Key, Type},
@@ -70,7 +70,7 @@ read_data_item(Node, TxId, Key, Type) ->
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op) ->
-    lager:info("ClockSI-Vnode: update key ~w for TxId ~w ~n",[Key, TxId]),
+    lager:info("Update issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
                                             {update_data_item, TxId, Key, Type, Op},
@@ -82,16 +82,16 @@ update_data_item(Node, TxId, Key, Type, Op) ->
     end.
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
-prepare(ListofNodes, Txn) ->
-    lager:info("ClockSI-Vnode: prepare TxId ~w ~n",[Txn]),
+prepare(ListofNodes, TxId) ->
+    lager:info("Prepare issued for txid: ~p", [TxId]),
     riak_core_vnode_master:command(ListofNodes,
-                                   {prepare, Txn},
+                                   {prepare, TxId},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
-    lager:info("ClockSI-Vnode: commit TxId ~w ~n",[TxId]),
+    lager:info("Commit issued for txid: ~p", [TxId]),
     riak_core_vnode_master:command(ListofNodes,
                                    {commit, TxId, CommitTime},
                                    {fsm, undefined, self()},
@@ -99,20 +99,19 @@ commit(ListofNodes, TxId, CommitTime) ->
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
-    lager:info("ClockSI-Vnode: abort TxId ~w ~n",[TxId]),
+    lager:info("Abort issued for txid: ~p", [TxId]),
     riak_core_vnode_master:command(ListofNodes,
                                    {abort, TxId},
                                    {fsm, undefined, self()},
-                                   ?CLOCKSI_MASTER),
-    lager:info("ClockSI-Vnode: sent command to abort TxId ~w ~n",[TxId]).
+                                   ?CLOCKSI_MASTER).
 
 %% @doc Initializes all data structures that vnode needs to track information
-%% the transactions it participates on.
+%%      the transactions it participates on.
 init([Partition]) ->
-    PreparedTx=ets:new(prepared_tx, [set]),
-    CommittedTx=ets:new(committed_tx, [set]),
-    ActiveTxsPerKey=ets:new(active_txs_per_key, [bag]),
-    WriteSet=ets:new(write_set, [duplicate_bag]),
+    PreparedTx = ets:new(prepared_tx, [set]),
+    CommittedTx = ets:new(committed_tx, [set]),
+    ActiveTxsPerKey = ets:new(active_txs_per_key, [bag]),
+    WriteSet = ets:new(write_set, [duplicate_bag]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
