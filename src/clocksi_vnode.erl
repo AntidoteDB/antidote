@@ -297,22 +297,21 @@ terminate(_Reason, _State) ->
 %%%===================================================================
 
 %% @doc clean_and_notify:
-%% This function is used for cleanning the state a transaction stores in the
-%% vnode while it is being procesed. Once a transaction commits or aborts, it
-%% is necessary to:
-%% 1. notify all read_fsms that are waiting for this transaction to finish
-%% 2. clean the state of the transaction. Namely:
-%% a. ActiteTxsPerKey,
-%% b. Waiting_Fsms,
-%% c. PreparedTx
-clean_and_notify(TxId, #state{%%active_tx=ActiveTx,
-                          prepared_tx=PreparedTx,
-                          write_set=WriteSet
-                          %%,waiting_fsms=WaitingFsms
-                         }) ->
-    lager:info("ClockSI_Vnode: cleanning tx state on the vnode."),
-    ets:match_delete(PreparedTx, {active,{TxId,'_'}}),
-    ets:delete(WriteSet, TxId).
+%%      This function is used for cleanning the state a transaction
+%%      stores in the vnode while it is being procesed. Once a
+%%      transaction commits or aborts, it is necessary to:
+%%      1. notify all read_fsms that are waiting for this transaction to finish
+%%      2. clean the state of the transaction. Namely:
+%%      a. ActiteTxsPerKey,
+%%      b. Waiting_Fsms,
+%%      c. PreparedTx
+%%
+clean_and_notify(TxId, Key, #state{active_txs_per_key=ActiveTxsPerKey,
+                                   prepared_tx=PreparedTx,
+                                   write_set=WriteSet}) ->
+    true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
+    true = ets:delete(WriteSet, TxId),
+    true = ets:delete(ActiveTxsPerKey, Key).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
