@@ -53,7 +53,7 @@ clocksi_execute_tx(Clock, Operations) ->
                [Clock, Operations]),
     ClientClock = case Clock of
         {Mega, Sec, Micro} ->
-            clocksi_vnode:now_milisec({Mega,Sec,Micro});
+            clocksi_vnode:now_milisec({Mega, Sec, Micro});
         _ ->
             Clock
     end,
@@ -110,9 +110,10 @@ clocksi_istart_tx() ->
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
     receive
         TxId ->
-            lager:info("TX started with TxId= ~p", [TxId]),
+            lager:info("TX started with TxId: ~p", [TxId]),
             TxId
-    after 10000 ->
+    after
+        10000 ->
             lager:info("Tx was not started!"),
             {error, timeout}
     end.

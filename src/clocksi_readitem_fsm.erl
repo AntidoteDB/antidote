@@ -1,16 +1,19 @@
-%% @doc The coordinator for stat write opeartions.  This example will
-%% show how to properly replicate your data in Riak Core by making use
-%% of the _preflist_.
 -module(clocksi_readitem_fsm).
+
 -behavior(gen_fsm).
+
 -include("floppy.hrl").
 
 %% API
 -export([start_link/6]).
 
 %% Callbacks
--export([init/1, code_change/4, handle_event/3, handle_info/3,
-         handle_sync_event/4, terminate/3]).
+-export([init/1,
+         code_change/4,
+         handle_event/3,
+         handle_info/3,
+         handle_sync_event/4,
+         terminate/3]).
 
 %% States
 -export([check_clock/2,
@@ -36,53 +39,51 @@ start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
                                  Tx, Key, Type, Updates], []).
 
-now_milisec({MegaSecs,Secs,MicroSecs}) ->
-    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
+now_milisec({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
-    SD = #state{
-            vnode=Vnode,
-            type=Type,
-            key=Key,
-            tx_coordinator=Coordinator,
-            transaction=Transaction,
-            updates=Updates,
-            pending_txs=[]},
+    SD = #state{vnode=Vnode,
+                type=Type,
+                key=Key,
+                tx_coordinator=Coordinator,
+                transaction=Transaction,
+                updates=Updates,
+                pending_txs=[]},
     {ok, check_clock, SD, 0}.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
-%%	if local clock is behinf, it sleeps the fms until the clock
-%%	catches up. CLOCK-SI: clock scew.
+%%      if local clock is behinf, it sleeps the fms until the clock
+%%      catches up. CLOCK-SI: clock skew.
+%%
 check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
-    case (T_TS) > Time of true ->
+    case (T_TS) > Time of
+        true ->
             lager:info("ClockSI ReadItemFSM: waiting for clock to catchUp ~n"),
             timer:sleep(T_TS - Time),
             lager:info("ClockSI ReadItemFSM: done waiting... ~n"),
             {next_state, waiting1, SD0, 0};
-
         false ->
-            lager:info(
-              "ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
+            lager:info("ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
             {next_state, waiting1, SD0, 0}
     end.
 
-waiting1(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
-    case  vectorclock:get_clock_by_key(Key) of
+waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
+    case vectorclock:get_clock_by_key(Key) of
         {ok, LocalClock} ->
-            Snapshottime = Transaction#transaction.vec_snapshot_time,
-            lager:info("Compare clocks: ~p ~p",[LocalClock, Snapshottime]),
-            case vectorclock:is_greater_than(LocalClock, Snapshottime) of
+            SnapshotTime = Transaction#transaction.vec_snapshot_time,
+            lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
+            case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
                 false ->
                     lager:info("Trigger downstream"),
-                    _Result = clocksi_downstream_generator_vnode:trigger
-                                (Key,
-                                {dummytx, [], vectorclock:from_list([]), 0}),
+                    _Result = clocksi_downstream_generator_vnode:trigger(Key, {dummytx, [], vectorclock:from_list([]), 0}),
                     %% TODO change this, add a heartbeat to increase vectorclock if
                     %%     there are no pending txns in downstream generator
                     lager:info("Return from DS ~p",[_Result]),
@@ -96,12 +97,12 @@ waiting1(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
 waiting1(_SomeMessage, SDO) ->
     {next_state, waiting1, SDO,0}.
 
-waiting2(timeout, SDO=#state{key = Key, transaction = Transaction}) ->
+waiting2(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
     case  vectorclock:get_clock_by_key(Key) of
         {ok, LocalClock} ->
-            Snapshottime = Transaction#transaction.vec_snapshot_time,
-            lager:info("Compare clocks: ~p ~p",[LocalClock, Snapshottime]),
-            case vectorclock:is_greater_than(LocalClock, Snapshottime) of
+            SnapshotTime = Transaction#transaction.vec_snapshot_time,
+            lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
+            case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
                 false ->
                     lager:info("Wait of vectoclock to catch up"),
                     {next_state, waiting2, SDO, 1};
@@ -115,15 +116,15 @@ waiting2(_SomeMessage, SDO) ->
     {next_state, waiting2, SDO,0}.
 
 %% @doc return:
-%%	- Reads adn returns the log of specified Key using replication layer.
+%%  - Reads and returns the log of specified Key using replication layer.
 return(timeout, SD0=#state{key=Key,
-                           tx_coordinator = Coordinator,
-                           transaction = Transaction,type=Type,
+                           tx_coordinator=Coordinator,
+                           transaction=Transaction,
+                           type=Type,
                            updates=Updates}) ->
-    lager:info(
-      "ClockSI ReadItemFSM: reading key from the materialiser ~w", [Key]),
-    Vec_snapshot_time = Transaction#transaction.vec_snapshot_time,
-    case materializer_vnode:read(Key, Type, Vec_snapshot_time) of
+    lager:info("ClockSI ReadItemFSM: reading key from the materialiser ~w", [Key]),
+    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+    case materializer_vnode:read(Key, Type, VecSnapshotTime) of
         {ok, Snapshot} ->
             Updates2=filter_updates_per_key(Updates, Key),
             lager:info
@@ -160,7 +161,7 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 terminate(_Reason, _SN, _SD) ->
     ok.
 
-%%Internal functions
+%% Internal functions
 
 filter_updates_per_key(Updates, Key) ->
     int_filter_updates_key(Updates, Key, []).

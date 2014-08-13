@@ -36,24 +36,24 @@ start_vnode(I) ->
 
 %% @doc Initialize the clock
 init([_Partition]) ->
-    {ok, #currentclock{clock = dict:new()}}.
+    {ok, #currentclock{clock=dict:new()}}.
 
 %% @doc
-handle_command({get_clock}, _Sender, #currentclock{clock = Clock} = State) ->
+handle_command(get_clock, _Sender, #currentclock{clock=Clock} = State) ->
     {reply, {ok, Clock}, State};
 
 %% @doc
-handle_command({update_clock, Dc_id, Timestamp}, _Sender, #currentclock{clock = Clock} = State) ->
-    New_clock = dict:update(Dc_id,
+handle_command({update_clock, DcId, Timestamp}, _Sender, #currentclock{clock=Clock} = State) ->
+    NewClock = dict:update(DcId,
                             fun(Value) ->
-                                    case Timestamp > Value of
-                                        true -> Timestamp;
-                                        false -> Value
-                                    end
+                                 case Timestamp > Value of
+                                     true -> Timestamp;
+                                     false -> Value
+                                 end
                             end,
                             Timestamp,
                             Clock),
-    {reply, {ok, New_clock}, State#currentclock{clock = New_clock}};
+    {reply, {ok, NewClock}, State#currentclock{clock=NewClock}};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -71,7 +71,7 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(_Data, State) ->
-    {reply,ok, State}.
+    {reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).

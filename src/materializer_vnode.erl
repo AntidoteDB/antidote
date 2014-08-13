@@ -30,13 +30,13 @@ start_vnode(I) ->
 
 %% @doc Read state of key at given snapshot time
 -spec read(key(), type(), vectorclock:vectorclock()) -> {ok, term()} | {error, atom()}.
-read(Key, Type, Snapshot_time) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
+read(Key, Type, SnapshotTime) ->
+    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
     [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(
-      NewPref, {read, Key, Type, Snapshot_time}, materializer_vnode_master).
+    riak_core_vnode_master:sync_command(NewPref,
+                                        {read, Key, Type, SnapshotTime},
+                                        materializer_vnode_master).
 
 %%@doc write downstream operation to persistant log and cache it for future read
 -spec update(key(), #clocksi_payload{}) -> ok | {error, atom()}.
@@ -49,18 +49,16 @@ update(Key, DownstreamOp) ->
 
 init([Partition]) ->
     Cache = ets:new(cache, [bag]),
-    %% TODO: Construct cache from log
-    {ok,#state{partition = Partition, cache = Cache}}.
+    {ok, #state{partition=Partition, cache=Cache}}.
 
-handle_command({read, Key, Type, Snapshot_time}, _Sender,
-               State = #state{cache= Cache}) ->
+handle_command({read, Key, Type, SnapshotTime}, _Sender,
+               State = #state{cache=Cache}) ->
     Operations = ets:lookup(Cache, Key),
     lager:info("operations: ~p", [Operations]),
-    ListofOps = filter_ops(Operations),
-    {ok, Snapshot} = clocksi_materializer:get_snapshot(
-                       Type, Snapshot_time, ListofOps),
+    ListOfOps = filter_ops(Operations),
+    lager:info("filter operations: ~p", [Operations]),
+    {ok, Snapshot} = clocksi_materializer:get_snapshot(Type, SnapshotTime, ListOfOps),
     lager:info("snapshot: ~p", [Snapshot]),
-    %% TODO: Store Snapshots in Cache
     {reply, {ok, Snapshot}, State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,

@@ -1,11 +1,13 @@
-%%@doc The coordinator for a given Clock SI interactive transaction.
-%%     It handles the state of the tx and executes the operations sequentially
-%%     by sending each operation to the responsible clockSI_vnode of the
-%%     involved key. when a tx is finalized (committed or aborted, the fsm
-%%     also finishes.
+%% @doc The coordinator for a given Clock SI interactive transaction.
+%%      It handles the state of the tx and executes the operations sequentially
+%%      by sending each operation to the responsible clockSI_vnode of the
+%%      involved key. when a tx is finalized (committed or aborted, the fsm
+%%      also finishes.
 
 -module(clocksi_interactive_tx_coord_fsm).
+
 -behavior(gen_fsm).
+
 -include("floppy.hrl").
 
 %% API
@@ -47,6 +49,7 @@
 
 start_link(From, Clientclock) ->
     gen_fsm:start_link(?MODULE, [From, Clientclock], []).
+
 start_link(From) ->
     gen_fsm:start_link(?MODULE, [From, ignore], []).
 
@@ -58,7 +61,6 @@ finish_op(From, Key,Result) ->
 %%%===================================================================
 
 %% @doc Initialize the state.
-
 init([From, Clientclock]) ->
     case Clientclock of
         ignore -> {ok, Snapshot_time} = get_snapshot_time();
@@ -277,7 +279,6 @@ terminate(_Reason, _SN, _SD) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
-
 
 %%@doc Set the transaction Snapshot Time to the maximum value of:
 %%     1.ClientClock, which is the last clock of the system the client

@@ -99,6 +99,8 @@ init([From, ClientClock, Operations]) ->
     Transaction = #transaction{snapshot_time=LocalClock,
                                vec_snapshot_time=SnapshotTime,
                                txn_id=TransactionId},
+    lager:error("Transaction at vec_snapshot_time: ~p, snapshot_time: ~p",
+                [SnapshotTime, LocalClock]),
     SD = #state{from=From,
                 transaction=Transaction,
                 operations=Operations,
@@ -106,7 +108,6 @@ init([From, ClientClock, Operations]) ->
                 prepare_time=0,
                 read_set=[]},
     {ok, prepare_op, SD, 0}.
-
 
 %% @doc Prepare the execution of the next operation. It calculates the
 %%      responsible vnode and sends the operation to it. When there are no more
@@ -201,11 +202,11 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
 prepare_2pc(timeout, SD0=#state{transaction=Transaction,
                                 updated_partitions=UpdatedPartitions}) ->
     case length(UpdatedPartitions) of
-        0->
+        0 ->
             SnapshotTime=Transaction#transaction.snapshot_time,
             {next_state, committing, SD0#state{state=prepared,
                                                commit_time=SnapshotTime}, 0};
-        _->
+        _ ->
             clocksi_vnode:prepare(UpdatedPartitions, Transaction),
             NumToAck = length(UpdatedPartitions),
             {next_state, receive_prepared,
@@ -245,7 +246,7 @@ committing(timeout, SD0=#state{transaction=Transaction,
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
-            lager:info("ClockSI-Coord: Committing and replying to client."),
+            lager:info("CommitTime: ~p", [CommitTime]),
             {next_state, reply_to_client, SD0#state{state=committed}, 0};
         _ ->
             clocksi_vnode:commit(UpdatedPartitions, Transaction, CommitTime),
@@ -258,7 +259,7 @@ committing(timeout, SD0=#state{transaction=Transaction,
 %%      receive a reply from every partition?
 %%      What delivery guarantees does sending messages provide?
 %%
-receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
+receive_committed(committed, S0=#state{num_to_ack=NumToAck}) ->
     case NumToAck of
         1 ->
             lager:info("ClockSI: Tx committed succesfully."),
