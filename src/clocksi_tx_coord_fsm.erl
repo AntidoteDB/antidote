@@ -353,7 +353,7 @@ get_snapshot_time(ClientClock) ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
     SnapshotTime = case (ClientClock > Now) of
         true->
-            ClientClock + ?MIN;
+            ClientClock;
         false ->
             Now
     end,
@@ -362,5 +362,5 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, non_neg_integer()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
-    SnapshotTime  = Now - ?DELTA,
+    SnapshotTime  = Now,
     {ok, SnapshotTime}.
