@@ -30,19 +30,18 @@
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
-%% where:
-%%	partition: the partition that the vnode is responsible for.
-%%	active_tx: a list of active transactions.
-%%	prepared_tx: a list of prepared transactions.
-%%	committed_tx: a list of committed transactions.
-%%	waiting_fsms: a list of the read_fsms that are currently
-%%         waiting for each tx to finish.
-%%	active_txs_per_key: a list of the active transactions that
-%%         have updated a key (but not yet finished).
-%%	write_set: a list of the write sets that the transactions generate.
+%%      where:
+%%          partition: the partition that the vnode is responsible for.
+%%          prepared_tx: a list of prepared transactions.
+%%          committed_tx: a list of committed transactions.
+%%          waiting_fsms: a list of the read_fsms that are currently
+%%              waiting for each tx to finish.
+%%          active_txs_per_key: a list of the active transactions that
+%%              have updated a key (but not yet finished).
+%%          write_set: a list of the write sets that the transactions
+%%              generate.
 %%----------------------------------------------------------------------
 -record(state, {partition,
-                active_tx,
                 prepared_tx,
                 committed_tx,
                 waiting_fsms,
