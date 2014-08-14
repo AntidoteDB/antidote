@@ -26,19 +26,22 @@ confirm() ->
     ListIds = [random:uniform(N) || _ <- lists:seq(1, NumWrites)],
 
     F = fun(Elem, Acc) ->
+            rt:log_to_nodes(Nodes, "Issuing write operation: ~p", [Acc]),
             Node = lists:nth(Elem, Nodes),
             lager:info("Sending append to Node ~w~n",[Node]),
             WriteResult = rpc:call(Node,
-                                   floppy, append, [abc, riak_dt_gcounter, {increment, 4}]),
+                                   floppy, append, [abc, riak_dt_gcounter, {increment, a}]),
             ?assertMatch({ok, _}, WriteResult),
             Acc + 1
     end,
 
     Total = lists:foldl(F, 0, ListIds),
+
+    rt:log_to_nodes(Nodes, "Issuing read operation."),
     FirstNode = hd(Nodes),
     ReadResult = rpc:call(FirstNode,
                           floppy, read, [abc, riak_dt_gcounter]),
-    lager:info("Read value: ~w~n",[ReadResult]),
+    lager:info("Read value: ~p", [ReadResult]),
     ?assertEqual({ok, Total}, ReadResult),
 
     pass.

@@ -18,6 +18,22 @@ start(_StartType, _StartArgs) ->
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
+            %%ClockSI layer
+
+            ok = riak_core:register([{vnode_module, clocksi_vnode}]),
+            ok = riak_core_node_watcher:service_up(clocksi, self()),
+
+            ok = riak_core:register(
+                   [{vnode_module, clocksi_downstream_generator_vnode}]),
+            ok = riak_core_node_watcher:service_up(
+                   clocksi_downstream_generator, self()),
+
+            ok = riak_core:register([{vnode_module, vectorclock_vnode}]),
+            ok = riak_core_node_watcher:service_up(vectorclock, self()),
+
+            ok = riak_core:register([{vnode_module, materializer_vnode}]),
+            ok = riak_core_node_watcher:service_up(materializer, self()),
+
             ok = riak_core:register([{vnode_module, floppy_rep_vnode}]),
             ok = riak_core_node_watcher:service_up(replication, self()),
             ok = riak_core:register([{vnode_module, inter_dc_repl_vnode}]),

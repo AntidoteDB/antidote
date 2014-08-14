@@ -1,16 +1,26 @@
 -module(floppy).
 
--include("floppy.hrl").
-
--export([append/3, read/2]).
+-export([append/3,
+         read/2,
+         clocksi_execute_tx/2,
+         clocksi_execute_tx/1,
+         clocksi_read/3,
+         clocksi_bulk_update/2,
+         clocksi_bulk_update/1,
+         clocksi_istart_tx/1,
+         clocksi_istart_tx/0,
+         clocksi_iread/3,
+         clocksi_iupdate/4,
+         clocksi_iprepare/1,
+         clocksi_icommit/1]).
 
 %% Public API
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
 append(Key, Type, {OpParam, Actor}) ->
-    Payload = #payload{key=Key, type=Type, op_param=OpParam, actor=Actor},
-    case floppy_rep_vnode:append(Key, Type, Payload) of
+    Operations = [{update, Key, Type, {OpParam, Actor}}],
+    case clocksi_execute_tx(Operations) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
@@ -20,11 +30,111 @@ append(Key, Type, {OpParam, Actor}) ->
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 read(Key, Type) ->
-    case floppy_rep_vnode:read(Key, Type) of
-        {ok, Ops} ->
-            Init = materializer:create_snapshot(Type),
-            Snapshot = materializer:update_snapshot(Key, Type, Init, Ops),
-            {ok, Type:value(Snapshot)};
+    case clocksi_read(now(), Key, Type) of
+        {ok,{_, [Val], _}} ->
+            {ok, Val};
         {error, Reason} ->
             {error, Reason}
     end.
+
+%% Clock SI API
+
+%% @doc Starts a new ClockSI transaction.
+%%      Input:
+%%      ClientClock: last clock the client has seen from a successful transaction.
+%%      Operations: the list of the operations the transaction involves.
+%%      Returns:
+%%      an ok message along with the result of the read operations involved in the
+%%      the transaction, in case the tx ends successfully.
+%%      error message in case of a failure.
+%%
+clocksi_execute_tx(Clock, Operations) ->
+    lager:info("Received transaction with clock: ~p for operations: ~p",
+               [Clock, Operations]),
+    ClientClock = case Clock of
+        {Mega, Sec, Micro} ->
+            clocksi_vnode:now_milisec({Mega, Sec, Micro});
+        _ ->
+            Clock
+    end,
+    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
+    receive
+        EndOfTx ->
+            lager:info("TX completed!"),
+            EndOfTx
+    after
+        10000 ->
+            lager:info("Tx failed!"),
+            {error, timeout}
+    end.
+
+clocksi_execute_tx(Operations) ->
+    lager:info("Received transaction for operations: ~p", [Operations]),
+    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
+    receive
+        EndOfTx ->
+            lager:info("TX completed!"),
+            EndOfTx
+    after
+        10000 ->
+            lager:info("Tx failed!"),
+            {error, timeout}
+    end.
+
+%% @doc Starts a new ClockSI interactive transaction.
+%%      Input:
+%%      ClientClock: last clock the client has seen from a successful transaction.
+%%      Returns: an ok message along with the new TxId.
+%%
+clocksi_istart_tx(Clock) ->
+    lager:info("Starting FSM for interactive transaction."),
+    ClientClock = case Clock of
+        {Mega, Sec, Micro} ->
+            clocksi_vnode:now_milisec({Mega, Sec, Micro});
+        _ ->
+            Clock
+    end,
+    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
+    receive
+        TxId ->
+            lager:info("TX started with TxId: ~p", [TxId]),
+            TxId
+    after
+        10000 ->
+            lager:info("Tx was not started!"),
+            {error, timeout}
+    end.
+
+clocksi_istart_tx() ->
+    lager:info("Starting FSM for interactive transaction."),
+    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
+    receive
+        TxId ->
+            lager:info("TX started with TxId: ~p", [TxId]),
+            TxId
+    after
+        10000 ->
+            lager:info("Tx was not started!"),
+            {error, timeout}
+    end.
+
+clocksi_bulk_update(ClientClock, Operations) ->
+    clocksi_execute_tx(ClientClock, Operations).
+
+clocksi_bulk_update(Operations) ->
+    clocksi_execute_tx(Operations).
+
+clocksi_read(ClientClock, Key, Type) ->
+    clocksi_execute_tx(ClientClock, [{read, Key, Type}]).
+
+clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
+    gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
+
+clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
+    gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
+
+clocksi_iprepare({_, _, CoordFsmPid})->
+    gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
+
+clocksi_icommit({_, _, CoordFsmPid})->
+    gen_fsm:sync_send_event(CoordFsmPid, commit).

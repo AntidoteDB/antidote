@@ -48,6 +48,7 @@ riak-test: currentdevrel
 ##    make stagedevrel DEVNODES=68
 
 .PHONY : stagedevrel devrel
+
 DEVNODES ?= 6
 
 # 'seq' is not available on all *BSD, so using an alternate in awk

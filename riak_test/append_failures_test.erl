@@ -24,9 +24,10 @@ confirm() ->
     First = hd(A),
 
     %% Perform successful write and read.
-    WriteResult = rpc:call(First, floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
+    WriteResult = rpc:call(First,
+                           floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
     lager:info("WriteResult: ~p", [WriteResult]),
-    ?assertMatch({ok, {1, _}}, WriteResult),
+    ?assertMatch({ok, _}, WriteResult),
 
     ReadResult = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
     lager:info("ReadResult: ~p", [ReadResult]),
@@ -37,14 +38,15 @@ confirm() ->
     PartInfo = rt:partition(A, Nodes -- A),
 
     %% Write to the minority partition.
-    WriteResult2 = rpc:call(First, floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
+    WriteResult2 = rpc:call(First,
+                            floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
     lager:info("WriteResult2: ~p", [WriteResult2]),
-    ?assertMatch({error, quorum_unreachable}, WriteResult2),
+    ?assertMatch({error, timeout}, WriteResult2),
 
     %% Read from the minority partition.
     ReadResult2 = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
     lager:info("ReadResult2: ~p", [ReadResult2]),
-    ?assertMatch({error, quorum_unreachable}, ReadResult2),
+    ?assertMatch({error, timeout}, ReadResult2),
 
     %% Heal the partition.
     rt:heal(PartInfo),
@@ -53,6 +55,6 @@ confirm() ->
     %% Read after the partition has been healed.
     ReadResult3 = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
     lager:info("ReadResult3: ~p", [ReadResult3]),
-    ?assertMatch({ok, 2}, ReadResult3),
+    ?assertMatch({ok, 1}, ReadResult3),
 
     pass.
