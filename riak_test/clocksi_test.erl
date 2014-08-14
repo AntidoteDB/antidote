@@ -254,7 +254,7 @@ clocksi_test_read_wait(Nodes) ->
                         [CommitTime]),
     lager:info("Tx2 Started, id : ~p", [TxId1]),
     lager:info("Tx2 Reading..."),
-    Pid=spawn(clock_si, spawn_read, [LastNode, TxId1, self()]),
+    Pid=spawn(?MODULE, spawn_read, [LastNode, TxId1, self()]),
     %% Delay first transaction
     timer:sleep(100),
     %% commit the first tx.
