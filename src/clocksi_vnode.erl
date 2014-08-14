@@ -268,12 +268,11 @@ terminate(_Reason, _State) ->
 %%      a. ActiteTxsPerKey,
 %%      b. PreparedTx
 %%
-clean_and_notify(TxId, Key, #state{active_txs_per_key=ActiveTxsPerKey,
+clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
                                    prepared_tx=PreparedTx,
                                    write_set=WriteSet}) ->
     true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
-    true = ets:delete(WriteSet, TxId),
-    true = ets:delete(ActiveTxsPerKey, Key).
+    true = ets:delete(WriteSet, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_milisec({MegaSecs, Secs, MicroSecs}) ->
