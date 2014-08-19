@@ -25,7 +25,7 @@
 
 -export([append/3,
          read/2,
-         read_from/2,
+         read_from/3,
          operate/6]).
 
 -record(state, {partition, lclock}).
@@ -90,9 +90,9 @@ read(Key, Type) ->
 %%      Args: Log identifier and the op id threshold.
 %%      Returns: {ok, Ops} if success, Ops is the union of operations;
 %%               {error, nothing} if operation failed.
-read_from(LogId, From) ->
+read_from(Key, Type, From) ->
     {ok,_Pid} = floppy_coord_sup:start_fsm(
-                  [self(), threshold_read, LogId, From]),
+                  [self(), threshold_read, Key, Type, From]),
     receive
         {ok, Ops} ->
             {ok, Ops};
