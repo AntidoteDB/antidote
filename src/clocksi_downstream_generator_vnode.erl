@@ -5,7 +5,10 @@
 -include("floppy.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
--record(dstate, {partition, last_commit_time, pending_operations}).
+-record(dstate, {partition,
+                 last_commit_time,
+                 pending_operations,
+                 stable_time}).
 
 -export([start_vnode/1,
          trigger/2]).
@@ -29,20 +32,16 @@
 %%      downstream op and write to persistent log
 %%      input: Key to identify the partition,
 %%             Writeset -> set of updates
--spec trigger(Key :: term(),
-              Writeset :: {TxId :: term(),
-                           Updates :: [{term(), {Key :: term(), Op :: term()}}],
-                           Vec_snapshot_time :: vectorclock:vectorclock(),
-                           Commit_time :: non_neg_integer()})
+-spec trigger(key(),
+              {TxId :: term(), Updates :: [{term(), {Key :: term(), Type:: term(), Op :: term()}}], Vec_snapshot_time :: vectorclock:vectorclock(), Commit_time :: non_neg_integer()})
              -> ok | {error, timeout}.
 trigger(Key, Writeset) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1,
-                                             clocksi_downstream_generator),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:command([NewPref], {trigger, Writeset, self()},
-                                   clocksi_downstream_generator_vnode_master),
+    Logid = log_utilities:get_logid_from_key(Key),
+    Preflist = log_utilities:get_preflist_from_logid(Logid),
+    IndexNode = hd(Preflist),
+    riak_core_vnode_master:command([IndexNode],
+                                   {trigger, Writeset, self()},
+                                   ?CLOCKSI_GENERATOR_MASTER),
     receive
         {ok, trigger_received} ->
             ok
@@ -55,43 +54,56 @@ start_vnode(I) ->
 
 init([Partition]) ->
     {ok, #dstate{partition = Partition,
-                 last_commit_time = 0, pending_operations = []}}.
+                 last_commit_time = 0,
+                 pending_operations = []}}.
 
 %% @doc Read client update operations,
 %%      generate downstream operations and store it to persistent log.
-handle_command({trigger, Write_set, From}, _Sender,
+handle_command({trigger, WriteSet, From}, _Sender,
                State=#dstate{partition = Partition,
-                             last_commit_time = Last_commit_time,
+                             last_commit_time = LastCommitTime,
                              pending_operations = Pending}) ->
-    Pending_operations = add_to_pending_operations(Pending, Write_set),
-    lager:info("Pending Operations ~p",[Pending_operations]),
+    PendingOperations = add_to_pending_operations(Pending, WriteSet),
+    lager:info("PendingOperations: ~p", [PendingOperations]),
+
     From ! {ok, trigger_received},
     Node = {Partition, node()}, %% Send ack to caller and continue processing
+    Stable_time = get_stable_time(Node, LastCommitTime),
+    %% Send a message to itself to process operations
+    riak_core_vnode_master:command([Node],
+                                   {process},
+                                   ?CLOCKSI_GENERATOR_MASTER),
+    {reply, {ok, trigger_received}, State#dstate{
+                                      pending_operations=PendingOperations,
+                                      stable_time=Stable_time}};
 
-    Stable_time = get_stable_time(Node),
+handle_command({process}, _Sender,
+               State=#dstate{partition = Partition,
+                             last_commit_time = LastCommitTime,
+                             pending_operations = PendingOperations,
+                             stable_time = Stable_time}) ->
     lager:info("Take updates before time : ~p",[Stable_time]),
-    Sorted_ops = filter_operations(Pending_operations,
-                                   Stable_time, Last_commit_time),
+    Sorted_ops = filter_operations(PendingOperations,
+                                   Stable_time, LastCommitTime),
     lager:info("Generate downstream for ~p",[Sorted_ops]),
     {Remaining_operations, Last_processed_time} =
         lists:foldl( fun(X, {Ops, LCTS}) ->
                              case process_update(X) of
-                                 {ok, Commit_time} ->
+                                 {ok, CommitTime} ->
                                      %% Remove this op from pending_operations
                                      New_pending = lists:delete(X, Ops),
-                                     {New_pending, Commit_time};
+                                     {New_pending, CommitTime};
                                  {error, _Reason} ->
                                      {Ops, LCTS}
                              end
-                     end, {Pending_operations, Last_commit_time}, Sorted_ops),
-    Dc_id = dc_utilities:get_my_dc_id(),
-    vectorclock:update_clock(Partition, Dc_id, Stable_time),
+                     end, {PendingOperations, LastCommitTime}, Sorted_ops),
+    DcId = dc_utilities:get_my_dc_id(),
+    lager:info("Updating vector clock ~p",[Stable_time]),
     inter_dc_repl_vnode:trigger({Partition, node()}),
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 
-handle_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_command_logging, Message}),
+handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command( _Message , _Sender, State) ->
@@ -134,8 +146,8 @@ process_update(Update) ->
             Key = New_op#clocksi_payload.key,
             case materializer_vnode:update(Key, New_op) of
                 ok ->
-                    {_Dcid, Commit_time} = New_op#clocksi_payload.commit_time,
-                    {ok, Commit_time};
+                    {_Dcid, CommitTime} = New_op#clocksi_payload.commit_time,
+                    {ok, CommitTime};
                 {error, Reason} ->
                     {error, Reason}
             end;
@@ -145,21 +157,24 @@ process_update(Update) ->
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
-get_stable_time(Node) ->
+get_stable_time(Node, Prev_stable_time) ->
     lager:info("In get_stable_time"),
-    {ok, Active_txns} = riak_core_vnode_master:sync_command(
-                         Node, {get_active_txns}, ?CLOCKSIMASTER),
-    lager:info("Active txns before filtering"),
-    lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
-                        case Min_time > Snapshot_time of
-                            true ->
-                                Snapshot_time;
-                            false ->
-                                Min_time
-                        end
-                end,
-                now_milisec(erlang:now()),
-                Active_txns).
+    case riak_core_vnode_master:sync_command(
+           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
+        {ok, Active_txns} ->
+            lager:info("Active txns before filtering ~p",[Active_txns]),
+            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
+                                case Min_time > Snapshot_time of
+                                    true ->
+                                        Snapshot_time;
+                                    false ->
+                                        Min_time
+                                end
+                        end,
+                        now_milisec(erlang:now()),
+                        Active_txns);
+        _ -> Prev_stable_time
+    end.
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
     (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
@@ -170,8 +185,8 @@ filter_operations(Ops, Before, After) ->
     Unprocessed_ops =
         lists:filtermap(
           fun(Payload) ->
-                  {_Dcid, Commit_time} = Payload#clocksi_payload.commit_time,
-                  Commit_time > After
+                  {_Dcid, CommitTime} = Payload#clocksi_payload.commit_time,
+                  CommitTime > After
           end,
           Ops),
     lager:info("Unprocessed Ops ~p after ~p",[Unprocessed_ops, After]),
@@ -181,8 +196,8 @@ filter_operations(Ops, Before, After) ->
     Filtered_ops =
         lists:filtermap(
           fun(Payload) ->
-                  {_Dcid, Commit_time} = Payload#clocksi_payload.commit_time,
-                  Commit_time < Before
+                  {_Dcid, CommitTime} = Payload#clocksi_payload.commit_time,
+                  CommitTime < Before
           end,
           Unprocessed_ops),
 
@@ -199,19 +214,19 @@ filter_operations(Ops, Before, After) ->
     Sorted_ops.
 
 %%@doc Add updates in writeset ot Pending operations to process downstream
-add_to_pending_operations(Pending, Write_set) ->
-    lager:info("Writeset : ~p",[Write_set]),
-    case Write_set of
-        {TxId, Updates, Vec_snapshot_time, Commit_time} ->
+add_to_pending_operations(Pending, WriteSet) ->
+    lager:info("Writeset : ~p", [WriteSet]),
+    case WriteSet of
+        {TxId, Updates, Vec_snapshot_time, CommitTime} ->
             lists:foldl( fun(Update, Operations) ->
-                                 {_,{Key,{Op,Actor}}} = Update,
-                                 Dc_id = dc_utilities:get_my_dc_id(),
+                                 {_,{Key, Type, {Op,Actor}}} = Update,
+                                 DcId = dc_utilities:get_my_dc_id(),
                                  New_op = #clocksi_payload{
-                                            key = Key, type = riak_dt_pncounter,
-                                            op_param = {Op, Actor},
-                                            snapshot_time = Vec_snapshot_time,
-                                            commit_time = {Dc_id,Commit_time},
-                                            txid = TxId},
+                                             key = Key, type = Type,
+                                             op_param = {Op, Actor},
+                                             snapshot_time = Vec_snapshot_time,
+                                             commit_time = {DcId, CommitTime},
+                                             txid = TxId},
                                  lists:append(Operations, [New_op])
                          end,
                          Pending, Updates);

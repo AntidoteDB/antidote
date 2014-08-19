@@ -49,8 +49,8 @@ debit(Key, Amount) ->
 %% @doc Returns the current balance for a customer.
 -spec getbalance(Key::term()) -> {error, error_in_read} | {ok, number()}.
 getbalance(Key) ->
-    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_pncounter]) of	
-        {error} ->
+    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_pncounter]) of
+        error ->
             {error, error_in_read};
         Val ->
             {ok, Val}

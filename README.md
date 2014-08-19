@@ -17,7 +17,7 @@ that is intended to provide the following features:
 Information about Floppystore's layered design can be found in the following google doc: https://docs.google.com/document/d/1SNnmAtx5FrcNgEMdNQkKlfzYc1tqziaV2lQ6g9IQyzs/edit#heading=h.ze32da2pga2f
 
 ### Current state ###
-	NOTE: not all features are available in the master branch.'
+	NOTE: not all features are available in the master branch.
 * Partitioned (built on top of floppyStore),
 * Replicated within a datacenter.
 * State-based CRDT support, as it uses the riak_dt library.
@@ -32,7 +32,9 @@ Using FloppyStore
 -----------------
 ### Prerequisites ###
 1. An unix-based OS.
-2. Erlang R16B02 (read https://github.com/SyncFree/floppy/blob/master/tutorial/1-get-started.md#get-an-erlang).
+2. Erlang R16B02 (read https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang).
+	
+	NOTE: use this Erlang version in order not to have problems.
 	
 ### Getting floppystore ###
 1. From your shell, run: `git clone http://github.com/SyncFree/floppystore`

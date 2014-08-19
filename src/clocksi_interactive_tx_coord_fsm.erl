@@ -1,15 +1,17 @@
-%%@doc The coordinator for a given Clock SI interactive transaction.
-%%     It handles the state of the tx and executes the operations sequentially
-%%     by sending each operation to the responsible clockSI_vnode of the
-%%     involved key. when a tx is finalized (committed or aborted, the fsm
-%%     also finishes.
+%% @doc The coordinator for a given Clock SI interactive transaction.
+%%      It handles the state of the tx and executes the operations sequentially
+%%      by sending each operation to the responsible clockSI_vnode of the
+%%      involved key. when a tx is finalized (committed or aborted, the fsm
+%%      also finishes.
 
 -module(clocksi_interactive_tx_coord_fsm).
+
 -behavior(gen_fsm).
+
 -include("floppy.hrl").
 
 %% API
--export([start_link/2]).
+-export([start_link/2, start_link/1]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -48,6 +50,9 @@
 start_link(From, Clientclock) ->
     gen_fsm:start_link(?MODULE, [From, Clientclock], []).
 
+start_link(From) ->
+    gen_fsm:start_link(?MODULE, [From, ignore], []).
+
 finish_op(From, Key,Result) ->
     gen_fsm:send_event(From, {Key, Result}).
 
@@ -56,9 +61,11 @@ finish_op(From, Key,Result) ->
 %%%===================================================================
 
 %% @doc Initialize the state.
-
 init([From, Clientclock]) ->
-    {ok, Snapshot_time}= get_snapshot_time(Clientclock),
+    case Clientclock of
+        ignore -> {ok, Snapshot_time} = get_snapshot_time();
+        _ -> {ok, Snapshot_time}= get_snapshot_time(Clientclock)
+    end,
     TxId=#tx_id{snapshot_time=Snapshot_time, server_pid=self()},
     {ok, Vec_clock} = vectorclock:get_clock_node(node()),
     Dc_id = dc_utilities:get_my_dc_id(),
@@ -81,25 +88,24 @@ init([From, Clientclock]) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
-          SD0=#state{transaction=Transaction, from=From,
-                     updated_partitions=Updated_partitions}) ->
+           SD0=#state{transaction=Transaction, from=From,
+                      updated_partitions=Updated_partitions}) ->
     case Op_type of
         prepare ->
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             {next_state, prepare, SD0#state{from=Sender}, 0};
         read ->
-            {Key, Param}=Args,
-            DocIdx = riak_core_util:chash_key({?BUCKET,
-                                               term_to_binary(Key)}),
+            {Key, Type}=Args,
             lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w",
                        [Key]),
-            [{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
-                                                            ?CLOCKSI),
+            Logid = log_utilities:get_logid_from_key(Key),
+            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
-                                              Key, Param) of
+                                              Key, Type) of
                 error ->
                     {reply, error, abort, SD0};
                 Read_result ->
@@ -108,20 +114,18 @@ execute_op({Op_type, Args}, Sender,
                     {reply, {ok, Read_result}, execute_op, SD0}
             end;
         update ->
-            {Key, Param}=Args,
-            DocIdx = riak_core_util:chash_key({?BUCKET,
-                                               term_to_binary(Key)}),
+            {Key, Type, Param}=Args,
             lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
                        [Key]),
-            [{IndexNode,_}] = riak_core_apl:get_primary_apl(DocIdx, 1,
-                                                            ?CLOCKSI),
-
+            Logid = log_utilities:get_logid_from_key(Key),
+            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            IndexNode = hd(Preflist),
             case clocksi_vnode:update_data_item(IndexNode, Transaction,
-                                                Key, Param) of
+                                                Key, Type, Param) of
                 ok ->
                     case lists:member(IndexNode, Updated_partitions) of
                         false ->
@@ -256,7 +260,7 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
 
 
 
-%% ====================================================================================
+%% =============================================================================
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -276,17 +280,24 @@ terminate(_Reason, _SN, _SD) ->
 %%% Internal Functions
 %%%===================================================================
 
-
 %%@doc Set the transaction Snapshot Time to the maximum value of:
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
+-spec get_snapshot_time(ClientClock :: non_neg_integer()) ->
+                               {ok, non_neg_integer()}.
 get_snapshot_time(ClientClock) ->
     Now=clocksi_vnode: now_milisec(erlang:now()),
     case (ClientClock > Now) of
         true->
             SnapshotTime = ClientClock + ?MIN;
         false ->
-            SnapshotTime = Now - ?DELTA
+            SnapshotTime = Now
     end,
     {ok, SnapshotTime}.
+
+-spec get_snapshot_time() -> {ok, non_neg_integer()}.
+get_snapshot_time() ->
+    Now = clocksi_vnode:now_milisec(erlang:now()),
+    Snapshot_time  = Now - ?DELTA,
+    {ok, Snapshot_time}.

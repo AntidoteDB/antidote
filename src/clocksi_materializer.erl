@@ -27,30 +27,40 @@ create_snapshot(Type) ->
 -spec update_snapshot(Type::atom(), Snapshot::term(),
                       SnapshotTime::vectorclock:vectorclock(),
                       Ops::[#clocksi_payload{}], TxId::term()) -> term().
-update_snapshot(_, Snapshot, _Snapshot_time, [], _TxId) ->
+update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
     {ok, Snapshot};
-update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest], TxId) ->
+update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
+    lager:info("Read issued at SnapshotTime: ~p", [SnapshotTime]),
     Type = Op#clocksi_payload.type,
-    case (is_op_in_snapshot(Op#clocksi_payload.commit_time, Snapshot_time)
+    case (is_op_in_snapshot(Op#clocksi_payload.commit_time, SnapshotTime)
           or (TxId =:= Op#clocksi_payload.txid)) of
         true ->
+            lager:info("Applying operation: ~p",
+                       [Op#clocksi_payload.commit_time]),
             case Op#clocksi_payload.op_param of
                 {merge, State} ->
-                    New_snapshot = Type:merge(Snapshot, State),
-                    update_snapshot(Type, New_snapshot,
-                                    Snapshot_time, Rest, TxId);
+                    NewSnapshot = Type:merge(Snapshot, State),
+                    update_snapshot(Type,
+                                    NewSnapshot,
+                                    SnapshotTime,
+                                    Rest,
+                                    TxId);
                 {Update, Actor} ->
                     case Type:update(Update, Actor, Snapshot) of
-                        {ok, New_snapshot} ->
-                            update_snapshot(Type, New_snapshot,
-                                            Snapshot_time, Rest, TxId);
-                        {error, Reason} -> {error, Reason};
-                        Other -> {error, Other}
-                    end;
-                Other -> lager:info("OP is ~p", [Other])
+                        {ok, NewSnapshot} ->
+                            update_snapshot(Type,
+                                            NewSnapshot,
+                                            SnapshotTime,
+                                            Rest,
+                                            TxId);
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
             end;
         false ->
-            update_snapshot(Type, Snapshot, Snapshot_time, Rest, TxId)
+            lager:info("Operation ~p exists in snapshot.",
+                       [Op#clocksi_payload.commit_time]),
+            update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot
@@ -58,45 +68,48 @@ update_snapshot(Type, Snapshot, Snapshot_time, [Op|Rest], TxId) ->
 %%             CommitTime = local commit time of this update at DC
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%      Outptut: true or false
--spec is_op_in_snapshot({Dc::term(),Commit_time::non_neg_integer()},
+-spec is_op_in_snapshot({Dc::term(),CommitTime::non_neg_integer()},
                         SnapshotTime::vectorclock:vectorclock()) -> boolean().
-is_op_in_snapshot({Dc, Commit_time}, Snapshot_time) ->
-    case vectorclock:get_clock_of_dc(Dc, Snapshot_time) of
+is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
+    case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
         {ok, Ts} ->
-            Commit_time =< Ts;
+            lager:info("CommitTime: ~p SnapshotTime: ~p Result: ~p",
+                       [CommitTime, Ts, CommitTime =< Ts]),
+            CommitTime =< Ts;
         error  ->
-            false %Snaphot hasnot seen any udpate from this DC
+            false
     end.
 
 update_snapshot_eager(_, Snapshot, []) ->
     Snapshot;
 update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
-    {OpParam,Actor}=Op,
-    {ok, NewSnapshot}= Type:update(OpParam, Actor, Snapshot),
+    {OpParam, Actor} = Op,
+    {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
     update_snapshot_eager(Type, NewSnapshot, Rest).
 
-%% @doc materialize a CRDT from its logged operations
-%%	- First creates an empty CRDT
-%%	- Second apply the corresponding logged operations
-%%	- Finally, transform the CRDT state into its value.
-%%	Input:	Type: The type of the CRDT
-%%		SnapshotTime: Threshold for the operations to be applied.
-%%		Ops: The list of operations to apply
-%%	Output: The value of the CRDT after appliying the operations
--spec get_snapshot(Type::atom(), SnapshotTime::vectorclock:vectorclock(),
-                   Ops::[#clocksi_payload{}]) -> term().
-get_snapshot(Type, Snapshot_time, Ops) ->
-    Init=create_snapshot(Type),
-    update_snapshot(Type, Init, Snapshot_time, Ops, ignore).
+%% @doc Materialize a CRDT from its logged operations.
+%%      - First creates an empty CRDT
+%%      - Second apply the corresponding logged operations
+%%      - Finally, transform the CRDT state into its value.
+%%      Input:  Type: The type of the CRDT
+%%      SnapshotTime: Threshold for the operations to be applied.
+%%      Ops: The list of operations to apply
+%%      Output: The value of the CRDT after appliying the operations
+-spec get_snapshot(type(), vectorclock:vectorclock(),
+                   [#clocksi_payload{}]) -> {ok, term()} | {error, atom()}.
+get_snapshot(Type, SnapshotTime, Ops) ->
+    Init = create_snapshot(Type),
+    update_snapshot(Type, Init, SnapshotTime, Ops, ignore).
 
--spec get_snapshot(Type::atom(), SnapshotTime::vectorclock:vectorclock(),
-                   Ops::[#clocksi_payload{}], TxId :: #tx_id{}) -> term().
-get_snapshot(Type,Snapshot_time,Ops,TxId) ->
-    Init=create_snapshot(Type),
-    update_snapshot(Type, Init, Snapshot_time, Ops, TxId).
+-spec get_snapshot(type(), vectorclock:vectorclock(),
+                   [#clocksi_payload{}], #tx_id{}) -> {ok, term()} | {error, atom()}.
+get_snapshot(Type, SnapshotTime, Ops, TxId) ->
+    Init = create_snapshot(Type),
+    update_snapshot(Type, Init, SnapshotTime, Ops, TxId).
 
 -ifdef(TEST).
-materializer_clockSI_test()->
+
+materializer_clocksi_test()->
     GCounter = create_snapshot(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
     Op1 = #clocksi_payload{key = abc, type = riak_dt_gcounter,

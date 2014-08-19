@@ -1,18 +1,24 @@
-%% @doc Interface for riak_searchng-admin commands.
+%% @doc Interface for floppy-admin commands.
+%%
+
 -module(floppy_console).
+
 -export([staged_join/1,
          down/1,
          ringready/1]).
+
 -ignore_xref([join/1,
               leave/1,
               remove/1,
               ringready/1]).
 
+%% @doc Staged join operations against a cluster.
 staged_join([NodeStr]) ->
     Node = list_to_atom(NodeStr),
     join(NodeStr, fun riak_core:staged_join/1,
          "Success: staged join request for ~p to ~p~n", [node(), Node]).
 
+%% @doc Join a node to a cluster.
 join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
     try
         case JoinFn(NodeStr) of
@@ -27,7 +33,8 @@ join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
                           [NodeStr]),
                 error;
             {error, unable_to_get_join_ring} ->
-                io:format("Failed: Unable to get ring from ~s~n", [NodeStr]),
+                io:format("Failed: Unable to get ring from ~s~n",
+                          [NodeStr]),
                 error;
             {error, not_single_node} ->
                 io:format("Failed: This node is already a member of a "
@@ -38,7 +45,8 @@ join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
                           "cluster~n"),
                 error;
             {error, _} ->
-                io:format("Join failed. Try again in a few moments.~n", []),
+                io:format("Join failed. Try again in a few moments.~n",
+                          []),
                 error
         end
     catch
@@ -48,7 +56,7 @@ join(NodeStr, JoinFn, SuccessFmt, SuccessArgs) ->
             error
     end.
 
-
+%% @doc Mark a node as down.
 down([Node]) ->
     try
         case riak_core:down(list_to_atom(Node)) of
@@ -73,22 +81,26 @@ down([Node]) ->
             error
     end.
 
+%% @doc Determine whether the ring is ready or not.
 ringready([]) ->
     try
         case riak_core_status:ringready() of
             {ok, Nodes} ->
-                io:format("TRUE All nodes agree on the ring ~p\n", [Nodes]);
+                io:format("TRUE All nodes agree on the ring ~p\n",
+                          [Nodes]);
             {error, {different_owners, N1, N2}} ->
-                io:format("FALSE Node ~p and ~p list different partition owners\n", [N1, N2]),
+                io:format("FALSE Node ~p and ~p list different partition owners\n",
+                          [N1, N2]),
                 error;
             {error, {nodes_down, Down}} ->
-                io:format("FALSE ~p down.  All nodes need to be up to check.\n", [Down]),
+                io:format("FALSE ~p down.  All nodes need to be up to check.\n",
+                          [Down]),
                 error
         end
     catch
         Exception:Reason ->
-            lager:error("Ringready failed ~p:~p", [Exception,
-                    Reason]),
+            lager:error("Ringready failed ~p:~p",
+                        [Exception, Reason]),
             io:format("Ringready failed, see log for details~n"),
             error
     end.
