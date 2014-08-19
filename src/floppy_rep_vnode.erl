@@ -92,7 +92,7 @@ read(Key, Type) ->
 %%               {error, nothing} if operation failed.
 read_from(Key, Type, From) ->
     {ok,_Pid} = floppy_coord_sup:start_fsm(
-                  [self(), threshold_read, Key, Type, From]),
+                  [self(), read_from, Key, Type, From]),
     receive
         {ok, Ops} ->
             {ok, Ops};

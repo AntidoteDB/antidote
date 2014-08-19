@@ -99,7 +99,7 @@ execute(timeout, SD0=#state{operation=Operation,
             %% Payload identifies the op_id from which operations are returned
             logging_vnode:read_from(Preflist, LogId, Payload),
             SD1 = SD0#state{num_to_ack=?NUM_R},
-            {next_state, waitRead, SD1, ?COMM_TIMEOUT};
+            {next_state, wait_read, SD1, ?COMM_TIMEOUT};
         _ ->
             floppy_coord_fsm:finish_op(From, error, wrong_command),
             {stop, normal, SD0}
