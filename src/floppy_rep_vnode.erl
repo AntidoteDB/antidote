@@ -25,6 +25,7 @@
 
 -export([append/3,
          read/2,
+         read_from/2,
          operate/6]).
 
 -record(state, {partition, lclock}).
@@ -37,10 +38,10 @@ init([Partition]) ->
     {ok, #state{partition=Partition, lclock=0}}.
 
 %% @doc Function: append/3
-%%      Purpose: Start a fsm to coordinate the `append' operation to be 
+%%      Purpose: Start a fsm to coordinate the `append' operation to be
 %%               performed in the object's replicaiton group
 %%      Args: Key of the object and operation parameters
-%%      Returns: {ok, Result} if success; {error, timeout} if operation 
+%%      Returns: {ok, Result} if success; {error, timeout} if operation
 %%               failed.
 %%
 -spec append(key(), type(), payload()) -> {ok, op_id()} | {error, timeout}.
@@ -62,7 +63,7 @@ append(Key, Type, Payload) ->
 %% @doc Function: read/1
 %%      Purpose: Start a fsm to `read' from the replication group of
 %%               the object specified by Key
-%%      Args: Key of the object and its type, which should be supported 
+%%      Args: Key of the object and its type, which should be supported
 %%            by the riak_dt.
 %%      Returns: {ok, Ops} if succeeded, Ops is the union of operations;
 %%               {error, nothing} if operation failed.
@@ -79,6 +80,27 @@ read(Key, Type) ->
     after
         ?OP_TIMEOUT ->
             lager:info("Read failed; timeout exceeded: ~p",
+                       [?OP_TIMEOUT]),
+            {error, timeout}
+    end.
+
+%% @doc Function: read_from/2
+%%      Purpose: Start a fsm to coordinate the `threshold_read' operation
+%%               to be performed in the object's replicaiton group
+%%      Args: Log identifier and the op id threshold.
+%%      Returns: {ok, Ops} if success, Ops is the union of operations;
+%%               {error, nothing} if operation failed.
+read_from(LogId, From) ->
+    {ok,_Pid} = floppy_coord_sup:start_fsm(
+                  [self(), threshold_read, LogId, From]),
+    receive
+        {ok, Ops} ->
+            {ok, Ops};
+        {error, Reason} ->
+            lager:info("Read from op ~p failed; Reason: ~p",[From, Reason]),
+            {error, Reason}
+    after ?OP_TIMEOUT ->
+            lager:info("Read_from ~p failed; timeout exceeded: !p",
                        [?OP_TIMEOUT]),
             {error, timeout}
     end.
@@ -101,16 +123,19 @@ operate(Preflist, ToReply, Op, Key, Type, Param) ->
 handle_command({operate, ToReply, Operation, Key, Type, Payload},
                _Sender, #state{partition=Partition, lclock=LC}) ->
     OpId = case Operation of
-        append ->
-            generate_op_id(LC);
-        read  ->
-            current_op_id(LC);
-        _ ->
-            lager:info("Invalid operation; type: ~p", [Operation]),
-            current_op_id(LC)
-    end,
+               append ->
+                   generate_op_id(LC);
+               read  ->
+                   current_op_id(LC);
+               read_from  ->
+                   current_op_id(LC);
+               _ ->
+                   lager:info("Invalid operation; type: ~p", [Operation]),
+                   current_op_id(LC)
+           end,
     {NewClock, _} = OpId,
-    {ok, _} = floppy_rep_sup:start_fsm([ToReply, Operation, Key, Type, Payload, OpId]),
+    {ok, _} = floppy_rep_sup:start_fsm(
+                [ToReply, Operation, Key, Type, Payload, OpId]),
     {noreply, #state{lclock=NewClock, partition=Partition}};
 
 handle_command(_Message, _Sender, State) ->

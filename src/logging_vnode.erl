@@ -15,7 +15,7 @@
          read/2,
          dappend/4,
          append_list/3,
-         threshold_read/3]).
+         read_from/3]).
 
 -export([init/1,
          terminate/2,
@@ -44,10 +44,10 @@ start_vnode(I) ->
 %%      `Preflist' From is the operation id form which the caller wants to
 %%      retrieve the operations.  The operations are retrieved in inserted
 %%      order and the From operation is also included.
--spec threshold_read(preflist(), key(), op_id()) -> term().
-threshold_read(Preflist, Log, From) ->
+-spec read_from(preflist(), key(), op_id()) -> term().
+read_from(Preflist, Log, From) ->
     riak_core_vnode_master:command(Preflist,
-                                   {threshold_read, Log, From},
+                                   {read_from, Log, From},
                                    {fsm, undefined, self()},
                                    ?LOGGING_MASTER).
 
@@ -91,13 +91,13 @@ init([Partition]) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     Preflists = lists:foldl(fun(X, Filtered) ->
-                    case preflist_member(Partition, X) of
-                        true ->
-                            lists:append(Filtered, [X]);
-                        false ->
-                            Filtered
-                    end
-                    end, [], GrossPreflists),
+                                    case preflist_member(Partition, X) of
+                                        true ->
+                                            lists:append(Filtered, [X]);
+                                        false ->
+                                            Filtered
+                                    end
+                            end, [], GrossPreflists),
     case open_logs(LogFile, Preflists, dict:new()) of
         {error, Reason} ->
             {error, Reason};
@@ -106,7 +106,7 @@ init([Partition]) ->
     end.
 
 %% @doc Read command: Returns the operations logged for Key
-%%	    Input: The id of the log to be read
+%%          Input: The id of the log to be read
 %%      Output: {ok, {vnode_id, Operations}} | {error, Reason}
 handle_command({read, LogId}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
@@ -131,7 +131,7 @@ handle_command({read, LogId}, _Sender,
 %%              LogId: Identifies the log to be read
 %%      Output: {vnode_id, Operations} | {error, Reason}
 %%
-handle_command({threshold_read, LogId, From}, _Sender,
+handle_command({read_from, LogId, From}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
@@ -157,21 +157,21 @@ handle_command({threshold_read, LogId, From}, _Sender,
 handle_command({append_list, LogId, Ops}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     Result = case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            F = fun({_, Operation}, Acc) ->
-                    lager:info("Operation: ~p", [Operation]),
-                    #operation{op_number=OpId, payload=Payload} = Operation,
-                    case insert_operation(Log, LogId, OpId, Payload) of
-                        {ok, _}->
-                            Acc;
-                        {error, Reason} ->
-                            [{error, Reason}|Acc]
-                    end
-                end,
-            lists:foldl(F, [], Ops);
-        {error, Reason} ->
-            {error, Reason}
-    end,
+                 {ok, Log} ->
+                     F = fun({_, Operation}, Acc) ->
+                                 lager:info("Operation: ~p", [Operation]),
+                                 #operation{op_number=OpId, payload=Payload} = Operation,
+                                 case insert_operation(Log, LogId, OpId, Payload) of
+                                     {ok, _}->
+                                         Acc;
+                                     {error, Reason} ->
+                                         [{error, Reason}|Acc]
+                                 end
+                         end,
+                     lists:foldl(F, [], Ops);
+                 {error, Reason} ->
+                     {error, Reason}
+             end,
     {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
@@ -278,24 +278,24 @@ no_elements([LogId|Rest], Map) ->
             {error, no_log_for_preflist}
     end.
 
-%% @doc threshold_prune: returns the operations that are not older than 
+%% @doc threshold_prune: returns the operations that are not older than
 %%      the specified op_id
 %%      Assump: The operations are retrieved in the order of insertion
-%%              If the order of insertion was Op1 -> Op2 -> Op4 -> Op3, 
+%%              If the order of insertion was Op1 -> Op2 -> Op4 -> Op3,
 %%              the expected list of operations would be:
 %%              [Op1, Op2, Op4, Op3]
 %%      Input:  Operations: Operations to filter
 %%              From: Oldest op_id to return
-%%              Filtered: List of filetered operations
+%%              Filtered: List of filtered operations
 %%      Return: The filtered list of operations
 %%
 -spec threshold_prune([op()], op_id()) -> [op()].
 threshold_prune([], _From) ->
     [];
-threshold_prune([{_LogId, Operation}=H|T], From) ->
+threshold_prune([{_LogId, Operation}|T], From) ->
     case Operation#operation.op_number =:= From of
         true ->
-            [H|T];
+            T;
         false ->
             threshold_prune(T, From)
     end.
@@ -305,7 +305,7 @@ threshold_prune([{_LogId, Operation}=H|T], From) ->
 %%                      Preflists: A list with the preflist in which
 %%                                 the vnode is involved
 %%                      Initial: Initial log identifier. Non negative
-%%                               integer. Consecutive ids for the logs. 
+%%                               integer. Consecutive ids for the logs.
 %%                      Map: The ongoing map of preflist->log. dict()
 %%                           type.
 %%      Return:         LogsMap: Maps the  preflist and actual name of
@@ -317,7 +317,7 @@ open_logs(_LogFile, [], Map) ->
 open_logs(LogFile, [Next|Rest], Map)->
     PartitionList = log_utilities:remove_node_from_preflist(Next),
     PreflistString = string:join(
-            lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
+                       lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
     LogId = LogFile ++ "--" ++ PreflistString,
     LogPath = filename:join(
                 app_helper:get_env(riak_core, platform_data_dir), LogId),
@@ -336,7 +336,7 @@ open_logs(LogFile, [Next|Rest], Map)->
 %%      Return: The actual name of the log
 %%
 -spec get_log_from_map(dict(), partition(), log_id()) ->
-    {ok, log()} | {error, no_log_for_preflist}.
+                              {ok, log()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, Partition, LogId) ->
     case dict:find(LogId, Map) of
         {ok, Log} ->
@@ -360,10 +360,10 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
     JointAcc = dets:foldl(F, Acc, Log),
     join_logs(T, F, JointAcc).
 
-%% @doc insert_operation: Inserts an operation into the log only if the 
+%% @doc insert_operation: Inserts an operation into the log only if the
 %%      OpId is not already in the log
 %%      Input:
-%%          Log: The identifier log the log where the operation will be 
+%%          Log: The identifier log the log where the operation will be
 %%               inserted
 %%          LogId: Log identifier to which the operation belongs.
 %%          OpId: Id of the operation to insert
@@ -371,7 +371,7 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
 %%      Return: {ok, OpId} | {error, Reason}
 %%
 -spec insert_operation(log(), log_id(), op_id(), payload()) ->
-    {ok, op_id()} | {error, reason()}.
+                              {ok, op_id()} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
     case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
         [] ->
@@ -416,7 +416,7 @@ thresholdprune_test() ->
                   {log1, #operation{op_number=op3}},
                   {log1, #operation{op_number=op4}},
                   {log1, #operation{op_number=op5}}],
-    Filtered = threshold_prune(Operations, op3),
+    Filtered = threshold_prune(Operations, op2),
     ?assertEqual([{log1, #operation{op_number=op3}},
                   {log1, #operation{op_number=op4}},
                   {log1, #operation{op_number=op5}}], Filtered).
