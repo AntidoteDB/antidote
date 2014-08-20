@@ -99,7 +99,8 @@ handle_command({process}, _Sender,
                      end, {PendingOperations, LastCommitTime}, Sorted_ops),
     DcId = dc_utilities:get_my_dc_id(),
     lager:info("Updating vector clock ~p",[Stable_time]),
-    inter_dc_repl_vnode:trigger({Partition, node()}),
+    vectorclock:update_clock(Partition, DcId, Stable_time),
+    %inter_dc_repl_vnode:trigger({Partition, node()}),
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 
