@@ -4,9 +4,9 @@
 -include("floppy.hrl").
 
 -export([start_vnode/1,
-     %API begin
-     store_update/1,
-     %API end
+                                                %API begin
+         store_update/1,
+                                                %API end
          init/1,
          terminate/2,
          handle_command/3,
@@ -31,36 +31,47 @@ start_vnode(I) ->
 %% Args: Key,
 %%       Payload contains Operation Timestamp and DepVector for causality tracking
 %%       FromDC = DC_ID
-%% -------------------- 
-store_update({Key,Payload, FromDC}) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET,
-                                       term_to_binary(Key)}),
-    [{Indexnode,_Type} | _Preflist] = riak_core_apl:get_primary_apl(DocIdx, ?N, interdcrecvr),
-    riak_core_vnode_master:sync_command(Indexnode, {store_update, {Key,Payload, FromDC}}, inter_dc_recvr_vnode_master),
-    riak_core_vnode_master:command(Indexnode, {process_queue}, inter_dc_recvr_vnode_master),
+%% --------------------
+store_update(Logrecord = #log_record{op_payload = Payload}) ->
+    lager:info("Received logrecord ~p",[Logrecord]),
+    Key = Payload#clocksi_payload.key,
+    CommitTime = Payload#clocksi_payload.commit_time,
+    {DcId, _Time} = CommitTime,
+    LogId = log_utilities:get_logid_from_key(Key),
+    Preflist = log_utilities:get_preflist_from_logid(LogId),
+    Indexnode = hd(Preflist),
+    riak_core_vnode_master:sync_command(Indexnode,
+                                        {store_update, Key, Logrecord, DcId},
+                                        inter_dc_recvr_vnode_master),
+    riak_core_vnode_master:command(Indexnode, {process_queue},
+                                   inter_dc_recvr_vnode_master),
     {ok, done}.
 
 %% riak_core_vnode call backs
 init([Partition]) ->
     StateFile = string:concat(integer_to_list(Partition), "replstate"),
     Path = filename:join(
-            app_helper:get_env(riak_core, platform_data_dir), StateFile),
+             app_helper:get_env(riak_core, platform_data_dir), StateFile),
     case dets:open_file(StateFile, [{file, Path}, {type, set}]) of
         {ok, StateStore} ->
-            case dets:lookup(StateStore, recvr_state) of %If file already exists read previous state from it.
-        [{recvr_state, State}] -> {ok, State};
-        [] -> 
-            {ok, State } = inter_dc_repl_update:init_state(),
-            {ok, State#recvr_state{statestore = StateStore}};
-        Error -> Error
-        end;
+            case dets:lookup(StateStore, recvr_state) of
+                %%If file already exists read previous state from it.
+                [{recvr_state, State}] -> {ok, State};
+                [] ->
+                    {ok, State } = inter_dc_repl_update:init_state(Partition),
+                    {ok, State#recvr_state{statestore = StateStore}};
+                Error -> Error
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
 
-%process one replication request from other Dc. Update is put in a queue for each DC. Updates are expected to recieve in causal order.
-handle_command({store_update, {Key, {Op, Ts, DepV}, Dc}}, _Sender, State) ->
-    {ok, NewState} = inter_dc_repl_update:enqueue_update({Key, {Op, Ts, DepV}, Dc}, State),
+%% process one replication request from other Dc. Update is put in a queue for each DC.
+%% Updates are expected to recieve in causal order.
+handle_command({store_update, Key, Payload, Dc}, _Sender, State) ->
+    lager:info(" processing update of ~p",[Key]),
+    {ok, NewState} = inter_dc_repl_update:enqueue_update(
+                       {Key, Payload, Dc}, State),
     dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {reply, ok, NewState};
 

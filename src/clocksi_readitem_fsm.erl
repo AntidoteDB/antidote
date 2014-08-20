@@ -80,7 +80,7 @@ waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
         {ok, LocalClock} ->
             SnapshotTime = Transaction#transaction.vec_snapshot_time,
             lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
-            case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
+            case vectorclock:ge(LocalClock, SnapshotTime) of
                 false ->
                     lager:info("Trigger downstream"),
                     _Result = clocksi_downstream_generator_vnode:trigger(Key, {dummytx, [], vectorclock:from_list([]), 0}),
@@ -102,7 +102,7 @@ waiting2(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
         {ok, LocalClock} ->
             SnapshotTime = Transaction#transaction.vec_snapshot_time,
             lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
-            case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
+            case vectorclock:ge(LocalClock, SnapshotTime) of
                 false ->
                     lager:info("Wait of vectoclock to catch up"),
                     {next_state, waiting2, SDO, 1};
