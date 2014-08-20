@@ -35,19 +35,17 @@ replication_test(Nodes) ->
     Key = key1,
 
     LogId = rpc:call(N1, log_utilities, get_logid_from_key, [Key]),
-    Preflist = rpc:call(N1, log_utilities, get_apl_from_logid, [LogId, logging]),
-    lager:info("LogId ~w: Preflist ~w",[LogId, Preflist]),
+    Preflist = rpc:call(N1, log_utilities, get_preflist_from_key, [Key]),
+    lager:info("LogId:~w Preflist:~w",[LogId, Preflist]),
     NodesRep = [Node || {_Index, Node} <- Preflist],
 
     lager:info("Nodes that replicate ~w: ~w",[Key, NodesRep]),
 
     WriteResult = rpc:call(hd(NodesRep), floppy, append, [Key, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult),
-    {ok, OpId} = WriteResult, 
 
-    Payload = {payload, key1, increment, ucl},
-    NumOfRecord1 = read_matches(LogId, Preflist, [{LogId, {operation, OpId, Payload}}]),
-    ?assertMatch(true, NumOfRecord1 ==3),
+    AllMatches = read_matches(LogId, Preflist), %% [{LogId, {operation, OpId, Payload}}]),
+    ?assertEqual(true, AllMatches),
     
     %% Second test
     Excluded1 = hd(lists:reverse(NodesRep)),
@@ -58,11 +56,9 @@ replication_test(Nodes) ->
     NewOpIds = send_multiple_updates(hd(Part1), 4, [], Key),
     lager:info("Total: ~w",[NewOpIds]),
 
-    OpIds = [OpId]++NewOpIds,
-    Records = [{LogId, {operation, Id, Payload}}|| Id <- OpIds],
-    NumOfRecord2 = read_matches(LogId, Preflist, Records),
+    AllMatches2 = read_matches(LogId, tl(lists:reverse(Preflist))),
 
-    ?assertEqual(2, NumOfRecord2),
+    ?assertEqual(true, AllMatches2),
 
     Result2 = rpc:call(Excluded1, floppy, append, [Key, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({error, _}, Result2),
@@ -84,17 +80,18 @@ replication_test(Nodes) ->
 
 
 
-read_matches(LogId, Preflist, Record) ->
+read_matches(LogId, Preflist) ->
     Results = [rpc:call(N, logging_vnode, read, [{I, N}, LogId])|| {I, N} <- Preflist],
+    lager:info("Results:", [Results]),
     Ops = [Op ||{ok, {_,Op}} <- Results],
-    SortedRecord = lists:sort(Record),
-    NewSum = lists:foldl(fun(X, Sum) -> case lists:sort(X) of
-                                    SortedRecord -> Sum+1;
-                                    _ -> Sum
+    [FirstNodeOp|_] = Ops,
+    SortedRecord = lists:sort(FirstNodeOp),
+    IfAllSame = lists:all(fun(X) -> case lists:sort(X) of
+                                    SortedRecord -> true;
+                                    _ -> false
                              end
-                end, 0, Ops),
-    NewSum.
-
+                end, Ops),
+    IfAllSame.
 
 
 send_multiple_updates(Node, Total, OpIds, Key) ->
