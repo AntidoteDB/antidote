@@ -38,6 +38,9 @@ start(_StartType, _StartArgs) ->
             ok = riak_core_node_watcher:service_up(replication, self()),
             ok = riak_core:register([{vnode_module, inter_dc_repl_vnode}]),
             ok = riak_core_node_watcher:service_up(interdcreplication, self()),
+            ok = riak_core:register([{vnode_module, inter_dc_recvr_vnode}]),
+            ok = riak_core_node_watcher:service_up(inter_dc_recvr, self()),
+
             ok = riak_core_ring_events:add_guarded_handler(floppy_ring_event_handler, []),
             ok = riak_core_node_watcher_events:add_guarded_handler(floppy_node_event_handler, []),
             ok = riak_api_pb_service:register(?SERVICES),
