@@ -5,7 +5,7 @@
 
 -export([start_vnode/1,
                                                 %API begin
-         store_update/1,
+         store_updates/1,
                                                 %API end
          init/1,
          terminate/2,
@@ -26,26 +26,32 @@ start_vnode(I) ->
 
 %% public API
 
-%% --------------------
-%% Sends update to be replicated to the vnode
-%% Args: Key,
-%%       Payload contains Operation Timestamp and DepVector for causality tracking
-%%       FromDC = DC_ID
-%% --------------------
-store_update(Logrecord = #log_record{op_payload = Payload}) ->
-    lager:info("Received logrecord ~p",[Logrecord]),
+store_updates(Updates) ->
+    Logrecord = hd(Updates),
+    Payload = Logrecord#log_record.op_payload,
     Key = Payload#clocksi_payload.key,
     CommitTime = Payload#clocksi_payload.commit_time,
     {DcId, _Time} = CommitTime,
     LogId = log_utilities:get_logid_from_key(Key),
     Preflist = log_utilities:get_preflist_from_logid(LogId),
     Indexnode = hd(Preflist),
-    riak_core_vnode_master:sync_command(Indexnode,
-                                        {store_update, Key, Logrecord, DcId},
-                                        inter_dc_recvr_vnode_master),
+    lists:foreach(fun(Update) ->
+                           store_update(Indexnode, Key, Update, DcId)
+                  end, Updates),
     riak_core_vnode_master:command(Indexnode, {process_queue},
                                    inter_dc_recvr_vnode_master),
     {ok, done}.
+
+%% --------------------
+%% Sends update to be replicated to the vnode
+%% Args: Key,
+%%       Payload contains Operation Timestamp and DepVector for causality tracking
+%%       FromDC = DC_ID
+%% --------------------
+store_update(Node, Key, Logrecord, DcId) ->
+    riak_core_vnode_master:sync_command(Node,
+                                        {store_update, Key, Logrecord, DcId},
+                                        inter_dc_recvr_vnode_master).
 
 %% riak_core_vnode call backs
 init([Partition]) ->
