@@ -16,7 +16,7 @@ start_link() ->
     {ok, PID}.
 
 replicate(Nodes, Name, Payload, Origin) ->
-    io:format("Sending update ~p to ~p ~n",[Payload, Nodes]),
+    lager:info("Sending update ~p to ~p ~n",[Payload, Nodes]),
     gen_server:abcast(Nodes, Name, {replicate, Payload, from, Origin}).
 
 stop(Pid)->
@@ -55,5 +55,5 @@ code_change(_OldVsn, State, _Extra) ->
 
 apply(Payload) ->
     io:format("Recieved update ~p ~n",[Payload]), 
-    inter_dc_recvr_vnode:store_update(Payload),    
+    inter_dc_recvr_vnode:store_updates(Payload),    
     ok.

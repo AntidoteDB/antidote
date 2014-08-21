@@ -3,9 +3,10 @@
 -include("floppy.hrl").
 
 -export([start_vnode/1,
-         %API begin
+         %%API begin
+         trigger/2,
          trigger/1,
-         %API end
+         %%API end
          init/1,
          terminate/2,
          handle_command/3,
@@ -29,24 +30,36 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% public API
-trigger(IndexNode) ->
-    riak_core_vnode_master:command(IndexNode, {trigger}, inter_dc_repl_vnode_master).
+trigger(IndexNode, Key) ->
+    riak_core_vnode_master:sync_command(IndexNode, {trigger, Key}, 
+                                   inter_dc_repl_vnode_master).
+trigger(Key) ->
+    LogId = log_utilities:get_logid_from_key(Key),
+    Preflist = log_utilities:get_preflist_from_logid(LogId),
+    IndexNode = hd(Preflist),
+    trigger(IndexNode, Key).
 
 %% riak_core_vnode call backs
 init([Partition]) ->
     {ok, #state{partition=Partition}}.
 
-handle_command({trigger}, _Sender, State=#state{partition=Partition, last_op=Last}) ->
-    Log = log_utilities:get_logid_from_partition(Partition),
+handle_command({trigger, Key}, _Sender, State=#state{partition=_Partition,
+                                                     last_op=Last}) ->
+    Log = log_utilities:get_logid_from_key(Key),
     case Last of
         empty ->
-            case floppy_rep_vnode:read(Log) of
+            case floppy_rep_vnode:read(Key, riak_dt_gcounter) of
                 {ok, Ops} ->
-                    Last2 = inter_dc_repl:propagate_sync(Ops);
+                    
+                    Downstreamops = filter_downstream(Ops),
+                    lager:info("Ops to replicate ~p",[Downstreamops]),
+                    %Last2 = inter_dc_repl:propagate_sync(Downstreamops);
+                    Last2 = Last,
+                    done = inter_dc_repl:propagate_sync(Downstreamops);
                 {error, nothing} ->
                     Last2 = Last,
-                    timer:sleep(?RETRY_TIME),
-                    trigger({Partition, node()})
+                    timer:sleep(?RETRY_TIME)
+                    %trigger({Partition, node()})
             end;
         _ ->
             case floppy_rep_vnode:threshold_read(Log, Last) of
@@ -54,11 +67,11 @@ handle_command({trigger}, _Sender, State=#state{partition=Partition, last_op=Las
                     Last2 = inter_dc_repl:propagate_sync(Ops);
                 {error, nothing} ->
                     Last2 = Last,
-                    timer:sleep(?RETRY_TIME),
-                    trigger({Partition, node()})
+                    timer:sleep(?RETRY_TIME)
+                    %trigger({Partition, node()})
             end
     end,
-    {noreply, State#state{last_op=Last2}}.
+    {reply, ok, State#state{last_op=Last2}}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -92,3 +105,14 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, _State) ->
     ok.
+
+filter_downstream(Ops) ->
+    lists:filtermap(fun({_LogId, Operation}) ->
+                            Op = Operation#operation.payload,
+                            case Op#log_record.op_type of
+                                downstreamop ->
+                                    {true, Op};
+                                _ ->
+                                    false
+                            end
+                    end, Ops).

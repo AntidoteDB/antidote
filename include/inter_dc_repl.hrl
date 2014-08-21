@@ -3,6 +3,6 @@
                       recQ :: orddict:orddict(), %Holds recieving updates from each DC separately in causal order. 
                       %TODO, use a persistent queue for fault tolerance
                       dcs,
-                      statestore}).
+                      statestore,
+                     partition}).
 
--define(OTHER_DC, ['dev31@127.0.0.1']).
