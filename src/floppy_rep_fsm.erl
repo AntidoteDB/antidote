@@ -1,5 +1,5 @@
 %% @doc The coordinator for stat write operations.  This example will
-%%      show how to properly replicate your data in Riak Core by making 
+%%      show how to properly replicate your data in Riak Core by making
 %%      use of the _preflist_.
 
 -module(floppy_rep_fsm).
@@ -95,6 +95,11 @@ execute(timeout, SD0=#state{operation=Operation,
             logging_vnode:dread(Preflist, LogId),
             {next_state, wait_read, SD0#state{num_to_ack=?NUM_R},
              ?COMM_TIMEOUT};
+        read_from ->
+            %% Payload identifies the op_id from which operations are returned
+            logging_vnode:read_from(Preflist, LogId, Payload),
+            SD1 = SD0#state{num_to_ack=?NUM_R},
+            {next_state, wait_read, SD1, ?COMM_TIMEOUT};
         _ ->
             floppy_coord_fsm:finish_op(From, error, wrong_command),
             {stop, normal, SD0}
