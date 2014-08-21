@@ -33,7 +33,11 @@
 %%      input: Key to identify the partition,
 %%             Writeset -> set of updates
 -spec trigger(key(),
-              {TxId :: term(), Updates :: [{term(), {Key :: term(), Type:: term(), Op :: term()}}], Vec_snapshot_time :: vectorclock:vectorclock(), Commit_time :: non_neg_integer()})
+              {TxId :: term(),
+               Updates :: [{term(),
+                            {Key :: term(), Type:: term(), Op :: term()}}],
+               Vec_snapshot_time :: vectorclock:vectorclock(),
+               Commit_time :: non_neg_integer()})
              -> ok | {error, timeout}.
 trigger(Key, Writeset) ->
     Logid = log_utilities:get_logid_from_key(Key),
@@ -100,7 +104,12 @@ handle_command({process}, _Sender,
     DcId = dc_utilities:get_my_dc_id(),
     lager:info("Updating vector clock ~p",[Stable_time]),
     vectorclock:update_clock(Partition, DcId, Stable_time),
-    %inter_dc_repl_vnode:trigger({Partition, node()}),
+    _ = case PendingOperations of
+        [] ->
+            nothing;
+        [H|_T] -> Key = H#clocksi_payload.key,
+                  inter_dc_repl_vnode:trigger(Key)
+    end,
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 

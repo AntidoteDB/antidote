@@ -26,6 +26,7 @@ enqueue_update({Key,
     lager:info("enquing ~p",[Key]),
     RecQNew = enqueue(FromDC, {Key,Payload}, RecQ),
     lager:info("Op Enqueued ~p",[Payload]),
+    lager:info("NewQ ~p",[RecQNew]),
     {ok, State#recvr_state{lastRecvd = LastRecvdNew, recQ = RecQNew}}.
 
 %% Process one update from Q for each DC each Q.
@@ -61,16 +62,22 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                             case check_dep(SnapshotTime, Localclock) of
                                 true ->
                                     %%{ok, _} = floppy_rep_vnode:append(Key, Type, LogRecord),
+                                    lager:info("Updating to materializer"),
                                     ok = materializer_vnode:update(Key, Payload),
                                     lager:info("Replicated ~p ~p",[Key, Ts]),
                                     %%TODO add error handling if append failed
                                     {ok, NewState} = finish_update_dc(
                                                        Dc, DcQ, Ts, StateData),
                                     {ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
+                                    riak_core_vnode_master:command({Partition, node()}, {process_queue},
+                                                                   inter_dc_recvr_vnode_master),
                                     NewState;
-                                false -> StateData
+                                false -> 
+                                    lager:info(" Dep not satisfied ~p", [Payload]),
+                                    StateData
                             end ;
                        true ->
+                            lager:info("Duplicate request"),
                             {ok, NewState} = finish_update_dc(
                                                Dc, DcQ, CTS, StateData),
                             %%Duplicate request, drop from queue
