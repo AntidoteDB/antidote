@@ -1,7 +1,10 @@
 %% @doc The walletapp is a test application for floppystore.
-%%      It makes use of create, read/get, and update operations on the floppystore.
-
-%% @TODO - Add transaction like operations - buy voucher and reduce balance -> Will be done when merging with clock_SI branch
+%%      It makes use of create, read/get, and update operations on the
+%%      floppystore.
+%%
+%% @todo Add transaction like operations - buy voucher and reduce
+%%       balance -> Will be done when merging with clock_SI branch
+%%
 
 -module(walletapp).
 
