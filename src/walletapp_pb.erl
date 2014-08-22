@@ -42,7 +42,7 @@ debit(Key, Amount, Pid) ->
             {error, Reason}
     end.
 
--spec getbalance(key(), pid()) -> {error, reason()} | {ok, integer()}.
+-spec getbalance(key(), pid()) -> {error, error_in_read} | {ok, integer()}.
 getbalance(Key, Pid) ->
     case floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
         {ok,Counter} ->
