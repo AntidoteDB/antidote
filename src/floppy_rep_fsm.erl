@@ -273,10 +273,10 @@ remove_dup([H|T], OpId, Set2) ->
 
 -ifdef(TEST).
 union_test()->
-    Result = union_ops([{nothing, {operation,1,dwaf}}, {nothing, {operation,2,fasd}}],[],[{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
-    ?assertEqual(Result, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
-    Result1 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,1, dwaf}}, {nothing, {operation,3, dafds}}]),
-    ?assertEqual(Result1, [{nothing, {operation, 2, fasd}}, {nothing, {operation,1, dwaf}}, {nothing, {operation, 3, dafds}}]),
-    Result2 = union_ops([{nothing, {operation,2,fasd}}], [], [{nothing, {operation,2, fasd}}]),
-    ?assertEqual(Result2, [{nothing, {operation, 2, fasd}}]).
+    Result = union_ops([{nothing, {operation,{1,node1},op1}}, {nothing,{operation,{2,node1},op2}}],[],[{nothing,{operation,{2,node1},op3}}, {nothing,{operation,{2,node2},op4}}]),
+    ?assertEqual(lists:sort(Result), lists:sort([{nothing,{operation,{1,node1},op1}}, {nothing,{operation,{2,node1},op3}}, {nothing,{operation,{2,node2},op4}}])),
+    Result1 = union_ops([{nothing, {operation,{1,node1},op1}}], [], [{nothing,{operation,{1,node2},op2}}, {nothing, {operation,{2,node2},op3}}]),
+    ?assertEqual(lists:sort(Result1), lists:sort([{nothing, {operation,{1,node1},op1}}, {nothing,{operation,{1,node2},op2}}, {nothing,{operation,{2,node2},op3}}])),
+    Result2 = union_ops([{nothing, {operation,{1,node1},op1}}], [], [{nothing,{operation,{1,node1},op3}}]),
+    ?assertEqual(length(Result2), 1).
 -endif.
