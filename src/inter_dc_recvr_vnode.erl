@@ -29,10 +29,17 @@ start_vnode(I) ->
 store_updates(Updates) ->
     Logrecord = hd(Updates),
     Payload = Logrecord#log_record.op_payload,
-    Key = Payload#clocksi_payload.key,
+    Op_type = Logrecord#log_record.op_type,
     CommitTime = Payload#clocksi_payload.commit_time,
     {DcId, _Time} = CommitTime,
-    LogId = log_utilities:get_logid_from_key(Key),
+    case Op_type of 
+        noop ->
+            Key = Payload#clocksi_payload.key,
+            LogId = log_utiltities:get_logid_from_partition(Key);
+        _ -> 
+            Key = Payload#clocksi_payload.key,
+            LogId = log_utilities:get_logid_from_key(Key)
+    end,
     Preflist = log_utilities:get_preflist_from_logid(LogId),
     Indexnode = hd(Preflist),
     lists:foreach(fun(Update) ->
