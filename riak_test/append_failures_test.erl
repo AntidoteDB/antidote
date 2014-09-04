@@ -50,7 +50,6 @@ confirm() ->
 
     %% Heal the partition.
     rt:heal(PartInfo),
-    rt:wait_until_transfers_complete(Nodes),
 
     %% Read after the partition has been healed.
     ReadResult3 = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
