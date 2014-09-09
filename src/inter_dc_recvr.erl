@@ -28,21 +28,24 @@ init([]) ->
 
 handle_cast({replicate, Payload, from, {PID,Node}}, _StateData) ->
     apply(Payload),
-    gen_server:cast({inter_dc_recvr,Node},{acknowledge,Payload,PID}),
+    DcId = dc_utilities:get_my_dc_id(),
+    gen_server:cast({inter_dc_recvr,Node},{acknowledge,Payload,PID,DcId}),
     {noreply,_StateData};
-handle_cast({acknowledge, Payload, PID}, _StateData) ->
-    inter_dc_repl:acknowledge(PID,Payload),
-    {noreply, _StateData}.
+handle_cast({acknowledge, _Payload, PID, DcId}, _StateData) ->
+    inter_dc_repl:acknowledge(PID,DcId),
+    {noreply, _StateData};
+handle_cast({get_update, Partition, OtherDc, FromOp}, _StateData) ->
+    inter_dc_repl_vnode:get_update(Partition, OtherDc, FromOp).
 
 handle_call(terminate, _From, State) ->
     {stop, normal, ok, State}.
 
 handle_info(Msg, State) ->
-    io:format("Unexpected message: ~p~n",[Msg]),
+    lager:info("Unexpected message: ~p~n",[Msg]),
     {noreply, State}.
 
 terminate(normal, _State) ->
-    io:format("Inter_dc_repl_recvr stopping"),
+    lager:info("Inter_dc_repl_recvr stopping"),
     ok;
 terminate(_Reason, _State) -> ok.
 

@@ -27,7 +27,8 @@ start_vnode(I) ->
 %% public API
 
 store_updates(Updates) ->
-    Logrecord = hd(Updates),
+    Operation = hd(Updates),
+    Logrecord = Operation#operation.payload,
     Payload = Logrecord#log_record.op_payload,
     Op_type = Logrecord#log_record.op_type,
     CommitTime = Payload#clocksi_payload.commit_time,
@@ -35,7 +36,7 @@ store_updates(Updates) ->
     case Op_type of 
         noop ->
             Key = Payload#clocksi_payload.key,
-            LogId = log_utiltities:get_logid_from_partition(Key);
+            LogId = log_utilities:get_logid_from_partition(Key);
         _ -> 
             Key = Payload#clocksi_payload.key,
             LogId = log_utilities:get_logid_from_key(Key)

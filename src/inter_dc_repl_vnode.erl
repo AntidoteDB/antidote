@@ -7,6 +7,7 @@
          %%trigger/2,
          trigger/1,
          sync_clock/2,
+         get_update/3,
          %%API end
          init/1,
          terminate/2,
@@ -46,6 +47,13 @@ sync_clock(Partition, Clock) ->
     riak_core_vnode_master:command({Partition, node()}, {sync_clock, Clock},
                                    inter_dc_repl_vnode_master).
 
+%%TODO: Not implemented
+get_update(DcId, FromOp, Partition) ->
+    Preflist = log_utilitities:get_preflist_from_partition(Partition),
+    Indexnode = hd(Preflist),
+    riak_core_vnode_master:command(Indexnode, {get_update, FromOp, DcId},
+                                   inter_dc_repl_vnode_master).
+
 %% riak_core_vnode call backs
 init([Partition]) ->
     {ok, #state{partition=Partition}}.
@@ -78,6 +86,26 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
     end,
     %trigger({Partition, node()})
     {reply, ok, State#state{last_op=OpDone}}.
+
+%% handle_command({get_update, FromOp, ReqDc}, _Sender, State=#state{partition=Partition}) ->
+%%     {ok, Clock} = vectorclock:get_clock(Partition),
+%%     case FromOp of
+%%         empty ->
+%%             case floppy_rep_vnode:read(Key, riak_dt_gcounter) of
+%%                 {ok, Ops} ->
+%%                     OpDone = prepare_and_send_ops(Ops,Clock,ReqDc,State);
+%%                 {error, _Reason} ->
+%%                     lager:debug("Error reading from flopp_rep")                   
+%%             end;
+%%         _ ->
+%%             case floppy_rep_vnode:read_from(Key, riak_dt_gcounter, FromOp) of
+%%                 {ok, Ops} ->
+%%                     OpDone = prepare_and_send_ops(Ops, Clock, State);
+%%                 {error, _Reason} ->
+%%                     lager:debug("Error reading from flopp_rep")                     
+%%             end
+%%     end,    
+%%     {reply, ok, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -113,28 +141,29 @@ terminate(_Reason, _State) ->
     ok.
 
 %% Filter Ops to the form understandable by recvr and propagate
-prepare_and_send_ops(Ops,Clock, _State = #state{partition=Partition, 
+prepare_and_send_ops(Ops, _Clock, _State = #state{partition=_Partition, 
                                               last_op=LastOpId}) ->
     case Ops of
         %% if empty, there are no updates
         [] ->
             %% get current vectorclock of node
             %% propogate vectorclock to other DC
-            DcId = dc_utilities:get_my_dc_id(),
-            LocalClock = vectorclock:get_clock_of_dc(Clock),
-            Op = #clocksi_payload{key = Partition, commit_time=
-                                      {DcId, LocalClock}},
-            Payload=#operation{payload = #log_record
-                               {op_type=noop, op_payload=Op}},
-            case inter_dc_repl:propagate_sync([Payload]) of
-                done ->
-                    Done = LastOpId;
-                Other ->
-                    Done = LastOpId,
-                    lager:info(
-                      "Propagation error. Reason: ~p",[Other])
+            %% DcId = dc_utilities:get_my_dc_id(),
+            %% LocalClock = vectorclock:get_clock_of_dc(DcId, Clock),
+            %% Op = #clocksi_payload{key = Partition, commit_time=
+            %%                           {DcId, LocalClock}},
+            %% Payload=#operation{payload = #log_record
+            %%                    {op_type=noop, op_payload=Op}},
+            %% case inter_dc_repl:propagate_sync([Payload]) of
+            %%     done ->
+            %%         Done = LastOpId;
+            %%     Other ->
+            %%         Done = LastOpId,
+            %%         lager:info(
+            %%           "Propagation error. Reason: ~p",[Other])
 
-            end;
+            %% end;
+            Done = LastOpId; %%TODO:
         _ ->
             Downstreamops = filter_downstream(Ops),
             lager:info("Ops to replicate ~p",[Downstreamops]),
@@ -157,7 +186,7 @@ filter_downstream(Ops) ->
                                     case DownOp#clocksi_payload.commit_time of
                                         {DcId,_Time} ->
                                             %% Op is committed in this DC
-                                            {true, Op};
+                                            {true, Operation};
                                         _ -> {false}
                                     end;
                                 _ ->

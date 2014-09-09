@@ -10,7 +10,7 @@
 -export([init_state/1, enqueue_update/2, process_queue/1]).
 
 init_state(Partition) ->
-    {ok, #recvr_state{lastRecvd = orddict:new(),
+    {ok, #recvr_state{lastRecvd = orddict:new(), %% stores last OpId received
                       lastCommitted = orddict:new(),
                       recQ = orddict:new(),
                       dcs = [1,2],
@@ -18,13 +18,11 @@ init_state(Partition) ->
     }.
 
 enqueue_update({Key,
-                Payload= #log_record{op_payload = Op}, FromDC},
-               State = #recvr_state{lastRecvd = LastRecvd, recQ = RecQ}) ->
-    CommitTime = Op#clocksi_payload.commit_time,
-    {FromDC, Ts} = CommitTime,
-    LastRecvdNew = set(FromDC, Ts, LastRecvd),
+                Payload= #operation{op_number = OpId, payload = LogRecord}, FromDC},
+               State = #recvr_state{lastRecvd = LastRecvd, recQ = RecQ}) ->    
+    LastRecvdNew = set(FromDC, OpId, LastRecvd),
     lager:info("enquing ~p",[Key]),
-    RecQNew = enqueue(FromDC, {Key,Payload}, RecQ),
+    RecQNew = enqueue(FromDC, {Key,LogRecord}, RecQ),
     lager:info("Op Enqueued ~p",[Payload]),
     lager:info("NewQ ~p",[RecQNew]),
     {ok, State#recvr_state{lastRecvd = LastRecvdNew, recQ = RecQNew}}.

@@ -103,10 +103,12 @@ handle_command({process}, _Sender,
                      end, {PendingOperations, LastCommitTime}, Sorted_ops),
     DcId = dc_utilities:get_my_dc_id(),
     lager:info("Updating vector clock ~p",[Stable_time]),
-    {ok, Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
+    {ok, _Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
     _ = case PendingOperations of
         [] ->
-            inter_dc_repl_vnode:sync_clock(Partition, Clock);
+                %%TODO
+            %% inter_dc_repl_vnode:sync_clock(Partition, Clock);
+                donothing;
         [H|_T] -> Key = H#clocksi_payload.key,
                   inter_dc_repl_vnode:trigger(Key)
     end,

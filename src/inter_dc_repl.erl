@@ -1,5 +1,8 @@
 -module(inter_dc_repl).
 -behaviour(gen_fsm).
+
+%% FSM to send a set of updates to another DC
+
 -include("floppy.hrl").
 -include("inter_dc_repl.hrl").
 
@@ -10,10 +13,10 @@
 -export([ready/2, await_ack/2]).
 
 %%public api
--export([propagate/1, propagate_sync/1, acknowledge/2]).
+-export([propagate/1, propagate_sync/1, propagate_sync/2, acknowledge/2]).
 
 -record(state,
-        { otherdcs :: node(),
+        { otherdc :: node(),
           otherpid :: pid(),
           payload :: payload(),
           retries :: integer(),
@@ -23,7 +26,6 @@
 
 -type state() :: #state{}.
 -define(TIMEOUT,1000).
-
 
 %%public api
 propagate_sync(Payload) ->
@@ -40,16 +42,25 @@ propagate(Payload) ->
                        {?OTHER_DC, inter_dc_recvr, Payload, ignore},
                        []).
 
+propagate_sync(Payload, OtherDc) ->
+    Me = self(),
+    ReqId = 1, %Generate reqID here -> adapt then type in the state record!
+    _ = gen_fsm:start_link(?MODULE, {OtherDc, inter_dc_recvr, Payload, {ReqId, Me}}, []),
+    receive
+        {ReqId, normal} -> done;
+        {ReqId, Reason} -> Reason
+    end.
+
 -spec acknowledge(pid(),payload()) -> ok.
-acknowledge(Pid, Payload) ->
-    gen_fsm:send_event(Pid, {ok, Payload}),
+acknowledge(Pid,DcId) ->
+    gen_fsm:send_event(Pid, {ok,DcId}),
     ok.
 
 %% gen_fsm callbacks
 -spec init({node(),pid(),payload(),{non_neg_integer(),pid()} | ignore}) ->
                   {ok,ready,state(),0}.
 init({OtherDC, OtherPid, Payload, From}) ->
-    StateData = #state{otherdcs = OtherDC,
+    StateData = #state{otherdc = OtherDC,
                        otherpid = OtherPid,
                        payload = Payload,
                        retries = 5, from = From,
@@ -58,34 +69,22 @@ init({OtherDC, OtherPid, Payload, From}) ->
     {ok, ready, StateData, 0}.
 
 -spec ready(timeout,state()) -> {next_state, await_ack,state(),?TIMEOUT}.
-ready(timeout, StateData = #state{otherdcs = OtherDcs,
+ready(timeout, StateData = #state{otherdc = OtherDc,
                                   otherpid = PID, payload = Payload}) ->
     lager:info("Start replicating"),
-    inter_dc_recvr:replicate(OtherDcs, PID, Payload, {self(),node()}),
+    inter_dc_recvr:replicate(OtherDc, PID, Payload, {self(),node()}),
     {next_state, await_ack,
      StateData#state{ackrecvd = 0},
      ?TIMEOUT}.
 
-await_ack({ok,_Payload}, StateData=#state{ackrecvd = AckRecvd ,
-                                         otherdcs = OtherDCs}) ->
-    TotalAck = AckRecvd+1,
-    NoDcs = length(OtherDCs),
-    lager:info("Ack rceived"),
-    case TotalAck of
-        NoDcs ->
-            {stop, normal, StateData#state{ackrecvd = TotalAck}};
-        _ ->
-            {next_state, await_ack,
-             StateData#state{ackrecvd = TotalAck}, ?TIMEOUT}
-    end;
+await_ack({ok,_DcId}, StateData) ->    
+    lager:info("Ack rceived"),    
+    {stop, normal, StateData};       
 
-await_ack(timeout,StateData=#state{ackrecvd = AckRecvd}) ->
-    case AckRecvd of
-        0 ->
-            {stop, request_timeout, StateData};
-        _ ->
-            {stop, normal, StateData}
-            %%TODO: Handle the case when not all DCs recieve updates
+await_ack(timeout,StateData=#state{retries = RetriesLeft}) ->
+    case RetriesLeft of
+        0 -> {stop, request_time_out, StateData};
+        _ -> {next_state, ready, StateData#state{retries = RetriesLeft -1},0}
     end.
 
 %% @private
