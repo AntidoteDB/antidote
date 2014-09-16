@@ -167,13 +167,15 @@ prepare_and_send_ops(Ops, _Clock, _State = #state{partition=_Partition,
         _ ->
             Downstreamops = filter_downstream(Ops),
             lager:info("Ops to replicate ~p",[Downstreamops]),
-            case inter_dc_repl:propagate_sync(Downstreamops) of
-                done ->
+            case inter_dc_communication_sender:propagate_sync
+                ({replicate, Downstreamops}) of
+                ok ->
                     Done = get_last_opid(Ops, LastOpId);
                 _ ->
                     Done = LastOpId
             end
     end,
+    lager:info("Reset lastopid to ~p",[Done]),
     Done.
 
 filter_downstream(Ops) ->

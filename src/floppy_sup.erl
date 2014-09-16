@@ -3,7 +3,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0, start_rep/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -14,6 +14,14 @@
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+%% @doc: start_rep(Port) - starts a server which listens for incomming
+%% tcp connection on port Port. Server receives updates to replicate 
+%% from other DCs 
+start_rep(Port) ->
+    supervisor:start_child(?MODULE, {inter_dc_communication_sup,
+                    {inter_dc_communication_sup, start_link, [Port]},
+                    permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
 %% ===================================================================
 %% Supervisor callbacks
@@ -70,9 +78,7 @@ init(_Args) ->
     RepSup = {floppy_rep_sup,
               {floppy_rep_sup, start_link, []},
               permanent, 5000, supervisor, [floppy_rep_sup]},
-    InterDcRecvr = {inter_dc_recvr,
-                    {inter_dc_recvr, start_link, []},
-                    permanent, 5000, worker, [inter_dc_recvr]},
+   
     {ok,
      {{one_for_one, 5, 10},
       [LoggingMaster,
@@ -84,7 +90,6 @@ init(_Args) ->
        InterDcRecvrMaster,
        CoordSup,
        RepSup,
-       InterDcRecvr,
        ClockSIDSGenMaster,
        VectorClockMaster,
        MaterializerMaster]}}.

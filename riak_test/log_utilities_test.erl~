@@ -1,4 +1,4 @@
--module(inter_dc_repl_test).
+-module(preflist_test).
 
 -export([confirm/0]).
 
@@ -8,10 +8,7 @@
 
 confirm() ->
     [Cluster1, Cluster2] = rt:build_clusters([1,1]),
-    Node2 = hd(Cluster2),
-    lager:info("NODE 2 = ~p",[Node2]),
-    Result = rpc:call(Node2, floppy_sup, start_rep,[8091]),
-    lager:info("Sup start result ~p", [Result]),
+
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
@@ -22,9 +19,7 @@ confirm() ->
 simple_replication_test(Cluster1, Cluster2) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
-   % Result = rpc:call(Node2, inter_dc_communication_sup, start_link,[8091]),
-   % lager:info("Sup start result ~p", [Result]),
-    timer:sleep(10000), %% REMOVE this
+
     WriteResult1 = rpc:call(Node1,
                            floppy, append,
                            [key1, riak_dt_gcounter, {increment, ucl}]),
@@ -62,9 +57,7 @@ multiple_keys_test(Cluster1, Cluster2) ->
 
 multiple_writes(Node, Start, End, Actor)->
     F = fun(N, Acc) ->
-            case rpc:call(Node, floppy, append,
-                          [N, riak_dt_gcounter,
-                           {{increment, 1}, Actor}]) of
+            case rpc:call(Node, floppy, append, [N, riak_dt_gcounter, {{increment, 1}, Actor}]) of
                 {ok, _} ->
                     Acc;
                 Other ->
