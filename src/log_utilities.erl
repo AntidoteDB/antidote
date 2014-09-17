@@ -12,7 +12,9 @@
          get_logid_from_key/1,
          get_preflist_from_logid/1,
          get_apl_from_logid/2,
-         remove_node_from_preflist/1]).
+         remove_node_from_preflist/1,
+         get_my_node/1
+        ]).
 
 %% @doc get_logid_from_partition computes the log identifier from the
 %%      partition id.
@@ -74,6 +76,10 @@ get_primaries_preflist(HashedKey)->
     Itr = chashbin:iterator(HashedKey, CHBin),
     {Primaries, _} = chashbin:itr_pop(?N, Itr),
     Primaries.
+
+get_my_node(Partition) ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    riak_core_ring:index_owner(Ring, Partition).
 
 %% @doc remove_node_from_preflist: From each element of the input
 %%      preflist, the node identifier is removed

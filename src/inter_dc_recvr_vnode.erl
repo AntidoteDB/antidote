@@ -33,15 +33,17 @@ store_updates(Updates) ->
     Op_type = Logrecord#log_record.op_type,
     CommitTime = Payload#clocksi_payload.commit_time,
     {DcId, _Time} = CommitTime,
-    case Op_type of 
+    case Op_type of
         noop ->
             Key = Payload#clocksi_payload.key,
-            LogId = log_utilities:get_logid_from_partition(Key);
-        _ -> 
+            %LogId = log_utilities:get_logid_from_partition(Key);
+            Node = log_utilities:get_my_node(Key),
+            Preflist = [{Key, Node}];
+        _ ->
             Key = Payload#clocksi_payload.key,
-            LogId = log_utilities:get_logid_from_key(Key)
+            LogId = log_utilities:get_logid_from_key(Key),
+            Preflist = log_utilities:get_preflist_from_logid(LogId)
     end,
-    Preflist = log_utilities:get_preflist_from_logid(LogId),
     Indexnode = hd(Preflist),
     lists:foreach(fun(Update) ->
                            store_update(Indexnode, Key, Update, DcId)
@@ -70,7 +72,8 @@ init([Partition]) ->
         {ok, StateStore} ->
             case dets:lookup(StateStore, recvr_state) of
                 %%If file already exists read previous state from it.
-                [{recvr_state, State}] -> {ok, State};
+                [{recvr_state, State}] ->
+                    {ok, State};
                 [] ->
                     {ok, State } = inter_dc_repl_update:init_state(Partition),
                     {ok, State#recvr_state{statestore = StateStore}};
@@ -83,7 +86,7 @@ init([Partition]) ->
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
 handle_command({store_update, Key, Payload, Dc}, _Sender, State) ->
-    lager:info(" processing update of ~p",[Key]),
+    lager:info(" processing update of ~p :: ~p",[Key, State]),
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
                        {Key, Payload, Dc}, State),
     dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),

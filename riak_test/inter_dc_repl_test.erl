@@ -24,7 +24,7 @@ simple_replication_test(Cluster1, Cluster2) ->
     Node2 = hd(Cluster2),
    % Result = rpc:call(Node2, inter_dc_communication_sup, start_link,[8091]),
    % lager:info("Sup start result ~p", [Result]),
-    timer:sleep(10000), %% REMOVE this
+    %%timer:sleep(10000), %% REMOVE this
     WriteResult1 = rpc:call(Node1,
                            floppy, append,
                            [key1, riak_dt_gcounter, {increment, ucl}]),
@@ -56,7 +56,7 @@ multiple_keys_test(Cluster1, Cluster2) ->
                    lists:seq(1,10)),
     Result1 = multiple_reads(Node1, 1, 10, 10),
     ?assertEqual(length(Result1), 0),
-    timer:sleep(20000),
+    timer:sleep(30000),
     Result2 = multiple_reads(Node2, 1, 10, 10),
     ?assertEqual(length(Result2), 0).
 

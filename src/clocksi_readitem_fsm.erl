@@ -147,8 +147,8 @@ return(timeout, SD0=#state{key=Key,
 return(_SomeMessage, SDO) ->
     {next_state, return, SDO,0}.
 
-handle_info(_Info, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+handle_info(_Info, StateName, StateData) ->
+    {next_state,StateName,StateData,1}.
 
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.

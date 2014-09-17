@@ -92,12 +92,11 @@ init([From, ClientClock, Operations]) ->
     end,
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Op = hd(Operations),
-    case Op of 
+    case Op of
         {update, K, _,_} -> Key = K;
         {read,K,_} -> Key = K
                           end,
     {ok, VecSnapshotTime} = vectorclock:get_clock_by_key(Key),
-            
     %{ok, VecSnapshotTime} = vectorclock:get_clock_node(node()),
     DcId = dc_utilities:get_my_dc_id(),
     SnapshotTime = dict:update(DcId,

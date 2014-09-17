@@ -51,13 +51,18 @@ init([Port,Host,Message,ReplyTo]) ->
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     lager:info("Connecting to ~p : ~p",[Host, Port]),
-    {ok, Socket} = gen_tcp:connect(Host, Port,
-                                 [{active,true},binary, {packet,2}], ?TIMEOUT),
-    lager:info("Connected"),
-    inet:setopts(Socket, [{active, once}]),
-    ok = gen_tcp:send(Socket, term_to_binary(Message)),
-    inet:setopts(Socket, [{active, once}]),
-    {next_state, wait_for_ack, State#state{socket=Socket},?TIMEOUT}.
+    case  gen_tcp:connect(Host, Port,
+                                 [{active,true},binary, {packet,2}], ?TIMEOUT) of
+        { ok, Socket} ->
+            lager:info("Connected"),
+            inet:setopts(Socket, [{active, once}]),
+            ok = gen_tcp:send(Socket, term_to_binary(Message)),
+            inet:setopts(Socket, [{active, once}]),
+            {next_state, wait_for_ack, State#state{socket=Socket},?TIMEOUT};
+        {error, _Reason} ->
+            lager:info("Couldnot connect to remote DC"),
+            {stop, normal, State}
+    end.
 
 wait_for_ack(acknowledge, State=#state{socket=_Socket} )->
     lager:debug("Updates sent to other DC"),

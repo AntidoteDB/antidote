@@ -19,7 +19,8 @@ init_state(Partition) ->
 
 enqueue_update({Key,
                 Payload= #operation{op_number = OpId, payload = LogRecord}, FromDC},
-               State = #recvr_state{lastRecvd = LastRecvd, recQ = RecQ}) ->    
+               State = #recvr_state{lastRecvd = LastRecvd, recQ = RecQ}) ->
+    lager:info("Process key"),
     LastRecvdNew = set(FromDC, OpId, LastRecvd),
     lager:info("enquing ~p",[Key]),
     RecQNew = enqueue(FromDC, {Key,LogRecord}, RecQ),
@@ -43,15 +44,22 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                                              partition = Partition}) ->
     case queue:is_empty(DcQ) of
-        false ->            
+        false ->
             {Key, LogRecord} = queue:get(DcQ),
             Payload = LogRecord#log_record.op_payload,
             CommitTime = Payload#clocksi_payload.commit_time,
-            SnapshotTime = vectorclock:set_clock_of_dc(Dc, 0,Payload#clocksi_payload.snapshot_time),
+            SnapshotTime = vectorclock:set_clock_of_dc(
+                             Dc, 0, Payload#clocksi_payload.snapshot_time),
             {Dc, Ts} = CommitTime,
             case LogRecord#log_record.op_type of
                 noop -> %% Dummy update to notify clock
-                    {ok, _} = vectorclock:update_clock(Partition, Dc, Ts);
+                    {ok, NewClock} = vectorclock:update_clock(Partition, Dc, Ts),
+                    lager:info("Clock updated from heartbeat ~p",[NewClock]),
+                    riak_core_vnode_master:command({Partition, node()}, {process_queue},
+                                           inter_dc_recvr_vnode_master),
+                    {ok, NewState} = finish_update_dc(
+                               Dc, DcQ, Ts, StateData),
+                    NewState;
                 _ ->
                     %% Check for dependency of operations and write to log
                     {ok, LC} = vectorclock:get_clock_by_key(Key),
@@ -60,8 +68,8 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                     case orddict:find(Dc, LastCTS) of  % Check for duplicate
                         {ok, CTS} ->
                             if Ts >= CTS ->
-                                    check_and_update(SnapshotTime, Localclock, Key, Payload, 
-                                                     Dc, DcQ, Ts, StateData ) ;                             
+                                    check_and_update(SnapshotTime, Localclock, Key, Payload,
+                                                     Dc, DcQ, Ts, StateData ) ;
                                true ->
                                     %% TODO: Not right way check duplicates
                                     lager:info("Duplicate request"),
@@ -74,7 +82,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                             check_and_update(SnapshotTime, Localclock, Key, Payload,
                                              Dc, DcQ, Ts, StateData)
                     end
-            end;                
+            end;
         true ->
             StateData
     end.

@@ -95,16 +95,16 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
 %%                 {ok, Ops} ->
 %%                     OpDone = prepare_and_send_ops(Ops,Clock,ReqDc,State);
 %%                 {error, _Reason} ->
-%%                     lager:debug("Error reading from flopp_rep")                   
+%%                     lager:debug("Error reading from flopp_rep")
 %%             end;
 %%         _ ->
 %%             case floppy_rep_vnode:read_from(Key, riak_dt_gcounter, FromOp) of
 %%                 {ok, Ops} ->
 %%                     OpDone = prepare_and_send_ops(Ops, Clock, State);
 %%                 {error, _Reason} ->
-%%                     lager:debug("Error reading from flopp_rep")                     
+%%                     lager:debug("Error reading from flopp_rep")
 %%             end
-%%     end,    
+%%     end,
 %%     {reply, ok, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
@@ -141,34 +141,36 @@ terminate(_Reason, _State) ->
     ok.
 
 %% Filter Ops to the form understandable by recvr and propagate
-prepare_and_send_ops(Ops, _Clock, _State = #state{partition=_Partition, 
+prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                                               last_op=LastOpId}) ->
     case Ops of
         %% if empty, there are no updates
         [] ->
             %% get current vectorclock of node
             %% propogate vectorclock to other DC
-            %% DcId = dc_utilities:get_my_dc_id(),
-            %% LocalClock = vectorclock:get_clock_of_dc(DcId, Clock),
-            %% Op = #clocksi_payload{key = Partition, commit_time=
-            %%                           {DcId, LocalClock}},
-            %% Payload=#operation{payload = #log_record
-            %%                    {op_type=noop, op_payload=Op}},
-            %% case inter_dc_repl:propagate_sync([Payload]) of
-            %%     done ->
-            %%         Done = LastOpId;
-            %%     Other ->
-            %%         Done = LastOpId,
-            %%         lager:info(
-            %%           "Propagation error. Reason: ~p",[Other])
-
-            %% end;
-            Done = LastOpId; %%TODO:
+            DcId = dc_utilities:get_my_dc_id(),
+            {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, Clock),
+            Op = #clocksi_payload{key = Partition,
+                                  commit_time={DcId, LocalClock},
+                                  snapshot_time = vectorclock:from_list([])
+                                 },
+            Payload=#operation{payload = #log_record
+                               {op_type=noop, op_payload=Op}},
+            case inter_dc_communication_sender:propagate_sync(
+                   {replicate, [Payload]}) of
+                done ->
+                    Done = LastOpId;
+                Other ->
+                    Done = LastOpId,
+                    lager:info(
+                      "Propagation error. Reason: ~p",[Other])
+            end;
+            %Done = LastOpId; %%TODO:
         _ ->
             Downstreamops = filter_downstream(Ops),
             lager:info("Ops to replicate ~p",[Downstreamops]),
-            case inter_dc_communication_sender:propagate_sync
-                ({replicate, Downstreamops}) of
+            case inter_dc_communication_sender:propagate_sync(
+                   {replicate, Downstreamops}) of
                 ok ->
                     Done = get_last_opid(Ops, LastOpId);
                 _ ->
