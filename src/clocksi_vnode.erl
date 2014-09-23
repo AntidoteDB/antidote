@@ -73,7 +73,6 @@ start_vnode(I) ->
 
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
-    lager:info("Read issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
                                             {read_data_item, TxId, Key, Type},
