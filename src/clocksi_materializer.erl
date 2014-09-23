@@ -26,6 +26,7 @@
 
 -export([get_snapshot/3,
          get_snapshot/4,
+         update_snapshot/4,
          update_snapshot_eager/3]).
 
 %% @doc Creates an empty CRDT
@@ -34,6 +35,17 @@
 -spec create_snapshot(Type::atom()) -> term().
 create_snapshot(Type) ->
     Type:new().
+    
+    
+%% @doc Calls the internal function update_snapshot/5, with no TxId.
+-spec update_snapshot(Type::atom(), Snapshot::term(),
+                      SnapshotTime::vectorclock:vectorclock(),
+                      Ops::[#clocksi_payload{}]) -> term().
+update_snapshot(_, Snapshot, _SnapshotTime, []) ->
+    {ok, Snapshot};   
+update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest]) ->
+	update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], ignore).
+	
 
 %% @doc Applies the operation of a list to a CRDT. Only the
 %%      operations with smaller timestamp than the specified
@@ -48,6 +60,7 @@ create_snapshot(Type) ->
                       Ops::[#clocksi_payload{}], TxId::term()) -> term().
 update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
     {ok, Snapshot};
+    
 update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
     lager:info("Read issued at SnapshotTime: ~p", [SnapshotTime]),
     Type = Op#clocksi_payload.type,

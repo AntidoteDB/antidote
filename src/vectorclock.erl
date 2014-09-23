@@ -29,7 +29,6 @@
 
 -export_type([vectorclock/0]).
 
--type vectorclock() :: dict().
 
 get_clock_by_key(Key) ->
     Logid = log_utilities:get_logid_from_key(Key),

@@ -18,6 +18,8 @@
 %% Used by the replication layer
 -record(operation, {op_number, payload}).
 -type operation() :: #operation{}.
+-type vectorclock() :: dict().
+
 
 %% The way records are stored in the log.
 -record(log_record, {tx_id, op_type::atom(), op_payload}).
