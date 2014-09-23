@@ -152,13 +152,8 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
-    lager:info("Node about to perform update_data_item"),
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
-    lager:info("Node to send the append ~p", [Node]),
-    Preflist = log_utilities:get_preflist_from_logid(LogId),
-    Leader = hd(Preflist),
-    lager:info("Node to send the append using leader ~p", [Leader]),
     Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
