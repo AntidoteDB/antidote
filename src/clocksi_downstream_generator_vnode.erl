@@ -54,12 +54,40 @@ trigger(Key, Writeset) ->
     end.
 
 start_vnode(I) ->
-    riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
+    {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
+    riak_core_vnode:send_command(Pid, trigger),
+    {ok, Pid}.
 
 init([Partition]) ->
     {ok, #dstate{partition = Partition,
                  last_commit_time = 0,
                  pending_operations = []}}.
+
+%%
+handle_command(trigger, _Sender,
+               State= #dstate{partition = Partition,
+                              last_commit_time = LastCommitTime
+                              }) ->
+    MyNode = node(),
+    case MyNode of
+        'dev2@127.0.0.1' ->
+            {reply, ok, State};
+        _ ->
+            Node = {Partition, node()},
+            Stable_time = get_stable_time(Node, LastCommitTime),
+            riak_core_vnode_master:command([Node],
+                                           {process},
+                                           ?CLOCKSI_GENERATOR_MASTER),
+            spawn(fun() ->
+                          timer:sleep(1000),
+                          riak_core_vnode_master:command([Node],
+                                                         {trigger},
+                                                         ?CLOCKSI_GENERATOR_MASTER)
+                  end
+                 ),
+            {reply, {ok, trigger_received},
+             State#dstate{stable_time=Stable_time}}
+        end;
 
 %% @doc Read client update operations,
 %%      generate downstream operations and store it to persistent log.
@@ -103,15 +131,20 @@ handle_command({process}, _Sender,
                      end, {PendingOperations, LastCommitTime}, Sorted_ops),
     DcId = dc_utilities:get_my_dc_id(),
     lager:info("Updating vector clock ~p",[Stable_time]),
-    {ok, _Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
+    {ok, Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
     _ = case PendingOperations of
-        [] ->
+            [] ->
                 %%TODO
-            %% inter_dc_repl_vnode:sync_clock(Partition, Clock);
-                donothing;
-        [H|_T] -> Key = H#clocksi_payload.key,
-                  inter_dc_repl_vnode:trigger(Key)
-    end,
+                MyNode = node(),
+                case MyNode of
+                    'dev2@127.0.0.1' ->
+                        {reply, ok, State};
+                    _ ->
+                        inter_dc_repl_vnode:sync_clock(Partition, Clock)
+                end;
+            [H|_T] -> Key = H#clocksi_payload.key,
+                      inter_dc_repl_vnode:trigger(Key)
+        end,
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 
