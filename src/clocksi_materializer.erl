@@ -49,7 +49,6 @@ create_snapshot(Type) ->
 update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
     {ok, Snapshot};
 update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
-    lager:info("Read issued at SnapshotTime: ~p", [SnapshotTime]),
     Type = Op#clocksi_payload.type,
     case (is_op_in_snapshot(Op#clocksi_payload.commit_time, SnapshotTime)
           or (TxId =:= Op#clocksi_payload.txid)) of

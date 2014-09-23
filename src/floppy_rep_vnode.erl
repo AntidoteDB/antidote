@@ -72,11 +72,6 @@ append(Key, Type, Payload) ->
         {error, Reason} ->
             lager:info("Append failed; reason: ~p", [Reason]),
             {error, Reason}
-    after
-        ?OP_TIMEOUT ->
-            lager:info("Append failed, timeout exceeded: ~p~n",
-                       [?OP_TIMEOUT]),
-            {error, timeout}
     end.
 
 %% @doc Function: read/1
@@ -96,11 +91,6 @@ read(Key, Type) ->
         {error, Reason} ->
             lager:info("Read failed; reason: ~p", [Reason]),
             {error, Reason}
-    after
-        ?OP_TIMEOUT ->
-            lager:info("Read failed; timeout exceeded: ~p",
-                       [?OP_TIMEOUT]),
-            {error, timeout}
     end.
 
 %% @doc Function: read_from/2
@@ -118,10 +108,6 @@ read_from(Key, Type, From) ->
         {error, Reason} ->
             lager:info("Read from op ~p failed; Reason: ~p",[From, Reason]),
             {error, Reason}
-    after ?OP_TIMEOUT ->
-            lager:info("Read_from ~p failed; timeout exceeded: !p",
-                       [?OP_TIMEOUT]),
-            {error, timeout}
     end.
 
 %% @doc Function: operate/5

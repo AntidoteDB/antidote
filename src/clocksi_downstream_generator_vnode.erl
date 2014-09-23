@@ -53,7 +53,7 @@
 %%             Writeset -> set of updates
 -spec trigger(key(),
               {TxId :: term(), Updates :: [{term(), {Key :: term(), Type:: term(), Op :: term()}}], Vec_snapshot_time :: vectorclock:vectorclock(), Commit_time :: non_neg_integer()})
-             -> ok | {error, timeout}.
+             -> ok.
 trigger(Key, Writeset) ->
     Logid = log_utilities:get_logid_from_key(Key),
     Preflist = log_utilities:get_preflist_from_logid(Logid),
@@ -64,8 +64,6 @@ trigger(Key, Writeset) ->
     receive
         {ok, trigger_received} ->
             ok
-    after 100 ->
-            {error, timeout}
     end.
 
 start_vnode(I) ->
