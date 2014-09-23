@@ -73,11 +73,8 @@ init([Partition]) ->
 handle_command({read, Key, Type, SnapshotTime}, _Sender,
                State = #state{cache=Cache}) ->
     Operations = ets:lookup(Cache, Key),
-    lager:info("operations: ~p", [Operations]),
     ListOfOps = filter_ops(Operations),
-    lager:info("filter operations: ~p", [Operations]),
     {ok, Snapshot} = clocksi_materializer:get_snapshot(Type, SnapshotTime, ListOfOps),
-    lager:info("snapshot: ~p", [Snapshot]),
     {reply, {ok, Snapshot}, State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,
