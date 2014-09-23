@@ -34,7 +34,6 @@
          read/2,
          asyn_append/3,
          append/3,
-         append_list/3,
          asyn_read_from/3,
          read_from/3]).
 
@@ -96,7 +95,6 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), log_id(), op()) -> term().
 asyn_append(Preflist, Log, Payload) ->
     lager:info("Append triggered with preference list: ~p", [Preflist]),
     riak_core_vnode_master:command(Preflist,
@@ -105,17 +103,9 @@ asyn_append(Preflist, Log, Payload) ->
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation
--spec append({partition(), node()}, log_id(), op()) -> term().
-append(Node, LogId, Payload) ->
-    riak_core_vnode_master:sync_command(Node,
+append(IndexNode, LogId, Payload) ->
+    riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, Payload},
-                                        ?LOGGING_MASTER).
-
-%% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
--spec append_list({partition(), node()}, key(), [op()]) -> term().
-append_list(Node, Log, Ops) ->
-    riak_core_vnode_master:sync_command(Node,
-                                        {append_list, Log, Ops},
                                         ?LOGGING_MASTER).
 
 %% @doc Opens the persistent copy of the Log.
@@ -182,32 +172,6 @@ handle_command({read_from, LogId, From}, _Sender,
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
-%% @doc Repair command: Appends the Ops to the Log
-%%      Input:  LogId: Indetifies which log the operations have
-%%              to be appended to.
-%%              Ops: Operations to append
-%%      Output: ok | {error, Reason}
-%%
-handle_command({append_list, LogId, Ops}, _Sender,
-               #state{partition=Partition, logs_map=Map}=State) ->
-    Result = case get_log_from_map(Map, Partition, LogId) of
-                 {ok, Log} ->
-                     F = fun({_, Operation}, Acc) ->
-                                 lager:info("Operation: ~p", [Operation]),
-                                 #operation{op_number=OpId, payload=Payload} = Operation,
-                                 case insert_operation(Log, LogId, OpId, Payload) of
-                                     {ok, _}->
-                                         Acc;
-                                     {error, Reason} ->
-                                         [{error, Reason}|Acc]
-                                 end
-                         end,
-                     lists:foldl(F, [], Ops);
-                 {error, Reason} ->
-                     {error, Reason}
-             end,
-    {reply, Result, State};
 
 %% @doc Append command: Appends a new op to the Log of Key
 %%      Input:  LogId: Indetifies which log the operation has to be
