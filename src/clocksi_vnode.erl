@@ -351,7 +351,7 @@ update_materializer(Updates, TxId, SnapshotTime, TxCommitTime) ->
                                                 snapshot_time = SnapshotTime,
                                                 commit_time = {DcId, TxCommitTime},
                                                 txid= TxId},
-                            [AccIn || materializer_vnode:update_cache(OpKey, CommittedDownstreamOp)]
+                            AccIn++[materializer_vnode:update_cache(OpKey, CommittedDownstreamOp)]
                     end,
     Results = lists:foldl(UpdateFunction, [], Updates),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),

@@ -33,6 +33,7 @@ generate_downstream_op(Update) ->
     Type =  Update#clocksi_payload.type,
     {Op, Actor} =  Update#clocksi_payload.op_param,
     SnapshotTime = Update#clocksi_payload.snapshot_time,
+    lager:info("Snapshot:",[SnapshotTime]),
     case materializer_vnode:read(Key, Type, SnapshotTime) of
         {ok, Snapshot} ->
             {ok, NewState} = Type:update(Op, Actor, Snapshot),

@@ -138,6 +138,7 @@ execute_op({Op_type, Args}, Sender,
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
+            lager:info("ClockSI-Interactive-Coord: Snapshot ~w ~n ", [Transaction]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
                        [Key]),
             Logid = log_utilities:get_logid_from_key(Key),
@@ -330,7 +331,7 @@ get_snapshot_time() ->
 -spec generate_downstream_op(#clocksi_payload{}, term(), term(), {term(), term()}) -> {ok, term()} | {error, term()}.
 generate_downstream_op(Txn, Key, Type, Param) ->
     TxnId = Txn#transaction.txn_id,
-    Snapshot_time=Txn#transaction.snapshot_time,
+    Snapshot_time=Txn#transaction.vec_snapshot_time,
     Record = #clocksi_payload{key = Key, type = Type,
                                 op_param = Param,
                                 snapshot_time = Snapshot_time,
