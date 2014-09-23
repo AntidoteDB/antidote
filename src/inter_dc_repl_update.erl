@@ -51,50 +51,45 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             SnapshotTime = vectorclock:set_clock_of_dc(
                              Dc, 0, Payload#clocksi_payload.snapshot_time),
             {Dc, Ts} = CommitTime,
-            case LogRecord#log_record.op_type of
-                noop -> %% Dummy update to notify clock
-                    {ok, NewClock} = vectorclock:update_clock(Partition, Dc, Ts),
-                    lager:info("Clock updated from heartbeat ~p",[NewClock]),
-                    riak_core_vnode_master:command({Partition, node()}, {process_queue},
-                                           inter_dc_recvr_vnode_master),
-                    {ok, NewState} = finish_update_dc(
-                               Dc, DcQ, Ts, StateData),
-                    NewState;
+            %% Check for dependency of operations and write to log
+            {ok, LC} = vectorclock:get_clock(Partition),
+            Localclock = vectorclock:set_clock_of_dc(Dc, 0, LC),
+            lager:info(" Localclock of recvr ~p",[Localclock]),
+            case orddict:find(Dc, LastCTS) of  % Check for duplicate
+                {ok, CTS} ->
+                    if Ts >= CTS ->
+                            check_and_update(SnapshotTime, Localclock, Key, LogRecord,
+                                             Dc, DcQ, Ts, StateData ) ;
+                       true ->
+                            %% TODO: Not right way check duplicates
+                            lager:info("Duplicate request"),
+                            {ok, NewState} = finish_update_dc(
+                                               Dc, DcQ, CTS, StateData),
+                            %%Duplicate request, drop from queue
+                            NewState
+                    end;
                 _ ->
-                    %% Check for dependency of operations and write to log
-                    {ok, LC} = vectorclock:get_clock_by_key(Key),
-                    Localclock = vectorclock:set_clock_of_dc(Dc, 0, LC),
-                    lager:info(" Localclock of recvr ~p",[Localclock]),
-                    case orddict:find(Dc, LastCTS) of  % Check for duplicate
-                        {ok, CTS} ->
-                            if Ts >= CTS ->
-                                    check_and_update(SnapshotTime, Localclock, Key, Payload,
-                                                     Dc, DcQ, Ts, StateData ) ;
-                               true ->
-                                    %% TODO: Not right way check duplicates
-                                    lager:info("Duplicate request"),
-                                    {ok, NewState} = finish_update_dc(
-                                                       Dc, DcQ, CTS, StateData),
-                                    %%Duplicate request, drop from queue
-                                    NewState
-                            end;
-                        _ ->
-                            check_and_update(SnapshotTime, Localclock, Key, Payload,
-                                             Dc, DcQ, Ts, StateData)
-                    end
+                    check_and_update(SnapshotTime, Localclock, Key, Payload,
+                                     Dc, DcQ, Ts, StateData)
+
             end;
         true ->
             StateData
     end.
 
-check_and_update(SnapshotTime, Localclock, Key, Payload, Dc, DcQ, Ts, StateData = #recvr_state{partition = Partition} ) ->
+check_and_update(SnapshotTime, Localclock, Key, LogRecord, Dc, DcQ, Ts, StateData = #recvr_state{partition = Partition} ) ->
+    Payload = LogRecord#log_record.op_payload,
     case check_dep(SnapshotTime, Localclock) of
         true ->
-            %%{ok, _} = floppy_rep_vnode:append(Key, Type, LogRecord),
-            lager:info("Updating to materializer"),
-            ok = materializer_vnode:update(Key, Payload),
-                                                %lager:info("Replicated ~p ~p",[Key, Ts]),
-            %%TODO add error handling if append failed
+            case LogRecord#log_record.op_type of
+                noop -> %% Heartbeat
+                    lager:debug("Heartbeat received");
+                _ ->
+                    lager:info("Updating to materializer"),
+                    ok = materializer_vnode:update(Key, Payload)
+                    %%TODO add error handling if append failed
+            end,
+
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
             {ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
@@ -102,7 +97,7 @@ check_and_update(SnapshotTime, Localclock, Key, Payload, Dc, DcQ, Ts, StateData 
                                            inter_dc_recvr_vnode_master),
             NewState;
         false ->
-            lager:info(" Dep not satisfied ~p", [Payload]),
+            lager:info("Dep not satisfied ~p", [Payload]),
             StateData
     end.
 

@@ -152,7 +152,7 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
             {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, Clock),
             Op = #clocksi_payload{key = Partition,
                                   commit_time={DcId, LocalClock},
-                                  snapshot_time = vectorclock:from_list([])
+                                  snapshot_time = Clock
                                  },
             Payload=#operation{payload = #log_record
                                {op_type=noop, op_payload=Op}},
