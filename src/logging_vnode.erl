@@ -75,7 +75,7 @@ asyn_read_from(Preflist, Log, From) ->
 %% @doc synchronous read_from operation
 -spec read_from({partition(), node()}, log_id(), op_id()) -> term().
 read_from(Node, LogId, From) ->
-    rial_core_vnode_master:sync_command(Node,
+    riak_core_vnode_master:sync_command(Node,
                                         {read_from, LogId, From},
                                         ?LOGGING_MASTER).
 
@@ -107,7 +107,7 @@ asyn_append(Preflist, Log, Payload) ->
 %% @doc synchronous append operation
 -spec append({partition(), node()}, log_id(), op()) -> term().
 append(Node, LogId, Payload) ->
-    rial_core_vnode_master:sync_command(Node,
+    riak_core_vnode_master:sync_command(Node,
                                         {append, LogId, Payload},
                                         ?LOGGING_MASTER).
 
@@ -137,7 +137,7 @@ init([Partition]) ->
         {error, Reason} ->
             {error, Reason};
         Map ->
-            {ok, #state{partition=Partition, logs_map=Map}}
+            {ok, #state{partition=Partition, logs_map=Map, clock=0}}
     end.
 
 %% @doc Read command: Returns the operations logged for Key
