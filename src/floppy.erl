@@ -79,12 +79,7 @@ clocksi_execute_tx(Clock, Operations) ->
     {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
     receive
         EndOfTx ->
-            lager:info("TX completed!"),
             EndOfTx
-    after
-        10000 ->
-            lager:info("Tx failed!"),
-            {error, timeout}
     end.
 
 clocksi_execute_tx(Operations) ->
@@ -92,12 +87,7 @@ clocksi_execute_tx(Operations) ->
     {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
     receive
         EndOfTx ->
-            lager:info("TX completed!"),
             EndOfTx
-    after
-        10000 ->
-            lager:info("Tx failed!"),
-            {error, timeout}
     end.
 
 %% @doc Starts a new ClockSI interactive transaction.

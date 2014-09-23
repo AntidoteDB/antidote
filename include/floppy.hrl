@@ -6,10 +6,11 @@
         clocksi_downstream_generator_vnode_master).
 -define(CLOCKSI, clocksi).
 -define(REPMASTER, floppy_rep_vnode_master).
--define(OP_TIMEOUT, 25000).
--define(COORD_TIMEOUT, 5000).
--define(COMM_TIMEOUT, 2500).
 -define(N, 1).
+-define(OP_TIMEOUT, infinity).
+-define(COORD_TIMEOUT, infinity).
+-define(COMM_TIMEOUT, infinity).
+-define(N, 3).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').
@@ -73,6 +74,5 @@
 -type type() :: atom().
 -type snapshot() :: term().
 -type txid() :: #tx_id{}.
-
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0]).

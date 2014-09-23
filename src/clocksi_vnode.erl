@@ -77,7 +77,8 @@ read_data_item(Node, TxId, Key, Type) ->
     try
         riak_core_vnode_master:sync_command(Node,
                                             {read_data_item, TxId, Key, Type},
-                                            ?CLOCKSI_MASTER)
+                                            ?CLOCKSI_MASTER,
+                                            infinity)
     catch
         _:Reason ->
             lager:error("Exception caught: ~p", [Reason]),
@@ -90,7 +91,8 @@ update_data_item(Node, TxId, Key, Type, Op) ->
     try
         riak_core_vnode_master:sync_command(Node,
                                             {update_data_item, TxId, Key, Type, Op},
-                                            ?CLOCKSI_MASTER)
+                                            ?CLOCKSI_MASTER,
+                                            infinity)
     catch
         _:Reason ->
             lager:error("Exception caught: ~p", [Reason]),
