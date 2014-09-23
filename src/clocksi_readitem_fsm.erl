@@ -98,14 +98,11 @@ waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
     case vectorclock:get_clock_by_key(Key) of
         {ok, LocalClock} ->
             SnapshotTime = Transaction#transaction.vec_snapshot_time,
-            lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
             case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
                 false ->
-                    lager:info("Trigger downstream"),
                     _Result = clocksi_downstream_generator_vnode:trigger(Key, {dummytx, [], vectorclock:from_list([]), 0}),
                     %% TODO change this, add a heartbeat to increase vectorclock if
                     %%     there are no pending txns in downstream generator
-                    lager:info("Return from DS ~p",[_Result]),
                     {next_state, waiting2, SDO, 1};
                 true ->
                     {next_state, return, SDO, 0}
@@ -120,10 +117,8 @@ waiting2(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
     case  vectorclock:get_clock_by_key(Key) of
         {ok, LocalClock} ->
             SnapshotTime = Transaction#transaction.vec_snapshot_time,
-            lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
             case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
                 false ->
-                    lager:info("Wait of vectoclock to catch up"),
                     {next_state, waiting2, SDO, 1};
                 true ->
                     {next_state, return, SDO, 0}
