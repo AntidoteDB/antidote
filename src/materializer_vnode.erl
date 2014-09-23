@@ -73,11 +73,8 @@ init([Partition]) ->
 handle_command({read, Key, Type, SnapshotTime}, _Sender,
                State = #state{cache=Cache}) ->
     Operations = ets:lookup(Cache, Key),
-    lager:info("operations: ~p", [Operations]),
     ListOfOps = filter_ops(Operations),
-    lager:info("filter operations: ~p", [Operations]),
     {ok, Snapshot} = clocksi_materializer:get_snapshot(Type, SnapshotTime, ListOfOps),
-    lager:info("snapshot: ~p", [Snapshot]),
     {reply, {ok, Snapshot}, State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,
@@ -86,8 +83,9 @@ handle_command({update, Key, DownstreamOp}, _Sender,
     LogRecord = #log_record{tx_id=DownstreamOp#clocksi_payload.txid,
                             op_type=downstreamop,
                             op_payload=DownstreamOp},
-    case floppy_rep_vnode:append(
-           Key, DownstreamOp#clocksi_payload.type, LogRecord) of
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    case logging_vnode:append(Node,LogId,LogRecord) of
         {ok, _} ->
             true = ets:insert(Cache, {Key, DownstreamOp}),
             {reply, ok, State};

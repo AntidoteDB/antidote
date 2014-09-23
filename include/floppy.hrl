@@ -9,7 +9,7 @@
 -define(OP_TIMEOUT, 25000).
 -define(COORD_TIMEOUT, 5000).
 -define(COMM_TIMEOUT, 2500).
--define(N, 3).
+-define(N, 1).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(OTHER_DC, 'floppy1@127.0.0.1').

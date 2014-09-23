@@ -150,7 +150,14 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
-    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+    lager:info("Node about to perform update_data_item"),
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    lager:info("Node to send the append ~p", [Node]),
+    Preflist = log_utilities:get_preflist_from_logid(LogId),
+    Leader = hd(Preflist),
+    lager:info("Node to send the append using leader ~p", [Leader]),
+    Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
             true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
@@ -160,8 +167,8 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                     Txn#transaction.vec_snapshot_time,
                     Partition),
             {noreply, State};
-        {error, timeout} ->
-            {reply, {error, timeout}, State}
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
     end;
 
 handle_command({prepare, Transaction}, _Sender,
@@ -180,8 +187,10 @@ handle_command({prepare, Transaction}, _Sender,
                                     op_payload=PrepareTime},
             true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
             Updates = ets:lookup(WriteSet, TxId),
-            [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-            Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+            [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            Result = logging_vnode:append(Node,LogId,LogRecord),
             case Result of
                 {ok, _} ->
                     {reply, {prepared, PrepareTime}, State};
@@ -202,8 +211,10 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                           op_payload={TxCommitTime,
                                       Transaction#transaction.vec_snapshot_time}},
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
             true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
@@ -222,8 +233,10 @@ handle_command({abort, Transaction}, _Sender,
                #state{partition=_Partition, write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key, Type, {TxId, aborted}),
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
     case Result of
         {ok, _} ->
             clean_and_notify(TxId, Key, State);
