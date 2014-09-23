@@ -143,23 +143,29 @@ execute_op({Op_type, Args}, Sender,
             Logid = log_utilities:get_logid_from_key(Key),
             Preflist = log_utilities:get_preflist_from_logid(Logid),
             IndexNode = hd(Preflist),
-            case clocksi_vnode:update_data_item(IndexNode, Transaction,
+            case generate_downstream_op(Transaction, Key, Type, Param) of
+                {ok, DownstreamRecord} ->
+                    {ok, _} = floppy_rep_vnode:append(Key, Type, DownstreamRecord),
+                    case clocksi_vnode:update_data_item(IndexNode, Transaction,
                                                 Key, Type, Param) of
-                ok ->
-                    case lists:member(IndexNode, Updated_partitions) of
-                        false ->
-                            lager:info(
-                              "ClockSI-Interactive-Coord: Adding Leader node ~w, updt: ~w",
-                              [IndexNode, Updated_partitions]),
-                            New_updated_partitions=
-                                lists:append(Updated_partitions, [IndexNode]),
-                            {reply, ok, execute_op,
-                             SD0#state
-                             {updated_partitions= New_updated_partitions}};
-                        true->
-                            {reply, ok, execute_op, SD0}
+                        ok ->
+                            case lists:member(IndexNode, Updated_partitions) of
+                                false ->
+                                    lager:info(
+                                    "ClockSI-Interactive-Coord: Adding Leader node ~w, updt: ~w",
+                                    [IndexNode, Updated_partitions]),
+                                    New_updated_partitions=
+                                        lists:append(Updated_partitions, [IndexNode]),
+                                    {reply, ok, execute_op,
+                                    SD0#state
+                                    {updated_partitions= New_updated_partitions}};
+                                true->
+                                    {reply, ok, execute_op, SD0}
+                            end;
+                        error ->
+                            {reply, error, abort, SD0}
                     end;
-                error ->
+                {error, _} ->
                     {reply, error, abort, SD0}
             end
     end.
@@ -320,3 +326,15 @@ get_snapshot_time() ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
     Snapshot_time  = Now - ?DELTA,
     {ok, Snapshot_time}.
+
+-spec generate_downstream_op(#clocksi_payload{}, term(), term(), {term(), term()}) -> {ok, term()} | {error, term()}.
+generate_downstream_op(Txn, Key, Type, Param) ->
+    TxnId = Txn#transaction.txn_id,
+    Snapshot_time=Txn#transaction.snapshot_time,
+    Record = #clocksi_payload{key = Key, type = Type,
+                                op_param = Param,
+                                snapshot_time = Snapshot_time,
+                                commit_time = {},
+                                txid = TxnId},
+    clocksi_downstream:generate_downstream_op(Record).
+
