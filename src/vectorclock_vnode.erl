@@ -28,7 +28,7 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(currentclock,{clock}).
+-record(currentclock,{last_received_clock, partition_vectorclock}).
 
 %% API
 start_vnode(I) ->
@@ -36,24 +36,38 @@ start_vnode(I) ->
 
 %% @doc Initialize the clock
 init([_Partition]) ->
-    {ok, #currentclock{clock=dict:new()}}.
+    {ok, #currentclock{last_received_clock=dict:new(),
+                      partition_vectorclock=dict:new()}}.
 
 %% @doc
-handle_command(get_clock, _Sender, #currentclock{clock=Clock} = State) ->
+handle_command(get_clock, _Sender, #currentclock{partition_vectorclock=Clock} = State) ->
     {reply, {ok, Clock}, State};
 
 %% @doc
-handle_command({update_clock, DcId, Timestamp}, _Sender, #currentclock{clock=Clock} = State) ->
-    NewClock = dict:update(DcId,
-                            fun(Value) ->
-                                 case Timestamp > Value of
-                                     true -> Timestamp;
-                                     false -> Value
-                                 end
-                            end,
-                            Timestamp,
-                            Clock),
-    {reply, {ok, NewClock}, State#currentclock{clock=NewClock}};
+%% update_vectorclock(partition, dc, time)
+%% if last_received_vectorclock[partition][dc] < time    
+%%    partition_vectorclock[partition][dc] = last_received_vectorclock[partition][dc]
+%% last_received_vectorclock[partition][dc] = time
+handle_command({update_clock, DcId, Timestamp}, _Sender, 
+               #currentclock{last_received_clock=LastClock,
+                             partition_vectorclock=VClock
+                            } = State) ->
+    case dict:find(DcId, LastClock) of
+        {ok, LClock} ->
+            case LClock < Timestamp of
+                true ->
+                    NewLClock = dict:store(DcId, Timestamp, LastClock),
+                    NewPClock = dict:store(DcId, LClock, VClock),
+                    {reply, {ok, NewLClock}, State#currentclock{last_received_clock=NewLClock,
+                                                              partition_vectorclock=NewPClock}
+                    };
+                false ->                    
+                    {reply, {ok, VClock}, State}
+            end;
+        error ->
+             NewLClock = dict:store(DcId, Timestamp, LastClock),
+            {reply, {ok, NewLClock}, State#currentclock{last_received_clock=NewLClock}}
+    end;
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
