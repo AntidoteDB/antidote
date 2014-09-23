@@ -149,20 +149,20 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                       write_set=WriteSet,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
-    LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
-    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
-    case Result of
-        {ok, _} ->
-            true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
-            true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
-            {ok, _Pid} = clocksi_updateitem_fsm:start_link(
+    %%LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
+    %%Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+    %%case Result of
+    %%    {ok, _} ->
+    true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
+    true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
+    {ok, _Pid} = clocksi_updateitem_fsm:start_link(
                     Sender,
                     Txn#transaction.vec_snapshot_time,
                     Partition),
-            {noreply, State};
-        {error, timeout} ->
-            {reply, {error, timeout}, State}
-    end;
+    {noreply, State};
+    %%    {error, timeout} ->
+    %%        {reply, {error, timeout}, State}
+    %%end;
 
 handle_command({prepare, Transaction}, _Sender,
                State = #state{partition=_Partition,
@@ -192,6 +192,9 @@ handle_command({prepare, Transaction}, _Sender,
             {reply, abort, State}
     end;
 
+%% TODO: sending empty writeset to clocksi_downstream_generatro
+%% Just a workaround, need to delete downstream_generator_vnode
+%% eventually.
 handle_command({commit, Transaction, TxCommitTime}, _Sender,
                #state{partition=_Partition,
                       committed_tx=CommittedTx,
@@ -203,17 +206,25 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                                       Transaction#transaction.vec_snapshot_time}},
     Updates = ets:lookup(WriteSet, TxId),
     [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
-    case Result of
+
+    %%Update materializer and write to materializer
+
+    case floppy_rep_vnode:append(Key, Type, LogRecord) of
         {ok, _} ->
             true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            _Return = clocksi_downstream_generator_vnode:trigger(
-                    Key, {TxId,
-                          Updates,
-                          Transaction#transaction.vec_snapshot_time,
-                          TxCommitTime}),
-            clean_and_notify(TxId, Key, State),
-            {reply, committed, State};
+            SnapshotTime = Transaction#transaction.vec_snapshot_time,
+            case update_materializer(Updates, TxId, SnapshotTime, TxCommitTime) of 
+                ok ->
+                    _Return = clocksi_downstream_generator_vnode:trigger(
+                                Key, {TxId,
+                                [],
+                                SnapshotTime,
+                                TxCommitTime}),
+                    clean_and_notify(TxId, Key, State),
+                    {reply, committed, State};
+                error ->
+                    {reply, {error, materializer_failure}, State}
+            end;
         {error, timeout} ->
             {reply, {error, timeout}, State}
     end;
@@ -328,3 +339,24 @@ check_keylog(TxId, [H|T], CommittedTx)->
         false ->
             check_keylog(TxId, T, CommittedTx)
     end.
+
+update_materializer(Updates, TxId, SnapshotTime, TxCommitTime) ->
+    DcId = dc_utilities:get_my_dc_id(),
+    UpdateFunction = fun (Op, AccIn) -> 
+                            {_, {OpKey, OpType, Param}} = Op,
+                            CommittedDownstreamOp = #clocksi_payload{key = OpKey, 
+                                                type = OpType,        
+                                                op_param = Param,
+                                                snapshot_time = SnapshotTime,
+                                                commit_time = {DcId, TxCommitTime},
+                                                txid= TxId},
+                            [AccIn || materializer_vnode:update_cache(OpKey, CommittedDownstreamOp)]
+                    end,
+    Results = lists:foldl(UpdateFunction, [], Updates),
+    Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
+    case length(Failures) of
+        0 ->
+            ok;
+        _ ->
+            error
+    end. 
