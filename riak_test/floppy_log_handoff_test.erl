@@ -37,8 +37,8 @@ confirm() ->
 
     lager:info("Spinning up test nodes"),
     Versions = [current || _ <- lists:seq(1, NTestNodes)],
-    [RootNode | TestNodes] = rt:deploy_nodes(Versions,[replication]),
-    rt:wait_for_service(RootNode, replication),
+    [RootNode | TestNodes] = rt:deploy_nodes(Versions,[logging]),
+    rt:wait_for_service(RootNode, logging),
 
     lager:info("Populating root node."),
     multiple_writes(RootNode, 1, NTestItems, ucl),
@@ -64,7 +64,7 @@ confirm() ->
 test_handoff(RootNode, NewNode, NTestItems) ->
 
     lager:info("Waiting for service on new node."),
-    rt:wait_for_service(NewNode, replication),
+    rt:wait_for_service(NewNode, logging),
 
     lager:info("Joining new node with cluster."),
     rt:join(NewNode, RootNode),

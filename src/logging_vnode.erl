@@ -30,10 +30,12 @@
 
 %% API
 -export([start_vnode/1,
-         dread/2,
+         asyn_read/2,
          read/2,
-         dappend/4,
+         asyn_append/3,
+         append/3,
          append_list/3,
+         asyn_read_from/3,
          read_from/3]).
 
 -export([init/1,
@@ -52,7 +54,7 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(state, {partition, logs_map}).
+-record(state, {partition, logs_map, clock}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -63,16 +65,23 @@ start_vnode(I) ->
 %%      `Preflist' From is the operation id form which the caller wants to
 %%      retrieve the operations.  The operations are retrieved in inserted
 %%      order and the From operation is also included.
--spec read_from(preflist(), key(), op_id()) -> term().
-read_from(Preflist, Log, From) ->
+-spec asyn_read_from(preflist(), key(), op_id()) -> term().
+asyn_read_from(Preflist, Log, From) ->
     riak_core_vnode_master:command(Preflist,
                                    {read_from, Log, From},
                                    {fsm, undefined, self()},
                                    ?LOGGING_MASTER).
 
+%% @doc synchronous read_from operation
+-spec read_from({partition(), node()}, log_id(), op_id()) -> term().
+read_from(Node, LogId, From) ->
+    riak_core_vnode_master:sync_command(Node,
+                                        {read_from, LogId, From},
+                                        ?LOGGING_MASTER).
+
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
--spec dread(preflist(), key()) -> term().
-dread(Preflist, Log) ->
+-spec asyn_read(preflist(), key()) -> term().
+asyn_read(Preflist, Log) ->
     lager:info("Read triggered with preference list: ~p", [Preflist]),
     riak_core_vnode_master:command(Preflist,
                                    {read, Log},
@@ -87,13 +96,20 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec dappend(preflist(), key(), op(), op_id()) -> term().
-dappend(Preflist, Log, OpId, Payload) ->
+-spec asyn_append(preflist(), log_id(), op()) -> term().
+asyn_append(Preflist, Log, Payload) ->
     lager:info("Append triggered with preference list: ~p", [Preflist]),
     riak_core_vnode_master:command(Preflist,
-                                   {append, Log, OpId, Payload},
+                                   {append, Log, Payload},
                                    {fsm, undefined, self()},
                                    ?LOGGING_MASTER).
+
+%% @doc synchronous append operation
+-spec append({partition(), node()}, log_id(), op()) -> term().
+append(Node, LogId, Payload) ->
+    riak_core_vnode_master:sync_command(Node,
+                                        {append, LogId, Payload},
+                                        ?LOGGING_MASTER).
 
 %% @doc Sends a `append_list' syncrhonous command to the Log in `Node'.
 -spec append_list({partition(), node()}, key(), [op()]) -> term().
@@ -121,7 +137,7 @@ init([Partition]) ->
         {error, Reason} ->
             {error, Reason};
         Map ->
-            {ok, #state{partition=Partition, logs_map=Map}}
+            {ok, #state{partition=Partition, logs_map=Map, clock=0}}
     end.
 
 %% @doc Read command: Returns the operations logged for Key
@@ -133,9 +149,9 @@ handle_command({read, LogId}, _Sender,
         {ok, Log} ->
             case get_log(Log, LogId) of
                 [] ->
-                    {reply, {ok,{{Partition, node()}, []}}, State};
+                    {reply, {ok, []}, State};
                 [H|T] ->
-                    {reply, {ok,{{Partition, node()}, [H|T]}}, State};
+                    {reply, {ok, [H|T]}, State};
                 {error, Reason}->
                     {reply, {error, Reason}, State}
             end;
@@ -156,10 +172,10 @@ handle_command({read_from, LogId, From}, _Sender,
         {ok, Log} ->
             case get_log(Log, LogId) of
                 [] ->
-                    {reply, {ok,{{Partition, node()}, []}}, State};
+                    {reply, {ok, []}, State};
                 [H|T] ->
                     Operations = threshold_prune([H|T], From),
-                    {reply, {ok,{{Partition, node()}, Operations}}, State};
+                    {reply, {ok, Operations}, State};
                 {error, Reason}->
                     {reply, {error, Reason}, State}
             end;
@@ -200,17 +216,19 @@ handle_command({append_list, LogId, Ops}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, OpId, Payload}, _Sender,
-               #state{logs_map=Map, partition=Partition}=State) ->
+handle_command({append, LogId, Payload}, _Sender,
+               #state{logs_map=Map, partition=Partition, clock=Clock}=State) ->
     lager:info("Issuing append operation at partition: ~p",
                [Partition]),
+    OpId = generate_op_id(Clock),
+    {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
                 {ok, OpId} ->
-                    {reply, {ok, {{Partition, node()}, OpId}}, State};
+                    {reply, {ok, OpId}, State#state{clock=NewClock}};
                 {error, Reason} ->
-                    {reply, {error, {{Partition, node()}, Reason}}, State}
+                    {reply, {error, {Reason}}, State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -425,6 +443,9 @@ get_log(Log, LogId) ->
 -spec preflist_member(partition(), preflist()) -> boolean().
 preflist_member(Partition,Preflist) ->
     lists:any(fun({P, _}) -> P =:= Partition end, Preflist).
+
+generate_op_id(Current) ->
+    {Current + 1, node()}.
 
 -ifdef(TEST).
 
