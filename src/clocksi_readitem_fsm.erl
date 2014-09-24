@@ -1,3 +1,22 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 -module(clocksi_readitem_fsm).
 
 -behavior(gen_fsm).
@@ -66,12 +85,9 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     Time = now_milisec(erlang:now()),
     case (T_TS) > Time of
         true ->
-            lager:info("ClockSI ReadItemFSM: waiting for clock to catchUp ~n"),
             timer:sleep(T_TS - Time),
-            lager:info("ClockSI ReadItemFSM: done waiting... ~n"),
             {next_state, waiting1, SD0, 0};
         false ->
-            lager:info("ClockSI ReadItemFSM: no need to wait for clock to catchUp ~n"),
             {next_state, waiting1, SD0, 0}
     end.
 
@@ -82,11 +98,9 @@ waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
             lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
             case vectorclock:ge(LocalClock, SnapshotTime) of
                 false ->
-                    lager:info("Trigger downstream"),
                     _Result = clocksi_downstream_generator_vnode:trigger(Key, {dummytx, [], vectorclock:from_list([]), 0}),
                     %% TODO change this, add a heartbeat to increase vectorclock if
                     %%     there are no pending txns in downstream generator
-                    lager:info("Return from DS ~p",[_Result]),
                     {next_state, waiting2, SDO, 1};
                 true ->
                     {next_state, return, SDO, 0}
@@ -104,7 +118,6 @@ waiting2(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
             lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
             case vectorclock:ge(LocalClock, SnapshotTime) of
                 false ->
-                    lager:info("Wait of vectoclock to catch up"),
                     {next_state, waiting2, SDO, 1};
                 true ->
                     {next_state, return, SDO, 0}
@@ -122,27 +135,17 @@ return(timeout, SD0=#state{key=Key,
                            transaction=Transaction,
                            type=Type,
                            updates=Updates}) ->
-    lager:info("ClockSI ReadItemFSM: reading key from the materialiser ~w", [Key]),
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     case materializer_vnode:read(Key, Type, VecSnapshotTime) of
         {ok, Snapshot} ->
             Updates2=filter_updates_per_key(Updates, Key),
-            lager:info
-              ("Filtered updates before completeing the read: ~w ~n" ,
-               [Updates2]),
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
             Reply=Type:value(Snapshot2);
         {error, Reason} ->
-            lager:error
-              ("ClockSI ReadItemFSM: reading from replog returned error: ~w",
-               [Reason]),
             Reply={error, Reason}
     end,
-    lager:info("ClockSI ReadItemFSM: replying to the tx coordinator ~w",
-               [Coordinator]),
     riak_core_vnode:reply(Coordinator, Reply),
-    lager:info("ClockSI ReadItemFSM: finished fsm for key ~w", [Key]),
     {stop, normal, SD0};
 return(_SomeMessage, SDO) ->
     {next_state, return, SDO,0}.
@@ -171,7 +174,6 @@ int_filter_updates_key([], _Key, Updates2) ->
 
 int_filter_updates_key([Next|Rest], Key, Updates2) ->
     {_, {KeyPrime, _Type, Op}} = Next,
-    lager:info("Comparing keys ~w==~w",[KeyPrime, Key]),
     case KeyPrime==Key of
         true ->
             int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));

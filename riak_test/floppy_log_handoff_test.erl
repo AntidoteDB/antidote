@@ -1,3 +1,22 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 -module(floppy_log_handoff_test).
 
 -export([confirm/0]).
@@ -18,8 +37,8 @@ confirm() ->
 
     lager:info("Spinning up test nodes"),
     Versions = [current || _ <- lists:seq(1, NTestNodes)],
-    [RootNode | TestNodes] = rt:deploy_nodes(Versions,[replication]),
-    rt:wait_for_service(RootNode, replication),
+    [RootNode | TestNodes] = rt:deploy_nodes(Versions,[logging]),
+    rt:wait_for_service(RootNode, logging),
 
     lager:info("Populating root node."),
     multiple_writes(RootNode, 1, NTestItems, ucl),
@@ -45,7 +64,7 @@ confirm() ->
 test_handoff(RootNode, NewNode, NTestItems) ->
 
     lager:info("Waiting for service on new node."),
-    rt:wait_for_service(NewNode, replication),
+    rt:wait_for_service(NewNode, logging),
 
     lager:info("Joining new node with cluster."),
     rt:join(NewNode, RootNode),

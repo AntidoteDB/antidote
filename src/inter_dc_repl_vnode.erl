@@ -24,6 +24,7 @@
          handle_exit/3]).
 
 -record(state, {partition,
+                dcid,
                 last_op=empty}).
 
 -define(RETRY_TIME, 5000).
@@ -56,7 +57,8 @@ get_update(DcId, FromOp, Partition) ->
 
 %% riak_core_vnode call backs
 init([Partition]) ->
-    {ok, #state{partition=Partition}}.
+    DcId=dc_utilities:get_my_dc_id(),
+    {ok, #state{partition=Partition,dcid=DcId}}.
 
 handle_command({sync_clock, Clock}, _Sender, State) ->
     prepare_and_send_ops([],Clock, State),
@@ -66,7 +68,9 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
     {ok, Clock} = vectorclock:get_clock_by_key(Key),
     case Last of
         empty ->
-            case floppy_rep_vnode:read(Key, riak_dt_gcounter) of
+            
+            LogId = log_utilities:get_logid_from_key(Key),
+            case logging_vnode:read({Partition, node()},LogId) of
                 {ok, Ops} ->
                     OpDone = prepare_and_send_ops(Ops,Clock,State);
                 {error, _Reason} ->
@@ -75,7 +79,8 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
                     trigger({Partition, node()}, Key)
             end;
         _ ->
-            case floppy_rep_vnode:read_from(Key, riak_dt_gcounter, Last) of
+            LogId = log_utilities:get_logid_from_key(Key),
+            case logging_vnode:read_from({Partition, node()}, LogId, Last) of
                 {ok, Ops} ->
                     OpDone = prepare_and_send_ops(Ops,Clock,State);
                 {error, _Reason} ->
@@ -142,13 +147,13 @@ terminate(_Reason, _State) ->
 
 %% Filter Ops to the form understandable by recvr and propagate
 prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
-                                              last_op=LastOpId}) ->
+                                              last_op=LastOpId,
+                                              dcid=DcId}) ->
     case Ops of
         %% if empty, there are no updates
         [] ->
             %% get current vectorclock of node
             %% propogate vectorclock to other DC
-            DcId = dc_utilities:get_my_dc_id(),
             {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, Clock),
             Op = #clocksi_payload{key = Partition,
                                   commit_time={DcId, LocalClock},
@@ -158,7 +163,7 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                                {op_type=noop, op_payload=Op}},
             case inter_dc_communication_sender:propagate_sync(
                    {replicate, [Payload]}) of
-                done ->
+                ok ->
                     Done = LastOpId;
                 Other ->
                     Done = LastOpId,
