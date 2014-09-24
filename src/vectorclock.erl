@@ -38,8 +38,7 @@
 -type vectorclock() :: dict().
 
 get_clock_by_key(Key) ->
-    Logid = log_utilities:get_logid_from_key(Key),
-    Preflist = log_utilities:get_preflist_from_logid(Logid),
+    Preflist = log_utilities:get_preflist_from_key(Key),
     Indexnode = hd(Preflist),
     lager:info("Preflist of Key ~p vectorclock ~p", [Key, Indexnode]),
     riak_core_vnode_master:sync_command(
@@ -48,8 +47,7 @@ get_clock_by_key(Key) ->
 -spec get_clock(Partition :: non_neg_integer())
                -> {ok, vectorclock()} | {error, term()}.
 get_clock(Partition) ->
-    Logid = log_utilities:get_logid_from_partition(Partition),
-    Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),
+    Preflist = [{Partition, node()}],
     Indexnode = hd(Preflist),
     case riak_core_vnode_master:sync_command(
            Indexnode, get_clock, vectorclock_vnode_master) of

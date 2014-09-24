@@ -59,8 +59,7 @@
                Commit_time :: non_neg_integer()})
              -> ok | {error, timeout}.
 trigger(Key, Writeset) ->
-    Logid = log_utilities:get_logid_from_key(Key),
-    Preflist = log_utilities:get_preflist_from_logid(Logid),
+    Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     riak_core_vnode_master:command([IndexNode],
                                    {trigger, Writeset, self()},

@@ -41,8 +41,7 @@ store_updates(Updates) ->
             Preflist = [{Key, Node}];
         _ ->
             Key = Payload#clocksi_payload.key,
-            LogId = log_utilities:get_logid_from_key(Key),
-            Preflist = log_utilities:get_preflist_from_logid(LogId)
+            Preflist = log_utilities:get_preflist_from_key(Key)
     end,
     Indexnode = hd(Preflist),
     lists:foreach(fun(Update) ->

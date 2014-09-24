@@ -37,8 +37,7 @@ trigger(IndexNode, Key) ->
     riak_core_vnode_master:command(IndexNode, {trigger,Key},
                                    inter_dc_repl_vnode_master).
 trigger(Key) ->
-     LogId = log_utilities:get_logid_from_key(Key),
-     Preflist = log_utilities:get_preflist_from_logid(LogId),
+     Preflist = log_utilities:get_preflist_from_key(Key),
      IndexNode = hd(Preflist),
      trigger(IndexNode, Key).
 
@@ -91,26 +90,6 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
     end,
     %trigger({Partition, node()})
     {reply, ok, State#state{last_op=OpDone}}.
-
-%% handle_command({get_update, FromOp, ReqDc}, _Sender, State=#state{partition=Partition}) ->
-%%     {ok, Clock} = vectorclock:get_clock(Partition),
-%%     case FromOp of
-%%         empty ->
-%%             case floppy_rep_vnode:read(Key, riak_dt_gcounter) of
-%%                 {ok, Ops} ->
-%%                     OpDone = prepare_and_send_ops(Ops,Clock,ReqDc,State);
-%%                 {error, _Reason} ->
-%%                     lager:debug("Error reading from flopp_rep")
-%%             end;
-%%         _ ->
-%%             case floppy_rep_vnode:read_from(Key, riak_dt_gcounter, FromOp) of
-%%                 {ok, Ops} ->
-%%                     OpDone = prepare_and_send_ops(Ops, Clock, State);
-%%                 {error, _Reason} ->
-%%                     lager:debug("Error reading from flopp_rep")
-%%             end
-%%     end,
-%%     {reply, ok, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
