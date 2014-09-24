@@ -35,7 +35,6 @@ get_clock_by_key(Key) ->
     Logid = log_utilities:get_logid_from_key(Key),
     Preflist = log_utilities:get_preflist_from_logid(Logid),
     Indexnode = hd(Preflist),
-    lager:info("Preflist of Key ~p vectorclock ~p", [Key, Indexnode]),
     riak_core_vnode_master:sync_command(
       Indexnode, get_clock, vectorclock_vnode_master).
 
