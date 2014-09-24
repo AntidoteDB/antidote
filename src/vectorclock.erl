@@ -70,7 +70,6 @@ get_clock_node(Node) ->
                   -> {ok, vectorclock()} | {error, term()}.
 update_clock(Partition, Dc_id, Timestamp) ->
     Indexnode = {Partition, node()},
-    lager:info("Preflist of vectorclokc ~p", [Indexnode]),
     case riak_core_vnode_master:sync_command(Indexnode,
                                              {update_clock, Dc_id, Timestamp},
                                              vectorclock_vnode_master) of
