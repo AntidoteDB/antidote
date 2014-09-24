@@ -150,10 +150,6 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                       write_set=WriteSet,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
-    %%LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
-    %%Result = floppy_rep_vnode:append(Key, Type, LogRecord),
-    %%case Result of
-    %%    {ok, _} ->
     true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
     true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
     {ok, _Pid} = clocksi_updateitem_fsm:start_link(
@@ -161,9 +157,6 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                     Txn#transaction.vec_snapshot_time,
                     Partition),
     {noreply, State};
-    %%    {error, timeout} ->
-    %%        {reply, {error, timeout}, State}
-    %%end;
 
 handle_command({prepare, Transaction}, _Sender,
                State = #state{partition=_Partition,
@@ -181,8 +174,10 @@ handle_command({prepare, Transaction}, _Sender,
                                     op_payload=PrepareTime},
             true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
             Updates = ets:lookup(WriteSet, TxId),
-            [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-            Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+            [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            Result = logging_vnode:append(Node,LogId,LogRecord),
             case Result of
                 {ok, _} ->
                     {reply, {prepared, PrepareTime}, State};
@@ -206,11 +201,10 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                           op_payload={TxCommitTime,
                                       Transaction#transaction.vec_snapshot_time}},
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-
-    %%Update materializer and write to materializer
-
-    case floppy_rep_vnode:append(Key, Type, LogRecord) of
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    case logging_vnode:append(Node,LogId,LogRecord) of
         {ok, _} ->
             true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             SnapshotTime = Transaction#transaction.vec_snapshot_time,
@@ -234,8 +228,10 @@ handle_command({abort, Transaction}, _Sender,
                #state{partition=_Partition, write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key, Type, {TxId, aborted}),
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
     case Result of
         {ok, _} ->
             clean_and_notify(TxId, Key, State);
