@@ -36,7 +36,6 @@ store_updates(Updates) ->
     case Op_type of
         noop ->
             Key = Payload#clocksi_payload.key,
-            %LogId = log_utilities:get_logid_from_partition(Key);
             Node = log_utilities:get_my_node(Key),
             Preflist = [{Key, Node}];
         _ ->
