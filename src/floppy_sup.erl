@@ -46,10 +46,6 @@ init(_Args) ->
                       {riak_core_vnode_master, start_link, [clocksi_vnode]},
                       permanent, 5000, worker, [riak_core_vnode_master]},
 
-    InterDcRepMaster = {inter_dc_repl_vnode_master,
-                        {riak_core_vnode_master, start_link,
-                         [inter_dc_repl_vnode]},
-                        permanent, 5000, worker, [riak_core_vnode_master]},
     ClockSITxCoordSup =  { clocksi_tx_coord_sup,
                            {clocksi_tx_coord_sup, start_link, []},
                            permanent, 5000, supervisor, [clockSI_tx_coord_sup]},
@@ -74,13 +70,12 @@ init(_Args) ->
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
-    InterDcRecvr = {inter_dc_recvr,
-                    {inter_dc_recvr, start_link, []},
-                    permanent, 5000, worker, [inter_dc_recvr]},
     {ok,
      {{one_for_one, 5, 10},
-      [LoggingMaster, ClockSIMaster, ClockSITxCoordSup,
-       ClockSIiTxCoordSup, InterDcRepMaster, InterDcRecvr,
+      [LoggingMaster,
+       ClockSIMaster,
+       ClockSITxCoordSup,
+       ClockSIiTxCoordSup,
        ClockSIDSGenMaster,
        VectorClockMaster,
        MaterializerMaster]}}.
