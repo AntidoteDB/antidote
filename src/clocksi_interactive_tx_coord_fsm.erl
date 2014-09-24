@@ -146,7 +146,9 @@ execute_op({Op_type, Args}, Sender,
             IndexNode = hd(Preflist),
             case generate_downstream_op(Transaction, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
-                    {ok, _} = floppy_rep_vnode:append(Key, Type, DownstreamRecord),
+                    LogId = log_utilities:get_logid_from_key(Key),
+                    [Node] = log_utilities:get_preflist_from_key(Key),
+                    {ok, _} = logging_vnode:append(Node, LogId, DownstreamRecord),
                     case clocksi_vnode:update_data_item(IndexNode, Transaction,
                                                 Key, Type, Param) of
                         ok ->
