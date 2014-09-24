@@ -341,9 +341,11 @@ open_logs(LogFile, [Next|Rest], Map)->
 get_log_from_map(Map, Partition, LogId) ->
     case dict:find(LogId, Map) of
         {ok, Log} ->
+            lager:info("partition: ~p, log_for_preflist: ~p",
+                       [Partition, LogId]),
             {ok, Log};
         error ->
-            lager:info("partition: ~p, no_log_for_preflist: ~p",
+            lager:error("partition: ~p, no_log_for_preflist: ~p",
                        [Partition, LogId]),
             {error, no_log_for_preflist}
     end.
