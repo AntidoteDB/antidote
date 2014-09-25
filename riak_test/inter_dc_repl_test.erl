@@ -22,9 +22,6 @@ confirm() ->
 simple_replication_test(Cluster1, Cluster2) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
-   % Result = rpc:call(Node2, inter_dc_communication_sup, start_link,[8091]),
-   % lager:info("Sup start result ~p", [Result]),
-    %%timer:sleep(10000), %% REMOVE this
     WriteResult1 = rpc:call(Node1,
                            floppy, append,
                            [key1, riak_dt_gcounter, {increment, ucl}]),
