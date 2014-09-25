@@ -39,7 +39,7 @@
 %%      object stored at some key.
 append(Key, Type, {OpParam, Actor}) ->
     Operations = [{update, Key, Type, {OpParam, Actor}}],
-    case clocksi_execute_tx(Operations) of
+    case clocksi_execute_tx(now(), Operations) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
