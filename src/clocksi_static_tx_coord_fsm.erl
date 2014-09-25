@@ -100,6 +100,7 @@ execute_batch_ops(timeout, SD=#state{from=From,
                                 Acc;
                             {read, Key, Type} ->
                                 {ok, Value} = gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}),
+                                lager:info("Read value:", [Value]),
                                 Acc++[Value]
                         end
                 end,
