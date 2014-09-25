@@ -150,7 +150,7 @@ execute_op({Op_type, Args}, Sender,
                     [Node] = log_utilities:get_preflist_from_key(Key),
                     {ok, _} = logging_vnode:append(Node, LogId, DownstreamRecord),
                     case clocksi_vnode:update_data_item(IndexNode, Transaction,
-                                                Key, Type, Param) of
+                                                Key, Type, Param, DownstreamRecord) of
                         ok ->
                             case lists:member(IndexNode, Updated_partitions) of
                                 false ->

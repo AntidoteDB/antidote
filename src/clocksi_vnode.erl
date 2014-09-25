@@ -26,7 +26,7 @@
 
 -export([start_vnode/1,
          read_data_item/4,
-         update_data_item/5,
+         update_data_item/6,
          prepare/2,
          commit/3,
          abort/2,
@@ -55,6 +55,8 @@
 %%          committed_tx: a list of committed transactions.
 %%          active_txs_per_key: a list of the active transactions that
 %%              have updated a key (but not yet finished).
+%%          downstream_set: a list of the downstream operations that the
+%%              transactions generate.
 %%          write_set: a list of the write sets that the transactions
 %%              generate.
 %%----------------------------------------------------------------------
@@ -62,6 +64,7 @@
                 prepared_tx,
                 committed_tx,
                 active_txs_per_key,
+                downstream_set,
                 write_set}).
 
 %%%===================================================================
@@ -85,11 +88,11 @@ read_data_item(Node, TxId, Key, Type) ->
     end.
 
 %% @doc Sends an update request to the Node that is responsible for the Key
-update_data_item(Node, TxId, Key, Type, Op) ->
+update_data_item(Node, TxId, Key, Type, Op, DownstreamOp) ->
     lager:info("Update issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
-                                            {update_data_item, TxId, Key, Type, Op},
+                                            {update_data_item, TxId, Key, Type, Op, DownstreamOp},
                                             ?CLOCKSI_MASTER,
                                             infinity)
     catch
@@ -129,10 +132,12 @@ init([Partition]) ->
     CommittedTx = ets:new(committed_tx, [set]),
     ActiveTxsPerKey = ets:new(active_txs_per_key, [bag]),
     WriteSet = ets:new(write_set, [duplicate_bag]),
+    DownstreamSet = ets:new(downstream_set, [duplicate_bag]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
                 write_set=WriteSet,
+                downstream_set=DownstreamSet,
                 active_txs_per_key=ActiveTxsPerKey}}.
 
 %% @doc starts a read_fsm to handle a read operation.
@@ -145,13 +150,15 @@ handle_command({read_data_item, Txn, Key, Type}, Sender,
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
+handle_command({update_data_item, Txn, Key, Type, Op, DownstreamOp}, Sender,
                #state{partition=Partition,
                       write_set=WriteSet,
+                      downstream_set=DownstreamSet,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
     true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
     true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
+    true = ets:insert(DownstreamSet, {TxId, {Key, DownstreamOp}}),
     {ok, _Pid} = clocksi_updateitem_fsm:start_link(
                     Sender,
                     Txn#transaction.vec_snapshot_time,
@@ -194,21 +201,21 @@ handle_command({prepare, Transaction}, _Sender,
 handle_command({commit, Transaction, TxCommitTime}, _Sender,
                #state{partition=_Partition,
                       committed_tx=CommittedTx,
-                      write_set=WriteSet} = State) ->
+                      downstream_set=DownstreamSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     LogRecord=#log_record{tx_id=TxId,
                           op_type=commit,
                           op_payload={TxCommitTime,
                                       Transaction#transaction.vec_snapshot_time}},
-    Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+    DownstreamOps = ets:lookup(DownstreamSet, TxId),
+    [{_, {Key, _DownsteamOp}} | _Rest] = DownstreamOps,
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
     case logging_vnode:append(Node,LogId,LogRecord) of
         {ok, _} ->
             true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             SnapshotTime = Transaction#transaction.vec_snapshot_time,
-            case update_materializer(Updates, TxId, SnapshotTime, TxCommitTime) of 
+            case update_materializer(DownstreamOps, TxCommitTime) of 
                 ok ->
                     _Return = clocksi_downstream_generator_vnode:trigger(
                                 Key, {TxId,
@@ -337,19 +344,15 @@ check_keylog(TxId, [H|T], CommittedTx)->
             check_keylog(TxId, T, CommittedTx)
     end.
 
-update_materializer(Updates, TxId, SnapshotTime, TxCommitTime) ->
+update_materializer(DownstreamOps, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
-    UpdateFunction = fun (Op, AccIn) -> 
-                            {_, {OpKey, OpType, Param}} = Op,
-                            CommittedDownstreamOp = #clocksi_payload{key = OpKey, 
-                                                type = OpType,        
-                                                op_param = Param,
-                                                snapshot_time = SnapshotTime,
-                                                commit_time = {DcId, TxCommitTime},
-                                                txid= TxId},
-                            AccIn++[materializer_vnode:update_cache(OpKey, CommittedDownstreamOp)]
+    UpdateFunction = fun (DownstreamOp, AccIn) -> 
+                            CommittedDownstreamOp = DownstreamOp#clocksi_payload{ 
+                                                commit_time = {DcId, TxCommitTime}},
+                            Key = DownstreamOp#clocksi_payload.key,
+                            AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)]
                     end,
-    Results = lists:foldl(UpdateFunction, [], Updates),
+    Results = lists:foldl(UpdateFunction, [], DownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
     case length(Failures) of
         0 ->
