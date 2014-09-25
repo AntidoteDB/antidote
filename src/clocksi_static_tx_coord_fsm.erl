@@ -96,7 +96,8 @@ execute_batch_ops(timeout, SD=#state{from=From,
     ExecuteOp = fun (Operation, Acc) ->
                         case Operation of
                             {update, Key, Type, OpParams} ->
-                                ok = gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}});
+                                ok = gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}),
+                                Acc;
                             {read, Key, Type} ->
                                 {ok, Value} = gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}),
                                 Acc++[Value]
