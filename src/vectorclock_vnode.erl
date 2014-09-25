@@ -103,11 +103,17 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                     NewLClock = dict:store(DcId, Timestamp, LastClock),
                     NewPClock = dict:store(DcId, Timestamp-1, VClock),
                     %% Broadcast new pvv to other partition
-                    riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                    {reply, {ok, NewLClock},
-                     State#currentclock{last_received_clock=NewLClock,
+                    try
+                        riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+                        {reply, {ok, NewLClock},
+                         State#currentclock{last_received_clock=NewLClock,
                                         partition_vectorclock=NewPClock}
-                    };
+                        }
+                    catch
+                        _:Reason ->
+                            lager:error("Exception caught ~p! ",[Reason]),
+                            {reply, {ok, LastClock},State}
+                    end;
                 false ->
                     {reply, {ok, VClock}, State}
             end;
@@ -115,10 +121,17 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
             lager:info("Timestamp : ~p",[Timestamp]),
             NewLClock = dict:store(DcId, Timestamp, LastClock),
             NewPClock = dict:store(DcId, Timestamp - 1, VClock),
-            riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-            {reply, {ok, NewLClock}, State#currentclock
-             {last_received_clock=NewLClock,
-              partition_vectorclock=NewPClock}}
+            try
+                riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+                {reply, {ok, NewLClock},
+                 State#currentclock{last_received_clock=NewLClock,
+                                    partition_vectorclock=NewPClock}
+                }
+            catch
+                _:Reason ->
+                    lager:error("Exception caught ~p! ",[Reason]),
+                    {reply, {ok, LastClock},State}
+            end
     end;
 
 handle_command(_Message, _Sender, State) ->

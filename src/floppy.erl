@@ -49,7 +49,7 @@ append(Key, Type, {OpParam, Actor}) ->
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 read(Key, Type) ->
-    case clocksi_read(now(), Key, Type) of
+    case clocksi_read(Key, Type) of
         {ok,{_, [Val], _}} ->
             {ok, Val};
         {error, Reason} ->
@@ -135,6 +135,9 @@ clocksi_bulk_update(Operations) ->
 
 clocksi_read(ClientClock, Key, Type) ->
     clocksi_execute_tx(ClientClock, [{read, Key, Type}]).
+
+clocksi_read(Key, Type) ->
+    clocksi_execute_tx([{read, Key, Type}]).
 
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).

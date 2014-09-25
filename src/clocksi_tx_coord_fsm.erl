@@ -103,18 +103,15 @@ finish_op(From, Key,Result) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
-    {ok, LocalClock} = case ClientClock of
+    {ok, SnapshotTime} = case ClientClock of
         ignore ->
             get_snapshot_time();
         _ ->
             get_snapshot_time(ClientClock)
     end,
-    TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
-    {ok, VecSnapshotTime} = vectorclock:get_stable_snapshot(),
     DcId = dc_utilities:get_my_dc_id(),
-    SnapshotTime = dict:update(DcId,
-                               fun (_Old) -> LocalClock end,
-                               LocalClock, VecSnapshotTime),
+    {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
+    TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
                                vec_snapshot_time=SnapshotTime,
                                txn_id=TransactionId},
@@ -366,19 +363,50 @@ terminate(Reason, _SN, _SD) ->
 %%         starting this transaction has seen, and
 %%      2. machine's local time, as returned by erlang:now().
 %%
--spec get_snapshot_time(non_neg_integer()) -> {ok, non_neg_integer()}.
+-spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
+                       -> {ok, vectroclock:vectorclock()}.
 get_snapshot_time(ClientClock) ->
+    %% Get entry for local dc
+    DcId = dc_utilities:get_my_dc_id(),
+    {ok, LClock} = vectorclock:get_clock_of_dc(DcId, ClientClock),
+    %% Set entry for local DC to 0
+    NewClientClock = dict:update(DcId,
+                               fun (_Old) -> 0 end,
+                               0, ClientClock),
+    VecSnapshotTime = wait_for_clock(NewClientClock),
     Now = clocksi_vnode:now_milisec(erlang:now()),
-    SnapshotTime = case (ClientClock > Now) of
+    LTime = case (LClock > Now) of
         true->
-            ClientClock;
+            LClock;
         false ->
             Now
     end,
+    SnapshotTime = dict:update(DcId,
+                fun (_Old) -> LTime end,
+                LTime, VecSnapshotTime),
     {ok, SnapshotTime}.
 
--spec get_snapshot_time() -> {ok, non_neg_integer()}.
+-spec get_snapshot_time() -> {ok, vectorclock:vectorclock()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
-    SnapshotTime  = Now,
+    {ok, VecSnapshotTime} = vectorclock:get_stable_snapshot(),
+    lager:info("Snapshot ~p",[VecSnapshotTime]),
+    DcId = dc_utilities:get_my_dc_id(),
+    SnapshotTime = dict:update(DcId,
+                fun (_Old) -> Now end,
+                Now, VecSnapshotTime),
     {ok, SnapshotTime}.
+
+-spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
+                           vectorclock:vectorclock().
+wait_for_clock(Clock) ->
+    {ok, VecSnapshotTime} = vectorclock:get_stable_snapshot(),
+    case vectorclock:ge(VecSnapshotTime, Clock) of
+        true ->
+            %% No need to wait
+            VecSnapshotTime;
+        false ->
+            %% wait for snapshot time to catch up with Client Clock
+            timer:sleep(100),
+            wait_for_clock(Clock)
+    end.

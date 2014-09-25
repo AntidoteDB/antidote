@@ -120,7 +120,12 @@ is_greater_than(Clock1, Clock2) ->
                true, Clock2).
 
 get_clock_of_dc(Dcid, VectorClock) ->
-    dict:find(Dcid, VectorClock).
+    case dict:find(Dcid, VectorClock) of
+        {ok, Value} ->
+            {ok, Value};
+        error ->
+            {ok, 0}
+    end.
 
 set_clock_of_dc(DcId, Time, VectorClock) ->
     dict:update(DcId,
