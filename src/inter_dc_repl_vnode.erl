@@ -128,6 +128,7 @@ terminate(_Reason, _State) ->
 prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                                               last_op=LastOpId,
                                               dcid=DcId}) ->
+    {ok, DCs} = inter_dc_manager:get_dcs(),
     case Ops of
         %% if empty, there are no updates
         [] ->
@@ -138,23 +139,24 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                                   commit_time={DcId, LocalClock},
                                   snapshot_time = vectorclock:from_list([])
                                  },
-            Payload=#operation{payload = #log_record
+            _Payload=#operation{payload = #log_record
                                {op_type=noop, op_payload=Op}},
-            case inter_dc_communication_sender:propagate_sync(
-                   {replicate, [Payload]}) of
-                ok ->
-                    Done = LastOpId;
-                Other ->
-                    Done = LastOpId,
-                    lager:info(
-                      "Propagation error. Reason: ~p",[Other])
-            end;
+            Done = LastOpId;
+            %case inter_dc_communication_sender:propagate_sync(
+            %       {replicate, [Payload]}, DCs) of
+            %    ok ->
+            %        Done = LastOpId;
+            %    Other ->
+            %        Done = LastOpId,
+            %        lager:info(
+            %          "Propagation error. Reason: ~p",[Other])
+            %end;
             %Done = LastOpId; %%TODO:
         _ ->
             Downstreamops = filter_downstream(Ops),
             lager:info("Ops to replicate ~p",[Downstreamops]),
             case inter_dc_communication_sender:propagate_sync(
-                   {replicate, Downstreamops}) of
+                   {replicate, Downstreamops}, DCs) of
                 ok ->
                     Done = get_last_opid(Ops, LastOpId);
                 _ ->

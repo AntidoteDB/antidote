@@ -12,7 +12,7 @@
 -define(COMM_TIMEOUT, infinity).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
--define(OTHER_DC, [{{127,0,0,1},8091}]).
+%-define(OTHER_DC, [{{127,0,0,1},8091}]).
 -record (payload, {key, type, op_param, actor}).
 
 %% Used by the replication layer

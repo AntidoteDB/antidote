@@ -35,8 +35,8 @@ accept(timeout, State=#state{socket=ListenSocket}) ->
 
 wait_for_message({replicate,Updates}, State=#state{socket=Socket}) ->
     inter_dc_recvr_vnode:store_updates(Updates),
-    lager:debug("Replication request received: ~p",[Updates]),
-    gen_tcp:send(Socket, term_to_binary(acknowledge)),
+    lager:error("Replication request received: ~p",[Updates]),
+    gen_tcp:send(Socket, term_to_binary({acknowledge, inter_dc_manager:get_my_dc()})),
     {next_state,stop_server,State,0};
 wait_for_message(timeout, State) ->
     {next_state, stop_server, State, 0};

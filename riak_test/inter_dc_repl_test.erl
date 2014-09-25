@@ -8,13 +8,21 @@
 
 confirm() ->
     [Cluster1, Cluster2] = rt:build_clusters([1,1]),
+
+    Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
-    lager:info("NODE 2 = ~p",[Node2]),
-    Result = rpc:call(Node2, floppy_sup, start_rep,[8091]),
-    lager:info("Sup start result ~p", [Result]),
-    lager:info("Waiting for ring to converge."),
+
+    {ok, DC1} = rpc:call(Node1, inter_dc_manager, start_receiver,[8091]),
+    {ok, DC2} = rpc:call(Node2, inter_dc_manager, start_receiver,[8092]),
+    
+    lager:info("DCs: ~p and ~p", [DC1, DC2]),
+
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
+
+    ok = rpc:call(Node1, inter_dc_manager, add_dc,[DC2]),
+    ok = rpc:call(Node2, inter_dc_manager, add_dc,[DC1]),
+
     simple_replication_test(Cluster1, Cluster2),
     multiple_keys_test(Cluster1, Cluster2),
     pass.
