@@ -24,6 +24,7 @@
          clocksi_execute_tx/2,
          clocksi_execute_tx/1,
          clocksi_read/3,
+         clocksi_read/2,
          clocksi_bulk_update/2,
          clocksi_bulk_update/1,
          clocksi_istart_tx/1,
@@ -67,16 +68,11 @@ read(Key, Type) ->
 %%      the transaction, in case the tx ends successfully.
 %%      error message in case of a failure.
 %%
+-spec clocksi_execute_tx(Clock :: vectorclock:vectorclock(), Operations::[]) -> term().
 clocksi_execute_tx(Clock, Operations) ->
     lager:info("Received transaction with clock: ~p for operations: ~p",
                [Clock, Operations]),
-    ClientClock = case Clock of
-        {Mega, Sec, Micro} ->
-            clocksi_vnode:now_milisec({Mega, Sec, Micro});
-        _ ->
-            Clock
-    end,
-    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
+    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Clock, Operations]),
     receive
         EndOfTx ->
             EndOfTx
@@ -97,13 +93,7 @@ clocksi_execute_tx(Operations) ->
 %%
 clocksi_istart_tx(Clock) ->
     lager:info("Starting FSM for interactive transaction."),
-    ClientClock = case Clock of
-        {Mega, Sec, Micro} ->
-            clocksi_vnode:now_milisec({Mega, Sec, Micro});
-        _ ->
-            Clock
-    end,
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
+    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
     receive
         TxId ->
             lager:info("TX started with TxId: ~p", [TxId]),

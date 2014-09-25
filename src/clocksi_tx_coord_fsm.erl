@@ -103,11 +103,14 @@ finish_op(From, Key,Result) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
-    {ok, SnapshotTime} = case ClientClock of
-        ignore ->
-            get_snapshot_time();
+    {ok, SnapshotTime} =
+        case ClientClock of
+            ignore ->
+                get_snapshot_time();
         _ ->
-            get_snapshot_time(ClientClock)
+                lager:error("CLient clock ~p",[ClientClock]),
+                get_snapshot_time(ClientClock)
+                %get_snapshot_time()
     end,
     DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
@@ -323,9 +326,13 @@ reply_to_client(timeout, SD=#state{from=From,
                                    state=TxState,
                                    commit_time=CommitTime}) ->
     TxId = Transaction#transaction.txn_id,
+    {ok, CurrentSnapshot} = vectorclock:get_stable_snapshot(),
+    DcId = dc_utilities:get_my_dc_id(),
+    CausalClock = vectorclock:set_clock_of_dc(
+                    DcId, CommitTime, CurrentSnapshot),
     _ = case TxState of
         committed ->
-            From ! {ok, {TxId, ReadSet, CommitTime}};
+            From ! {ok, {TxId, ReadSet, CausalClock}};
         aborted ->
             From ! {abort, TxId};
         Reason ->
@@ -366,25 +373,7 @@ terminate(Reason, _SN, _SD) ->
 -spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
                        -> {ok, vectroclock:vectorclock()}.
 get_snapshot_time(ClientClock) ->
-    %% Get entry for local dc
-    DcId = dc_utilities:get_my_dc_id(),
-    {ok, LClock} = vectorclock:get_clock_of_dc(DcId, ClientClock),
-    %% Set entry for local DC to 0
-    NewClientClock = dict:update(DcId,
-                               fun (_Old) -> 0 end,
-                               0, ClientClock),
-    VecSnapshotTime = wait_for_clock(NewClientClock),
-    Now = clocksi_vnode:now_milisec(erlang:now()),
-    LTime = case (LClock > Now) of
-        true->
-            LClock;
-        false ->
-            Now
-    end,
-    SnapshotTime = dict:update(DcId,
-                fun (_Old) -> LTime end,
-                LTime, VecSnapshotTime),
-    {ok, SnapshotTime}.
+    wait_for_clock(ClientClock).
 
 -spec get_snapshot_time() -> {ok, vectorclock:vectorclock()}.
 get_snapshot_time() ->
@@ -397,16 +386,20 @@ get_snapshot_time() ->
                 Now, VecSnapshotTime),
     {ok, SnapshotTime}.
 
--spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-                           vectorclock:vectorclock().
+ -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
+                           vectorclock:vectorclock() | error.
 wait_for_clock(Clock) ->
-    {ok, VecSnapshotTime} = vectorclock:get_stable_snapshot(),
-    case vectorclock:ge(VecSnapshotTime, Clock) of
-        true ->
-            %% No need to wait
-            VecSnapshotTime;
-        false ->
-            %% wait for snapshot time to catch up with Client Clock
-            timer:sleep(100),
-            wait_for_clock(Clock)
-    end.
+   case get_snapshot_time() of
+       {ok, VecSnapshotTime} ->
+           case vectorclock:ge(VecSnapshotTime, Clock) of
+               true ->
+                   %% No need to wait
+                   {ok, VecSnapshotTime};
+               false ->
+                   %% wait for snapshot time to catch up with Client Clock
+                   timer:sleep(100),
+                   wait_for_clock(Clock)
+           end;
+       {error, _Reason} ->
+          error
+  end.
