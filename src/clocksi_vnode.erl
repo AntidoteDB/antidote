@@ -1,3 +1,22 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 -module(clocksi_vnode).
 
 -behaviour(riak_core_vnode).
@@ -54,11 +73,11 @@ start_vnode(I) ->
 
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
-    lager:info("Read issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
                                             {read_data_item, TxId, Key, Type},
-                                            ?CLOCKSI_MASTER)
+                                            ?CLOCKSI_MASTER,
+                                            infinity)
     catch
         _:Reason ->
             lager:error("Exception caught: ~p", [Reason]),
@@ -71,7 +90,8 @@ update_data_item(Node, TxId, Key, Type, Op) ->
     try
         riak_core_vnode_master:sync_command(Node,
                                             {update_data_item, TxId, Key, Type, Op},
-                                            ?CLOCKSI_MASTER)
+                                            ?CLOCKSI_MASTER,
+                                            infinity)
     catch
         _:Reason ->
             lager:error("Exception caught: ~p", [Reason]),
@@ -131,7 +151,9 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
-    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
             true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
@@ -141,8 +163,8 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                     Txn#transaction.vec_snapshot_time,
                     Partition),
             {noreply, State};
-        {error, timeout} ->
-            {reply, {error, timeout}, State}
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
     end;
 
 handle_command({prepare, Transaction}, _Sender,
@@ -161,8 +183,10 @@ handle_command({prepare, Transaction}, _Sender,
                                     op_payload=PrepareTime},
             true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
             Updates = ets:lookup(WriteSet, TxId),
-            [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-            Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+            [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            Result = logging_vnode:append(Node,LogId,LogRecord),
             case Result of
                 {ok, _} ->
                     {reply, {prepared, PrepareTime}, State};
@@ -183,8 +207,10 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                           op_payload={TxCommitTime,
                                       Transaction#transaction.vec_snapshot_time}},
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key, Type, LogRecord),
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
             true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
@@ -203,8 +229,10 @@ handle_command({abort, Transaction}, _Sender,
                #state{partition=_Partition, write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, Type, {_Op, _Actor}}} | _Rest] = Updates,
-    Result = floppy_rep_vnode:append(Key, Type, {TxId, aborted}),
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
     case Result of
         {ok, _} ->
             clean_and_notify(TxId, Key, State);

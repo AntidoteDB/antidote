@@ -1,3 +1,22 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 -module(vectorclock).
 
 -include("floppy.hrl").
@@ -19,8 +38,7 @@
 -type vectorclock() :: dict().
 
 get_clock_by_key(Key) ->
-    Logid = log_utilities:get_logid_from_key(Key),
-    Preflist = log_utilities:get_preflist_from_logid(Logid),
+    Preflist = log_utilities:get_preflist_from_key(Key),
     Indexnode = hd(Preflist),
     lager:info("Preflist of Key ~p vectorclock ~p", [Key, Indexnode]),
     try
@@ -48,7 +66,6 @@ get_clock(Partition) ->
     end.
 
 get_clock_node(Node) ->
-    lager:error("In get clock node"),
     Preflist = riak_core_apl:active_owners(vectorclock),
     Prefnode = [{Partition, Node1} ||
                    {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
@@ -57,7 +74,6 @@ get_clock_node(Node) ->
     _Seed = random:seed(A1, A2, A3),
     Index = random:uniform(length(Prefnode)),
     VecNode = lists:nth(Index, Prefnode),
-    lager:error("Get snapshot"),
     riak_core_vnode_master:sync_command(
       VecNode, get_stable_snapshot, vectorclock_vnode_master).
 

@@ -37,8 +37,9 @@ simple_replication_test(Cluster1, Cluster2) ->
                            floppy, append,
                            [key1, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult3),
-    rpc:call(Node1, floppy, read,
+    Result = rpc:call(Node1, floppy, read,
                            [key1, riak_dt_gcounter]),
+    ?assertEqual({ok, 3}, Result),
 
     timer:sleep(10000),
     ReadResult = rpc:call(Node2,

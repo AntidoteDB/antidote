@@ -36,13 +36,11 @@ store_updates(Updates) ->
     case Op_type of
         noop ->
             Key = Payload#clocksi_payload.key,
-            %LogId = log_utilities:get_logid_from_partition(Key);
             Node = log_utilities:get_my_node(Key),
             Preflist = [{Key, Node}];
         _ ->
             Key = Payload#clocksi_payload.key,
-            LogId = log_utilities:get_logid_from_key(Key),
-            Preflist = log_utilities:get_preflist_from_logid(LogId)
+            Preflist = log_utilities:get_preflist_from_key(Key)
     end,
     Indexnode = hd(Preflist),
     lists:foreach(fun(Update) ->

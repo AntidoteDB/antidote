@@ -1,3 +1,22 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 -module(log_utilities).
 
 -include("floppy.hrl").
@@ -7,24 +26,11 @@
 -endif.
 
 
--export([get_logid_from_partition/1,
-         get_preflist_from_key/1,
+-export([get_preflist_from_key/1,
          get_logid_from_key/1,
-         get_preflist_from_logid/1,
-         get_apl_from_logid/2,
          remove_node_from_preflist/1,
          get_my_node/1
         ]).
-
-%% @doc get_logid_from_partition computes the log identifier from the
-%%      partition id.
-%%      Input:  Partition:  The partition identifier
-%%      Return: Log id
-%%
--spec get_logid_from_partition(partition_id()) -> log_id().
-get_logid_from_partition(Partition) ->
-    Preflist = get_primaries_preflist(Partition),
-    remove_node_from_preflist(Preflist).
 
 %% @doc get_logid_from_key computes the log identifier from a key
 %%      Input:  Key:    The key from which the log id is going to be computed
@@ -42,28 +48,6 @@ get_logid_from_key(Key) ->
 get_preflist_from_key(Key) ->
     HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     get_primaries_preflist(HashedKey).
-
-%% @doc get_preflist_from_logid computes the preflist to which a logId belongs
-%%      only primaries no matter down or up
-%%      Input:  A log id
-%%      Return: The primaries preflist
-%%
--spec get_preflist_from_logid(log_id()) -> preflist().
-get_preflist_from_logid(LogId) ->
-    Partition = hd(LogId),
-    get_primaries_preflist(Partition).
-
-%% @doc get_apl_from_logid computes the preflist to which a logId belongs
-%%      only primaries and active nodes
-%%      Input:  LogId: A log id
-%%              Service: The service in the riak_core application
-%%      Return: The active primaries preflist
-%%
--spec get_apl_from_logid(log_id(), atom()) -> preflist().
-get_apl_from_logid(LogId, Service) ->
-    Partition = hd(LogId),
-    PreflistAnn = riak_core_apl:get_primary_apl(Partition, ?N, Service),
-    [IndexNode || {IndexNode, _} <- PreflistAnn].
 
 %% @doc get_primaries_preflist returns the preflist with the primary
 %%      vnodes. No matter they are up or down.
