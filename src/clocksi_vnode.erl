@@ -158,7 +158,7 @@ handle_command({update_data_item, Txn, Key, Type, Op, DownstreamOp}, Sender,
     TxId = Txn#transaction.txn_id,
     true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
     true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
-    true = ets:insert(DownstreamSet, {TxId, {Key, DownstreamOp}}),
+    true = ets:insert(DownstreamSet, {TxId, DownstreamOp}),
     {ok, _Pid} = clocksi_updateitem_fsm:start_link(
                     Sender,
                     Txn#transaction.vec_snapshot_time,
@@ -208,7 +208,8 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                           op_payload={TxCommitTime,
                                       Transaction#transaction.vec_snapshot_time}},
     DownstreamOps = ets:lookup(DownstreamSet, TxId),
-    [{_, {Key, _DownsteamOp}} | _Rest] = DownstreamOps,
+    [{_, DownstreamOp} | _Rest] = DownstreamOps,
+    Key = DownstreamOp#clocksi_payload.key,
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
     case logging_vnode:append(Node,LogId,LogRecord) of
@@ -346,7 +347,8 @@ check_keylog(TxId, [H|T], CommittedTx)->
 
 update_materializer(DownstreamOps, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
-    UpdateFunction = fun (DownstreamOp, AccIn) -> 
+    lager:info("DS:~w",[DownstreamOps]),
+    UpdateFunction = fun ({_, DownstreamOp}, AccIn) -> 
                             CommittedDownstreamOp = DownstreamOp#clocksi_payload{ 
                                                 commit_time = {DcId, TxCommitTime}},
                             Key = DownstreamOp#clocksi_payload.key,
