@@ -40,7 +40,6 @@
 get_clock_by_key(Key) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     Indexnode = hd(Preflist),
-    lager:info("Preflist of Key ~p vectorclock ~p", [Key, Indexnode]),
     try
         riak_core_vnode_master:sync_command(
           Indexnode, get_clock, vectorclock_vnode_master)
@@ -82,7 +81,6 @@ get_clock_node(Node) ->
                   -> {ok, vectorclock()} | {error, term()}.
 update_clock(Partition, Dc_id, Timestamp) ->
     Indexnode = {Partition, node()},
-    lager:debug("Updating to Preflist of vectorclock ~p ~p", [Indexnode, Timestamp]),
     case riak_core_vnode_master:sync_command(Indexnode,
                                              {update_clock, Dc_id, Timestamp},
                                              vectorclock_vnode_master) of

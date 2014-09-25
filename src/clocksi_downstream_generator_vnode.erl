@@ -63,11 +63,7 @@ trigger(Key, Writeset) ->
     IndexNode = hd(Preflist),
     riak_core_vnode_master:command([IndexNode],
                                    {trigger, Writeset, self()},
-                                   ?CLOCKSI_GENERATOR_MASTER),
-    receive
-        {ok, trigger_received} ->
-            ok
-    end.
+                                   ?CLOCKSI_GENERATOR_MASTER).
 
 start_vnode(I) ->
     {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
@@ -107,14 +103,12 @@ handle_command({trigger,Pid}, _Sender,
 
 %% @doc Read client update operations,
 %%      generate downstream operations and store it to persistent log.
-handle_command({trigger, WriteSet, From}, _Sender,
+handle_command({trigger, WriteSet, _From}, _Sender,
                State=#dstate{partition = Partition,
                              last_commit_time = LastCommitTime,
                              pending_operations = Pending}) ->
     PendingOperations = add_to_pending_operations(Pending, WriteSet),
-    lager:info("PendingOperations: ~p", [PendingOperations]),
 
-    From ! {ok, trigger_received},
     Node = {Partition, node()}, %% Send ack to caller and continue processing
     Stable_time = get_stable_time(Node, LastCommitTime),
     %% Send a message to itself to process operations
@@ -146,7 +140,6 @@ handle_command({process}, _Sender,
                              end
                      end, {PendingOperations, LastCommitTime}, Sorted_ops),
     DcId = dc_utilities:get_my_dc_id(),
-    lager:info("Updating vector clock ~p",[Stable_time]),
     {ok, Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
     _ = case PendingOperations of
             [] ->
