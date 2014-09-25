@@ -29,7 +29,7 @@
          is_greater_than/2,
          get_clock_of_dc/2,
          set_clock_of_dc/3,
-         get_clock_node/1,
+         get_stable_snapshot/0,
          from_list/1,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
@@ -37,6 +37,7 @@
 
 -type vectorclock() :: dict().
 
+-spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_clock_by_key(Key) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     Indexnode = hd(Preflist),
@@ -52,29 +53,37 @@ get_clock_by_key(Key) ->
 -spec get_clock(Partition :: non_neg_integer())
                -> {ok, vectorclock()} | {error, term()}.
 get_clock(Partition) ->
-    %%Logid = log_utilities:get_logid_from_partition(Partition),
-    %%Preflist = log_utilities:get_apl_from_logid(Logid, vectorclock),
     Indexnode = {Partition, node()},
-    case riak_core_vnode_master:sync_command(
-           Indexnode, get_clock, vectorclock_vnode_master) of
-        {ok, Clock} ->
-            {ok, Clock};
-        {error, Reason} ->
-            lager:info("Update vector clock failed: ~p",[Reason]),
+    try
+        riak_core_vnode_master:sync_command(
+           Indexnode, get_clock, vectorclock_vnode_master)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
             {error, Reason}
     end.
 
-get_clock_node(Node) ->
+%% @doc get_stable_snapshot: Returns stable snapshot time
+%% in the current DC. stable snapshot time is the snapshot available at
+%% in all partitions
+-spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()} | {error, term()}.
+get_stable_snapshot() ->
+    %% Ask a random vnode for current stable snapshot time
+    Node = node(),
     Preflist = riak_core_apl:active_owners(vectorclock),
     Prefnode = [{Partition, Node1} ||
                    {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
     %% Take a random vnode
-    {A1,A2,A3} = now(),
-    _Seed = random:seed(A1, A2, A3),
     Index = random:uniform(length(Prefnode)),
-    VecNode = lists:nth(Index, Prefnode),
-    riak_core_vnode_master:sync_command(
-      VecNode, get_stable_snapshot, vectorclock_vnode_master).
+    Indexnode = lists:nth(Index, Prefnode),
+    try
+        riak_core_vnode_master:sync_command(
+          Indexnode, get_stable_snapshot, vectorclock_vnode_master)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
 
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())

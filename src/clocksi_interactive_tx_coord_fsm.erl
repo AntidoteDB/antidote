@@ -86,7 +86,7 @@ init([From, Clientclock]) ->
         _ -> {ok, Snapshot_time}= get_snapshot_time(Clientclock)
     end,
     TxId=#tx_id{snapshot_time=Snapshot_time, server_pid=self()},
-    {ok, Vec_clock} = vectorclock:get_clock_node(node()),
+    {ok, Vec_clock} = vectorclock:get_stable_snapshot(),
     Dc_id = dc_utilities:get_my_dc_id(),
     Vec_snapshot_time = dict:update(Dc_id,
                                     fun (_Old) -> Snapshot_time end,
