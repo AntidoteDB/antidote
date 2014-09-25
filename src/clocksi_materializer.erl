@@ -53,8 +53,6 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
     case (is_op_in_snapshot(Op#clocksi_payload.commit_time, SnapshotTime)
           or (TxId =:= Op#clocksi_payload.txid)) of
         true ->
-            lager:info("Applying operation: ~p",
-                       [Op#clocksi_payload.commit_time]),
             case Op#clocksi_payload.op_param of
                 {merge, State} ->
                     NewSnapshot = Type:merge(Snapshot, State),
@@ -91,8 +89,6 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
 is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
     case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
         {ok, Ts} ->
-            lager:info("CommitTime: ~p SnapshotTime: ~p Result: ~p",
-                       [CommitTime, Ts, CommitTime =< Ts]),
             CommitTime =< Ts;
         error  ->
             false

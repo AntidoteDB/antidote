@@ -68,8 +68,6 @@ read(Key, Type) ->
 %%      error message in case of a failure.
 %%
 clocksi_execute_tx(Clock, Operations) ->
-    lager:info("Received transaction with clock: ~p for operations: ~p",
-               [Clock, Operations]),
     ClientClock = case Clock of
         {Mega, Sec, Micro} ->
             clocksi_vnode:now_milisec({Mega, Sec, Micro});
@@ -83,7 +81,6 @@ clocksi_execute_tx(Clock, Operations) ->
     end.
 
 clocksi_execute_tx(Operations) ->
-    lager:info("Received transaction for operations: ~p", [Operations]),
     {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
     receive
         EndOfTx ->
@@ -96,7 +93,6 @@ clocksi_execute_tx(Operations) ->
 %%      Returns: an ok message along with the new TxId.
 %%
 clocksi_istart_tx(Clock) ->
-    lager:info("Starting FSM for interactive transaction."),
     ClientClock = case Clock of
         {Mega, Sec, Micro} ->
             clocksi_vnode:now_milisec({Mega, Sec, Micro});
@@ -106,25 +102,14 @@ clocksi_istart_tx(Clock) ->
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
     receive
         TxId ->
-            lager:info("TX started with TxId: ~p", [TxId]),
             TxId
-    after
-        10000 ->
-            lager:info("Tx was not started!"),
-            {error, timeout}
     end.
 
 clocksi_istart_tx() ->
-    lager:info("Starting FSM for interactive transaction."),
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
     receive
         TxId ->
-            lager:info("TX started with TxId: ~p", [TxId]),
             TxId
-    after
-        10000 ->
-            lager:info("Tx was not started!"),
-            {error, timeout}
     end.
 
 clocksi_bulk_update(ClientClock, Operations) ->

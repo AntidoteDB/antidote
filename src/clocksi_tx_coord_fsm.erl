@@ -118,8 +118,6 @@ init([From, ClientClock, Operations]) ->
     Transaction = #transaction{snapshot_time=LocalClock,
                                vec_snapshot_time=SnapshotTime,
                                txn_id=TransactionId},
-    lager:error("Transaction at vec_snapshot_time: ~p, snapshot_time: ~p",
-                [SnapshotTime, LocalClock]),
     SD = #state{from=From,
                 transaction=Transaction,
                 operations=Operations,
@@ -140,7 +138,6 @@ prepare_op(timeout, SD0=#state{operations=Operations}) ->
         [] ->
             {next_state, prepare_2pc, SD0, 0};
         [Op|TailOps] ->
-            lager:error("Received operation: ~p", [Op]),
             [Op|TailOps] = Operations,
             {Key, FormattedOp} = case Op of
                 {update, Key0, _Type, _} ->
@@ -148,10 +145,6 @@ prepare_op(timeout, SD0=#state{operations=Operations}) ->
                 {read, Key0, Type} ->
                     {Key0, {read, Key0, Type, ignore}}
             end,
-            lager:info("ClockSI-Coord: PID ~w ~n ", [self()]),
-            lager:info("ClockSI-Coord: Op ~w ~n ", [Op]),
-            lager:info("ClockSI-Coord: TailOps ~w ~n ", [TailOps]),
-            lager:info("ClockSI-Coord: getting leader for Key ~w ~n", [Key]),
             Logid = log_utilities:get_logid_from_key(Key),
             Preflist = log_utilities:get_preflist_from_logid(Logid),
             Leader = hd(Preflist),
@@ -170,7 +163,6 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
                                read_set=ReadSet,
                                current_op_leader=CurrentOpLeader}) ->
     {OpType, Key, Type, Param} = CurrentOp,
-    lager:info("ClockSI-Coord: Execute operation ~w", [CurrentOp]),
     IndexNode = CurrentOpLeader,
     case OpType of
         read ->
@@ -184,8 +176,6 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
                     {next_state, abort, SD0};
                 ReadResult ->
                     NewReadSet = lists:append(ReadSet, [ReadResult]),
-                    lager:info("Read value added to read set: ~p",
-                               [CurrentOpLeader]),
                     SD1 = SD0#state{read_set=NewReadSet},
                     {next_state, prepare_op, SD1, 0}
             end;
@@ -198,8 +188,6 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
                 ok ->
                     case lists:member(IndexNode, UpdatedPartitions) of
                         false ->
-                            lager:info("Adding leader: ~p, update: ~p",
-                                       [IndexNode, UpdatedPartitions]),
                             NewUpdatedPartitions = lists:append(UpdatedPartitions,
                                                                 [IndexNode]),
                             SD1 = SD0#state{updated_partitions=NewUpdatedPartitions},
@@ -239,13 +227,10 @@ receive_prepared({prepared, ReceivedPrepareTime},
                  S0=#state{num_to_ack=NumToAck, prepare_time=PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 ->
-            lager:info("ClockSI: start committing... Commit time: ~w.",
-                       [MaxPrepareTime]),
             {next_state, committing, S0#state{prepare_time=MaxPrepareTime,
                                               commit_time=MaxPrepareTime,
                                               state=committing}, 0};
         _ ->
-            lager:info("ClockSI: Keep collecting prepare replies."),
             {next_state, receive_prepared, S0#state
              {num_to_ack=NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
@@ -265,7 +250,6 @@ committing(timeout, SD0=#state{transaction=Transaction,
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
-            lager:info("CommitTime: ~p", [CommitTime]),
             {next_state, reply_to_client, SD0#state{state=committed}, 0};
         _ ->
             clocksi_vnode:commit(UpdatedPartitions, Transaction, CommitTime),
@@ -281,10 +265,8 @@ committing(timeout, SD0=#state{transaction=Transaction,
 receive_committed(committed, S0=#state{num_to_ack=NumToAck}) ->
     case NumToAck of
         1 ->
-            lager:info("ClockSI: Tx committed succesfully."),
             {next_state, reply_to_client, S0#state{state=committed}, 0};
         _ ->
-            lager:info("ClockSI: Keep collecting commit replies."),
             {next_state, receive_committed, S0#state{num_to_ack=NumToAck-1}}
     end.
 
@@ -311,10 +293,8 @@ abort(abort, SD0=#state{transaction=Transaction,
 receive_aborted(ack_abort, S0=#state{num_to_ack= NumToAck}) ->
     case NumToAck of
         1 ->
-            lager:info("ClockSI-coord-fsm: Tx aborted."),
             {next_state, reply_to_client, S0, 0};
         _ ->
-            lager:info("ClockSI-coord-fsm: Keep collecting abort replies."),
             {next_state, receive_aborted, S0#state{num_to_ack=NumToAck-1}}
     end.
 
@@ -339,23 +319,19 @@ reply_to_client(timeout, SD=#state{from=From,
 
 %% ====================================================================
 
-handle_info(Info, _StateName, StateData) ->
-    lager:info("Received ignored info: ~p", [Info]),
+handle_info(_Info, _StateName, StateData) ->
     {stop, badmsg, StateData}.
 
-handle_event(Event, _StateName, StateData) ->
-    lager:info("Received ignored event: ~p", [Event]),
+handle_event(_Event, _StateName, StateData) ->
     {stop, badmsg, StateData}.
 
-handle_sync_event(Event, _From, _StateName, StateData) ->
-    lager:info("Received ignored sync event: ~p", [Event]),
+handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop, badmsg, StateData}.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
-terminate(Reason, _SN, _SD) ->
-    lager:info("Terminate triggered with reason: ~p", [Reason]),
+terminate(_Reason, _SN, _SD) ->
     ok.
 
 %%%===================================================================
