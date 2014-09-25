@@ -18,7 +18,7 @@ init_state(Partition) ->
     }.
 
 enqueue_update({Key,
-                Payload= #operation{op_number = OpId, payload = LogRecord},
+                _Payload= #operation{op_number = OpId, payload = LogRecord},
                 FromDC},
                State = #recvr_state{lastRecvd = LastRecvd, recQ = RecQ}) ->
     LastRecvdNew = set(FromDC, OpId, LastRecvd),
