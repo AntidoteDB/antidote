@@ -37,15 +37,16 @@ simple_replication_test(Cluster1, Cluster2) ->
                            floppy, append,
                            [key1, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult3),
+    {ok,{_,_,CommitTime}}=WriteResult3,
     Result = rpc:call(Node1, floppy, read,
                            [key1, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, Result),
 
-    timer:sleep(10000),
     ReadResult = rpc:call(Node2,
-                           floppy, read,
-                           [key1, riak_dt_gcounter]),
-    ?assertEqual({ok, 3}, ReadResult),
+                           floppy, clocksi_read,
+                           [CommitTime, key1, riak_dt_gcounter]),
+    {ok, {_,[ReadSet],_} }= ReadResult,
+    ?assertEqual(3, ReadSet),
     pass.
 
 multiple_keys_test(Cluster1, Cluster2) ->
@@ -55,10 +56,15 @@ multiple_keys_test(Cluster1, Cluster2) ->
                             multiple_writes(Node1, 1, 10, rpl)
                    end,
                    lists:seq(1,10)),
-    Result1 = multiple_reads(Node1, 1, 10, 10),
+    WriteResult3 = rpc:call(Node1,
+                           floppy, append,
+                           [key1, riak_dt_gcounter, {increment, ucl}]),
+    ?assertMatch({ok, _}, WriteResult3),
+    {ok,{_,_,CommitTime}}=WriteResult3,
+
+    Result1 = multiple_reads(Node1, 1, 10, 10,CommitTime),
     ?assertEqual(length(Result1), 0),
-    timer:sleep(30000),
-    Result2 = multiple_reads(Node2, 1, 10, 10),
+    Result2 = multiple_reads(Node2, 1, 10, 10, CommitTime),
     ?assertEqual(length(Result2), 0).
 
 multiple_writes(Node, Start, End, Actor)->
@@ -74,12 +80,12 @@ multiple_writes(Node, Start, End, Actor)->
     end,
     lists:foldl(F, [], lists:seq(Start, End)).
 
-multiple_reads(Node, Start, End, Total) ->
+multiple_reads(Node, Start, End, Total, CommitTime) ->
     F = fun(N, Acc) ->
-            case rpc:call(Node, floppy, read, [N, riak_dt_gcounter]) of
+            case rpc:call(Node, floppy, clocksi_read, [CommitTime, N, riak_dt_gcounter]) of
                 {error, _} ->
                     [{N, error} | Acc];
-                {ok, Value} ->
+                {ok, {_,[Value],_}} ->
                     ?assertEqual(Value, Total),
                     Acc
             end
