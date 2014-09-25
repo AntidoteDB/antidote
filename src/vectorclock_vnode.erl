@@ -77,13 +77,11 @@ handle_command(get_stable_snapshot, _Sender,
 handle_command(calculate_stable_snapshot, _Sender,
                State=#currentclock{partition_vectorclock = Clock}) ->
     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
-    lager:error("Calculating stable snapshot"),
     Stable_snapshot = riak_core_metadata:fold(
                         fun({_Key, V}, A) ->
                                 find_min(V,A)
                         end,
                         Clock, ?META_PREFIX),
-    lager:info("Stable snapshot ~p ",[Stable_snapshot]),
     {reply, {ok, Stable_snapshot},
      State#currentclock{stable_snapshot=Stable_snapshot}};
 
@@ -118,7 +116,6 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                     {reply, {ok, VClock}, State}
             end;
         error ->
-            lager:info("Timestamp : ~p",[Timestamp]),
             NewLClock = dict:store(DcId, Timestamp, LastClock),
             NewPClock = dict:store(DcId, Timestamp - 1, VClock),
             try
@@ -171,12 +168,9 @@ terminate(_Reason, _State) ->
     ok.
 
 find_min([VClock], StableClock) ->
-    lager:info("VClock ~p", [VClock]),
-    lager:info("StableClock ~p", [StableClock]),
     dict:fold(fun(Dc, Clock1, Snapshot) ->
                        case dict:find(Dc,StableClock) of
                            {ok, Clock2} ->
-                               lager:info("Sn ~p",[Snapshot]),
                                dict:store(Dc, min(Clock1, Clock2), Snapshot);
                            _ -> Snapshot
                        end

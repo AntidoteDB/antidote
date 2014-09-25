@@ -21,12 +21,8 @@ enqueue_update({Key,
                 Payload= #operation{op_number = OpId, payload = LogRecord},
                 FromDC},
                State = #recvr_state{lastRecvd = LastRecvd, recQ = RecQ}) ->
-    lager:debug("Process key"),
     LastRecvdNew = set(FromDC, OpId, LastRecvd),
-    lager:debug("enquing ~p",[Key]),
-    RecQNew = enqueue(FromDC, {Key,LogRecord}, RecQ),
-    lager:debug("Op Enqueued ~p",[Payload]),
-    lager:debug("NewQ ~p",[RecQNew]),
+   RecQNew = enqueue(FromDC, {Key,LogRecord}, RecQ),
     {ok, State#recvr_state{lastRecvd = LastRecvdNew, recQ = RecQNew}}.
 
 %% Process one update from Q for each DC each Q.
@@ -55,7 +51,6 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             %% Check for dependency of operations and write to log
             {ok, LC} = vectorclock:get_clock(Partition),
             Localclock = vectorclock:set_clock_of_dc(Dc, 0, LC),
-            lager:debug(" Localclock of recvr ~p",[Localclock]),
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
                 {ok, CTS} ->
                     if Ts >= CTS ->
@@ -89,8 +84,8 @@ check_and_update(SnapshotTime, Localclock, Key, LogRecord,
                 noop -> %% Heartbeat
                     lager:debug("Heartbeat received");
                 _ ->
-                    lager:info("Updating to materializer - commit time ~p",[Ts]),
-                    ok = materializer_vnode:update(Key, Payload)
+                    ok = materializer_vnode:update(Key, Payload),
+                    lager:debug("Update from remote DC applied:",[payload])
                     %%TODO add error handling if append failed
             end,
 
@@ -118,9 +113,7 @@ finish_update_dc(Dc, DcQ, Cts,
 
 %% Checks depV against the committed timestamps
 check_dep(DepV, Localclock) ->
-    lager:debug("Compare ~p  >  ~p",[Localclock , DepV]),
     Result = vectorclock:ge(Localclock, DepV),
-    lager:debug("Compare result ~p",[Result]),
     Result.
 
 %%Set a new value to the key.
