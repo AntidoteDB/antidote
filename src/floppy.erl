@@ -68,23 +68,22 @@ read(Key, Type) ->
 %%      error message in case of a failure.
 %%
 clocksi_execute_tx(Clock, Operations) ->
-    lager:info("Received transaction with clock: ~p for operations: ~p",
-               [Clock, Operations]),
+    lager:info("Received transaction with clock: ~p for operations: ~p"),
     ClientClock = case Clock of
         {Mega, Sec, Micro} ->
             clocksi_vnode:now_milisec({Mega, Sec, Micro});
         _ ->
             Clock
-    end,
-    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
+        end,    
+    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
     receive
         EndOfTx ->
             EndOfTx
-    end.
+    end. 
 
 clocksi_execute_tx(Operations) ->
     lager:info("Received transaction for operations: ~p", [Operations]),
-    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
+    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), noclock, Operations]),
     receive
         EndOfTx ->
             EndOfTx

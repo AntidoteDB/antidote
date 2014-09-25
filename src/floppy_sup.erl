@@ -50,6 +50,10 @@ init(_Args) ->
                            {clocksi_tx_coord_sup, start_link, []},
                            permanent, 5000, supervisor, [clockSI_tx_coord_sup]},
 
+    ClockSIsTxCoordSup =  { clocksi_static_tx_coord_sup,
+                           {clocksi_static_tx_coord_sup, start_link, []},
+                           permanent, 5000, supervisor, [clockSI_static_tx_coord_sup]},
+
     ClockSIiTxCoordSup =  { clocksi_interactive_tx_coord_sup,
                             {clocksi_interactive_tx_coord_sup, start_link, []},
                             permanent, 5000, supervisor,
@@ -75,6 +79,7 @@ init(_Args) ->
       [LoggingMaster,
        ClockSIMaster,
        ClockSITxCoordSup,
+       ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
        ClockSIDSGenMaster,
        VectorClockMaster,
