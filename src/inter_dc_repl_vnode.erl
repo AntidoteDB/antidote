@@ -34,7 +34,7 @@ start_vnode(I) ->
 
 %% public API
 trigger(IndexNode, Key) ->
-    riak_core_vnode_master:command(IndexNode, {trigger,Key},
+    riak_core_vnode_master:sync_command(IndexNode, {trigger,Key},
                                    inter_dc_repl_vnode_master).
 trigger(Key) ->
      Preflist = log_utilities:get_preflist_from_key(Key),
@@ -66,16 +66,13 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
                                                      last_op=Last}) ->
     {ok, Clock} = vectorclock:get_clock_by_key(Key),
     case Last of
-        empty ->
-            
+        empty ->            
             LogId = log_utilities:get_logid_from_key(Key),
             case logging_vnode:read({Partition, node()},LogId) of
                 {ok, Ops} ->
                     OpDone = prepare_and_send_ops(Ops,Clock,State);
                 {error, _Reason} ->
-                    OpDone = Last,
-                    timer:sleep(?RETRY_TIME),
-                    trigger({Partition, node()}, Key)
+                    OpDone = Last
             end;
         _ ->
             LogId = log_utilities:get_logid_from_key(Key),
@@ -83,9 +80,7 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
                 {ok, Ops} ->
                     OpDone = prepare_and_send_ops(Ops,Clock,State);
                 {error, _Reason} ->
-                    OpDone = Last,
-                    timer:sleep(?RETRY_TIME),
-                    trigger({Partition, node()})
+                    OpDone = Last
             end
     end,
     %trigger({Partition, node()})
@@ -161,7 +156,6 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                     Done = LastOpId
             end
     end,
-    lager:info("Reset lastopid to ~p",[Done]),
     Done.
 
 filter_downstream(Ops) ->
