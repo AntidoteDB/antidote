@@ -28,45 +28,78 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(currentclock,{last_received_clock, partition_vectorclock}).
+-define(META_PREFIX, {partition,vectorclock}).
+
+-record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
+                      partition_vectorclock :: vectorclock:vectorclock(),
+                      stable_snapshot :: vectorclock:vectorclock(),
+                      partition}).
 
 %% API
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Initialize the clock
-init([_Partition]) ->
+init([Partition]) ->
     {ok, #currentclock{last_received_clock=dict:new(),
-                      partition_vectorclock=dict:new()}}.
+                      partition_vectorclock=dict:new(),
+                      stable_snapshot = dict:new(),
+                      partition = Partition}}.
 
 %% @doc
-handle_command(get_clock, _Sender, #currentclock{partition_vectorclock=Clock} = State) ->
+handle_command(get_clock, _Sender,
+               #currentclock{partition_vectorclock=Clock} = State) ->
     {reply, {ok, Clock}, State};
 
-%% @doc
-%% update_vectorclock(partition, dc, time)
-%% if last_received_vectorclock[partition][dc] < time    
-%%    partition_vectorclock[partition][dc] = last_received_vectorclock[partition][dc]
+handle_command(get_stable_snapshot, _Sender,
+               State=#currentclock{stable_snapshot=Clock}) ->
+    {reply, {ok, Clock}, State};
+
+handle_command(calculate_stable_snapshot, _Sender,
+               State=#currentclock{partition_vectorclock = Clock}) ->
+    %% Calculate stable_snapshot from minimum of vectorclock of all partitions
+    lager:error("Calculating stable snapshot"),
+    Stable_snapshot = riak_core_metadata:fold(
+                        fun({_Key, V}, A) ->
+                                find_min(V,A)
+                        end,
+                        Clock, ?META_PREFIX),
+    lager:info("Stable snapshot ~p ",[Stable_snapshot]),
+    {reply, {ok, Stable_snapshot},
+     State#currentclock{stable_snapshot=Stable_snapshot}};
+
+%% @doc This function implements following code
+%% if last_received_vectorclock[partition][dc] < time
+%%   vectorclock[partition][dc] = last_received_vectorclock[partition][dc]
 %% last_received_vectorclock[partition][dc] = time
-handle_command({update_clock, DcId, Timestamp}, _Sender, 
+handle_command({update_clock, DcId, Timestamp}, _Sender,
                #currentclock{last_received_clock=LastClock,
-                             partition_vectorclock=VClock
+                             partition_vectorclock=VClock,
+                             partition=Partition
                             } = State) ->
     case dict:find(DcId, LastClock) of
         {ok, LClock} ->
             case LClock < Timestamp of
                 true ->
                     NewLClock = dict:store(DcId, Timestamp, LastClock),
-                    NewPClock = dict:store(DcId, LClock, VClock),
-                    {reply, {ok, NewLClock}, State#currentclock{last_received_clock=NewLClock,
-                                                              partition_vectorclock=NewPClock}
+                    NewPClock = dict:store(DcId, Timestamp-1, VClock),
+                    %% Broadcast new pvv to other partition
+                    riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+                    {reply, {ok, NewLClock},
+                     State#currentclock{last_received_clock=NewLClock,
+                                        partition_vectorclock=NewPClock}
                     };
-                false ->                    
+                false ->
                     {reply, {ok, VClock}, State}
             end;
         error ->
-             NewLClock = dict:store(DcId, Timestamp, LastClock),
-            {reply, {ok, NewLClock}, State#currentclock{last_received_clock=NewLClock}}
+            lager:info("Timestamp : ~p",[Timestamp]),
+            NewLClock = dict:store(DcId, Timestamp, LastClock),
+            NewPClock = dict:store(DcId, Timestamp - 1, VClock),
+            riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+            {reply, {ok, NewLClock}, State#currentclock
+             {last_received_clock=NewLClock,
+              partition_vectorclock=NewPClock}}
     end;
 
 handle_command(_Message, _Sender, State) ->
@@ -104,3 +137,17 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, _State) ->
     ok.
+
+find_min([VClock], StableClock) ->
+    lager:info("VClock ~p", [VClock]),
+    lager:info("StableClock ~p", [StableClock]),
+    dict:fold(fun(Dc, Clock1, Snapshot) ->
+                       case dict:find(Dc,StableClock) of
+                           {ok, Clock2} ->
+                               lager:info("Sn ~p",[Snapshot]),
+                               dict:store(Dc, min(Clock1, Clock2), Snapshot);
+                           _ -> Snapshot
+                       end
+               end,
+               dict:new(),
+               VClock).

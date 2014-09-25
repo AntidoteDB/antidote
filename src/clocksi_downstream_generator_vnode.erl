@@ -55,16 +55,17 @@ trigger(Key, Writeset) ->
 
 start_vnode(I) ->
     {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
-    riak_core_vnode:send_command(Pid, trigger),
+    riak_core_vnode:send_command(Pid, {trigger,Pid}),
     {ok, Pid}.
 
 init([Partition]) ->
     {ok, #dstate{partition = Partition,
                  last_commit_time = 0,
-                 pending_operations = []}}.
+                 pending_operations = [],
+                stable_time = 0}}.
 
 %%
-handle_command(trigger, _Sender,
+handle_command({trigger,Pid}, _Sender,
                State= #dstate{partition = Partition,
                               last_commit_time = LastCommitTime
                               }) ->
@@ -79,10 +80,9 @@ handle_command(trigger, _Sender,
                                            {process},
                                            ?CLOCKSI_GENERATOR_MASTER),
             spawn(fun() ->
-                          timer:sleep(1000),
-                          riak_core_vnode_master:command([Node],
-                                                         {trigger},
-                                                         ?CLOCKSI_GENERATOR_MASTER)
+                          %% Trigger updating vectroclock periodically
+                          timer:sleep(5000),                      
+                          riak_core_vnode:send_command(Pid, {trigger,Pid})
                   end
                  ),
             {reply, {ok, trigger_received},

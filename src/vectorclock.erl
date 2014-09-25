@@ -23,8 +23,14 @@ get_clock_by_key(Key) ->
     Preflist = log_utilities:get_preflist_from_logid(Logid),
     Indexnode = hd(Preflist),
     lager:info("Preflist of Key ~p vectorclock ~p", [Key, Indexnode]),
-    riak_core_vnode_master:sync_command(
-      Indexnode, get_clock, vectorclock_vnode_master).
+    try
+        riak_core_vnode_master:sync_command(
+          Indexnode, get_clock, vectorclock_vnode_master)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
 
 -spec get_clock(Partition :: non_neg_integer())
                -> {ok, vectorclock()} | {error, term()}.
@@ -42,6 +48,7 @@ get_clock(Partition) ->
     end.
 
 get_clock_node(Node) ->
+    lager:error("In get clock node"),
     Preflist = riak_core_apl:active_owners(vectorclock),
     Prefnode = [{Partition, Node1} ||
                    {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
@@ -50,15 +57,16 @@ get_clock_node(Node) ->
     _Seed = random:seed(A1, A2, A3),
     Index = random:uniform(length(Prefnode)),
     VecNode = lists:nth(Index, Prefnode),
+    lager:error("Get snapshot"),
     riak_core_vnode_master:sync_command(
-      VecNode, get_clock, vectorclock_vnode_master).
+      VecNode, get_stable_snapshot, vectorclock_vnode_master).
 
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())
                   -> {ok, vectorclock()} | {error, term()}.
 update_clock(Partition, Dc_id, Timestamp) ->
     Indexnode = {Partition, node()},
-    lager:info("Updating Preflist of vectorclock ~p", [Indexnode]),
+    lager:debug("Updating to Preflist of vectorclock ~p ~p", [Indexnode, Timestamp]),
     case riak_core_vnode_master:sync_command(Indexnode,
                                              {update_clock, Dc_id, Timestamp},
                                              vectorclock_vnode_master) of
