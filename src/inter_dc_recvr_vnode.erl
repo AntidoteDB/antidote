@@ -48,7 +48,7 @@ store_updates(Updates) ->
                   end, Updates),
     riak_core_vnode_master:command(Indexnode, {process_queue},
                                    inter_dc_recvr_vnode_master),
-    {ok, done}.
+    ok.
 
 %% --------------------
 %% Sends update to be replicated to the vnode
@@ -87,12 +87,12 @@ handle_command({store_update, Key, Payload, Dc}, _Sender, State) ->
     lager:info(" processing update of ~p :: ~p",[Key, State]),
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
                        {Key, Payload, Dc}, State),
-    dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
+    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {reply, ok, NewState};
 
 handle_command({process_queue}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:process_queue(State),
-    dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
+    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {noreply, NewState}.
 
 handle_handoff_command(_Message, _Sender, State) ->

@@ -55,9 +55,9 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
                                  [{active,true},binary, {packet,2}], ?TIMEOUT) of
         { ok, Socket} ->
             lager:info("Connected"),
-            inet:setopts(Socket, [{active, once}]),
+            ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
-            inet:setopts(Socket, [{active, once}]),
+            ok = inet:setopts(Socket, [{active, once}]),
             {next_state, wait_for_ack, State#state{socket=Socket},?TIMEOUT};
         {error, _Reason} ->
             lager:info("Couldnot connect to remote DC"),
@@ -77,7 +77,7 @@ stop(timeout, State=#state{socket=Socket}) ->
     {stop, normal, State}.
 
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
-    inet:setopts(Socket, [{active, once}]),
+    ok = inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(), binary_to_term(Bin)),
     {next_state, StateName, StateData};
 

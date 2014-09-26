@@ -27,6 +27,6 @@ start_socket() ->
 %% Start with 20 listeners so that many multiple connections can
 %% be started at once, without serialization.
 empty_listeners() ->
-    [start_socket() || _ <- lists:seq(1,20)],
+    _ = [start_socket() || _ <- lists:seq(1,20)],
     lager:info("Starting listeners"),
     ok.

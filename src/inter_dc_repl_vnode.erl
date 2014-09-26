@@ -7,7 +7,6 @@
          %%trigger/2,
          trigger/1,
          sync_clock/2,
-         get_update/3,
          %%API end
          init/1,
          terminate/2,
@@ -35,23 +34,14 @@ start_vnode(I) ->
 %% public API
 trigger(IndexNode, Key) ->
     riak_core_vnode_master:sync_command(IndexNode, {trigger,Key},
-                                   inter_dc_repl_vnode_master).
+                                        inter_dc_repl_vnode_master).
 trigger(Key) ->
-     Preflist = log_utilities:get_preflist_from_key(Key),
-     IndexNode = hd(Preflist),
-     trigger(IndexNode, Key).
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    trigger(IndexNode, Key).
 
 sync_clock(Partition, Clock) ->
-    %Preflist = log_utilitities:get_preflist_from_partition(Partition),
-    %Indexnode = hd(Preflist),
     riak_core_vnode_master:command({Partition, node()}, {sync_clock, Clock},
-                                   inter_dc_repl_vnode_master).
-
-%%TODO: Not implemented
-get_update(DcId, FromOp, Partition) ->
-    Preflist = log_utilitities:get_preflist_from_partition(Partition),
-    Indexnode = hd(Preflist),
-    riak_core_vnode_master:command(Indexnode, {get_update, FromOp, DcId},
                                    inter_dc_repl_vnode_master).
 
 %% riak_core_vnode call backs
@@ -63,10 +53,10 @@ handle_command({sync_clock, Clock}, _Sender, State) ->
     prepare_and_send_ops([],Clock, State),
     {reply, ok, State};
 handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
-                                                     last_op=Last}) ->
+                                                    last_op=Last}) ->
     {ok, Clock} = vectorclock:get_clock_by_key(Key),
     case Last of
-        empty ->            
+        empty ->
             LogId = log_utilities:get_logid_from_key(Key),
             case logging_vnode:read({Partition, node()},LogId) of
                 {ok, Ops} ->
@@ -83,7 +73,7 @@ handle_command({trigger,Key}, _Sender, State=#state{partition=Partition,
                     OpDone = Last
             end
     end,
-    %trigger({Partition, node()})
+                                                %trigger({Partition, node()})
     {reply, ok, State#state{last_op=OpDone}}.
 
 handle_handoff_command(_Message, _Sender, State) ->
@@ -121,8 +111,8 @@ terminate(_Reason, _State) ->
 
 %% Filter Ops to the form understandable by recvr and propagate
 prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
-                                              last_op=LastOpId,
-                                              dcid=DcId}) ->
+                                                 last_op=LastOpId,
+                                                 dcid=DcId}) ->
     case Ops of
         %% if empty, there are no updates
         [] ->
@@ -144,7 +134,7 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                     lager:info(
                       "Propagation error. Reason: ~p",[Other])
             end;
-            %Done = LastOpId; %%TODO:
+                                                %Done = LastOpId; %%TODO:
         _ ->
             Downstreamops = filter_downstream(Ops),
             lager:info("Ops to replicate ~p",[Downstreamops]),

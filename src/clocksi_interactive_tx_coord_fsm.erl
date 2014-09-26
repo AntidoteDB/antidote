@@ -304,22 +304,26 @@ terminate(_Reason, _SN, _SD) ->
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
 -spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
-                       -> {ok, vectroclock:vectorclock()}.
+                       -> {ok, vectorclock:vectorclock()} | {error,term()}.
 get_snapshot_time(ClientClock) ->
     wait_for_clock(ClientClock).
 
--spec get_snapshot_time() -> {ok, vectorclock:vectorclock()}.
+-spec get_snapshot_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
-    {ok, VecSnapshotTime} = vectorclock:get_stable_snapshot(),
-    DcId = dc_utilities:get_my_dc_id(),
-    SnapshotTime = dict:update(DcId,
-                fun (_Old) -> Now end,
-                Now, VecSnapshotTime),
-    {ok, SnapshotTime}.
+    case vectorclock:get_stable_snapshot() of
+        {ok, VecSnapshotTime} ->
+            DcId = dc_utilities:get_my_dc_id(),
+            SnapshotTime = dict:update(DcId,
+                                       fun (_Old) -> Now end,
+                                       Now, VecSnapshotTime),
+            {ok, SnapshotTime};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
- -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-                           vectorclock:vectorclock() | error.
+-spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
+                           {ok, vectorclock:vectorclock()} | {error, term()}.
 wait_for_clock(Clock) ->
    case get_snapshot_time() of
        {ok, VecSnapshotTime} ->
@@ -332,6 +336,6 @@ wait_for_clock(Clock) ->
                    timer:sleep(100),
                    wait_for_clock(Clock)
            end;
-       {error, _Reason} ->
-          error
+       {error, Reason} ->
+          {error, Reason}
   end.

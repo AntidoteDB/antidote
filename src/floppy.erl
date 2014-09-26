@@ -70,7 +70,8 @@ read(Key, Type) ->
 %%      the transaction, in case the tx ends successfully.
 %%      error message in case of a failure.
 %%
--spec clocksi_execute_tx(Clock :: vectorclock:vectorclock(), Operations::[]) -> term().
+-spec clocksi_execute_tx(Clock :: vectorclock:vectorclock(),
+                         Operations::[any()]) -> term().
 clocksi_execute_tx(Clock, Operations) ->
     lager:info("Received transaction with clock: ~p for operations: ~p",
                [Clock, Operations]),
@@ -80,7 +81,7 @@ clocksi_execute_tx(Clock, Operations) ->
             EndOfTx
     end.
 
--spec clocksi_execute_tx(Operations::[]) -> term().
+-spec clocksi_execute_tx(Operations::[any()]) -> term().
 clocksi_execute_tx(Operations) ->
     lager:info("Received transaction for operations: ~p", [Operations]),
     {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
@@ -122,11 +123,11 @@ clocksi_istart_tx() ->
     end.
 
 -spec clocksi_bulk_update(ClientClock:: vectorclock:vectorclock(),
-                          Operations::[]) -> term().
+                          Operations::[any()]) -> term().
 clocksi_bulk_update(ClientClock, Operations) ->
     clocksi_execute_tx(ClientClock, Operations).
 
--spec clocksi_bulk_update(Operations :: []) -> term().
+-spec clocksi_bulk_update(Operations :: [any()]) -> term().
 clocksi_bulk_update(Operations) ->
     clocksi_execute_tx(Operations).
 

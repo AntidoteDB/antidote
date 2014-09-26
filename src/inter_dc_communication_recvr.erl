@@ -30,13 +30,16 @@ accept(timeout, State=#state{socket=ListenSocket}) ->
     lager:info("Waiting for connection"),
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
     lager:info("connection accepted"),
-    inet:setopts(AcceptSocket, [{active, once}]),
+    ok = inet:setopts(AcceptSocket, [{active, once}]),
     {next_state, wait_for_message, State#state{socket=AcceptSocket}, ?TIMEOUT}.
 
 wait_for_message({replicate,Updates}, State=#state{socket=Socket}) ->
-    inter_dc_recvr_vnode:store_updates(Updates),
-    lager:debug("Replication request received: ~p",[Updates]),
-    gen_tcp:send(Socket, term_to_binary(acknowledge)),
+    case inter_dc_recvr_vnode:store_updates(Updates) of
+        ok ->  lager:debug("Replication request received: ~p",[Updates]),
+               ok = gen_tcp:send(Socket, term_to_binary(acknowledge));
+        {error, _Reason} ->
+            lager:debug("Could not send message to replicate")
+    end,
     {next_state,stop_server,State,0};
 wait_for_message(timeout, State) ->
     {next_state, stop_server, State, 0};
@@ -46,13 +49,13 @@ wait_for_message(Message, State) ->
 
 stop_server(timeout, State=#state{socket=Socket}) ->
     %% start a new listener
-    inter_dc_communication_sup:start_socket(),
+    {ok, _Pid} = inter_dc_communication_sup:start_socket(),
     gen_tcp:close(Socket),
     {stop, normal, State}.
 
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
     % flow control: enable forwarding of next tcp message
-    inet:setopts(Socket, [{active, once}]),
+    ok = inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(),binary_to_term(Bin)),
     {next_state, StateName, StateData};
 
