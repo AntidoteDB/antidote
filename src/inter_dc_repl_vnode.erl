@@ -169,7 +169,7 @@ filter_downstream(Ops) ->
                                         {DcId,_Time} ->
                                             %% Op is committed in this DC
                                             {true, Operation};
-                                        _ -> {false}
+                                        _ -> false
                                     end;
                                 _ ->
                                     false
