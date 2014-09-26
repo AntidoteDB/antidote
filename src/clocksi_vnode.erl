@@ -210,7 +210,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
     case Result of
         {ok, _} ->
             true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            _Return = clocksi_downstream_generator_vnode:trigger(
+            clocksi_downstream_generator_vnode:trigger(
                     Key, {TxId,
                           Updates,
                           Transaction#transaction.vec_snapshot_time,
