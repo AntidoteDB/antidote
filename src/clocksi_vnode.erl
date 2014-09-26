@@ -323,7 +323,6 @@ check_keylog(TxId, [H|T], CommittedTx)->
     case ThisTxId > TxId of
         true ->
             CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            timer:sleep(1000),
             case CommitInfo of
                 [{_, _CommitTime}] ->
                     true;
