@@ -86,7 +86,6 @@ read_data_item(Node, TxId, Key, Type) ->
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op) ->
-    lager:info("Update issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
                                             {update_data_item, TxId, Key, Type, Op},
@@ -100,7 +99,6 @@ update_data_item(Node, TxId, Key, Type, Op) ->
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
-    lager:info("Prepare issued for txid: ~p", [TxId]),
     riak_core_vnode_master:command(ListofNodes,
                                    {prepare, TxId},
                                    {fsm, undefined, self()},
@@ -108,7 +106,6 @@ prepare(ListofNodes, TxId) ->
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
-    lager:info("Commit issued for txid: ~p", [TxId]),
     riak_core_vnode_master:command(ListofNodes,
                                    {commit, TxId, CommitTime},
                                    {fsm, undefined, self()},
@@ -116,7 +113,6 @@ commit(ListofNodes, TxId, CommitTime) ->
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
-    lager:info("Abort issued for txid: ~p", [TxId]),
     riak_core_vnode_master:command(ListofNodes,
                                    {abort, TxId},
                                    {fsm, undefined, self()},
