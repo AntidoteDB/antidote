@@ -19,6 +19,8 @@
 %% -------------------------------------------------------------------
 -module(floppy).
 
+-include("floppy.hrl").
+
 -export([append/3,
          read/2,
          clocksi_execute_tx/2,
@@ -78,6 +80,7 @@ clocksi_execute_tx(Clock, Operations) ->
             EndOfTx
     end.
 
+-spec clocksi_execute_tx(Operations::[]) -> term().
 clocksi_execute_tx(Operations) ->
     lager:info("Received transaction for operations: ~p", [Operations]),
     {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
@@ -91,6 +94,7 @@ clocksi_execute_tx(Operations) ->
 %%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
+-spec clocksi_istart_tx(Clock:: vectorclock:vectorclock()) -> term().
 clocksi_istart_tx(Clock) ->
     lager:info("Starting FSM for interactive transaction."),
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
@@ -117,12 +121,17 @@ clocksi_istart_tx() ->
             {error, timeout}
     end.
 
+-spec clocksi_bulk_update(ClientClock:: vectorclock:vectorclock(),
+                          Operations::[]) -> term().
 clocksi_bulk_update(ClientClock, Operations) ->
     clocksi_execute_tx(ClientClock, Operations).
 
+-spec clocksi_bulk_update(Operations :: []) -> term().
 clocksi_bulk_update(Operations) ->
     clocksi_execute_tx(Operations).
 
+-spec clocksi_read(ClientClock :: vectorclock:vectorclock(),
+                   Key :: key(), Type:: type()) -> term().
 clocksi_read(ClientClock, Key, Type) ->
     clocksi_execute_tx(ClientClock, [{read, Key, Type}]).
 
