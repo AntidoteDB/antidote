@@ -24,7 +24,6 @@
 %% Send a message to all DCs over a tcp connection
 propagate_sync(Message, DCs) ->
     lists:foreach( fun({DcAddress, Port}) ->
-                            lager:info("Sending operations ~p to {~p, ~p}",[Message, DcAddress, Port]),
                            inter_dc_communication_sender:start_link(
                              Port, DcAddress, Message, self()),
                            receive
@@ -65,8 +64,7 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             {stop, normal, State}
     end.
 
-wait_for_ack({acknowledge, DC}, State=#state{socket=_Socket, message=Message} )->
-    lager:error("Updates ~p received in DC ~p", [Message, DC]),
+wait_for_ack({acknowledge, _DC}, State=#state{socket=_Socket, message=_Message} )->
     {next_state, stop , State,0};
 
 wait_for_ack(timeout, State) ->
