@@ -34,8 +34,9 @@ start_vnode(I) ->
 
 %% public API
 trigger(IndexNode, Key) ->
-    riak_core_vnode_master:command(IndexNode, {trigger,Key},
-                                   inter_dc_repl_vnode_master).
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {trigger, Key},
+                                        inter_dc_repl_vnode_master).
 trigger(Key) ->
      Preflist = log_utilities:get_preflist_from_key(Key),
      IndexNode = hd(Preflist),
@@ -139,22 +140,20 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                                   commit_time={DcId, LocalClock},
                                   snapshot_time = vectorclock:from_list([])
                                  },
-            _Payload=#operation{payload = #log_record
+            Payload=#operation{payload = #log_record
                                {op_type=noop, op_payload=Op}},
-            Done = LastOpId;
-            %case inter_dc_communication_sender:propagate_sync(
-            %       {replicate, [Payload]}, DCs) of
-            %    ok ->
-            %        Done = LastOpId;
-            %    Other ->
-            %        Done = LastOpId,
-            %        lager:info(
-            %          "Propagation error. Reason: ~p",[Other])
-            %end;
-            %Done = LastOpId; %%TODO:
+            case inter_dc_communication_sender:propagate_sync(
+                   {replicate, [Payload]}, DCs) of
+                ok ->
+                    Done = LastOpId;
+                Other ->
+                    Done = LastOpId,
+                    lager:info(
+                      "Propagation error. Reason: ~p",[Other])
+            end;
         _ ->
             Downstreamops = filter_downstream(Ops),
-            lager:info("Ops to replicate ~p",[Downstreamops]),
+            lager:error("X1 propagation ~p",[Downstreamops]),
             case inter_dc_communication_sender:propagate_sync(
                    {replicate, Downstreamops}, DCs) of
                 ok ->
@@ -163,7 +162,6 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                     Done = LastOpId
             end
     end,
-    lager:info("Reset lastopid to ~p",[Done]),
     Done.
 
 filter_downstream(Ops) ->
