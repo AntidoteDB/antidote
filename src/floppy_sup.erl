@@ -87,6 +87,11 @@ init(_Args) ->
                           {riak_core_vnode_master,  start_link,
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
+
+    InterDcManager = {inter_dc_manager,
+                        {inter_dc_manager, start_link, []},
+                        permanent, 5000, worker, [inter_dc_manager]},
+    
        {ok,
      {{one_for_one, 5, 10},
       [LoggingMaster,
@@ -95,6 +100,7 @@ init(_Args) ->
        ClockSIiTxCoordSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
+       InterDcManager,
        ClockSIDSGenMaster,
        VectorClockMaster,
        MaterializerMaster]}}.

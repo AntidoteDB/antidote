@@ -33,7 +33,8 @@ start_vnode(I) ->
 
 %% public API
 trigger(IndexNode, Key) ->
-    riak_core_vnode_master:sync_command(IndexNode, {trigger,Key},
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {trigger, Key},
                                         inter_dc_repl_vnode_master).
 trigger(Key) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -113,6 +114,7 @@ terminate(_Reason, _State) ->
 prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                                                  last_op=LastOpId,
                                                  dcid=DcId}) ->
+    {ok, DCs} = inter_dc_manager:get_dcs(),
     case Ops of
         %% if empty, there are no updates
         [] ->
@@ -126,7 +128,7 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
             Payload=#operation{payload = #log_record
                                {op_type=noop, op_payload=Op}},
             case inter_dc_communication_sender:propagate_sync(
-                   {replicate, [Payload]}) of
+                   {replicate, [Payload]}, DCs) of
                 ok ->
                     Done = LastOpId;
                 Other ->
@@ -134,12 +136,11 @@ prepare_and_send_ops(Ops, Clock, _State = #state{partition=Partition,
                     lager:info(
                       "Propagation error. Reason: ~p",[Other])
             end;
-                                                %Done = LastOpId; %%TODO:
         _ ->
             Downstreamops = filter_downstream(Ops),
-            lager:info("Ops to replicate ~p",[Downstreamops]),
+            lager:error("X1 propagation ~p",[Downstreamops]),
             case inter_dc_communication_sender:propagate_sync(
-                   {replicate, Downstreamops}) of
+                   {replicate, Downstreamops}, DCs) of
                 ok ->
                     Done = get_last_opid(Ops, LastOpId);
                 _ ->

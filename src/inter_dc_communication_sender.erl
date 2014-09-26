@@ -4,7 +4,7 @@
 -include("floppy.hrl").
 
 -export([start_link/4,
-         propagate_sync/1
+         propagate_sync/2
         ]).
 -export([init/1,
          code_change/4,
@@ -22,7 +22,7 @@
 -define(TIMEOUT,5000).
 
 %% Send a message to all DCs over a tcp connection
-propagate_sync(Message) ->
+propagate_sync(Message, DCs) ->
     lists:foreach( fun({DcAddress, Port}) ->
                            inter_dc_communication_sender:start_link(
                              Port, DcAddress, Message, self()),
@@ -37,7 +37,7 @@ propagate_sync(Message) ->
                                    %%TODO: Retry if needed
                            end
                    end,
-                   ?OTHER_DC),
+                   DCs),
     ok.
 
 start_link(Port, Host, Message, ReplyTo) ->
@@ -64,8 +64,7 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             {stop, normal, State}
     end.
 
-wait_for_ack(acknowledge, State=#state{socket=_Socket} )->
-    lager:debug("Updates sent to other DC"),
+wait_for_ack({acknowledge, _DC}, State=#state{socket=_Socket, message=_Message} )->
     {next_state, stop , State,0};
 
 wait_for_ack(timeout, State) ->
@@ -79,7 +78,7 @@ stop(timeout, State=#state{socket=Socket}) ->
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
     ok = inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(), binary_to_term(Bin)),
-    {next_state, StateName, StateData};
+    {next_state, StateName, StateData}; 
 
 handle_info({tcp_closed, Socket}, _StateName,
             #state{socket=Socket} = StateData) ->
