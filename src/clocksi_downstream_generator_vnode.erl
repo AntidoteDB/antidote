@@ -107,7 +107,7 @@ handle_command({process}, _Sender,
                              end
                      end, {PendingOperations, LastCommitTime}, Sorted_ops),
     DcId = dc_utilities:get_my_dc_id(),
-    vectorclock:update_clock(Partition, DcId, Stable_time),
+    {ok, _Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 
