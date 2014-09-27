@@ -262,10 +262,9 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
                                    state=TxState, commit_time=CommitTime}) ->
     lager:info("ClockSI-coord-fsm: Replying ~w to ~w", [TxState, From]),
     TxId = Transaction#transaction.txn_id,
-    {ok, CurrentSnapshot} = vectorclock:get_stable_snapshot(),
     DcId = dc_utilities:get_my_dc_id(),
     CausalClock = vectorclock:set_clock_of_dc(
-                    DcId, CommitTime, CurrentSnapshot),
+                    DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
     _ = case TxState of
         committed ->
             Reply = {ok, {TxId, CausalClock}},

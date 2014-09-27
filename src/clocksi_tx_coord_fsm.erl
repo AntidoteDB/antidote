@@ -326,10 +326,9 @@ reply_to_client(timeout, SD=#state{from=From,
                                    state=TxState,
                                    commit_time=CommitTime}) ->
     TxId = Transaction#transaction.txn_id,
-    {ok, CurrentSnapshot} = vectorclock:get_stable_snapshot(),
     DcId = dc_utilities:get_my_dc_id(),
     CausalClock = vectorclock:set_clock_of_dc(
-                    DcId, CommitTime, CurrentSnapshot),
+                    DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
     _ = case TxState of
         committed ->
             From ! {ok, {TxId, ReadSet, CausalClock}};
@@ -400,6 +399,7 @@ wait_for_clock(Clock) ->
                    {ok, VecSnapshotTime};
                false ->
                    %% wait for snapshot time to catch up with Client Clock
+                   %%TODO: Fix the waiting time
                    timer:sleep(100),
                    wait_for_clock(Clock)
            end;
