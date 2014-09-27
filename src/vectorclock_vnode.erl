@@ -103,14 +103,14 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                     %% Broadcast new pvv to other partition
                     try
                         riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                        {reply, {ok, NewLClock},
+                        {reply, {ok, NewPClock},
                          State#currentclock{last_received_clock=NewLClock,
                                         partition_vectorclock=NewPClock}
                         }
                     catch
                         _:Reason ->
                             lager:error("Exception caught ~p! ",[Reason]),
-                            {reply, {ok, LastClock},State}
+                            {reply, {ok, VClock},State}
                     end;
                 false ->
                     {reply, {ok, VClock}, State}
@@ -120,14 +120,14 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
             NewPClock = dict:store(DcId, Timestamp - 1, VClock),
             try
                 riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                {reply, {ok, NewLClock},
+                {reply, {ok, NewPClock},
                  State#currentclock{last_received_clock=NewLClock,
                                     partition_vectorclock=NewPClock}
                 }
             catch
                 _:Reason ->
                     lager:error("Exception caught ~p! ",[Reason]),
-                    {reply, {ok, LastClock},State}
+                    {reply, {ok, VClock},State}
             end
     end;
 
