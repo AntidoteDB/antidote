@@ -74,32 +74,26 @@ init([Partition]) ->
     {ok, #dstate{partition = Partition,
                  last_commit_time = 0,
                  pending_operations = [],
-                stable_time = 0}}.
+                 stable_time = 0}}.
 
 %%
 handle_command({trigger,Pid}, _Sender,
                State= #dstate{partition = Partition,
                               last_commit_time = LastCommitTime
-                              }) ->
-    MyNode = node(),
-    case MyNode of
-        'dev2@127.0.0.1' ->
-            {reply, ok, State};
-        _ ->
-            Node = {Partition, node()},
-            Stable_time = get_stable_time(Node, LastCommitTime),
-            riak_core_vnode_master:command([Node],
-                                           {process},
-                                           ?CLOCKSI_GENERATOR_MASTER),
-            spawn(fun() ->
-                          %% Trigger updating vectroclock periodically
-                          timer:sleep(5000),
-                          riak_core_vnode:send_command(Pid, {trigger,Pid})
-                  end
-                 ),
-            {reply, {ok, trigger_received},
-             State#dstate{stable_time=Stable_time}}
-        end;
+                             }) ->
+    Node = {Partition, node()},
+    Stable_time = get_stable_time(Node, LastCommitTime),
+    spawn(fun() ->
+                  %% Trigger updating vectroclock periodically
+                  timer:sleep(5000),
+                  riak_core_vnode_master:command([Node],
+                                                 {process},
+                                                 ?CLOCKSI_GENERATOR_MASTER),
+                  riak_core_vnode:send_command(Pid, {trigger,Pid})
+          end
+         ),
+    {reply, {ok, trigger_received},
+     State#dstate{stable_time=Stable_time}};
 
 %% @doc Read client update operations,
 %%      generate downstream operations and store it to persistent log.
@@ -141,14 +135,7 @@ handle_command({process}, _Sender,
     {ok, Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
     _ = case PendingOperations of
             [] ->
-                %%TODO
-                MyNode = node(),
-                case MyNode of
-                    'dev2@127.0.0.1' ->
-                        {reply, ok, State};
-                    _ ->
-                        inter_dc_repl_vnode:sync_clock(Partition, Clock)
-                end;
+                inter_dc_repl_vnode:sync_clock(Partition, Clock);
             [H|_T] -> Key = H#clocksi_payload.key,
                       inter_dc_repl_vnode:trigger(Key)
         end,
@@ -213,7 +200,7 @@ get_stable_time(Node, Prev_stable_time) ->
     case riak_core_vnode_master:sync_command(
            Node, {get_active_txns}, ?CLOCKSI_MASTER) of
         {ok, Active_txns} ->
-           lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
+            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
                                 case Min_time > Snapshot_time of
                                     true ->
                                         Snapshot_time;
