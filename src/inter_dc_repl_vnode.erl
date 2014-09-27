@@ -42,7 +42,7 @@ trigger(Key) ->
     trigger(IndexNode, Key).
 
 sync_clock(Partition, Clock) ->
-    riak_core_vnode_master:command({Partition, node()}, {sync_clock, Clock},
+    riak_core_vnode_master:sync_command({Partition, node()}, {sync_clock, Clock},
                                    inter_dc_repl_vnode_master).
 
 %% riak_core_vnode call backs
