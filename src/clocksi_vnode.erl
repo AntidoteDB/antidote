@@ -121,10 +121,18 @@ abort(ListofNodes, TxId) ->
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
 init([Partition]) ->
-    PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++ integer_to_list(Partition)), [set, {write_concurrency, true}]),
-    CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++ integer_to_list(Partition)), [set, {write_concurrency, true}]),
-    ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key) ++ integer_to_list(Partition)), [bag, {write_concurrency, true}]),
-    WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++ integer_to_list(Partition)), [duplicate_bag, {write_concurrency, true}]),
+    PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++
+                                      integer_to_list(Partition)),
+                         [set, {write_concurrency, true}]),
+    CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
+                                       integer_to_list(Partition)),
+                          [set, {write_concurrency, true}]),
+    ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
+                                           ++ integer_to_list(Partition)),
+                              [bag, {write_concurrency, true}]),
+    WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++
+                                    integer_to_list(Partition)),
+                       [duplicate_bag, {write_concurrency, true}]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,

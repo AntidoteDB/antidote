@@ -375,7 +375,12 @@ insert_operation(Log, LogId, OpId, Payload) ->
     Result = dets:insert(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
     case Result of
         ok ->
-            {ok, OpId};
+            case dets:sync(Log) of
+                ok ->
+                    {ok, OpId};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
