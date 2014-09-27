@@ -19,7 +19,7 @@
 
 -record(state, {port, host, socket,message, caller}). % the current socket
 
--define(TIMEOUT,5000).
+-define(TIMEOUT,60000).
 
 %% Send a message to all DCs over a tcp connection
 propagate_sync(Message, DCs) ->
@@ -29,10 +29,12 @@ propagate_sync(Message, DCs) ->
                            receive
                                {done, normal} ->
                                    ok;
-                               _ ->
+                               {done, Other} ->
+                                   lager:error("Send failed Reason:~p Message ~p",[Other, Message]),
                                    {error}
                                    %%TODO: Retry if needed
                            after ?TIMEOUT ->
+                                   lager:error("Send failed timeout Message ~p",[Message]),
                                    {error, timeout}
                                    %%TODO: Retry if needed
                            end
@@ -50,11 +52,9 @@ init([Port,Host,Message,ReplyTo]) ->
                          caller=ReplyTo}, 0}.
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
-    lager:info("Connecting to ~p : ~p",[Host, Port]),
     case  gen_tcp:connect(Host, Port,
                                  [{active,true},binary, {packet,2}], ?TIMEOUT) of
         { ok, Socket} ->
-            lager:info("Connected"),
             ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
             ok = inet:setopts(Socket, [{active, once}]),
@@ -76,7 +76,7 @@ stop(timeout, State=#state{socket=Socket}) ->
     {stop, normal, State}.
 
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
-    ok = inet:setopts(Socket, [{active, once}]),
+    inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(), binary_to_term(Bin)),
     {next_state, StateName, StateData}; 
 
@@ -86,7 +86,7 @@ handle_info({tcp_closed, Socket}, _StateName,
     {stop, normal, StateData};
 
 handle_info(Message, _StateName, StateData) ->
-    lager:debug("Unexpected message: ~p",[Message]),
+    lager:info("Unexpected message: ~p",[Message]),
     {stop,badmsg,StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
