@@ -174,7 +174,8 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
                     {next_state, abort, SD0};
                 {error, _Reason} ->
                     {next_state, abort, SD0};
-                ReadResult ->
+                {ok, Snapshot} ->
+                    ReadResult = Type:value(Snapshot),
                     NewReadSet = lists:append(ReadSet, [ReadResult]),
                     SD1 = SD0#state{read_set=NewReadSet},
                     {next_state, prepare_op, SD1, 0}

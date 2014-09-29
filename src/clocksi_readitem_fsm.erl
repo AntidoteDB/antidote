@@ -139,7 +139,7 @@ return(timeout, SD0=#state{key=Key,
             Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
-            Reply=Type:value(Snapshot2);
+            Reply = {ok, Snapshot2};
         {error, Reason} ->
             Reply={error, Reason}
     end,

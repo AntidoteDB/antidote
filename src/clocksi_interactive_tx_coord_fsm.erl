@@ -127,7 +127,10 @@ execute_op({Op_type, Args}, Sender,
                                               Key, Type) of
                 error ->
                     {reply, error, abort, SD0};
-                Read_result ->
+                {error, _Reason} ->
+                    {next_state, abort, SD0};
+                {ok, Snapshot} ->
+                    Read_result = Type:value(Snapshot),
                     lager:info("ClockSI-Interactive-Coord: Read Result:  ~w ~n",
                                [Read_result]),
                     {reply, {ok, Read_result}, execute_op, SD0}
@@ -337,4 +340,3 @@ generate_downstream_op(Txn, Key, Type, Param) ->
                                 commit_time = {},
                                 txid = TxnId},
     clocksi_downstream:generate_downstream_op(Record).
-
