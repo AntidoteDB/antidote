@@ -74,8 +74,6 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
                     end
             end;
         false ->
-            lager:info("Operation ~p exists in snapshot.",
-                       [Op#clocksi_payload.commit_time]),
             update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
     end.
 

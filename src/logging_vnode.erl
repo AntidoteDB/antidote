@@ -182,8 +182,6 @@ handle_command({read_from, LogId, From}, _Sender,
 %%
 handle_command({append, LogId, Payload}, _Sender,
                #state{logs_map=Map, partition=Partition, clock=Clock}=State) ->
-    lager:info("Issuing append operation at partition: ~p",
-               [Partition]),
     OpId = generate_op_id(Clock),
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
@@ -374,19 +372,17 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
 -spec insert_operation(log(), log_id(), op_id(), payload()) ->
                               {ok, op_id()} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
-    case dets:match(Log, {LogId, #operation{op_number=OpId, payload='_'}}) of
-        [] ->
-            Result = dets:insert(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
-            case Result of
+    Result = dets:insert(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
+    case Result of
+        ok ->
+            case dets:sync(Log) of
                 ok ->
                     {ok, OpId};
                 {error, Reason} ->
                     {error, Reason}
             end;
         {error, Reason} ->
-            {error, Reason};
-        _ ->
-            {ok, OpId}
+            {error, Reason}
     end.
 
 %% @doc get_log: Looks up for the operations logged in a particular log
