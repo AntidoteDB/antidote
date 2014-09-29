@@ -30,11 +30,15 @@ propagate_sync(Message, DCs) ->
                                {done, normal} ->
                                    ok;
                                {done, Other} ->
-                                   lager:error("Send failed Reason:~p Message ~p",[Other, Message]),
+                                   lager:error(
+                                     "Send failed Reason:~p Message ~p",
+                                     [Other, Message]),
                                    {error}
                                    %%TODO: Retry if needed
                            after ?TIMEOUT ->
-                                   lager:error("Send failed timeout Message ~p",[Message]),
+                                   lager:error(
+                                     "Send failed timeout Message ~p"
+                                     ,[Message]),
                                    {error, timeout}
                                    %%TODO: Retry if needed
                            end
@@ -53,7 +57,7 @@ init([Port,Host,Message,ReplyTo]) ->
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
-                                 [{active,true},binary, {packet,2}], ?TIMEOUT) of
+                          [{active,true},binary, {packet,2}], ?TIMEOUT) of
         { ok, Socket} ->
             ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
@@ -78,7 +82,7 @@ stop(timeout, State=#state{socket=Socket}) ->
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
     inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(), binary_to_term(Bin)),
-    {next_state, StateName, StateData}; 
+    {next_state, StateName, StateData};
 
 handle_info({tcp_closed, Socket}, _StateName,
             #state{socket=Socket} = StateData) ->
