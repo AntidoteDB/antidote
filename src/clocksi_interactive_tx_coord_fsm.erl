@@ -141,14 +141,11 @@ execute_op({Op_type, Args}, Sender,
             lager:info("ClockSI-Interactive-Coord: Snapshot ~w ~n ", [Transaction]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
                        [Key]),
-            Logid = log_utilities:get_logid_from_key(Key),
-            Preflist = log_utilities:get_preflist_from_logid(Logid),
-            IndexNode = hd(Preflist),
             case generate_downstream_op(Transaction, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
-                    LogId = log_utilities:get_logid_from_key(Key),
-                    [Node] = log_utilities:get_preflist_from_key(Key),
-                    {ok, _} = logging_vnode:append(Node, LogId, DownstreamRecord),
+                    Logid = log_utilities:get_logid_from_key(Key),
+                    Preflist = log_utilities:get_preflist_from_logid(Logid),
+                    IndexNode = hd(Preflist),
                     case clocksi_vnode:update_data_item(IndexNode, Transaction,
                                                 Key, Type, Param, DownstreamRecord) of
                         ok ->
