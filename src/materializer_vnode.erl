@@ -74,7 +74,7 @@ init([Partition]) ->
 handle_command({read, Key, Type, SnapshotTime}, _Sender,
 		State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
                           
-    %lager:info("operations: ~p", [Operations]),
+    %lager:info("materialiser_vnode: operations: ~p", [Operations]),
     % get the latest snapshot for the key
     case ets:lookup(SnapshotCache, Key) of
     	[] ->
@@ -82,30 +82,35 @@ handle_command({read, Key, Type, SnapshotTime}, _Sender,
             [] ->
             	Snapshot=Type:new();
             [{_, OpsDict}] ->
-            	{ok, [Ops]}= get_ops_to_apply(OpsDict, SnapshotTime),
-            	lager:info("Ops to apply are: ~p",[Ops]),
+            	{ok, Ops}= get_ops_to_apply(OpsDict),
+            	lager:info("materialiser_vnode: Ops to apply are: ~p",[Ops]),
             	{ok, Snapshot} = clocksi_materializer:get_snapshot(Type, SnapshotTime, Ops),
             	CommitTime = (lists:last(Ops))#clocksi_payload.commit_time,
-            	lager:info("caching new snapshot= ~p with Commit Time= ~p", [Snapshot, CommitTime]),
+            	lager:info("materialiser_vnode: caching new snapshot= ~p with Commit Time= ~p", [Snapshot, CommitTime]),
             	SnapshotDict=orddict:new(),
-            	ets:insert(SnapshotCache, {Key, orddict:append(CommitTime,Snapshot, SnapshotDict)})
+            	ets:insert(SnapshotCache, {Key, orddict:store(CommitTime,Snapshot, SnapshotDict)})
             end;
         [{_, SnapshotDict}] ->
-			{ok, {SnapshotCommitTime, [LatestSnapshot]}} = get_latest_snapshot(SnapshotDict, SnapshotTime),
-		    lager:info("Latest snapshot for key ~p is ~p, with commit time ~p.",[Key, LatestSnapshot, SnapshotCommitTime]),
+			{ok, {SnapshotCommitTime, LatestSnapshot}} = get_latest_snapshot(SnapshotDict, SnapshotTime),
+		    lager:info("materialiser_vnode: Latest snapshot for key ~p is ~p, with commit time ~p.",[Key, LatestSnapshot, SnapshotCommitTime]),
             case ets:lookup(OpsCache, Key) of
             [] ->
             	Snapshot=LatestSnapshot;
             [{_, OpsDict}] ->
-            	{ok, Ops}= get_ops_to_apply(OpsDict, SnapshotTime),
-            	lager:info("Ops to apply are: ~p",[Ops]),
-            	{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, Ops),
-            	CommitTime = (lists:last(Ops))#clocksi_payload.commit_time,
-            	lager:info("caching new snapshot= ~p, snapshot committed with time:~p.", [Snapshot,CommitTime]),
-            	ets:insert(SnapshotCache, {Key, orddict:append(CommitTime,Snapshot, SnapshotDict)})
+            	{ok, Ops}= get_ops_to_apply(OpsDict),
+            	lager:info("materialiser_vnode: Ops to apply are: ~p",[Ops]),
+            	case Ops of
+            	[]->
+            	    Snapshot=LatestSnapshot;
+            	[H|T]->
+					{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, [H|T]),
+					CommitTime = (lists:last([H|T]))#clocksi_payload.commit_time,
+					lager:info("materialiser_vnode: caching new snapshot= ~p, snapshot committed with time:~p.", [Snapshot,CommitTime]),
+					ets:insert(SnapshotCache, {Key, orddict:store(CommitTime,Snapshot, SnapshotDict)})
+				end
             end
     end,
-	lager:info("snapshot: ~p", [Snapshot]),
+	lager:info("materialiser_vnode: snapshot: ~p", [Snapshot]),
 	{reply, {ok, Snapshot}, State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,
@@ -122,9 +127,9 @@ handle_command({update, Key, DownstreamOp}, _Sender,
         	[]->
         		OpsDict=orddict:new();
         	[{_, OpsDict}]->
-        		lager:info("OpsDict= ~p",[OpsDict])
+        		lager:info("materialiser_vnode: OpsDict= ~p",[OpsDict])
         	end,
-        	OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
+        	OpsDict1=orddict:store(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
             true = ets:insert(OpsCache, {Key, OpsDict1}),
             {reply, ok, State};
         {error, Reason} ->
@@ -181,42 +186,45 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
--spec get_latest_snapshot(orddict:orddict(), integer()) -> {ok, term()} | {error, atom()}.
+-spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
+	 -> {ok, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
 	case SnapshotDict of
 	[]->
 		{ok,[]};
 	[H|T]->
-		lager:info("These are the stored Snapshots: ~p",[H|T]),
-		{CommitTime, Snapshot} = lists:last(orddict:filter(fun(Key, _Value) -> 
-				belongs_to_snapshot(Key, SnapshotTime, materialised_version) end, [H|T])),
-		{ok, {CommitTime, Snapshot}}
+		lager:info("materialiser_vnode: These are the stored Snapshots: ~p",[H|T]),
+		case orddict:filter(fun(Key, _Value) -> 
+				belongs_to_snapshot(Key, SnapshotTime) end, [H|T]) of 
+			[]->
+		        {ok,[]};
+		    [H1|T1]->
+				{CommitTime, Snapshot} = lists:last([H1|T1]),
+				{ok, {CommitTime, Snapshot}}
+        end
 	end.
 
--spec get_ops_to_apply(orddict:orddict(), integer()) -> {ok, list()} | {error, atom()}.
-get_ops_to_apply(OpsDict, SnapshotTime) ->
-	case OpsDict of
+-spec get_ops_to_apply(orddict:orddict()) -> {ok, list()}.
+get_ops_to_apply(OpsDict) ->
+	case orddict:to_list(OpsDict) of
 	[]->
 		{ok, []};
 	[H|T]->
-		lager:info("operations that are in the operation store are: ~p",[[H|T]]),
-		lager:info("SnapshotTime=~p",[SnapshotTime]),
-    	FilteredOps = orddict:filter(fun(Key, _Value) -> belongs_to_snapshot(Key, SnapshotTime, operation) end, [H|T]),
-    	{ok,[Op || { _Key, Op} <- FilteredOps]}
+		{ok,[Op || { _Key, Op} <- [H|T]]}
     end.
-
+    
+    
 %% @doc Check whether a Key's Snapshot is included in a snapshot
 %%      Input: Dc = Datacenter Id
 %%             CommitTime = local commit time of this Snapshot at DC
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%      Outptut: true or false
 -spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
-                        SnapshotTime::vectorclock:vectorclock(), atom()) -> boolean().
-belongs_to_snapshot({Dc, CommitTime}, SnapshotTime, CheckType) ->
-	lager:info("is ~p in snapshot? DC= ~p - CommitTime = ~p", [CheckType, Dc, CommitTime]),
+                        SnapshotTime::vectorclock:vectorclock()) -> boolean().
+belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
     case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
         {ok, Ts} ->
-            lager:info("CommitTime: ~p SnapshotTime: ~p Result: ~p",
+            lager:info("materialiser_vnode: CommitTime: ~p SnapshotTime: ~p Result: ~p",
                        [CommitTime, Ts, CommitTime =< Ts]),
             CommitTime =< Ts;
         error  ->
