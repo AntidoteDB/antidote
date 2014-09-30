@@ -435,11 +435,11 @@ clocksi_concurrency_test(Nodes) ->
     Node = hd(Nodes),
     %% read txn starts before the write txn's prepare phase,
     Key = conc,
-    {ok, TxId1} = rpc:call(Node, floppy, clocksi_istart_tx, [now()]),
+    {ok, TxId1} = rpc:call(Node, floppy, clocksi_istart_tx, []),
     rpc:call(Node, floppy, clocksi_iupdate,
              [TxId1, Key, riak_dt_gcounter, {increment, ucl}]),
     rpc:call(Node, floppy, clocksi_iprepare, [TxId1]),
-    {ok, TxId2} = rpc:call(Node, floppy, clocksi_istart_tx, [now()]),
+    {ok, TxId2} = rpc:call(Node, floppy, clocksi_istart_tx, []),
     Pid = self(),
     spawn( fun() ->
                    rpc:call(Node, floppy, clocksi_iupdate,

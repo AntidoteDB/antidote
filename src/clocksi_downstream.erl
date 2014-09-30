@@ -32,15 +32,13 @@ generate_downstream_op(Transaction, Node, Update) ->
     Key = Update#clocksi_payload.key,
     Type =  Update#clocksi_payload.type,
     {Op, Actor} =  Update#clocksi_payload.op_param,
-    SnapshotTime = Update#clocksi_payload.snapshot_time,
-    lager:info("Snapshot:",[SnapshotTime]),
     case clocksi_vnode:read_data_item(Node,
                                       Transaction,
                                       Key,
                                       Type) of
         {ok, Snapshot} ->
             {ok, NewState} = Type:update(Op, Actor, Snapshot),
-            DownstreamOp = Update#clocksi_payload{op_param={merge, NewState}},
+            DownstreamOp = {merge,NewState},
             {ok, DownstreamOp};
         {error, Reason} ->
             lager:info("Error: ~p", [Reason]),

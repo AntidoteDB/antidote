@@ -181,11 +181,10 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
             case generate_downstream_op(Transaction, CurrentOpLeader, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
                     case clocksi_vnode:update_data_item(IndexNode,
-                                                    Transaction,
-                                                    Key,
-                                                    Type,
-                                                    Param,
-                                                    DownstreamRecord) of
+                                                        Transaction,
+                                                        Key,
+                                                        Type,
+                                                        DownstreamRecord) of
                         ok ->
                             case lists:member(IndexNode, UpdatedPartitions) of
                                 false ->
@@ -387,7 +386,7 @@ wait_for_clock(Clock) ->
        {error, Reason} ->
           {error, Reason}
   end.
-  
+
 -spec generate_downstream_op(#clocksi_payload{}, term(), term(),
                              term(), {term(), term()}) ->
                                     {ok, term()} | {error, term()}.

@@ -95,8 +95,12 @@ is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
 update_snapshot_eager(_, Snapshot, []) ->
     Snapshot;
 update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
-    {OpParam, Actor} = Op,
-    {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
+    case Op of
+        {merge, State} ->
+            NewSnapshot = Type:merge(Snapshot, State);
+        {OpParam, Actor} ->
+            {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot)
+    end,
     update_snapshot_eager(Type, NewSnapshot, Rest).
 
 %% @doc Materialize a CRDT from its logged operations.

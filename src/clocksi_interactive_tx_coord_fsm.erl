@@ -146,7 +146,7 @@ execute_op({Op_type, Args}, Sender,
             case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
                     case clocksi_vnode:update_data_item(IndexNode, Transaction,
-                                                Key, Type, Param, DownstreamRecord) of
+                                                Key, Type, DownstreamRecord) of
                         ok ->
                             case lists:member(IndexNode, Updated_partitions) of
                                 false ->
@@ -347,7 +347,7 @@ wait_for_clock(Clock) ->
        {error, Reason} ->
           {error, Reason}
   end.
-  
+
 -spec generate_downstream_op(#clocksi_payload{}, term(), term(), term(), {term(), term()}) -> {ok, term()} | {error, term()}.
 generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
     TxnId = Txn#transaction.txn_id,
