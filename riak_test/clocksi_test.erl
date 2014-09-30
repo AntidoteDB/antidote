@@ -41,6 +41,7 @@ confirm() ->
     clocksi_test_certification_check(Nodes),
     clocksi_multiple_test_certification_check(Nodes),
     clocksi_multiple_read_update_test(Nodes),
+    clocksi_concurrency_test(Nodes),
     rt:clean_cluster(Nodes),
     pass.
 
@@ -426,3 +427,33 @@ read_update_test(Node, Key) ->
 get_random_key() ->
     random:seed(now()),
     random:uniform(1000).
+
+%% @doc The following function tests how two concurrent transactions work
+%%      when they are interleaved.
+clocksi_concurrency_test(Nodes) ->
+    lager:info("clockSI_concurrency_test started"),
+    Node = hd(Nodes),
+    %% read txn starts before the write txn's prepare phase,
+    Key = conc,
+    {ok, TxId1} = rpc:call(Node, floppy, clocksi_istart_tx, [now()]),
+    rpc:call(Node, floppy, clocksi_iupdate,
+             [TxId1, Key, riak_dt_gcounter, {increment, ucl}]),
+    rpc:call(Node, floppy, clocksi_iprepare, [TxId1]),
+    {ok, TxId2} = rpc:call(Node, floppy, clocksi_istart_tx, [now()]),
+    Pid = self(),
+    spawn( fun() ->
+                   rpc:call(Node, floppy, clocksi_iupdate,
+                            [TxId2, Key, riak_dt_gcounter, {increment, ucl}]),
+                   rpc:call(Node, floppy, clocksi_iprepare, [TxId2]),
+                   {ok,_}= rpc:call(Node, floppy, clocksi_icommit, [TxId2]),
+                   Pid ! ok
+           end),
+
+    {ok,_}= rpc:call(Node, floppy, clocksi_icommit, [TxId1]),
+     receive
+         ok ->
+             Result= rpc:call(Node,
+                              floppy, read, [Key, riak_dt_gcounter]),
+             ?assertEqual({ok, 2}, Result),
+             pass
+     end.

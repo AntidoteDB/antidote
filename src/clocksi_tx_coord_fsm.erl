@@ -171,31 +171,38 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
                     {next_state, abort, SD0};
                 {error, _Reason} ->
                     {next_state, abort, SD0};
-                ReadResult ->
+                {ok, Snapshot} ->
+                    ReadResult = Type:value(Snapshot),
                     NewReadSet = lists:append(ReadSet, [ReadResult]),
                     SD1 = SD0#state{read_set=NewReadSet},
                     {next_state, prepare_op, SD1, 0}
             end;
         update ->
-            case clocksi_vnode:update_data_item(IndexNode,
-                                                Transaction,
-                                                Key,
-                                                Type,
-                                                Param) of
-                ok ->
-                    case lists:member(IndexNode, UpdatedPartitions) of
-                        false ->
-                            NewUpdatedPartitions = lists:append(UpdatedPartitions,
-                                                                [IndexNode]),
-                            SD1 = SD0#state{updated_partitions=NewUpdatedPartitions},
-                            {next_state, prepare_op, SD1, 0};
-                        true->
-                            {next_state, prepare_op, SD0, 0}
+            case generate_downstream_op(Transaction, CurrentOpLeader, Key, Type, Param) of
+                {ok, DownstreamRecord} ->
+                    case clocksi_vnode:update_data_item(IndexNode,
+                                                    Transaction,
+                                                    Key,
+                                                    Type,
+                                                    Param,
+                                                    DownstreamRecord) of
+                        ok ->
+                            case lists:member(IndexNode, UpdatedPartitions) of
+                                false ->
+                                    NewUpdatedPartitions = lists:append(UpdatedPartitions,
+                                                                    [IndexNode]),
+                                    SD1 = SD0#state{updated_partitions=NewUpdatedPartitions},
+                                    {next_state, prepare_op, SD1, 0};
+                                true->
+                                    {next_state, prepare_op, SD0, 0}
+                            end;
+                        error ->
+                            {next_state, abort, SD0};
+                        {error, _Reason} ->
+                            {next_state, abort, SD0}
                     end;
-                error ->
-                    {next_state, abort, SD0};
-                {error, _Reason} ->
-                    {next_state, abort, SD0}
+                {error, _} ->
+                    {reply, error, abort, SD0}
             end
     end.
 
@@ -380,3 +387,16 @@ wait_for_clock(Clock) ->
        {error, Reason} ->
           {error, Reason}
   end.
+  
+-spec generate_downstream_op(#clocksi_payload{}, term(), term(),
+                             term(), {term(), term()}) ->
+                                    {ok, term()} | {error, term()}.
+generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
+    TxnId = Txn#transaction.txn_id,
+    Snapshot_time=Txn#transaction.vec_snapshot_time,
+    Record = #clocksi_payload{key = Key, type = Type,
+                                op_param = Param,
+                                snapshot_time = Snapshot_time,
+                                commit_time = {},
+                                txid = TxnId},
+    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Record).
