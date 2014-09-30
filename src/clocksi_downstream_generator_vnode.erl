@@ -71,44 +71,16 @@ init([Partition]) ->
 
 %% @doc Read client update operations,
 %%      generate downstream operations and store it to persistent log.
-handle_command({trigger, WriteSet, _From}, _Sender,
+handle_command({trigger, _WriteSet, _From}, _Sender,
                State=#dstate{partition = Partition,
-                             last_commit_time = LastCommitTime,
-                             pending_operations = Pending}) ->
-    PendingOperations = add_to_pending_operations(Pending, WriteSet),
+                             last_commit_time = LastCommitTime}) ->
 
     Node = {Partition, node()}, %% Send ack to caller and continue processing
     Stable_time = get_stable_time(Node, LastCommitTime),
-    %% Send a message to itself to process operations
-    riak_core_vnode_master:command([Node],
-                                   {process},
-                                   ?CLOCKSI_GENERATOR_MASTER),
-    {reply, {ok, trigger_received}, State#dstate{
-                                      pending_operations=PendingOperations,
-                                      stable_time=Stable_time}};
-
-handle_command({process}, _Sender,
-               State=#dstate{partition = Partition,
-                             last_commit_time = LastCommitTime,
-                             pending_operations = PendingOperations,
-                             stable_time = Stable_time}) ->
-    Sorted_ops = filter_operations(PendingOperations,
-                                   Stable_time, LastCommitTime),
-    {Remaining_operations, Last_processed_time} =
-        lists:foldl( fun(X, {Ops, LCTS}) ->
-                             case process_update(X) of
-                                 {ok, CommitTime} ->
-                                     %% Remove this op from pending_operations
-                                     New_pending = lists:delete(X, Ops),
-                                     {New_pending, CommitTime};
-                                 {error, _Reason} ->
-                                     {Ops, LCTS}
-                             end
-                     end, {PendingOperations, LastCommitTime}, Sorted_ops),
     DcId = dc_utilities:get_my_dc_id(),
     {ok, _Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
-    {reply, ok, State#dstate{last_commit_time = Last_processed_time,
-                             pending_operations = Remaining_operations}};
+    {reply, {ok, trigger_received}, State#dstate{
+                                      last_commit_time=Stable_time}};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -146,22 +118,6 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-%% @doc Generate downstream for one update and write to log
-process_update(Update) ->
-    case clocksi_downstream:generate_downstream_op(Update) of
-        {ok, New_op} ->
-            Key = New_op#clocksi_payload.key,
-            case materializer_vnode:update(Key, New_op) of
-                ok ->
-                    {_Dcid, CommitTime} = New_op#clocksi_payload.commit_time,
-                    {ok, CommitTime};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
 get_stable_time(Node, Prev_stable_time) ->
@@ -183,54 +139,3 @@ get_stable_time(Node, Prev_stable_time) ->
 
 now_milisec({MegaSecs,Secs,MicroSecs}) ->
     (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
-
-%% @doc Select updates committed before Time and sort them in timestamp order.
-filter_operations(Ops, Before, After) ->
-    %% Remove operations which are already processed
-    Unprocessed_ops =
-        lists:filtermap(
-          fun(Payload) ->
-                  {_Dcid, CommitTime} = Payload#clocksi_payload.commit_time,
-                  CommitTime > After
-          end,
-          Ops),
-
-    %% remove operations which are not safer to process now,
-    %% because there could be other operations with lesser timestamps
-    Filtered_ops =
-        lists:filtermap(
-          fun(Payload) ->
-                  {_Dcid, CommitTime} = Payload#clocksi_payload.commit_time,
-                  CommitTime < Before
-          end,
-          Unprocessed_ops),
-
-    %% Sort operations in timestamp order
-    Sorted_ops =
-        lists:sort(
-          fun( Payload1, Payload2) ->
-                  {_Dcid1, Time1} = Payload1#clocksi_payload.commit_time,
-                  {_Dcid1, Time2} = Payload2#clocksi_payload.commit_time,
-                  Time1 < Time2
-          end,
-          Filtered_ops),
-    Sorted_ops.
-
-%%@doc Add updates in writeset ot Pending operations to process downstream
-add_to_pending_operations(Pending, WriteSet) ->
-    case WriteSet of
-        {TxId, Updates, Vec_snapshot_time, CommitTime} ->
-            lists:foldl( fun(Update, Operations) ->
-                                 {_,{Key, Type, {Op,Actor}}} = Update,
-                                 DcId = dc_utilities:get_my_dc_id(),
-                                 New_op = #clocksi_payload{
-                                             key = Key, type = Type,
-                                             op_param = {Op, Actor},
-                                             snapshot_time = Vec_snapshot_time,
-                                             commit_time = {DcId, CommitTime},
-                                             txid = TxId},
-                                 lists:append(Operations, [New_op])
-                         end,
-                         Pending, Updates);
-        _  -> Pending
-    end.
