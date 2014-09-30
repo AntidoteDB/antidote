@@ -55,8 +55,7 @@
               {TxId :: term(), Updates :: [{term(), {Key :: term(), Type:: term(), Op :: term()}}], Vec_snapshot_time :: vectorclock:vectorclock(), Commit_time :: non_neg_integer()})
              -> ok.
 trigger(Key, Writeset) ->
-    Logid = log_utilities:get_logid_from_key(Key),
-    Preflist = log_utilities:get_preflist_from_logid(Logid),
+    Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     riak_core_vnode_master:command([IndexNode],
                                    {trigger, Writeset, self()},

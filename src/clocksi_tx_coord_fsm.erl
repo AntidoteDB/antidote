@@ -145,8 +145,7 @@ prepare_op(timeout, SD0=#state{operations=Operations}) ->
                 {read, Key0, Type} ->
                     {Key0, {read, Key0, Type, ignore}}
             end,
-            Logid = log_utilities:get_logid_from_key(Key),
-            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            Preflist = log_utilities:get_preflist_from_key(Key),
             Leader = hd(Preflist),
             SD1 = SD0#state{operations=TailOps,
                             current_op=FormattedOp, current_op_leader=Leader},
@@ -181,7 +180,7 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
                     {next_state, prepare_op, SD1, 0}
             end;
         update ->
-            case generate_downstream_op(Transaction, Key, Type, Param) of
+            case generate_downstream_op(Transaction, CurrentOpLeader, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
                     case clocksi_vnode:update_data_item(IndexNode,
                                                     Transaction,
@@ -367,8 +366,10 @@ get_snapshot_time() ->
     SnapshotTime  = Now,
     {ok, SnapshotTime}.
 
--spec generate_downstream_op(#clocksi_payload{}, term(), term(), {term(), term()}) -> {ok, term()} | {error, term()}.
-generate_downstream_op(Txn, Key, Type, Param) ->
+-spec generate_downstream_op(#clocksi_payload{}, term(), term(),
+                             term(), {term(), term()}) ->
+                                    {ok, term()} | {error, term()}.
+generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
     TxnId = Txn#transaction.txn_id,
     Snapshot_time=Txn#transaction.vec_snapshot_time,
     Record = #clocksi_payload{key = Key, type = Type,
@@ -376,4 +377,4 @@ generate_downstream_op(Txn, Key, Type, Param) ->
                                 snapshot_time = Snapshot_time,
                                 commit_time = {},
                                 txid = TxnId},
-    clocksi_downstream:generate_downstream_op(Record).
+    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Record).
