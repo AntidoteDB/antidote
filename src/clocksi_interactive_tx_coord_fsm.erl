@@ -120,8 +120,7 @@ execute_op({Op_type, Args}, Sender,
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w",
                        [Key]),
-            Logid = log_utilities:get_logid_from_key(Key),
-            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type) of
@@ -144,11 +143,10 @@ execute_op({Op_type, Args}, Sender,
             lager:info("ClockSI-Interactive-Coord: Snapshot ~w ~n ", [Transaction]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
                        [Key]),
-            case generate_downstream_op(Transaction, Key, Type, Param) of
+            Preflist = log_utilities:get_preflist_from_key(Key),
+            IndexNode = hd(Preflist),
+            case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
-                    Logid = log_utilities:get_logid_from_key(Key),
-                    Preflist = log_utilities:get_preflist_from_logid(Logid),
-                    IndexNode = hd(Preflist),
                     case clocksi_vnode:update_data_item(IndexNode, Transaction,
                                                 Key, Type, Param, DownstreamRecord) of
                         ok ->
@@ -330,8 +328,8 @@ get_snapshot_time() ->
     Snapshot_time  = Now - ?DELTA,
     {ok, Snapshot_time}.
 
--spec generate_downstream_op(#clocksi_payload{}, term(), term(), {term(), term()}) -> {ok, term()} | {error, term()}.
-generate_downstream_op(Txn, Key, Type, Param) ->
+-spec generate_downstream_op(#clocksi_payload{}, term(), term(), term(), {term(), term()}) -> {ok, term()} | {error, term()}.
+generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
     TxnId = Txn#transaction.txn_id,
     Snapshot_time=Txn#transaction.vec_snapshot_time,
     Record = #clocksi_payload{key = Key, type = Type,
@@ -339,4 +337,4 @@ generate_downstream_op(Txn, Key, Type, Param) ->
                                 snapshot_time = Snapshot_time,
                                 commit_time = {},
                                 txid = TxnId},
-    clocksi_downstream:generate_downstream_op(Record).
+    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Record).
