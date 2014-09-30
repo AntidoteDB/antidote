@@ -115,7 +115,6 @@ waiting2(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
     case  vectorclock:get_clock_by_key(Key) of
         {ok, LocalClock} ->
             SnapshotTime = Transaction#transaction.vec_snapshot_time,
-            lager:info("Compare clocks: ~p ~p",[LocalClock, SnapshotTime]),
             case vectorclock:ge(LocalClock, SnapshotTime) of
                 false ->
                     {next_state, waiting2, SDO, 1};
