@@ -438,13 +438,20 @@ clocksi_concurrency_test(Nodes) ->
              [TxId1, Key, riak_dt_gcounter, {increment, ucl}]),
     rpc:call(Node, floppy, clocksi_iprepare, [TxId1]),
     {ok, TxId2} = rpc:call(Node, floppy, clocksi_istart_tx, [now()]),
-    rpc:call(Node, floppy, clocksi_iupdate,
-             [TxId2, Key, riak_dt_gcounter, {increment, ucl}]),
-    rpc:call(Node, floppy, clocksi_iprepare, [TxId2]),
+    Pid = self(),
+    spawn( fun() ->
+                   rpc:call(Node, floppy, clocksi_iupdate,
+                            [TxId2, Key, riak_dt_gcounter, {increment, ucl}]),
+                   rpc:call(Node, floppy, clocksi_iprepare, [TxId2]),
+                   {ok,_}= rpc:call(Node, floppy, clocksi_icommit, [TxId2]),
+                   Pid ! ok
+           end),
 
     {ok,_}= rpc:call(Node, floppy, clocksi_icommit, [TxId1]),
-    {ok,_}= rpc:call(Node, floppy, clocksi_icommit, [TxId2]),
-    Result= rpc:call(Node,
-                          floppy, read, [Key, riak_dt_gcounter]),
-    ?assertEqual({ok, 2}, Result),
-    pass.
+     receive
+         ok ->
+             Result= rpc:call(Node,
+                              floppy, read, [Key, riak_dt_gcounter]),
+             ?assertEqual({ok, 2}, Result),
+             pass
+     end.
