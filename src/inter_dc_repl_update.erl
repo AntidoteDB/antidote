@@ -13,17 +13,14 @@ init_state(Partition) ->
     {ok, #recvr_state{lastRecvd = orddict:new(), %% stores last OpId received
                       lastCommitted = orddict:new(),
                       recQ = orddict:new(),
-                      dcs = [1,2],
                       partition=Partition}
     }.
 
-enqueue_update({Key,
-                _Payload= #operation{op_number = OpId, payload = LogRecord},
-                FromDC},
-               State = #recvr_state{lastRecvd = LastRecvd, recQ = RecQ}) ->
-    LastRecvdNew = set(FromDC, OpId, LastRecvd),
-   RecQNew = enqueue(FromDC, {Key,LogRecord}, RecQ),
-    {ok, State#recvr_state{lastRecvd = LastRecvdNew, recQ = RecQNew}}.
+enqueue_update(Transaction,
+               State = #recvr_state{recQ = RecQ}) ->
+    {_,{FromDC, _CommitTime},_,_} = Transaction,
+    RecQNew = enqueue(FromDC, Transaction, RecQ),
+    {ok, State#recvr_state{recQ = RecQNew}}.
 
 %% Process one update from Q for each DC each Q.
 %% This method must be called repeatedly
@@ -42,20 +39,23 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                                              partition = Partition}) ->
     case queue:is_empty(DcQ) of
         false ->
-            {Key, LogRecord} = queue:get(DcQ),
-            Payload = LogRecord#log_record.op_payload,
-            CommitTime = Payload#clocksi_payload.commit_time,
+            Transaction = queue:get(DcQ),
+            {_TxId, CommitTime, VecSnapshotTime, _Ops} = Transaction,
             SnapshotTime = vectorclock:set_clock_of_dc(
-                             Dc, 0, Payload#clocksi_payload.snapshot_time),
+                             Dc, 0, VecSnapshotTime),
+            LocalDc = dc_utilities:get_my_dc_id(),
             {Dc, Ts} = CommitTime,
             %% Check for dependency of operations and write to log
             {ok, LC} = vectorclock:get_clock(Partition),
-            Localclock = vectorclock:set_clock_of_dc(Dc, 0, LC),
+            Localclock = vectorclock:set_clock_of_dc(
+                           Dc, 0,
+                           vectorclock:set_clock_of_dc(
+                             LocalDc, now_millisec(erlang:now()), LC)),
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
                 {ok, CTS} ->
                     if Ts >= CTS ->
                             check_and_update(SnapshotTime, Localclock,
-                                             Key, LogRecord,
+                                             Transaction,
                                              Dc, DcQ, Ts, StateData ) ;
                        true ->
                             %% TODO: Not right way check duplicates
@@ -66,7 +66,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                             NewState
                     end;
                 _ ->
-                    check_and_update(SnapshotTime, Localclock, Key, LogRecord,
+                    check_and_update(SnapshotTime, Localclock, Transaction,
                                      Dc, DcQ, Ts, StateData)
 
             end;
@@ -74,33 +74,49 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             StateData
     end.
 
-check_and_update(SnapshotTime, Localclock, Key, LogRecord,
+check_and_update(SnapshotTime, Localclock, Transaction,
                  Dc, DcQ, Ts,
                  StateData = #recvr_state{partition = Partition} ) ->
-    Payload = LogRecord#log_record.op_payload,
+    {_,_,_,Ops} = Transaction,
+    Node = {Partition,node()},
     case check_dep(SnapshotTime, Localclock) of
         true ->
-            case LogRecord#log_record.op_type of
-                noop -> %% Heartbeat
-                    lager:debug("Heartbeat received");
-                _ ->
-                    ok = materializer_vnode:update(Key, Payload),
-                    lager:debug("Update from remote DC applied:",[payload])
-                    %%TODO add error handling if append failed
-            end,
-
+            lists:foreach(
+              fun(Op) ->
+                      Logrecord = Op#operation.payload,
+                      case Logrecord#log_record.op_type of
+                          noop ->
+                              lager:debug("Heartbeat Received");
+                          update ->
+                              {Key,_Type,_Op} = Logrecord#log_record.op_payload,
+                              LogId = log_utilities:get_logid_from_key(Key),
+                              logging_vnode:append(Node, LogId, Logrecord);
+                          _ -> %% prepare or commit
+                              %%logging_vnode:append(Node, LogId, Logrecord);
+                              lager:debug("Prepare/Commit record")
+                              %%TODO Write this to log
+                      end
+              end, Ops),
+            DownOps =
+                clocksi_transaction_reader:get_update_ops_from_transaction(
+                  Transaction),
+            lists:foreach( fun(DownOp) ->
+                                   Key = DownOp#clocksi_payload.key,
+                                   ok = materializer_vnode:update(Key, DownOp)
+                           end, DownOps),
+            lager:debug("Update from remote DC applied:",[payload]),
+            %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
             {ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
-            %%vectorclock:calculate_stable_snapshot(Partition, Dc, Ts),
             riak_core_vnode_master:command(
-              [{Partition,node()}], calculate_stable_snapshot,
+              {Partition,node()}, calculate_stable_snapshot,
               vectorclock_vnode_master),
             riak_core_vnode_master:command({Partition, node()}, {process_queue},
                                            inter_dc_recvr_vnode_master),
             NewState;
         false ->
-            lager:debug("Dep not satisfied ~p", [Payload]),
+            lager:debug("Dep not satisfied ~p", [Transaction]),
             StateData
     end.
 
@@ -131,3 +147,6 @@ enqueue(Dc, Data, RecQ) ->
             Q2 = queue:in(Data,Q),
             set(Dc, Q2, RecQ)
     end.
+
+now_millisec({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

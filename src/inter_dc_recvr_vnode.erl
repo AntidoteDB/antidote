@@ -4,9 +4,9 @@
 -include("floppy.hrl").
 
 -export([start_vnode/1,
-                                                %API begin
+         %%API begin
          store_updates/1,
-                                                %API end
+         %%API end
          init/1,
          terminate/2,
          handle_command/3,
@@ -26,26 +26,28 @@ start_vnode(I) ->
 
 %% public API
 
-store_updates(Updates) ->
-    Operation = hd(Updates),
+-spec store_updates(Transactions::[clocksi_transaction_reader:transaction()])
+                   -> ok.
+store_updates(Transactions) ->
+    Transaction = hd(Transactions),
+    {_Txid,_Commitime,_ST,Ops} = Transaction,
+    Operation = hd(Ops),
     Logrecord = Operation#operation.payload,
     Payload = Logrecord#log_record.op_payload,
     Op_type = Logrecord#log_record.op_type,
-    CommitTime = Payload#clocksi_payload.commit_time,
-    {DcId, _Time} = CommitTime,
     case Op_type of
         noop ->
-            Key = Payload#clocksi_payload.key,
+            Key = Payload,
             Node = log_utilities:get_my_node(Key),
             Preflist = [{Key, Node}];
         _ ->
-            Key = Payload#clocksi_payload.key,
+            {Key,_Type,_Op} = Payload,
             Preflist = log_utilities:get_preflist_from_key(Key)
     end,
     Indexnode = hd(Preflist),
-    lists:foreach(fun(Update) ->
-                           store_update(Indexnode, Key, Update, DcId)
-                  end, Updates),
+    lists:foreach(fun(Txn) ->
+                          store_update(Indexnode, Txn)
+                  end, Transactions),
     riak_core_vnode_master:command(Indexnode, {process_queue},
                                    inter_dc_recvr_vnode_master),
     ok.
@@ -56,9 +58,9 @@ store_updates(Updates) ->
 %%       Payload contains Operation Timestamp and DepVector for causality tracking
 %%       FromDC = DC_ID
 %% --------------------
-store_update(Node, Key, Logrecord, DcId) ->
+store_update(Node, Transaction) ->
     riak_core_vnode_master:sync_command(Node,
-                                        {store_update, Key, Logrecord, DcId},
+                                        {store_update, Transaction},
                                         inter_dc_recvr_vnode_master).
 
 %% riak_core_vnode call backs
@@ -83,10 +85,9 @@ init([Partition]) ->
 
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
-handle_command({store_update, Key, Payload, Dc}, _Sender, State) ->
-    lager:info(" processing update of ~p :: ~p",[Key, State]),
+handle_command({store_update, Transaction}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
-                       {Key, Payload, Dc}, State),
+                       Transaction, State),
     ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {reply, ok, NewState};
 
