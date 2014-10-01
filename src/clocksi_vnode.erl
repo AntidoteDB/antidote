@@ -125,16 +125,16 @@ abort(ListofNodes, TxId) ->
 %%      the transactions it participates on.
 init([Partition]) ->
     PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++
-                                      integer_to_list(Partition)),
+                                          integer_to_list(Partition)),
                          [set, {write_concurrency, true}]),
     CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
-                                       integer_to_list(Partition)),
+                                           integer_to_list(Partition)),
                           [set, {write_concurrency, true}]),
     ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
                                            ++ integer_to_list(Partition)),
                               [bag, {write_concurrency, true}]),
     WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++
-                                    integer_to_list(Partition)),
+                                        integer_to_list(Partition)),
                        [duplicate_bag, {write_concurrency, true}]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
@@ -167,9 +167,9 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
             true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
             true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
             {ok, _Pid} = clocksi_updateitem_fsm:start_link(
-                    Sender,
-                    Txn#transaction.vec_snapshot_time,
-                    Partition),
+                           Sender,
+                           Txn#transaction.vec_snapshot_time,
+                           Partition),
             {noreply, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -227,11 +227,6 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
             true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             case update_materializer(Updates, Transaction, TxCommitTime) of
                 ok ->
-                    clocksi_downstream_generator_vnode:trigger(
-                            Key, {TxId,
-                                [],
-                                Transaction#transaction.vec_snapshot_time,
-                                TxCommitTime}),
                     clean_and_notify(TxId, Key, State),
                     {reply, committed, State};
                 error ->
@@ -313,8 +308,8 @@ terminate(_Reason, _State) ->
 %%      b. PreparedTx
 %%
 clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
-                                   prepared_tx=PreparedTx,
-                                   write_set=WriteSet}) ->
+                                    prepared_tx=PreparedTx,
+                                    write_set=WriteSet}) ->
     true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
     true = ets:delete(WriteSet, TxId).
 
@@ -362,14 +357,14 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     UpdateFunction = fun ({_, {Key, Type, Op}}, AccIn) ->
                              CommittedDownstreamOp =
                                  #clocksi_payload{
-                                   key = Key,
-                                   type = Type,
-                                   op_param = Op,
-                                   snapshot_time = Transaction#transaction.vec_snapshot_time,
-                                   commit_time = {DcId, TxCommitTime},
-                                  txid = Transaction#transaction.txn_id},
-                            AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)]
-                    end,
+                                    key = Key,
+                                    type = Type,
+                                    op_param = Op,
+                                    snapshot_time = Transaction#transaction.vec_snapshot_time,
+                                    commit_time = {DcId, TxCommitTime},
+                                    txid = Transaction#transaction.txn_id},
+                             AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)]
+                     end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
     case length(Failures) of
