@@ -13,11 +13,11 @@
          handle_sync_event/4,
          terminate/3]).
 -export([accept/2,
-         wait_for_message/2,
-         stop_server/2
+         wait_for_message/2
+         %%stop_server/2
         ]).
 
--define(TIMEOUT,10000).
+-define(TIMEOUT,20000).
 
 start_link(Socket) ->
     gen_fsm:start_link(?MODULE, Socket, []).
@@ -27,32 +27,32 @@ init(Socket) ->
     {ok, accept, #state{socket=Socket},0}.
 
 accept(timeout, State=#state{socket=ListenSocket}) ->
-    lager:info("Waiting for connection"),
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    lager:info("connection accepted"),
     ok = inet:setopts(AcceptSocket, [{active, once}]),
     {next_state, wait_for_message, State#state{socket=AcceptSocket}, ?TIMEOUT}.
 
 wait_for_message({replicate,Updates}, State=#state{socket=Socket}) ->
     case inter_dc_recvr_vnode:store_updates(Updates) of
         ok ->
-            lager:error("Replication request received: ~p",[Updates]),
             ok = gen_tcp:send(Socket, term_to_binary({acknowledge, inter_dc_manager:get_my_dc()}));
         {error, _Reason} ->
-            lager:debug("Could not send message to replicate")
+            lager:error(" Did not replicate messages received")
     end,
-    {next_state,stop_server,State,0};
-wait_for_message(timeout, State) ->
-    {next_state, stop_server, State, 0};
-wait_for_message(Message, State) ->
-    lager:debug("Unexpected Message: ~p", [Message]),
-    {next_state, stop_server, State,0}.
+    stop_server(State),
+    {stop,normal,State};
 
-stop_server(timeout, State=#state{socket=Socket}) ->
+wait_for_message(timeout, State) ->
+    stop_server(State),
+    {stop, normal, State};
+
+wait_for_message(Message, State) ->
+    lager:error("Unexpected Message: ~p", [Message]),
+    {next_state, wait_for_message, State, ?TIMEOUT}.
+
+stop_server(_State=#state{socket=Socket}) ->
     %% start a new listener
     {ok, _Pid} = inter_dc_communication_sup:start_socket(),
-    gen_tcp:close(Socket),
-    {stop, normal, State}.
+    gen_tcp:close(Socket).
 
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
     %% flow control: enable forwarding of next tcp message
@@ -63,11 +63,13 @@ handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
 handle_info({tcp_closed, Socket}, _StateName,
             #state{socket=Socket} = StateData) ->
     lager:debug("TCP disconnect."),
-    {next_state, stop_server,StateData,0};
+    stop_server(StateData),
+    {stop, normal, StateData};
 
 handle_info(Message, _StateName, StateData) ->
-    lager:debug("Recevied info:  ~p",[Message]),
-    {stop,badmsg,StateData}.
+    lager:error("Recevied info:  ~p",[Message]),
+    stop_server(StateData),
+    {stop, normal, StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.

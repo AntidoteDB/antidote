@@ -14,37 +14,43 @@
          terminate/3]).
 -export([connect/2,
          wait_for_ack/2,
-         stop/2
-]).
+         stop/2,
+         stop_error/2
+        ]).
 
 -record(state, {port, host, socket,message, caller}). % the current socket
 
--define(TIMEOUT,60000).
+-define(TIMEOUT,20000).
+-define(CONNECT_TIMEOUT,5000).
 
 %% Send a message to all DCs over a tcp connection
 propagate_sync(Message, DCs) ->
-    lists:foreach( fun({DcAddress, Port}) ->
-                           inter_dc_communication_sender:start_link(
-                             Port, DcAddress, Message, self()),
-                           receive
-                               {done, normal} ->
-                                   ok;
-                               {done, Other} ->
-                                   lager:error(
-                                     "Send failed Reason:~p Message ~p",
-                                     [Other, Message]),
-                                   {error}
-                                   %%TODO: Retry if needed
-                           after ?TIMEOUT ->
-                                   lager:error(
-                                     "Send failed timeout Message ~p"
-                                     ,[Message]),
-                                   {error, timeout}
-                                   %%TODO: Retry if needed
-                           end
-                   end,
-                   DCs),
-    ok.
+    Errors = lists:foldl( fun({DcAddress, Port}, Acc) ->
+                                  inter_dc_communication_sender:start_link(
+                                    Port, DcAddress, Message, self()),
+                                  receive
+                                      {done, normal} ->
+                                          Acc;
+                                      {done, Other} ->
+                                          lager:error(
+                                            "Send failed Reason:~p Message: ~p",
+                                            [Other, Message]),
+                                          Acc ++ [error]
+                                          %%TODO: Retry if needed
+                                  after ?TIMEOUT ->
+                                          lager:error(
+                                            "Send failed timeout Message ~p"
+                                            ,[Message]),
+                                          Acc ++ [{error, timeout}]
+                                          %%TODO: Retry if needed
+                                  end
+                          end, [],
+                          DCs),
+    case length(Errors) of
+        0 ->
+            ok;
+        _ -> error
+    end.
 
 start_link(Port, Host, Message, ReplyTo) ->
     gen_fsm:start_link(?MODULE, [Port, Host, Message, ReplyTo], []).
@@ -57,27 +63,31 @@ init([Port,Host,Message,ReplyTo]) ->
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
-                          [{active,true},binary, {packet,2}], ?TIMEOUT) of
+                          [{active,true},binary, {packet,2}], ?CONNECT_TIMEOUT) of
         { ok, Socket} ->
             ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
             ok = inet:setopts(Socket, [{active, once}]),
-            {next_state, wait_for_ack, State#state{socket=Socket},?TIMEOUT};
+            {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
         {error, _Reason} ->
-            lager:info("Couldnot connect to remote DC"),
+            lager:error("Couldnot connect to remote DC"),
             {stop, normal, State}
     end.
 
 wait_for_ack({acknowledge, _DC}, State=#state{socket=_Socket, message=_Message} )->
-    {next_state, stop , State,0};
+    {next_state, stop, State,0};
 
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
-    {next_state,stop,State,0}.
+    {next_state,stop_error,State,0}.
 
 stop(timeout, State=#state{socket=Socket}) ->
     gen_tcp:close(Socket),
     {stop, normal, State}.
+
+stop_error(timeout, State=#state{socket=Socket}) ->
+    gen_tcp:close(Socket),
+    {stop, error, State}.
 
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
     inet:setopts(Socket, [{active, once}]),
@@ -90,7 +100,7 @@ handle_info({tcp_closed, Socket}, _StateName,
     {stop, normal, StateData};
 
 handle_info(Message, _StateName, StateData) ->
-    lager:info("Unexpected message: ~p",[Message]),
+    lager:error("Unexpected message: ~p",[Message]),
     {stop,badmsg,StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
