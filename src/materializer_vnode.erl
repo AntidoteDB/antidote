@@ -62,19 +62,17 @@ read(Key, Type, SnapshotTime) ->
 %% TODO: Not sure if we will keep this interface
 -spec update(key(), #clocksi_payload{}) -> ok | {error, atom()}.
 update(Key, DownstreamOp) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref, {update, Key, DownstreamOp},
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
 
 %%@doc write a downstream operation to cache it but do no write it to log
 -spec update_cache(key(), #clocksi_payload{}) -> ok | {error, atom()}.
 update_cache(Key, DownstreamOp) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref, {update_cache, Key, DownstreamOp},
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    riak_core_vnode_master:sync_command(IndexNode, {update_cache, Key, DownstreamOp},
                                         materializer_vnode_master).
 
 init([Partition]) ->
@@ -107,7 +105,6 @@ handle_command({update, Key, DownstreamOp}, _Sender,
 handle_command({update_cache, Key, DownstreamOp}, _Sender,
                State = #state{cache = Cache})->
     %% TODO: Remove unnecessary information from op_payload in log_Record
-    lager:info("Downstream op to cache", [Key, DownstreamOp]),
     true = ets:insert(Cache, {Key, DownstreamOp}),
     {reply, ok, State};
 
