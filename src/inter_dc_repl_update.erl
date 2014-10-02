@@ -79,6 +79,18 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                  StateData = #recvr_state{partition = Partition} ) ->
     {_,_,_,Ops} = Transaction,
     Node = {Partition,node()},
+    FirstOp = hd(Ops),
+    FirstRecord = FirstOp#operation.payload,
+    LogId = case FirstRecord#log_record.op_type of
+                update ->
+                    {Key1,_Type,_Op} = FirstRecord#log_record.op_payload,
+                    log_utilities:get_logid_from_key(Key1);
+                noop ->
+                    error;
+                _ ->
+                    lager:error("Wrong transaction record format"),
+                    erlang:error(bad_transaction_record)
+            end,
     case check_dep(SnapshotTime, Localclock) of
         true ->
             lists:foreach(
@@ -88,11 +100,9 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                           noop ->
                               lager:debug("Heartbeat Received");
                           update ->
-                              {Key,_Type,_Op} = Logrecord#log_record.op_payload,
-                              LogId = log_utilities:get_logid_from_key(Key),
                               logging_vnode:append(Node, LogId, Logrecord);
                           _ -> %% prepare or commit
-                              %%logging_vnode:append(Node, LogId, Logrecord);
+                              logging_vnode:append(Node, LogId, Logrecord),
                               lager:debug("Prepare/Commit record")
                               %%TODO Write this to log
                       end
