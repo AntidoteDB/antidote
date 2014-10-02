@@ -26,9 +26,10 @@
                 last_read_opid,
                 pending_operations,
                 pending_commit_records,
-                prev_stable_time}).
+                prev_stable_time,
+                dcid}).
 
--export([init/1,
+-export([init/2,
          get_next_transactions/1,
          get_update_ops_from_transaction/1,
          get_prev_stable_time/1]).
@@ -41,8 +42,8 @@
 
 %% @doc Returns an iterator to read transactions from a partition
 %%  transactions can be read using get_next_transactions
--spec init(Partition::partition_id()) -> {ok, #state{}}.
-init(Partition) ->
+-spec init(Partition::partition_id(), DcId::dcid()) -> {ok, #state{}}.
+init(Partition, DcId) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     [Preflist] = lists:filtermap(fun([H|_T]) ->
@@ -59,7 +60,8 @@ init(Partition) ->
                 last_read_opid = empty,
                 pending_operations = dict:new(),
                 pending_commit_records = [],
-                prev_stable_time = 0}}.
+                prev_stable_time = 0,
+                dcid = DcId}}.
 
 %% @doc get_next_transactions takes the iterator returned by init
 %%  it returns new iterator and a list of committed transactions in
@@ -71,7 +73,8 @@ get_next_transactions(State=#state{partition = Partition,
                                    pending_operations = Pending,
                                    pending_commit_records = PendingCommitRecords,
                                    prev_stable_time = PrevStableTime,
-                                   last_read_opid = Last_read_opid}
+                                   last_read_opid = Last_read_opid,
+                                   dcid = DcId}
                      ) ->
     Node = {Partition, node()},
     %% No transactions will commit in future with commit time < stable_time
@@ -84,7 +87,7 @@ get_next_transactions(State=#state{partition = Partition,
     end,
 
     {PendingOperations, Commitrecords} =
-        add_to_pending_operations(Pending, PendingCommitRecords, NewOps),
+        add_to_pending_operations(Pending, PendingCommitRecords, NewOps, DcId),
 
     Txns = get_sorted_commit_records(Commitrecords),
     %% "Before" contains all transactions committed before stable_time
@@ -209,23 +212,38 @@ now_milisec({MegaSecs,Secs,MicroSecs}) ->
     (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
 
 %%@doc Add updates in writeset ot Pending operations to process downstream
-add_to_pending_operations(Pending, Commitrecords, Ops) ->
+add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->
     case Ops of
         [] ->
             {Pending,Commitrecords};
         _ ->
-            lists:foldl(fun(Op, {ListPending, ListCommits}) ->
-                                {_Logid, Operation} = Op,
-                                Logrecord = Operation#operation.payload,
-                                TxId = Logrecord#log_record.tx_id,
-                                NewPending = dict:append(TxId, Operation, ListPending),
-                                case Logrecord#log_record.op_type of
-                                    commit ->
-                                        NewCommit = ListCommits ++ [Logrecord];
-                                    _ ->
-                                        NewCommit = ListCommits
-                                end,
-                                {NewPending, NewCommit}
-                        end,
-                        {Pending, Commitrecords}, Ops)
+            lists:foldl(
+              fun(Op, {ListPending, ListCommits}) ->
+                      {_Logid, Operation} = Op,
+                      Logrecord = Operation#operation.payload,
+                      TxId = Logrecord#log_record.tx_id,
+                      case Logrecord#log_record.op_type of
+                          commit ->
+                              {{Dc,_CT},_ST} = Logrecord#log_record.op_payload,
+                              case Dc of
+                                  DcId ->
+                                      NewCommit = ListCommits ++ [Logrecord],
+                                      NewPending =
+                                          dict:append(
+                                            TxId, Operation, ListPending);
+                                  _ ->
+                                      NewCommit=ListCommits,
+                                      NewPending = dict:erase(TxId, ListPending)
+                              end;
+                          abort ->
+                              NewCommit = ListCommits,
+                              NewPending = dict:erase(TxId, ListPending);
+                          _ ->
+                              NewPending =
+                                  dict:append(TxId, Operation, ListPending),
+                              NewCommit=ListCommits
+                      end,
+                      {NewPending, NewCommit}
+              end,
+              {Pending, Commitrecords}, Ops)
     end.

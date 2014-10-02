@@ -37,7 +37,7 @@ start_vnode(I) ->
 %% riak_core_vnode call backs
 init([Partition]) ->
     DcId = dc_utilities:get_my_dc_id(),
-    {ok, Reader} = clocksi_transaction_reader:init(Partition),
+    {ok, Reader} = clocksi_transaction_reader:init(Partition, DcId),
     {ok, #state{partition=Partition,
                 dcid=DcId,
                 reader = Reader}}.
