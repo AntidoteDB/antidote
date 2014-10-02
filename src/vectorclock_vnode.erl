@@ -56,15 +56,29 @@
 
 %% API
 start_vnode(I) ->
-    riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
+    {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
+    riak_core_vnode:send_command(Pid, init),
+    {ok,Pid}.
 
 %% @doc Initialize the clock
 init([Partition]) ->
+    NewPClock = dict:new(),
     {ok, #currentclock{last_received_clock=dict:new(),
-                      partition_vectorclock=dict:new(),
+                      partition_vectorclock=NewPClock,
                       stable_snapshot = dict:new(),
                       partition = Partition}}.
 
+handle_command(init, _Sender,
+               #currentclock{partition = Partition,
+                             partition_vectorclock=Clock} = State) ->
+    try
+        riak_core_metadata:put(?META_PREFIX, Partition, Clock),
+        {reply, ok, State}
+    catch
+        _:Reason ->
+            lager:error("Exception caught ~p! ",[Reason]),
+            {reply, error, State}
+    end;
 %% @doc
 handle_command(get_clock, _Sender,
                #currentclock{partition_vectorclock=Clock} = State) ->
@@ -79,7 +93,7 @@ handle_command(calculate_stable_snapshot, _Sender,
     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
     Stable_snapshot = riak_core_metadata:fold(
                         fun({_Key, V}, A) ->
-                                find_min(V,A)
+                                find_min(V,{Clock,A})
                         end,
                         Clock, ?META_PREFIX),
     {reply, {ok, Stable_snapshot},
@@ -167,13 +181,11 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-find_min([VClock], StableClock) ->
-    dict:fold(fun(Dc, Clock1, Snapshot) ->
-                       case dict:find(Dc,StableClock) of
-                           {ok, Clock2} ->
-                               dict:store(Dc, min(Clock1, Clock2), Snapshot);
-                           _ -> Snapshot
-                       end
+find_min([VClock], {PVV, StableClock}) ->
+    dict:fold(fun(Dc, _, Snapshot) ->
+                      {ok, Clock1} = vectorclock:get_clock_of_dc(Dc, VClock),
+                      {ok, Clock2} = vectorclock:get_clock_of_dc(Dc, Snapshot),
+                      dict:store(Dc, min(Clock1, Clock2), Snapshot)
                end,
-               dict:new(),
-               VClock).
+               StableClock,
+               PVV).
