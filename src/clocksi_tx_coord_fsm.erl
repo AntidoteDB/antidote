@@ -387,15 +387,5 @@ wait_for_clock(Clock) ->
           {error, Reason}
   end.
 
--spec generate_downstream_op(#clocksi_payload{}, term(), term(),
-                             term(), {term(), term()}) ->
-                                    {ok, term()} | {error, term()}.
 generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
-    TxnId = Txn#transaction.txn_id,
-    Snapshot_time=Txn#transaction.vec_snapshot_time,
-    Record = #clocksi_payload{key = Key, type = Type,
-                                op_param = Param,
-                                snapshot_time = Snapshot_time,
-                                commit_time = {},
-                                txid = TxnId},
-    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Record).
+   clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param).
