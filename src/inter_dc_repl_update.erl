@@ -102,7 +102,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                   Transaction),
             lists:foreach( fun(DownOp) ->
                                    Key = DownOp#clocksi_payload.key,
-                                   ok = materializer_vnode:update(Key, DownOp)
+                                   ok = materializer_vnode:update_cache(Key, DownOp)
                            end, DownOps),
             lager:debug("Update from remote DC applied:",[payload]),
             %%TODO add error handling if append failed
