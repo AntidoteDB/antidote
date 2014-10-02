@@ -12,15 +12,14 @@ confirm() ->
     HeadCluster2 = hd(Cluster2),
     HeadCluster3 = hd(Cluster3),
 
+    rt:wait_until_ring_converged(Cluster1),
+    rt:wait_until_ring_converged(Cluster2),
+    rt:wait_until_ring_converged(Cluster3),
+    timer:sleep(500), %%TODO: wait for inter_dc_manager to be up
     {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, start_receiver,[8092]),
     {ok, DC3} = rpc:call(HeadCluster3, inter_dc_manager, start_receiver,[8093]),
     lager:info("Receivers start results ~p, ~p and ~p", [DC1, DC2, DC3]),
-
-    rt:wait_until_ring_converged(Cluster1),
-    rt:wait_until_ring_converged(Cluster2),
-    rt:wait_until_ring_converged(Cluster3),
-
 
     ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2, DC3]]),
     ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1, DC3]]),

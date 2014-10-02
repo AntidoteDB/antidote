@@ -11,7 +11,7 @@ confirm() ->
 
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
-
+    timer:sleep(100), %%TODO: wait for inter_dc_manager to be up
     {ok, DC1} = rpc:call(Node1, inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, start_receiver,[8092]),
 
