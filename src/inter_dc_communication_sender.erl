@@ -25,27 +25,32 @@
 
 %% Send a message to all DCs over a tcp connection
 propagate_sync(Message, DCs) ->
-    Errors = lists:foldl( fun({DcAddress, Port}, Acc) ->
-                                  inter_dc_communication_sender:start_link(
-                                    Port, DcAddress, Message, self()),
-                                  receive
-                                      {done, normal} ->
-                                          Acc;
-                                      {done, Other} ->
-                                          lager:error(
-                                            "Send failed Reason:~p Message: ~p",
-                                            [Other, Message]),
-                                          Acc ++ [error]
-                                          %%TODO: Retry if needed
-                                  after ?TIMEOUT ->
-                                          lager:error(
-                                            "Send failed timeout Message ~p"
-                                            ,[Message]),
-                                          Acc ++ [{error, timeout}]
-                                          %%TODO: Retry if needed
-                                  end
-                          end, [],
-                          DCs),
+    Errors = lists:foldl(
+               fun({DcAddress, Port}, Acc) ->
+                       case inter_dc_communication_sender:start_link(
+                              Port, DcAddress, Message, self()) of
+                           {ok, _} ->
+                               receive
+                                   {done, normal} ->
+                                       Acc;
+                                   {done, Other} ->
+                                       lager:error(
+                                         "Send failed Reason:~p Message: ~p",
+                                         [Other, Message]),
+                                       Acc ++ [error]
+                                       %%TODO: Retry if needed
+                               after ?TIMEOUT ->
+                                       lager:error(
+                                         "Send failed timeout Message ~p"
+                                         ,[Message]),
+                                       Acc ++ [{error, timeout}]
+                                       %%TODO: Retry if needed
+                               end;
+                           _ ->
+                               Acc ++ [error]
+                       end
+               end, [],
+               DCs),
     case length(Errors) of
         0 ->
             ok;
@@ -82,15 +87,15 @@ wait_for_ack(timeout, State) ->
     {next_state,stop_error,State,0}.
 
 stop(timeout, State=#state{socket=Socket}) ->
-    gen_tcp:close(Socket),
+    _ = gen_tcp:close(Socket),
     {stop, normal, State}.
 
 stop_error(timeout, State=#state{socket=Socket}) ->
-    gen_tcp:close(Socket),
+    _ = gen_tcp:close(Socket),
     {stop, error, State}.
 
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
-    inet:setopts(Socket, [{active, once}]),
+    _ = inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(), binary_to_term(Bin)),
     {next_state, StateName, StateData};
 

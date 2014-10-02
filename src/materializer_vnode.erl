@@ -92,7 +92,7 @@ handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{cache = Cache})->
     %% TODO: Remove unnecessary information from op_payload in log_Record
     LogRecord = #log_record{tx_id=DownstreamOp#clocksi_payload.txid,
-                            op_type=downstreamop,
+                            op_type=update,
                             op_payload=DownstreamOp},
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),

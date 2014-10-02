@@ -85,12 +85,8 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
 -spec is_op_in_snapshot({Dc::term(),CommitTime::non_neg_integer()},
                         SnapshotTime::vectorclock:vectorclock()) -> boolean().
 is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
-    case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
-        {ok, Ts} ->
-            CommitTime =< Ts;
-        error  ->
-            false
-    end.
+    {ok, Ts} = vectorclock:get_clock_of_dc(Dc, SnapshotTime),
+    CommitTime =< Ts.
 
 update_snapshot_eager(_, Snapshot, []) ->
     Snapshot;

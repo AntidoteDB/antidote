@@ -32,12 +32,9 @@ accept(timeout, State=#state{socket=ListenSocket}) ->
     {next_state, wait_for_message, State#state{socket=AcceptSocket}, ?TIMEOUT}.
 
 wait_for_message({replicate,Updates}, State=#state{socket=Socket}) ->
-    case inter_dc_recvr_vnode:store_updates(Updates) of
-        ok ->
-            ok = gen_tcp:send(Socket, term_to_binary({acknowledge, inter_dc_manager:get_my_dc()}));
-        {error, _Reason} ->
-            lager:error(" Did not replicate messages received")
-    end,
+    inter_dc_recvr_vnode:store_updates(Updates),
+    _ = gen_tcp:send(Socket, term_to_binary(
+                               {acknowledge, inter_dc_manager:get_my_dc()})),
     stop_server(State),
     {stop,normal,State};
 
