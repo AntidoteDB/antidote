@@ -49,11 +49,12 @@
          handle_handoff_data/2,
          encode_handoff_item/2,
          handle_coverage/4,
+         handle_info/2,
          handle_exit/3]).
 
 -ignore_xref([start_vnode/1]).
 
--record(state, {partition, logs_map, clock}).
+-record(state, {partition, logs_map, clock, senders_awaiting_ack}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -81,7 +82,6 @@ read_from(Node, LogId, From) ->
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
 -spec asyn_read(preflist(), key()) -> term().
 asyn_read(Preflist, Log) ->
-    lager:info("Read triggered with preference list: ~p", [Preflist]),
     riak_core_vnode_master:command(Preflist,
                                    {read, Log},
                                    {fsm, undefined, self()},
@@ -96,7 +96,6 @@ read(Node, Log) ->
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
 asyn_append(Preflist, Log, Payload) ->
-    lager:info("Append triggered with preference list: ~p", [Preflist]),
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, Payload},
                                    {fsm, undefined, self()},
@@ -106,7 +105,8 @@ asyn_append(Preflist, Log, Payload) ->
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, Payload},
-                                        ?LOGGING_MASTER).
+                                        ?LOGGING_MASTER,
+                                        infinity).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -127,7 +127,10 @@ init([Partition]) ->
         {error, Reason} ->
             {error, Reason};
         Map ->
-            {ok, #state{partition=Partition, logs_map=Map, clock=0}}
+            {ok, #state{partition=Partition,
+                        logs_map=Map,
+                        clock=0,
+                        senders_awaiting_ack=dict:new()}}
     end.
 
 %% @doc Read command: Returns the operations logged for Key
@@ -180,17 +183,29 @@ handle_command({read_from, LogId, From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload}, _Sender,
-               #state{logs_map=Map, partition=Partition, clock=Clock}=State) ->
+handle_command({append, LogId, Payload}, Sender,
+               #state{logs_map=Map,
+                      clock=Clock,
+                      partition=Partition,
+                      senders_awaiting_ack=SendersAwaitingAck0}=State) ->
     OpId = generate_op_id(Clock),
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
                 {ok, OpId} ->
-                    {reply, {ok, OpId}, State#state{clock=NewClock}};
+                    case dict:find(LogId, SendersAwaitingAck0) of
+                        error ->
+                            Me = self(),
+                            Me ! {sync, Log, LogId},
+                            ok;
+                        _ ->
+                            ok
+                    end,
+                    SendersAwaitingAck = dict:append(LogId, {Sender, OpId}, SendersAwaitingAck0),
+                    {noreply, State#state{senders_awaiting_ack=SendersAwaitingAck, clock=NewClock}};
                 {error, Reason} ->
-                    {reply, {error, {Reason}}, State}
+                    {reply, {error, Reason}, State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -202,7 +217,7 @@ handle_command(_Message, _Sender, State) ->
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
-    Acc= join_logs(dict:to_list(Map), F, Acc0),
+    Acc = join_logs(dict:to_list(Map), F, Acc0),
     {reply, Acc, State}.
 
 handoff_starting(_TargetNode, State) ->
@@ -218,7 +233,9 @@ handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
     {LogId, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
+            %% Optimistic handling; crash otherwise.
             {ok, _OpId} = insert_operation(Log, LogId, OpId, Payload),
+            ok = dets:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -238,6 +255,23 @@ is_empty(State=#state{logs_map=Map}) ->
 
 delete(State) ->
     {ok, State}.
+
+handle_info({sync, Log, LogId},
+            #state{senders_awaiting_ack=SendersAwaitingAck0}=State) ->
+    case dict:find(LogId, SendersAwaitingAck0) of
+        {ok, Senders} ->
+            _ = case dets:sync(Log) of
+                ok ->
+                    [riak_core_vnode:reply(Sender, {ok, OpId}) || {Sender, OpId} <- Senders];
+                {error, Reason} ->
+                    [riak_core_vnode:reply(Sender, {error, Reason}) || {Sender, _OpId} <- Senders]
+            end,
+            ok;
+        _ ->
+            ok
+    end,
+    SendersAwaitingAck = dict:erase(LogId, SendersAwaitingAck0),
+    {ok, State#state{senders_awaiting_ack=SendersAwaitingAck}}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) ->
     {stop, not_implemented, State}.
@@ -272,8 +306,6 @@ no_elements([LogId|Rest], Map) ->
                     false
             end;
         error ->
-            lager:info("Preflist to map return: no_log_for_preflist: ~w~n",
-                       [LogId]),
             {error, no_log_for_preflist}
     end.
 
@@ -336,13 +368,11 @@ open_logs(LogFile, [Next|Rest], Map)->
 %%
 -spec get_log_from_map(dict(), partition(), log_id()) ->
                               {ok, log()} | {error, no_log_for_preflist}.
-get_log_from_map(Map, Partition, LogId) ->
+get_log_from_map(Map, _Partition, LogId) ->
     case dict:find(LogId, Map) of
         {ok, Log} ->
             {ok, Log};
         error ->
-            lager:info("partition: ~p, no_log_for_preflist: ~p",
-                       [Partition, LogId]),
             {error, no_log_for_preflist}
     end.
 
@@ -375,12 +405,7 @@ insert_operation(Log, LogId, OpId, Payload) ->
     Result = dets:insert(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
     case Result of
         ok ->
-            case dets:sync(Log) of
-                ok ->
-                    {ok, OpId};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
+            {ok, OpId};
         {error, Reason} ->
             {error, Reason}
     end.
