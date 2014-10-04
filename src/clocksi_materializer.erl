@@ -58,7 +58,7 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest]) ->
 %%      Output: The CRDT after appliying the operations
 -spec update_snapshot(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid()) -> {ok,snapshot()} | {error, atom()}.
+                      [clocksi_payload()], txid() | ignore) -> {ok,snapshot()} | {error, atom()}.
 update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
     {ok, Snapshot};
 
@@ -127,8 +127,8 @@ get_snapshot(Type, SnapshotTime, Ops) ->
     Init = create_snapshot(Type),
     update_snapshot(Type, Init, SnapshotTime, Ops, ignore).
 
--spec get_snapshot(type(), vectorclock:vectorclock(),
-                   [#clocksi_payload{}], #tx_id{}) -> {ok, snapshot()} | {error, atom()}.
+-spec get_snapshot(type(), snapshot_time(),
+                   [clocksi_payload()], txid()) -> {ok, snapshot()} | {error, atom()}.
 get_snapshot(Type, SnapshotTime, Ops, TxId) ->
     Init = create_snapshot(Type),
     update_snapshot(Type, Init, SnapshotTime, Ops, TxId).
