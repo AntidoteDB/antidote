@@ -20,7 +20,7 @@
 %% @doc The coordinator for a given Clock SI static transaction.
 %%      It handles the state of the tx and executes the operations sequentially
 %%      by sending each operation to the responsible clockSI_vnode of the
-%%      involved key. when a tx is finalized (committed or aborted, the fsm
+%%      involved key. When a tx is finalized (committed or aborted), the fsm
 %%      also finishes.
 
 -module(clocksi_static_tx_coord_fsm).
@@ -46,9 +46,9 @@
 %%    state: state of the transaction: {active|prepared|committing|committed}
 %%----------------------------------------------------------------------
 -record(state, {
-          from,
-          tx_id,
-          tx_coord_pid,
+          from :: pid(),
+          tx_id :: txid(),
+          tx_coord_pid :: pid(),
           operations :: list(),
           state:: atom()}).
 
@@ -77,8 +77,8 @@ init([From, ClientClock, Operations]) ->
         {ok, TxId} ->
             lager:info("TX started with TxId: ~p", [TxId]),
             {_, _, TxCoordPid} = TxId,
-            {ok, execute_batch_ops, #state{tx_id=TxId, tx_coord_pid= TxCoordPid,
-                from=From, operations=Operations}, 0}
+            {ok, execute_batch_ops, #state{tx_id=TxId, tx_coord_pid = TxCoordPid,
+                from = From, operations = Operations}, 0}
     after
         10000 ->
             lager:info("Tx was not started!"),
@@ -89,10 +89,10 @@ init([From, ClientClock, Operations]) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-execute_batch_ops(timeout, SD=#state{from=From,
-                                tx_id=TxId,
-                                tx_coord_pid=TxCoordPid,
-                                operations=Operations}) ->
+execute_batch_ops(timeout, SD=#state{from = From,
+                                tx_id = TxId,
+                                tx_coord_pid = TxCoordPid,
+                                operations = Operations}) ->
     ExecuteOp = fun (Operation, Acc) ->
                         case Operation of
                             {update, Key, Type, OpParams} ->
@@ -124,13 +124,13 @@ execute_batch_ops(timeout, SD=#state{from=From,
 %% =============================================================================
 
 handle_info(_Info, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 handle_sync_event(_Event, _From, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
