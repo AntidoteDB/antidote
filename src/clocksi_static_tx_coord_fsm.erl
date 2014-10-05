@@ -67,12 +67,12 @@ start_link(From, ClientClock, Operations) ->
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
     lager:info("Starting FSM for interactive transaction."),
-    case ClientClock of
-        noclock ->
-            {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]);
-        _ ->
-            {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
-    end,
+    {ok, _Pid} = case ClientClock of
+                noclock ->
+                    clocksi_interactive_tx_coord_sup:start_fsm([self()]);
+                _ ->
+                    clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
+            end,
     receive
         {ok, TxId} ->
             lager:info("TX started with TxId: ~p", [TxId]),
@@ -116,7 +116,7 @@ execute_batch_ops(timeout, SD=#state{from = From,
                     {stop, normal, SD}
             end;
         {aborted, TxId} ->
-            gen_fsm:reply(From, {error, {aborted, TxId}}),
+            From ! {error, {aborted, TxId}},
             {stop, normal, SD}
     end.
 
