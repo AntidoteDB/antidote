@@ -93,10 +93,8 @@ handle_command({process}, _Sender,
                              last_commit_time = LastCommitTime,
                              pending_operations = PendingOperations,
                              stable_time = Stable_time}) ->
-    lager:info("Take updates before time : ~p",[Stable_time]),
     Sorted_ops = filter_operations(PendingOperations,
                                    Stable_time, LastCommitTime),
-    lager:info("Generate downstream for ~p",[Sorted_ops]),
     {Remaining_operations, Last_processed_time} =
         lists:foldl( fun(X, {Ops, LCTS}) ->
                              case process_update(X) of
@@ -109,7 +107,7 @@ handle_command({process}, _Sender,
                              end
                      end, {PendingOperations, LastCommitTime}, Sorted_ops),
     DcId = dc_utilities:get_my_dc_id(),
-    vectorclock:update_clock(Partition, DcId, Stable_time),
+    {ok, _Clock} = vectorclock:update_clock(Partition, DcId, Stable_time),
     {reply, ok, State#dstate{last_commit_time = Last_processed_time,
                              pending_operations = Remaining_operations}};
 
@@ -168,11 +166,9 @@ process_update(Update) ->
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
 get_stable_time(Node, Prev_stable_time) ->
-    lager:info("In get_stable_time"),
     case riak_core_vnode_master:sync_command(
            Node, {get_active_txns}, ?CLOCKSI_MASTER) of
         {ok, Active_txns} ->
-            lager:info("Active txns before filtering ~p",[Active_txns]),
             lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
                                 case Min_time > Snapshot_time of
                                     true ->
@@ -199,7 +195,6 @@ filter_operations(Ops, Before, After) ->
                   CommitTime > After
           end,
           Ops),
-    lager:info("Unprocessed Ops ~p after ~p",[Unprocessed_ops, After]),
 
     %% remove operations which are not safer to process now,
     %% because there could be other operations with lesser timestamps
@@ -211,7 +206,6 @@ filter_operations(Ops, Before, After) ->
           end,
           Unprocessed_ops),
 
-    lager:info("Filter operations: ~p",[Filtered_ops]),
     %% Sort operations in timestamp order
     Sorted_ops =
         lists:sort(
@@ -225,7 +219,6 @@ filter_operations(Ops, Before, After) ->
 
 %%@doc Add updates in writeset ot Pending operations to process downstream
 add_to_pending_operations(Pending, WriteSet) ->
-    lager:info("Writeset : ~p", [WriteSet]),
     case WriteSet of
         {TxId, Updates, Vec_snapshot_time, CommitTime} ->
             lists:foldl( fun(Update, Operations) ->
