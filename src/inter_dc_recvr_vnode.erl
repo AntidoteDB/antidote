@@ -1,3 +1,26 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
+%% @doc This vnode is responsible for receiving updates from remote DCs and 
+%% applying to local partition in causal order
+
 -module(inter_dc_recvr_vnode).
 -behaviour(riak_core_vnode).
 -include("inter_dc_repl.hrl").
@@ -26,6 +49,8 @@ start_vnode(I) ->
 
 %% public API
 
+%% @doc store_updates: sends the updates from remote DC to corresponding
+%%  partition's vnode. Input is a list of transactions from remote DC.
 -spec store_updates(Transactions::[clocksi_transaction_reader:transaction()])
                    -> ok.
 store_updates(Transactions) ->
@@ -52,12 +77,6 @@ store_updates(Transactions) ->
                                    inter_dc_recvr_vnode_master),
     ok.
 
-%% --------------------
-%% Sends update to be replicated to the vnode
-%% Args: Key,
-%%       Payload contains Operation Timestamp and DepVector for causality tracking
-%%       FromDC = DC_ID
-%% --------------------
 store_update(Node, Transaction) ->
     riak_core_vnode_master:sync_command(Node,
                                         {store_update, Transaction},

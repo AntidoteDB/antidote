@@ -1,3 +1,25 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
+
+%% @doc : This module has functions to process updates from remote DCs
+
 -module(inter_dc_repl_update).
 
 -include("inter_dc_repl.hrl").
@@ -16,13 +38,17 @@ init_state(Partition) ->
                       partition=Partition}
     }.
 
+%% @doc enqueue_update: Put transaction into queue for processing later
+-spec enqueue_update(Transaction::clocksi_transaction_reader:transaction(),
+                     #recvr_state{}) ->
+                            {ok, #recvr_state{}}.
 enqueue_update(Transaction,
                State = #recvr_state{recQ = RecQ}) ->
     {_,{FromDC, _CommitTime},_,_} = Transaction,
     RecQNew = enqueue(FromDC, Transaction, RecQ),
     {ok, State#recvr_state{recQ = RecQNew}}.
 
-%% Process one update from Q for each DC each Q.
+%% Process one transaction from Q for each DC each Q.
 %% This method must be called repeatedly
 %% inorder to process all updates
 process_queue(State=#recvr_state{recQ = RecQ}) ->
@@ -34,7 +60,8 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 
 %% private functions
 
-%%Takes one update from DC queue, checks whether its depV is satisfied and apply the update locally.
+%% Takes one transction from DC queue, checks whether its depV is satisfied
+%% and apply the update locally.
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                                              partition = Partition}) ->
     case queue:is_empty(DcQ) of

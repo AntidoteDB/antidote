@@ -21,13 +21,14 @@
 
 -include("floppy.hrl").
 
--record(state, {partition,
-                logid,
-                last_read_opid,
-                pending_operations,
-                pending_commit_records,
-                prev_stable_time,
-                dcid}).
+-record(state, {partition :: partition_id(),
+                logid :: log_id(),
+                last_read_opid :: empty | op_id(),
+                pending_operations :: dict(),
+                pending_commit_records :: list(),
+                prev_stable_time :: non_neg_integer(),
+                dcid :: dcid()
+               }).
 
 -export([init/2,
          get_next_transactions/1,
@@ -149,6 +150,9 @@ get_update_ops_from_transaction(Transaction) ->
 -spec get_prev_stable_time(Reader::#state{}) -> non_neg_integer().
 get_prev_stable_time(Reader) ->
     Reader#state.prev_stable_time.
+
+
+%% ---- Internal function ----- %%
 
 %% @doc construct_transaction: Returns a structure of type transaction()
 %% from a list of update operations and prepare/commit records
