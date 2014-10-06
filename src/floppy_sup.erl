@@ -73,11 +73,6 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
 
-    ClockSIDSGenMaster = { clocksi_downstream_generator_vnode_master,
-                           {riak_core_vnode_master,  start_link,
-                            [clocksi_downstream_generator_vnode]},
-                           permanent, 5000, worker, [riak_core_vnode_master]},
-
     VectorClockMaster = {vectorclock_vnode_master,
                          {riak_core_vnode_master,  start_link,
                           [vectorclock_vnode]},
@@ -91,8 +86,8 @@ init(_Args) ->
     InterDcManager = {inter_dc_manager,
                         {inter_dc_manager, start_link, []},
                         permanent, 5000, worker, [inter_dc_manager]},
-    
-       {ok,
+
+    {ok,
      {{one_for_one, 5, 10},
       [LoggingMaster,
        ClockSIMaster,
@@ -101,6 +96,5 @@ init(_Args) ->
        InterDcRepMaster,
        InterDcRecvrMaster,
        InterDcManager,
-       ClockSIDSGenMaster,
        VectorClockMaster,
        MaterializerMaster]}}.
