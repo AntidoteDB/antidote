@@ -42,7 +42,7 @@ create_snapshot(Type) ->
                       snapshot_time(),
                       [clocksi_payload()]) -> {ok,snapshot()} | {error, atom()}.
 update_snapshot(_Type, Snapshot, _SnapshotTime, []) ->
-    {ok, Snapshot};   
+    {ok, Snapshot};
 update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest]) ->
     update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], ignore).
 
@@ -50,7 +50,7 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest]) ->
 %% @doc Applies the operation of a list to a CRDT. Only the
 %%      operations with smaller timestamp than the specified
 %%      are considered. Newer operations are discarded.
-%%      Input:	
+%%      Input:
 %%      Type: The type of CRDT to create
 %%      Snapshot: Current state of the CRDT
 %%      SnapshotTime: Threshold for the operations to be applied.
@@ -58,7 +58,8 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest]) ->
 %%      Output: The CRDT after appliying the operations
 -spec update_snapshot(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid() | ignore) -> {ok,snapshot()} | {error, atom()}.
+                      [clocksi_payload()], txid() | ignore) ->
+                             {ok,snapshot()} | {error, atom()}.
 update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
     {ok, Snapshot};
 
@@ -160,7 +161,7 @@ materializer_clocksi_sequential_test() ->
                                    vectorclock:from_list([{1,4}]),Ops),
     ?assertEqual(6,riak_dt_gcounter:value(Gcounter3)),
     {ok, Gcounter4} = get_snapshot(riak_dt_gcounter,
-                                   vectorclock:from_list([{5,7}]),Ops),
+                                   vectorclock:from_list([{1,7}]),Ops),
     ?assertEqual(6,riak_dt_gcounter:value(Gcounter4)).
 
 materializer_clocksi_concurrent_test() ->
@@ -178,7 +179,8 @@ materializer_clocksi_concurrent_test() ->
 
     Ops = [Op1,Op2,Op3],
     {ok, GCounter2} = update_snapshot(riak_dt_gcounter,
-                                      GCounter, vectorclock:from_list([{2,2}]),
+                                      GCounter,
+                                      vectorclock:from_list([{2,2},{1,2}]),
                                       Ops, ignore),
     ?assertEqual(4,riak_dt_gcounter:value(GCounter2)),
     {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,
