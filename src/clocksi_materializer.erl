@@ -186,4 +186,14 @@ materializer_clocksi_concurrent_test() ->
     {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,
                                    vectorclock:from_list([{1,2}]),Ops),
     ?assertEqual(3,riak_dt_gcounter:value(Gcounter3)).
+
+%% @doc Testing gcounter with empty update log
+materializer_clocksi_noop_test() ->
+    GCounter = create_snapshot(riak_dt_gcounter),
+    ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
+    Ops = [],
+    {ok, GCounter2} = update_snapshot(riak_dt_gcounter, GCounter,
+                                vectorclock:from_list([{1,1}]),
+                                Ops, ignore),
+    ?assertEqual(0,riak_dt_gcounter:value(GCounter2)).
 -endif.
