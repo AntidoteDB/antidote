@@ -64,31 +64,35 @@ update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
     {ok, Snapshot};
 
 update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
-    Type = Op#clocksi_payload.type,
-    case (is_op_in_snapshot(Op#clocksi_payload.commit_time, SnapshotTime)
-          or (TxId =:= Op#clocksi_payload.txid)) of
+    case Type == Op#clocksi_payload.type of
         true ->
-            case Op#clocksi_payload.op_param of
-                {merge, State} ->
-                    NewSnapshot = Type:merge(Snapshot, State),
-                    update_snapshot(Type,
-                                    NewSnapshot,
-                                    SnapshotTime,
-                                    Rest,
-                                    TxId);
-                {Update, Actor} ->
-                    case Type:update(Update, Actor, Snapshot) of
-                        {ok, NewSnapshot} ->
+            case (is_op_in_snapshot(Op#clocksi_payload.commit_time, SnapshotTime)
+                  or (TxId =:= Op#clocksi_payload.txid)) of
+                true ->
+                    case Op#clocksi_payload.op_param of
+                        {merge, State} ->
+                            NewSnapshot = Type:merge(Snapshot, State),
                             update_snapshot(Type,
                                             NewSnapshot,
                                             SnapshotTime,
                                             Rest,
                                             TxId);
-                        {error, Reason} ->
-                            {error, Reason}
-                    end
+                        {Update, Actor} ->
+                            case Type:update(Update, Actor, Snapshot) of
+                                {ok, NewSnapshot} ->
+                                    update_snapshot(Type,
+                                                    NewSnapshot,
+                                                    SnapshotTime,
+                                                    Rest,
+                                                    TxId);
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end
+                    end;
+                false ->
+                    update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
             end;
-        false ->
+        false -> %% Op is not for this {Key, Type}
             update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
     end.
 
@@ -107,6 +111,7 @@ is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
             false
     end.
 
+%% @doc update_snapshot_eager: apply updates in order without any checks
 -spec update_snapshot_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().
 update_snapshot_eager(_, Snapshot, []) ->
     Snapshot;
@@ -123,7 +128,8 @@ update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
 %%      SnapshotTime: Threshold for the operations to be applied, including the threshold.
 %%      Ops: The list of operations to apply
 %%      Output: The value of the CRDT after applying the operations
--spec get_snapshot(type(), snapshot_time(), [clocksi_payload()]) -> {ok, snapshot()} | {error, atom()}.
+-spec get_snapshot(type(), snapshot_time(), [clocksi_payload()]) ->
+                          {ok, snapshot()} | {error, atom()}.
 get_snapshot(Type, SnapshotTime, Ops) ->
     Init = create_snapshot(Type),
     update_snapshot(Type, Init, SnapshotTime, Ops, ignore).
