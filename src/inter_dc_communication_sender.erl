@@ -92,10 +92,8 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
                           [{active,true},binary, {packet,2}], ?CONNECT_TIMEOUT) of
         { ok, Socket} ->
-            lager:info("I have succesfully connected to ~p:~p",[Host, Port]),
             ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
-            lager:info("Message succesfully sent to ~p:~p",[Host, Port]),
             ok = inet:setopts(Socket, [{active, once}]),
             {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
         {error, _Reason} ->

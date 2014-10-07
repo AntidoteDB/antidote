@@ -52,7 +52,6 @@ init(Port) ->
 
 accept(timeout, State=#state{listener=ListenSocket}) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    lager:info("Connection accepted"),
     {ok, _} = inter_dc_communication_fsm_sup:start_fsm([AcceptSocket]),
     {next_state, accept, State, 0}.
 
