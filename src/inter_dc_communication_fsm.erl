@@ -30,13 +30,8 @@ receive_message(timeout, State=#state{socket=Socket}) ->
         {ok, Message} ->
             case binary_to_term(Message) of
                 {replicate, Updates} ->
-                    lager:info("Message received ~p, about to process it", [Updates]),
-                    case inter_dc_recvr_vnode:store_updates(Updates) of
-                        ok ->  
-                            ok = gen_tcp:send(Socket, term_to_binary({acknowledge, inter_dc_manager:get_my_dc()}));
-                        {error, _Reason} ->
-                            lager:error("Could not store updates propagarted form other DC")
-                    end;
+                    ok =  inter_dc_recvr_vnode:store_updates(Updates) ,
+                    ok = gen_tcp:send(Socket, term_to_binary({acknowledge, inter_dc_manager:get_my_dc()}));
                 Unknown ->
                     lager:error("Weird message received ~p", [Unknown])
             end;
