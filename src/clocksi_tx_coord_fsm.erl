@@ -366,15 +366,14 @@ get_snapshot_time() ->
     SnapshotTime  = Now,
     {ok, SnapshotTime}.
 
--spec generate_downstream_op(#clocksi_payload{}, term(), term(),
+-spec generate_downstream_op(#transaction{}, {integer(), atom()}, term(),
                              term(), {term(), term()}) ->
-                                    {ok, term()} | {error, term()}.
+                                    {ok, #clocksi_payload{}} | {error, atom()}.
 generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
     TxnId = Txn#transaction.txn_id,
     Snapshot_time=Txn#transaction.vec_snapshot_time,
     Record = #clocksi_payload{key = Key, type = Type,
                                 op_param = Param,
                                 snapshot_time = Snapshot_time,
-                                commit_time = {},
                                 txid = TxnId},
     clocksi_downstream:generate_downstream_op(Txn, IndexNode, Record).
