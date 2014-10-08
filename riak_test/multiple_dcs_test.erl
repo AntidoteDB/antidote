@@ -144,17 +144,8 @@ parallel_writes_test(Cluster1, Cluster2, Cluster3) ->
                         ?assertEqual(15, ReadSet3),
                         lager:info("Parallel reads passed"),
                         pass
-                after 10000 ->
-                        lager:info("Timeout"),
-                        timeout
-                end
-            after 10000 ->
-                    lager:info("Timeout"),
-                    timeout
+                    end
             end
-    after 10000 ->
-            lager:info("Timeout"),
-            timeout
     end,
     ?assertEqual(Result, pass),
     pass.
