@@ -52,33 +52,23 @@
 -record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
                       partition_vectorclock :: vectorclock:vectorclock(),
                       stable_snapshot :: vectorclock:vectorclock(),
-                      partition}).
+                      partition,
+                      num_p}).
 
 %% API
 start_vnode(I) ->
-    {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
-    riak_core_vnode:send_command(Pid, init),
-    {ok,Pid}.
+    riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Initialize the clock
 init([Partition]) ->
     NewPClock = dict:new(),
+    riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
     {ok, #currentclock{last_received_clock=dict:new(),
-                      partition_vectorclock=NewPClock,
-                      stable_snapshot = dict:new(),
-                      partition = Partition}}.
+                       partition_vectorclock=NewPClock,
+                       stable_snapshot = dict:new(),
+                       partition = Partition,
+                       num_p=0}}.
 
-handle_command(init, _Sender,
-               #currentclock{partition = Partition,
-                             partition_vectorclock=Clock} = State) ->
-    try
-        riak_core_metadata:put(?META_PREFIX, Partition, Clock),
-        {reply, ok, State}
-    catch
-        _:Reason ->
-            lager:error("Exception caught ~p! ",[Reason]),
-            {reply, error, State}
-    end;
 %% @doc
 handle_command(get_clock, _Sender,
                #currentclock{partition_vectorclock=Clock} = State) ->
@@ -88,16 +78,35 @@ handle_command(get_stable_snapshot, _Sender,
                State=#currentclock{stable_snapshot=Clock}) ->
     {reply, {ok, Clock}, State};
 
+%% @doc : calculate stable snapshot from min of vectorclock (each entry)
+%% from all partitions
 handle_command(calculate_stable_snapshot, _Sender,
-               State=#currentclock{partition_vectorclock = Clock}) ->
+               State=#currentclock{partition_vectorclock = Clock,
+                                   num_p=NumP}) ->
     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
-    Stable_snapshot = riak_core_metadata:fold(
-                        fun({_Key, V}, A) ->
-                                find_min(V,{Clock,A})
-                        end,
-                        Clock, ?META_PREFIX),
+    NumPartitions = case NumP of
+                        0 ->
+                            {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+                            riak_core_ring:num_partitions(Ring);
+                            _ -> NumP
+                          end,
+    NumMetadata = length(riak_core_metadata:to_list(?META_PREFIX)),
+    Stable_snapshot =
+        %% If metadata doesnot contain clock of all partitions
+        %% donot calculate stable snapshot
+        case NumPartitions == NumMetadata of
+            true ->
+                riak_core_metadata:fold(
+                  fun({_Key, V}, A) ->
+                          find_min(V,{Clock,A})
+                  end,
+                  Clock, ?META_PREFIX);
+            false ->
+                dict:new()
+        end,
     {reply, {ok, Stable_snapshot},
-     State#currentclock{stable_snapshot=Stable_snapshot}};
+     State#currentclock{stable_snapshot=Stable_snapshot,
+                        num_p = NumPartitions}};
 
 %% @doc This function implements following code
 %% if last_received_vectorclock[partition][dc] < time
