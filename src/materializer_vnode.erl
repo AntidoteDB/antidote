@@ -25,7 +25,7 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 
--define(SNAPSHOT_THRESHOLD, 10).
+-define(SNAPSHOT_THRESHOLD, 3).
 -define(SNAPSHOT_MIN, 2).
 -define(OPS_THRESHOLD, 50).
 -define(OPS_MIN, 5).
@@ -89,20 +89,20 @@ handle_command({read, Key, Type, SnapshotTime}, _Sender,
             [] ->
             	Snapshot=NewSnapshot;
             [{_, OpsDict}] ->
-            	lager:info("materialiser_vnode: about to filter OpsDict= ~p",[OpsDict]),
+            	%lager:info("materialiser_vnode: about to filter OpsDict= ~p",[OpsDict]),
             	{ok, Ops}= filter_ops(OpsDict),
-            	lager:info("materialiser_vnode: Ops to apply are: ~p",[Ops]),
-            	LastOp=lists:last(Ops),
+            	%lager:info("materialiser_vnode: Ops to apply are: ~p",[Ops]),
+            	LastOp=lists:nth(1, Ops),
             	TxId = LastOp#clocksi_payload.txid,
             	{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, NewSnapshot, SnapshotTime, Ops, TxId),
             	CommitTime = (lists:last(Ops))#clocksi_payload.commit_time,
-            	lager:info("materialiser_vnode: caching new snapshot= ~p with Commit Time= ~p", [Snapshot, CommitTime]),
+            	%lager:info("materialiser_vnode: caching new snapshot= ~p with Commit Time= ~p", [Snapshot, CommitTime]),
             	SnapshotDict=orddict:new(),
-            	ets:insert(SnapshotCache, {Key, snapshot_gc(orddict:store(CommitTime,Snapshot, SnapshotDict))})
+            	ets:insert(SnapshotCache, {Key, orddict:store(CommitTime,Snapshot, SnapshotDict)})
             end;
         [{_, SnapshotDict}] ->
 			{ok, {SnapshotCommitTime, LatestSnapshot}} = get_latest_snapshot(SnapshotDict, SnapshotTime),
-		    lager:info("materialiser_vnode: Latest snapshot for key ~p is ~p, with commit time ~p.",[Key, LatestSnapshot, SnapshotCommitTime]),
+		    %lager:info("materialiser_vnode: Latest snapshot for key ~p is ~p, with commit time ~p.",[Key, LatestSnapshot, SnapshotCommitTime]),
             case ets:lookup(OpsCache, Key) of
             [] ->
             	Snapshot=LatestSnapshot;
@@ -114,14 +114,15 @@ handle_command({read, Key, Type, SnapshotTime}, _Sender,
             	[]->
             	    Snapshot=LatestSnapshot;
             	[H|T]->
-            		LastOp=lists:last([H|T]),
+            		LastOp=lists:nth(1, Ops),
             		TxId = LastOp#clocksi_payload.txid,
 					{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, [H|T], TxId),
 					CommitTime = LastOp#clocksi_payload.commit_time,
 					lager:info("previous snapshots are = ~p, ",[SnapshotDict]),
 					lager:info("materialiser_vnode: caching new snapshot= ~p, snapshot committed with time:~p.", [Snapshot,CommitTime]),
 					lager:info("previous snapshots are = ~p, ",[orddict:store(CommitTime,Snapshot, SnapshotDict)]),
-					ets:insert(SnapshotCache, {Key, snapshot_gc(orddict:store(CommitTime,Snapshot, SnapshotDict))}),
+					SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
+            		snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
 					lager:info("new snapshots are = ~p, ",[ets:lookup(SnapshotCache, Key)])
 				end
             end
@@ -207,6 +208,9 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
+
+%% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in 
+%% a snapshot identified by SnapshotTime
 -spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
 	 -> {ok, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
@@ -225,6 +229,7 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
         end
 	end.
 
+%% @doc Get a list of operations from an orddict of operations
 -spec filter_ops(orddict:orddict()) -> {ok, list()} | {error, wrong_format}.
 filter_ops(Ops) ->
 	filter_ops(Ops, []).
@@ -248,6 +253,9 @@ filter_ops([H|T], Acc) ->
 -spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
                         SnapshotTime::vectorclock:vectorclock()) -> boolean().
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
+
+	lager:info("BELONGS TO SNAPSHOT FUNCTION ~n Dc= ~p, CommitTime= ~p, SnapshotTime= ~p", [Dc, CommitTime, SnapshotTime]),
+
     case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
         {ok, Ts} ->
             lager:info("materialiser_vnode: CommitTime: ~p SnapshotTime: ~p Result: ~p",
@@ -257,18 +265,33 @@ belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
             false
     end.
 
-%% @doc Garbage collect the snapshot cache. 
-snapshot_gc(SnapshotDict)-> 
+%% @doc Garbage collection.
+snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)-> 
 	case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of 
 	true ->
 		lager:info("pruning the following snapshot cache: ~p",[SnapshotDict]),
-		Pruned=orddict:from_list(lists:sublist(orddict:to_list(SnapshotDict), ?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN)),
-		lager:info("Result is: ",[Pruned]),
-		Pruned;
+		PrunedSnapshots=orddict:from_list(lists:sublist(orddict:to_list(SnapshotDict), 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN)),
+		lager:info("Result is: ~p",[PrunedSnapshots]),
+		FirstOp=lists:nth(1, PrunedSnapshots),
+		{CommitTime, _S} = FirstOp,
+		lager:info("pruning the following OPERATIONS cache before commit time: ~p ~n ~p",[CommitTime,OpsDict]),
+		PrunedOps=prune_ops(OpsDict, CommitTime),
+		lager:info("Result is: ~p",[PrunedOps]),
+		ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
+        ets:insert(OpsCache, {Key, PrunedOps}),
+        true;
 	false ->
+		ets:insert(SnapshotCache, {Key, SnapshotDict}),
 		lager:info("NO NEED OF pruning the following snapshot cache: ~p",[SnapshotDict]),
-		SnapshotDict
+		false
 	end.
+	
+%% @doc Remove from OpsDict all operations that have committed before Threshold. 	
+prune_ops(OpsDict, Threshold)->
+	orddict:filter(fun(_Key, Value) -> 
+				lager:info("This is the operation to analyse: ~n ~p", [Value]),
+				(belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
+
 
 %% @doc Garbage collect the operations cache. 
 ops_gc(OpsDict)-> 
