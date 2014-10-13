@@ -163,6 +163,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the 
 %% vnode when the write function calls it. That is done for garbage collection. 
+-spec internal_read(term(), atom(), vectorclock:vectorclock(), atom() , atom() ) -> term().
 internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 	%lager:info("materialiser_vnode: operations: ~p", [Operations]),
     % get the latest snapshot for the key
@@ -258,10 +259,11 @@ filter_ops([H|T], Acc) ->
 	end.
     
     
-%% @doc Check whether a Key's Snapshot is included in a snapshot
+%% @doc Check whether a Key's operation or stored snapshot is included
+%%		in a snapshot defined by a vector clock
 %%      Input: Dc = Datacenter Id
 %%             CommitTime = local commit time of this Snapshot at DC
-%%             SnapshotTime = Orddict of [{Dc, Ts}]
+%%             SnapshotTime = vector clock
 %%      Outptut: true or false
 -spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
                         SnapshotTime::vectorclock:vectorclock()) -> boolean().
@@ -278,7 +280,10 @@ belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
             false
     end.
 
-%% @doc Garbage collection triggered by reads.
+%% @doc Operation to insert a Snapshot in the cache and start 
+%%      Garbage collection triggered by reads.
+-spec snapshot_insert_gc(Key::term(), SnapshotDict::orddict:orddict(), 
+	OpsDict::orddict:orddict(), atom() , atom() ) -> true.
 snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)-> 
 	case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of 
 	true ->
@@ -291,15 +296,14 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
 		PrunedOps=prune_ops(OpsDict, CommitTime),
 		%lager:info("Result is: ~p",[PrunedOps]),
 		ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-        ets:insert(OpsCache, {Key, PrunedOps}),
-        true;
+        ets:insert(OpsCache, {Key, PrunedOps});
 	false ->
-		ets:insert(SnapshotCache, {Key, SnapshotDict}),
+		ets:insert(SnapshotCache, {Key, SnapshotDict})
 		%lager:info("NO NEED OF pruning the following snapshot cache: ~p",[SnapshotDict]),
-		false
 	end.
 	
-%% @doc Remove from OpsDict all operations that have committed before Threshold. 	
+%% @doc Remove from OpsDict all operations that have committed before Threshold. 
+-spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().	
 prune_ops(OpsDict, Threshold)->
 	orddict:filter(fun(_Key, Value) -> 
 				%lager:info("This is the operation to analyse: ~n ~p", [Value]),
@@ -310,11 +314,12 @@ prune_ops(OpsDict, Threshold)->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
-
+-spec op_insert_gc(term(), clocksi_payload(), 
+	orddict:orddict(), atom() , atom() )-> true.
 op_insert_gc(Key,DownstreamOp, OpsDict, OpsCache, SnapshotCache)-> 
     case (orddict:size(OpsDict))>=?OPS_THRESHOLD of 
     true ->
-	    lager:info("too many operations: time to GC: ~p"),
+	    lager:info("too many operations: time to GC: ~n~p",[OpsDict]),
 	    Type=DownstreamOp#clocksi_payload.type,
 	    SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
 	    lager:info("redading key: ~p ~n type: ~p ~n snapshot time: ~p", [Key, Type, SnapshotTime]),
@@ -327,7 +332,7 @@ op_insert_gc(Key,DownstreamOp, OpsDict, OpsCache, SnapshotCache)->
     lager:info("operation being stored: ~p", [DownstreamOp]),
     OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
     lager:info("materialiser_vnode: OpsDict= ~p",[OpsDict1]),
-    true = ets:insert(OpsCache, {Key, OpsDict1}).
+    ets:insert(OpsCache, {Key, OpsDict1}).
 
      
     
