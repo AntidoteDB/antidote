@@ -1,4 +1,4 @@
-%% -------------------------------------------------------------------
+% % -------------------------------------------------------------------
 %%
 %% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
 %%
@@ -89,7 +89,6 @@ read_data_item(Node, TxId, Key, Type) ->
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op, DownstreamOp) ->
-    lager:info("Update issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
                                             {update_data_item, TxId, Key, Type, Op, DownstreamOp},
@@ -218,27 +217,32 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                           op_payload={TxCommitTime,
                                       Transaction#transaction.vec_snapshot_time}},
     DownstreamOps = ets:lookup(DownstreamSet, TxId),
-    [{_, DownstreamOp} | _Rest] = DownstreamOps,
-    Key = DownstreamOp#clocksi_payload.key,
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    case logging_vnode:append(Node,LogId,LogRecord) of
-        {ok, _} ->
-            true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            case update_materializer(DownstreamOps, TxCommitTime) of 
-                ok ->
-                    clocksi_downstream_generator_vnode:trigger(
-                            Key, {TxId,
-                                [],
-                                Transaction#transaction.vec_snapshot_time,
-                                TxCommitTime}),
-                    clean_and_notify(TxId, Key, State),
-                    {reply, committed, State};
-                error ->
-                    {reply, {error, materializer_failure}, State}
-            end;
-        {error, timeout} ->
-            {reply, {error, timeout}, State}
+    case DownstreamOps of
+        [] ->
+            clean_and_notify(TxId, State),
+            {reply, committed, State};
+        [{_, DownstreamOp} | _Rest] ->
+            Key = DownstreamOp#clocksi_payload.key,
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            case logging_vnode:append(Node,LogId,LogRecord) of
+                {ok, _} ->
+                    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+                    case update_materializer(DownstreamOps, TxCommitTime) of 
+                        ok ->
+                            clocksi_downstream_generator_vnode:trigger(
+                                    Key, {TxId,
+                                        [],
+                                        Transaction#transaction.vec_snapshot_time,
+                                        TxCommitTime}),
+                            clean_and_notify(TxId, State),
+                            {reply, committed, State};
+                        error ->
+                            {reply, {error, materializer_failure}, State}
+                    end;
+                {error, timeout} ->
+                    {reply, {error, timeout}, State}
+            end
     end;
 
 handle_command({abort, Transaction}, _Sender,
@@ -251,9 +255,9 @@ handle_command({abort, Transaction}, _Sender,
     Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
     case Result of
         {ok, _} ->
-            clean_and_notify(TxId, Key, State);
+            clean_and_notify(TxId, State);
         {error, timeout} ->
-            clean_and_notify(TxId, Key, State)
+            clean_and_notify(TxId, State)
     end,
     {reply, ack_abort, State};
 
@@ -310,12 +314,15 @@ terminate(_Reason, _State) ->
 %%      1. notify all read_fsms that are waiting for this transaction to finish
 %%      2. clean the state of the transaction. Namely:
 %%      a. ActiteTxsPerKey,
-%%      b. PreparedTx
+%%      b. PreparedTx,
+%%      c. DownstreamOps
 %%
-clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
+clean_and_notify(TxId, #state{active_txs_per_key=_ActiveTxsPerKey,
                                    prepared_tx=PreparedTx,
+                                   downstream_set=DownstreamSet,
                                    write_set=WriteSet}) ->
     true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
+    true = ets:delete(DownstreamSet, TxId),
     true = ets:delete(WriteSet, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
@@ -355,16 +362,19 @@ check_keylog(TxId, [H|T], CommittedTx)->
 
 update_materializer(DownstreamOps, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
-    lager:info("DS:~w",[DownstreamOps]),
     UpdateFunction = fun ({_, DownstreamOp}, AccIn) -> 
                             CommittedDownstreamOp = DownstreamOp#clocksi_payload{ 
                                                 commit_time = {DcId, TxCommitTime}},
                             Key = DownstreamOp#clocksi_payload.key,
-                            AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)]
+                            case materializer_vnode:update_cache(Key, CommittedDownstreamOp) of 
+                                ok ->
+                                    AccIn;
+                                Other ->
+                                    AccIn++[Other]
+                            end
                     end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),
-    Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
-    case length(Failures) of
+    case length(Results) of
         0 ->
             ok;
         _ ->

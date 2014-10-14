@@ -64,6 +64,7 @@
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
+-type index_node() :: {riak_core_apl:index(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
 -type op_id() :: {non_neg_integer(), node()}.

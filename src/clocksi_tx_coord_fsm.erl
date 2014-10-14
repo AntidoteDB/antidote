@@ -366,8 +366,8 @@ get_snapshot_time() ->
     SnapshotTime  = Now,
     {ok, SnapshotTime}.
 
--spec generate_downstream_op(#transaction{}, {integer(), atom()}, term(),
-                             term(), {term(), term()}) ->
+-spec generate_downstream_op(#transaction{}, index_node(), key(),
+                             type(), op()) ->
                                     {ok, #clocksi_payload{}} | {error, atom()}.
 generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
     TxnId = Txn#transaction.txn_id,

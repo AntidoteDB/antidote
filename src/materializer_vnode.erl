@@ -107,7 +107,6 @@ handle_command({update, Key, DownstreamOp}, _Sender,
 handle_command({update_cache, Key, DownstreamOp}, _Sender,
                State = #state{cache = Cache})->
     %% TODO: Remove unnecessary information from op_payload in log_Record
-    lager:info("Downstream op to cache", [Key, DownstreamOp]),
     true = ets:insert(Cache, {Key, DownstreamOp}),
     {reply, ok, State};
 
