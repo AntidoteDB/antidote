@@ -67,12 +67,9 @@ update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
 update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
     case Type == Op#clocksi_payload.type of
         true ->
-        lager:info("TxId of the operation: ~p ~n TxId argument: ~p", [Op#clocksi_payload.txid, TxId]),
-        lager:info("checking if operation is to be included: ~p", [Op]),
             case (is_op_in_snapshot(Op#clocksi_payload.commit_time, SnapshotTime)
                   or (TxId =:= Op#clocksi_payload.txid)) of
                 true ->
-                	lager:info("IT IS!!!"),
                     case Op#clocksi_payload.op_param of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
@@ -94,7 +91,6 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
                             end
                     end;
                 false ->
-                lager:info("IT IS NOT!!!"),
                     update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
             end;
         false -> %% Op is not for this {Key, Type}

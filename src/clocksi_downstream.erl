@@ -27,7 +27,7 @@
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(#clocksi_payload{}) ->
-    {ok, #clocksi_payload{}} | {error, atom()}.
+    {ok, #clocksi_payload{}} | {error, no_snapshot}.
 generate_downstream_op(Update) ->
     Key = Update#clocksi_payload.key,
     Type =  Update#clocksi_payload.type,
@@ -39,6 +39,6 @@ generate_downstream_op(Update) ->
             DownstreamOp = Update#clocksi_payload{op_param={merge, NewState}},
             {ok, DownstreamOp};
         {error, no_snapshot} ->
-            lager:info("Error: no snapshot"),
+           % lager:info("Error: no snapshot"),
             {error, no_snapshot}
     end.
