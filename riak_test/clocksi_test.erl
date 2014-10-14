@@ -146,11 +146,16 @@ clocksi_single_key_update_read_test(Nodes) ->
                       [{update, Key, Type, {increment, a}},
                        {update, Key, Type, {increment, b}}]]),
     ?assertMatch({ok, _}, Result),
+    Result1= rpc:call(FirstNode, floppy, clocksi_bulk_update,
+                     [now(),
+                      [{update, Key, Type, {increment, c}},
+                       {update, Key, Type, {increment, d}}]]),
+    ?assertMatch({ok, _}, Result1),
     Result2= rpc:call(FirstNode, floppy, clocksi_read,
                       [now(), Key, riak_dt_pncounter]),
     {ok, {_, ReadSet, _}}=Result2,
-    ?assertMatch([2], ReadSet),
-    lager:info("Test3 passed"),
+    ?assertMatch([4], ReadSet),
+    lager:info("Test for single key and multiple updates passed"),
     pass.
 
 %% @doc Verify that multiple reads/writes are successful.
