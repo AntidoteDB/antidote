@@ -29,6 +29,10 @@
 -define(SNAPSHOT_MIN, 2).
 -define(OPS_THRESHOLD, 50).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export([start_vnode/1,
          read/3,
          update/2]).
@@ -226,8 +230,6 @@ internal_update(Key, DownstreamOp, OpsCache, SnapshotCache) ->
     end.
 
 
-
-
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in 
 %% a snapshot identified by SnapshotTime
 -spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
@@ -260,11 +262,13 @@ filter_ops([], Acc) ->
 filter_ops([H|T], Acc) ->
 	case H of 
 	{_Key, Ops} ->
-		filter_ops(T,lists:append(Ops, Acc));
+		filter_ops(T,lists:append(Acc, Ops));
 	_ ->
 		{error, wrong_format}
-	end.
-    
+	end;
+filter_ops(_, _Acc) ->
+	{error, wrong_format}.
+	
     
 %% @doc Check whether a Key's operation or stored snapshot is included
 %%		in a snapshot defined by a vector clock
@@ -345,6 +349,22 @@ op_insert_gc(Key,DownstreamOp, OpsDict, OpsCache, SnapshotCache)->
     end.
 
      
-%-ifdef(TEST). 
+-ifdef(TEST). 
+
+%% @doc Testing filter_ops works in both situations, when the function receives
+%%      what it expects and when it receives something in an unexpected format.
+filter_ops_test() ->
+	Ops=orddict:new(),
+	Ops1=orddict:append(key1, [a1, a2], Ops),
+	Ops2=orddict:append(key2, [b1, b2], Ops1),
+	Ops3=orddict:append(key3, [c1, c2], Ops2),
+	Result=filter_ops(Ops3),
+	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}),
+	Result1=filter_ops({some, thing}),
+	?assertEqual(Result1, {error, wrong_format}),
+	Result2=filter_ops([anything]),
+	?assertEqual(Result2, {error, wrong_format}).   
+-endif.
+
     
     
