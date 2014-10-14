@@ -198,7 +198,8 @@ internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 	%{async, snapshot_gc(), Sender, State};
 	
 	
-	
+-spec internal_update(Key::term(), DownstreamOp::clocksi_payload(), 
+		OpsCache::atom(), SnapshotCache::atom()) ->	ok | {error, term()}.
 internal_update(Key, DownstreamOp, OpsCache, SnapshotCache) ->	
 %% TODO: Remove unnecessary information from op_payload in log_Record
     LogRecord = #log_record{tx_id=DownstreamOp#clocksi_payload.txid,
