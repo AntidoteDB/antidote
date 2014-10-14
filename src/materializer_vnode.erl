@@ -148,7 +148,6 @@ terminate(_Reason, _State) ->
 %% vnode when the write function calls it. That is done for garbage collection. 
 -spec internal_read(term(), atom(), vectorclock:vectorclock(), atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
-	%lager:info("materialiser_vnode: operations: ~p", [Operations]),
     % get the latest snapshot for the key
     case ets:lookup(SnapshotCache, Key) of
     	[] ->
@@ -157,14 +156,11 @@ internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
             [] ->
             	Snapshot=NewSnapshot;
             [{_, OpsDict}] ->
-            	%lager:info("materialiser_vnode: about to filter OpsDict= ~p",[OpsDict]),
             	{ok, Ops}= filter_ops(OpsDict),
-            	%lager:info("materialiser_vnode: Ops to apply are: ~p",[Ops]),
             	LastOp=lists:nth(1, Ops),
             	TxId = LastOp#clocksi_payload.txid,
             	{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, NewSnapshot, SnapshotTime, Ops, TxId),
             	CommitTime = (lists:last(Ops))#clocksi_payload.commit_time,
-            	%lager:info("materialiser_vnode: caching new snapshot= ~p with Commit Time= ~p", [Snapshot, CommitTime]),
             	SnapshotDict=orddict:new(),
             	ets:insert(SnapshotCache, {Key, orddict:store(CommitTime,Snapshot, SnapshotDict)})
             end,
@@ -172,24 +168,17 @@ internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
         [{_, SnapshotDict}] -> 
             case get_latest_snapshot(SnapshotDict, SnapshotTime) of
 			{ok, {_SnapshotCommitTime, LatestSnapshot}}->
-				%lager:info("materialiser_vnode: Latest snapshot for key ~p is ~p, with commit time ~p.",[Key, LatestSnapshot, SnapshotCommitTime]),
 				case ets:lookup(OpsCache, Key) of
 				[] ->
 					LatestSnapshot;
 				[{_, OpsDict}] ->
-					%lager:info("materialiser_vnode: about to filter OpsDict= ~p",[OpsDict]),
 					{ok, Ops}= filter_ops(OpsDict),
-					%lager:info("materialiser_vnode: Ops to apply are: ~p",[Ops]),
 					LastOp=lists:nth(1, Ops),
 					TxId = LastOp#clocksi_payload.txid,
 					{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, Ops, TxId),
 					CommitTime = LastOp#clocksi_payload.commit_time,
-					%lager:info("previous snapshots are = ~p, ",[SnapshotDict]),
-					%lager:info("materialiser_vnode: caching new snapshot= ~p, snapshot committed with time:~p.", [Snapshot,CommitTime]),
-					%lager:info("previous snapshots are = ~p, ",[orddict:store(CommitTime,Snapshot, SnapshotDict)]),
 					SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
 					snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
-					%lager:info("new snapshots are = ~p, ",[ets:lookup(SnapshotCache, Key)])
 					Snapshot
 				end;
 			{error, no_snapshot} ->
@@ -197,9 +186,7 @@ internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 				{error, no_snapshot}
 			end	
     end.
-	%lager:info("materialiser_vnode: snapshot: ~p", [Snapshot]),
 	%TODO: trigger the GC mechanism asynchronously
-	%{async, snapshot_gc(), Sender, State};
 	
 	
 %% @doc This function takes care of appending an operation to the log and
@@ -218,7 +205,6 @@ internal_update(Key, DownstreamOp, OpsCache, SnapshotCache) ->
         {ok, _} ->
         	case ets:lookup(OpsCache, Key) of
         	[]->
-        		%lager:info("storing the first operation for the key"),
         		OpsDict=orddict:new();
         	[{_, OpsDict}]->
         		OpsDict
@@ -239,7 +225,6 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
 	[]->
 		{ok,[]};
 	[H|T]->
-		%lager:info("materialiser_vnode: These are the stored Snapshots: ~p",[H|T]),
 		case orddict:filter(fun(Key, _Value) -> 
 				belongs_to_snapshot(Key, SnapshotTime) end, [H|T]) of 
 			[]->
@@ -279,13 +264,8 @@ filter_ops(_, _Acc) ->
 -spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
                         SnapshotTime::vectorclock:vectorclock()) -> boolean()|error.
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
-
-	%lager:info("BELONGS TO SNAPSHOT FUNCTION ~n Dc= ~p, CommitTime= ~p, SnapshotTime= ~p", [Dc, CommitTime, SnapshotTime]),
-
     case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
         {ok, Ts} ->
-            %lager:info("materialiser_vnode: CommitTime: ~p SnapshotTime: ~p Result: ~p",
-            %           [CommitTime, Ts, CommitTime =< Ts]),
             CommitTime =< Ts;
         error  ->
             error
@@ -298,26 +278,20 @@ belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)-> 
 	case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of 
 	true ->
-		%lager:info("pruning the following snapshot cache: ~p",[SnapshotDict]),
 		PrunedSnapshots=orddict:from_list(lists:sublist(orddict:to_list(SnapshotDict), 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN)),
-		%lager:info("Result is: ~p",[PrunedSnapshots]),
 		FirstOp=lists:nth(1, PrunedSnapshots),
 		{CommitTime, _S} = FirstOp,
-		%lager:info("pruning the following OPERATIONS cache before commit time: ~p ~n ~p",[CommitTime,OpsDict]),
 		PrunedOps=prune_ops(OpsDict, CommitTime),
-		%lager:info("Result is: ~p",[PrunedOps]),
 		ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
         ets:insert(OpsCache, {Key, PrunedOps});
 	false ->
 		ets:insert(SnapshotCache, {Key, SnapshotDict})
-		%lager:info("NO NEED OF pruning the following snapshot cache: ~p",[SnapshotDict]),
 	end.
 	
 %% @doc Remove from OpsDict all operations that have committed before Threshold. 
 -spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().	
 prune_ops(OpsDict, Threshold)->
 	orddict:filter(fun(_Key, Value) -> 
-				%lager:info("This is the operation to analyse: ~n ~p", [Value]),
 				(belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
 
 
@@ -330,21 +304,15 @@ prune_ops(OpsDict, Threshold)->
 op_insert_gc(Key,DownstreamOp, OpsDict, OpsCache, SnapshotCache)-> 
     case (orddict:size(OpsDict))>=?OPS_THRESHOLD of 
     true ->
-	    lager:info("too many operations: time to GC: ~n~p",[OpsDict]),
 	    Type=DownstreamOp#clocksi_payload.type,
 	    SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
-	    lager:info("redading key: ~p ~n type: ~p ~n snapshot time: ~p", [Key, Type, SnapshotTime]),
 	    Type=DownstreamOp#clocksi_payload.type,
 	    SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
 	    _Read=internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache),
-	    lager:info("operation being stored: ~p", [DownstreamOp]),
 		OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
-		lager:info("materialiser_vnode: OpsDict= ~p",[OpsDict1]),
 		ets:insert(OpsCache, {Key, OpsDict1});
 	false ->
-		lager:info("operation being stored: ~p", [DownstreamOp]),
 		OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
-		lager:info("materialiser_vnode: OpsDict= ~p",[OpsDict1]),
 		ets:insert(OpsCache, {Key, OpsDict1})
     end.
 
