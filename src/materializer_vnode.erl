@@ -198,6 +198,8 @@ internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 	%{async, snapshot_gc(), Sender, State};
 	
 	
+%% @doc This function takes care of appending an operation to the log and
+%%  to the cache.	
 -spec internal_update(Key::term(), DownstreamOp::clocksi_payload(), 
 		OpsCache::atom(), SnapshotCache::atom()) ->	ok | {error, term()}.
 internal_update(Key, DownstreamOp, OpsCache, SnapshotCache) ->	
