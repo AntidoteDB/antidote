@@ -129,10 +129,10 @@ execute_op({Op_type, Args}, Sender,
                 {error, _Reason} ->
                     {next_state, abort, SD0};
                 {ok, Snapshot} ->
-                    Read_result = Type:value(Snapshot),
+                    ReadResult = Type:value(Snapshot),
                     lager:info("ClockSI-Interactive-Coord: Read Result:  ~w ~n",
-                               [Read_result]),
-                    {reply, {ok, Read_result}, execute_op, SD0}
+                               [ReadResult]),
+                    {reply, {ok, ReadResult}, execute_op, SD0}
             end;
         update ->
             {Key, Type, Param}=Args,
@@ -140,7 +140,6 @@ execute_op({Op_type, Args}, Sender,
             lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
             lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
-            lager:info("ClockSI-Interactive-Coord: Snapshot ~w ~n ", [Transaction]),
             lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
                        [Key]),
             Preflist = log_utilities:get_preflist_from_key(Key),
@@ -152,9 +151,6 @@ execute_op({Op_type, Args}, Sender,
                         ok ->
                             case lists:member(IndexNode, Updated_partitions) of
                                 false ->
-                                    lager:info(
-                                    "ClockSI-Interactive-Coord: Adding Leader node ~w, updt: ~w",
-                                    [IndexNode, Updated_partitions]),
                                     New_updated_partitions=
                                         lists:append(Updated_partitions, [IndexNode]),
                                     {reply, ok, execute_op,
