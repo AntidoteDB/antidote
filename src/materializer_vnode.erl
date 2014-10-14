@@ -83,30 +83,9 @@ handle_command({read, Key, Type, SnapshotTime}, _Sender,
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
-    %% TODO: Remove unnecessary information from op_payload in log_Record
-    LogRecord = #log_record{tx_id=DownstreamOp#clocksi_payload.txid,
-                            op_type=downstreamop,
-                            op_payload=DownstreamOp},
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    %% TODO: what if all of the following was done asynchronously?
-    case logging_vnode:append(Node,LogId,LogRecord) of
-        {ok, _} ->
-        	case ets:lookup(OpsCache, Key) of
-        	[]->
-        		%lager:info("storing the first operation for the key"),
-        		OpsDict=orddict:new();
-        	[{_, OpsDict}]->
-        		OpsDict
-        	end,        	
-        	op_insert_gc(Key,DownstreamOp, OpsDict, OpsCache, SnapshotCache),
-            {reply, ok, State};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+    Result=internal_update(Key, DownstreamOp, OpsCache, SnapshotCache),
+    {reply, Result, State};
     
-    
-
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
@@ -163,7 +142,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the 
 %% vnode when the write function calls it. That is done for garbage collection. 
--spec internal_read(term(), atom(), vectorclock:vectorclock(), atom() , atom() ) -> term().
+-spec internal_read(term(), atom(), vectorclock:vectorclock(), atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 	%lager:info("materialiser_vnode: operations: ~p", [Operations]),
     % get the latest snapshot for the key
@@ -184,49 +163,72 @@ internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
             	%lager:info("materialiser_vnode: caching new snapshot= ~p with Commit Time= ~p", [Snapshot, CommitTime]),
             	SnapshotDict=orddict:new(),
             	ets:insert(SnapshotCache, {Key, orddict:store(CommitTime,Snapshot, SnapshotDict)})
-            end;
+            end,
+            Snapshot;
         [{_, SnapshotDict}] -> 
             case get_latest_snapshot(SnapshotDict, SnapshotTime) of
 			{ok, {_SnapshotCommitTime, LatestSnapshot}}->
 				%lager:info("materialiser_vnode: Latest snapshot for key ~p is ~p, with commit time ~p.",[Key, LatestSnapshot, SnapshotCommitTime]),
 				case ets:lookup(OpsCache, Key) of
 				[] ->
-					Snapshot=LatestSnapshot;
+					LatestSnapshot;
 				[{_, OpsDict}] ->
 					%lager:info("materialiser_vnode: about to filter OpsDict= ~p",[OpsDict]),
 					{ok, Ops}= filter_ops(OpsDict),
 					%lager:info("materialiser_vnode: Ops to apply are: ~p",[Ops]),
-					case Ops of
-					[]->
-						Snapshot=LatestSnapshot;
-					[H|T]->
-						LastOp=lists:nth(1, Ops),
-						TxId = LastOp#clocksi_payload.txid,
-						{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, [H|T], TxId),
-						CommitTime = LastOp#clocksi_payload.commit_time,
-						%lager:info("previous snapshots are = ~p, ",[SnapshotDict]),
-						%lager:info("materialiser_vnode: caching new snapshot= ~p, snapshot committed with time:~p.", [Snapshot,CommitTime]),
-						%lager:info("previous snapshots are = ~p, ",[orddict:store(CommitTime,Snapshot, SnapshotDict)]),
-						SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
-						snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache)
-						%lager:info("new snapshots are = ~p, ",[ets:lookup(SnapshotCache, Key)])
-					end
+					LastOp=lists:nth(1, Ops),
+					TxId = LastOp#clocksi_payload.txid,
+					{ok, Snapshot} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, Ops, TxId),
+					CommitTime = LastOp#clocksi_payload.commit_time,
+					%lager:info("previous snapshots are = ~p, ",[SnapshotDict]),
+					%lager:info("materialiser_vnode: caching new snapshot= ~p, snapshot committed with time:~p.", [Snapshot,CommitTime]),
+					%lager:info("previous snapshots are = ~p, ",[orddict:store(CommitTime,Snapshot, SnapshotDict)]),
+					SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
+					snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
+					%lager:info("new snapshots are = ~p, ",[ets:lookup(SnapshotCache, Key)])
+					Snapshot
 				end;
-			{ok, no_snapshot} ->
+			{error, no_snapshot} ->
 				%%FIX THIS, READ FROM THE LOG WHEN THERE IS NO SNAPSHOT.
-				Snapshot=no_snapshot
+				{error, no_snapshot}
 			end	
-    end,
+    end.
 	%lager:info("materialiser_vnode: snapshot: ~p", [Snapshot]),
-	Snapshot.
 	%TODO: trigger the GC mechanism asynchronously
 	%{async, snapshot_gc(), Sender, State};
+	
+	
+	
+internal_update(Key, DownstreamOp, OpsCache, SnapshotCache) ->	
+%% TODO: Remove unnecessary information from op_payload in log_Record
+    LogRecord = #log_record{tx_id=DownstreamOp#clocksi_payload.txid,
+                            op_type=downstreamop,
+                            op_payload=DownstreamOp},
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    %% TODO: what if all of the following was done asynchronously?
+    case logging_vnode:append(Node,LogId,LogRecord) of
+        {ok, _} ->
+        	case ets:lookup(OpsCache, Key) of
+        	[]->
+        		%lager:info("storing the first operation for the key"),
+        		OpsDict=orddict:new();
+        	[{_, OpsDict}]->
+        		OpsDict
+        	end,        	
+        	op_insert_gc(Key,DownstreamOp, OpsDict, OpsCache, SnapshotCache),
+            ok;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
 
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in 
 %% a snapshot identified by SnapshotTime
 -spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
-	 -> {ok, term()}.
+	 -> {ok, term()} | {error, no_snapshot}| {error, wrong_format, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
 	case SnapshotDict of
 	[]->
@@ -236,11 +238,13 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
 		case orddict:filter(fun(Key, _Value) -> 
 				belongs_to_snapshot(Key, SnapshotTime) end, [H|T]) of 
 			[]->
-		        {ok,no_snapshot};
+		        {error,no_snapshot};
 		    [H1|T1]->
 				{CommitTime, Snapshot} = lists:last([H1|T1]),
 				{ok, {CommitTime, Snapshot}}
-        end
+        end;
+    Anything ->
+    	{error, wrong_format, Anything}
 	end.
 
 %% @doc Get a list of operations from an orddict of operations
@@ -266,7 +270,7 @@ filter_ops([H|T], Acc) ->
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
 -spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
-                        SnapshotTime::vectorclock:vectorclock()) -> boolean().
+                        SnapshotTime::vectorclock:vectorclock()) -> boolean()|error.
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 
 	%lager:info("BELONGS TO SNAPSHOT FUNCTION ~n Dc= ~p, CommitTime= ~p, SnapshotTime= ~p", [Dc, CommitTime, SnapshotTime]),
@@ -277,7 +281,7 @@ belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
             %           [CommitTime, Ts, CommitTime =< Ts]),
             CommitTime =< Ts;
         error  ->
-            false
+            error
     end.
 
 %% @doc Operation to insert a Snapshot in the cache and start 
@@ -325,16 +329,19 @@ op_insert_gc(Key,DownstreamOp, OpsDict, OpsCache, SnapshotCache)->
 	    lager:info("redading key: ~p ~n type: ~p ~n snapshot time: ~p", [Key, Type, SnapshotTime]),
 	    Type=DownstreamOp#clocksi_payload.type,
 	    SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
-	    internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache);
+	    _Read=internal_read(Key, Type, SnapshotTime, OpsCache, SnapshotCache),
+	    lager:info("operation being stored: ~p", [DownstreamOp]),
+		OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
+		lager:info("materialiser_vnode: OpsDict= ~p",[OpsDict1]),
+		ets:insert(OpsCache, {Key, OpsDict1});
 	false ->
-		continue
-    end,
-    lager:info("operation being stored: ~p", [DownstreamOp]),
-    OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
-    lager:info("materialiser_vnode: OpsDict= ~p",[OpsDict1]),
-    ets:insert(OpsCache, {Key, OpsDict1}).
+		lager:info("operation being stored: ~p", [DownstreamOp]),
+		OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
+		lager:info("materialiser_vnode: OpsDict= ~p",[OpsDict1]),
+		ets:insert(OpsCache, {Key, OpsDict1})
+    end.
 
      
-    
+%-ifdef(TEST). 
     
     
