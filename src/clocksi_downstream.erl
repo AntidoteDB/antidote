@@ -38,7 +38,7 @@ generate_downstream_op(Update) ->
             {ok, NewState} = Type:update(Op, Actor, Snapshot),
             DownstreamOp = Update#clocksi_payload{op_param={merge, NewState}},
             {ok, DownstreamOp};
-        {error, Reason} ->
-            lager:info("Error: ~p", [Reason]),
-            {error, Reason}
+        {error, no_snapshot} ->
+            lager:info("Error: no snapshot"),
+            {error, no_snapshot}
     end.
