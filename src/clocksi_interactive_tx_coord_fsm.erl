@@ -81,18 +81,18 @@ finish_op(From, Key,Result) ->
 
 %% @doc Initialize the state.
 init([From, Clientclock]) ->
-    case Clientclock of
-        ignore -> {ok, Snapshot_time} = get_snapshot_time();
-        _ -> {ok, Snapshot_time}= get_snapshot_time(Clientclock)
-    end,
-    TxId=#tx_id{snapshot_time=Snapshot_time, server_pid=self()},
+    {ok, SnapshotTime} = case Clientclock of
+                            ignore -> get_snapshot_time();
+                            _ -> get_snapshot_time(Clientclock)
+                        end,
+    TxId=#tx_id{snapshot_time=SnapshotTime, server_pid=self()},
     {ok, Vec_clock} = vectorclock:get_clock_node(node()),
     Dc_id = dc_utilities:get_my_dc_id(),
     Vec_snapshot_time = dict:update(Dc_id,
-                                    fun (_Old) -> Snapshot_time end,
-                                    Snapshot_time,
+                                    fun (_Old) -> SnapshotTime end,
+                                    SnapshotTime,
                                     Vec_clock),
-    Transaction = #transaction{snapshot_time = Snapshot_time,
+    Transaction = #transaction{snapshot_time = SnapshotTime,
                                vec_snapshot_time = Vec_snapshot_time,
                                txn_id = TxId},
     SD = #state{
@@ -107,19 +107,13 @@ init([From, Clientclock]) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
-           SD0=#state{transaction=Transaction, from=From,
+           SD0=#state{transaction=Transaction, from=_From,
                       updated_partitions=Updated_partitions}) ->
     case Op_type of
         prepare ->
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             {next_state, prepare, SD0#state{from=Sender}, 0};
         read ->
             {Key, Type}=Args,
-            lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
-            lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
-            lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w",
-                       [Key]),
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
@@ -130,18 +124,10 @@ execute_op({Op_type, Args}, Sender,
                     {next_state, abort, SD0};
                 {ok, Snapshot} ->
                     ReadResult = Type:value(Snapshot),
-                    lager:info("ClockSI-Interactive-Coord: Read Result:  ~w ~n",
-                               [ReadResult]),
                     {reply, {ok, ReadResult}, execute_op, SD0}
             end;
         update ->
             {Key, Type, Param}=Args,
-            lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
-            lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
-            lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
-            lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
-                       [Key]),
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
@@ -310,11 +296,11 @@ terminate(_Reason, _SN, _SD) ->
                                {ok, non_neg_integer()}.
 get_snapshot_time(ClientClock) ->
     Now=clocksi_vnode: now_milisec(erlang:now()),
-    case (ClientClock > Now) of
-        true->
-            SnapshotTime = ClientClock + ?MIN;
-        false ->
-            SnapshotTime = Now
+    SnapshotTime = case (ClientClock > Now) of
+                    true->
+                        ClientClock + ?MIN;
+                    false ->
+                        Now
     end,
     {ok, SnapshotTime}.
 
