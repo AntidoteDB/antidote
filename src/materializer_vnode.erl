@@ -27,7 +27,7 @@
 
 -define(SNAPSHOT_THRESHOLD, 10).
 -define(SNAPSHOT_MIN, 2).
--define(OPS_THRESHOLD, 5).
+-define(OPS_THRESHOLD, 50).
 
 -export([start_vnode/1,
          read/3,
