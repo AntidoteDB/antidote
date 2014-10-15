@@ -125,7 +125,9 @@ execute_op({Op_type, Args}, Sender,
             IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type) of
-                error ->
+                {error, no_snapshot} ->
+                    {reply, error, abort, SD0};
+                {error, _Reason} ->
                     {reply, error, abort, SD0};
                 Read_result ->
                     lager:info("ClockSI-Interactive-Coord: Read Result:  ~w ~n",

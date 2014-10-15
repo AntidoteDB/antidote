@@ -172,6 +172,8 @@ execute_op(timeout, SD0=#state{current_op=CurrentOp,
                                               Type) of
                 error ->
                     {next_state, abort, SD0};
+                {error, no_snapshot} ->
+                    {next_state, abort, SD0};
                 {error, _Reason} ->
                     {next_state, abort, SD0};
                 ReadResult ->

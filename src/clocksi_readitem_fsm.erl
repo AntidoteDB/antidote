@@ -140,8 +140,8 @@ return(timeout, SD0=#state{key=Key,
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
             Reply=Type:value(Snapshot2);
-        {error, Reason} ->
-            Reply={error, Reason}
+        {error, no_snapshot} ->
+            Reply={error, no_snapshot}
     end,
     riak_core_vnode:reply(Coordinator, Reply),
     {stop, normal, SD0};
