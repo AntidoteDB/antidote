@@ -151,7 +151,7 @@ internal_read(Sender, Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
     % get the latest snapshot for the key
     case ets:lookup(SnapshotCache, Key) of
     	[] ->
-    		NewSnapshot=Type:new(),
+    		NewSnapshot=clocksi_materializer:new(Type),
             case ets:lookup(OpsCache, Key) of
             [] ->
             	riak_core_vnode:reply(Sender, {ok, NewSnapshot});
@@ -159,7 +159,7 @@ internal_read(Sender, Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
             	{ok, Ops}= filter_ops(OpsDict),
             	LastOp=lists:last(Ops),
             	TxId = LastOp#clocksi_payload.txid,
-            	{ok, Snapshot, CommitTime} = clocksi_materializer:update_snapshot(Type, NewSnapshot, SnapshotTime, Ops, TxId),
+            	{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, NewSnapshot, SnapshotTime, Ops, TxId),
             	riak_core_vnode:reply(Sender, {ok, Snapshot}),
             	SnapshotDict=orddict:new(),
             	ets:insert(SnapshotCache, {Key, orddict:store(CommitTime,Snapshot, SnapshotDict)})
@@ -178,7 +178,7 @@ internal_read(Sender, Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 					[H|T] ->
 						LastOp=lists:last([H|T]),
 						TxId = LastOp#clocksi_payload.txid,
-						{ok, Snapshot, CommitTime} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, [H|T], TxId),
+						{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotTime, [H|T], TxId),
 						case (Sender /= ignore) of
 						true ->
 							riak_core_vnode:reply(Sender, {ok, Snapshot});

@@ -24,27 +24,29 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([get_snapshot/3,
-         get_snapshot/4,
-         update_snapshot/5,
-         update_snapshot_eager/3]).
+-export([new/1,
+         materialize/5,
+         materialize_eager/3]).
 
 %% @doc Creates an empty CRDT
 %%      Input: Type: The type of CRDT to create
 %%      Output: The newly created CRDT
--spec create_snapshot(type()) -> term().
-create_snapshot(Type) ->
+-spec new(type()) -> term().
+new(Type) ->
     Type:new().
 
 
-%% @doc Calls the internal function update_snapshot/6, with no TxId.
--spec update_snapshot(type(), snapshot(),
+%% @doc Calls the internal function materialize/6, with no TxId.
+-spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], tx_id:tx_id()) -> {ok,snapshot()} | {error, atom()}.
-%update_snapshot(_Type, Snapshot, _SnapshotTime, []) ->
+                      [clocksi_payload()], txid()|ignore) -> {ok, snapshot(), {dc(),CommitTime::non_neg_integer()}} | {error, atom()}.
+%materialize(_Type, Snapshot, _SnapshotTime, []) ->
 %    {ok, Snapshot};
-update_snapshot(Type, Snapshot, SnapshotTime, Ops, TxId) ->
-    update_snapshot(Type, Snapshot, SnapshotTime, Ops, TxId, ignore).
+materialize(Type, Snapshot, SnapshotTime, Ops, ignore) ->
+    materialize(Type, Snapshot, SnapshotTime, Ops, ignore, ignore);
+materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
+    materialize(Type, Snapshot, SnapshotTime, Ops, TxId, ignore).
+
 
 
 %% @doc Applies the operation of a list to a CRDT. Only the
@@ -57,14 +59,14 @@ update_snapshot(Type, Snapshot, SnapshotTime, Ops, TxId) ->
 %%      Ops: The list of operations to apply in causal order
 %%      Output: The CRDT after appliying the operations and its commit
 %%      time taken from the last operation that was applied to the snapshot.
--spec update_snapshot(type(), snapshot(),
+-spec materialize(type(), snapshot(),
                       snapshot_time(),
                       [clocksi_payload()], txid(), {dc(),CommitTime::non_neg_integer()} | ignore) ->
                              {ok,snapshot(), {dc(),CommitTime::non_neg_integer()}} | {error, atom()}.
-update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId, CommitTime) ->
+materialize(_, Snapshot, _SnapshotTime, [], _TxId, CommitTime) ->
     {ok, Snapshot, CommitTime};
 
-update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
+materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
     case Type == Op#clocksi_payload.type of
         true ->
             OpCommitTime=Op#clocksi_payload.commit_time,
@@ -74,7 +76,7 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame)
                     case Op#clocksi_payload.op_param of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
-                            update_snapshot(Type,
+                            materialize(Type,
                                             NewSnapshot,
                                             SnapshotTime,
                                             Rest,
@@ -83,7 +85,7 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame)
                         {Update, Actor} ->
                             case Type:update(Update, Actor, Snapshot) of
                                 {ok, NewSnapshot} ->
-                                    update_snapshot(Type,
+                                    materialize(Type,
                                                     NewSnapshot,
                                                     SnapshotTime,
                                                     Rest,
@@ -94,10 +96,10 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame)
                             end
                     end;
                 false ->
-                    update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
+                    materialize(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
             end;
         false -> %% Op is not for this {Key, Type}
-            update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
+            materialize(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot
@@ -115,39 +117,19 @@ is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
             false
     end.
 
-%% @doc update_snapshot_eager: apply updates in order without any checks
--spec update_snapshot_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().
-update_snapshot_eager(_, Snapshot, []) ->
+%% @doc materialize_eager: apply updates in order without any checks
+-spec materialize_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().
+materialize_eager(_, Snapshot, []) ->
     Snapshot;
-update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
+materialize_eager(Type, Snapshot, [Op|Rest]) ->
     {OpParam, Actor} = Op,
     {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
-    update_snapshot_eager(Type, NewSnapshot, Rest).
-
-%% @doc Materialize a CRDT from its logged operations.
-%%      - First creates an empty CRDT
-%%      - Second apply the corresponding logged operations
-%%      - Finally, transform the CRDT state into its value.
-%%      Input:  Type: The type of the CRDT
-%%      SnapshotTime: Threshold for the operations to be applied, including the threshold.
-%%      Ops: The list of operations to apply
-%%      Output: The value of the CRDT after applying the operations
--spec get_snapshot(type(), snapshot_time(), [clocksi_payload()]) ->
-                          {ok, snapshot()} | {error, atom()}.
-get_snapshot(Type, SnapshotTime, Ops) ->
-    Init = create_snapshot(Type),
-    update_snapshot(Type, Init, SnapshotTime, Ops, ignore).
-
--spec get_snapshot(type(), snapshot_time(),
-                   [clocksi_payload()], txid()) -> {ok, snapshot()} | {error, atom()}.
-get_snapshot(Type, SnapshotTime, Ops, TxId) ->
-    Init = create_snapshot(Type),
-    update_snapshot(Type, Init, SnapshotTime, Ops, TxId).
+    materialize_eager(Type, NewSnapshot, Rest).
 
 -ifdef(TEST).
 
 materializer_clocksi_sequential_test() ->
-    GCounter = create_snapshot(riak_dt_gcounter),
+    GCounter = new(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
     Op1 = #clocksi_payload{key = abc, type = riak_dt_gcounter,
                            op_param = {{increment,2}, actor1},
@@ -163,19 +145,20 @@ materializer_clocksi_sequential_test() ->
                            commit_time = {1, 4}, txid = 4},
 
     Ops = [Op1,Op2,Op3,Op4],
-    {ok, GCounter2, CommitTime2} = update_snapshot(riak_dt_gcounter,
+    {ok, GCounter2, CommitTime2} = materialize(riak_dt_gcounter,
                                       GCounter, vectorclock:from_list([{1,3}]),
                                       Ops, ignore, ignore),
     ?assertEqual({4, {1,3}}, {riak_dt_gcounter:value(GCounter2), CommitTime2}),
-    {ok, Gcounter3, CommitTime3} = get_snapshot(riak_dt_gcounter,
-                                   vectorclock:from_list([{1,4}]),Ops),
+    Snapshot=new(riak_dt_gcounter),
+    {ok, Gcounter3, CommitTime3} = materialize(riak_dt_gcounter, Snapshot,
+                                   vectorclock:from_list([{1,4}]),Ops, ignore),
     ?assertEqual({6, {1,4}}, {riak_dt_gcounter:value(Gcounter3), CommitTime3}),
-    {ok, Gcounter4, CommitTime4} = get_snapshot(riak_dt_gcounter,
-                                   vectorclock:from_list([{1,7}]),Ops),
+    {ok, Gcounter4, CommitTime4} = materialize(riak_dt_gcounter, Snapshot,
+                                   vectorclock:from_list([{1,7}]),Ops, ignore),
     ?assertEqual({6, {1,4}}, {riak_dt_gcounter:value(Gcounter4), CommitTime4}).
 
 materializer_clocksi_concurrent_test() ->
-    GCounter = create_snapshot(riak_dt_gcounter),
+    GCounter = new(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
     Op1 = #clocksi_payload{key = abc, type = riak_dt_gcounter,
                            op_param = {{increment,2}, actor1},
@@ -188,21 +171,22 @@ materializer_clocksi_concurrent_test() ->
                            commit_time = {2, 1}, txid = 3},
 
     Ops = [Op1,Op2,Op3],
-    {ok, GCounter2, CommitTime2} = update_snapshot(riak_dt_gcounter,
+    {ok, GCounter2, CommitTime2} = materialize(riak_dt_gcounter,
                                       GCounter,
                                       vectorclock:from_list([{2,2},{1,2}]),
                                       Ops, ignore, ignore),
     ?assertEqual({4, {2,1}}, {riak_dt_gcounter:value(GCounter2), CommitTime2}),
-    {ok, Gcounter3, CommitTime3} = get_snapshot(riak_dt_gcounter,
-                                   vectorclock:from_list([{1,2}]),Ops),
+    Snapshot=new(riak_dt_gcounter),
+    {ok, Gcounter3, CommitTime3} = materialize(riak_dt_gcounter, Snapshot,
+                                   vectorclock:from_list([{1,2}]),Ops, ignore),
     ?assertEqual({3, {1,2}}, {riak_dt_gcounter:value(Gcounter3), CommitTime3}).
 
 %% @doc Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
-    GCounter = create_snapshot(riak_dt_gcounter),
+    GCounter = new(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
     Ops = [],
-    {ok, GCounter2, ignore} = update_snapshot(riak_dt_gcounter, GCounter,
+    {ok, GCounter2, ignore} = materialize(riak_dt_gcounter, GCounter,
                                 vectorclock:from_list([{1,1}]),
                                 Ops, ignore, ignore),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter2)).

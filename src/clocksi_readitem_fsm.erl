@@ -137,7 +137,7 @@ return(timeout, SD0=#state{key=Key,
     case materializer_vnode:read(Key, Type, VecSnapshotTime) of
         {ok, Snapshot} ->
             Updates2=filter_updates_per_key(Updates, Key),
-            Snapshot2=clocksi_materializer:update_snapshot_eager
+            Snapshot2=clocksi_materializer:materialize_eager
                         (Type, Snapshot, Updates2),
             Reply=Type:value(Snapshot2);
         {error, no_snapshot} ->
