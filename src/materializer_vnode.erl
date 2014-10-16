@@ -158,7 +158,6 @@ internal_read(Sender, Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
             [{_, OpsDict}] ->
             	{ok, Ops}= filter_ops(OpsDict),
             	LastOp=lists:last(Ops),
-            	lager:info("Last Op is: ~p", [LastOp]),
             	TxId = LastOp#clocksi_payload.txid,
             	{ok, Snapshot, CommitTime} = clocksi_materializer:update_snapshot(Type, NewSnapshot, SnapshotTime, Ops, TxId),
             	riak_core_vnode:reply(Sender, {ok, Snapshot}),
@@ -173,17 +172,22 @@ internal_read(Sender, Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 					riak_core_vnode:reply(Sender, {ok, LatestSnapshot});
 				[{_, OpsDict}] ->
 					{ok, Ops}= filter_ops(OpsDict),
-					LastOp=lists:last(Ops),
-					TxId = LastOp#clocksi_payload.txid,
-					{ok, Snapshot, CommitTime} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, Ops, TxId),
-					case (Sender /= ignore) of
-					true ->
-						riak_core_vnode:reply(Sender, {ok, Snapshot});
-					false ->
-						false
-					end,
-					SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
-					snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache)
+					case Ops of
+					[] ->
+						riak_core_vnode:reply(Sender, {ok, LatestSnapshot});
+					[H|T] ->
+						LastOp=lists:last([H|T]),
+						TxId = LastOp#clocksi_payload.txid,
+						{ok, Snapshot, CommitTime} = clocksi_materializer:update_snapshot(Type, LatestSnapshot, SnapshotTime, [H|T], TxId),
+						case (Sender /= ignore) of
+						true ->
+							riak_core_vnode:reply(Sender, {ok, Snapshot});
+						false ->
+							false
+						end,
+						SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
+						snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache)
+					end
 				end;
 			{error, no_snapshot} ->
 				%%FIX THIS, READ FROM THE LOG WHEN THERE IS NO SNAPSHOT.

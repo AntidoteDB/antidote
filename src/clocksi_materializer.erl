@@ -97,7 +97,7 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame)
                     update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
             end;
         false -> %% Op is not for this {Key, Type}
-            update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
+            update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot

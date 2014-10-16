@@ -159,8 +159,10 @@ process_update(Update) ->
                 {error, Reason} ->
                     {error, Reason}
             end;
+        {error, no_snapshot} ->
+            {error, no_snapshot};
         {error, Reason} ->
-            {error, Reason}
+        	{error, Reason}
     end.
 
 %% @doc Return smallest snapshot time of active transactions.
