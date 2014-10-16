@@ -26,7 +26,6 @@
 
 -export([get_snapshot/3,
          get_snapshot/4,
-         update_snapshot/4,
          update_snapshot/5,
          update_snapshot_eager/3]).
 
@@ -38,14 +37,14 @@ create_snapshot(Type) ->
     Type:new().
 
 
-%% @doc Calls the internal function update_snapshot/5, with no TxId.
+%% @doc Calls the internal function update_snapshot/6, with no TxId.
 -spec update_snapshot(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()]) -> {ok,snapshot()} | {error, atom()}.
-update_snapshot(_Type, Snapshot, _SnapshotTime, []) ->
-    {ok, Snapshot};
-update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest]) ->
-    update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], ignore).
+                      [clocksi_payload()], tx_id:tx_id()) -> {ok,snapshot()} | {error, atom()}.
+%update_snapshot(_Type, Snapshot, _SnapshotTime, []) ->
+%    {ok, Snapshot};
+update_snapshot(Type, Snapshot, SnapshotTime, Ops, TxId) ->
+    update_snapshot(Type, Snapshot, SnapshotTime, Ops, TxId, ignore).
 
 
 %% @doc Applies the operation of a list to a CRDT. Only the
@@ -56,18 +55,20 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest]) ->
 %%      Snapshot: Current state of the CRDT
 %%      SnapshotTime: Threshold for the operations to be applied.
 %%      Ops: The list of operations to apply in causal order
-%%      Output: The CRDT after appliying the operations
+%%      Output: The CRDT after appliying the operations and its commit
+%%      time taken from the last operation that was applied to the snapshot.
 -spec update_snapshot(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid() | ignore) ->
-                             {ok,snapshot()} | {error, atom()}.
-update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId) ->
-    {ok, Snapshot};
+                      [clocksi_payload()], txid(), {dc(),CommitTime::non_neg_integer()} | ignore) ->
+                             {ok,snapshot(), {dc(),CommitTime::non_neg_integer()}} | {error, atom()}.
+update_snapshot(_, Snapshot, _SnapshotTime, [], _TxId, CommitTime) ->
+    {ok, Snapshot, CommitTime};
 
-update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
+update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
     case Type == Op#clocksi_payload.type of
         true ->
-            case (is_op_in_snapshot(Op#clocksi_payload.commit_time, SnapshotTime)
+            OpCommitTime=Op#clocksi_payload.commit_time,
+            case (is_op_in_snapshot(OpCommitTime, SnapshotTime)
                   or (TxId =:= Op#clocksi_payload.txid)) of
                 true ->
                     case Op#clocksi_payload.op_param of
@@ -77,7 +78,8 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
                                             NewSnapshot,
                                             SnapshotTime,
                                             Rest,
-                                            TxId);
+                                            TxId,
+                                            OpCommitTime);
                         {Update, Actor} ->
                             case Type:update(Update, Actor, Snapshot) of
                                 {ok, NewSnapshot} ->
@@ -85,13 +87,14 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
                                                     NewSnapshot,
                                                     SnapshotTime,
                                                     Rest,
-                                                    TxId);
+                                                    TxId,
+                                                    OpCommitTime);
                                 {error, Reason} ->
                                     {error, Reason}
                             end
                     end;
                 false ->
-                    update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
+                    update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
             end;
         false -> %% Op is not for this {Key, Type}
             update_snapshot(Type, Snapshot, SnapshotTime, Rest, TxId)
@@ -160,16 +163,16 @@ materializer_clocksi_sequential_test() ->
                            commit_time = {1, 4}, txid = 4},
 
     Ops = [Op1,Op2,Op3,Op4],
-    {ok, GCounter2} = update_snapshot(riak_dt_gcounter,
+    {ok, GCounter2, CommitTime2} = update_snapshot(riak_dt_gcounter,
                                       GCounter, vectorclock:from_list([{1,3}]),
-                                      Ops, ignore),
-    ?assertEqual(4,riak_dt_gcounter:value(GCounter2)),
-    {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,
+                                      Ops, ignore, ignore),
+    ?assertEqual({4, {1,3}}, {riak_dt_gcounter:value(GCounter2), CommitTime2}),
+    {ok, Gcounter3, CommitTime3} = get_snapshot(riak_dt_gcounter,
                                    vectorclock:from_list([{1,4}]),Ops),
-    ?assertEqual(6,riak_dt_gcounter:value(Gcounter3)),
-    {ok, Gcounter4} = get_snapshot(riak_dt_gcounter,
+    ?assertEqual({6, {1,4}}, {riak_dt_gcounter:value(Gcounter3), CommitTime3}),
+    {ok, Gcounter4, CommitTime4} = get_snapshot(riak_dt_gcounter,
                                    vectorclock:from_list([{1,7}]),Ops),
-    ?assertEqual(6,riak_dt_gcounter:value(Gcounter4)).
+    ?assertEqual({6, {1,4}}, {riak_dt_gcounter:value(Gcounter4), CommitTime4}).
 
 materializer_clocksi_concurrent_test() ->
     GCounter = create_snapshot(riak_dt_gcounter),
@@ -185,22 +188,22 @@ materializer_clocksi_concurrent_test() ->
                            commit_time = {2, 1}, txid = 3},
 
     Ops = [Op1,Op2,Op3],
-    {ok, GCounter2} = update_snapshot(riak_dt_gcounter,
+    {ok, GCounter2, CommitTime2} = update_snapshot(riak_dt_gcounter,
                                       GCounter,
                                       vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore),
-    ?assertEqual(4,riak_dt_gcounter:value(GCounter2)),
-    {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,
+                                      Ops, ignore, ignore),
+    ?assertEqual({4, {2,1}}, {riak_dt_gcounter:value(GCounter2), CommitTime2}),
+    {ok, Gcounter3, CommitTime3} = get_snapshot(riak_dt_gcounter,
                                    vectorclock:from_list([{1,2}]),Ops),
-    ?assertEqual(3,riak_dt_gcounter:value(Gcounter3)).
+    ?assertEqual({3, {1,2}}, {riak_dt_gcounter:value(Gcounter3), CommitTime3}).
 
 %% @doc Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
     GCounter = create_snapshot(riak_dt_gcounter),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
     Ops = [],
-    {ok, GCounter2} = update_snapshot(riak_dt_gcounter, GCounter,
+    {ok, GCounter2, ignore} = update_snapshot(riak_dt_gcounter, GCounter,
                                 vectorclock:from_list([{1,1}]),
-                                Ops, ignore),
+                                Ops, ignore, ignore),
     ?assertEqual(0,riak_dt_gcounter:value(GCounter2)).
 -endif.
