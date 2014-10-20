@@ -39,11 +39,9 @@ new(Type) ->
 %% @doc Calls the internal function materialize/6, with no TxId.
 -spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid()|ignore) -> {ok, snapshot(), {dc(),CommitTime::non_neg_integer()}} | {error, atom()}.
+                      [clocksi_payload()], txid()) -> {ok, snapshot(), {dc(),CommitTime::non_neg_integer()}} | {error, atom()}.
 %materialize(_Type, Snapshot, _SnapshotTime, []) ->
 %    {ok, Snapshot};
-materialize(Type, Snapshot, SnapshotTime, Ops, ignore) ->
-    materialize(Type, Snapshot, SnapshotTime, Ops, ignore, ignore);
 materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
     materialize(Type, Snapshot, SnapshotTime, Ops, TxId, ignore).
 
