@@ -60,8 +60,8 @@
 %%----------------------------------------------------------------------
 -record(state, {partition,
                 prepared_tx,
-                committed_tx,
-                active_txs_per_key,
+                %committed_tx,
+                %active_txs_per_key,
                 write_set}).
 
 %%%===================================================================
@@ -124,20 +124,20 @@ init([Partition]) ->
     PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++
                                       integer_to_list(Partition)),
                          [set, {write_concurrency, true}]),
-    CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
-                                       integer_to_list(Partition)),
-                          [set, {write_concurrency, true}]),
-    ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
-                                           ++ integer_to_list(Partition)),
-                              [bag, {write_concurrency, true}]),
+    %CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
+    %                                   integer_to_list(Partition)),
+    %                      [set, {write_concurrency, true}]),
+    %ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
+    %                                       ++ integer_to_list(Partition)),
+    %                          [bag, {write_concurrency, true}]),
     WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++
                                     integer_to_list(Partition)),
                        [duplicate_bag, {write_concurrency, true}]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
-                committed_tx=CommittedTx,
-                write_set=WriteSet,
-                active_txs_per_key=ActiveTxsPerKey}}.
+                %committed_tx=CommittedTx,
+                write_set=WriteSet}}.
+                %active_txs_per_key=ActiveTxsPerKey
 
 %% @doc starts a read_fsm to handle a read operation.
 handle_command({read_data_item, Txn, Key, Type}, Sender,
@@ -151,8 +151,9 @@ handle_command({read_data_item, Txn, Key, Type}, Sender,
 %% @doc handles an update operation at a Leader's partition
 handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                #state{partition=Partition,
-                      write_set=WriteSet,
-                      active_txs_per_key=ActiveTxsPerKey}=State) ->
+                      write_set=WriteSet}=State) ->
+                      %active_txs_per_key=ActiveTxsPerKey
+                      
     TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
     LogId = log_utilities:get_logid_from_key(Key),
@@ -160,7 +161,7 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
     Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
-            true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
+            %true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
             true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
             {ok, _Pid} = clocksi_updateitem_fsm:start_link(
                     Sender,
@@ -173,14 +174,14 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
 
 handle_command({prepare, Transaction}, _Sender,
                State = #state{partition=_Partition,
-                              committed_tx=CommittedTx,
-                              active_txs_per_key=ActiveTxPerKey,
+                              %committed_tx=CommittedTx,
+                              %active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
     TxId = Transaction#transaction.txn_id,
-    TxWriteSet = ets:lookup(WriteSet, TxId),
-    case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
-        true ->
+    %TxWriteSet = ets:lookup(WriteSet, TxId),
+    %case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
+    %    true ->
             PrepareTime = now_milisec(erlang:now()),
             LogRecord = #log_record{tx_id=TxId,
                                     op_type=prepare,
@@ -197,13 +198,13 @@ handle_command({prepare, Transaction}, _Sender,
                 {error, timeout} ->
                     {reply, {error, timeout}, State}
             end;
-        false ->
-            {reply, abort, State}
-    end;
+     %   false ->
+     %       {reply, abort, State}
+    %end;
 
 handle_command({commit, Transaction, TxCommitTime}, _Sender,
                #state{partition=_Partition,
-                      committed_tx=CommittedTx,
+                      %committed_tx=CommittedTx,
                       write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     LogRecord=#log_record{tx_id=TxId,
@@ -217,7 +218,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
     Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
-            true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+            %true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             clocksi_downstream_generator_vnode:trigger(
                     Key, {TxId,
                           Updates,
@@ -300,7 +301,7 @@ terminate(_Reason, _State) ->
 %%      a. ActiteTxsPerKey,
 %%      b. PreparedTx
 %%
-clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
+clean_and_notify(TxId, _Key, #state{%active_txs_per_key=_ActiveTxsPerKey,
                                    prepared_tx=PreparedTx,
                                    write_set=WriteSet}) ->
     true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
@@ -312,31 +313,31 @@ now_milisec({MegaSecs, Secs, MicroSecs}) ->
 
 %% @doc Performs a certification check when a transaction wants to move
 %%      to the prepared state.
-certification_check(_, [], _, _) ->
-    true;
-certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    {_, {Key, _Type, _}} = H,
-    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
-    case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true ->
-            false;
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
-    end.
+%certification_check(_, [], _, _) ->
+%    true;
+%certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
+%    {_, {Key, _Type, _}} = H,
+%    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
+%    case check_keylog(TxId, TxsPerKey, CommittedTx) of
+%        true ->
+%            false;
+%        false ->
+%            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
+%    end.
 
-check_keylog(_, [], _) ->
-    false;
-check_keylog(TxId, [H|T], CommittedTx)->
-    {_Key, _Type, ThisTxId}=H,
-    case ThisTxId > TxId of
-        true ->
-            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            case CommitInfo of
-                [{_, _CommitTime}] ->
-                    true;
-                [] ->
-                    check_keylog(TxId, T, CommittedTx)
-            end;
-        false ->
-            check_keylog(TxId, T, CommittedTx)
-    end.
+%check_keylog(_, [], _) ->
+%    false;
+%check_keylog(TxId, [H|T], CommittedTx)->
+%    {_Key, _Type, ThisTxId}=H,
+%    case ThisTxId > TxId of
+%        true ->
+%            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
+%            case CommitInfo of
+%                [{_, _CommitTime}] ->
+%                    true;
+%                [] ->
+%                    check_keylog(TxId, T, CommittedTx)
+%            end;
+%        false ->
+%            check_keylog(TxId, T, CommittedTx)
+%    end.
