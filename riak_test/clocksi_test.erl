@@ -58,6 +58,14 @@ clocksi_test1(Nodes) ->
                     [now(), []]),
     ?assertMatch({ok, _}, Result1),
 
+    % A simple read returns empty
+    Result11=rpc:call(FirstNode, floppy, clocksi_execute_tx,
+                    [now(),
+                     [{read, key1, Type}]]),
+    ?assertMatch({ok, _}, Result11),
+    {ok, {_, ReadSet11, _}}=Result11, 
+    ?assertMatch([0], ReadSet11),
+
     %% Read what you wrote
     Result2=rpc:call(FirstNode, floppy, clocksi_execute_tx,
                     [now(),
@@ -78,7 +86,7 @@ clocksi_test1(Nodes) ->
     {ok, {_, ReadSet3, _}}=Result3,
     ?assertEqual([1,1], ReadSet3),
 
-    %% Multiple updates to a key works
+    %% Multiple updates to a key in a transaction works
     Result5=rpc:call(FirstNode, floppy, clocksi_execute_tx,
                     [now(),
                      [{update, key1, Type, {increment, a}},
