@@ -159,7 +159,7 @@ internal_read(Sender, Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
             	{ok, Ops}= filter_ops(OpsDict),
             	LastOp=lists:last(Ops),
             	TxId = LastOp#clocksi_payload.txid,
-            	{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, NewSnapshot, SnapshotTime, [LastOp], TxId),
+            	{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, NewSnapshot, SnapshotTime, Ops, TxId),
             	riak_core_vnode:reply(Sender, {ok, Snapshot}),
             	SnapshotDict=orddict:new(),
             	ets:insert(SnapshotCache, {Key, orddict:store(CommitTime,Snapshot, SnapshotDict)})
@@ -178,7 +178,7 @@ internal_read(Sender, Key, Type, SnapshotTime, OpsCache, SnapshotCache) ->
 					[H|T] ->
 						LastOp=lists:last([H|T]),
 						TxId = LastOp#clocksi_payload.txid,
-						{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotTime, [LastOp], TxId),
+						{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotTime, Ops, TxId),
 						case (Sender /= ignore) of
 						true ->
 							riak_core_vnode:reply(Sender, {ok, Snapshot});
@@ -342,7 +342,21 @@ filter_ops_test() ->
 	?assertEqual(Result1, {error, wrong_format}),
 	Result2=filter_ops([anything]),
 	?assertEqual(Result2, {error, wrong_format}).   
--endif.
+	
+%% @doc Testing belongs_to_snapshot returns true when a commit time 
+%% is smaller than a snapshot time
+belongs_to_snapshot_test()->
+	CommitTime1= clocksi_vnode:now_milisec(now())- 100,
+	CommitTime2= clocksi_vnode:now_milisec(now()) - 100,
+	SnapshotClockDC1 = clocksi_vnode:now_milisec(now()),
+	SnapshotClockDC2 = clocksi_vnode:now_milisec(now()),
+	CommitTime3= clocksi_vnode:now_milisec(now()) + 100,
+	CommitTime4= clocksi_vnode:now_milisec(now()) + 100,
 
-    
-    
+	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
+	?assertEqual(true, belongs_to_snapshot({1, CommitTime1}, SnapshotVC)),
+	?assertEqual(true, belongs_to_snapshot({2, CommitTime2}, SnapshotVC)),
+	?assertEqual(false, belongs_to_snapshot({1, CommitTime3}, SnapshotVC)),
+	?assertEqual(false, belongs_to_snapshot({2, CommitTime4}, SnapshotVC)).
+	
+-endif.
