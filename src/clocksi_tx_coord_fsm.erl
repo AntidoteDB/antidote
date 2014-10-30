@@ -39,6 +39,7 @@
          handle_event/3,
          handle_info/3,
          handle_sync_event/4,
+         get_snapshot_time/1,
          terminate/3]).
 
 %% States
@@ -107,7 +108,8 @@ init([From, ClientClock, Operations]) ->
         ignore ->
             get_snapshot_time();
         _ ->
-            get_snapshot_time(ClientClock)
+            %get_snapshot_time(ClientClock)
+            {ok,ClientClock}
     end,
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     {ok, VecSnapshotTime} = vectorclock:get_clock_node(node()),
@@ -347,7 +349,7 @@ terminate(_Reason, _SN, _SD) ->
 %%
 -spec get_snapshot_time(non_neg_integer()) -> {ok, non_neg_integer()}.
 get_snapshot_time(ClientClock) ->
-    Now = clocksi_vnode:now_milisec(erlang:now()),
+    Now = clocksi_vnode:now_milisec(now()),
     SnapshotTime = case (ClientClock > Now) of
         true->
             ClientClock;

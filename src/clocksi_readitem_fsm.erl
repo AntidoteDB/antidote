@@ -134,7 +134,8 @@ return(timeout, SD0=#state{key=Key,
                            type=Type,
                            updates=Updates}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime) of
+    TxId = Transaction#transaction.txn_id,
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
         {ok, Snapshot} ->
             Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:materialize_eager

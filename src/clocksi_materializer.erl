@@ -69,9 +69,10 @@ materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
         true ->
             OpCommitTime=Op#clocksi_payload.commit_time,
             case (is_op_in_snapshot(OpCommitTime, SnapshotTime)
-                  or (TxId =:= Op#clocksi_payload.txid)) of
+                  or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-                    case Op#clocksi_payload.op_param of
+                		lager:info("op in snapshot ~p ~n TxId tx= ~p, tx op= ~p, txs equal= ~p", [is_op_in_snapshot(OpCommitTime, SnapshotTime),TxId, Op#clocksi_payload.txid, (TxId == Op#clocksi_payload.txid)]), 
+                	    case Op#clocksi_payload.op_param of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
                             materialize(Type,

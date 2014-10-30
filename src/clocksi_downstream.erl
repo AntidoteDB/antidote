@@ -32,13 +32,13 @@ generate_downstream_op(Update) ->
     Key = Update#clocksi_payload.key,
     Type =  Update#clocksi_payload.type,
     {Op, Actor} =  Update#clocksi_payload.op_param,
+    TxId=Update#clocksi_payload.txid,
     SnapshotTime = Update#clocksi_payload.snapshot_time,
-    case materializer_vnode:read(Key, Type, SnapshotTime) of
+    case materializer_vnode:read(Key, Type, SnapshotTime, TxId) of
         {ok, Snapshot} ->
             {ok, NewState} = Type:update(Op, Actor, Snapshot),
             DownstreamOp = Update#clocksi_payload{op_param={merge, NewState}},
             {ok, DownstreamOp};
         {error, no_snapshot} ->
-           % lager:info("Error: no snapshot"),
             {error, no_snapshot}
     end.
