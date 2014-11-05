@@ -105,19 +105,13 @@ init([From, ClientClock]) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
-           SD0=#state{transaction=Transaction, from=From,
+           SD0=#state{transaction=Transaction, from=_From,
                       updated_partitions=Updated_partitions}) ->
     case Op_type of
         prepare ->
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             {next_state, prepare, SD0#state{from=Sender}, 0};
         read ->
             {Key, Type}=Args,
-            lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
-            lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
-            lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w",
-                       [Key]),
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
@@ -127,20 +121,11 @@ execute_op({Op_type, Args}, Sender,
                 {error, _Reason} ->
                     {next_state, abort, SD0};
                 {ok, Snapshot} ->
-                    Read_result = Type:value(Snapshot),
-                    lager:info("ClockSI-Interactive-Coord: Read Result:  ~w ~n",
-                               [Read_result]),
-                    {reply, {ok, Read_result}, execute_op, SD0}
+                    ReadResult = Type:value(Snapshot),
+                    {reply, {ok, ReadResult}, execute_op, SD0}
             end;
         update ->
             {Key, Type, Param}=Args,
-            lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
-            lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
-            lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
-            lager:info("ClockSI-Interactive-Coord: Snapshot ~w ~n ", [Transaction]),
-            lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
-                       [Key]),
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
@@ -150,9 +135,6 @@ execute_op({Op_type, Args}, Sender,
                         ok ->
                             case lists:member(IndexNode, Updated_partitions) of
                                 false ->
-                                    lager:info(
-                                    "ClockSI-Interactive-Coord: Adding Leader node ~w, updt: ~w",
-                                    [IndexNode, Updated_partitions]),
                                     New_updated_partitions=
                                         lists:append(Updated_partitions, [IndexNode]),
                                     {reply, ok, execute_op,
