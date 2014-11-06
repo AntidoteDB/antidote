@@ -190,15 +190,19 @@ handle_command({prepare, Transaction}, _Sender,
                                     op_payload=PrepareTime},
             true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
             Updates = ets:lookup(WriteSet, TxId),
-            [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
-            LogId = log_utilities:get_logid_from_key(Key),
-            [Node] = log_utilities:get_preflist_from_key(Key),
-            Result = logging_vnode:append(Node,LogId,LogRecord),
-            case Result of
-                {ok, _} ->
-                    {reply, {prepared, PrepareTime}, State};
-                {error, timeout} ->
-                    {reply, {error, timeout}, State}
+            case Updates of 
+                [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+                    LogId = log_utilities:get_logid_from_key(Key),
+                    [Node] = log_utilities:get_preflist_from_key(Key),
+                    Result = logging_vnode:append(Node,LogId,LogRecord),
+                    case Result of
+                        {ok, _} ->
+                            {reply, {prepared, PrepareTime}, State};
+                        {error, timeout} ->
+                            {reply, {error, timeout}, State}
+                    end;
+                _ -> 
+                    {reply, {error, no_tx_record}, State}
             end;
         false ->
             {reply, abort, State}
@@ -218,38 +222,46 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                           op_payload={{DcId, TxCommitTime},
                                       Transaction#transaction.vec_snapshot_time}},
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, _Type, {_Op, _Param}}} | _Rest] = Updates,
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    case logging_vnode:append(Node,LogId,LogRecord) of
-        {ok, _} ->
-            true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            case update_materializer(Updates, Transaction, TxCommitTime) of
-                ok ->
-                    clean_and_notify(TxId, Key, State),
-                    {reply, committed, State};
-                error ->
-                    {reply, {error, materializer_failure}, State}
+    case Updates of
+        [{_, {Key, _Type, {_Op, _Param}}} | _Rest] -> 
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            case logging_vnode:append(Node,LogId,LogRecord) of
+                {ok, _} ->
+                    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+                    case update_materializer(Updates, Transaction, TxCommitTime) of
+                        ok ->
+                            clean_and_notify(TxId, Key, State),
+                            {reply, committed, State};
+                        error ->
+                            {reply, {error, materializer_failure}, State}
+                    end;
+                {error, timeout} ->
+                    {reply, {error, timeout}, State}
             end;
-        {error, timeout} ->
-            {reply, {error, timeout}, State}
+        _ -> 
+            {reply, {error, no_tx_record}, State}
     end;
 
 handle_command({abort, Transaction}, _Sender,
                #state{partition=_Partition, write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
-    case Result of
-        {ok, _} ->
-            clean_and_notify(TxId, Key, State);
-        {error, timeout} ->
-            clean_and_notify(TxId, Key, State)
-    end,
-    {reply, ack_abort, State};
+    case Updates of
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
+            case Result of
+                {ok, _} ->
+                    clean_and_notify(TxId, Key, State);
+                {error, timeout} ->
+                    clean_and_notify(TxId, Key, State)
+            end,
+            {reply, ack_abort, State};
+        _ ->
+            {reply, {error, no_tx_record}, State}
+    end;
 
 %% @doc Return active transactions in prepare state with their preparetime
 handle_command({get_active_txns}, _Sender,
