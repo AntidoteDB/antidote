@@ -70,22 +70,20 @@ start_link(From, Operations) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
-    lager:info("Starting FSM for interactive transaction."),
     {ok, _Pid} = case ClientClock of
-                ignore ->
-                    clocksi_interactive_tx_coord_sup:start_fsm([self()]);
-                _ ->
-                    clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
-            end,
+                     ignore ->
+                         clocksi_interactive_tx_coord_sup:start_fsm([self()]);
+                     _ ->
+                         clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
+                 end,
     receive
         {ok, TxId} ->
-            lager:info("TX started with TxId: ~p", [TxId]),
             {_, _, TxCoordPid} = TxId,
             {ok, execute_batch_ops, #state{tx_id=TxId, tx_coord_pid = TxCoordPid,
-                from = From, operations = Operations}, 0}
+                                           from = From, operations = Operations}, 0}
     after
         10000 ->
-            lager:info("Tx was not started!"),
+            lager:error("Tx was not started!"),
             gen_fsm:reply(From, {error, timeout}),
             {stop, normal, #state{}}
     end.
@@ -94,9 +92,9 @@ init([From, ClientClock, Operations]) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_batch_ops(timeout, SD=#state{from = From,
-                                tx_id = TxId,
-                                tx_coord_pid = TxCoordPid,
-                                operations = Operations}) ->
+                                     tx_id = TxId,
+                                     tx_coord_pid = TxCoordPid,
+                                     operations = Operations}) ->
     ExecuteOp = fun (Operation, Acc) ->
                         case Operation of
                             {update, Key, Type, OpParams} ->
@@ -104,7 +102,6 @@ execute_batch_ops(timeout, SD=#state{from = From,
                                 Acc;
                             {read, Key, Type} ->
                                 {ok, Value} = gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}),
-                                lager:info("Read value:", [Value]),
                                 Acc++[Value]
                         end
                 end,
@@ -140,4 +137,3 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
     ok.
-
