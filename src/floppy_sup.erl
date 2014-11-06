@@ -64,10 +64,6 @@ init(_Args) ->
                             [inter_dc_recvr_vnode]},
                            permanent, 5000, worker, [riak_core_vnode_master]},
 
-    ClockSITxCoordSup =  { clocksi_tx_coord_sup,
-                           {clocksi_tx_coord_sup, start_link, []},
-                           permanent, 5000, supervisor, [clockSI_tx_coord_sup]},
-
     ClockSIsTxCoordSup =  { clocksi_static_tx_coord_sup,
                            {clocksi_static_tx_coord_sup, start_link, []},
                            permanent, 5000, supervisor, [clockSI_static_tx_coord_sup]},
@@ -95,7 +91,6 @@ init(_Args) ->
      {{one_for_one, 5, 10},
       [LoggingMaster,
        ClockSIMaster,
-       ClockSITxCoordSup,
        ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
        InterDcRepMaster,
