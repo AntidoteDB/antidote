@@ -88,7 +88,6 @@ read_data_item(Node, TxId, Key, Type) ->
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op) ->
-    lager:info("Update issued for key: ~p txid: ~p", [Key, TxId]),
     try
         riak_core_vnode_master:sync_command(Node,
                                             {update_data_item, TxId, Key, Type, Op},
@@ -353,7 +352,6 @@ check_keylog(TxId, [H|T], CommittedTx)->
                                  ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
-    lager:info("DS:~w",[DownstreamOps]),
     UpdateFunction = fun ({_, {Key, Type, Op}}, AccIn) ->
                              CommittedDownstreamOp =
                                  #clocksi_payload{
