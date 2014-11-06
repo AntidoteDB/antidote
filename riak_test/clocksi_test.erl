@@ -2,7 +2,7 @@
 %%
 %% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
 %%
-%% This file is provided to you under the Apache License,
+% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
 %% except in compliance with the License.  You may obtain
 %% a copy of the License at
@@ -51,17 +51,46 @@ clocksi_test1(Nodes) ->
     FirstNode = hd(Nodes),
     lager:info("Test1 started"),
     Type = riak_dt_pncounter,
-    Result=rpc:call(FirstNode, floppy, clocksi_execute_tx,
+    %% Empty transaction works,
+    Result0=rpc:call(FirstNode, floppy, clocksi_execute_tx,
+                    [[]]),
+    ?assertMatch({ok, _}, Result0),
+    Result1=rpc:call(FirstNode, floppy, clocksi_execute_tx,
+                    [[]]),
+    ?assertMatch({ok, _}, Result1),
+
+    %% Read what you wrote
+    Result2=rpc:call(FirstNode, floppy, clocksi_execute_tx,
                     [
-                     [{update, 11, Type, {increment, a}},
-                      {update, 11, Type, {increment, a}},
-                      {read, 11, riak_dt_pncounter},
-                      {update, 12, Type, {increment, a}},
-                      {read, 12, riak_dt_pncounter}]]),
-    lager:info("*** ~p",[Result]),
-    {ok, {_, ReadSet, _}}=Result,
-    ?assertMatch([2,1], ReadSet),
-    lager:info("Test1 passed"),
+                      [{read, key1, Type},
+                      {update, key1, Type, {increment, a}},
+                      {update, key2, Type, {increment, a}},
+                      {read, key1, Type}]]),
+    ?assertMatch({ok, _}, Result2),
+    {ok, {_, ReadSet2, _}}=Result2, 
+    ?assertMatch([0,1], ReadSet2),
+
+    %% Update is persisted && update to multiple keys are atomic
+    Result3=rpc:call(FirstNode, floppy, clocksi_execute_tx,
+                    [
+                     [{read, key1, Type},
+                      {read, key2, Type}]]),
+    ?assertMatch({ok, _}, Result3),
+    {ok, {_, ReadSet3, _}}=Result3,
+    ?assertEqual([1,1], ReadSet3),
+
+    %% Multiple updates to a key works
+    Result5=rpc:call(FirstNode, floppy, clocksi_execute_tx,
+                    [
+                     [{update, key1, Type, {increment, a}},
+                      {update, key1, Type, {increment, a}}]]),
+    ?assertMatch({ok,_}, Result5),
+
+    Result6=rpc:call(FirstNode, floppy, clocksi_execute_tx,
+                    [
+                     [{read, key1, Type}]]),
+    {ok, {_, ReadSet6, _}}=Result6,
+    ?assertEqual(3, hd(ReadSet6)),
     pass.
 
 %% @doc The following function tests that ClockSI can run an interactive tx.

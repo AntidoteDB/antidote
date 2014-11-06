@@ -73,7 +73,7 @@ read(Key, Type) ->
 -spec clocksi_execute_tx(Clock :: vectorclock:vectorclock(),
                          Operations::[any()]) -> term().
 clocksi_execute_tx(Clock, Operations) ->
-    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Clock, Operations]),
+    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
     receive
         EndOfTx ->
             EndOfTx
@@ -81,7 +81,7 @@ clocksi_execute_tx(Clock, Operations) ->
 
 -spec clocksi_execute_tx(Operations::[any()]) -> term().
 clocksi_execute_tx(Operations) ->
-    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
+    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
     receive
         EndOfTx ->
             EndOfTx
