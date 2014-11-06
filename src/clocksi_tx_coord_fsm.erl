@@ -278,14 +278,14 @@ receive_committed(committed, S0=#state{num_to_ack=NumToAck}) ->
 %%
 abort(timeout, SD0=#state{transaction=Transaction,
                           updated_partitions=UpdatedPartitions}) ->
-    clocksi_vnode:abort(UpdatedPartitions, Transaction#transaction.txn_id),
+    clocksi_vnode:abort(UpdatedPartitions, Transaction),
     NumToAck = length(UpdatedPartitions),
     {next_state, receive_aborted,
      SD0#state{state=aborted, num_to_ack=NumToAck}};
 
 abort(abort, SD0=#state{transaction=Transaction,
                         updated_partitions=UpdatedPartitions}) ->
-    clocksi_vnode:abort(UpdatedPartitions, Transaction#transaction.txn_id),
+    clocksi_vnode:abort(UpdatedPartitions, Transaction),
     NumToAck = length(UpdatedPartitions),
     {next_state, receive_aborted,
      SD0#state{state=aborted, num_to_ack=NumToAck}}.
