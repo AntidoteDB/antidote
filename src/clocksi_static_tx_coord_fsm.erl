@@ -30,7 +30,8 @@
 -include("floppy.hrl").
 
 %% API
--export([start_link/3]).
+-export([start_link/3,
+         start_link/2]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -59,6 +60,9 @@
 start_link(From, ClientClock, Operations) ->
     gen_fsm:start_link(?MODULE, [From, ClientClock, Operations], []).
 
+start_link(From, Operations) ->
+    gen_fsm:start_link(?MODULE, [From, ignore, Operations], []).
+
 
 %%%===================================================================
 %%% States
@@ -68,7 +72,7 @@ start_link(From, ClientClock, Operations) ->
 init([From, ClientClock, Operations]) ->
     lager:info("Starting FSM for interactive transaction."),
     {ok, _Pid} = case ClientClock of
-                noclock ->
+                ignore ->
                     clocksi_interactive_tx_coord_sup:start_fsm([self()]);
                 _ ->
                     clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
