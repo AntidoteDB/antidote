@@ -85,18 +85,18 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
 -spec is_op_in_snapshot({Dc::term(),CommitTime::non_neg_integer()},
                         SnapshotTime::vectorclock:vectorclock()) -> boolean().
 is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
-    case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
-        {ok, Ts} ->
-            CommitTime =< Ts;
-        error  ->
-            false
-    end.
+    {ok, Ts} = vectorclock:get_clock_of_dc(Dc, SnapshotTime),
+    CommitTime =< Ts.
 
 update_snapshot_eager(_, Snapshot, []) ->
     Snapshot;
 update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
-    {OpParam, Actor} = Op,
-    {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
+    case Op of
+        {merge, State} ->
+            NewSnapshot = Type:merge(Snapshot, State);
+        {OpParam, Actor} ->
+            {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot)
+    end,
     update_snapshot_eager(Type, NewSnapshot, Rest).
 
 %% @doc Materialize a CRDT from its logged operations.

@@ -19,11 +19,14 @@
 %% -------------------------------------------------------------------
 -module(floppy).
 
+-include("floppy.hrl").
+
 -export([append/3,
          read/2,
          clocksi_execute_tx/2,
          clocksi_execute_tx/1,
          clocksi_read/3,
+         clocksi_read/2,
          clocksi_bulk_update/2,
          clocksi_bulk_update/1,
          clocksi_istart_tx/1,
@@ -49,7 +52,7 @@ append(Key, Type, {OpParam, Actor}) ->
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 read(Key, Type) ->
-    case clocksi_read(now(), Key, Type) of
+    case clocksi_read(Key, Type) of
         {ok,{_, [Val], _}} ->
             {ok, Val};
         {error, Reason} ->
@@ -67,21 +70,18 @@ read(Key, Type) ->
 %%      the transaction, in case the tx ends successfully.
 %%      error message in case of a failure.
 %%
+-spec clocksi_execute_tx(Clock :: vectorclock:vectorclock(),
+                         Operations::[any()]) -> term().
 clocksi_execute_tx(Clock, Operations) ->
-    ClientClock = case Clock of
-        {Mega, Sec, Micro} ->
-            clocksi_vnode:now_milisec({Mega, Sec, Micro});
-        _ ->
-            Clock
-    end,
-    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), ClientClock, Operations]),
+    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
     receive
         EndOfTx ->
             EndOfTx
     end.
 
+-spec clocksi_execute_tx(Operations::[any()]) -> term().
 clocksi_execute_tx(Operations) ->
-    {ok, _} = clocksi_tx_coord_sup:start_fsm([self(), Operations]),
+    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
     receive
         EndOfTx ->
             EndOfTx
@@ -92,14 +92,9 @@ clocksi_execute_tx(Operations) ->
 %%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
+-spec clocksi_istart_tx(Clock:: vectorclock:vectorclock()) -> term().
 clocksi_istart_tx(Clock) ->
-    ClientClock = case Clock of
-        {Mega, Sec, Micro} ->
-            clocksi_vnode:now_milisec({Mega, Sec, Micro});
-        _ ->
-            Clock
-    end,
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock]),
+    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
     receive
         TxId ->
             TxId
@@ -112,14 +107,22 @@ clocksi_istart_tx() ->
             TxId
     end.
 
+-spec clocksi_bulk_update(ClientClock:: vectorclock:vectorclock(),
+                          Operations::[any()]) -> term().
 clocksi_bulk_update(ClientClock, Operations) ->
     clocksi_execute_tx(ClientClock, Operations).
 
+-spec clocksi_bulk_update(Operations :: [any()]) -> term().
 clocksi_bulk_update(Operations) ->
     clocksi_execute_tx(Operations).
 
+-spec clocksi_read(ClientClock :: vectorclock:vectorclock(),
+                   Key :: key(), Type:: type()) -> term().
 clocksi_read(ClientClock, Key, Type) ->
     clocksi_execute_tx(ClientClock, [{read, Key, Type}]).
+
+clocksi_read(Key, Type) ->
+    clocksi_execute_tx([{read, Key, Type}]).
 
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
