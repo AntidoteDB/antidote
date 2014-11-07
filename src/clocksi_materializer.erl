@@ -71,7 +71,6 @@ materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
             case (is_op_in_snapshot(OpCommitTime, SnapshotTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-                		lager:info("op in snapshot ~p ~n TxId tx= ~p, tx op= ~p, txs equal= ~p", [is_op_in_snapshot(OpCommitTime, SnapshotTime),TxId, Op#clocksi_payload.txid, (TxId == Op#clocksi_payload.txid)]), 
                 	    case Op#clocksi_payload.op_param of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
@@ -175,10 +174,17 @@ materializer_clocksi_concurrent_test() ->
                                       vectorclock:from_list([{2,2},{1,2}]),
                                       Ops, ignore, ignore),
     ?assertEqual({4, {2,1}}, {riak_dt_gcounter:value(GCounter2), CommitTime2}),
+    
+    
+    
     Snapshot=new(riak_dt_gcounter),
     {ok, Gcounter3, CommitTime3} = materialize(riak_dt_gcounter, Snapshot,
                                    vectorclock:from_list([{1,2}]),Ops, ignore),
-    ?assertEqual({3, {1,2}}, {riak_dt_gcounter:value(Gcounter3), CommitTime3}).
+    ?assertEqual({3, {1,2}}, {riak_dt_gcounter:value(Gcounter3), CommitTime3}),
+    
+    {ok, Gcounter4, CommitTime4} = materialize(riak_dt_gcounter, Snapshot,
+                                   vectorclock:from_list([{2,1}]),Ops, ignore),
+    ?assertEqual({1, {2,1}}, {riak_dt_gcounter:value(Gcounter4), CommitTime4}).
 
 %% @doc Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
