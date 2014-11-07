@@ -98,17 +98,17 @@ execute_batch_ops(timeout, SD=#state{from = From,
     ExecuteOp = fun (Operation, Acc) ->
                         case Operation of
                             {update, Key, Type, OpParams} ->
-                                ok = gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}),
+                                ok = gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity),
                                 Acc;
                             {read, Key, Type} ->
-                                {ok, Value} = gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}),
+                                {ok, Value} = gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity),
                                 Acc++[Value]
                         end
                 end,
     ReadSet = lists:foldl(ExecuteOp, [], Operations),
-    case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}) of
+    case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
         {ok, _} ->
-            case gen_fsm:sync_send_event(TxCoordPid, commit) of
+            case gen_fsm:sync_send_event(TxCoordPid, commit, infinity) of
                 {ok, {TxId, CommitTime}} ->
                     From ! {ok, {TxId, ReadSet, CommitTime}},
                     {stop, normal, SD};
