@@ -116,10 +116,21 @@ is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
 -spec materialize_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().
 materialize_eager(_, Snapshot, []) ->
     Snapshot;
-materialize_eager(Type, Snapshot, [Op|Rest]) ->
-    {OpParam, Actor} = Op,
-    {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot),
+case Op of
+        {merge, State} ->
+            NewSnapshot = Type:merge(Snapshot, State);
+        {OpParam, Actor} ->
+            {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot)
+    end,
     materialize_eager(Type, NewSnapshot, Rest).
+update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
+    case Op of
+        {merge, State} ->
+            NewSnapshot = Type:merge(Snapshot, State);
+        {OpParam, Actor} ->
+            {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot)
+    end,
+    update_snapshot_eager(Type, NewSnapshot, Rest).
 
 -ifdef(TEST).
 

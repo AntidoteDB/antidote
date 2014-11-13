@@ -34,8 +34,15 @@
 -endif.
 
 -export([start_vnode/1,
+<<<<<<< HEAD
          read/4,
          update/2]).
+=======
+         read/3,
+         update/2,
+         update_cache/2]).
+
+>>>>>>> master
 -export([init/1,
          terminate/2,
          handle_command/3,
@@ -65,13 +72,29 @@ read(Key, Type, SnapshotTime, TxId) ->
                                         {read, Key, Type, SnapshotTime, TxId},
                                         materializer_vnode_master).
 
+<<<<<<< HEAD
 
 %%@doc write operation to cache for future read
+=======
+%%@doc write operation to persistant log and cache it for future read
+%% TODO: Not sure if we will keep this interface
+>>>>>>> master
 -spec update(key(), #clocksi_payload{}) -> ok | {error, atom()}.
 update(Key, DownstreamOp) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
+<<<<<<< HEAD
+=======
+                                        materializer_vnode_master).
+
+%%@doc write a downstream operation to cache it but do no write it to log
+-spec update_cache(key(), #clocksi_payload{}) -> ok | {error, atom()}.
+update_cache(Key, DownstreamOp) ->
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    riak_core_vnode_master:sync_command(IndexNode, {update_cache, Key, DownstreamOp},
+>>>>>>> master
                                         materializer_vnode_master).
 
 init([Partition]) ->
@@ -85,8 +108,31 @@ handle_command({read, Key, Type, SnapshotTime, TxId}, Sender,
     {noreply, State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,
+<<<<<<< HEAD
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
     true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),
+    {reply, ok, State};
+=======
+               State = #state{cache = Cache})->
+    %% TODO: Remove unnecessary information from op_payload in log_Record
+    LogRecord = #log_record{tx_id=DownstreamOp#clocksi_payload.txid,
+                            op_type=update,
+                            op_payload=DownstreamOp},
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    case logging_vnode:append(Node,LogId,LogRecord) of
+        {ok, _} ->
+            true = ets:insert(Cache, {Key, DownstreamOp}),
+            {reply, ok, State};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
+>>>>>>> master
+
+handle_command({update_cache, Key, DownstreamOp}, _Sender,
+               State = #state{cache = Cache})->
+    %% TODO: Remove unnecessary information from op_payload in log_Record
+    true = ets:insert(Cache, {Key, DownstreamOp}),
     {reply, ok, State};
 
 handle_command(_Message, _Sender, State) ->

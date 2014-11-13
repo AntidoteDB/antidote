@@ -121,6 +121,8 @@ return(timeout, SD0=#state{key=Key,
             Reply={ok, Snapshot2};
         {error, no_snapshot} ->
             Reply={error, no_snapshot}
+        {error, Reason} ->
+            Reply={error, Reason}
     end,
     riak_core_vnode:reply(Coordinator, Reply),
     {stop, normal, SD0};
