@@ -28,7 +28,6 @@
 -define(SNAPSHOT_THRESHOLD, 10).
 -define(SNAPSHOT_MIN, 2).
 -define(OPS_THRESHOLD, 50).
-%-define(NOTEST, true).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -37,7 +36,6 @@
 -export([start_vnode/1,
          read/4,
          update/2]).
-
 -export([init/1,
          terminate/2,
          handle_command/3,
@@ -67,13 +65,13 @@ read(Key, Type, SnapshotTime, TxId) ->
                                         {read, Key, Type, SnapshotTime, TxId},
                                         materializer_vnode_master).
 
-%%@doc write downstream operation to persistant log and ops_cache it for future read
+
+%%@doc write operation to cache for future read
 -spec update(key(), #clocksi_payload{}) -> ok | {error, atom()}.
 update(Key, DownstreamOp) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref, {update, Key, DownstreamOp},
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
 
 init([Partition]) ->
@@ -83,13 +81,13 @@ init([Partition]) ->
 
 handle_command({read, Key, Type, SnapshotTime, TxId}, Sender,
                State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
-    internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache),
+    {ok, _} = internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache),
     {noreply, State};
 
-handle_command({update, Key, DownstreamOp}, Sender,
+handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
-    ok=internal_update(Sender, Key, DownstreamOp, OpsCache, SnapshotCache),
-    {noreply, State};
+    true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),
+    {reply, ok, State};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -147,7 +145,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid:txid(), atom() , atom() ) -> {ok, term()} | {error, atom()}.
+-spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid:txid(), atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
@@ -166,10 +164,10 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 	case ets:lookup(OpsCache, Key) of
 		[] ->
 			case ExistsSnapshot of
-			true ->        						
+			false ->        						
 				riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
 				{ok, LatestSnapshot};
-			false ->
+			true ->
 				riak_core_vnode:reply(Sender, {error, no_snapshot}),
 				{error, no_snapshot}
 			end;
@@ -193,30 +191,6 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 					Res
 			end
 	end.
-    
-
-%%TODO: trigger the GC mechanism asynchronously
-
-%% @doc This function takes care of appending an operation to the log and
-%%  to the cache.
--spec internal_update(term(), Key::term(), DownstreamOp::clocksi_payload(),
-                      OpsCache::atom(), SnapshotCache::atom()) ->	ok.
-internal_update(Sender, Key, DownstreamOp, OpsCache, SnapshotCache) ->
-    %% TODO: Remove unnecessary information from op_payload in log_Record
-    LogRecord = #log_record{tx_id=DownstreamOp#clocksi_payload.txid,
-                            op_type=downstreamop,
-                            op_payload=DownstreamOp},
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    %% TODO: what if all of the following was done asynchronously?
-    case logging_vnode:append(Node,LogId,LogRecord) of
-        {ok, _} ->
-            riak_core_vnode:reply(Sender, ok),
-            op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),
-            ok;
-        {error, Reason} ->
-            riak_core_vnode:reply(Sender, {error, Reason})
-    end.
 
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
@@ -265,14 +239,10 @@ filter_ops(_, _Acc) ->
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
 -spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
-                          SnapshotTime::vectorclock:vectorclock()) -> boolean()|error.
+                          SnapshotTime::vectorclock:vectorclock()) -> boolean().
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
-    case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
-        {ok, Ts} ->
-            CommitTime =< Ts;
-        error  ->
-            false
-    end.
+	{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
+	CommitTime =< Ts.
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
@@ -317,7 +287,7 @@ op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
-            ok=internal_read(ignore, Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
+            {_, _} = internal_read(ignore, Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
             OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
             ets:insert(OpsCache, {Key, OpsDict1});
         false ->

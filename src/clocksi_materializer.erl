@@ -39,7 +39,7 @@ new(Type) ->
 %% @doc Calls the internal function materialize/6, with no TxId.
 -spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid()) -> {ok, snapshot(), {dc(),CommitTime::non_neg_integer()}} | {error, atom()}.
+                      [clocksi_payload()], txid()) -> {ok, snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, atom()}.
 %materialize(_Type, Snapshot, _SnapshotTime, []) ->
 %    {ok, Snapshot};
 materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
@@ -59,12 +59,13 @@ materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
 %%      time taken from the last operation that was applied to the snapshot.
 -spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid(), {dc(),CommitTime::non_neg_integer()} | ignore) ->
-                             {ok,snapshot(), {dc(),CommitTime::non_neg_integer()}} | {error, atom()}.
+                      [clocksi_payload()], txid(), {dcid(),CommitTime::non_neg_integer()} | ignore) ->
+                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, atom()}.
 materialize(_, Snapshot, _SnapshotTime, [], _TxId, CommitTime) ->
     {ok, Snapshot, CommitTime};
 
 materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
+	lager:info("params: ~p", [Op#clocksi_payload.op_param]),
     case Type == Op#clocksi_payload.type of
         true ->
             OpCommitTime=Op#clocksi_payload.commit_time,
@@ -105,15 +106,11 @@ materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
 %%             CommitTime = local commit time of this update at DC
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%      Output: true or false
--spec is_op_in_snapshot({dc(),CommitTime::non_neg_integer()},
+-spec is_op_in_snapshot({dcid(),CommitTime::non_neg_integer()},
                         snapshot_time()) -> boolean().
 is_op_in_snapshot({Dc, CommitTime}, SnapshotTime) ->
-    case vectorclock:get_clock_of_dc(Dc, SnapshotTime) of
-        {ok, Ts} ->
-            CommitTime =< Ts;
-        error  ->
-            false
-    end.
+    {ok, Ts} = vectorclock:get_clock_of_dc(Dc, SnapshotTime),
+    CommitTime =< Ts.
 
 %% @doc materialize_eager: apply updates in order without any checks
 -spec materialize_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().

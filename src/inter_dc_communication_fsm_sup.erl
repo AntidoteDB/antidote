@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 %% @doc Supervise the fsm.
--module(clocksi_tx_coord_sup).
+-module(inter_dc_communication_fsm_sup).
 -behavior(supervisor).
 
 -export([start_fsm/1,
@@ -34,9 +34,8 @@ start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
 
-%% @doc Starts the coordinator of a ClockSI transaction.
 init([]) ->
-    Worker = {clocksi_tx_coord_fsm,
-              {clocksi_tx_coord_fsm, start_link, []},
-              transient, 5000, worker, [clocksi_tx_coord_fsm]},
+    Worker = {inter_dc_communication_fsm,
+              {inter_dc_communication_fsm, start_link, []},
+              transient, 5000, worker, [inter_dc_communication_fsm]},
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

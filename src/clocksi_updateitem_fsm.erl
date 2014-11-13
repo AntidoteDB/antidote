@@ -31,7 +31,7 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([check_clock/2, update_item/2, waiting/2]).
+-export([check_clock/2, update_item/2]).
 
 -record(state,
         {partition, vclock, coordinator}).
@@ -63,18 +63,9 @@ check_clock(timeout, SD0=#state{vclock=Vclock}) ->
     case T_TS > Time of
         true ->
             timer:sleep(T_TS - Time),
-            {next_state, waiting, SD0#state{vclock=Newclock}, 0};
+            {next_state, update_item, SD0#state{vclock=Newclock}, 0};
         false ->
-            {next_state, waiting, SD0#state{vclock=Newclock}, 0}
-    end.
-waiting(timeout, SD0 = #state{vclock=Vclock, partition=Partition}) ->
-    {ok, LocalVclock} = vectorclock:get_clock(Partition),
-    case vectorclock:is_greater_than(LocalVclock, Vclock) of
-        true ->
-            {next_state, update_item, SD0, 0};
-        false  ->
-            %% wait
-            {next_state, waiting, SD0, 10}
+            {next_state, update_item, SD0#state{vclock=Newclock}, 0}
     end.
 
 %% @doc simply finishes the fsm.

@@ -12,7 +12,6 @@
 -define(COMM_TIMEOUT, infinity).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
--define(OTHER_DC, 'floppy1@127.0.0.1').
 -record (payload, {key, type, op_param, actor}).
 
 %% Used by the replication layer
@@ -22,7 +21,9 @@
 
 
 %% The way records are stored in the log.
--record(log_record, {tx_id, op_type::atom(), op_payload}).
+-record(log_record, {tx_id,
+                     op_type:: update | prepare | commit | abort | noop,
+                     op_payload}).
 
 %% Clock SI
 
@@ -66,6 +67,9 @@
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
+%%chash:index_as_int() is the same as riak_core_apl:index().
+%%If it is changed in the future this should be fixed also.
+-type index_node() :: {chash:index_as_int(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
 -type op_id() :: {non_neg_integer(), node()}.
@@ -78,6 +82,6 @@
 -type commit_time() ::  {term(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
--type dc() :: term().
+-type dcid() :: term().
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0]).

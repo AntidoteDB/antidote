@@ -371,7 +371,7 @@ open_logs(LogFile, [Next|Rest], Map)->
 get_log_from_map(Map, _Partition, LogId) ->
     case dict:find(LogId, Map) of
         {ok, Log} ->
-            {ok, Log};
+           {ok, Log};
         error ->
             {error, no_log_for_preflist}
     end.
