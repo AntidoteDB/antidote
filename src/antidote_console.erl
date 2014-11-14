@@ -17,10 +17,10 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc Interface for floppy-admin commands.
+%% @doc Interface for antidote-admin commands.
 %%
 
--module(floppy_console).
+-module(antidote_console).
 
 -export([staged_join/1,
          down/1,

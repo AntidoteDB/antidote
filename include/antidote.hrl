@@ -1,11 +1,11 @@
--define(BUCKET, <<"floppy">>).
--define(MASTER, floppy_vnode_master).
+-define(BUCKET, <<"antidote">>).
+-define(MASTER, antidote_vnode_master).
 -define(LOGGING_MASTER, logging_vnode_master).
 -define(CLOCKSI_MASTER, clocksi_vnode_master).
 -define(CLOCKSI_GENERATOR_MASTER,
         clocksi_downstream_generator_vnode_master).
 -define(CLOCKSI, clocksi).
--define(REPMASTER, floppy_rep_vnode_master).
+-define(REPMASTER, antidote_rep_vnode_master).
 -define(N, 1).
 -define(OP_TIMEOUT, infinity).
 -define(COORD_TIMEOUT, infinity).

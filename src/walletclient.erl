@@ -22,7 +22,7 @@
 %% @TODO Adapt to protocol buffer API once it is ready! 
 
 -module(walletclient).
--include("floppy.hrl").
+-include("antidote.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([run/1, start/1]).
@@ -34,7 +34,7 @@ start(Args) ->
 -spec run([key()]) -> ok.
 run([Key_bal,Key_voucher])->
     io:format("Starting Wallet Client~n"),
-    case walletapp:init('wallet1@127.0.0.1', floppy) of
+    case walletapp:init('wallet1@127.0.0.1', antidote) of
         true ->
             Result1 = testbalance(Key_bal, 10, []),
             io:format("~nTesting credit and debit operations: ~p ~n ", [Result1]),

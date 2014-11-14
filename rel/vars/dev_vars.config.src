@@ -15,5 +15,5 @@
 %% etc/vm.args
 %%
 {node,         "@NODE@"}.
-{cookie, "floppy"}.
+{cookie, "antidote"}.
 

@@ -17,11 +17,11 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppyc_counter).
+-module(antidotec_counter).
 
--include_lib("riak_pb/include/floppy_pb.hrl").
+-include_lib("riak_pb/include/antidote_pb.hrl").
 
--behaviour(floppyc_datatype).
+-behaviour(antidotec_datatype).
 
 -export([new/1,
          new/2,
@@ -45,42 +45,42 @@
           increment :: integer()
          }).
 
--export_type([floppy_counter/0]).
--opaque floppy_counter() :: #counter{}.
+-export_type([antidote_counter/0]).
+-opaque antidote_counter() :: #counter{}.
 
--spec new(term()) -> floppy_counter().
+-spec new(term()) -> antidote_counter().
 new(Key) ->
     #counter{key=Key, value=0, increment=0}.
 
--spec new(term(), integer()) -> floppy_counter().
+-spec new(term(), integer()) -> antidote_counter().
 new(Key, Value) ->
     #counter{key=Key, value=Value, increment=0}.
 
--spec value(floppy_counter()) -> integer().
+-spec value(antidote_counter()) -> integer().
 value(#counter{value=Value}) ->
     Value.
 
--spec dirty_value(floppy_counter()) -> integer().
+-spec dirty_value(antidote_counter()) -> integer().
 dirty_value(#counter{value=Value, increment=Increment}) ->
     Value + Increment.
 
 %% @doc Increments the counter with 1 unit.
--spec increment(floppy_counter()) -> floppy_counter().
+-spec increment(antidote_counter()) -> antidote_counter().
 increment(Counter) ->
     increment(1, Counter).
 
 %% @doc Increments the counter with Amount units.
--spec increment(integer(), floppy_counter()) -> floppy_counter().
+-spec increment(integer(), antidote_counter()) -> antidote_counter().
 increment(Amount, #counter{increment=Value}=Counter) when is_integer(Amount) ->
     Counter#counter{increment=Value+Amount}.
 
 %% @doc Decrements the counter by 1.
--spec decrement(floppy_counter()) -> floppy_counter().
+-spec decrement(antidote_counter()) -> antidote_counter().
 decrement(Counter) ->
     increment(-1, Counter).
 
 %% @doc Decrements the counter by the passed amount.
--spec decrement(integer(), floppy_counter()) -> floppy_counter().
+-spec decrement(integer(), antidote_counter()) -> antidote_counter().
 decrement(Amount, #counter{increment=Value}=Counter) ->
     Counter#counter{increment=Value-Amount}.
 

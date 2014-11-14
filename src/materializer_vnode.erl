@@ -21,7 +21,7 @@
 
 -behaviour(riak_core_vnode).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -export([start_vnode/1,

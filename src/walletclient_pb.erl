@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(walletclient_pb).
--include("floppy.hrl").
+-include("antidote.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([run/1, start/1]).
@@ -30,7 +30,7 @@ start(Args) ->
 -spec run([key()]) -> ok | {error, reason()}.
 run([Key_bal,Key_voucher])->
     io:format("Starting Wallet Client~n"),
-    case floppyc_pb_socket:start_link("localhost",8087) of
+    case antidotec_pb_socket:start_link("localhost",8087) of
         {ok, Pid} ->
             Result1 = testbalance(Key_bal, 10, [],Pid),
             io:format("~nTesting credit and debit operations: ~p ~n ", [Result1]),

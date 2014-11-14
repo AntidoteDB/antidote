@@ -1,6 +1,6 @@
-# FloppyStore erlang client
+# Antidote erlang client
 
-This is a repository for an erlang FloppyStore client.  This simple
+This is a repository for an erlang Antidote client.  This simple
 client provides a non-transactional put/get interface with the storage.
 
 ## Current progress
@@ -19,29 +19,29 @@ Please note that this version may not handle timeouts.
 Build the project as you would, following the instructions on:
 
 ```
-https://github.com/SyncFree/floppystore/
+https://github.com/SyncFree/antidote/
 ```
 
 ## Testing the API
 
 Start an erlang console with the required dependencies:
 
-  erl -pa floppystore/deps/*/ebin/ floppystore/ebin/
+  erl -pa antidote/deps/*/ebin/ antidote/ebin/
 
 Connect to the database
 
-  {ok, Pid} = floppyc_pb_socket:start("localhost", 8087).
+  {ok, Pid} = antidotec_pb_socket:start("localhost", 8087).
 
 Read or create a new key with a counter data-type:
 
-  Obj = floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid).
+  Obj = antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid).
 
 Increment and read the value of the counter:
 
-  Obj2 = floppyc_counter:increment(Obj).
-  floppyc_counter:dirty_value(Obj2).
+  Obj2 = antidotec_counter:increment(Obj).
+  antidotec_counter:dirty_value(Obj2).
 
 Store the updated object:
 
-  floppyc_pb_socket:store_crdt(Obj2, Pid).
+  antidotec_pb_socket:store_crdt(Obj2, Pid).
 

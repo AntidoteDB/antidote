@@ -21,7 +21,7 @@
 
 -behavior(gen_fsm).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 %% API
 -export([start_link/6]).

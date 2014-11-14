@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppy_sup).
+-module(antidote_sup).
 
 -behaviour(supervisor).
 
