@@ -17,26 +17,29 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc Supervise the fsm.
--module(clocksi_tx_coord_sup).
--behavior(supervisor).
+-module(antidote_ring_event_handler).
+-behaviour(gen_event).
 
--export([start_fsm/1,
-         start_link/0]).
--export([init/1]).
+%% gen_event callbacks
+-export([init/1, handle_event/2, handle_call/2,
+         handle_info/2, terminate/2, code_change/3]).
+-record(state, {}).
 
-
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-
-start_fsm(Args) ->
-    supervisor:start_child(?MODULE, Args).
-
-
-%% @doc Starts the coordinator of a ClockSI transaction.
 init([]) ->
-    Worker = {clocksi_tx_coord_fsm,
-              {clocksi_tx_coord_fsm, start_link, []},
-              transient, 5000, worker, [clocksi_tx_coord_fsm]},
-    {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.
+    {ok, #state{}}.
+
+handle_event({ring_update, _Ring}, State) ->
+    {ok, State}.
+
+handle_call(_Event, State) ->
+    {ok, ok, State}.
+
+handle_info(_Info, State) ->
+    {ok, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+

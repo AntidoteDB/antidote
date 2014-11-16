@@ -21,7 +21,7 @@
 
 -behavior(gen_fsm).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 %% API
 -export([start_link/6]).
@@ -37,7 +37,6 @@
 %% States
 -export([check_clock/2,
          waiting1/2,
-         waiting2/2,
          return/2]).
 
 %% Spawn
@@ -92,39 +91,18 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     end.
 
 waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
-    case vectorclock:get_clock_by_key(Key) of
-        {ok, LocalClock} ->
-            SnapshotTime = Transaction#transaction.vec_snapshot_time,
-            case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
-                false ->
-                    clocksi_downstream_generator_vnode:trigger(Key, {dummytx, [], vectorclock:from_list([]), 0}),
-                    %% TODO change this, add a heartbeat to increase vectorclock if
-                    %%     there are no pending txns in downstream generator
-                    {next_state, waiting2, SDO, 1};
-                true ->
-                    {next_state, return, SDO, 0}
-            end;
-        _ ->
-            {next_state, waiting1, SDO, 5}
+    LocalClock = get_stable_time(Key),
+    TxId = Transaction#transaction.txn_id,
+    SnapshotTime = TxId#tx_id.snapshot_time,
+    case LocalClock > SnapshotTime of
+        false ->
+            {next_state, waiting1, SDO, 1};
+        true ->
+            {next_state, return, SDO, 0}
     end;
+
 waiting1(_SomeMessage, SDO) ->
     {next_state, waiting1, SDO,0}.
-
-waiting2(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
-    case  vectorclock:get_clock_by_key(Key) of
-        {ok, LocalClock} ->
-            SnapshotTime = Transaction#transaction.vec_snapshot_time,
-            case vectorclock:is_greater_than(LocalClock, SnapshotTime) of
-                false ->
-                    {next_state, waiting2, SDO, 1};
-                true ->
-                    {next_state, return, SDO, 0}
-            end;
-        _ ->
-            {next_state, waiting2, SDO, 5}
-    end;
-waiting2(_SomeMessage, SDO) ->
-    {next_state, waiting2, SDO,0}.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
@@ -139,7 +117,7 @@ return(timeout, SD0=#state{key=Key,
             Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
-            Reply=Type:value(Snapshot2);
+            Reply = {ok, Snapshot2};
         {error, Reason} ->
             Reply={error, Reason}
     end,
@@ -148,8 +126,8 @@ return(timeout, SD0=#state{key=Key,
 return(_SomeMessage, SDO) ->
     {next_state, return, SDO,0}.
 
-handle_info(_Info, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+handle_info(_Info, StateName, StateData) ->
+    {next_state,StateName,StateData,1}.
 
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -177,4 +155,23 @@ int_filter_updates_key([Next|Rest], Key, Updates2) ->
             int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
         false ->
             int_filter_updates_key(Rest, Key, Updates2)
+    end.
+
+get_stable_time(Key) ->
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    Node = hd(Preflist),
+    case riak_core_vnode_master:sync_command(
+           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
+        {ok, Active_txns} ->
+            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
+                                case Min_time > Snapshot_time of
+                                    true ->
+                                        Snapshot_time;
+                                    false ->
+                                        Min_time
+                                end
+                        end,
+                        now_milisec(erlang:now()),
+                        Active_txns);
+        _ -> 0
     end.

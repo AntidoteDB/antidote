@@ -27,7 +27,7 @@
 
 -behavior(gen_fsm).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 %% API
 -export([start_link/2, start_link/1]).
@@ -45,7 +45,7 @@
 %% @doc Data Type: state
 %% where:
 %%    from: the pid of the calling process.
-%%    txid: transaction id handled by this fsm, as defined in src/floppy.hrl.
+%%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
 %%    updated_partitions: the partitions where update operations take place.
 %%    num_to_ack: when sending prepare_commit,
 %%                number of partitions that have acked.
@@ -80,86 +80,73 @@ finish_op(From, Key,Result) ->
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([From, Clientclock]) ->
-    case Clientclock of
-        ignore -> {ok, Snapshot_time} = get_snapshot_time();
-        _ -> {ok, Snapshot_time}= get_snapshot_time(Clientclock)
+init([From, ClientClock]) ->
+    {ok, SnapshotTime} = case ClientClock of
+        ignore ->
+            get_snapshot_time();
+        _ ->
+            get_snapshot_time(ClientClock)
     end,
-    TxId=#tx_id{snapshot_time=Snapshot_time, server_pid=self()},
-    {ok, Vec_clock} = vectorclock:get_clock_node(node()),
-    Dc_id = dc_utilities:get_my_dc_id(),
-    Vec_snapshot_time = dict:update(Dc_id,
-                                    fun (_Old) -> Snapshot_time end,
-                                    Snapshot_time,
-                                    Vec_clock),
-    Transaction = #transaction{snapshot_time = Snapshot_time,
-                               vec_snapshot_time = Vec_snapshot_time,
-                               txn_id = TxId},
+    DcId = dc_utilities:get_my_dc_id(),
+    {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
+    TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
+    Transaction = #transaction{snapshot_time=LocalClock,
+                               vec_snapshot_time=SnapshotTime,
+                               txn_id=TransactionId},
     SD = #state{
             transaction = Transaction,
             updated_partitions=[],
             prepare_time=0
            },
-    From ! {ok, TxId},
+    From ! {ok, TransactionId},
     {ok, execute_op, SD}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
-           SD0=#state{transaction=Transaction, from=From,
+           SD0=#state{transaction=Transaction, from=_From,
                       updated_partitions=Updated_partitions}) ->
     case Op_type of
         prepare ->
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
             {next_state, prepare, SD0#state{from=Sender}, 0};
         read ->
             {Key, Type}=Args,
-            lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
-            lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
-            lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w",
-                       [Key]),
-            Logid = log_utilities:get_logid_from_key(Key),
-            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type) of
                 error ->
                     {reply, error, abort, SD0};
-                Read_result ->
-                    lager:info("ClockSI-Interactive-Coord: Read Result:  ~w ~n",
-                               [Read_result]),
-                    {reply, {ok, Read_result}, execute_op, SD0}
+                {error, _Reason} ->
+                    {next_state, abort, SD0};
+                {ok, Snapshot} ->
+                    ReadResult = Type:value(Snapshot),
+                    {reply, {ok, ReadResult}, execute_op, SD0}
             end;
         update ->
             {Key, Type, Param}=Args,
-            lager:info("ClockSI-Interactive-Coord: PID ~w ~n ", [self()]),
-            lager:info("ClockSI-Interactive-Coord: Op ~w ~n ", [Args]),
-            lager:info("ClockSI-Interactive-Coord: Sender ~w ~n ", [Sender]),
-            lager:info("ClockSI-Interactive-Coord: From ~w ~n ", [From]),
-            lager:info("ClockSI-Interactive-Coord: getting leader for Key ~w ",
-                       [Key]),
-            Logid = log_utilities:get_logid_from_key(Key),
-            Preflist = log_utilities:get_preflist_from_logid(Logid),
+            Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
-            case clocksi_vnode:update_data_item(IndexNode, Transaction,
-                                                Key, Type, Param) of
-                ok ->
-                    case lists:member(IndexNode, Updated_partitions) of
-                        false ->
-                            lager:info(
-                              "ClockSI-Interactive-Coord: Adding Leader node ~w, updt: ~w",
-                              [IndexNode, Updated_partitions]),
-                            New_updated_partitions=
-                                lists:append(Updated_partitions, [IndexNode]),
-                            {reply, ok, execute_op,
-                             SD0#state
-                             {updated_partitions= New_updated_partitions}};
-                        true->
-                            {reply, ok, execute_op, SD0}
+            case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
+                {ok, DownstreamRecord} ->
+                    case clocksi_vnode:update_data_item(IndexNode, Transaction,
+                                                Key, Type, DownstreamRecord) of
+                        ok ->
+                            case lists:member(IndexNode, Updated_partitions) of
+                                false ->
+                                    New_updated_partitions=
+                                        lists:append(Updated_partitions, [IndexNode]),
+                                    {reply, ok, execute_op,
+                                    SD0#state
+                                    {updated_partitions= New_updated_partitions}};
+                                true->
+                                    {reply, ok, execute_op, SD0}
+                            end;
+                        error ->
+                            {reply, error, abort, SD0}
                     end;
-                error ->
+                {error, _} ->
                     {reply, error, abort, SD0}
             end
     end.
@@ -192,24 +179,19 @@ receive_prepared({prepared, ReceivedPrepareTime},
                            from= From, prepare_time=PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 ->
-            lager:info("ClockSI: Commiting at Commit time: ~p",
-                       [MaxPrepareTime]),
             gen_fsm:reply(From, {ok, MaxPrepareTime}),
             {next_state, committing,
              S0#state{prepare_time=MaxPrepareTime,
                       commit_time=MaxPrepareTime, state=committing}};
         _ ->
-            lager:info("ClockSI: Keep collecting prepare replies."),
             {next_state, receive_prepared,
              S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 
 receive_prepared(abort, S0) ->
-    lager:info("ClockSI: Got reply to abort."),
     {next_state, abort, S0, 0};
 
 receive_prepared(timeout, S0) ->
-    lager:info("ClockSI: Did not receive all replies in time, aborting..."),
     {next_state, abort, S0 ,0}.
 
 %% @doc after receiving all prepare_times, send the commit message to all
@@ -237,38 +219,34 @@ committing(commit, Sender, SD0=#state{transaction = Transaction,
 receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
     case NumToAck of
         1 ->
-            lager:info("ClockSI: Finished collecting commit acks. Tx committed succesfully.~n"),
             {next_state, reply_to_client, S0#state{state=committed}, 0};
         _ ->
-            lager:info("ClockSI: Keep collecting commit replies~n"),
-            {next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
+           {next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
     end.
 
 %% @doc when an updated partition does not pass the certification check,
 %%      the transaction aborts.
 abort(timeout, SD0=#state{transaction = Transaction,
                           updated_partitions=UpdatedPartitions}) ->
-    lager:info("ClockSI-coord-fsm: aborting..."),
     clocksi_vnode:abort(UpdatedPartitions, Transaction),
-    lager:info("ClockSI-coord-fsm: sent abort command to partitions..."),
     {next_state, reply_to_client, SD0#state{state=aborted},0};
 
 abort(abort, SD0=#state{transaction = Transaction,
                         updated_partitions=UpdatedPartitions}) ->
-    lager:info("ClockSI-coord-fsm: received abort command, aborting..."),
     clocksi_vnode:abort(UpdatedPartitions, Transaction),
-    lager:info("ClockSI-coord-fsm: sent abort command to partitions..."),
     {next_state, reply_to_client, SD0#state{state=aborted},0}.
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
                                    state=TxState, commit_time=CommitTime}) ->
-    lager:info("ClockSI-coord-fsm: Replying ~w to ~w", [TxState, From]),
     TxId = Transaction#transaction.txn_id,
-    case TxState of
-        committed->
-            Reply={ok, {TxId, CommitTime}},
+    DcId = dc_utilities:get_my_dc_id(),
+    CausalClock = vectorclock:set_clock_of_dc(
+                    DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+    _ = case TxState of
+        committed ->
+            Reply = {ok, {TxId, CausalClock}},
             gen_fsm:reply(From,Reply);
         aborted->
             gen_fsm:reply(From,{aborted, TxId});
@@ -303,20 +281,42 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(ClientClock :: non_neg_integer()) ->
-                               {ok, non_neg_integer()}.
+-spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
+                       -> {ok, vectorclock:vectorclock()} | {error,term()}.
 get_snapshot_time(ClientClock) ->
-    Now=clocksi_vnode: now_milisec(erlang:now()),
-    case (ClientClock > Now) of
-        true->
-            SnapshotTime = ClientClock + ?MIN;
-        false ->
-            SnapshotTime = Now
-    end,
-    {ok, SnapshotTime}.
+    wait_for_clock(ClientClock).
 
--spec get_snapshot_time() -> {ok, non_neg_integer()}.
+-spec get_snapshot_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
-    Snapshot_time  = Now - ?DELTA,
-    {ok, Snapshot_time}.
+    case vectorclock:get_stable_snapshot() of
+        {ok, VecSnapshotTime} ->
+            DcId = dc_utilities:get_my_dc_id(),
+            SnapshotTime = dict:update(DcId,
+                                       fun (_Old) -> Now end,
+                                       Now, VecSnapshotTime),
+            {ok, SnapshotTime};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
+                           {ok, vectorclock:vectorclock()} | {error, term()}.
+wait_for_clock(Clock) ->
+   case get_snapshot_time() of
+       {ok, VecSnapshotTime} ->
+           case vectorclock:ge(VecSnapshotTime, Clock) of
+               true ->
+                   %% No need to wait
+                   {ok, VecSnapshotTime};
+               false ->
+                   %% wait for snapshot time to catch up with Client Clock
+                   timer:sleep(100),
+                   wait_for_clock(Clock)
+           end;
+       {error, Reason} ->
+          {error, Reason}
+  end.
+
+generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
+    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param).

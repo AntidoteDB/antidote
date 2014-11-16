@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppy_log_handoff_test).
+-module(log_handoff_test).
 
 -export([confirm/0]).
 
@@ -84,7 +84,7 @@ test_handoff(RootNode, NewNode, NTestItems) ->
 
 multiple_writes(Node, Start, End, Actor)->
     F = fun(N, Acc) ->
-            case rpc:call(Node, floppy, append, [N, riak_dt_gcounter, {{increment, N}, Actor}]) of
+            case rpc:call(Node, antidote, append, [N, riak_dt_gcounter, {{increment, N}, Actor}]) of
                 {ok, _} ->
                     Acc;
                 Other ->
@@ -95,7 +95,7 @@ multiple_writes(Node, Start, End, Actor)->
 
 multiple_reads(Node, Start, End) ->
     F = fun(N, Acc) ->
-            case rpc:call(Node, floppy, read, [N, riak_dt_gcounter]) of
+            case rpc:call(Node, antidote, read, [N, riak_dt_gcounter]) of
                 {error, _} ->
                     [{N, error} | Acc];
                 {ok, Value} ->

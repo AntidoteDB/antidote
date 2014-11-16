@@ -99,7 +99,7 @@ cluster_admin()
                 exit 1
             fi
             ensure_node_running
-            $NODETOOL rpc floppy_console staged_join "$2"
+            $NODETOOL rpc antidote_console staged_join "$2"
             ;;
         leave)
             if [ $# -eq 1 ]; then
@@ -195,7 +195,7 @@ case "$1" in
         fi
 
         shift
-        $NODETOOL rpc floppy_console down $@
+        $NODETOOL rpc antidote_console down $@
         ;;
 
      ringready)
@@ -212,7 +212,7 @@ case "$1" in
         fi
         shift
 
-        $NODETOOL rpc floppy_console ringready $@
+        $NODETOOL rpc antidote_console ringready $@
         ;;
 
     member[_-]status)

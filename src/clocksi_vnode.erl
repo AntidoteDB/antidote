@@ -21,7 +21,7 @@
 
 -behaviour(riak_core_vnode).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
@@ -55,6 +55,8 @@
 %%          committed_tx: a list of committed transactions.
 %%          active_txs_per_key: a list of the active transactions that
 %%              have updated a key (but not yet finished).
+%%          downstream_set: a list of the downstream operations that the
+%%              transactions generate.
 %%          write_set: a list of the write sets that the transactions
 %%              generate.
 %%----------------------------------------------------------------------
@@ -122,16 +124,16 @@ abort(ListofNodes, TxId) ->
 %%      the transactions it participates on.
 init([Partition]) ->
     PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++
-                                      integer_to_list(Partition)),
+                                          integer_to_list(Partition)),
                          [set, {write_concurrency, true}]),
     CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
-                                       integer_to_list(Partition)),
+                                           integer_to_list(Partition)),
                           [set, {write_concurrency, true}]),
     ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
                                            ++ integer_to_list(Partition)),
                               [bag, {write_concurrency, true}]),
     WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++
-                                    integer_to_list(Partition)),
+                                        integer_to_list(Partition)),
                        [duplicate_bag, {write_concurrency, true}]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
@@ -154,7 +156,8 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                       write_set=WriteSet,
                       active_txs_per_key=ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
-    LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Op}},
+    LogRecord = #log_record{tx_id=TxId, op_type=update,
+                            op_payload={Key, Type, Op}},
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
     Result = logging_vnode:append(Node,LogId,LogRecord),
@@ -163,9 +166,9 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
             true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
             true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
             {ok, _Pid} = clocksi_updateitem_fsm:start_link(
-                    Sender,
-                    Txn#transaction.vec_snapshot_time,
-                    Partition),
+                           Sender,
+                           Txn#transaction.vec_snapshot_time,
+                           Partition),
             {noreply, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -187,63 +190,78 @@ handle_command({prepare, Transaction}, _Sender,
                                     op_payload=PrepareTime},
             true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
             Updates = ets:lookup(WriteSet, TxId),
-            [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
-            LogId = log_utilities:get_logid_from_key(Key),
-            [Node] = log_utilities:get_preflist_from_key(Key),
-            Result = logging_vnode:append(Node,LogId,LogRecord),
-            case Result of
-                {ok, _} ->
-                    {reply, {prepared, PrepareTime}, State};
-                {error, timeout} ->
-                    {reply, {error, timeout}, State}
+            case Updates of 
+                [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+                    LogId = log_utilities:get_logid_from_key(Key),
+                    [Node] = log_utilities:get_preflist_from_key(Key),
+                    Result = logging_vnode:append(Node,LogId,LogRecord),
+                    case Result of
+                        {ok, _} ->
+                            {reply, {prepared, PrepareTime}, State};
+                        {error, timeout} ->
+                            {reply, {error, timeout}, State}
+                    end;
+                _ -> 
+                    {reply, {error, no_tx_record}, State}
             end;
         false ->
             {reply, abort, State}
     end;
 
+%% TODO: sending empty writeset to clocksi_downstream_generatro
+%% Just a workaround, need to delete downstream_generator_vnode
+%% eventually.
 handle_command({commit, Transaction, TxCommitTime}, _Sender,
                #state{partition=_Partition,
                       committed_tx=CommittedTx,
                       write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
+    DcId = dc_utilities:get_my_dc_id(),
     LogRecord=#log_record{tx_id=TxId,
                           op_type=commit,
-                          op_payload={TxCommitTime,
+                          op_payload={{DcId, TxCommitTime},
                                       Transaction#transaction.vec_snapshot_time}},
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    Result = logging_vnode:append(Node,LogId,LogRecord),
-    case Result of
-        {ok, _} ->
-            true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
-            clocksi_downstream_generator_vnode:trigger(
-                    Key, {TxId,
-                          Updates,
-                          Transaction#transaction.vec_snapshot_time,
-                          TxCommitTime}),
-            clean_and_notify(TxId, Key, State),
-            {reply, committed, State};
-        {error, timeout} ->
-            {reply, {error, timeout}, State}
+    case Updates of
+        [{_, {Key, _Type, {_Op, _Param}}} | _Rest] -> 
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            case logging_vnode:append(Node,LogId,LogRecord) of
+                {ok, _} ->
+                    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+                    case update_materializer(Updates, Transaction, TxCommitTime) of
+                        ok ->
+                            clean_and_notify(TxId, Key, State),
+                            {reply, committed, State};
+                        error ->
+                            {reply, {error, materializer_failure}, State}
+                    end;
+                {error, timeout} ->
+                    {reply, {error, timeout}, State}
+            end;
+        _ -> 
+            {reply, {error, no_tx_record}, State}
     end;
 
 handle_command({abort, Transaction}, _Sender,
                #state{partition=_Partition, write_set=WriteSet} = State) ->
     TxId = Transaction#transaction.txn_id,
     Updates = ets:lookup(WriteSet, TxId),
-    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] = Updates,
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
-    case Result of
-        {ok, _} ->
-            clean_and_notify(TxId, Key, State);
-        {error, timeout} ->
-            clean_and_notify(TxId, Key, State)
-    end,
-    {reply, ack_abort, State};
+    case Updates of
+    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
+            case Result of
+                {ok, _} ->
+                    clean_and_notify(TxId, Key, State);
+                {error, timeout} ->
+                    clean_and_notify(TxId, Key, State)
+            end,
+            {reply, ack_abort, State};
+        _ ->
+            {reply, {error, no_tx_record}, State}
+    end;
 
 %% @doc Return active transactions in prepare state with their preparetime
 handle_command({get_active_txns}, _Sender,
@@ -301,8 +319,8 @@ terminate(_Reason, _State) ->
 %%      b. PreparedTx
 %%
 clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
-                                   prepared_tx=PreparedTx,
-                                   write_set=WriteSet}) ->
+                                    prepared_tx=PreparedTx,
+                                    write_set=WriteSet}) ->
     true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
     true = ets:delete(WriteSet, TxId).
 
@@ -339,4 +357,29 @@ check_keylog(TxId, [H|T], CommittedTx)->
             end;
         false ->
             check_keylog(TxId, T, CommittedTx)
+    end.
+
+-spec update_materializer(DownstreamOps :: [{term(),{key(),type(),op()}}],
+                          Transaction::#transaction{},TxCommitTime:: {term(), term()}) ->
+                                 ok | error.
+update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
+    DcId = dc_utilities:get_my_dc_id(),
+    UpdateFunction = fun ({_, {Key, Type, Op}}, AccIn) ->
+                             CommittedDownstreamOp =
+                                 #clocksi_payload{
+                                    key = Key,
+                                    type = Type,
+                                    op_param = Op,
+                                    snapshot_time = Transaction#transaction.vec_snapshot_time,
+                                    commit_time = {DcId, TxCommitTime},
+                                    txid = Transaction#transaction.txn_id},
+                             AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)]
+                     end,
+    Results = lists:foldl(UpdateFunction, [], DownstreamOps),
+    Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
+    case length(Failures) of
+        0 ->
+            ok;
+        _ ->
+            error
     end.

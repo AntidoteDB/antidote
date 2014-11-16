@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppy_app).
+-module(antidote_app).
 
 -behaviour(application).
 
@@ -25,15 +25,15 @@
 -export([start/2, stop/1]).
 
 %% PB Services
--define(SERVICES, [{floppy_pb_counter, 94, 98},
-                   {floppy_pb_set, 99, 101}]).
+-define(SERVICES, [{antidote_pb_counter, 94, 98},
+                   {antidote_pb_set, 99, 101}]).
 
 %% ===================================================================
 %% Application callbacks
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    case floppy_sup:start_link() of
+    case antidote_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
@@ -42,19 +42,19 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, clocksi_vnode}]),
             ok = riak_core_node_watcher:service_up(clocksi, self()),
 
-            ok = riak_core:register(
-                   [{vnode_module, clocksi_downstream_generator_vnode}]),
-            ok = riak_core_node_watcher:service_up(
-                   clocksi_downstream_generator, self()),
-
             ok = riak_core:register([{vnode_module, vectorclock_vnode}]),
             ok = riak_core_node_watcher:service_up(vectorclock, self()),
 
             ok = riak_core:register([{vnode_module, materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(materializer, self()),
 
-            ok = riak_core_ring_events:add_guarded_handler(floppy_ring_event_handler, []),
-            ok = riak_core_node_watcher_events:add_guarded_handler(floppy_node_event_handler, []),
+            ok = riak_core:register([{vnode_module, inter_dc_repl_vnode}]),
+            ok = riak_core_node_watcher:service_up(interdcreplication, self()),
+            ok = riak_core:register([{vnode_module, inter_dc_recvr_vnode}]),
+            ok = riak_core_node_watcher:service_up(inter_dc_recvr, self()),
+
+            ok = riak_core_ring_events:add_guarded_handler(antidote_ring_event_handler, []),
+            ok = riak_core_node_watcher_events:add_guarded_handler(antidote_node_event_handler, []),
             ok = riak_api_pb_service:register(?SERVICES),
             {ok, Pid};
         {error, Reason} ->

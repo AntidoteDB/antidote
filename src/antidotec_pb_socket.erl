@@ -17,9 +17,9 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppyc_pb_socket).
+-module(antidotec_pb_socket).
 
--include_lib("riak_pb/include/floppy_pb.hrl").
+-include_lib("riak_pb/include/antidote_pb.hrl").
 
 -behaviour(gen_server).
 
@@ -244,7 +244,7 @@ cancel_req_timer(Tref) ->
 %list of oeprations that will be appended to the log.
 %% @todo: propagate only one operation with the list of updates to ensure atomicity.
 store_crdt(Obj, Pid) ->
-    Mod = floppyc_datatype:module_for_term(Obj),
+    Mod = antidotec_datatype:module_for_term(Obj),
     Ops = Mod:to_ops(Obj),
     case Ops of
         undefined -> ok;
@@ -263,7 +263,7 @@ store_crdt(Obj, Pid) ->
 %% @todo Handle different return messages
 -spec get_crdt(term(), atom(), pid()) -> {ok, term()} | {error, term()}.
 get_crdt(Key, Type, Pid) ->
-    Mod = floppyc_datatype:module_for_type(Type),
+    Mod = antidotec_datatype:module_for_type(Type),
     Op = Mod:message_for_get(Key),
     case call_infinity(Pid, {req, Op, ?TIMEOUT}) of
         {ok, Value} ->

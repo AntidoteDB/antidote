@@ -17,29 +17,25 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppy_node_event_handler).
--behaviour(gen_event).
+%% @doc Supervise the fsm.
+-module(clocksi_static_tx_coord_sup).
+-behavior(supervisor).
 
-%% gen_event callbacks
--export([init/1, handle_event/2, handle_call/2,
-         handle_info/2, terminate/2, code_change/3]).
--record(state, {}).
+-export([start_fsm/1,
+         start_link/0]).
+-export([init/1]).
 
+start_link() ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+start_fsm(Args) ->
+    supervisor:start_child(?MODULE, Args).
+
+%% @doc Starts the coordinator of a ClockSI static transaction.
 init([]) ->
-    {ok, #state{}}.
-
-handle_event({service_update, _Services}, State) ->
-    {ok, State}.
-
-handle_call(_Event, State) ->
-    {ok, ok, State}.
-
-handle_info(_Info, State) ->
-    {ok, State}.
-
-terminate(_Reason, _State) ->
-    ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
+    lager:info("clockSI_static_tx_coord_sup: Starting fsm..."),
+    Worker = {clocksi_static_tx_coord_fsm,
+              {clocksi_static_tx_coord_fsm, start_link, []},
+              transient, 5000, worker, [clocksi_static_tx_coord_fsm]},
+    lager:info("clockSI_static_tx_coord_sup: done."),
+    {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppy_pb_counter).
+-module(antidote_pb_set).
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -26,7 +26,7 @@
 
 -behaviour(riak_api_pb_service).
 
--include_lib("riak_pb/include/floppy_pb.hrl").
+-include_lib("riak_pb/include/antidote_pb.hrl").
 
 -export([init/0,
          decode/2,
@@ -46,12 +46,10 @@ init() ->
 decode(Code, Bin) ->
     Msg = riak_pb_codec:decode(Code, Bin),
     case Msg of
-        #fpbincrementreq{} ->
-            {ok, Msg, {"floppy.inc", <<>>}};
-        #fpbdecrementreq{} ->
-            {ok, Msg, {"floppy.dec", <<>>}};
-        #fpbgetcounterreq{} ->
-            {ok, Msg, {"floppy.getcounter", <<>>}}
+        #fpbsetupdatereq{} ->
+            {ok, Msg, {"antidote.updt", <<>>}};
+        #fpbgetsetreq{} ->
+            {ok, Msg, {"antidote.get", <<>>}}
     end.
 
 %% @doc encode/1 callback. Encodes an outgoing response message.
@@ -59,20 +57,21 @@ encode(Message) ->
     {ok, riak_pb_codec:encode(Message)}.
 
 %% @doc process/2 callback. Handles an incoming request message.
-process(#fpbincrementreq{key=Key, amount=Amount}, State) ->
-    {ok, _Result} = floppy:append(Key, riak_dt_pncounter, {{increment, Amount}, node()}),
+process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
+    lists:foreach(fun(X) ->
+                          Elem = erlang:binary_to_term(X),
+                          antidote:append(Key, riak_dt_orset, {{add, Elem}, node()})
+                  end,AddsBin),
+    lists:foreach(fun(X) ->
+                          Elem = erlang:binary_to_term(X),
+                          antidote:append(Key, riak_dt_orset, {{remove, Elem}, node()})
+                  end,RemsBin),
     {reply, #fpboperationresp{success = true}, State};
 
 %% @doc process/2 callback. Handles an incoming request message.
-process(#fpbdecrementreq{key=Key, amount=Amount}, State) ->
-    {ok, _Result} = floppy:append(Key, riak_dt_pncounter, {{decrement, Amount}, node()}),
-    {reply, #fpboperationresp{success = true}, State};
-
-%% @doc process/2 callback. Handles an incoming request message.
-%% @todo accept different types of counters.
-process(#fpbgetcounterreq{key=Key}, State) ->
-    {ok, Result} = floppy:read(Key, riak_dt_pncounter),
-    {reply, #fpbgetcounterresp{value = Result}, State}.
+process(#fpbgetsetreq{key=Key}, State) ->
+    {ok, Result} = antidote:read(Key, riak_dt_orset),
+    {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State}.
 
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.

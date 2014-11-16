@@ -21,7 +21,7 @@
 
 -behaviour(riak_core_vnode).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -ifdef(TEST).
@@ -371,7 +371,7 @@ open_logs(LogFile, [Next|Rest], Map)->
 get_log_from_map(Map, _Partition, LogId) ->
     case dict:find(LogId, Map) of
         {ok, Log} ->
-            {ok, Log};
+           {ok, Log};
         error ->
             {error, no_log_for_preflist}
     end.
@@ -461,12 +461,14 @@ thresholdprune_notmatching_test() ->
 %%      is in the map and when the key is not in the map
 get_log_from_map_test() ->
     Dict = dict:new(),
-    Dict2 = dict:store([floppy1, c], value1, Dict),
-    Dict3 = dict:store([floppy2, c], value2, Dict2),
-    Dict4 = dict:store([floppy3, c], value3, Dict3),
-    Dict5 = dict:store([floppy4, c], value4, Dict4),
-    ?assertEqual({ok, value3}, get_log_from_map(Dict5, undefined, [floppy3,c])),
-    ?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5, undefined, [floppy5, c])).
+    Dict2 = dict:store([antidote1, c], value1, Dict),
+    Dict3 = dict:store([antidote2, c], value2, Dict2),
+    Dict4 = dict:store([antidote3, c], value3, Dict3),
+    Dict5 = dict:store([antidote4, c], value4, Dict4),
+    ?assertEqual({ok, value3}, get_log_from_map(Dict5, undefined,
+            [antidote3,c])),
+    ?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5,
+            undefined, [antidote5, c])).
 
 %% @doc Testing that preflist_member returns true when there is a
 %%      match.

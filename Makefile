@@ -23,18 +23,17 @@ rel: all
 	$(REBAR) generate
 
 relclean:
-	rm -rf rel/floppy
+	rm -rf rel/antidote
 
 stage : rel
-	$(foreach dep,$(wildcard deps/*), rm -rf rel/floppy/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/floppy/lib;)
-	$(foreach app,$(wildcard apps/*), rm -rf rel/floppy/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/floppy/lib;)
+	$(foreach dep,$(wildcard deps/*), rm -rf rel/antidote/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/antidote/lib;)
+	$(foreach app,$(wildcard apps/*), rm -rf rel/antidote/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/antidote/lib;)
 
 currentdevrel: stagedevrel compile-riak-test
-	riak_test/bin/floppystore-current.sh
+	riak_test/bin/antidote-current.sh
 
 riak-test: currentdevrel
-	$(foreach dep,$(wildcard riak_test/*.erl), ../riak_test/riak_test -v -c floppystore -t $(dep);)
-
+	$(foreach dep,$(wildcard riak_test/*.erl), ../riak_test/riak_test -v -c antidote -t $(dep);)
 
 ##
 ## Developer targets

@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppyc_datatype).
+-module(antidotec_datatype).
 
 -ifdef(EQC).
 -include_lib("eqc/include/eqc.hrl").
@@ -27,7 +27,7 @@
 -endif.
 
 
--define(MODULES, [floppyc_counter, floppyc_set]).
+-define(MODULES, [antidotec_counter, antidotec_set]).
 
 -export([module_for_type/1,
          module_for_term/1]).
@@ -62,13 +62,14 @@
 -callback is_type(datatype()) -> boolean().
 
 %% @doc Determines the symbolic name of the container's type, e.g.
-%% floppy_set, floppy_map, floppy_counter.
+%% antidote_set, antidote_map, antidote_counter.
 -callback type() -> typename().
 
 %% @doc Returns the module name for the container of the given CRDT data-type.
--spec module_for_type(riak_dt_orset | riak_dt_pncounter) -> floppyc_counter | floppyc_set.
-module_for_type(riak_dt_orset) -> floppyc_set;
-module_for_type(riak_dt_pncounter)  -> floppyc_counter.
+-spec module_for_type(riak_dt_orset | riak_dt_pncounter) ->
+    antidotec_counter | antidotec_set.
+module_for_type(riak_dt_orset) -> antidotec_set;
+module_for_type(riak_dt_pncounter)  -> antidotec_counter.
 
 %% @doc Returns the container module name for the given term. 
 %% Returns undefined if the module is not known.

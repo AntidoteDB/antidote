@@ -44,26 +44,26 @@ confirm() ->
 
 start_stop_test() ->
     lager:info("Verifying pb connection..."),
-    {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
-    Disconnected = floppyc_pb_socket:stop(Pid),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(ok, Disconnected),
     pass.
 
 get_empty_crdt_test(Key) ->
     lager:info("Verifying retrieval of empty CRDT..."),
-    {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, Obj} = floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid),
-    _Disconnected = floppyc_pb_socket:stop(Pid),
-    ?assertMatch(true, floppyc_counter:is_type(Obj)),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Obj} = antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid),
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    ?assertMatch(true, antidotec_counter:is_type(Obj)),
     pass.
 
 update_counter_crdt_test(Key, Amount) ->
     lager:info("Verifying retrieval of updated counter CRDT..."),
-    {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, Obj} = floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid),
-    Obj2 = floppyc_counter:increment(Amount, Obj),
-    Result = floppyc_pb_socket:store_crdt(Obj2, Pid),
-     _Disconnected = floppyc_pb_socket:stop(Pid),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Obj} = antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid),
+    Obj2 = antidotec_counter:increment(Amount, Obj),
+    Result = antidotec_pb_socket:store_crdt(Obj2, Pid),
+     _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(ok, Result),
     pass.
 
@@ -73,9 +73,9 @@ update_counter_crdt_and_read_test(Key, Amount) ->
 
 get_crdt_check_value(Key, Type, Expected) ->
     lager:info("Verifying value of updated CRDT..."),
-    {ok, Pid} = floppyc_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, Obj} = floppyc_pb_socket:get_crdt(Key, Type, Pid),
-    Mod = floppyc_datatype:module_for_type(Type),
-    _Disconnected = floppyc_pb_socket:stop(Pid),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Obj} = antidotec_pb_socket:get_crdt(Key, Type, Pid),
+    Mod = antidotec_datatype:module_for_type(Type),
+    _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(Expected, Mod:value(Obj)),
     pass.

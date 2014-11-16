@@ -2,9 +2,9 @@
 .eunit
 deps/*
 ebin/*
-rel/floppy
+rel/antidote
 dev
-apps/floppy/src/*
+apps/antidote/src/*
 *.swp
 *.swo
 src/*.swo
