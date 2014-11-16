@@ -19,7 +19,7 @@
 
 -module(crdt_pncounter).
 
--export([new/0, new/1, value/1, value/2, update/2]).
+-export([new/0, new/1, value/1, value/2, update/2, to_binary/1, from_binary/1]).
 -export([parent_clock/2, update/3, equal/2]).
 
 %% EQC API
@@ -32,9 +32,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([pncounter/0, pncounter_op/0]).
+-export_type([pncounter/0, pncounter_op/0, binary_pncounter/0]).
 
 -opaque pncounter()  :: {Inc::non_neg_integer(), Dec::non_neg_integer()}.
+-type binary_pncounter() :: binary().
 -type pncounter_op() :: riak_dt_gcounter:gcounter_op() | decrement_op().
 -type decrement_op() :: decrement | {decrement, pos_integer()}.
 -type pncounter_q()  :: positive | negative.
@@ -113,11 +114,19 @@ equal({Inc1, Dec1}, {Inc2, Dec2}) ->
             false
     end.
 
-
 -include("../deps/riak_dt/include/riak_dt_tags.hrl").
 -define(TAG, ?DT_PNCOUNTER_TAG).
 -define(V1_VERS, 1).
 -define(V2_VERS, 2).
+
+-spec to_binary(pncounter()) -> binary_pncounter().
+to_binary(PNCounter) ->
+    %% @TODO something smarter
+    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(PNCounter))/binary>>.
+
+from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
+    %% @TODO something smarter
+    binary_to_term(Bin).
 
 % Priv
 -spec increment_by(pos_integer(), pncounter()) -> pncounter().
@@ -178,5 +187,11 @@ equal_test() ->
     PNCnt3 = {2,0}, 
     ?assertNot(equal(PNCnt1, PNCnt2)),
     ?assert(equal(PNCnt2, PNCnt3)).
+
+binary_test() ->
+    PNCnt1 = {4,2},
+    BinaryPNCnt1 = to_binary(PNCnt1),
+    PNCnt2 = from_binary(BinaryPNCnt1),
+    ?assert(equal(PNCnt1, PNCnt2)).
 
 -endif.

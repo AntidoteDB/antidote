@@ -296,3 +296,16 @@ concurrent_add_test() ->
     {ok, Set5} = update(Op4, 1, Set3),
     ?assertEqual([], value(Set5)).
     
+binary_test() ->
+    ORSet1 = new(),
+    BinaryORSet1 = to_binary(ORSet1),
+    ORSet2 = from_binary(BinaryORSet1),
+    ?assert(equal(ORSet1, ORSet2)),
+
+    {ok, Op1} = update({add, <<"foo">>}, 1, ORSet1),
+    {ok, ORSet3} = update(Op1, 1, ORSet1),
+    BinaryORSet3 = to_binary(ORSet3),
+    ORSet4 = from_binary(BinaryORSet3),
+    ?assert(equal(ORSet3, ORSet4)).
+
+-endif.

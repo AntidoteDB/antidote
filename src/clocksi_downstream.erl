@@ -35,8 +35,17 @@ generate_downstream_op(Update) ->
     SnapshotTime = Update#clocksi_payload.snapshot_time,
     case materializer_vnode:read(Key, Type, SnapshotTime) of
         {ok, Snapshot} ->
-            {ok, NewState} = Type:update(Op, Actor, Snapshot),
-            DownstreamOp = Update#clocksi_payload{op_param={merge, NewState}},
+            DownstreamOp = case Type of
+                            crdt_orset ->
+                                {ok, Op} = Type:update(Op, Actor, Snapshot),
+                                Update#clocksi_payload{op_param=Op};
+                            crdt_pncounter ->
+                                {ok, Op} = Type:update(Op, Actor, Snapshot),
+                                Update#clocksi_payload{op_param=Op};
+                            _ ->
+                                {ok, NewState} = Type:update(Op, Actor, Snapshot),
+                                Update#clocksi_payload{op_param={merge, NewState}}
+            end,
             {ok, DownstreamOp};
         {error, Reason} ->
             lager:info("Error: ~p", [Reason]),
