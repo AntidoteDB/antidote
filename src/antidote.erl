@@ -17,9 +17,9 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppy).
+-module(antidote).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 -export([append/3,
          read/2,

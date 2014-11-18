@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(clocksi_transaction_reader).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 -record(state, {partition :: partition_id(),
                 logid :: log_id(),

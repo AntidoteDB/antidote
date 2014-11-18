@@ -50,7 +50,7 @@ handle_call(get_my_dc, _From, #state{port=Port} = State) ->
     {reply, {ok, {my_ip(),Port}}, State};
 
 handle_call({start_receiver, Port}, _From, State) ->
-    {ok, _} = floppy_sup:start_rep(Port),
+    {ok, _} = antidote_sup:start_rep(Port),
     {reply, {ok, {my_ip(),Port}}, State#state{port=Port}};
 
 handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->

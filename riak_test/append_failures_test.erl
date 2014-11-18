@@ -44,11 +44,11 @@ confirm() ->
 
     %% Perform successful write and read.
     WriteResult = rpc:call(First,
-                           floppy, append, [key1, riak_dt_gcounter, {increment, ucl}]),
+                           antidote, append, [key1, riak_dt_gcounter, {increment, ucl}]),
     lager:info("WriteResult: ~p", [WriteResult]),
     ?assertMatch({ok, _}, WriteResult),
 
-    ReadResult = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
+    ReadResult = rpc:call(First, antidote, read, [key1, riak_dt_gcounter]),
     lager:info("ReadResult: ~p", [ReadResult]),
     ?assertMatch({ok, 1}, ReadResult),
 
@@ -60,7 +60,7 @@ confirm() ->
     rt:heal(PartInfo),
 
     %% Read after the partition has been healed.
-    ReadResult3 = rpc:call(First, floppy, read, [key1, riak_dt_gcounter]),
+    ReadResult3 = rpc:call(First, antidote, read, [key1, riak_dt_gcounter]),
     lager:info("ReadResult3: ~p", [ReadResult3]),
     ?assertMatch({ok, 1}, ReadResult3),
 

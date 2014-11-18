@@ -33,24 +33,24 @@ simple_replication_test(Cluster1, Cluster2) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     WriteResult1 = rpc:call(Node1,
-                            floppy, append,
+                            antidote, append,
                             [key1, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
-                            floppy, append,
+                            antidote, append,
                             [key1, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node1,
-                            floppy, append,
+                            antidote, append,
                             [key1, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
-    Result = rpc:call(Node1, floppy, read,
+    Result = rpc:call(Node1, antidote, read,
                       [key1, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, Result),
 
     ReadResult = rpc:call(Node2,
-                          floppy, clocksi_read,
+                          antidote, clocksi_read,
                           [CommitTime, key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet],_} }= ReadResult,
     ?assertEqual(3, ReadSet),
@@ -65,7 +65,7 @@ multiple_keys_test(Cluster1, Cluster2) ->
                    end,
                    lists:seq(1,10)),
     WriteResult3 = rpc:call(Node1,
-                            floppy, append,
+                            antidote, append,
                             [key1, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
@@ -79,7 +79,7 @@ multiple_keys_test(Cluster1, Cluster2) ->
 
 multiple_writes(Node, Start, End, Actor)->
     F = fun(N, Acc) ->
-                case rpc:call(Node, floppy, append,
+                case rpc:call(Node, antidote, append,
                               [N, riak_dt_gcounter,
                                {{increment, 1}, Actor}]) of
                     {ok, _} ->
@@ -92,7 +92,7 @@ multiple_writes(Node, Start, End, Actor)->
 
 multiple_reads(Node, Start, End, Total, CommitTime) ->
     F = fun(N, Acc) ->
-                case rpc:call(Node, floppy, clocksi_read, [CommitTime, N, riak_dt_gcounter]) of
+                case rpc:call(Node, antidote, clocksi_read, [CommitTime, N, riak_dt_gcounter]) of
                     {error, _} ->
                         [{N, error} | Acc];
                     {ok, {_,[Value],_}} ->
@@ -111,23 +111,23 @@ causality_test(Cluster1, Cluster2) ->
     Key = myset,
     %% Add two elements in DC1
     AddResult1 = rpc:call(Node1,
-                          floppy, append,
+                          antidote, append,
                           [Key, riak_dt_orset, {{add, first}, act1}]),
     ?assertMatch({ok, _}, AddResult1),
     AddResult2 = rpc:call(Node1,
-                          floppy, append,
+                          antidote, append,
                           [Key, riak_dt_orset, {{add, second}, act1}]),
     ?assertMatch({ok, _}, AddResult2),
     {ok,{_,_,CommitTime}}=AddResult2,
 
     %% Remove one element from D2C
     RemoveResult = rpc:call(Node2,
-                            floppy, clocksi_bulk_update,
+                            antidote, clocksi_bulk_update,
                             [CommitTime,
                              [{update, Key, riak_dt_orset, {{remove, first}, act1}}]]),
     ?assertMatch({ok, _}, RemoveResult),
     %% Read result
-    Result = rpc:call(Node2, floppy, read,
+    Result = rpc:call(Node2, antidote, read,
                       [Key, riak_dt_orset]),
     ?assertMatch({ok, [second]}, Result),
     lager:info("Causality test passed!"),
@@ -171,7 +171,7 @@ atomicity_test(Cluster1, Cluster2) ->
 
 atomic_write_txn(Node, Key1, Key2, Key3) ->
     Type = riak_dt_gcounter,
-    Result= rpc:call(Node, floppy, clocksi_bulk_update,
+    Result= rpc:call(Node, antidote, clocksi_bulk_update,
                      [
                       [{update, Key1, Type, {increment, a}},
                        {update, Key2, Type, {increment, a}},
@@ -181,12 +181,12 @@ atomic_write_txn(Node, Key1, Key2, Key3) ->
 
 atomic_read_txn(Node, Key1, Key2, Key3) ->
     Type = riak_dt_gcounter,
-    {ok,TxId} = rpc:call(Node, floppy, clocksi_istart_tx, []),
-    {ok, R1} = rpc:call(Node, floppy, clocksi_iread,
+    {ok,TxId} = rpc:call(Node, antidote, clocksi_istart_tx, []),
+    {ok, R1} = rpc:call(Node, antidote, clocksi_iread,
                         [TxId, Key1, Type]),
-    {ok, R2} = rpc:call(Node, floppy, clocksi_iread,
+    {ok, R2} = rpc:call(Node, antidote, clocksi_iread,
                         [TxId, Key2, Type]),
-    {ok, R3} = rpc:call(Node, floppy, clocksi_iread,
+    {ok, R3} = rpc:call(Node, antidote, clocksi_iread,
                         [TxId, Key3, Type]),
     ?assertEqual(R1,R2),
     ?assertEqual(R2,R3).

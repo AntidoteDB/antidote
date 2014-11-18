@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc mult_writes_one_read: Test that perform NumWrites increments to the key:abc.
+%% @doc log_test: Test that perform NumWrites increments to the key:abc.
 %%      Each increment is sent to a random node of the cluster.
 %%      Test norml behaviour of the logging layer
 %%      Perflorms a read to the first node of the cluster to check whether all the
@@ -26,7 +26,7 @@
 %%          Nodes: List of the nodes that belong to the built cluster.
 %%
 
--module(floppy_log_test).
+-module(log_test).
 
 -export([confirm/0]).
 
@@ -49,7 +49,7 @@ confirm() ->
             Node = lists:nth(Elem, Nodes),
             lager:info("Sending append to Node ~w~n",[Node]),
             WriteResult = rpc:call(Node,
-                                   floppy, append, [abc, riak_dt_gcounter, {increment, a}]),
+                                   antidote, append, [abc, riak_dt_gcounter, {increment, a}]),
             ?assertMatch({ok, _}, WriteResult),
             Acc + 1
     end,
@@ -59,7 +59,7 @@ confirm() ->
     rt:log_to_nodes(Nodes, "Issuing read operation."),
     FirstNode = hd(Nodes),
     ReadResult = rpc:call(FirstNode,
-                          floppy, read, [abc, riak_dt_gcounter]),
+                          antidote, read, [abc, riak_dt_gcounter]),
     lager:info("Read value: ~p", [ReadResult]),
     ?assertEqual({ok, Total}, ReadResult),
 

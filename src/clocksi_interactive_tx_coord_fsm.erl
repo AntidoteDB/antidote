@@ -27,7 +27,7 @@
 
 -behavior(gen_fsm).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 %% API
 -export([start_link/2, start_link/1]).
@@ -45,7 +45,7 @@
 %% @doc Data Type: state
 %% where:
 %%    from: the pid of the calling process.
-%%    txid: transaction id handled by this fsm, as defined in src/floppy.hrl.
+%%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
 %%    updated_partitions: the partitions where update operations take place.
 %%    num_to_ack: when sending prepare_commit,
 %%                number of partitions that have acked.

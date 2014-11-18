@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(clocksi_downstream).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 -export([generate_downstream_op/5]).
 

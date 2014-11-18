@@ -21,7 +21,7 @@
 
 -behaviour(riak_core_vnode).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,

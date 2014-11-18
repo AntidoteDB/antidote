@@ -29,14 +29,14 @@
          usevoucher/3,
          readvouchers/2]).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 -spec credit(key(), non_neg_integer(), pid()) -> ok | {error, reason()}.
 credit(Key, Amount, Pid) ->
-    case floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
+    case antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
         {ok, Counter} ->
-            CounterUpdt = floppyc_counter:increment(Amount, Counter),
-            case floppyc_pb_socket:store_crdt(CounterUpdt, Pid) of
+            CounterUpdt = antidotec_counter:increment(Amount, Counter),
+            case antidotec_pb_socket:store_crdt(CounterUpdt, Pid) of
                 ok ->
                     ok;
                 {error, Reason} ->
@@ -48,10 +48,10 @@ credit(Key, Amount, Pid) ->
 
 -spec debit(key(), non_neg_integer(), pid()) -> ok | {error, reason()}.
 debit(Key, Amount, Pid) ->
-    case floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
+    case antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
         {ok,Counter} ->
-            CounterUpdt = floppyc_counter:decrement(Amount, Counter),
-            case floppyc_pb_socket:store_crdt(CounterUpdt, Pid) of
+            CounterUpdt = antidotec_counter:decrement(Amount, Counter),
+            case antidotec_pb_socket:store_crdt(CounterUpdt, Pid) of
                 ok ->
                     ok;
                 {error, Reason} ->
@@ -63,19 +63,19 @@ debit(Key, Amount, Pid) ->
 
 -spec getbalance(key(), pid()) -> {error, error_in_read} | {ok, integer()}.
 getbalance(Key, Pid) ->
-    case floppyc_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
+    case antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
         {ok,Counter} ->
-            {ok, floppyc_counter:value(Counter)};
+            {ok, antidotec_counter:value(Counter)};
         {error, _Reason} ->
             {error, error_in_read}
     end.
 
 -spec buyvoucher(key(), term(), pid()) -> ok | {error, reason()}.
 buyvoucher(Key, Voucher, Pid) ->
-    case floppyc_pb_socket:get_crdt(Key, riak_dt_orset, Pid) of
+    case antidotec_pb_socket:get_crdt(Key, riak_dt_orset, Pid) of
         {ok, Set} ->
-            SetUpdt = floppyc_set:add(Voucher,Set),
-            case floppyc_pb_socket:store_crdt(SetUpdt, Pid) of
+            SetUpdt = antidotec_set:add(Voucher,Set),
+            case antidotec_pb_socket:store_crdt(SetUpdt, Pid) of
                 ok ->
                     ok;
                 {error, Reason} ->
@@ -87,10 +87,10 @@ buyvoucher(Key, Voucher, Pid) ->
 
 -spec usevoucher(key(), term(), pid()) -> ok | {error, reason()}.
 usevoucher(Key, Voucher, Pid) ->
-    case floppyc_pb_socket:get_crdt(Key, riak_dt_orset, Pid) of
+    case antidotec_pb_socket:get_crdt(Key, riak_dt_orset, Pid) of
         {ok, Set} ->
-            SetUpdt = floppyc_set:remove(Voucher, Set),
-            case floppyc_pb_socket:store_crdt(SetUpdt, Pid) of
+            SetUpdt = antidotec_set:remove(Voucher, Set),
+            case antidotec_pb_socket:store_crdt(SetUpdt, Pid) of
                 ok ->
                     ok;
                 {error, Reason} ->
@@ -102,9 +102,9 @@ usevoucher(Key, Voucher, Pid) ->
 
 -spec readvouchers(key(), pid()) -> {ok, list()} | {error, reason()}.
 readvouchers(Key, Pid) ->
-    case floppyc_pb_socket:get_crdt(Key, riak_dt_orset, Pid) of
+    case antidotec_pb_socket:get_crdt(Key, riak_dt_orset, Pid) of
         {ok, Set} ->
-            {ok, sets:to_list(floppyc_set:value(Set))};
+            {ok, sets:to_list(antidotec_set:value(Set))};
         {error, Reason} ->
             {error, Reason}
     end.

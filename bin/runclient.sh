@@ -1,11 +1,11 @@
 ROOT=../
 cd $ROOT
-rel/floppy/bin/floppy stop
-rm -rf rel/floppy/data/
+rel/antidote/bin/antidote stop
+rm -rf rel/antidote/data/
 make rel
-rel/floppy/bin/floppy start
+rel/antidote/bin/antidote start
 sleep 5
-cd floppyclient/ebin
-erl -name 'client@127.0.0.1' -cookie 'floppy' -run walletclient start a b -run init stop -noshell
+cd antidoteclient/ebin
+erl -name 'client@127.0.0.1' -cookie 'antidote' -run walletclient start a b -run init stop -noshell
 cd ../
-../rel/floppy/bin/floppy stop
+../rel/antidote/bin/antidote stop

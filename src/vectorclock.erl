@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(vectorclock).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

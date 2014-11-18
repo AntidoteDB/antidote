@@ -23,7 +23,7 @@
 -module(inter_dc_communication_sender).
 -behaviour(gen_fsm).
 
--include("floppy.hrl").
+-include("antidote.hrl").
 
 -export([start_link/4,
          propagate_sync/2

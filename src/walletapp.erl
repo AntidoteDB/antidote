@@ -17,9 +17,9 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc The walletapp is a test application for floppystore.
+%% @doc The walletapp is a test application for antidote.
 %%      It makes use of create, read/get, and update operations on the
-%%      floppystore.
+%%      antidote.
 %%
 %% @todo Add transaction like operations - buy voucher and reduce
 %%       balance -> Will be done when merging with clock_SI branch
@@ -37,7 +37,7 @@
 
 -type reason() :: atom().
 
--define(SERVER, 'floppy@127.0.0.1').
+-define(SERVER, 'antidote@127.0.0.1').
 
 %% @doc Initializes the application by setting a cookie.
 init(Nodename, Cookie) ->
@@ -51,7 +51,7 @@ init(Nodename, Cookie) ->
 %% @doc Increases the available credit for a customer.
 -spec credit(Key::term(), Amount::non_neg_integer()) -> ok | {error, reason()}.
 credit(Key, Amount) ->
-    case rpc:call(?SERVER, floppy, append, [Key, {{increment, Amount}, actor1}]) of
+    case rpc:call(?SERVER, antidote, append, [Key, {{increment, Amount}, actor1}]) of
         {ok, _} ->
             ok;
         {error, Reason} ->
@@ -61,7 +61,7 @@ credit(Key, Amount) ->
 %% @doc Decreases the available credit for a customer.
 -spec debit(Key::term(), Amount::non_neg_integer()) -> ok | {error, reason()}.
 debit(Key, Amount) ->
-    case rpc:call(?SERVER, floppy,  append, [Key,{{decrement,Amount}, actor1}]) of
+    case rpc:call(?SERVER, antidote,  append, [Key,{{decrement,Amount}, actor1}]) of
         {ok, _} ->
             ok;
         {error, Reason} ->
@@ -71,7 +71,7 @@ debit(Key, Amount) ->
 %% @doc Returns the current balance for a customer.
 -spec getbalance(Key::term()) -> {error, error_in_read} | {ok, number()}.
 getbalance(Key) ->
-    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_pncounter]) of
+    case rpc:call(?SERVER, antidote, read, [Key, riak_dt_pncounter]) of
         error ->
             {error, error_in_read};
         Val ->
@@ -81,17 +81,17 @@ getbalance(Key) ->
 %% @doc Increases the number of available vouchers for a customer.
 -spec buyvoucher(Key::term(),Voucher::term()) -> ok | {error, reason()}.
 buyvoucher(Key, Voucher) ->
-    rpc:call(?SERVER,floppy,  append, [Key, {{add, Voucher}, actor1}]).
+    rpc:call(?SERVER,antidote,  append, [Key, {{add, Voucher}, actor1}]).
 
 %% @doc Decreases the number of available vouchers for a customer.
 -spec usevoucher(Key::term(),Voucher::term()) -> ok | {error, reason()}.
 usevoucher(Key, Voucher) ->
-    rpc:call(?SERVER, floppy, append, [Key, {{remove, Voucher}, actor1}]).
+    rpc:call(?SERVER, antidote, append, [Key, {{remove, Voucher}, actor1}]).
 
 %% @doc Returns the number of currently available vouchers for a customer.
 -spec readvouchers(Key::term()) -> {ok, list()} | {error, reason()}.
 readvouchers(Key) ->
-    case rpc:call(?SERVER, floppy, read, [Key, riak_dt_orset]) of
+    case rpc:call(?SERVER, antidote, read, [Key, riak_dt_orset]) of
         {error, Reason} ->
             {error, Reason};
         Val ->

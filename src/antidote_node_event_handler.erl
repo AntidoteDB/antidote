@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(floppy_node_event_handler).
+-module(antidote_node_event_handler).
 -behaviour(gen_event).
 
 %% gen_event callbacks

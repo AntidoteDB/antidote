@@ -1,7 +1,7 @@
 %% -*- erlang -*-
-{application, floppy,
+{application, antidote,
  [
-  {description, ""},
+  {description, "SyncFree reference platform"},
   {vsn, "1"},
   {registered, []},
   {applications, [
@@ -11,6 +11,6 @@
                   riak_api,
                   riak_core
                  ]},
-  {mod, { floppy_app, []}},
+  {mod, { antidote_app, []}},
   {env, []}
  ]}.

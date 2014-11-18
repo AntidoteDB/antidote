@@ -3,7 +3,7 @@
 # just bail out if things go south
 set -e
 
-: ${RTEE_DEST_DIR:="$HOME/rt/floppystore"}
+: ${RTEE_DEST_DIR:="$HOME/rt/antidote"}
 
 echo "Making $(pwd) the current release:"
 cwd=$(pwd)
