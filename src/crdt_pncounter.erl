@@ -19,8 +19,8 @@
 
 -module(crdt_pncounter).
 
--export([new/0, new/1, value/1, value/2, update/2, to_binary/1, from_binary/1]).
--export([parent_clock/2, update/3, equal/2]).
+-export([new/0, new/1, value/1, value/2, update/2, generate_downstream/3, to_binary/1, from_binary/1]).
+-export([equal/2]).
 
 %% EQC API
 -ifdef(EQC).
@@ -54,11 +54,6 @@ new(Value) when Value < 0 ->
 new(_Zero) ->
     new().
 
-%% @doc no-op
--spec parent_clock(riak_dt_vclock:vclock(), pncounter()) ->
-                          pncounter().
-parent_clock(_Clock, Cntr) ->
-    Cntr.
 
 %% @doc The single, total value of a `pncounter()'
 -spec value(pncounter()) -> integer().
@@ -75,6 +70,17 @@ value(positive, PNCnt) ->
 value(negative, PNCnt) ->
     {_Inc, Dec} = PNCnt,
     Dec.
+
+-spec generate_downstream(pncounter_op(), riak_dt:actor(), pncounter()) -> {ok, pncounter_op()}.
+generate_downstream(increment, _Actor, _PNCnt) ->
+    {ok, {increment, 1}};
+generate_downstream(decrement, _Actor, _PNCnt) ->
+    {ok, {decrement, 1}};
+generate_downstream({increment, By}, _Actor, _PNCnt) -> 
+    {ok, {increment, By}};
+generate_downstream({decrement, By}, _Actor, _PNCnt) -> 
+    {ok, {decrement, By}}.
+
 
 %% @doc Update a `pncounter()'. The first argument is either the atom
 %% `increment' or `decrement' or the two tuples `{increment, pos_integer()}' or
@@ -97,8 +103,6 @@ update({increment, By}, PNCnt) when is_integer(By), By < 0 ->
 update({decrement, By}, PNCnt) when is_integer(By), By > 0 ->
     {ok, decrement_by(By, PNCnt)}.
 
-update(Op, Cntr, _Ctx) ->
-    update(Op, Cntr).
 
 -spec equal(pncounter(), pncounter()) -> boolean().
 equal({Inc1, Dec1}, {Inc2, Dec2}) ->

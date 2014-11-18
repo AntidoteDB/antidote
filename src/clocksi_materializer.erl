@@ -61,8 +61,8 @@ update_snapshot(Type, Snapshot, SnapshotTime, [Op|Rest], TxId) ->
                                     SnapshotTime,
                                     Rest,
                                     TxId);
-                {Update, Actor} ->
-                    case Type:update(Update, Actor, Snapshot) of
+                {update, DownstreamOp} ->
+                    case Type:update(DownstreamOp, Snapshot) of
                         {ok, NewSnapshot} ->
                             update_snapshot(Type,
                                             NewSnapshot,
@@ -122,28 +122,28 @@ get_snapshot(Type, SnapshotTime, Ops, TxId) ->
 -ifdef(TEST).
 
 materializer_clocksi_test()->
-    GCounter = create_snapshot(riak_dt_gcounter),
-    ?assertEqual(0,riak_dt_gcounter:value(GCounter)),
-    Op1 = #clocksi_payload{key = abc, type = riak_dt_gcounter,
-                           op_param = {{increment,2}, actor1},
+    PNCounter = create_snapshot(crdt_pncounter),
+    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update,{increment,2}},
                            commit_time = {1, 1}, txid = 1},
-    Op2 = #clocksi_payload{key = abc, type = riak_dt_gcounter,
-                           op_param = {{increment,1}, actor1},
+    Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update,{increment,1}},
                            commit_time = {1, 2}, txid = 2},
-    Op3 = #clocksi_payload{key = abc, type = riak_dt_gcounter,
-                           op_param = {{increment,1}, actor1},
+    Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update,{increment,1}},
                            commit_time = {1, 3}, txid = 3},
-    Op4 = #clocksi_payload{key = abc, type = riak_dt_gcounter,
-                           op_param = {{increment,2}, actor1},
+    Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update,{increment,2}},
                            commit_time = {1, 4}, txid = 4},
 
     Ops = [Op1,Op2,Op3,Op4],
-    {ok, GCounter2} = update_snapshot(riak_dt_gcounter,
-                                      GCounter, vectorclock:from_list([{1,3}]),
+    {ok, PNCounter2} = update_snapshot(crdt_pncounter,
+                                      PNCounter, vectorclock:from_list([{1,3}]),
                                       Ops, ignore),
-    ?assertEqual(4,riak_dt_gcounter:value(GCounter2)),
-    {ok, Gcounter3} = get_snapshot(riak_dt_gcounter,
+    ?assertEqual(4,crdt_pncounter:value(PNCounter2)),
+    {ok, PNcounter3} = get_snapshot(crdt_pncounter,
                                    vectorclock:from_list([{1,4}]),Ops),
-    ?assertEqual(6,riak_dt_gcounter:value(Gcounter3)).
+    ?assertEqual(6,crdt_pncounter:value(PNcounter3)).
 
 -endif.
