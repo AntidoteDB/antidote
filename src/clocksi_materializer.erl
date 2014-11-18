@@ -65,7 +65,19 @@ materialize(_, Snapshot, _SnapshotTime, [], _TxId, CommitTime) ->
     {ok, Snapshot, CommitTime};
 
 materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
-	lager:info("params: ~p", [Op#clocksi_payload.op_param]),
+
+
+%% to remove
+	OpCommitTime=Op#clocksi_payload.commit_time,
+	case OpCommitTime of
+	ignore ->
+		lager:info("Params= ~p ", [Op#clocksi_payload.op_param]);
+	_->
+		1=1
+	end,
+%%%%%%%%%%%%%%
+
+
     case Type == Op#clocksi_payload.type of
         true ->
             OpCommitTime=Op#clocksi_payload.commit_time,
