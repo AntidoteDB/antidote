@@ -39,7 +39,7 @@ new(Type) ->
 %% @doc Calls the internal function materialize/6, with no TxId.
 -spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid()) -> {ok, snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, atom()}.
+                      [clocksi_payload()], txid()) -> {ok, snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, term()}.
 %materialize(_Type, Snapshot, _SnapshotTime, []) ->
 %    {ok, Snapshot};
 materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
@@ -59,25 +59,12 @@ materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
 %%      time taken from the last operation that was applied to the snapshot.
 -spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid(), {dcid(),CommitTime::non_neg_integer()} | ignore) ->
-                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, atom()}.
+                      [clocksi_payload()], txid(), {dcid(),CommitTime::non_neg_integer()}) ->
+                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, term()}.
 materialize(_, Snapshot, _SnapshotTime, [], _TxId, CommitTime) ->
     {ok, Snapshot, CommitTime};
 
-materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
-
-
-%% to remove
-	OpCommitTime=Op#clocksi_payload.commit_time,
-	case OpCommitTime of
-	ignore ->
-		lager:info("Params= ~p ", [Op#clocksi_payload.op_param]);
-	_->
-		1=1
-	end,
-%%%%%%%%%%%%%%
-
-
+materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTime) ->
     case Type == Op#clocksi_payload.type of
         true ->
             OpCommitTime=Op#clocksi_payload.commit_time,
@@ -107,10 +94,10 @@ materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTame) ->
                             end
                     end;
                 false ->
-                    materialize(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
+                    materialize(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTime)
             end;
         false -> %% Op is not for this {Key, Type}
-            materialize(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTame)
+            materialize(Type, Snapshot, SnapshotTime, Rest, TxId, LastOpCommitTime)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot

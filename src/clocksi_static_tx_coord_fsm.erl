@@ -96,30 +96,49 @@ execute_batch_ops(timeout, SD=#state{from = From,
                                      tx_coord_pid = TxCoordPid,
                                      operations = Operations}) ->
     ExecuteOp = fun (Operation, Acc) ->
-                        case Operation of
-                            {update, Key, Type, OpParams} ->
-                                ok = gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity),
-                                Acc;
-                            {read, Key, Type} ->
-                                {ok, Value} = gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity),
-                                Acc++[Value]
-                        end
+    					case Acc of 
+						{error, Reason} ->
+							{error, Reason};
+						_ ->
+							case Operation of
+								{update, Key, Type, OpParams} ->
+									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
+									ok ->
+										Acc;
+									{error, Reason} ->
+										{error, Reason}
+									end;
+								{read, Key, Type} ->
+									case gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity) of
+									{ok, Value} ->
+										Acc++[Value];
+									{error, Reason} ->
+										{error, Reason}
+									end
+							end
+						end
                 end,
     ReadSet = lists:foldl(ExecuteOp, [], Operations),
-    case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-        {ok, _} ->
-            case gen_fsm:sync_send_event(TxCoordPid, commit, infinity) of
-                {ok, {TxId, CommitTime}} ->
-                    From ! {ok, {TxId, ReadSet, CommitTime}},
-                    {stop, normal, SD};
-                _ ->
-                    From ! {error, commit_fail},
-                    {stop, normal, SD}
-            end;
-        {aborted, TxId} ->
-            From ! {error, {aborted, TxId}},
-            {stop, normal, SD}
-    end.
+    case ReadSet of 
+	{error, _Reason} ->
+		{stop, normal, SD};
+	_ ->
+		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
+		{ok, _} ->
+			case gen_fsm:sync_send_event(TxCoordPid, commit, infinity) of
+				{ok, {TxId, CommitTime}} ->
+					From ! {ok, {TxId, ReadSet, CommitTime}},
+					{stop, normal, SD};
+				_ ->
+					From ! {error, commit_fail},
+					{stop, normal, SD}
+			end;
+		{aborted, TxId} ->
+			From ! {error, {aborted, TxId}},
+			{stop, normal, SD}
+		end
+	end.
+	
 
 
 %% =============================================================================
