@@ -75,29 +75,29 @@ start_vnode(I) ->
 
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
-    %try
+    try
         riak_core_vnode_master:sync_command(Node,
                                             {read_data_item, TxId, Key, Type},
                                             ?CLOCKSI_MASTER,
-                                            infinity).
-    %catch
-    %    _:Reason ->
-    %        lager:error("Exception caught: ~p", [Reason]),
-    %        {error, Reason}
-    %end.
+                                            infinity)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op) ->
-   % try
+    try
         riak_core_vnode_master:sync_command(Node,
                                             {update_data_item, TxId, Key, Type, Op},
                                             ?CLOCKSI_MASTER,
-                                            infinity).
-  %  catch
-  %      _:Reason ->
-  %          lager:error("Exception caught: ~p", [Reason]),
-  %          {error, Reason}
-  %  end.
+                                            infinity)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->

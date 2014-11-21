@@ -182,7 +182,7 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 					{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotTime, [H|T], TxId),
 					%% the following checks for the case there was no snapshots and there were operations, but none was applicable
 					%% for the given snapshot_time
-					case (Snapshot == LatestSnapshot) and (ExistsSnapshot==false) of 
+					case (CommitTime==ignore) of 
 					true->
 						riak_core_vnode:reply(Sender, {error, no_snapshot}),
 						{error, no_snapshot};
