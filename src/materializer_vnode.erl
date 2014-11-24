@@ -57,7 +57,7 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), vectorclock:vectorclock(), txid:txid()) -> {ok, term()} | {error, atom()}.
+-spec read(key(), type(), vectorclock:vectorclock(), txid()) -> {ok, term()} | {error, atom()}.
 read(Key, Type, SnapshotTime, TxId) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
@@ -146,7 +146,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid:txid(), atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
+-spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
@@ -179,24 +179,29 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 					riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
 					{ok, LatestSnapshot};
 				[H|T] ->
-					{ok, Snapshot, CommitTime} = clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotTime, [H|T], TxId),
-					%% the following checks for the case there was no snapshots and there were operations, but none was applicable
-					%% for the given snapshot_time
-					case (CommitTime==ignore) of 
-					true->
-						riak_core_vnode:reply(Sender, {error, no_snapshot}),
-						{error, no_snapshot};
-					false->
-						Res = case (Sender /= ignore) of
-								  true ->
-									  riak_core_vnode:reply(Sender, {ok, Snapshot}),
-									  {ok, Snapshot};
-								  false ->
-									  {ok, Snapshot}
-							  end,
-						SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
-						snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
-						Res
+					case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotTime, [H|T], TxId) of
+					{ok, Snapshot, CommitTime} ->
+						%% the following checks for the case there was no snapshots and there were operations, but none was applicable
+						%% for the given snapshot_time
+						case (CommitTime==ignore) of 
+						true->
+							riak_core_vnode:reply(Sender, {error, no_snapshot}),
+							{error, no_snapshot};
+						false->
+							Res = case (Sender /= ignore) of
+									  true ->
+										  riak_core_vnode:reply(Sender, {ok, Snapshot}),
+										  {ok, Snapshot};
+									  false ->
+										  {ok, Snapshot}
+								  end,
+							SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
+							snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
+							Res
+						end;
+					{error, Reason} ->
+						riak_core_vnode:reply(Sender, {error, Reason}),
+						{error, Reason}
 					end
 			end
 	end.
