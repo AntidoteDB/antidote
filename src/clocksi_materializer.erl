@@ -86,6 +86,7 @@ materialize(Type, Snapshot, SnapshotTime, [Op|Rest], TxId, LastOpCommitTime) ->
                                         TxId,
                                         OpCommitTime);
                         {update, DownstreamOp} ->
+                            lager:info("Applying downstream operation:~w", [DownstreamOp]),
                             case Type:update(DownstreamOp, Snapshot) of
                                 {ok, NewSnapshot} ->
                                     materialize(Type,

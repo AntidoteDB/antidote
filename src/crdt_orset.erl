@@ -178,7 +178,12 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 add_elem(Elem,Token,ORDict) ->
     case orddict:find(Elem,ORDict) of
         {ok, Tokens} ->
-            {ok, orddict:store(Elem, Tokens++[Token], ORDict)};
+            case lists:member(Token, Tokens) of
+                true ->
+                    {ok, ORDict};
+                false ->
+                    {ok, orddict:store(Elem, Tokens++[Token], ORDict)}
+            end;
         error ->
             {ok, orddict:store(Elem, [Token], ORDict)}
     end.

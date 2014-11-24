@@ -30,6 +30,7 @@ confirm() ->
     empty_set_test(Nodes),
     add_test(Nodes),
     remove_test(Nodes),
+    %%concurrency_test(Nodes),
     rt:clean_cluster(Nodes),
     pass.
 
@@ -42,12 +43,18 @@ empty_set_test(Nodes) ->
     Result0=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
     ?assertMatch({ok, []}, Result0),
-    Result1=rpc:call(FirstNode, antidote, append,
-                    [Key, Type, {{remove, a}, ucl}]),
-    ?assertMatch({error,{precondition,{not_present,a}}}, Result1),
-    Result2=rpc:call(FirstNode, antidote, append,
+    %%Result1=rpc:call(FirstNode, antidote, append,
+    %%                [Key, Type, {{remove, a}, ucl}]),
+    %%?assertMatch({ok, _}, Result1),
+    %%Result2=rpc:call(FirstNode, antidote, read,
+    %%                [Key, Type]),
+    %%?assertMatch({error,{precondition,{not_present,a}}}, Result2),
+    Result3=rpc:call(FirstNode, antidote, append,
                     [Key, Type, {{add, a}, ucl}]),
-    ?assertMatch({ok, [a]}, Result2).
+    ?assertMatch({ok, _}, Result3),
+    Result4=rpc:call(FirstNode, antidote, read,
+                    [Key, Type]),
+    ?assertMatch({ok, [a]}, Result4).
 
 
 add_test(Nodes) ->
@@ -57,16 +64,25 @@ add_test(Nodes) ->
     Key = key_add,
     %%Add multiple key works
     Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{add, a}, ucl}}, {Key, Type, {{add, b}, ucl}}]),
-    ?assertMatch({ok, [a,b]}, Result0),
+                    [[{update, Key, Type, {{add, a}, ucl}}, {update, Key, Type, {{add, b}, ucl}}]]),
+    ?assertMatch({ok, _}, Result0),
+    Result1=rpc:call(FirstNode, antidote, read,
+                    [Key, Type]),
+    ?assertMatch({ok, [a,b]}, Result1),
     %%Add a key twice in a transaction only adds one
-    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{add, c}, ucl}}, {Key, Type, {{add, c}, ucl}}]),
-    ?assertMatch({ok, [a,b,c]}, Result1),
-    %%Add a key multiple time will not duplicate
     Result2=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{add, a}, ucl}}]),
-    ?assertMatch({ok, [a,b,c]}, Result2).
+                    [[{update, Key, Type, {{add, c}, ucl}}, {update, Key, Type, {{add, c}, ucl}}]]),
+    ?assertMatch({ok, _}, Result2),
+    Result3=rpc:call(FirstNode, antidote, read,
+                    [Key, Type]),
+    ?assertMatch({ok, [a,b,c]}, Result3),
+    %%Add a key multiple time will not duplicate
+    Result4=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+                    [[{update, Key, Type, {{add, a}, ucl}}]]),
+    ?assertMatch({ok, _}, Result4),
+    Result5=rpc:call(FirstNode, antidote, read,
+                    [Key, Type]),
+    ?assertMatch({ok, [a,b,c]}, Result5).
 
 
 remove_test(Nodes) ->
@@ -75,35 +91,60 @@ remove_test(Nodes) ->
     Type = crdt_orset,
     Key = key_remove,
     %%Remove a non-existent key will trigger error
-    Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{remove, a}, ucl}}]),
-    lager:info("Result0: ~w", [Result0]),
-    ?assertMatch({error, _}, Result0),
+    %Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    %                [{update, Key, Type, {{remove, a}, ucl}}]),
+    %lager:info("Result0: ~w", [Result0]),
+    %?assertMatch({error, _}, Result0),
     
     Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{add, a}, ucl}}, {Key, Type, {{add, b}, ucl}}]),
+                    [[{update, Key, Type, {{add, a}, ucl}}, {update, Key, Type, {{add, b}, ucl}}]]),
     ?assertMatch({ok, _}, Result1),
     Result2=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
-    ?assertMatch([a,b], Result2),
+    ?assertMatch({ok, [a,b]}, Result2),
     %% Remove an element works
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{remove, a}, ucl}}]),
+                    [[{update, Key, Type, {{remove, a}, ucl}}]]),
     ?assertMatch({ok, _}, Result3),
     Result4=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
-    ?assertMatch([b], Result4),
+    ?assertMatch({ok, [b]}, Result4),
     %%Add back and remove all works
     Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{add, a}, ucl}}, {Key, Type, {{add, b}, ucl}}]),
+                    [[{update, Key, Type, {{add, a}, ucl}}, {update, Key, Type, {{add, b}, ucl}}]]),
     ?assertMatch({ok, _}, Result5),
     %%Remove all
     Result6=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [{Key, Type, {{remove, a}, ucl}}, {Key, Type, {{remove, b}, ucl}}]),
+                    [[{update, Key, Type, {{remove, a}, ucl}}, {update, Key, Type, {{remove, b}, ucl}}]]),
     ?assertMatch({ok, _}, Result6),
     Result7=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
-    ?assertMatch([], Result7).
+    ?assertMatch({ok, []}, Result7).
     
+
+concurrency_test(Nodes) ->
+    FirstNode = hd(Nodes),
+    SecondNode = lists:nth(2, Nodes),
+    lager:info("Concurrency test started"),
+    Type = crdt_orset,
+    Key = key_concurrency,
+    
+    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+                    [[{update, Key, Type, {{add, a}, ucl}}]]),
+    ?assertMatch({ok, _}, Result1),
+
+    Result2=rpc:call(SecondNode, antidote, clocksi_execute_tx,
+                    [[{update, Key, Type, {{add, a}, no_user}}]]),
+    ?assertMatch({ok, _}, Result2),
+
+    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+                    [[{update, Key, Type, {{remove, a}, ucl}}]]),
+    ?assertMatch({ok, _}, Result3),
+
+    Result4=rpc:call(SecondNode, antidote, read,
+                    [Key, Type]),
+    ?assertMatch({ok, [a]}, Result4).
+        
+
 
 
