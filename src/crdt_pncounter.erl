@@ -36,8 +36,8 @@
 
 -opaque pncounter()  :: {Inc::non_neg_integer(), Dec::non_neg_integer()}.
 -type binary_pncounter() :: binary().
--type pncounter_op() :: riak_dt_gcounter:gcounter_op() | decrement_op().
--type decrement_op() :: decrement | {decrement, pos_integer()}.
+-type pncounter_op() :: {riak_dt_gcounter:gcounter_op(), binary()} | decrement_op().
+-type decrement_op() :: decrement | {decrement, pos_integer(), binary()}.
 -type pncounter_q()  :: positive | negative.
 
 %% @doc Create a new, empty `pncounter()'
@@ -48,9 +48,9 @@ new() ->
 %% @doc Create a `pncounter()' with an initial `Value' for `Actor'.
 -spec new(integer()) -> pncounter().
 new(Value) when Value > 0 ->
-    update({increment, Value}, new());
+    update({{increment, Value}, unique(1)}, new());
 new(Value) when Value < 0 ->
-    update({decrement, Value * -1}, new());
+    update({decrement, Value * -1, unique(1)}, new());
 new(_Zero) ->
     new().
 
@@ -72,14 +72,14 @@ value(negative, PNCnt) ->
     Dec.
 
 -spec generate_downstream(pncounter_op(), riak_dt:actor(), pncounter()) -> {ok, pncounter_op()}.
-generate_downstream(increment, _Actor, _PNCnt) ->
-    {ok, {increment, 1}};
-generate_downstream(decrement, _Actor, _PNCnt) ->
-    {ok, {decrement, 1}};
-generate_downstream({increment, By}, _Actor, _PNCnt) -> 
-    {ok, {increment, By}};
-generate_downstream({decrement, By}, _Actor, _PNCnt) -> 
-    {ok, {decrement, By}}.
+generate_downstream(increment, Actor, _PNCnt) ->
+    {ok, {{increment, 1}, unique(Actor)}};
+generate_downstream(decrement, Actor, _PNCnt) ->
+    {ok, {{decrement, 1}, unique(Actor)}};
+generate_downstream({increment, By}, Actor, _PNCnt) -> 
+    {ok, {{increment, By}, unique(Actor)}};
+generate_downstream({decrement, By}, Actor, _PNCnt) -> 
+    {ok, {{decrement, By}, unique(Actor)}}.
 
 
 %% @doc Update a `pncounter()'. The first argument is either the atom
@@ -90,17 +90,13 @@ generate_downstream({decrement, By}, _Actor, _PNCnt) ->
 %%
 %% returns the updated `pncounter()'
 -spec update(pncounter_op(), pncounter()) -> {ok, pncounter()}.
-update(increment, PNCnt) ->
-    update({increment, 1}, PNCnt);
-update(decrement, PNCnt) ->
-    update({decrement, 1}, PNCnt);
-update({_IncrDecr, 0}, PNCnt) ->
+update({{_IncrDecr, 0}, _Token}, PNCnt) ->
     {ok, PNCnt};
-update({increment, By}, PNCnt) when is_integer(By), By > 0 ->
+update({{increment, By}, _Token}, PNCnt) when is_integer(By), By > 0 ->
     {ok, increment_by(By, PNCnt)};
-update({increment, By}, PNCnt) when is_integer(By), By < 0 ->
+update({{increment, By}, _Token}, PNCnt) when is_integer(By), By < 0 ->
     update({decrement, -By}, PNCnt);
-update({decrement, By}, PNCnt) when is_integer(By), By > 0 ->
+update({{decrement, By}, _Token}, PNCnt) when is_integer(By), By > 0 ->
     {ok, decrement_by(By, PNCnt)}.
 
 
@@ -143,6 +139,8 @@ decrement_by(Decrement, PNCnt) ->
     {Inc, Dec} = PNCnt,
     {Inc, Dec+Decrement}.
 
+unique(_Actor) ->
+    crypto:strong_rand_bytes(20).
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -161,28 +159,28 @@ value_test() ->
 
 update_increment_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, 1}, PNCnt0),
-    {ok, PNCnt2} = update({increment, 2}, PNCnt1),
-    {ok, PNCnt3} = update({increment, 1}, PNCnt2),
+    {ok, PNCnt1} = update({{increment, 1}, 1}, PNCnt0),
+    {ok, PNCnt2} = update({{increment, 2}, 1}, PNCnt1),
+    {ok, PNCnt3} = update({{increment, 1}, 1}, PNCnt2),
     ?assertEqual({4,0}, PNCnt3).
 
 update_increment_by_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, 7}, PNCnt0),
+    {ok, PNCnt1} = update({{increment, 7}, 1}, PNCnt0),
     ?assertEqual({7,0}, PNCnt1).
 
 update_decrement_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, 1}, PNCnt0),
-    {ok, PNCnt2} = update({increment, 2}, PNCnt1),
-    {ok, PNCnt3} = update({increment, 1}, PNCnt2),
-    {ok, PNCnt4} = update({decrement, 1}, PNCnt3),
+    {ok, PNCnt1} = update({{increment, 1}, 1}, PNCnt0),
+    {ok, PNCnt2} = update({{increment, 2}, 1}, PNCnt1),
+    {ok, PNCnt3} = update({{increment, 1}, 1}, PNCnt2),
+    {ok, PNCnt4} = update({{decrement, 1}, 1}, PNCnt3),
     ?assertEqual({4,1}, PNCnt4).
 
 update_decrement_by_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, 7}, PNCnt0),
-    {ok, PNCnt2} = update({decrement, 5}, PNCnt1),
+    {ok, PNCnt1} = update({{increment, 7}, 1}, PNCnt0),
+    {ok, PNCnt2} = update({{decrement, 5}, 1}, PNCnt1),
     ?assertEqual({7, 5}, PNCnt2).
 
 equal_test() ->

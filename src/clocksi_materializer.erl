@@ -94,8 +94,8 @@ update_snapshot_eager(Type, Snapshot, [Op|Rest]) ->
     case Op of
         {merge, State} ->
             NewSnapshot = Type:merge(Snapshot, State);
-        {OpParam, Actor} ->
-            {ok, NewSnapshot} = Type:update(OpParam, Actor, Snapshot)
+        {update, DownstreamOp} ->
+            {ok, NewSnapshot} = Type:update(DownstreamOp, Snapshot)
     end,
     update_snapshot_eager(Type, NewSnapshot, Rest).
 
@@ -125,16 +125,16 @@ materializer_clocksi_test()->
     PNCounter = create_snapshot(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
-                           op_param = {update,{increment,2}},
+                           op_param = {update,{{increment,2},1}},
                            commit_time = {1, 1}, txid = 1},
     Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
-                           op_param = {update,{increment,1}},
+                           op_param = {update,{{increment,1},1}},
                            commit_time = {1, 2}, txid = 2},
     Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
-                           op_param = {update,{increment,1}},
+                           op_param = {update,{{increment,1},1}},
                            commit_time = {1, 3}, txid = 3},
     Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
-                           op_param = {update,{increment,2}},
+                           op_param = {update,{{increment,2},1}},
                            commit_time = {1, 4}, txid = 4},
 
     Ops = [Op1,Op2,Op3,Op4],

@@ -40,6 +40,7 @@ generate_downstream_op(Transaction, Node, Key, Type, Update) ->
                                 {update, OpParam};
                             crdt_pncounter ->
                                 {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+                                lager:info("Generate downstream for ~w", [OpParam]),
                                 {update, OpParam};
                             _ ->
                                 {ok, NewState} = Type:update(Op, Actor, Snapshot),
