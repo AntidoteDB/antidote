@@ -39,11 +39,16 @@ new(Type) ->
 %% @doc Calls the internal function materialize/6, with no TxId.
 -spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid()) -> {ok, snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, term()}.
+                      [clocksi_payload()], txid()) -> {ok, snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
 %materialize(_Type, Snapshot, _SnapshotTime, []) ->
 %    {ok, Snapshot};
 materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
-    materialize(Type, Snapshot, SnapshotTime, Ops, TxId, ignore).
+    case materialize(Type, Snapshot, SnapshotTime, Ops, TxId, ignore) of
+    {ok, Val, CommitTime} ->
+    	{ok, Val, CommitTime};
+    {error, Reason} ->
+    	{error, Reason}
+    end.
 
 
 
@@ -59,8 +64,8 @@ materialize(Type, Snapshot, SnapshotTime, Ops, TxId) ->
 %%      time taken from the last operation that was applied to the snapshot.
 -spec materialize(type(), snapshot(),
                       snapshot_time(),
-                      [clocksi_payload()], txid(), {dcid(),CommitTime::non_neg_integer()}) ->
-                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()}} | {error, term()}.
+                      [clocksi_payload()], txid(), {dcid(),CommitTime::non_neg_integer()} | ignore) ->
+                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
 materialize(_, Snapshot, _SnapshotTime, [], _TxId, CommitTime) ->
     {ok, Snapshot, CommitTime};
 
