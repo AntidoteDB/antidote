@@ -7,9 +7,9 @@
 %% -------------------------------------------------------------------
 
 %% @doc
-%% A PN-Counter CRDT. A PN-Counter is essentially two G-Counters: one for increments and
+%% A PN-Counter CRDT. A PN-Counter is represented as two non-negative integers: one for increments and
 %% one for decrements. The value of the counter is the difference between the value of the
-%% Positive G-Counter and the value of the Negative G-Counter.
+%% positive counter and the value of the negative counter.
 %%
 %%
 %% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
@@ -54,7 +54,6 @@ new(Value) when Value < 0 ->
 new(_Zero) ->
     new().
 
-
 %% @doc The single, total value of a `pncounter()'
 -spec value(pncounter()) -> integer().
 value(PNCnt) ->
@@ -71,6 +70,14 @@ value(negative, PNCnt) ->
     {_Inc, Dec} = PNCnt,
     Dec.
 
+%% @doc Generate a downstream operation.
+%% The first parameter is either `increment' or `decrement' or the two tuples 
+%% `{increment, pos_integer()}' or `{decrement, pos_integer()}'. The second parameter
+%% is the actor and the third parameter is the pncounter (both parameters are not actually used).
+%% 
+%% Returns a tuple representing the downstream operation and a unique identifier. The unique 
+%% identifier is to ensure that the two same operations (e.g. two {increment, 1}) in a single 
+%% transaction will not be ingored, which is caused by our implementation.
 -spec generate_downstream(pncounter_op(), riak_dt:actor(), pncounter()) -> {ok, pncounter_op()}.
 generate_downstream(increment, Actor, _PNCnt) ->
     {ok, {{increment, 1}, unique(Actor)}};
@@ -84,9 +91,10 @@ generate_downstream({decrement, By}, Actor, _PNCnt) ->
 
 %% @doc Update a `pncounter()'. The first argument is either the atom
 %% `increment' or `decrement' or the two tuples `{increment, pos_integer()}' or
-%% `{decrement, pos_integer()}'. In the case of the former, the operation's amount
+%% `{decrement, pos_integer()}', followed by a unique token, which is not used here. 
+%% In the case of the former, the operation's amount
 %% is `1'. Otherwise it is the value provided in the tuple's second element.
-%% `Actor' is any term, and the 3rd argument is the `pncounter()' to update.
+%% The 2nd argument is the `pncounter()' to update.
 %%
 %% returns the updated `pncounter()'
 -spec update(pncounter_op(), pncounter()) -> {ok, pncounter()}.
@@ -95,11 +103,15 @@ update({{_IncrDecr, 0}, _Token}, PNCnt) ->
 update({{increment, By}, _Token}, PNCnt) when is_integer(By), By > 0 ->
     {ok, increment_by(By, PNCnt)};
 update({{increment, By}, _Token}, PNCnt) when is_integer(By), By < 0 ->
-    update({decrement, -By}, PNCnt);
+    {ok, decrement_by(-By, PNCnt)};
 update({{decrement, By}, _Token}, PNCnt) when is_integer(By), By > 0 ->
-    {ok, decrement_by(By, PNCnt)}.
+    {ok, decrement_by(By, PNCnt)};
+update({{decrement, By}, _Token}, PNCnt) when is_integer(By), By < 0 ->
+    {ok, increment_by(-By, PNCnt)}.
 
 
+%% @doc Compare if two `pncounter()' are equal. Only returns `true()' if both 
+%% of their positive and negative entries are equal.
 -spec equal(pncounter(), pncounter()) -> boolean().
 equal({Inc1, Dec1}, {Inc2, Dec2}) ->
     case Inc1 of
@@ -149,6 +161,7 @@ unique(_Actor) ->
 new_test() ->
     ?assertEqual({0,0}, new()).
 
+%% @doc test the correctness of `value()' function
 value_test() ->
     PNCnt1 = {4,0}, 
     PNCnt2 = {8,4},
@@ -157,6 +170,7 @@ value_test() ->
     ?assertEqual(4, value(PNCnt2)),
     ?assertEqual(0, value(PNCnt3)).
 
+%% @doc test the correctness of increment without parameter.
 update_increment_test() ->
     PNCnt0 = new(),
     {ok, PNCnt1} = update({{increment, 1}, 1}, PNCnt0),
@@ -164,11 +178,13 @@ update_increment_test() ->
     {ok, PNCnt3} = update({{increment, 1}, 1}, PNCnt2),
     ?assertEqual({4,0}, PNCnt3).
 
+%% @doc test the correctness of increment by some numbers.
 update_increment_by_test() ->
     PNCnt0 = new(),
     {ok, PNCnt1} = update({{increment, 7}, 1}, PNCnt0),
     ?assertEqual({7,0}, PNCnt1).
 
+%% @doc test the correctness of decrement.
 update_decrement_test() ->
     PNCnt0 = new(),
     {ok, PNCnt1} = update({{increment, 1}, 1}, PNCnt0),
