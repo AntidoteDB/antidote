@@ -57,6 +57,11 @@
 new() ->
     orddict:new().
 
+%% @doc   
+%% without parameter: return all existing elements in the `orset()'  
+%% {fragment, elem}: create and return a new `orset()' with all metadata 
+%% of an element 
+%% {tokens, elem}: returns all uniques tokens of an element in the set
 -spec value(orset()) -> [member()].
 value(ORDict) ->
     orddict:fetch_keys(ORDict).
@@ -79,6 +84,10 @@ value({tokens, Elem}, ORSet) ->
 value(_,ORSet) ->
     value(ORSet).
 
+%% @doc generate downstream operations. 
+%% If the operation is add or add_all, generate unique tokens for each element
+%% If the operation is remove or remove_all, fetches all unique tokens for 
+%% these elements existing in the `orset()'.
 -spec generate_downstream(orset_op(), actor(), orset()) -> {ok, orset_op()}.
 generate_downstream({add,Elem}, Actor, _ORDict) ->
     Token = unique(Actor),
@@ -97,6 +106,13 @@ generate_downstream({remove_all,Elems}, _Actor, ORDict) ->
     {ok, {remove_all, ToRemove}}.
 
 
+%% @doc apply downstream operations and update an `orset()'.
+%% The first parameter denotes this operation is for adding or removing elements.
+%% For add or add_all, the second element of the tuple is a list of elements and tokens to add
+%% For remove or remove_all, the second element of the tuple is a list of elements and their tokens
+%% to remove.
+%% For update, the second element of the tuple is a list of updates to apply, each of which can
+%% either be add, add_all or remove, remove_all. 
 -spec update(orset_op(), orset()) -> {ok, orset()} |
                                               {error, {precondition ,{not_present, member()}}}.
 update({add, {Elem, [Token|_]}}, ORDict) ->
@@ -139,7 +155,7 @@ precondition_context(ORDict) ->
 stats(ORSet) ->
     [ {S, stat(S, ORSet)} || S <- [element_count] ].
 
--spec stat(atom(), orset()) -> number() | undefined.
+-spec stat(atom(), orset()) -> integer() | undefined.
 stat(element_count, ORSet) ->
     orddict:size(ORSet);
 stat(_, _) -> undefined.
@@ -158,6 +174,7 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     binary_to_term(Bin).
 
 %% Private
+%% @doc add an element and its token to the `orset()'.
 add_elem(Elem,Token,ORDict) ->
     case orddict:find(Elem,ORDict) of
         {ok, Tokens} ->
@@ -166,6 +183,7 @@ add_elem(Elem,Token,ORDict) ->
             {ok, orddict:store(Elem, [Token], ORDict)}
     end.
 
+%% @doc remove all tokens of the element from the `orset()'.
 remove_elem({Elem,RemoveTokens},ORDict) ->
     case orddict:find(Elem,ORDict) of
         {ok, Tokens} ->
@@ -196,6 +214,7 @@ apply_ops([Op | Rest], ORDict) ->
         Error -> Error
     end.
 
+%% @doc generate a unique identifier (best-effort).
 unique(_Actor) ->
     crypto:strong_rand_bytes(20).
 
