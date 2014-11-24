@@ -141,11 +141,11 @@ execute_op({Op_type, Args}, Sender,
                                 true->
                                     {reply, ok, execute_op, SD0}
                             end;
-                        error ->
-                            {reply, error, abort, SD0}
+                        {error, Reason} ->
+                            {reply, {error, Reason}, abort, SD0}
                     end;
-                {error, _} ->
-                    {reply, error, abort, SD0}
+                {error, Reason} ->
+                    {reply, {error, Reason}, abort, SD0}
             end
     end.
 
