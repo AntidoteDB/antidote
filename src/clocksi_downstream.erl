@@ -36,8 +36,17 @@ generate_downstream_op(Transaction, Node, Key, Type, Update) ->
                                       Key,
                                       Type) of
         {ok, Snapshot} ->
-            {ok, NewState} = Type:update(Op, Actor, Snapshot),
-            DownstreamOp = {merge, NewState},
+            DownstreamOp = case Type of
+                            crdt_orset ->
+                                {ok, Op} = Type:update(Op, Actor, Snapshot),
+                                Update#clocksi_payload{op_param=Op};
+                            crdt_pncounter ->
+                                {ok, Op} = Type:update(Op, Actor, Snapshot),
+                                Update#clocksi_payload{op_param=Op};
+                            _ ->
+                                {ok, NewState} = Type:update(Op, Actor, Snapshot),
+                                Update#clocksi_payload{op_param={merge, NewState}}
+            end,
             {ok, DownstreamOp};
         {error, no_snapshot} ->
             {error, no_snapshot}
