@@ -188,16 +188,15 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 							riak_core_vnode:reply(Sender, {error, no_snapshot}),
 							{error, no_snapshot};
 						false->
-							Res = case (Sender /= ignore) of
-									  true ->
-										  riak_core_vnode:reply(Sender, {ok, Snapshot}),
-										  {ok, Snapshot};
-									  false ->
-										  {ok, Snapshot}
-								  end,
+							case (Sender /= ignore) of
+							  true ->
+								  riak_core_vnode:reply(Sender, {ok, Snapshot});
+							  false ->
+								  1=1
+							  end,
 							SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
 							snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
-							Res
+							{ok, Snapshot}
 						end;
 					{error, Reason} ->
 						riak_core_vnode:reply(Sender, {error, Reason}),
