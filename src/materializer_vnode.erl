@@ -152,14 +152,16 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
         [] ->
         	SnapshotDict=orddict:new(),
             LatestSnapshot=clocksi_materializer:new(Type),
+            SnapshotCommitTime = ignore,
             ExistsSnapshot=false;
         [{_, SnapshotDict}] ->
             case get_latest_snapshot(SnapshotDict, SnapshotTime) of
-                {ok, {_SnapshotCommitTime, LatestSnapshot}}->
+                {ok, {SnapshotCommitTime, LatestSnapshot}}->
                     ExistsSnapshot=true;
                 {ok, no_snapshot} ->
                 	ExistsSnapshot=false,
-                    LatestSnapshot=clocksi_materializer:new(Type)
+                    LatestSnapshot=clocksi_materializer:new(Type), 
+                    SnapshotCommitTime = ignore
             end
     end,
 	case ets:lookup(OpsCache, Key) of
@@ -179,7 +181,7 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 					riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
 					{ok, LatestSnapshot};
 				[H|T] ->
-					case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotTime, [H|T], TxId) of
+					case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, SnapshotTime, [H|T], TxId) of
 					{ok, Snapshot, CommitTime} ->
 						%% the following checks for the case there was no snapshots and there were operations, but none was applicable
 						%% for the given snapshot_time
