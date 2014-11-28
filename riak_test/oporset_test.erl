@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(oporset_test).
 
--export([confirm/0]).
+-export([confirm/0, concurrency_test/1]).
 
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
