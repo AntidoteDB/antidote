@@ -215,7 +215,7 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
         []->
-            {ok,[]};
+            {ok, no_snapshot};
         [H|T]->
             case orddict:filter(fun(Key, _Value) ->
                                         belongs_to_snapshot(Key, SnapshotTime) end, [H|T]) of

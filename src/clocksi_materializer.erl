@@ -82,6 +82,19 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
             case (is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
+                
+                
+                		case is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime) of
+                		true -> lager:info("op is in snapshot");
+                		false -> lager:info("op is NOT in snapshot")
+                		end,
+                		
+                		case (TxId == Op#clocksi_payload.txid) of
+                		true -> lager:info("tx id is the same");
+                		false -> lager:info("tx id is NOT the same")
+                		end,
+                
+                
                 	    case Op#clocksi_payload.op_param of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
@@ -122,18 +135,25 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
 %%			   SnapshotCommitTime = commit time of that snapshot.
 %%      Outptut: true or false
 -spec is_op_in_snapshot({term(), non_neg_integer()}, vectorclock:vectorclock(), {term(),non_neg_integer()} | ignore) -> boolean().
-is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime) ->
-	{Dc, CommitTime}= OpCommitTime,
-    {ok, Ts} = vectorclock:get_clock_of_dc(Dc, SnapshotTime),
+is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
+	{OpDc, OpCommitTime}= OperationCommitTime,
+    {ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
+    
+    lager:info("operation commit time = ~p", [OpCommitTime]),
+    lager:info("snapshot commit time = ~p", [SnapshotCommitTime]),
+    lager:info("snapshot time in the dc= ~p", [Ts]),
+    
     case SnapshotCommitTime of
     ignore -> 
-    	CommitTime =< Ts;
+    	OpCommitTime =< Ts;
     {SnapshotDc, SnapshotCT} ->
-    	case SnapshotDc==Dc of
+    	case (SnapshotDc == OpDc) of
     	true ->
-			(CommitTime =< Ts) and (SnapshotCT < OpCommitTime);
+    	lager:info("same DC"),
+			(OpCommitTime =< Ts) and (SnapshotCT < OpCommitTime);
 		false ->
-			CommitTime =< Ts
+		lager:info("diff DC"),
+			OpCommitTime =< Ts
 		end
 	end.
 
@@ -221,4 +241,16 @@ materializer_clocksi_noop_test() ->
                                 vectorclock:from_list([{1,1}]),
                                 Ops, ignore, ignore),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
+    
+    
+    
+    
+is_op_in_snapshot_test()->
+	OpCT1 = {dc1, 1},
+	ST1 = vectorclock:from_list([{dc1, 2}]),
+	ST2 = vectorclock:from_list([{dc1, 0}]),
+	true = is_op_in_snapshot(OpCT1, ST1, ignore),
+	false = is_op_in_snapshot(OpCT1, ST2, ignore).
+    
+    
 -endif.
