@@ -225,6 +225,8 @@ Running Tests
 ### Setup riak_test ###
 
 1. Clone [https://github.com/SyncFree/riak\_test](https://github.com/SyncFree/riak_test) .Lets call it RIAK_TEST
+2. Switch to the features/csm/floppystore branch:
+	* git checkout features/csm/floppystore
 2. cd RIAK_TEST and run commands
 	* make
 5. Download and put `.riak_test.config` in home directory from following link
