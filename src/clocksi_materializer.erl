@@ -45,7 +45,7 @@ new(Type) ->
 %materialize(_Type, Snapshot, _SnapshotTime, []) ->
 %    {ok, Snapshot};
 materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
-    case materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, ignore) of
+    case materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime) of
     {ok, Val, CommitTime} ->
     	{ok, Val, CommitTime};
     {error, Reason} ->
@@ -82,19 +82,6 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
             case (is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-                
-                
-                		case is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime) of
-                		true -> lager:info("op is in snapshot");
-                		false -> lager:info("op is NOT in snapshot")
-                		end,
-                		
-                		case (TxId == Op#clocksi_payload.txid) of
-                		true -> lager:info("tx id is the same");
-                		false -> lager:info("tx id is NOT the same")
-                		end,
-                
-                
                 	    case Op#clocksi_payload.op_param of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
@@ -106,7 +93,6 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
                                         TxId,
                                         OpCommitTime);
                         {update, DownstreamOp} ->
-                            lager:info("Applying downstream operation:~w", [DownstreamOp]),
                             case Type:update(DownstreamOp, Snapshot) of
                                 {ok, NewSnapshot} ->
                                     materialize(Type,
@@ -138,21 +124,14 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
 is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
 	{OpDc, OpCommitTime}= OperationCommitTime,
     {ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
-    
-    lager:info("operation commit time = ~p", [OpCommitTime]),
-    lager:info("snapshot commit time = ~p", [SnapshotCommitTime]),
-    lager:info("snapshot time in the dc= ~p", [Ts]),
-    
     case SnapshotCommitTime of
     ignore -> 
     	OpCommitTime =< Ts;
     {SnapshotDc, SnapshotCT} ->
     	case (SnapshotDc == OpDc) of
     	true ->
-    	lager:info("same DC"),
 			(OpCommitTime =< Ts) and (SnapshotCT < OpCommitTime);
 		false ->
-		lager:info("diff DC"),
 			OpCommitTime =< Ts
 		end
 	end.
@@ -230,7 +209,11 @@ materializer_clocksi_concurrent_test() ->
     
     {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, Snapshot, ignore,
                                    vectorclock:from_list([{2,1}]),Ops, ignore),
-    ?assertEqual({1, {2,1}}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
+    ?assertEqual({1, {2,1}}, {crdt_pncounter:value(PNcounter4), CommitTime4}),
+    
+    {ok, PNcounter5, CommitTime5} = materialize(crdt_pncounter, Snapshot, ignore,
+                                   vectorclock:from_list([{1,1}]),Ops, ignore),
+    ?assertEqual({2, {1,1}}, {crdt_pncounter:value(PNcounter5), CommitTime5}).
 
 %% @doc Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
