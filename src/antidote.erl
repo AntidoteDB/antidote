@@ -130,5 +130,4 @@ clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
 
 clocksi_icommit({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}),
-    gen_fsm:sync_send_event(CoordFsmPid, commit).
+    gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
