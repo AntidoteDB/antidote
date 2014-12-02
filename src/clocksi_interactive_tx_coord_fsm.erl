@@ -189,11 +189,6 @@ prepare_2pc(timeout, SD0=#state{
             gen_fsm:reply(From, {ok, Snapshot_time}),
             {next_state, committing_2pc,
             SD0#state{state=committing, commit_time=Snapshot_time}};
-        1-> 
-            clocksi_vnode:prepare(Updated_partitions, Transaction),
-            Num_to_ack=length(Updated_partitions),
-            {next_state, receive_prepared,
-            SD0#state{num_to_ack=Num_to_ack, state=prepared}};
         _->
             clocksi_vnode:prepare(Updated_partitions, Transaction),
             Num_to_ack=length(Updated_partitions),
