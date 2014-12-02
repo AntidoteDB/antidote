@@ -33,7 +33,6 @@
          clocksi_istart_tx/0,
          clocksi_iread/3,
          clocksi_iupdate/4,
-         clocksi_iprepare/1,
          clocksi_icommit/1]).
 
 %% Public API
@@ -130,8 +129,6 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
 
-clocksi_iprepare({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
-
 clocksi_icommit({_, _, CoordFsmPid})->
+    gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}),
     gen_fsm:sync_send_event(CoordFsmPid, commit).
