@@ -180,13 +180,12 @@ prepare(timeout, SD0=#state{
 %%      of the received prepare_time).
 receive_prepared({prepared, ReceivedPrepareTime},
                  S0=#state{num_to_ack= NumToAck,
-                           from= From, prepare_time=PrepareTime}) ->
+                           from= _From, prepare_time=PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 ->
-            gen_fsm:reply(From, {ok, MaxPrepareTime}),
             {next_state, committing,
              S0#state{prepare_time=MaxPrepareTime,
-                      commit_time=MaxPrepareTime, state=committing}};
+                      commit_time=MaxPrepareTime, state=committing}, 0};
         _ ->
             {next_state, receive_prepared,
              S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
@@ -198,14 +197,13 @@ receive_prepared(abort, S0) ->
 receive_prepared(timeout, S0) ->
     {next_state, abort, S0 ,0}.
 
-single_committing({committed, CommitTime}, S0=#state{from=From}) ->
-    gen_fsm:reply(From, {ok, CommitTime}),
+single_committing({committed, CommitTime}, S0=#state{from=_From}) ->
     {next_state, reply_to_client, S0#state{prepare_time=CommitTime, commit_time=CommitTime, state=committed}, 0}.
     
 
 %% @doc after receiving all prepare_times, send the commit message to all
 %%       updated partitions, and go to the "receive_committed" state.
-committing(commit, Sender, SD0=#state{transaction = Transaction,
+committing(timeout, Sender, SD0=#state{transaction = Transaction,
                                       updated_partitions=Updated_partitions,
                                       commit_time=Commit_time}) ->
     NumToAck=length(Updated_partitions),
