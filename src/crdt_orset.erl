@@ -200,7 +200,12 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
                     {ok, orddict:store(Elem, Tokens--RemoveTokens, ORDict)}
             end;
         error ->
-            {error, {precondition, {not_present, Elem}}}
+            case RemoveTokens of 
+                [] ->
+                    {ok, ORDict};
+                _ ->
+                    {error, {precondition, {not_present, Elem}}}
+            end
     end.
 
 remove_elems([], ORDict) ->
@@ -289,7 +294,7 @@ remove_test() ->
     {ok, Set6} = update(Op6, Set1),
     {ok, Op7} = generate_downstream({remove_all, [<<"manu">>, <<"test">>]}, 1, Set6),
     Result = update(Op7, Set6),
-    ?assertEqual({error,{precondition,{not_present,<<"test">>}}}, Result).
+    ?assertMatch({ok, _}, Result).
 
     
 concurrent_add_test() ->
