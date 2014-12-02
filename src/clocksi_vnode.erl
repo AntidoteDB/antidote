@@ -106,6 +106,8 @@ prepare(ListofNodes, TxId) ->
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 %% @doc Sends prepare+commit to a single partition
+%%      Called by a Tx coordinator when the tx only
+%%      affects one partition
 single_commit(Node, TxId) ->
     riak_core_vnode_master:command(Node,
                                    {single_commit, TxId},
@@ -312,6 +314,7 @@ terminate(_Reason, _State) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
+%% @doc Executes the prepare phase of this partition
 prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime)->
     TxId = Transaction#transaction.txn_id,
     TxWriteSet = ets:lookup(WriteSet, TxId),
@@ -334,6 +337,7 @@ prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareT
             {error, write_conflict}
     end.
 
+%% @doc Executes the commit phase of this partition
 commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State)->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
