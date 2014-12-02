@@ -38,7 +38,7 @@
 
 %% States
 -export([execute_op/3, finish_op/3, prepare/2,
-         receive_prepared/2, committing/3, receive_committed/2, abort/2,
+         receive_prepared/2, single_committing/2, committing/3, receive_committed/2, abort/2,
          reply_to_client/2]).
 
 %%---------------------------------------------------------------------
@@ -164,6 +164,10 @@ prepare(timeout, SD0=#state{
             gen_fsm:reply(From, {ok, Snapshot_time}),
             {next_state, committing,
              SD0#state{state=committing, commit_time=Snapshot_time}};
+        1-> 
+            clocksi_vnode:single_commit(Updated_partitions, Transaction),
+            {next_state, single_committing,
+             SD0#state{state=committing, num_to_ack=1}};
         _->
             clocksi_vnode:prepare(Updated_partitions, Transaction),
             Num_to_ack=length(Updated_partitions),
@@ -193,6 +197,11 @@ receive_prepared(abort, S0) ->
 
 receive_prepared(timeout, S0) ->
     {next_state, abort, S0 ,0}.
+
+single_committing({committed, CommitTime}, S0=#state{from=From}) ->
+    gen_fsm:reply(From, {ok, CommitTime}),
+    {next_state, reply_to_client, S0#state{prepare_time=CommitTime, commit_time=CommitTime, state=committed}, 0}.
+    
 
 %% @doc after receiving all prepare_times, send the commit message to all
 %%       updated partitions, and go to the "receive_committed" state.
@@ -254,8 +263,6 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
             gen_fsm:reply(From,{TxId, Reason})
     end,
     {stop, normal, SD}.
-
-
 
 %% =============================================================================
 
