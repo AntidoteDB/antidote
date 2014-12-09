@@ -52,6 +52,9 @@
 -record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
                       partition_vectorclock :: vectorclock:vectorclock(),
                       stable_snapshot :: vectorclock:vectorclock(),
+		      safe_clock :: vectorclock:vectorclock(),
+		      sent_clock :: vectorclock:vectorclock(),
+		      safe_to_ack :: vectorclock:vectorclock(),
                       partition,
                       num_p}).
 
@@ -66,16 +69,25 @@ init([Partition]) ->
     {ok, #currentclock{last_received_clock=dict:new(),
                        partition_vectorclock=NewPClock,
                        stable_snapshot = dict:new(),
+		       safe_clock = dict:new(),
+		       sent_clock = dict:new(),
+		       safe_to_ack = dict:new(),
                        partition = Partition,
                        num_p=0}}.
 
-%% @doc
+%% @doc returns physical clock?
 handle_command(get_clock, _Sender,
                #currentclock{partition_vectorclock=Clock} = State) ->
     {reply, {ok, Clock}, State};
 
+% old remove
 handle_command(get_stable_snapshot, _Sender,
                State=#currentclock{stable_snapshot=Clock}) ->
+    {reply, {ok, Clock}, State};
+
+% returns safel time
+handle_command(get_safe_time, _Sender,
+	       State=#currentclock{safe_clock=Clock}) ->
     {reply, {ok, Clock}, State};
 
 %% @doc : calculate stable snapshot from min of vectorclock (each entry)
