@@ -53,7 +53,7 @@
                       partition_vectorclock :: vectorclock:vectorclock(),
                       stable_snapshot :: vectorclock:vectorclock(),
 		      safe_clock :: vectorclock:vectorclock(),
-		      sent_clock :: vectorclock:vectorclock(),
+		      sent_clock :: dict(),
 		      safe_to_ack :: vectorclock:vectorclock(),
                       partition,
                       num_p}).
@@ -90,6 +90,8 @@ handle_command(get_safe_time, _Sender,
 	       State=#currentclock{safe_clock=Clock}) ->
     {reply, {ok, Clock}, State};
 
+
+
 %% @doc : calculate stable snapshot from min of vectorclock (each entry)
 %% from all partitions
 handle_command(calculate_stable_snapshot, _Sender,
@@ -100,8 +102,8 @@ handle_command(calculate_stable_snapshot, _Sender,
                         0 ->
                             {ok, Ring} = riak_core_ring_manager:get_my_ring(),
                             riak_core_ring:num_partitions(Ring);
-                            _ -> NumP
-                          end,
+			_ -> NumP
+		    end,
     NumMetadata = length(riak_core_metadata:to_list(?META_PREFIX)),
     Stable_snapshot =
         %% If metadata doesnot contain clock of all partitions
@@ -120,13 +122,59 @@ handle_command(calculate_stable_snapshot, _Sender,
      State#currentclock{stable_snapshot=Stable_snapshot,
                         num_p = NumPartitions}};
 
+
+
+handle_command({update_sent_clock, DcId, SendPartition, Timestamp}, _Sender,
+	       #currentclock{sent_clock=SentClock,
+			     safe_to_ack=AckClock,
+			     partition=Partition
+			    } = State) ->
+    case dict:find(SendPartition, SentClock) of
+	{ok, PartitionSentClock} ->
+	    case dict:find(DcId, PartitionSentClock) < Timestamp of
+		true -> 
+		    NewPartitionSentClock = dict:store(DcId, Timestamp, vectorclock:vectorclock()),
+		    NewSentClock = dict:store(SendPartition, NewPartitionSentClock, SentClock),
+		    try
+			riak_core_metadata:put(?META_PREFIX, Partition, NewSentClock),
+			{reply, {ok, NewSentClock},
+			 State#currentclock{sent_clock=NewSentClock}
+			}
+		    catch
+			_:Reason ->
+			    lager:error("Exception caught ~p!",[Reason]),
+			    {reply, {ok, SentClock},State}
+		    end;
+		false ->
+		    {reply, {ok, SentClock}, State}
+	    end;
+	error ->
+	    NewPartitionSentClock = dict:store(DcId, Timestamp, ),
+	    NewSentClock = dict:store(SendPartition, NewPartitionSentClock, SentClock),
+	    try
+		riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+		{reply, {ok, NewSentClock},
+		 State#currentclock{sent_clock=NewSentClock}
+		}
+	    catch
+		_:Reason ->
+		    lager:error("Exception caught ~p!", [Reason]),
+		    {reply, {ok, SentClock}, State}
+	    end
+    end;
+
+handle_command() ->
+
+
+
+
 %% @doc This function implements following code
 %% if last_received_vectorclock[partition][dc] < time
 %%   vectorclock[partition][dc] = last_received_vectorclock[partition][dc]
 %% last_received_vectorclock[partition][dc] = time
 handle_command({update_clock, DcId, Timestamp}, _Sender,
                #currentclock{last_received_clock=LastClock,
-                             partition_vectorclock=VClock,
+                             safe_clock=VClock,
                              partition=Partition
                             } = State) ->
     case dict:find(DcId, LastClock) of
@@ -140,7 +188,7 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                         riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
                         {reply, {ok, NewPClock},
                          State#currentclock{last_received_clock=NewLClock,
-                                        partition_vectorclock=NewPClock}
+                                        safe_clock=NewPClock}
                         }
                     catch
                         _:Reason ->
@@ -157,7 +205,7 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                 riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
                 {reply, {ok, NewPClock},
                  State#currentclock{last_received_clock=NewLClock,
-                                    partition_vectorclock=NewPClock}
+                                    safe_clock=NewPClock}
                 }
             catch
                 _:Reason ->
