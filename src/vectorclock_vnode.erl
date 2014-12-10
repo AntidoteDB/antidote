@@ -126,7 +126,6 @@ handle_command(calculate_stable_snapshot, _Sender,
 
 handle_command({update_sent_clock, DcId, SendPartition, Timestamp}, _Sender,
 	       #currentclock{sent_clock=SentClock,
-			     safe_to_ack=AckClock,
 			     partition=Partition
 			    } = State) ->
     case dict:find(SendPartition, SentClock) of
@@ -149,10 +148,10 @@ handle_command({update_sent_clock, DcId, SendPartition, Timestamp}, _Sender,
 		    {reply, {ok, SentClock}, State}
 	    end;
 	error ->
-	    NewPartitionSentClock = dict:store(DcId, Timestamp, ),
+	    NewPartitionSentClock = dict:store(DcId, Timestamp, vectorclock:vectorclock()),
 	    NewSentClock = dict:store(SendPartition, NewPartitionSentClock, SentClock),
 	    try
-		riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+		riak_core_metadata:put(?META_PREFIX, Partition, NewSentClock),
 		{reply, {ok, NewSentClock},
 		 State#currentclock{sent_clock=NewSentClock}
 		}
@@ -163,7 +162,7 @@ handle_command({update_sent_clock, DcId, SendPartition, Timestamp}, _Sender,
 	    end
     end;
 
-handle_command() ->
+
 
 
 
