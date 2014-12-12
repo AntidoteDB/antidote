@@ -116,10 +116,8 @@ execute_op({Op_type, Args}, Sender,
             IndexNode = hd(Preflist),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type) of
-                error ->
-                    {reply, error, abort, SD0};
-                {error, _Reason} ->
-                    {next_state, abort, SD0};
+                {error, Reason} ->
+                    {reply, {error, Reason}, abort, SD0};
                 {ok, Snapshot} ->
                     ReadResult = Type:value(Snapshot),
                     {reply, {ok, ReadResult}, execute_op, SD0}
@@ -143,11 +141,11 @@ execute_op({Op_type, Args}, Sender,
                                 true->
                                     {reply, ok, execute_op, SD0}
                             end;
-                        error ->
-                            {reply, error, abort, SD0}
+                        {error, Reason} ->
+                            {reply, {error, Reason}, abort, SD0}
                     end;
-                {error, _} ->
-                    {reply, error, abort, SD0}
+                {error, Reason} ->
+                    {reply, {error, Reason}, abort, SD0}
             end
     end.
 

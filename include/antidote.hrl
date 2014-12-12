@@ -17,6 +17,8 @@
 %% Used by the replication layer
 -record(operation, {op_number, payload}).
 -type operation() :: #operation{}.
+-type vectorclock() :: dict().
+
 
 %% The way records are stored in the log.
 -record(log_record, {tx_id,
@@ -50,12 +52,12 @@
 
 %% -record(tx, {id, snapshot_time, commit_time, prepare_time, state, origin}).
 -record(tx_id, {snapshot_time, server_pid}).
--record(clocksi_payload, {key :: term(),
-                          type :: term(),
+-record(clocksi_payload, {key :: key(),
+                          type :: type(),
                           op_param :: {term(), term()},
-                          snapshot_time :: vectorclock:vectorclock(),
-                          commit_time :: {term(), non_neg_integer()},
-                          txid :: #tx_id{}
+                          snapshot_time :: snapshot_time(),
+                          commit_time :: commit_time(),
+                          txid :: txid()
                          }).
 -record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
 
@@ -76,7 +78,10 @@
 -type log_id() :: [partition_id()].
 -type type() :: atom().
 -type snapshot() :: term().
+-type snapshot_time() ::  vectorclock:vectorclock().
+-type commit_time() ::  {term(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
+-type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0]).
