@@ -230,11 +230,11 @@ Running Tests
 2. cd RIAK_TEST and run commands
 	* make
 5. Download and put `.riak_test.config` in home directory from following link
-	https://gist.github.com/cmeiklejohn/d96d7167e1a8ed4b128d
+	https://gist.github.com/lythq/f979e11749a868fc33dd
 6. Create directory `rt` in home
 7. Modify  `.riak_test.config` 
 	* Change rtdev\_path (line number 106) to point to your HOME/rt/antidote
-	* Add line `{test_paths, ["PATH TO ANTIDOTE/riak_test/ebin"]}`
+	* Change test\_paths (line number 109) to point to your PATH\_TO\_ANTIDOTE/riak\_test/ebin
 
 ### Building antidote for testing ###
 
@@ -247,10 +247,10 @@ Running Tests
 ### Running test ###
 
 1. Go to RIAK_TEST directory
-2. ./riak\_test -v -c antidote -v -t "TEST\_TO\_RUN"
+2. ./riak\_test -v -c antidote -t "TEST\_TO\_RUN"
 
 	TEST\_TO\_RUN is any test module in antidote/riak_test/
 
-	eg:- ./riak_test -v -c antidote -v -t antidote
+	eg:- ./riak_test -v -c antidote -t clocksi_test
 
 
