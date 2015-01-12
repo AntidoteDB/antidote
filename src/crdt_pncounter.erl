@@ -50,12 +50,6 @@
 -export([new/0, new/1, value/1, value/2, update/2, generate_downstream/3, to_binary/1, from_binary/1]).
 -export([equal/2]).
 
-%% EQC API
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
--export([gen_op/0, update_expected/3, eqc_state_value/1, init_state/0, generate/0]).
--endif.
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
