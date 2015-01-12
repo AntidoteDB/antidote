@@ -21,13 +21,16 @@
 %% -------------------------------------------------------------------
 
 %% @doc
-%% An Multi-Value Register CRDT.
-%% There are two kinds of updates: assign and propagate.  Assign is used
-%% for a single replica of MVReg where updates are linealizable.
-%% Propagate is used to propagate update from a replica to other
-%% replicas. It is similar to the 'merge' operation of the state-based
-%% specifiction of MVReg.  Detailed usage is explained later.
+%% A Multi-Value Register CRDT.
+%% There are two kinds of updates: assign and propagate.  Assign is use for a single replica of MVReg where 
+%% updates are linealizable. Propagate is used to propagate update from a replica to other replicas. It is 
+%% similar to the 'merge' operation of the state-based specifiction of MVReg. 
 %%
+%% This file is adapted from riak_dt_lwwreg, a state-based implementation of last-writer-wins register.
+%% The changes are as follows:
+%% 1. The return value of an MVReg is a list of {value, vclock} pairs, as MVReg may contain multiple values.
+%% 2. There is a new kind of operation: propagate, which stands for merging the contents of two MVRegs.
+%%  
 %% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%

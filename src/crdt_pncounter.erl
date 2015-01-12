@@ -1,16 +1,42 @@
-%% -*- coding: utf-8 -*-
 %% -------------------------------------------------------------------
 %%
-%% crdt_pncounter: A convergent, replicated, state based PN counter
+%% crdt_pncounter: A convergent, replicated, operation based PN-Counter.
 %%
+%% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 
+
 %% @doc
-%% A PN-Counter CRDT. A PN-Counter is represented as two non-negative integers: one for increments and
-%% one for decrements. The value of the counter is the difference between the value of the
-%% positive counter and the value of the negative counter.
+%% An operation-based PN-Counter CRDT.
+%% A PN-Counter is represented as two non-negative integers: one for increments and one for decrements.
+%% The value of the counter is the difference between the value of the positive counter and the value 
+%% of the negative counter.
 %%
+%% As the data structure is operation-based, to issue an operation, one should firstly call 
+%% `generate_downstream/3' to get the downstream version of the operation and then call `update/2'. 
+%%
+%% This file is adapted from riak_dt_pncounter, a state-based implementation of PN-Counter.
+%% The changes are as follows:
+%% 1. `generate_downstream/3' is added, as this is a requirement for op-based CRDTs.
+%%    For PN-Counter, there is actually little difference between their op-based and state-based
+%%    implementation. Having `generate_downstream/3' is merely to keep the interface of op-based 
+%%    CRDTs compatible with each other.
+%% 2. `merge/2' is removed.
 %%
 %% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
 %% Convergent and Commutative Replicated Data Types. [http://hal.upmc.fr/inria-00555588/]
