@@ -229,12 +229,6 @@ Running Tests
 	* git checkout features/csm/floppystore
 2. cd RIAK_TEST and run commands
 	* make
-5. Download and put `.riak_test.config` in home directory from following link
-	https://gist.github.com/lythq/f979e11749a868fc33dd
-6. Create directory `rt` in home
-7. Modify  `.riak_test.config` 
-	* Change rtdev\_path (line number 106) to point to your HOME/rt/antidote
-	* Change test\_paths (line number 109) to point to your PATH\_TO\_ANTIDOTE/riak\_test/ebin
 
 ### Building antidote for testing ###
 
