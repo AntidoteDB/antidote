@@ -23,19 +23,21 @@
 
 %% @doc
 %% An operation-based PN-Counter CRDT.
-%% A PN-Counter is represented as two non-negative integers: one for increments and one for decrements.
-%% The value of the counter is the difference between the value of the positive counter and the value 
-%% of the negative counter.
+%% A PN-Counter is represented as two non-negative integers: one for increments
+%% and one for decrements. The value of the counter is the difference between the
+%% value of the positive counter and the value of the negative counter.
 %%
-%% As the data structure is operation-based, to issue an operation, one should firstly call 
-%% `generate_downstream/3' to get the downstream version of the operation and then call `update/2'. 
+%% As the data structure is operation-based, to issue an operation, one should 
+%% firstly call `generate_downstream/3' to get the downstream version of the 
+%% operation and then call `update/2'. 
 %%
-%% This file is adapted from riak_dt_pncounter, a state-based implementation of PN-Counter.
+%% This file is adapted from riak_dt_pncounter, a state-based implementation of 
+%% PN-Counter.
 %% The changes are as follows:
 %% 1. `generate_downstream/3' is added, as this is a requirement for op-based CRDTs.
-%%    For PN-Counter, there is actually little difference between their op-based and state-based
-%%    implementation. Having `generate_downstream/3' is merely to keep the interface of op-based 
-%%    CRDTs compatible with each other.
+%%    For PN-Counter, there is actually little difference between their op-based and 
+%%    state-based implementation. Having `generate_downstream/3' is merely to keep 
+%%    the interface of op-based CRDTs compatible with each other.
 %% 2. `merge/2' is removed.
 %%
 %% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
