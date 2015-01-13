@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% crdt_orset: A convergent, replicated, state based observe remove set
+%% crdt_orset: A convergent, replicated, operation based observe remove set
 %%
 %% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
@@ -20,8 +20,31 @@
 %%
 %% -------------------------------------------------------------------
 
--module(crdt_orset).
+%% @doc
+%% An operation-based Observed-Remove Set CRDT.
+%% As the data structure is operation-based, to issue an operation, one should
+%% firstly call `generate_downstream/3' to get the downstream version of the 
+%% operation and then call `update/2'.
+%%
+%% It provides five operations: add, which adds an element to a set; add_all,
+%% adds a list of elements to a set; remove, which removes an element from a set;
+%% remove_all that removes a list of elements from the set; update, that contains
+%% a list of previous four commands.
+%%
+%% This file is adapted from riak_dt_orset, a state-based implementation of 
+%% Observed-Remove Set.
+%% The changes are as follows:
+%% 1. `generate_downstream/3' is added, as this is necessary for op-based CRDTs.
+%% 2. `merge/2' is removed.
+%% 3. There is no tombstone of removed elements.
+%%
+%% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
+%% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
+%%
+%% @end
 
+
+-module(crdt_orset).
 
 %% API
 -export([new/0, value/1, generate_downstream/3, update/2, equal/2,
@@ -46,7 +69,6 @@
 -type binary_orset() :: binary(). %% A binary that from_binary/1 will operate on.
 
 -type orset_op() :: {add, member()} | {remove, member()} |
-                    {get_downstream, member()}|
                     {add_all, [member()]} | {remove_all, [member()]} |
                     {update, [orset_op()]}.
 
