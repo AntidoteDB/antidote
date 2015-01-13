@@ -22,14 +22,17 @@
 
 %% @doc
 %% An operation-based Observed-Remove Set CRDT.
-%% As the data structure is operation-based, to issue an operation, one should firstly call 
-%% `generate_downstream/3' to get the downstream version of the operation and then call `update/2'.
+%% As the data structure is operation-based, to issue an operation, one should
+%% firstly call `generate_downstream/3' to get the downstream version of the 
+%% operation and then call `update/2'.
 %%
-%% It provides five operations: add, which adds an element to a set; add_all, adds a list of elements
-%% to a set; remove, which removes an element from a set; remove_all that removes a list of elements
-%% from the set; update, that contains a list of previous four commands.
+%% It provides five operations: add, which adds an element to a set; add_all,
+%% adds a list of elements to a set; remove, which removes an element from a set;
+%% remove_all that removes a list of elements from the set; update, that contains
+%% a list of previous four commands.
 %%
-%% This file is adapted from riak_dt_orset, a state-based implementation of Observed-Remove Set.
+%% This file is adapted from riak_dt_orset, a state-based implementation of 
+%% Observed-Remove Set.
 %% The changes are as follows:
 %% 1. `generate_downstream/3' is added, as this is necessary for op-based CRDTs.
 %% 2. `merge/2' is removed.
