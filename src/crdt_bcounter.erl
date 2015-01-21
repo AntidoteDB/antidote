@@ -108,7 +108,7 @@ value(Counter) -> Counter.
 %% This operation fails and returns `{error, no_permissions}'
 %% if it tries to consume resources unavailable to the source replica
 %% (which prevents logging of forbidden attempts).
--spec generate_downstream(bcounter_op(), riak_dt:actor(), bcounter()) -> {ok, bcounter_op()}.
+-spec generate_downstream(bcounter_op(), riak_dt:actor(), bcounter()) -> {ok, bcounter_op()} | {error, no_permissions}.
 generate_downstream({increment,V}, Actor, _Counter) when is_integer(V), V > 0 ->
     {ok, {{increment,V},Actor}};
 generate_downstream({decrement,V}, Actor, Counter) when is_integer(V), V > 0 ->
