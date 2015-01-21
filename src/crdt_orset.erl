@@ -42,25 +42,14 @@
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
 %% @end
-
-
 -module(crdt_orset).
 
 %% API
 -export([new/0, value/1, generate_downstream/3, update/2, equal/2,
          to_binary/1, from_binary/1, value/2, precondition_context/1, stats/1, stat/2]).
 
--ifdef(EQC).
--include_lib("eqc/include/eqc.hrl").
--endif.
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--endif.
-
-%% EQC API
--ifdef(EQC).
--export([init_state/0, gen_op/0, update_expected/3, eqc_state_value/1]).
 -endif.
 
 -export_type([orset/0, binary_orset/0, orset_op/0]).
