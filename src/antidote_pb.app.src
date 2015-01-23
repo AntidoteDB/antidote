@@ -1,0 +1,11 @@
+{application, antidote_pb,
+ [
+  {description, "Protocol Buffer client for antidote"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
