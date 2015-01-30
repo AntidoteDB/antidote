@@ -162,7 +162,7 @@ handle_command({read_data_item, Txn, Key, Type}, Sender,
 handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                #state{partition=Partition,
                       write_set=WriteSet,
-                      active_txs_per_key=ActiveTxsPerKey}=State) ->
+                      active_txs_per_key=_ActiveTxsPerKey}=State) ->
     TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update,
                             op_payload={Key, Type, Op}},
@@ -171,7 +171,7 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
     Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
-            true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
+            %%true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
             true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
             {ok, _Pid} = clocksi_updateitem_fsm:start_link(
                            Sender,
@@ -315,30 +315,25 @@ terminate(_Reason, _State) ->
 %%% Internal Functions
 %%%===================================================================
 %% @doc Executes the prepare phase of this partition
-prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime)->
+prepare(Transaction, WriteSet, _CommittedTx, _ActiveTxPerKey, PreparedTx, PrepareTime)->
     TxId = Transaction#transaction.txn_id,
-    TxWriteSet = ets:lookup(WriteSet, TxId),
-    case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
-        true ->
-            LogRecord = #log_record{tx_id=TxId,
-                                    op_type=prepare,
-                                    op_payload=PrepareTime},
-            true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
-            Updates = ets:lookup(WriteSet, TxId),
-            case Updates of 
-                [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
-                    LogId = log_utilities:get_logid_from_key(Key),
-                    [Node] = log_utilities:get_preflist_from_key(Key),
-                    logging_vnode:append(Node,LogId,LogRecord);
-                _ -> 
-                    {error, no_updates}
-            end;
-        false ->
-            {error, write_conflict}
+    LogRecord = #log_record{tx_id=TxId,
+                            op_type=prepare,
+                            op_payload=PrepareTime},
+    true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
+    Updates = ets:lookup(WriteSet, TxId),
+    case Updates of 
+        [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            logging_vnode:append(Node,LogId,LogRecord);
+        _ -> 
+            {error, no_updates}
     end.
+        
 
 %% @doc Executes the commit phase of this partition
-commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State)->
+commit(Transaction, TxCommitTime, WriteSet, _CommittedTx, State)->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
     LogRecord=#log_record{tx_id=TxId,
@@ -352,7 +347,7 @@ commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State)->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append(Node,LogId,LogRecord) of
                 {ok, _} ->
-                    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+                    %true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
                             clean_and_notify(TxId, Key, State),
@@ -385,37 +380,6 @@ clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_milisec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
-
-%% @doc Performs a certification check when a transaction wants to move
-%%      to the prepared state.
-certification_check(_, [], _, _) ->
-    true;
-certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    {_, {Key, _Type, _}} = H,
-    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
-    case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true ->
-            false;
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
-    end.
-
-check_keylog(_, [], _) ->
-    false;
-check_keylog(TxId, [H|T], CommittedTx)->
-    {_Key, _Type, ThisTxId}=H,
-    case ThisTxId > TxId of
-        true ->
-            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            case CommitInfo of
-                [{_, _CommitTime}] ->
-                    true;
-                [] ->
-                    check_keylog(TxId, T, CommittedTx)
-            end;
-        false ->
-            check_keylog(TxId, T, CommittedTx)
-    end.
 
 -spec update_materializer(DownstreamOps :: [{term(),{key(),type(),op()}}],
                           Transaction::#transaction{},TxCommitTime:: {term(), term()}) ->
