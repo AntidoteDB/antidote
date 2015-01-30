@@ -75,9 +75,17 @@ asyn_read_from(Preflist, Log, From) ->
 %% @doc synchronous read_from operation
 -spec read_from({partition(), node()}, log_id(), op_id()) -> term().
 read_from(Node, LogId, From) ->
-    riak_core_vnode_master:sync_command(Node,
-                                        {read_from, LogId, From},
-                                        ?LOGGING_MASTER).
+    case riak_core_vnode_master:sync_command(Node,
+                                        {read, LogId},
+                                        ?LOGGING_MASTER) of
+        {ok, []} ->
+            {ok, []};
+        {ok, [H|T]} ->
+            Operations = threshold_prune([H|T], From),
+            {ok, Operations};
+        {error, Reason} ->
+            {error, Reason}
+    end.                            
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
 -spec asyn_read(preflist(), key()) -> term().
