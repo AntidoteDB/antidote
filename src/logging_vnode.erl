@@ -183,27 +183,28 @@ handle_command({read_from, LogId, From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload}, Sender,
+handle_command({append, LogId, Payload}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
                       partition=Partition,
-                      senders_awaiting_ack=SendersAwaitingAck0}=State) ->
+                      senders_awaiting_ack=_SendersAwaitingAck0}=State) ->
     OpId = generate_op_id(Clock),
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
                 {ok, OpId} ->
-                    case dict:find(LogId, SendersAwaitingAck0) of
-                        error ->
-                            Me = self(),
-                            Me ! {sync, Log, LogId},
-                            ok;
-                        _ ->
-                            ok
-                    end,
-                    SendersAwaitingAck = dict:append(LogId, {Sender, OpId}, SendersAwaitingAck0),
-                    {noreply, State#state{senders_awaiting_ack=SendersAwaitingAck, clock=NewClock}};
+                    %% case dict:find(LogId, SendersAwaitingAck0) of
+                    %%     error ->
+                    %%         Me = self(),
+                    %%        %Me ! {sync, Log, LogId},
+                    %%         ok;
+                    %%     _ ->
+                    %%         ok
+                    %% end,
+                    %SendersAwaitingAck = dict:append(LogId, {Sender, OpId}, SendersAwaitingAck0),
+                    %{noreply, State#state{senders_awaiting_ack=SendersAwaitingAck, clock=NewClock}};
+                    {reply, {ok, OpId}, State#state{clock=NewClock}};
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
             end;
