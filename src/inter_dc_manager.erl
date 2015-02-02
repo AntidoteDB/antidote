@@ -24,7 +24,6 @@
 -include("antidote.hrl").
 
 -export([start_link/0,
-         get_my_dc/0,
          start_receiver/1,
          get_dcs/0,
          add_dc/1,
@@ -44,9 +43,6 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-get_my_dc() ->
-    gen_server:call(?MODULE, get_my_dc, infinity).
 
 %% Starts listening to TCP port for incomming requests from other DCs
 %% Returns the address of the DC, which could be used by others to communicate
@@ -78,23 +74,22 @@ add_list_dcs(DCs) ->
 init([]) ->
     {ok, #state{dcs=[]}}.
 
-handle_call(get_my_dc, _From, #state{port=Port} = State) ->
-    {reply, {ok, {my_ip(),Port}}, State};
-
 handle_call({start_receiver, Port}, _From, State) ->
-    {ok, _} = antidote_sup:start_rep(Port),
-    {reply, {ok, {my_ip(),Port}}, State#state{port=Port}};
+    {ok, _} = antidote_sup:start_rep(self(), Port),
+    receive
+        ready -> {reply, {ok, my_dc(Port)}, State#state{port=Port}}
+    end;
 
 handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->
     {reply, {ok, DCs}, State};
 
-handle_call({add_dc, NewDC}, _From, #state{dcs=DCs0} = State) ->
-    DCs = DCs0 ++ [NewDC],
-    {reply, ok, State#state{dcs=DCs}};
+handle_call({add_dc, OtherDC}, _From, #state{dcs=DCs} = State) ->
+    NewDCs = add_dc(OtherDC, DCs),
+    {reply, ok, State#state{dcs=NewDCs}};
 
-handle_call({add_list_dcs, DCs}, _From, #state{dcs=DCs0} = State) ->
-    DCs1 = DCs0 ++ DCs,
-    {reply, ok, State#state{dcs=DCs1}}.
+handle_call({add_list_dcs, OtherDCs}, _From, #state{dcs=DCs} = State) ->
+    NewDCs = add_dcs(OtherDCs, DCs),
+    {reply, ok, State#state{dcs=NewDCs}}.
 
 handle_cast(_Info, State) ->
     {noreply, State}.
@@ -110,7 +105,15 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-my_ip() ->
+my_dc(DcPort) ->
     {ok, List} = inet:getif(),
     {Ip, _, _} = hd(List),
-    inet_parse:ntoa(Ip).
+    DcIp = inet_parse:ntoa(Ip),
+    DcId = dc_utilities:get_my_dc_id(),
+    {DcId, {DcIp, DcPort}}.
+
+add_dc({DcId, DcAddress}, DCs) -> 
+    orddict:store(DcId, DcAddress, DCs).
+
+add_dcs(OtherDCs, DCs) ->
+    lists:foldl(fun add_dc/2, DCs, OtherDCs).
