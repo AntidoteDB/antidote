@@ -26,7 +26,7 @@
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(#transaction{}, Node::term(), Key::key(),
+-spec generate_downstream_op(Transaction::txn(), Node::term(), Key::key(),
                              Type::type(), Update::op()) ->
                                     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update) ->

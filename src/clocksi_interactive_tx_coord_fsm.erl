@@ -55,7 +55,7 @@
 %%----------------------------------------------------------------------
 -record(state, {
           from,
-          transaction :: #transaction{},
+          transaction :: txn(),
           updated_partitions :: list(),
           num_to_ack :: integer(),
           prepare_time :: integer(),

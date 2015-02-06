@@ -360,7 +360,7 @@ check_keylog(TxId, [H|T], CommittedTx)->
     end.
 
 -spec update_materializer(DownstreamOps :: [{term(),{key(),type(),op()}}],
-                          Transaction::#transaction{},TxCommitTime:: {term(), term()}) ->
+                          Transaction::txn(),TxCommitTime:: {term(), term()}) ->
                                  ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
