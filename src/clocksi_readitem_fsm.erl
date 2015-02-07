@@ -75,14 +75,14 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
     {ok, check_clock, SD, 0}.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behinf, it sleeps the fms until the clock
+%%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
 check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
-    case (T_TS) > Time of
+    case T_TS > Time of
         true ->
             timer:sleep(T_TS - Time),
             {next_state, waiting1, SD0, 0};
