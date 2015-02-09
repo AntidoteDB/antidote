@@ -42,7 +42,9 @@ Using Antidote
 ### Building Antidote ###
 #### Single Node Cluster 
 Go to the Antidote directory (the one that you've just cloned using git) and:
+
 	make rel
+	
 Rebar will now pull all the dependencies it needs from github, and
 build the application, and make an erlang "release" of a single node.
 If all went well (if it didn't, send an email to the SyncFree
