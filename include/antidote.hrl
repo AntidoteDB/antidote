@@ -78,6 +78,9 @@
 -type snapshot() :: term().
 -type txid() :: #tx_id{}.
 -type dcid() :: term().
--type transaction() :: term(). %% TODO: actually define the spec of a transaction
+%-type transaction() :: term(). %% TODO: actually define the spec of a transaction
+-type transaction() :: {txid(), {dcid(), non_neg_integer()},
+                        vectorclock:vectorclock(), [#operation{}]}.
+
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0]).

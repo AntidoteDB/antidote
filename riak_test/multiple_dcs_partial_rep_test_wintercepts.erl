@@ -1,6 +1,6 @@
 -module(multiple_dcs_partial_rep_test_wintercepts).
 
--export([confirm/0, multiple_writes/4]).
+-export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -78,42 +78,42 @@ replication_intercept_test1(Cluster1, Cluster2, Cluster3) ->
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node1,
 			    antidote, append,
-			    [Akey, riak_dt_gcounter, {increment, ucl}]),
+			    [AKey, riak_dt_gcounter, {increment, ucl}]),
 		      ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
 
     %%Sleep a bit to let propagation happen
     timer:sleep(5000),
 
-    ReadResult = rpc:call(Node1, antidote, read,
-			  [Akey, riak_dt_gcounter]),
+    ReadReasult = rpc:call(Node1, antidote, read,
+			  [AKey, riak_dt_gcounter]),
     %% Should get 0 beacause reading from an external DC
     %% that has not recived any updates
     ?assertEqual(0, ReadReasult),
 
     ReadResult2 = rpc:call(Node1,
 			   antidote, clocksi_read,
-			   [CommitTime, Akey, riak_dt_gcounter]),
+			   [CommitTime, AKey, riak_dt_gcounter]),
     %%This is an error because the local DC doesn't replicate the key
     %% and the external DCs have not recieved the updates needed
     %% so should timeout
-    ?assertEqual({error, _}, ReadResult2),
+    ?assertMatch({error, _}, ReadResult2),
     lager:info("Done read in Node1"),
 
     ReadResult3 = rpc:call(Node3,
 			   antidote, clocksi_read,
-			   [CommitTime, Akey, riak_dt_gcounter]),
+			   [CommitTime, AKey, riak_dt_gcounter]),
     %%    {ok, {_,[ReadSet1],_} }= ReadResult3,
     %%    ?assertEqual(0, ReadSet1),
-    ?assertEqual({error, _}, ReadResult3),
+    ?assertMatch({error, _}, ReadResult3),
     lager:info("Done Read in Node2"),
    
     ReadResult4 = rpc:call(Node2,
 			   antidote, clocksi_read,
-			   [CommitTime, Akey, riak_dt_gcounter]),
+			   [CommitTime, AKey, riak_dt_gcounter]),
     %%   {ok, {_,[ReadSet2],_} }= ReadResult4,
     %%   ?assertEqual(0, ReadSet2),
-    ?assertEqual({error, _}, ReadResult4),
+    ?assertMatch({error, _}, ReadResult4),
     lager:info("Done Read in Node3").
 
 

@@ -175,21 +175,21 @@ handle_command({update_safe_vector_local, Vector}, _Sender,
 	       #currentclock{safe_clock=SafeClock
 			     } = State) ->
     NewSafeClock = dict:fold(fun(DcId,Timestamp,NewDict) ->
-		      case dict:find(DcId, NewDict) of
-			  true ->
-			      update(DcId, fun(OldTimestamp) ->
-						   case OldTimestamp < Timestamp of
-						       true ->
-							   Timestamp;
-						       _ -> 
-							   OldTimestamp
-						   end
-					   end, NewDict);
-			  false -> 
-			      dict:store(DcId, Timestamp, NewDict)
-		      end
-	      end, SafeClock, Vector),
-    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock};
+				     case dict:find(DcId, NewDict) of
+					 true ->
+					     dict:update(DcId, fun(OldTimestamp) ->
+								       case OldTimestamp < Timestamp of
+									   true ->
+									       Timestamp;
+									   _ -> 
+									       OldTimestamp
+								       end
+							       end, NewDict);
+					 false -> 
+					     dict:store(DcId, Timestamp, NewDict)
+				     end
+			     end, SafeClock, Vector),
+    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}};
 
 		    
 %% Don't do this anymore, is expensive and unecessary,

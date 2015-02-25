@@ -1,6 +1,6 @@
 -module(multiple_dcs_partial_rep_test_wintercepts_test3).
 
--export([confirm/0, multiple_writes/4]).
+-export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -67,7 +67,7 @@ replication_intercept_test3(Cluster1, Cluster2, Cluster3) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     Node3 = hd(Cluster3),
-    DC1key = key6,
+    DC1Key = key6,
     DC2Key = key16,
     DC3Key = key26,
     
@@ -114,14 +114,14 @@ replication_intercept_test3(Cluster1, Cluster2, Cluster3) ->
     %% your local updates
 
     ReadResult = rpc:call(Node1, antidote, read,
-			  [DCKey1, riak_dt_gcounter]),
-    ?assertEqual(1, ReadReasult),
+			  [DC1Key, riak_dt_gcounter]),
+    ?assertEqual(1, ReadResult),
     ReadResult2 = rpc:call(Node1, antidote, read,
-			  [DCKey2, riak_dt_gcounter]),
-    ?assertEqual(1, ReadReasult2),
+			  [DC2Key, riak_dt_gcounter]),
+    ?assertEqual(1, ReadResult2),
     ReadResult3 = rpc:call(Node1, antidote, read,
-			  [DCKey3, riak_dt_gcounter]),
-    ?assertEqual(1, ReadReasult3),
+			  [DC3Key, riak_dt_gcounter]),
+    ?assertEqual(1, ReadResult3),
 
 
     %% Ensure you can do transactions on your local keys
@@ -129,14 +129,14 @@ replication_intercept_test3(Cluster1, Cluster2, Cluster3) ->
     %% they haven't recived the updates upto your timestamp
     ReadResult4 = rpc:call(Node1,
 			   antidote, clocksi_read,
-			   [CommitTime, DCKey1, riak_dt_gcounter]),
+			   [CommitTime, DC1Key, riak_dt_gcounter]),
     {ok, {_,[ReadSet1],_} }= ReadResult4,
     ?assertEqual(1, ReadSet1),
     lager:info("Done Read in Node1"),
 
     ReadResult5 = rpc:call(Node1,
 			   antidote, clocksi_read,
-			   [CommitTime, DCKey2, riak_dt_gcounter]),
-    ?assertEqual({error, _}, ReadResult5),
+			   [CommitTime, DC2Key, riak_dt_gcounter]),
+    ?assertMatch({error, _}, ReadResult5),
     lager:info("Done Read in Node1").
     

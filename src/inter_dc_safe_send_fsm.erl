@@ -35,7 +35,7 @@
          handle_info/3,
          handle_sync_event/4,
          terminate/3]).
-
+-export([loop_send_safe/2]).
 
 -record(state, {last_sent,
                 dcid}).
