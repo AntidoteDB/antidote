@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(clocksi_transaction_reader).
 
--include("antidote.hrl").
+-include("../include/antidote.hrl").
 
 -record(state, {partition :: partition_id(),
                 logid :: log_id(),
@@ -68,7 +68,11 @@ init(Partition, DcId) ->
 %%  it returns new iterator and a list of committed transactions in
 %%  commit time order. Transactions which are not committed will not be returned
 %% TODO: Deal with transactions committed in other DCs
--spec get_next_transactions(State::#state{}) -> {#state{}, [transaction()]}.
+%% Partial Rep: this should be fine as it is, but might be more efficient
+%% for the partial replication to just have the coordinator to send the whole
+%% transaction because the partitions have to be re-organized at the external DC
+%% anyway
+%% -spec get_next_transactions(State::#state{}) -> {#state{}, [transaction()]}.
 get_next_transactions(State=#state{partition = Partition,
                                    logid = LogId,
                                    pending_operations = Pending,
@@ -98,22 +102,22 @@ get_next_transactions(State=#state{partition = Partition,
                                 CommitTime < Stable_time
                         end,
                         Txns),
-    {NewPendingOps, ListTransactions} =
+    {NewPendingOps, DictTransactionsDcs} =
         lists:foldl(
           fun(_Logrecord=#log_record{tx_id=TxId},
               {PendingOps, Transactions}) ->
                   {ok, Ops} = get_ops_of_txn(TxId,PendingOps),
-                  Txn = construct_transaction(Ops),
-                  NewTransactions = Transactions ++ [Txn],
+                  {Txn, DCs}  = construct_transaction(Ops),
+                  NewTransactions = dict:append(DCs, Txn, Transactions),
                   NewPending = remove_txn_from_pending(TxId, PendingOps),
                   {NewPending, NewTransactions}
-          end, {PendingOperations, []},
+          end, {PendingOperations, dict:new()},
           Before),
     NewState = State#state{pending_operations = NewPendingOps,
                            pending_commit_records = After,
                            prev_stable_time = Stable_time,
                            last_read_opid = Newlast_read_opid},
-    {NewState, ListTransactions}.
+    {NewState, DictTransactionsDcs, Stable_time}.
 
 %% @doc returns all update operations in a txn in #clocksi_payload{} format
 -spec get_update_ops_from_transaction(Transaction::transaction()) ->
@@ -156,13 +160,19 @@ get_prev_stable_time(Reader) ->
 
 %% @doc construct_transaction: Returns a structure of type transaction()
 %% from a list of update operations and prepare/commit records
--spec construct_transaction(Ops::[#operation{}]) -> transaction().
+%% For partial repl alg, also return DCs that replicate the ops of this Tx
+%% Will comment out the spec for now
+% -spec construct_transaction(Ops::[#operation{}]) -> transaction().
 construct_transaction(Ops) ->
+    DCs = lists:foldl(fun(Op, dcSet) ->
+			      sets:union(dcSet,sets:from_list(
+						get_dc_replicas(Op)))
+		      end ,sets:new(), Ops),
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
     {CommitTime, VecSnapshotTime} = Commitrecord#log_record.op_payload,
     TxId = Commitrecord#log_record.tx_id,
-    {TxId, CommitTime, VecSnapshotTime, Ops}.
+    {{TxId, CommitTime, VecSnapshotTime, Ops}, sets:to_list(DCs)}.
 
 read_next_ops(Node, LogId, Last_read_opid) ->
     case Last_read_opid of
@@ -171,6 +181,14 @@ read_next_ops(Node, LogId, Last_read_opid) ->
         _ ->
             logging_vnode:read_from(Node, LogId, Last_read_opid)
     end.
+
+%% Need to actually implement this
+%% It should at least check a static function for knowing what
+%% DCs replicate what keys
+%% should return a list of DCs
+get_dc_replicas(_Op) ->
+    inter_dc_manager:get_dcs().
+
 
 get_ops_of_txn(TxId, PendingOps) ->
     dict:find(TxId, PendingOps).

@@ -22,8 +22,8 @@
 
 -module(inter_dc_repl_update).
 
--include("inter_dc_repl.hrl").
--include("antidote.hrl").
+-include("../include/inter_dc_repl.hrl").
+-include("../include/antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -60,6 +60,9 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 
 %% private functions
 
+
+
+
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
@@ -68,16 +71,23 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
         false ->
             Transaction = queue:get(DcQ),
             {_TxId, CommitTime, VecSnapshotTime, _Ops} = Transaction,
+
+	    %% Tyler: Not sure should set the sender DC time to 0?
             SnapshotTime = vectorclock:set_clock_of_dc(
                              Dc, 0, VecSnapshotTime),
             LocalDc = dc_utilities:get_my_dc_id(),
             {Dc, Ts} = CommitTime,
             %% Check for dependency of operations and write to log
+	    %% Gets safe_clock from the partition (instead of partition clock)
             {ok, LC} = vectorclock:get_clock(Partition),
+	    %% Sets the time of the local DC in the safe clock to the current time,
+	    %% and the time of sending DC to 0
             Localclock = vectorclock:set_clock_of_dc(
                            Dc, 0,
                            vectorclock:set_clock_of_dc(
                              LocalDc, now_millisec(erlang:now()), LC)),
+	    %% It assumes it is a duplicate just if has a smaller CTS?
+	    %% Maybe should keep a CTS per partition?
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
                 {ok, CTS} ->
                     if Ts >= CTS ->
@@ -101,6 +111,8 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             StateData
     end.
 
+    
+
 check_and_update(SnapshotTime, Localclock, Transaction,
                  Dc, DcQ, Ts,
                  StateData = #recvr_state{partition = Partition} ) ->
@@ -118,6 +130,8 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                     lager:error("Wrong transaction record format"),
                     erlang:error(bad_transaction_record)
             end,
+    %% Would it be possbile to just log it directly, since when a new transaction
+    %% is created it is only given snapshot times that are safe.
     case check_dep(SnapshotTime, Localclock) of
         true ->
             lists:foreach(
@@ -146,6 +160,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
             {ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
+	    %% Why is a stable snapshot calculated here??
             riak_core_vnode_master:command(
               {Partition,node()}, calculate_stable_snapshot,
               vectorclock_vnode_master),

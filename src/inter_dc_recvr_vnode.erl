@@ -54,27 +54,60 @@ start_vnode(I) ->
 -spec store_updates(Transactions::[clocksi_transaction_reader:transaction()])
                    -> ok.
 store_updates(Transactions) ->
-    Transaction = hd(Transactions),
-    {_Txid,_Commitime,_ST,Ops} = Transaction,
+    list:foreach(fun start_store_update/1,Transactions).
+
+
+start_store_update(Transaction) ->
+    {Txid,Committime,ST,Ops} = Transaction,
     Operation = hd(Ops),
     Logrecord = Operation#operation.payload,
     Payload = Logrecord#log_record.op_payload,
     Op_type = Logrecord#log_record.op_type,
     case Op_type of
         noop ->
+% This is a heartbeat, how should this be used in this partial rep protocol?
             Key = Payload,
             Node = log_utilities:get_my_node(Key),
-            Preflist = [{Key, Node}];
+            Preflist = [{Key, Node}],
+	    Indexnode = hd(Preflist),
+	    store_update(Indexnode, Transaction),
+%% Maybe should only run this once???
+	    riak_core_vnode_master:command(Indexnode, {process_queue},
+					   inter_dc_recvr_vnode_master);
+	safe_update ->
+%% Before calling update_safe_clock,
+%% maybe should wait until all updates up to this time have been processed locally
+%% (they all have been recieved, but not yet processed yet) otherwise some new
+%% transactions might be blocked temporarily
+	    {Dc, Ts} = Committime,
+%% TODO:  This only updates a single random partition's safe clock
+%% instead could use meta_data? Don't actually need to propagate it everywhere though
+%% What would be the best way to do this?
+	    {ok, _} = vectorclock:update_safe_clock(Dc, Ts);
         _ ->
-            {Key,_Type,_Op} = Payload,
-            Preflist = log_utilities:get_preflist_from_key(Key)
+%%  Maybe want to update recieved clock here? No because acks are sent from other DC
+%% Instead should check for recieving the safe messages (maybe those can be propagated
+%% like the noop transactions
+
+%% Have to go through the transactions and find the proper operations for each op
+%% beacuse the external DC doesn't know the partitioning of this DC
+	    
+%% Fix this: should first check if this op is replicated in this DC
+	    SeparatedTransactions = list:foldl(fun(Op1,Acc) ->
+						       {K1,_,_} = Op1#operation.payload#log_record.op_payload,
+						       dict:append(hd(log_utilities:get_preflist_from_key(K1)),
+								   Op1,Acc) end,
+					       dict:new(), Ops),
+
+%% Fix this: because sends a store_update per op, should instead send a message per partition
+	    dict:fold(fun(Node,Op2,_) ->
+			      store_update(Node,{Txid,Committime,ST,Op2}),
+%% Maybe should only run this once???
+			      riak_core_vnode_master:command(Node,{proceess_queue},
+							     inter_dc_recvr_vnode_master) end,
+		      ok,SeparatedTransactions)
     end,
-    Indexnode = hd(Preflist),
-    lists:foreach(fun(Txn) ->
-                          store_update(Indexnode, Txn)
-                  end, Transactions),
-    riak_core_vnode_master:command(Indexnode, {process_queue},
-                                   inter_dc_recvr_vnode_master),
+
     ok.
 
 store_update(Node, Transaction) ->

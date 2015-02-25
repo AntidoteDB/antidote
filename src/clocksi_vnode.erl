@@ -26,6 +26,7 @@
 
 -export([start_vnode/1,
          read_data_item/4,
+	 read_data_item_external/4,
          update_data_item/5,
          prepare/2,
          commit/3,
@@ -77,7 +78,7 @@ start_vnode(I) ->
 read_data_item(Node, TxId, Key, Type) ->
     try
         riak_core_vnode_master:sync_command(Node,
-                                            {read_data_item, TxId, Key, Type},
+                                            {read_data_item, TxId, Key, Type, local},
                                             ?CLOCKSI_MASTER,
                                             infinity)
     catch
@@ -85,6 +86,21 @@ read_data_item(Node, TxId, Key, Type) ->
             lager:error("Exception caught: ~p", [Reason]),
             {error, Reason}
     end.
+
+
+read_data_item_external(Node, TxId, Key, Type) ->
+    try
+        riak_core_vnode_master:sync_command(Node,
+                                            {read_data_item, TxId, Key, Type, external},
+                                            ?CLOCKSI_MASTER,
+                                            infinity)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
+
+
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(Node, TxId, Key, Type, Op) ->
@@ -142,13 +158,16 @@ init([Partition]) ->
                 active_txs_per_key=ActiveTxsPerKey}}.
 
 %% @doc starts a read_fsm to handle a read operation.
-handle_command({read_data_item, Txn, Key, Type}, Sender,
+handle_command({read_data_item, Txn, Key, Type, IsLocal}, Sender,
                #state{write_set=WriteSet, partition=Partition}=State) ->
     Vnode = {Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
-                                                 Key, Type, Updates),
+                                                 Key, Type, Updates, IsLocal),
+    %% Tyler note: The reason why noreply is sent is because the readitem fsm
+    %% will send the reply later using the riak_core_vnode:reply function
     {noreply, State};
+
 
 %% @doc handles an update operation at a Leader's partition
 handle_command({update_data_item, Txn, Key, Type, Op}, Sender,

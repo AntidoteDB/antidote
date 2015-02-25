@@ -18,8 +18,9 @@
 %%
 %% -------------------------------------------------------------------
 %% @doc Supervise the fsm.
--module(inter_dc_communication_fsm_sup).
+-module(inter_dc_safe_send_sup).
 -behavior(supervisor).
+
 
 -export([start_fsm/1,
          start_link/0]).
@@ -33,9 +34,9 @@ start_link() ->
 start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
-
+%% TODO: is this the correct things for this
 init([]) ->
-    Worker = {inter_dc_communication_fsm,
-              {inter_dc_communication_fsm, start_link, []},
-              transient, 5000, worker, [inter_dc_communication_fsm]},
+    Worker = {inter_dc_safe_send_fsm,
+              {inter_dc_safe_send_fsm, start_link, []},
+              transient, 5000, worker, [inter_dc_safe_send_fsm]},
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

@@ -64,11 +64,10 @@ init([Partition]) ->
 
 handle_command(trigger, _Sender, State=#state{partition=Partition,
                                               reader=Reader}) ->
-    {NewReaderState, Transactions} =
+    {NewReaderState, DictTransactionsDcs, StableTime} =
         clocksi_transaction_reader:get_next_transactions(Reader),
-    {ok, DCs} = inter_dc_manager:get_dcs(),
-    case Transactions of
-        [] ->
+    case dict:size(DictTransactionsDcs) of
+        0 ->
             %% Send heartbeat
             Heartbeat = [#operation
                          {payload =
@@ -81,22 +80,32 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
             %% Receiving DC treats hearbeat like a transaction
             %% So wrap heartbeat in a transaction structure
             Transaction = {TxId, {DcId, Time}, Clock, Heartbeat},
+	    %% Send heartbeat to all DCs in partial replication alg
+	    %% Still need to decide what to do with heartbeats in partial replication alg
+	    {ok, DCs} = inter_dc_manager:get_dcs(),
             case inter_dc_communication_sender:propagate_sync(
-                   {replicate, [Transaction]}, DCs) of
+                   dict:append(DCs, Transaction, dict:new()), StableTime, Partition) of
                 ok ->
                     NewReader = NewReaderState;
                 _ ->
                     NewReader = NewReaderState
             end;
-        [_H|_T] ->
+	%% For partial replication, need to check if the external DC replicates
+	%% the ops before sending the transactions
+	%% For now this can be done just statically I guess
+	%% To do it dynamically, before a DC changes what it replicates needs to tell
+	%% each DC at what time it is changing, so the external DCs can safely
+	%% send all the values for the new keys it is replicating
+	_ ->
             case inter_dc_communication_sender:propagate_sync(
-                   {replicate, Transactions}, DCs) of
+                   DictTransactionsDcs, StableTime, Partition) of
                 ok ->
                     NewReader = NewReaderState;
                 _ ->
                     NewReader = Reader
             end
     end,
+    %% Update the time of the final 
     timer:sleep(?REPL_PERIOD),
     riak_core_vnode:send_command(self(), trigger),
     {reply, ok, State#state{reader=NewReader}}.

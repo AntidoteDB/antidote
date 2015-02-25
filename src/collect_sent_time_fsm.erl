@@ -18,120 +18,112 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc : This gen_fsm is similar to inter_dc_repl_vnode, but instead of sending
-%% transactions, it send safe_time messages to external DCs when they have recieved
-%% all updates up to the given time
+%% @doc : There are number of DCs-1 instances of this server running in each DC
+%% Each of them keep track of the time of updates sent from each partition
+%% to an external DC
 
--module(inter_dc_safe_send_fsm).
--behaviour(gen_fsm).
+-module(collect_sent_time_fsm).
+-behaviour(gen_server).
 -include("antidote.hrl").
-
 
 
 -export([start_link/1]).
 -export([init/1,
-         code_change/4,
+	 get_max_sent_time/2,
+	 update_sent_time/3,
+	 handle_cast/2,
+	 handle_call/3,
+         code_change/3,
          handle_event/3,
-         handle_info/3,
+         handle_info/2,
          handle_sync_event/4,
-         terminate/3]).
+         terminate/2]).
 
 
--record(state, {last_sent,
+-record(state, {sent_times,
+		num_partitions,
                 dcid}).
 
-%% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
--define(SAFE_SEND_PERIOD, 5000).
+
+%% LastSentTs is the last sent safe_time that was sent
+%% to the exernal DC, this value is included so that
+%% incase the server was restarted, this reinits the state
+get_max_sent_time(DcId, LastSentTs) ->
+    Pid = global:where_is({global, get_atom(DcId)}),
+    %% Start this service if it is down
+    %% Should add a try_catch incase concurrent server creations/failures
+    case Pid of
+	undefined ->
+	    start_link([DcId, LastSentTs]);
+	_ -> Pid
+    end,
+    gen_server:call({global, get_atom(DcId)}, {get_max_sent_time}).
 
 
-start_link(_Nothing) ->
-    gen_fsm:start_link(?MODULE, [], []).
-%%{ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
-%% Starts replication process by sending a trigger message
-%%riak_core_vnode:send_command(Pid, trigger),
-%%{ok, Pid}.
-
-%% riak_core_vnode call backs
-init(_Nothing) ->
-    DcId = dc_utilities:get_my_dc_id(),
-    {ok, loop_send_safe, #state{last_sent=dict:new(),
-				dcid=DcId},0}.
+update_sent_time(DcId, Partition, Timestamp) ->
+    Pid = global:where_is({global, get_atom(DcId)}),
+    %% Start this service if it is down
+    case Pid of
+	undefined ->
+	    start_link([DcId, 0]);
+	_ -> Pid
+    end,
+    gen_server:cast({global, get_atom(DcId)},
+		    {update_sent_time, Partition, Timestamp}).
 
 
-loop_send_safe(trigger, State=#state{last_sent=LastSent,
-				     dcid=DcId}) ->
-    {ok, DCs} = inter_dc_manager:get_dcs(),
-    %% Is this the way to get the ids of the partitions?
-    %% Or are their ids given in some different way?
+start_link([DcId, StartTimestamp]) ->
+    gen_server:start_link({global, get_atom(DcId)}, ?MODULE, [DcId, StartTimestamp], []).
+
+
+%% TODO, Fix, Are partitions based on numbers?? Or do they have an ID??
+init([DcId, _StartTimestamp]) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     NumPartitions = riak_core_ring:num_partitions(Ring),
-    FirstMaxDict = lists:foldl(fun(DC,FirstDictAcc) ->
-				       dict:store(DC,riak_core_metadata:get(
-						       ?META_PREFIX_DC,{NumPartitions-1,DC}), FirstDictAcc)
-			       end,
-			       dict:new(), DCs),
-    MaxToSend = list:foldl(fun(Dc,MaxToSendAcc) ->
-				   min_dc_sent_dict(NumPartitions-2, MaxToSendAcc, Dc)
-			   end,
-			   FirstMaxDict, DCs),
-    %% Loops through the possible max to send, seing if they were larger than what was sent previoulsy
-    %% If they are, then a new safe_time message is sent to the given external DC
-    NewSent = dict:fold(fun(Dc,Timestamp,SentDict) ->
-				case Timestamp > dict:find(Dc, LastSent) of
-				    true -> 
-					%% Send safetime just like doing a heartbeat transaction
-					SafeTime = [#operation
-						    {payload =
-							 #log_record{op_type=safe_time, op_payload = Partition}
-						    }],
-					DcId = dc_utilities:get_my_dc_id(),
-					{ok, Clock} = vectorclock:get_clock(Partition),
-					Time = Timestamp,
-					TxId = 0,
-					%% Receiving DC treats safe time like a transaction
-					%% So wrap safe time in a transaction structure
-					Transaction = {TxId, {DcId, Time}, Clock, Heartbeat},
-					%% Send safe to the given Dc
-					case inter_dc_communication_sender:propagate_sync_safe_time(
-					       Dc, Transaction) of
-					    ok ->
-						Acc = SentDict;
-					    _ ->
-						%% Keep the old time since there was an error sending the message
-						Acc = dict:update(Dc, dict:fetch(Dc, LastSent), SentDict)
-					end;
-				    
-				    _  ->
-				end;
-			   Acc 
-			   end,
-			MaxToSend, MaxToSend),
-    %% Update the time of the final 
-    timer:sleep(?SAFE_SEND_PERIOD),
-    %%riak_core_vnode:send_command(self(), trigger),
-    %%{reply, ok, State#state{lastSent=NewSent}}.
-    {next_state, loop_send_safe, State#state{lastSent=NewSent},0}.
+    %%SentTimes = min_dc_sent_dict(NumPartitions, StartTimestamp, dict:new()),
+    SentTimes = dict:new(),
+    {ok, #state{sent_times=SentTimes,
+		num_partitions=NumPartitions,
+		dcid=DcId}}.
+
+%% Updates the sent time of a given partition
+handle_cast({update_sent_time, Partition, Timestamp}, State=#state{sent_times=LastSent}) ->
+    NewSent = dict:store(Partition, Timestamp, LastSent),
+    {noreply, State=#state{sent_times=NewSent}}.
 
 
+handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
+						    num_partitions=NumPartitions}) ->
+    %% Maybe should use a more efficient data-structure so you don't
+    %% have to iterate over an entire list each time
+    case dict:size(LastSent) of
+	NumPartitions ->
+	    [{_FirstPartition, FirstTimestamp}|_Rest] = dict:to_list(LastSent),
+	    Time = dict:fold(fun(_Partition, Timestamp, MinTimestamp) ->
+				     case Timestamp > MinTimestamp of
+					 true ->
+					     MinTimestamp;
+					 _ -> 
+					     Timestamp
+				     end
+			     end,
+			     FirstTimestamp, LastSent),
+	    {reply, Time, State};
+	_ ->
+	    {reply, 0, State}
+    end.
 
 
 %% Is this the right way to get the partition ids?
 %% This is a helper function
-min_dc_sent_dict(-1,DcSent,Dc) ->
-    DcSent;
-min_dc_sent_dict(N,DcSent,Dc) ->
-    min_dc_sent_dict(N-1, dict:store(Dc, erlang:min(dict:get(Dc, DcSent),
-						    riak_core_metadata:get(?META_PREFIX_DC, {N, Dc})),
-				     DcSent), Dc).
+%%min_dc_sent_dict(-1,_StartTimestamp,DcSent) ->
+%%    DcSent;
+%%min_dc_sent_dict(N,StartTimestamp,DcSent) ->
+%%    min_dc_sent_dict(N-1, StartTimestamp, dict:store(N, StartTimestamp, DcSent)).
 
 
-
-
-    
-
-
-
-handle_info(Message, _StateName, StateData) ->
+%% FIX ToDo: should I remove these, or add others?
+handle_info(Message, StateData) ->
     lager:error("Recevied info:  ~p",[Message]),
     {stop,badmsg,StateData}.
 
@@ -141,7 +133,15 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
-code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+code_change(_OldVsn, StateName, State) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _SD) ->
+terminate(_Reason, _SN) ->
     ok.
+
+
+
+%% Helper function
+-spec get_atom(DcId :: term())
+	      -> atom().
+get_atom(DcId) ->
+    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(DcId)).

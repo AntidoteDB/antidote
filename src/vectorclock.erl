@@ -31,6 +31,13 @@
          set_clock_of_dc/3,
          get_stable_snapshot/0,
          from_list/1,
+	 wait_for_clock/1,
+	 get_random_node/0,
+	 update_sent_clock/3,
+	 update_safe_vector_local/1,
+	 update_safe_vector_local/2,
+	 update_safe_clock_local/2,
+	 update_safe_clock_local/3,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
@@ -55,8 +62,9 @@ get_clock_by_key(Key) ->
 get_clock(Partition) ->
     Indexnode = {Partition, node()},
     try
+%% Chage to get_safe_time from get_clock
         riak_core_vnode_master:sync_command(
-           Indexnode, get_clock, vectorclock_vnode_master)
+           Indexnode, get_safe_time, vectorclock_vnode_master)
     catch
         _:Reason ->
             lager:error("Exception caught: ~p", [Reason]),
@@ -68,14 +76,7 @@ get_clock(Partition) ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_stable_snapshot() ->
-    %% Ask a random vnode for current stable snapshot time
-    Node = node(),
-    Preflist = riak_core_apl:active_owners(vectorclock),
-    Prefnode = [{Partition, Node1} ||
-                   {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
-    %% Take a random vnode
-    Index = random:uniform(length(Prefnode)),
-    Indexnode = lists:nth(Index, Prefnode),
+    Indexnode = vectorclock:get_random_node(),
     try
         riak_core_vnode_master:sync_command(
           Indexnode, get_stable_snapshot, vectorclock_vnode_master)
@@ -84,6 +85,133 @@ get_stable_snapshot() ->
             lager:error("Exception caught: ~p", [Reason]),
             {error, Reason}
     end.
+
+
+
+%%update_sent_clock(Partition, Dc_id, Timestamp) ->
+    
+update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
+    collect_sent_time_fsm:update_sent_time(
+      {DcAddress,Port}, Partition, StableTime).
+
+
+
+%% update_sent_clock_old(Partition, Dc_id, Timestamp) ->
+%%     Indexnode = {Partition, node()},
+%%     try
+%%         case riak_core_vnode_master:sync_command(Indexnode,
+%%                                              {update_sent_clock, Dc_id, Partition, Timestamp},
+%%                                              vectorclock_vnode_master) of
+%%             {ok, Clock} ->
+%%                 {ok, Clock};
+%%             {error, Reason} ->
+%%                 lager:info("Update sent clock failed: ~p",[Reason]),
+%%                 {error, Reason}
+%%         end
+%%     catch
+%%         _:R ->
+%%             lager:error("Exception caught: ~p", [R]),
+%%             {error, R}
+%%     end.
+
+
+
+-spec get_safe_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
+get_safe_time() ->
+    %% Right now this is done using riak_core meta-data, but should
+    %% try doing it differently b/c meta-data is expensive
+    Indexnode = vectorclock:get_random_node(),
+    try
+        riak_core_vnode_master:sync_command(
+          Indexnode, get_safe_time, vectorclock_vnode_master)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
+
+%% The update_safe_vector_local functions take a clock that is then used
+%% to update the safe time, and also returns a clock with the possibly
+%% updated safe time
+%% If no partition is given, it just calls a random partition
+-spec update_safe_vector_local(Vector :: vectorclock:vectorclock())
+			      -> {ok, vectorclock:vectorclock()} | {error, term()}.
+update_safe_vector_local(Vector) ->
+    Indexnode = vectorclock:get_random_node(),
+    update_safe_vector_local(Indexnode, Vector).
+
+-spec update_safe_vector_local(Partition :: non_neg_integer(), Vector :: vectorclock:vectorclock())
+			      -> {ok, vectorclock:vectorclock()} | {error, term()}.
+update_safe_vector_local(Partition, Vector) ->
+    try
+	case riak_core_vnode_master:sync_command(Partition,
+						 {update_safe_vector, Vector},
+						 vectorclock_vnode_master) of
+	    {ok, Clock} ->
+		{ok, Clock};
+	    {error, Reason} ->
+		lager:info("Update safe clock failed ~p", [Reason]),
+		{error, Reason}
+	end
+    catch
+	_:R ->
+	    lager:error("Exception caught: ~p", [R]),
+	    {error, R}
+    end.
+
+
+
+-spec update_safe_clock_local(Dc_id :: term(), Timestamp :: non_neg_integer())
+			     -> {ok, vectorclock()} | {error, term()}.
+update_safe_clock_local(Dc_id, Timestamp) ->
+    Indexnode = vectorclock:get_random_node(),
+    update_safe_clock_local(Dc_id, Indexnode, Timestamp).
+
+
+%% This just updates the safeclock of the local partition
+-spec update_safe_clock_local(Dc_id :: term(), Partition :: non_neg_integer(), Timestamp :: non_neg_integer())
+			     -> {ok, vectorclock()} | {error, term()}.
+update_safe_clock_local(Dc_id, Partition, Timestamp) ->
+    try
+	case riak_core_vnode_master:sync_command(Partition,
+						 {update_safe_clock, true, Dc_id, Timestamp},
+						 vectorclock_vnode_master) of
+	    {ok, Clock} ->
+		{ok, Clock};
+	    {error, Reason} ->
+		lager:info("Update safe clock failed ~p",[Reason]),
+		{error, Reason}
+	end
+    catch
+	_:R ->
+	    lager:error("Exception caught: ~p", [R]),
+	    {error, R}
+    end.
+    
+
+%% This updates the safeclock for all partitions by sending riak-core
+%% meta-data
+%% Dont use this for now
+%% -spec update_safe_clock(Dc_id :: term(), Timestamp :: non_neg_integer())
+%% 		       -> {ok, vectorclock()} | {error, term()}.
+%% update_safe_clock(Dc_id, Timestamp) ->
+%%     Indexnode = vectorclock:get_random_node(),
+%%     try
+%% 	case riak_core_vnode_master:sync_command(Indexnode,
+%% 						 {update_safe_clock, false, Dc_id, Timestamp},
+%% 						 vectorclock_vnode_master) of
+%% 	    {ok, Clock} ->
+%% 		{ok, Clock};
+%% 	    {error, Reason} ->
+%% 		lager:infor("Update safe clock failed ~p",[Reason]),
+%% 		{error, Reason}
+%% 	end
+%%     catch
+%% 	_:R ->
+%% 	    lager:error("Exception caught: ~p", [R]),
+%% 	    {error, R}
+%%     end.
+    
 
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())
@@ -105,6 +233,42 @@ update_clock(Partition, Dc_id, Timestamp) ->
             lager:error("Exception caught: ~p", [R]),
             {error, R}
     end.
+
+
+-spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
+                           {ok, vectorclock:vectorclock()} | {error, term()}.
+wait_for_clock(Clock) ->
+   case get_safe_time() of
+       {ok, VecSnapshotTime} ->
+           case vectorclock:ge(VecSnapshotTime, Clock) of
+               true ->
+                   %% No need to wait
+                   {ok, VecSnapshotTime};
+               false ->
+                   %% wait for snapshot time to catch up with Client Clock
+                   timer:sleep(100),
+                   wait_for_clock(Clock)
+           end;
+       {error, Reason} ->
+          {error, Reason}
+  end.
+
+
+
+
+%% @doc Returns a random node
+get_random_node() ->
+    % Send the update to a random node
+    Node = node(),
+    Preflist = riak_core_apl:active_owners(vectorclock),
+    Prefnode = [{Partition, Node1} ||
+                   {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
+    %% Take a random vnode
+    Index = random:uniform(length(Prefnode)),
+    lists:nth(Index, Prefnode).
+
+
+
 
 %% @doc Return true if Clock1 > Clock2
 -spec is_greater_than(Clock1 :: vectorclock(), Clock2 :: vectorclock())

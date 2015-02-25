@@ -83,9 +83,9 @@ finish_op(From, Key,Result) ->
 init([From, ClientClock]) ->
     {ok, SnapshotTime} = case ClientClock of
         ignore ->
-            get_snapshot_time();
+            get_snapshot_time(dict:new(),localTransaction);
         _ ->
-            get_snapshot_time(ClientClock)
+            get_snapshot_time(ClientClock,localTransaction)
     end,
     DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
@@ -281,42 +281,75 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
-                       -> {ok, vectorclock:vectorclock()} | {error,term()}.
-get_snapshot_time(ClientClock) ->
-    wait_for_clock(ClientClock).
+%% In parital replication, this should only be called when doing a
+%% read coming from an external DC
 
--spec get_snapshot_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
-get_snapshot_time() ->
+-spec get_snapshot_time(ClientClock :: vectorclock:vectorclock(), term())
+                       -> {ok, vectorclock:vectorclock()} | {error,term()}.
+get_snapshot_time(ClientClock, externalTransaction) ->
+    vectorclock:wait_for_clock(ClientClock),
+    get_snapshot_time(ClientClock, localTransaction);
+%% This should update the safe_time of the vectorclock vnode as well
+%% The reason is that any advances in the clock that have happened
+%% locally are already safe to read because it means the safe clock
+%% was already updated somewhere in this DC
+
+%% !!!!! Still need a way to be sure advance the safe_time if
+%% not using meta-data !!!!
+get_snapshot_time(ClientClock, locaTransaction) ->
     Now = clocksi_vnode:now_milisec(erlang:now()),
-    case vectorclock:get_stable_snapshot() of
-        {ok, VecSnapshotTime} ->
-            DcId = dc_utilities:get_my_dc_id(),
-            SnapshotTime = dict:update(DcId,
-                                       fun (_Old) -> Now end,
-                                       Now, VecSnapshotTime),
-            {ok, SnapshotTime};
-        {error, Reason} ->
-            {error, Reason}
+    case vectorclock:update_safe_vector_local(ClientClock) of
+	{ok, VecSnapshotTime} ->
+	    DcId = dc_utilities:get_my_dc_id(),
+	    %% ToDo!! Fix! This is probably not the right value to store here
+	    %% This is your local DC dependencies and not your commit time
+	    %% So should be an older value (that is still consistent)
+	    %% Otw you will cause long waiting when doing external reads
+	    %% because they will have to wait until this time is reached
+	    {ok, dict:store(DcId, Now, VecSnapshotTime)};
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
--spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-                           {ok, vectorclock:vectorclock()} | {error, term()}.
-wait_for_clock(Clock) ->
-   case get_snapshot_time() of
-       {ok, VecSnapshotTime} ->
-           case vectorclock:ge(VecSnapshotTime, Clock) of
-               true ->
-                   %% No need to wait
-                   {ok, VecSnapshotTime};
-               false ->
-                   %% wait for snapshot time to catch up with Client Clock
-                   timer:sleep(100),
-                   wait_for_clock(Clock)
-           end;
-       {error, Reason} ->
-          {error, Reason}
-  end.
+    
+
+
+%% This gets the actual safe_clock time without updating anything
+%% Should probably query meta-data or safe-time server so that clock is advanced
+%% because this is only called when waiting for a clock, which is done
+%% during an external read
+%% -spec get_safe_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
+%% get_safe_time() ->
+%%     Now = clocksi_vnode:now_milisec(erlang:now()),
+%%     %% Don't use stable snapshot, instead use safe time
+%%     case vectorclock:get_safe_time() of
+%%         {ok, VecSnapshotTime} ->
+%%             DcId = dc_utilities:get_my_dc_id(),
+%%             SnapshotTime = dict:update(DcId,
+%%                                        fun (_Old) -> Now end,
+%%                                        Now, VecSnapshotTime),
+%%             {ok, SnapshotTime};
+%%         {error, Reason} ->
+%%             {error, Reason}
+%%     end.
+
+%% -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
+%%                            {ok, vectorclock:vectorclock()} | {error, term()}.
+%% wait_for_clock(Clock) ->
+%%    case get_safe_time() of
+%%        {ok, VecSnapshotTime} ->
+%%            case vectorclock:ge(VecSnapshotTime, Clock) of
+%%                true ->
+%%                    %% No need to wait
+%%                    {ok, VecSnapshotTime};
+%%                false ->
+%%                    %% wait for snapshot time to catch up with Client Clock
+%%                    timer:sleep(100),
+%%                    wait_for_clock(Clock)
+%%            end;
+%%        {error, Reason} ->
+%%           {error, Reason}
+%%   end.
 
 generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
     clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param).

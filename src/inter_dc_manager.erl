@@ -6,14 +6,30 @@
          start_receiver/1,
          get_dcs/0,
          add_dc/1,
-         add_list_dcs/1]).
+         add_list_dcs/1,
+	 get_my_read_dc/0,
+         start_read_receiver/1,
+         get_read_dcs/0,
+         add_read_dc/1,
+         add_list_read_dcs/1,
+	 get_my_safe_send_dc/0,
+         start_safe_send_receiver/1,
+         get_safe_send_dcs/0,
+         add_safe_send_dc/1,
+         add_list_safe_send_dcs/1,
+	 set_replication_keys/1
+	]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
         terminate/2, code_change/3]).
 
 -record(state, {
-        dcs,
-        port
+	  dcs,
+	  dcs_read,
+	  dcs_safe_send,
+	  port,
+	  port_read,
+	  port_safe_send
     }).
 
 %% ===================================================================
@@ -37,7 +53,45 @@ add_dc(NewDC) ->
 
 add_list_dcs(DCs) ->
     gen_server:call(?MODULE, {add_list_dcs, DCs}, infinity).
+
+
+get_my_read_dc() ->
+    gen_server:call(?MODULE, get_my_read_dc, infinity).
+
+start_read_receiver(Port) ->
+    gen_server:call(?MODULE, {start_read_receiver, Port}, infinity).
+
+get_read_dcs() ->
+    gen_server:call(?MODULE, get_read_dcs, infinity).
+
+add_read_dc(NewDC) ->
+    gen_server:call(?MODULE, {add_read_dc, NewDC}, infinity).
+
+add_list_read_dcs(DCs) ->
+    gen_server:call(?MODULE, {add_list_read_dcs, DCs}, infinity).
+
+
+
+get_my_safe_send_dc() ->
+    gen_server:call(?MODULE, get_my_safe_send_dc, infinity).
+
+start_safe_send_receiver(Port) ->
+    gen_server:call(?MODULE, {start_safe_send_receiver, Port}, infinity).
+
+get_safe_send_dcs() ->
+    gen_server:call(?MODULE, get_safe_send_dcs, infinity).
+
+add_safe_send_dc(NewDC) ->
+    gen_server:call(?MODULE, {add_safe_send_dc, NewDC}, infinity).
+
+add_list_safe_send_dcs(DCs) ->
+    gen_server:call(?MODULE, {add_list_safe_send_dcs, DCs}, infinity).
    
+
+
+set_replication_keys(KeyDescription) ->
+    gen_server:call(?MODULE, {set_replication_keys, KeyDescription}, infinity).
+
 
 %% ===================================================================
 %% gen_server callbacks
@@ -62,7 +116,59 @@ handle_call({add_dc, NewDC}, _From, #state{dcs=DCs0} = State) ->
 
 handle_call({add_list_dcs, DCs}, _From, #state{dcs=DCs0} = State) ->
     DCs1 = DCs0 ++ DCs,
-    {reply, ok, State#state{dcs=DCs1}}.
+    {reply, ok, State#state{dcs=DCs1}};
+
+
+
+handle_call(get_my_read_dc, _From, #state{port_read=Port} = State) ->
+    {reply, {ok, {my_ip(),Port}}, State};
+
+handle_call({start_read_reciever, Port}, _Form, State) ->
+    %% ToDo: fix this
+    {ok, _} = antidote_sup:state_read_rep(Port),
+    {reply, {ok, {my_ip(),Port}}, State#state{port_read=Port}};
+
+handle_call(get_read_dcs, _From, #state{dcs_read=DCs} = State) ->
+    {reply, {ok, DCs}, State};
+
+handle_call({add_read_dc, NewDC}, _From, #state{dcs_read=DCs0} = State) ->
+    DCs = DCs0 ++ [NewDC],
+    {reply, ok, State#state{dcs_read=DCs}};
+
+handle_call({add_list_read_dcs, DCs}, _From, #state{dcs_read=DCs0} = State) ->
+    DCs1 = DCs0 ++ DCs,
+    {reply, ok, State#state{dcs_read=DCs1}};
+
+
+
+handle_call(get_my_safe_send_dc, _From, #state{port_safe_send=Port} = State) ->
+    {reply, {ok, {my_ip(),Port}}, State};
+
+handle_call({start_safe_send_reciever, Port}, _Form, State) ->
+    %% ToDo: fix this
+    {ok, _} = antidote_sup:state_read_rep(Port),
+    {reply, {ok, {my_ip(),Port}}, State#state{port_safe_send=Port}};
+
+handle_call(get_safe_send_dcs, _From, #state{dcs_safe_send=DCs} = State) ->
+    {reply, {ok, DCs}, State};
+
+handle_call({add_safe_send_dc, NewDC}, _From, #state{dcs_safe_send=DCs0} = State) ->
+    DCs = DCs0 ++ [NewDC],
+    {reply, ok, State#state{dcs_safe_send=DCs}};
+
+handle_call({add_list_safe_send_dcs, DCs}, _From, #state{dcs_safe_send=DCs0} = State) ->
+    DCs1 = DCs0 ++ DCs,
+    {reply, ok, State#state{dcs_safe_send=DCs1}};
+
+
+handle_call(set_replication_keys, _From, State) ->
+    %% TODO, this should setup the replication keys
+    {reply, ok, State}.
+
+
+
+
+
 
 handle_cast(_Info, State) ->
     {noreply, State}.

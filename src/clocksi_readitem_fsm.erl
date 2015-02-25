@@ -24,7 +24,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/6]).
+-export([start_link/7]).
 
 %% Callbacks
 -export([init/1,
@@ -47,15 +47,16 @@
                 tx_coordinator,
                 vnode,
                 updates,
-                pending_txs}).
+                pending_txs,
+		isLocal}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
+start_link(Vnode, Coordinator, Tx, Key, Type, Updates, IsLocal) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
-                                 Tx, Key, Type, Updates], []).
+                                 Tx, Key, Type, Updates, IsLocal], []).
 
 now_milisec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
@@ -64,30 +65,55 @@ now_milisec({MegaSecs, Secs, MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
+init([Vnode, Coordinator, Transaction, Key, Type, Updates, local]) ->
     SD = #state{vnode=Vnode,
                 type=Type,
                 key=Key,
                 tx_coordinator=Coordinator,
                 transaction=Transaction,
                 updates=Updates,
-                pending_txs=[]},
+                pending_txs=[],
+		isLocal=true},
+    {ok, check_clock, SD, 0};
+
+init([Vnode, Coordinator, Transaction, Key, Type, Updates, external]) ->
+    SD = #state{vnode=Vnode,
+                type=Type,
+                key=Key,
+                tx_coordinator=Coordinator,
+                transaction=Transaction,
+                updates=Updates,
+                pending_txs=[],
+		isLocal=false},
     {ok, check_clock, SD, 0}.
+
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behinf, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
-check_clock(timeout, SD0=#state{transaction=Transaction}) ->
+%% For partial-rep, when a read is coming from another DC it also
+%% waits until all the dependencies of that read are satisfied
+check_clock(timeout, SD0=#state{transaction=Transaction,isLocal=IsLocal}) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),
-    case (T_TS) > Time of
-        true ->
-            timer:sleep(T_TS - Time),
-            {next_state, waiting1, SD0, 0};
-        false ->
-            {next_state, waiting1, SD0, 0}
+    case IsLocal of
+	true -> 
+	    case (T_TS) > Time of
+		true ->
+		    timer:sleep(T_TS - Time),
+		    {next_state, waiting1, SD0, 0};
+		false ->
+		    {next_state, waiting1, SD0, 0}
+	    end;
+	false ->
+	    %% This could cause really long waiting, because the time of the
+	    %% origin DC is using time:now() for its time, instead of using
+	    %% time based on one of its dependencies
+	    %% Should fix this
+	    vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
+	    {next_state, return, SD0, 0}
     end.
 
 waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->

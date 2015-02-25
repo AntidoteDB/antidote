@@ -29,9 +29,12 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-start_fsm(_Args) ->
-    supervisor:start_child(?MODULE, _Args).
+start_fsm(Args) ->
+    supervisor:start_child(?MODULE, Args).
 
+
+%% Acutally don't need a sup for this, because one is just started automatically
+%% when one isn't available
 %% @doc Supervisor for the fsm to collect the sent times
 %% should start one for each external DC, with the DC address
 %% as the input args, but these args cn be put in when
@@ -40,6 +43,6 @@ init([]) ->
     lager:info("collect_sent_time_sup: Starting fsm..."),
     Worker = {collect_sent_time_fsm,
               {collect_sent_time_fsm, start_link, []},
-              transient, 5000, worker, []},
+              transient, 5000, worker, [collect_sent_time_fsm]},
     lager:info("collect_sent_time_sup: done."),
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

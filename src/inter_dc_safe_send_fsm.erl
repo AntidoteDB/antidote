@@ -18,127 +18,181 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc : This vnode is responsible for sending transaction committed in local
-%%  DCs to remote DCs in commit-time order
+%% @doc : This gen_fsm is similar to inter_dc_repl_vnode, but instead of sending
+%% transactions, it send safe_time messages to external DCs when they have recieved
+%% all updates up to the given time
 
--module(inter_dc_repl_vnode).
--behaviour(riak_core_vnode).
+-module(inter_dc_safe_send_fsm).
+-behaviour(gen_fsm).
 -include("antidote.hrl").
 
--export([start_vnode/1,
-         init/1,
-         terminate/2,
-         handle_command/3,
-         is_empty/1,
-         delete/1,
-         handle_handoff_command/3,
-         handoff_starting/2,
-         handoff_cancelled/1,
-         handoff_finished/2,
-         handle_handoff_data/2,
-         encode_handoff_item/2,
-         handle_coverage/4,
-         handle_exit/3]).
 
--record(state, {partition,
-                dcid,
-                last_op=empty,
-                reader}).
 
-%% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 5000).
+-export([start_link/1]).
+-export([init/1,
+         code_change/4,
+         handle_event/3,
+         handle_info/3,
+         handle_sync_event/4,
+         terminate/3]).
 
-start_vnode(I) ->
-    {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
-    %% Starts replication process by sending a trigger message
-    riak_core_vnode:send_command(Pid, trigger),
-    {ok, Pid}.
+
+-record(state, {last_sent,
+                dcid}).
+
+%% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
+-define(SAFE_SEND_PERIOD, 5000).
+
+
+start_link(_Nothing) ->
+    gen_fsm:start_link(?MODULE, [], []).
+%%{ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
+%% Starts replication process by sending a trigger message
+%%riak_core_vnode:send_command(Pid, trigger),
+%%{ok, Pid}.
 
 %% riak_core_vnode call backs
-init([Partition]) ->
+init(_Nothing) ->
     DcId = dc_utilities:get_my_dc_id(),
-    {ok, Reader} = clocksi_transaction_reader:init(Partition, DcId),
-    {ok, #state{partition=Partition,
-                dcid=DcId,
-                reader = Reader}}.
+    {ok, DCs} = inter_dc_manager:get_dcs(),
+    NewDcDict = list:foldl(fun(Dc, DcDict) ->
+    				   dict:store(Dc,0,DcDict)
+    			   end,
+    			   dict:new(), DCs),
+    {ok, loop_send_safe, #state{last_sent=NewDcDict,
+				dcid=DcId},0}.
 
-handle_command(trigger, _Sender, State=#state{partition=Partition,
-                                              reader=Reader}) ->
-    {NewReaderState, DictTransactionsDcs, StableTime} =
-        clocksi_transaction_reader:get_next_transactions(Reader),
-    case dict:size(DictTransactionsDcs) of
-        0 ->
-            %% Send heartbeat
-            Heartbeat = [#operation
-                         {payload =
-                              #log_record{op_type=noop, op_payload = Partition}
-                         }],
-            DcId = dc_utilities:get_my_dc_id(),
-            {ok, Clock} = vectorclock:get_clock(Partition),
-            Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
-            TxId = 0,
-            %% Receiving DC treats hearbeat like a transaction
-            %% So wrap heartbeat in a transaction structure
-            Transaction = {TxId, {DcId, Time}, Clock, Heartbeat},
-	    %% Send heartbeat to all DCs in partial replication alg
-	    %% Still need to decide what to do with heartbeats in partial replication alg
-	    {ok, DCs} = inter_dc_manager:get_dcs(),
-            case inter_dc_communication_sender:propagate_sync(
-                   dict:append(DCs, Transaction, dict:new()), StableTime, Partition) of
-                ok ->
-                    NewReader = NewReaderState;
-                _ ->
-                    NewReader = NewReaderState
-            end;
-	%% For partial replication, need to check if the external DC replicates
-	%% the ops before sending the transactions
-	%% For now this can be done just statically I guess
-	%% To do it dynamically, before a DC changes what it replicates needs to tell
-	%% each DC at what time it is changing, so the external DCs can safely
-	%% send all the values for the new keys it is replicating
-        _ ->
-            case inter_dc_communication_sender:propagate_sync(
-                   DictTransactionsDcs, StableTime, Partition) of
-                ok ->
-                    NewReader = NewReaderState;
-                _ ->
-                    NewReader = Reader
-            end
-    end,
-    %% Update the time of the final 
-    timer:sleep(?REPL_PERIOD),
-    riak_core_vnode:send_command(self(), trigger),
-    {reply, ok, State#state{reader=NewReader}}.
 
-handle_handoff_command(_Message, _Sender, State) ->
-    {noreply, State}.
 
-handoff_starting(_TargetNode, State) ->
-    {true, State}.
+%% do i need to export this????
+loop_send_safe(timeout, State=#state{last_sent=LastSent,
+				     dcid=DcId}) ->
+    NewSent = dict:fold(fun(Dc, LastSentTs, LastSentAcc) ->
+				NewMax = collect_sent_time_fsm:get_max_sent_time(
+					   Dc, LastSentTs),
+				case NewMax > LastSentTs of
+				    true -> 
+					%% Send safetime just like doing a heartbeat transaction
+					SafeTime = [#operation
+						    {payload =
+							 #log_record{op_type=safe_time, op_payload = 0}
+						    }],
+					DcId = dc_utilities:get_my_dc_id(),
+					%% Dont need clock, should just give an empty value
+					%% {ok, Clock} = vectorclock:get_clock(Partition),
+					Clock = 0,
+					Time = NewMax,
+					TxId = 0,
+					%% Receiving DC treats safe time like a transaction
+					%% So wrap safe time in a transaction structure
+					Transaction = {TxId, {DcId, Time}, Clock, SafeTime},
+					%% Send safe to the given Dc
+					case inter_dc_communication_sender:propagate_sync_safe_time(
+					       Dc, Transaction) of
+					    ok ->
+						dict:store(Dc, NewMax, LastSentAcc);
+					    _ ->
+						%% Keep the old time since there was an error sending the message
+						LastSentAcc
+					end;
+				    
+				    _  ->
+					LastSentAcc
+				end,
+				LastSentAcc 
+			end,
+			LastSent, LastSent),
+    {next_state, loop_send_safe, State#state{last_sent=NewSent},?SAFE_SEND_PERIOD}.
 
-handoff_cancelled(State) ->
-    {ok, State}.
+    
+    
 
-handoff_finished(_TargetNode, State) ->
-    {ok, State}.
+%% Old way of doing this, using riak_metadata, keep for now
+%% to test
+%% loop_send_safe2(timeout, State=#state{last_sent=LastSent,
+%% 				     dcid=DcId}) ->
+%%     {ok, DCs} = inter_dc_manager:get_dcs(),
+%%     %% Is this the way to get the ids of the partitions?
+%%     %% Or are their ids given in some different way?
+%%     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+%%     NumPartitions = riak_core_ring:num_partitions(Ring),
+%%     FirstMaxDict = lists:foldl(fun(DC,FirstDictAcc) ->
+%% 				       dict:store(DC,riak_core_metadata:get(
+%% 						       ?META_PREFIX_DC,{NumPartitions-1,DC}), FirstDictAcc)
+%% 			       end,
+%% 			       dict:new(), DCs),
+%%     MaxToSend = list:foldl(fun(Dc,MaxToSendAcc) ->
+%% 				   min_dc_sent_dict(NumPartitions-2, MaxToSendAcc, Dc)
+%% 			   end,
+%% 			   FirstMaxDict, DCs),
+%%     %% Loops through the possible max to send, seing if they were larger than what was sent previoulsy
+%%     %% If they are, then a new safe_time message is sent to the given external DC
+%%     NewSent = dict:fold(fun(Dc,Timestamp,SentDict) ->
+%% 				case Timestamp > dict:find(Dc, LastSent) of
+%% 				    true -> 
+%% 					%% Send safetime just like doing a heartbeat transaction
+%% 					SafeTime = [#operation
+%% 						    {payload =
+%% 							 #log_record{op_type=safe_time, op_payload = Partition}
+%% 						    }],
+%% 					DcId = dc_utilities:get_my_dc_id(),
+%% 					{ok, Clock} = vectorclock:get_clock(Partition),
+%% 					Time = Timestamp,
+%% 					TxId = 0,
+%% 					%% Receiving DC treats safe time like a transaction
+%% 					%% So wrap safe time in a transaction structure
+%% 					Transaction = {TxId, {DcId, Time}, Clock, SafeTime},
+%% 					%% Send safe to the given Dc
+%% 					case inter_dc_communication_sender:propagate_sync_safe_time(
+%% 					       Dc, Transaction) of
+%% 					    ok ->
+%% 						Acc = SentDict;
+%% 					    _ ->
+%% 						%% Keep the old time since there was an error sending the message
+%% 						Acc = dict:update(Dc, dict:fetch(Dc, LastSent), SentDict)
+%% 					end;
+				    
+%% 				    _  ->
+%% 				end,
+%% 				Acc 
+%% 			end,
+%% 			MaxToSend, MaxToSend),
+%%     %% Update the time of the final 
+%%     timer:sleep(?SAFE_SEND_PERIOD),
+%%     %%riak_core_vnode:send_command(self(), trigger),
+%%     %%{reply, ok, State#state{lastSent=NewSent}}.
+%%     {next_state, loop_send_safe, State#state{lastSent=NewSent},0}.
 
-handle_handoff_data(_Data, State) ->
-    {reply, ok, State}.
 
-encode_handoff_item(_ObjectName, _ObjectValue) ->
-    <<>>.
 
-is_empty(State) ->
-    {true, State}.
 
-delete(State) ->
-    {ok, State}.
+%% %% Is this the right way to get the partition ids?
+%% %% This is a helper function
+%% min_dc_sent_dict(-1,DcSent,Dc) ->
+%%     DcSent;
+%% min_dc_sent_dict(N,DcSent,Dc) ->
+%%     min_dc_sent_dict(N-1, dict:store(Dc, erlang:min(dict:get(Dc, DcSent),
+%% 						    riak_core_metadata:get(?META_PREFIX_DC, {N, Dc})),
+%% 				     DcSent), Dc).
 
-handle_coverage(_Req, _KeySpaces, _Sender, State) ->
-    {stop, not_implemented, State}.
 
-handle_exit(_Pid, _Reason, State) ->
-    {noreply, State}.
 
-terminate(_Reason, _State) ->
+
+    
+
+
+
+handle_info(Message, _StateName, StateData) ->
+    lager:error("Recevied info:  ~p",[Message]),
+    {stop,badmsg,StateData}.
+
+handle_event(_Event, _StateName, StateData) ->
+    {stop,badmsg,StateData}.
+
+handle_sync_event(_Event, _From, _StateName, StateData) ->
+    {stop,badmsg,StateData}.
+
+code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+
+terminate(_Reason, _SN, _SD) ->
     ok.

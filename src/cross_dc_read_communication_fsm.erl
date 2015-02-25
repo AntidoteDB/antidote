@@ -37,7 +37,7 @@ receive_message(timeout, State=#state{socket=Socket}) ->
 				 IndexNode = hd(Preflist),
 				 %% Is it safe to do a read like this from an external transaction?
 				 %% Might cause blocking because external DC might be ahead in time
-				 case clocksi_vnode:read_data_item(IndexNode, Transaction,
+				 case clocksi_vnode:read_data_item_external(IndexNode, Transaction,
 								   Key, Type) of
 				     error ->
 					 {reply, error, abort};

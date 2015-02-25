@@ -4,17 +4,6 @@
 -define(M, inter_dc_communication_sender_orig).
 
 
-
-
-
-dropped_put(Preflist, BKey, Obj, ReqId, StartTime, Options, Sender) ->
-    NewPreflist = lists:sublist(Preflist, length(Preflist) - 1),
-    ?I_INFO("Preflist modified from ~p to ~p", [Preflist, NewPreflist]),
-    ?M:put_orig(NewPreflist, BKey, Obj, ReqId, StartTime, Options, Sender).
-
-
-
-
 %% TestInt1:
 %% For this test, want to have an update to key5 at DC1
 %% which doesn't replicate key5
