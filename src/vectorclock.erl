@@ -35,7 +35,6 @@
 
 -export_type([vectorclock/0]).
 
--type vectorclock() :: dict().
 
 -spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_clock_by_key(Key) ->

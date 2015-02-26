@@ -207,13 +207,11 @@ get_stable_time(Node, Prev_stable_time) ->
                                         Min_time
                                 end
                         end,
-                        now_milisec(erlang:now()),
+                        clocksi_vnode:now_microsec(erlang:now()),
                         Active_txns);
         _ -> Prev_stable_time
     end.
 
-now_milisec({MegaSecs,Secs,MicroSecs}) ->
-    (MegaSecs*1000000 + Secs)*1000000 + MicroSecs.
 
 %%@doc Add updates in writeset ot Pending operations to process downstream
 add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->

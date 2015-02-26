@@ -24,7 +24,9 @@
 -export([generate_downstream_op/5]).
 
 %% @doc Returns downstream operation for upstream operation
--spec generate_downstream_op(#transaction{}, Node::term(), Key::key(),
+%%      input: Update - upstream operation
+%%      output: Downstream operation or {error, Reason}
+-spec generate_downstream_op(Transaction::tx(), Node::term(), Key::key(),
                              Type::type(), Update::op()) ->
                                     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update) ->
@@ -34,10 +36,26 @@ generate_downstream_op(Transaction, Node, Key, Type, Update) ->
                                       Key,
                                       Type) of
         {ok, Snapshot} ->
-            {ok, NewState} = Type:update(Op, Actor, Snapshot),
-            DownstreamOp = {merge, NewState},
-            {ok, DownstreamOp};
-        {error, Reason} ->
-            lager:info("Error: ~p", [Reason]),
-            {error, Reason}
+            DownstreamOp = case Type of
+                            crdt_bcounter ->
+                                case Type:generate_downstream(Op, Actor, Snapshot) of
+                                    {ok, OpParam} -> {update, OpParam};
+                                    {error, Error} -> {error, Error}
+                                end;
+                            crdt_orset ->
+                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+                                {update, OpParam};
+                            crdt_pncounter ->
+                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+                                {update, OpParam};
+                            _ ->
+                                {ok, NewState} = Type:update(Op, Actor, Snapshot),
+                                {merge, NewState}
+                            end,
+            case DownstreamOp of
+                {error, Reason} -> {error, Reason};
+                _ -> {ok, DownstreamOp}
+            end;
+        {error, no_snapshot} ->
+            {error, no_snapshot}
     end.

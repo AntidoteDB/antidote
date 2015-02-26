@@ -30,7 +30,7 @@
          commit/3,
          single_commit/2,
          abort/2,
-         now_milisec/1,
+         now_microsec/1,
          init/1,
          terminate/2,
          handle_command/3,
@@ -188,7 +188,7 @@ handle_command({single_commit, Transaction}, _Sender,
                               active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
-    PrepareTime = now_milisec(erlang:now()),
+    PrepareTime = now_microsec(erlang:now()),
     Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
@@ -217,7 +217,7 @@ handle_command({prepare, Transaction}, _Sender,
                               active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
-    PrepareTime = now_milisec(erlang:now()),
+    PrepareTime = now_microsec(erlang:now()),
     Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
@@ -383,7 +383,7 @@ clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
     true = ets:delete(WriteSet, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
-now_milisec({MegaSecs, Secs, MicroSecs}) ->
+now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 %% @doc Performs a certification check when a transaction wants to move
@@ -418,7 +418,7 @@ check_keylog(TxId, [H|T], CommittedTx)->
     end.
 
 -spec update_materializer(DownstreamOps :: [{term(),{key(),type(),op()}}],
-                          Transaction::#transaction{},TxCommitTime:: {term(), term()}) ->
+                          Transaction::tx(),TxCommitTime:: {term(), term()}) ->
                                  ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
@@ -431,7 +431,7 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
                                     snapshot_time = Transaction#transaction.vec_snapshot_time,
                                     commit_time = {DcId, TxCommitTime},
                                     txid = Transaction#transaction.txn_id},
-                             AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)]
+                             AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)]
                      end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),

@@ -57,8 +57,6 @@ start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
                                  Tx, Key, Type, Updates], []).
 
-now_milisec({MegaSecs, Secs, MicroSecs}) ->
-    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 %%%===================================================================
 %%% States
@@ -75,16 +73,17 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
     {ok, check_clock, SD, 0}.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behinf, it sleeps the fms until the clock
+%%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
 check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
-    Time = now_milisec(erlang:now()),
-    case (T_TS) > Time of
+    Time = clocksi_vnode:now_microsec(erlang:now()),
+    case T_TS > Time of
         true ->
-            timer:sleep(T_TS - Time),
+	    SleepMiliSec = (T_TS - Time) div 1000 + 1,
+            timer:sleep(SleepMiliSec),
             {next_state, waiting1, SD0, 0};
         false ->
             {next_state, waiting1, SD0, 0}
@@ -112,12 +111,13 @@ return(timeout, SD0=#state{key=Key,
                            type=Type,
                            updates=Updates}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime) of
+    TxId = Transaction#transaction.txn_id,
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
         {ok, Snapshot} ->
             Updates2=filter_updates_per_key(Updates, Key),
-            Snapshot2=clocksi_materializer:update_snapshot_eager
+            Snapshot2=clocksi_materializer:materialize_eager
                         (Type, Snapshot, Updates2),
-            Reply = {ok, Snapshot2};
+            Reply={ok, Snapshot2};
         {error, Reason} ->
             Reply={error, Reason}
     end,
@@ -171,7 +171,7 @@ get_stable_time(Key) ->
                                         Min_time
                                 end
                         end,
-                        now_milisec(erlang:now()),
+                        clocksi_vnode:now_microsec(erlang:now()),
                         Active_txns);
         _ -> 0
     end.
