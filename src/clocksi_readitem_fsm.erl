@@ -57,8 +57,6 @@ start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
                                  Tx, Key, Type, Updates], []).
 
-now_milisec({MegaSecs, Secs, MicroSecs}) ->
-    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 %%%===================================================================
 %%% States
@@ -81,10 +79,11 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
 check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
-    Time = now_milisec(erlang:now()),
+    Time = clocksi_vnode:now_microsec(erlang:now()),
     case T_TS > Time of
         true ->
-            timer:sleep(T_TS - Time),
+	    SleepMiliSec = (T_TS - Time) div 1000 + 1,
+            timer:sleep(SleepMiliSec),
             {next_state, waiting1, SD0, 0};
         false ->
             {next_state, waiting1, SD0, 0}
@@ -172,7 +171,7 @@ get_stable_time(Key) ->
                                         Min_time
                                 end
                         end,
-                        now_milisec(erlang:now()),
+                        clocksi_vnode:now_microsec(erlang:now()),
                         Active_txns);
         _ -> 0
     end.

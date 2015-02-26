@@ -30,7 +30,7 @@
          prepare/2,
          commit/3,
          abort/2,
-         now_milisec/1,
+         now_microsec/1,
          init/1,
          terminate/2,
          handle_command/3,
@@ -184,7 +184,7 @@ handle_command({prepare, Transaction}, _Sender,
     TxWriteSet = ets:lookup(WriteSet, TxId),
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
         true ->
-            PrepareTime = now_milisec(erlang:now()),
+            PrepareTime = now_microsec(erlang:now()),
             LogRecord = #log_record{tx_id=TxId,
                                     op_type=prepare,
                                     op_payload=PrepareTime},
@@ -325,7 +325,7 @@ clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
     true = ets:delete(WriteSet, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
-now_milisec({MegaSecs, Secs, MicroSecs}) ->
+now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 %% @doc Performs a certification check when a transaction wants to move

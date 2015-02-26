@@ -289,7 +289,7 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_snapshot_time() ->
-    Now = clocksi_vnode:now_milisec(erlang:now()),
+    Now = clocksi_vnode:now_microsec(erlang:now()),
     case vectorclock:get_stable_snapshot() of
         {ok, VecSnapshotTime} ->
             DcId = dc_utilities:get_my_dc_id(),
@@ -312,7 +312,7 @@ wait_for_clock(Clock) ->
                    {ok, VecSnapshotTime};
                false ->
                    %% wait for snapshot time to catch up with Client Clock
-                   timer:sleep(100),
+                   timer:sleep(10),
                    wait_for_clock(Clock)
            end;
        {error, Reason} ->
