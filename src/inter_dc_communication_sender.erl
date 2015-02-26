@@ -51,12 +51,12 @@
 %% keys as list of DCs for transacitons that are replicated
 %% and values as the transactions
 
--spec propagate_sync(DictTransactionsDcs :: dict(), StableTime :: pos_integer(),
-		     Partition :: pos_integer())
-				  -> ok | error.
+%-spec propagate_sync(DictTransactionsDcs :: dict(), StableTime :: pos_integer(),
+%		     Partition :: term())
+%				  -> ok | error.
 propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
-    listTxnDcs = dict:to_list(DictTransactionsDcs),
-    Errors = list:foldl(
+    ListTxnDcs = dict:to_list(DictTransactionsDcs),
+    Errors = lists:foldl(
 	       fun({DCs, Message}, Err) ->
 		       lists:foldl(
 			 fun({DcAddress, Port}, Acc) ->
@@ -96,7 +96,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 					 Acc ++ [error]
 				 end
 			 end, Err, DCs)
-	       end, [], listTxnDcs), 
+	       end, [], ListTxnDcs), 
     case length(Errors) of
         0 ->
             ok;

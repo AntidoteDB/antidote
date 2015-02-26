@@ -22,7 +22,8 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/1]).
+-export([start_link/0, start_rep/1,
+	start_collect_sent/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -38,9 +39,16 @@ start_link() ->
 %% tcp connection on port Port. Server receives updates to replicate 
 %% from other DCs 
 start_rep(Port) ->
+    lager:info("Starting sup inter dc..."),
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
                     {inter_dc_communication_sup, start_link, [Port]},
-                    permanent, 5000, supervisor, [inter_dc_communication_sup]}).
+				     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
+
+start_collect_sent(Port) ->
+    lager:info("Starting sup collect sent..."),
+    supervisor:start_child(?MODULE, {collect_sent_time_sup,
+				     {collect_sent_time_sup, start_link, [Port]},
+				     permanent, 5000, supervisor, [collect_sent_time_sup]}).
 
 %% ===================================================================
 %% Supervisor callbacks
