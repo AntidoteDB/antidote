@@ -38,5 +38,5 @@ start_fsm(Args) ->
 init([]) ->
     Worker = {inter_dc_safe_send_fsm,
               {inter_dc_safe_send_fsm, start_link, []},
-              transient, 5000, worker, [inter_dc_safe_send_fsm]},
+              permanent, 5000, worker, [inter_dc_safe_send_fsm]},
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

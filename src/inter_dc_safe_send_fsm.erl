@@ -28,7 +28,7 @@
 
 
 
--export([start_link/1]).
+-export([start_link/0]).
 -export([init/1,
          code_change/4,
          handle_event/3,
@@ -44,7 +44,8 @@
 -define(SAFE_SEND_PERIOD, 5000).
 
 
-start_link(_Nothing) ->
+start_link() ->
+    lager:info("in start link safe send fsm"),
     gen_fsm:start_link(?MODULE, [], []).
 %%{ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
 %% Starts replication process by sending a trigger message
@@ -52,10 +53,10 @@ start_link(_Nothing) ->
 %%{ok, Pid}.
 
 %% riak_core_vnode call backs
-init(_Nothing) ->
+init([]) ->
     DcId = dc_utilities:get_my_dc_id(),
     {ok, DCs} = inter_dc_manager:get_dcs(),
-    NewDcDict = list:foldl(fun(Dc, DcDict) ->
+    NewDcDict = lists:foldl(fun(Dc, DcDict) ->
     				   dict:store(Dc,0,DcDict)
     			   end,
     			   dict:new(), DCs),
@@ -67,6 +68,7 @@ init(_Nothing) ->
 %% do i need to export this????
 loop_send_safe(timeout, State=#state{last_sent=LastSent,
 				     dcid=DcId}) ->
+    lager:info("running safe send"),
     NewSent = dict:fold(fun(Dc, LastSentTs, LastSentAcc) ->
 				NewMax = collect_sent_time_fsm:get_max_sent_time(
 					   Dc, LastSentTs),
@@ -75,7 +77,7 @@ loop_send_safe(timeout, State=#state{last_sent=LastSent,
 					%% Send safetime just like doing a heartbeat transaction
 					SafeTime = [#operation
 						    {payload =
-							 #log_record{op_type=safe_time, op_payload = 0}
+							 #log_record{op_type=safe_update, op_payload = 0}
 						    }],
 					DcId = dc_utilities:get_my_dc_id(),
 					%% Dont need clock, should just give an empty value
@@ -87,6 +89,7 @@ loop_send_safe(timeout, State=#state{last_sent=LastSent,
 					%% So wrap safe time in a transaction structure
 					Transaction = {TxId, {DcId, Time}, Clock, SafeTime},
 					%% Send safe to the given Dc
+					lager:info("Sending new safe time"),
 					case inter_dc_communication_sender:propagate_sync_safe_time(
 					       Dc, Transaction) of
 					    ok ->

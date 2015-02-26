@@ -124,8 +124,7 @@ handle_call(get_my_read_dc, _From, #state{port_read=Port} = State) ->
     {reply, {ok, {my_ip(),Port}}, State};
 
 handle_call({start_read_reciever, Port}, _Form, State) ->
-    %% ToDo: fix this
-    {ok, _} = antidote_sup:state_read_rep(Port),
+    {ok, _} = antidote_sup:start_cross_dc_read_communication_recvr(Port),
     {reply, {ok, {my_ip(),Port}}, State#state{port_read=Port}};
 
 handle_call(get_read_dcs, _From, #state{dcs_read=DCs} = State) ->
@@ -141,24 +140,45 @@ handle_call({add_list_read_dcs, DCs}, _From, #state{dcs_read=DCs0} = State) ->
 
 
 
-handle_call(get_my_safe_send_dc, _From, #state{port_safe_send=Port} = State) ->
-    {reply, {ok, {my_ip(),Port}}, State};
 
-handle_call({start_safe_send_reciever, Port}, _Form, State) ->
-    %% ToDo: fix this
-    {ok, _} = antidote_sup:state_read_rep(Port),
-    {reply, {ok, {my_ip(),Port}}, State#state{port_safe_send=Port}};
+handle_call({start_collect_sent}, _From, State) ->
+    {ok, _} = antidote_sup:start_collect_sent(),
+    {reply, ok, State};
 
-handle_call(get_safe_send_dcs, _From, #state{dcs_safe_send=DCs} = State) ->
-    {reply, {ok, DCs}, State};
+handle_call({start_safe_time_sender}, _From, State) ->
+    {ok, _} = antidote_sup:start_safe_time_sender(),
+    {reply, ok, State};
 
-handle_call({add_safe_send_dc, NewDC}, _From, #state{dcs_safe_send=DCs0} = State) ->
-    DCs = DCs0 ++ [NewDC],
-    {reply, ok, State#state{dcs_safe_send=DCs}};
 
-handle_call({add_list_safe_send_dcs, DCs}, _From, #state{dcs_safe_send=DCs0} = State) ->
-    DCs1 = DCs0 ++ DCs,
-    {reply, ok, State#state{dcs_safe_send=DCs1}};
+
+handle_call({start_senders}, _From, State) ->
+    {ok, _} = antidote_sup:start_senders(),
+    {reply, ok, State};
+
+handle_call({start_recvrs, ComPort, ReadPort}, _From, State) ->
+    {ok, _} = antidote_sup:start_recvrs(ComPort,ReadPort),
+    {reply, ok, State};
+
+
+
+%% handle_call(get_my_safe_send_dc, _From, #state{port_safe_send=Port} = State) ->
+%%     {reply, {ok, {my_ip(),Port}}, State};
+
+%% handle_call({start_safe_send_reciever, Port}, _Form, State) ->
+%%     %% ToDo: fix this
+%%     {ok, _} = antidote_sup:state_read_rep(Port),
+%%     {reply, {ok, {my_ip(),Port}}, State#state{port_safe_send=Port}};
+
+%% handle_call(get_safe_send_dcs, _From, #state{dcs_safe_send=DCs} = State) ->
+%%     {reply, {ok, DCs}, State};
+
+%% handle_call({add_safe_send_dc, NewDC}, _From, #state{dcs_safe_send=DCs0} = State) ->
+%%     DCs = DCs0 ++ [NewDC],
+%%     {reply, ok, State#state{dcs_safe_send=DCs}};
+
+%% handle_call({add_list_safe_send_dcs, DCs}, _From, #state{dcs_safe_send=DCs0} = State) ->
+%%     DCs1 = DCs0 ++ DCs,
+%%     {reply, ok, State#state{dcs_safe_send=DCs1}};
 
 
 handle_call(set_replication_keys, _From, State) ->

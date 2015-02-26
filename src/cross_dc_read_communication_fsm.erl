@@ -48,7 +48,7 @@ receive_message(timeout, State=#state{socket=Socket}) ->
 					 {reply, {ok, ReadResult}}
 				 end;
 			     Unknown ->
-				 lager:error("Weird message received ~p", [Unknown]),
+				 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),
 				 Unknown
 			 end,
 	    ok = gen_tcp:send(Socket,

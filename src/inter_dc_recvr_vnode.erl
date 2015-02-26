@@ -54,7 +54,7 @@ start_vnode(I) ->
 -spec store_updates(Transactions::[clocksi_transaction_reader:transaction()])
                    -> ok.
 store_updates(Transactions) ->
-    list:foreach(fun start_store_update/1,Transactions).
+    lists:foreach(fun start_store_update/1,Transactions).
 
 
 start_store_update(Transaction) ->

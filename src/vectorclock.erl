@@ -38,6 +38,7 @@
 	 update_safe_vector_local/2,
 	 update_safe_clock_local/2,
 	 update_safe_clock_local/3,
+	 get_safe_time/0,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
@@ -118,8 +119,7 @@ update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
 
 -spec get_safe_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_safe_time() ->
-    %% Right now this is done using riak_core meta-data, but should
-    %% try doing it differently b/c meta-data is expensive
+    %% Right now this only gets the safe time of the local vector
     Indexnode = vectorclock:get_random_node(),
     try
         riak_core_vnode_master:sync_command(

@@ -21,11 +21,11 @@
 -module(collect_sent_time_sup).
 -behavior(supervisor).
 
--export([start_link/1]).
+-export([start_link/2]).
 -export([init/1]).
 
 
-start_link([DcId, StartTimestamp]) ->
+start_link(DcId, StartTimestamp) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [DcId, StartTimestamp]).
 
 
@@ -37,7 +37,6 @@ start_link([DcId, StartTimestamp]) ->
 %% as the input args, but these args cn be put in when
 %% starting the supervisor?
 init([DcId, StartTimestamp]) ->
-    lager:info("collect_sent_time_sup: Starting fsm..."),
     Listener = {collect_sent_time_fsm,
                 {collect_sent_time_fsm, start_link, [DcId, StartTimestamp]}, % pass the socket!
                 permanent, 1000, worker, [collect_sent_time_fsm]},

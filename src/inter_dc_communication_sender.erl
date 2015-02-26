@@ -61,7 +61,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 		       lists:foldl(
 			 fun({DcAddress, Port}, Acc) ->
 				 case start_link(
-					Port, DcAddress, Message, self(), send_propagate) of
+					Port, DcAddress, {replicate, Message}, self(), send_propagate) of
 				     {ok, _} ->
 					 receive
 					     {done, normal, _Reply} ->
@@ -115,7 +115,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 			      -> ok | error.
 propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
     case start_link(
-	   Port, DcAddress, [Transaction], self(), send_safe_time) of
+	   Port, DcAddress, {replicate, [Transaction]}, self(), send_safe_time) of
 	{ok, _} ->
 	    receive
 		{done, normal, _Reply} ->
@@ -168,8 +168,9 @@ perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
 
 -spec start_link(Port :: port(), Host :: non_neg_integer(), Message :: [term()], ReplyTo :: pid(), MsgType :: atom())
 		-> {ok, pid()} | ignore | {error, term()}.
-start_link(Port, Host, Message, ReplyTo, MsgType) ->
-    gen_fsm:start_link(list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MsgType)), [Port, Host, Message, ReplyTo], []).
+start_link(Port, Host, Message, ReplyTo, _MsgType) ->
+						% gen_fsm:start_link(list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MsgType)), [Port, Host, Message, ReplyTo], []).
+    gen_fsm:start_link(?MODULE, [Port, Host, Message, ReplyTo], []).
 
 init([Port,Host,Message,ReplyTo]) ->
     {ok, connect, #state{port=Port,
@@ -186,12 +187,12 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             ok = inet:setopts(Socket, [{active, once}]),
             {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
         {error, _Reason} ->
-            lager:error("Couldnot connect to remote DC"),
+            %%lager:error("Couldnot connect to remote DC"),
             {stop, normal, State}
     end.
 
 wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message} )->
-    {next_state, stop, State=#state{reply=Reply},0};
+    {next_state, stop, State#state{reply=Reply},0};
 
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed

@@ -49,7 +49,7 @@
 %% to the exernal DC, this value is included so that
 %% incase the server was restarted, this reinits the state
 get_max_sent_time(DcId, LastSentTs) ->
-    Pid = global:where_is({global, get_atom(DcId)}),
+    Pid = global:whereis_name(get_atom(DcId)),
     %% Start this service if it is down
     %% Should add a try_catch incase concurrent server creations/failures
     case Pid of
@@ -61,7 +61,7 @@ get_max_sent_time(DcId, LastSentTs) ->
 
 
 update_sent_time(DcId, Partition, Timestamp) ->
-    Pid = global:where_is({global, get_atom(DcId)}),
+    Pid = global:whereis_name(get_atom(DcId)),
     %% Start this service if it is down
     case Pid of
 	undefined ->
@@ -89,7 +89,7 @@ init([DcId, _StartTimestamp]) ->
 %% Updates the sent time of a given partition
 handle_cast({update_sent_time, Partition, Timestamp}, State=#state{sent_times=LastSent}) ->
     NewSent = dict:store(Partition, Timestamp, LastSent),
-    {noreply, State=#state{sent_times=NewSent}}.
+    {noreply, State#state{sent_times=NewSent}}.
 
 
 handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
@@ -143,5 +143,5 @@ terminate(_Reason, _SN) ->
 %% Helper function
 -spec get_atom(DcId :: term())
 	      -> atom().
-get_atom(DcId) ->
-    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(DcId)).
+get_atom({DcAddr, _Port}) ->
+    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(DcAddr)).
