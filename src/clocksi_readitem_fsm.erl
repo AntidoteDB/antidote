@@ -84,7 +84,7 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
     Time = now_milisec(erlang:now()),
     case (T_TS) > Time of
         true ->
-            timer:sleep(T_TS - Time),
+            timer:sleep((T_TS - Time) div 1000 +1 ),
             {next_state, waiting1, SD0, 0};
         false ->
             {next_state, waiting1, SD0, 0}
