@@ -21,16 +21,13 @@
 -module(collect_sent_time_sup).
 -behavior(supervisor).
 
--export([start_fsm/1,
-         start_link/0]).
+-export([start_link/1]).
 -export([init/1]).
 
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link([DcId, StartTimestamp]) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [DcId, StartTimestamp]).
 
-start_fsm(Args) ->
-    supervisor:start_child(?MODULE, Args).
 
 
 %% Acutally don't need a sup for this, because one is just started automatically
@@ -39,10 +36,12 @@ start_fsm(Args) ->
 %% should start one for each external DC, with the DC address
 %% as the input args, but these args cn be put in when
 %% starting the supervisor?
-init([]) ->
+init([DcId, StartTimestamp]) ->
     lager:info("collect_sent_time_sup: Starting fsm..."),
-    Worker = {collect_sent_time_fsm,
-              {collect_sent_time_fsm, start_link, []},
-              transient, 5000, worker, [collect_sent_time_fsm]},
-    lager:info("collect_sent_time_sup: done."),
-    {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.
+    Listener = {collect_sent_time_fsm,
+                {collect_sent_time_fsm, start_link, [DcId, StartTimestamp]}, % pass the socket!
+                permanent, 1000, worker, [collect_sent_time_fsm]},
+
+    {ok, {{simple_one_for_one, 5, 10}, [Listener]}}.
+
+

@@ -23,7 +23,7 @@
 
 %% API
 -export([start_link/0, start_rep/1,
-	start_collect_sent/1]).
+	start_collect_sent/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -44,10 +44,11 @@ start_rep(Port) ->
                     {inter_dc_communication_sup, start_link, [Port]},
 				     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
-start_collect_sent(Port) ->
+start_collect_sent() ->
     lager:info("Starting sup collect sent..."),
+    DcId = dc_utilities:get_my_dc_id(),
     supervisor:start_child(?MODULE, {collect_sent_time_sup,
-				     {collect_sent_time_sup, start_link, [Port]},
+				     {collect_sent_time_sup, start_link, [DcId,0]},
 				     permanent, 5000, supervisor, [collect_sent_time_sup]}).
 
 %% ===================================================================
