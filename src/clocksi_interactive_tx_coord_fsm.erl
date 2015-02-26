@@ -61,6 +61,7 @@
           prepare_time :: integer(),
           commit_time :: integer(),
           commit_protocol :: term(),
+          buffer=dict:new() :: dict(),
           state:: atom()}).
 
 %%%===================================================================
@@ -107,7 +108,8 @@ init([From, ClientClock]) ->
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
            SD0=#state{transaction=Transaction, from=_From,
-                      updated_partitions=Updated_partitions}) ->
+                      buffer=Buffer0,
+                      updated_partitions=UpdatedPartitions0}) ->
     case Op_type of
         prepare ->
             case Args of
@@ -120,8 +122,20 @@ execute_op({Op_type, Args}, Sender,
             {Key, Type}=Args,
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
+            Updates = case dict:find(IndexNode, Buffer0) of
+                        {ok, Dict0} ->
+                            case dict:find(Key, Dict0) of
+                                {ok, List} ->
+                                    List;
+                                error ->
+                                    []
+                            end;
+                        error ->
+                            []
+                       end,
+            lager:info("Sending updates ~p", [Updates]),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
-                                              Key, Type) of
+                                              Key, Type, Updates) of
                 error ->
                     {reply, error, abort, SD0};
                 {error, _Reason} ->
@@ -134,27 +148,18 @@ execute_op({Op_type, Args}, Sender,
             {Key, Type, Param}=Args,
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
-            case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
-                {ok, DownstreamRecord} ->
-                    case clocksi_vnode:update_data_item(IndexNode, Transaction,
-                                                Key, Type, DownstreamRecord) of
-                        ok ->
-                            case lists:member(IndexNode, Updated_partitions) of
-                                false ->
-                                    New_updated_partitions=
-                                        lists:append(Updated_partitions, [IndexNode]),
-                                    {reply, ok, execute_op,
-                                    SD0#state
-                                    {updated_partitions= New_updated_partitions}};
-                                true->
-                                    {reply, ok, execute_op, SD0}
-                            end;
-                        error ->
-                            {reply, error, abort, SD0}
-                    end;
-                {error, _} ->
-                    {reply, error, abort, SD0}
-            end
+            
+            case dict:find(IndexNode, Buffer0) of
+                {ok, Dict0} ->
+                    Dict1 = dict:append(Key, {Type, Param}, Dict0),
+                    UpdatedPartitions = UpdatedPartitions0;
+                error ->
+                    Dict0 = dict:new(),
+                    Dict1 = dict:append(Key, {Type, Param}, Dict0),
+                    UpdatedPartitions = UpdatedPartitions0 ++ [IndexNode]
+            end,
+            Buffer = dict:store(IndexNode, Dict1, Buffer0),
+            {reply, ok, execute_op, SD0#state{updated_partitions=UpdatedPartitions, buffer=Buffer}}
     end.
 
 
@@ -162,6 +167,7 @@ execute_op({Op_type, Args}, Sender,
 %%      to the "receive_prepared"state.
 prepare(timeout, SD0=#state{
                         transaction = Transaction,
+                        buffer = Buffer,
                         updated_partitions=Updated_partitions, from=_From}) ->
     case length(Updated_partitions) of
         0->
@@ -169,11 +175,15 @@ prepare(timeout, SD0=#state{
             {next_state, committing,
             SD0#state{state=committing, commit_time=Snapshot_time}, 0};
         1-> 
-            clocksi_vnode:single_commit(Updated_partitions, Transaction),
+            Updates = dict:fetch(hd(Updated_partitions), Buffer),
+            clocksi_vnode:pre_prepare(Updated_partitions, Transaction, dict:to_list(Updates), single),
             {next_state, single_committing,
             SD0#state{state=committing, num_to_ack=1}};
         _->
-            clocksi_vnode:prepare(Updated_partitions, Transaction),
+            lists:foreach(fun(Partition) ->
+                            Updates = dict:fetch(Partition, Buffer),
+                            clocksi_vnode:pre_prepare(Partition, Transaction, dict:to_list(Updates), multi)
+                          end, Updated_partitions),
             Num_to_ack=length(Updated_partitions),
             {next_state, receive_prepared,
             SD0#state{num_to_ack=Num_to_ack, state=prepared}}
@@ -182,6 +192,7 @@ prepare(timeout, SD0=#state{
 %%      involved in the txs.
 prepare_2pc(timeout, SD0=#state{
                         transaction = Transaction,
+                        buffer = Buffer,
                         updated_partitions=Updated_partitions, from=From}) ->
     case length(Updated_partitions) of
         0->
@@ -190,7 +201,11 @@ prepare_2pc(timeout, SD0=#state{
             {next_state, committing_2pc,
             SD0#state{state=committing, commit_time=Snapshot_time}};
         _->
-            clocksi_vnode:prepare(Updated_partitions, Transaction),
+            lists:foreach(fun(Partition) ->
+                            Updates = dict:fetch(Partition, Buffer),
+                            lager:info("Sending prepare to ~p with updates: ~p", [Partition, dict:to_list(Updates)]),
+                            clocksi_vnode:pre_prepare(Partition, Transaction, dict:to_list(Updates), multi)
+                          end, Updated_partitions),
             Num_to_ack=length(Updated_partitions),
             {next_state, receive_prepared,
             SD0#state{num_to_ack=Num_to_ack, state=prepared}}
@@ -371,6 +386,3 @@ wait_for_clock(Clock) ->
        {error, Reason} ->
           {error, Reason}
   end.
-
-generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
-    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param).

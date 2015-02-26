@@ -24,11 +24,13 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
+         reply_coordinator/2,
          read_data_item/4,
-         update_data_item/5,
-         prepare/2,
+         read_data_item/5,
+         pre_prepare/4,
+         prepare/5,
          commit/3,
-         single_commit/2,
+         single_commit/5,
          abort/2,
          now_milisec/1,
          init/1,
@@ -73,24 +75,14 @@
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-%% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type) ->
-    try
-        riak_core_vnode_master:sync_command(Node,
-                                            {read_data_item, TxId, Key, Type},
-                                            ?CLOCKSI_MASTER,
-                                            infinity)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
+    read_data_item(Node, TxId, Key, Type, []).
 
-%% @doc Sends an update request to the Node that is responsible for the Key
-update_data_item(Node, TxId, Key, Type, Op) ->
+%% @doc Sends a read request to the Node that is responsible for the Key
+read_data_item(Node, TxId, Key, Type, Updates) ->
     try
         riak_core_vnode_master:sync_command(Node,
-                                            {update_data_item, TxId, Key, Type, Op},
+                                            {read_data_item, TxId, Key, Type, Updates},
                                             ?CLOCKSI_MASTER,
                                             infinity)
     catch
@@ -100,17 +92,24 @@ update_data_item(Node, TxId, Key, Type, Op) ->
     end.
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
-prepare(ListofNodes, TxId) ->
+pre_prepare(ListofNodes, TxId, Updates, TxType) ->
     riak_core_vnode_master:command(ListofNodes,
-                                   {prepare, TxId},
+                                   {pre_prepare, TxId, Updates, TxType},
+                                   {fsm, undefined, self()},
+                                   ?CLOCKSI_MASTER).
+
+%% @doc Sends a prepare request to a Node involved in a tx identified by TxId
+prepare(ListofNodes, TxId, Updates, Coordinator, PrepareTime) ->
+    riak_core_vnode_master:command(ListofNodes,
+                                   {prepare, TxId, Updates, Coordinator, PrepareTime},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 %% @doc Sends prepare+commit to a single partition
 %%      Called by a Tx coordinator when the tx only
 %%      affects one partition
-single_commit(Node, TxId) ->
+single_commit(Node, TxId, Updates, Coordinator, PrepareTime) ->
     riak_core_vnode_master:command(Node,
-                                   {single_commit, TxId},
+                                   {single_commit, TxId, Updates, Coordinator, PrepareTime},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 
@@ -150,85 +149,76 @@ init([Partition]) ->
                 active_txs_per_key=ActiveTxsPerKey}}.
 
 %% @doc starts a read_fsm to handle a read operation.
-handle_command({read_data_item, Txn, Key, Type}, Sender,
-               #state{write_set=WriteSet, partition=Partition}=State) ->
+handle_command({read_data_item, Txn, Key, Type, Updates}, Sender,
+               #state{partition=Partition}=State) ->
     Vnode = {Partition, node()},
-    Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
                                                  Key, Type, Updates),
     {noreply, State};
 
-%% @doc handles an update operation at a Leader's partition
-handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
-               #state{partition=Partition,
-                      write_set=WriteSet,
-                      active_txs_per_key=ActiveTxsPerKey}=State) ->
-    TxId = Txn#transaction.txn_id,
-    LogRecord = #log_record{tx_id=TxId, op_type=update,
-                            op_payload={Key, Type, Op}},
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    Result = logging_vnode:append(Node,LogId,LogRecord),
-    case Result of
-        {ok, _} ->
-            true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
-            true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
-            {ok, _Pid} = clocksi_updateitem_fsm:start_link(
-                           Sender,
-                           Txn#transaction.vec_snapshot_time,
-                           Partition),
-            {noreply, State};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+handle_command({pre_prepare, Transaction, Updates, TxType}, Sender,
+               State = #state{partition=Partition}) ->
+    Vnode = {Partition, node()},
+    {ok, _Pid} = clocksi_preprepare_fsm:start_link(Vnode, Sender, Transaction, Updates, TxType),
+    {noreply, State};
 
-handle_command({single_commit, Transaction}, _Sender,
+handle_command({single_commit, Transaction, Updates, Coordinator, PrepareTime}, _Sender,
                State = #state{partition=_Partition,
                               committed_tx=CommittedTx,
                               active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
-    PrepareTime = now_milisec(erlang:now()),
-    Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
-    case Result of
-        {ok, _} ->
-            ResultCommit = commit(Transaction, PrepareTime, WriteSet, PreparedTx, State),
-            case ResultCommit of
-                {ok, committed} ->
-                    {reply, {committed, PrepareTime}, State};
-                {error, materializer_failure} ->
-                    {reply, {error, materializer_failure}, State};
+    case update_data_item(Updates, Transaction, State) of
+        ok ->
+            Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+            case Result of
+                {ok, _} ->
+                    ResultCommit = commit(Transaction, PrepareTime, WriteSet, PreparedTx, State),
+                    case ResultCommit of
+                        {ok, committed} ->
+                            reply_coordinator(Coordinator, {committed, PrepareTime});
+                        {error, materializer_failure} ->
+                            reply_coordinator(Coordinator, {error, materializer_failure});
+                        {error, timeout} ->
+                            reply_coordinator(Coordinator, {error, timeout});
+                        {error, no_updates} ->
+                            reply_coordinator(Coordinator, no_tx_record)
+                    end;
                 {error, timeout} ->
-                    {reply, {error, timeout}, State};
+                    reply_coordinator(Coordinator, {error, timeout});
                 {error, no_updates} ->
-                    {reply, no_tx_record, State}
+                    reply_coordinator(Coordinator, {error, no_tx_record});
+                {error, write_conflict} ->
+                    reply_coordinator(Coordinator, abort)
             end;
-        {error, timeout} ->
-            {reply, {error, timeout}, State};
-        {error, no_updates} ->
-            {reply, {error, no_tx_record}, State};
-        {error, write_conflict} ->
-            {reply, abort, State}
-    end;
-
-handle_command({prepare, Transaction}, _Sender,
+        error ->
+            reply_coordinator(Coordinator, abort)
+    end,
+    {noreply, State};
+    
+handle_command({prepare, Transaction, Updates, Coordinator, PrepareTime}, _Sender,
                State = #state{partition=_Partition,
                               committed_tx=CommittedTx,
                               active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
-    PrepareTime = now_milisec(erlang:now()),
-    Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
-    case Result of
-        {ok, _} ->
-            {reply, {prepared, PrepareTime}, State};
-        {error, timeout} ->
-            {reply, {error, timeout}, State};
-        {error, no_updates} ->
-            {reply, {error, no_tx_record}, State};
-        {error, write_conflict} ->
-            {reply, abort, State}
-    end;
+    case update_data_item(Updates, Transaction, State) of
+        ok ->
+            Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+            case Result of
+                {ok, _} ->
+                    reply_coordinator(Coordinator, {prepared, PrepareTime});
+                {error, timeout} ->
+                    reply_coordinator(Coordinator, {error, timeout});
+                {error, no_updates} ->
+                    reply_coordinator(Coordinator, {error, no_tx_record});
+                {error, write_conflict} ->
+                    reply_coordinator(Coordinator, abort)
+            end;
+        error ->
+            reply_coordinator(Coordinator, abort)
+    end,
+    {noreply, State};
 
 %% TODO: sending empty writeset to clocksi_downstream_generatro
 %% Just a workaround, need to delete downstream_generator_vnode
@@ -314,6 +304,30 @@ terminate(_Reason, _State) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
+reply_coordinator(Coordinator, Reply) ->
+    riak_core_vnode:reply(Coordinator, Reply).
+
+update_data_item([], _Txn, _State) ->
+    ok;
+
+update_data_item([Op|Rest], Txn, State=#state{partition=_Partition,
+                      write_set=WriteSet,
+                      active_txs_per_key=ActiveTxsPerKey}) ->
+    {Key, Type, DownstreamRecord} = Op,
+    TxId = Txn#transaction.txn_id,
+    LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, DownstreamRecord}},
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,LogRecord),
+    case Result of
+        {ok, _} ->
+            true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
+            true = ets:insert(WriteSet, {TxId, {Key, Type, DownstreamRecord}}),
+            update_data_item(Rest, Txn, State);
+        {error, _Reason} ->
+            error
+    end.
+
 %% @doc Executes the prepare phase of this partition
 prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime)->
     TxId = Transaction#transaction.txn_id,
