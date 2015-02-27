@@ -25,7 +25,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([get_clock/1, update_clock/3, get_clock_by_key/1,
+-export([get_clock/1, get_clock_by_key/1,
          is_greater_than/2,
          get_clock_of_dc/2,
          set_clock_of_dc/3,
@@ -92,6 +92,10 @@ get_stable_snapshot() ->
 %%update_sent_clock(Partition, Dc_id, Timestamp) ->
     
 update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
+%% need to fix this so it takes the min of the stabletime and any live
+%% transactions
+%% Actaully this should be ok?? bc stable time comes from 
+%% clock_si_transaction_reader
     collect_sent_time_fsm:update_sent_time(
       {DcAddress,Port}, Partition, StableTime).
 
@@ -121,6 +125,7 @@ update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
 get_safe_time() ->
     %% Right now this only gets the safe time of the local vector
     Indexnode = vectorclock:get_random_node(),
+    lager:info("get safe time at partition ~p", [Indexnode]),
     try
         riak_core_vnode_master:sync_command(
           Indexnode, get_safe_time, vectorclock_vnode_master)
@@ -144,8 +149,9 @@ update_safe_vector_local(Vector) ->
 			      -> {ok, vectorclock:vectorclock()} | {error, term()}.
 update_safe_vector_local(Partition, Vector) ->
     try
+	lager:info("in update safe vector local"),
 	case riak_core_vnode_master:sync_command(Partition,
-						 {update_safe_vector, Vector},
+						 {update_safe_vector_local, Vector},
 						 vectorclock_vnode_master) of
 	    {ok, Clock} ->
 		{ok, Clock};
@@ -169,12 +175,13 @@ update_safe_clock_local(Dc_id, Timestamp) ->
 
 
 %% This just updates the safeclock of the local partition
--spec update_safe_clock_local(Dc_id :: term(), Partition :: non_neg_integer(), Timestamp :: non_neg_integer())
+-spec update_safe_clock_local(Dc_id :: term(), Partition :: term(), Timestamp :: non_neg_integer())
 			     -> {ok, vectorclock()} | {error, term()}.
 update_safe_clock_local(Dc_id, Partition, Timestamp) ->
     try
+	lager:info("in update safe clock local"),
 	case riak_core_vnode_master:sync_command(Partition,
-						 {update_safe_clock, true, Dc_id, Timestamp},
+						 {update_safe_clock, Dc_id, Timestamp},
 						 vectorclock_vnode_master) of
 	    {ok, Clock} ->
 		{ok, Clock};
@@ -213,26 +220,26 @@ update_safe_clock_local(Dc_id, Partition, Timestamp) ->
 %%     end.
     
 
--spec update_clock(Partition :: non_neg_integer(),
-                   Dc_id :: term(), Timestamp :: non_neg_integer())
-                  -> {ok, vectorclock()} | {error, term()}.
-update_clock(Partition, Dc_id, Timestamp) ->
-    Indexnode = {Partition, node()},
-    try
-        case riak_core_vnode_master:sync_command(Indexnode,
-                                             {update_clock, Dc_id, Timestamp},
-                                             vectorclock_vnode_master) of
-            {ok, Clock} ->
-                {ok, Clock};
-            {error, Reason} ->
-                lager:info("Update vector clock failed: ~p",[Reason]),
-                {error, Reason}
-        end
-    catch
-        _:R ->
-            lager:error("Exception caught: ~p", [R]),
-            {error, R}
-    end.
+%% -spec update_clock(Partition :: non_neg_integer(),
+%%                    Dc_id :: term(), Timestamp :: non_neg_integer())
+%%                   -> {ok, vectorclock()} | {error, term()}.
+%% update_clock(Partition, Dc_id, Timestamp) ->
+%%     Indexnode = {Partition, node()},
+%%     try
+%%         case riak_core_vnode_master:sync_command(Indexnode,
+%%                                              {update_clock, Dc_id, Timestamp},
+%%                                              vectorclock_vnode_master) of
+%%             {ok, Clock} ->
+%%                 {ok, Clock};
+%%             {error, Reason} ->
+%%                 lager:info("Update vector clock failed: ~p",[Reason]),
+%%                 {error, Reason}
+%%         end
+%%     catch
+%%         _:R ->
+%%             lager:error("Exception caught: ~p", [R]),
+%%             {error, R}
+%%     end.
 
 
 -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
@@ -264,6 +271,8 @@ get_random_node() ->
     Prefnode = [{Partition, Node1} ||
                    {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
     %% Take a random vnode
+    {A1,A2,A3} = now(),
+    random:seed(A1, A2, A3),
     Index = random:uniform(length(Prefnode)),
     lists:nth(Index, Prefnode).
 

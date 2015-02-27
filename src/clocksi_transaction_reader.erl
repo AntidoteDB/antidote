@@ -33,7 +33,9 @@
 -export([init/2,
          get_next_transactions/1,
          get_update_ops_from_transaction/1,
-         get_prev_stable_time/1]).
+         get_prev_stable_time/1,
+	 get_dc_replicas/1,
+	 is_replicated_here/1]).
 
 -export_type([transaction/0]).
 
@@ -107,7 +109,9 @@ get_next_transactions(State=#state{partition = Partition,
           fun(_Logrecord=#log_record{tx_id=TxId},
               {PendingOps, Transactions}) ->
                   {ok, Ops} = get_ops_of_txn(TxId,PendingOps),
+		  lager:info("Ahead of construct ~p", [Ops]),
                   {Txn, DCs}  = construct_transaction(Ops),
+		  lager:info("After of construct ~p", [Ops]),
                   NewTransactions = dict:append(DCs, Txn, Transactions),
                   NewPending = remove_txn_from_pending(TxId, PendingOps),
                   {NewPending, NewTransactions}
@@ -164,8 +168,9 @@ get_prev_stable_time(Reader) ->
 %% Will comment out the spec for now
 % -spec construct_transaction(Ops::[#operation{}]) -> transaction().
 construct_transaction(Ops) ->
-    DCs = lists:foldl(fun(Op, dcSet) ->
-			      sets:union(dcSet,sets:from_list(
+    DCs = lists:foldl(fun(Op, DcSet) ->
+			      lager:info("an op: ~p", [Op]),
+			      sets:union(DcSet,sets:from_list(
 						get_dc_replicas(Op)))
 		      end ,sets:new(), Ops),
     Commitoperation = lists:last(Ops),
@@ -187,8 +192,11 @@ read_next_ops(Node, LogId, Last_read_opid) ->
 %% DCs replicate what keys
 %% should return a list of DCs
 get_dc_replicas(_Op) ->
-    inter_dc_manager:get_dcs().
+    {ok, Dcs} = inter_dc_manager:get_dcs(),
+    Dcs.
 
+is_replicated_here(_Op) ->
+    true.
 
 get_ops_of_txn(TxId, PendingOps) ->
     dict:find(TxId, PendingOps).

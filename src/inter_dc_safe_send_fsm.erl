@@ -45,7 +45,6 @@
 
 
 start_link() ->
-    lager:info("in start link safe send fsm"),
     gen_fsm:start_link(?MODULE, [], []).
 %%{ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
 %% Starts replication process by sending a trigger message
@@ -68,7 +67,6 @@ init([]) ->
 %% do i need to export this????
 loop_send_safe(timeout, State=#state{last_sent=LastSent,
 				     dcid=DcId}) ->
-    lager:info("running safe send"),
     NewSent = dict:fold(fun(Dc, LastSentTs, LastSentAcc) ->
 				NewMax = collect_sent_time_fsm:get_max_sent_time(
 					   Dc, LastSentTs),
@@ -89,7 +87,6 @@ loop_send_safe(timeout, State=#state{last_sent=LastSent,
 					%% So wrap safe time in a transaction structure
 					Transaction = {TxId, {DcId, Time}, Clock, SafeTime},
 					%% Send safe to the given Dc
-					lager:info("Sending new safe time"),
 					case inter_dc_communication_sender:propagate_sync_safe_time(
 					       Dc, Transaction) of
 					    ok ->

@@ -101,79 +101,101 @@ handle_command(get_safe_time, _Sender,
 
 %% @doc : calculate stable snapshot from min of vectorclock (each entry)
 %% from all partitions
-handle_command(calculate_stable_snapshot, _Sender,
-               State=#currentclock{partition_vectorclock = Clock,
-                                   num_p=NumP}) ->
-    %% Calculate stable_snapshot from minimum of vectorclock of all partitions
-    NumPartitions = case NumP of
-                        0 ->
-                            {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-                            riak_core_ring:num_partitions(Ring);
-			_ -> NumP
-		    end,
-    NumMetadata = length(riak_core_metadata:to_list(?META_PREFIX)),
-    Stable_snapshot =
-        %% If metadata doesnot contain clock of all partitions
-        %% donot calculate stable snapshot
-        case NumPartitions == NumMetadata of
-            true ->
-                riak_core_metadata:fold(
-                  fun({_Key, V}, A) ->
-                          find_min(V,{Clock,A})
-                  end,
-                  Clock, ?META_PREFIX);
-            false ->
-                dict:new()
-        end,
-    {reply, {ok, Stable_snapshot},
-     State#currentclock{stable_snapshot=Stable_snapshot,
-                        num_p = NumPartitions}};
+%% handle_command(calculate_stable_snapshot, _Sender,
+%%                State=#currentclock{partition_vectorclock = Clock,
+%%                                    num_p=NumP}) ->
+%%     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
+%%     NumPartitions = case NumP of
+%%                         0 ->
+%%                             {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+%%                             riak_core_ring:num_partitions(Ring);
+%% 			_ -> NumP
+%% 		    end,
+%%     NumMetadata = length(riak_core_metadata:to_list(?META_PREFIX)),
+%%     Stable_snapshot =
+%%         %% If metadata doesnot contain clock of all partitions
+%%         %% donot calculate stable snapshot
+%%         case NumPartitions == NumMetadata of
+%%             true ->
+%%                 riak_core_metadata:fold(
+%%                   fun({_Key, V}, A) ->
+%%                           find_min(V,{Clock,A})
+%%                   end,
+%%                   Clock, ?META_PREFIX);
+%%             false ->
+%%                 dict:new()
+%%         end,
+%%     {reply, {ok, Stable_snapshot},
+%%      State#currentclock{stable_snapshot=Stable_snapshot,
+%%                         num_p = NumPartitions}};
 
 
 %% This update happens when a external DC sends an time saying
 %% all updates up to this time have been sent to this DC
-handle_command({update_safe_clock, IsLocal, DcId, Timestamp}, _Sender, 
-	       #currentclock{safe_clock=SafeClock
-			     } = State) ->
-    case dict:find(DcId,SafeClock) of
-	{ok,DcSafeClock} ->
-	    case DcSafeClock < Timestamp of
-		true ->
-		    NewSafeClock = dict:store(DcId,Timestamp,SafeClock),
-		    case IsLocal of
-			false ->
-			    try
-				riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
-				{reply, {ok, NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-			    catch
-				_:Reason ->
-				    lager:error("Exception caught ~p", [Reason]),
-				    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-			    end;
-			true ->
-			    {reply, {ok, NewSafeClock}, State#currentclock{safe_clock=NewSafeClock}}
-		    end;
-		false ->
-		    {reply, {ok, SafeClock}, State}
-	    end;
-	error ->
-	    NewSafeClock = dict:store(DcId,Timestamp,SafeClock),
-	    try
-		riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
-		{reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-	    catch
-		_:Reason ->
-		    lager:error("Exception caught ~p", [Reason]),
-		    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-	    end
-    end;
+%% handle_command({update_safe_clock, IsLocal, DcId, Timestamp}, _Sender, 
+%% 	       #currentclock{safe_clock=SafeClock
+%% 			     } = State) ->
+%%     case dict:find(DcId,SafeClock) of
+%% 	{ok,DcSafeClock} ->
+%% 	    case DcSafeClock < Timestamp of
+%% 		true ->
+%% 		    NewSafeClock = dict:store(DcId,Timestamp,SafeClock),
+%% 		    case IsLocal of
+%% 			false ->
+%% 			    try
+%% 				riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
+%% 				{reply, {ok, NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
+%% 			    catch
+%% 				_:Reason ->
+%% 				    lager:error("Exception caught ~p", [Reason]),
+%% 				    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
+%% 			    end;
+%% 			true ->
+%% 			    {reply, {ok, NewSafeClock}, State#currentclock{safe_clock=NewSafeClock}}
+%% 		    end;
+%% 		false ->
+%% 		    {reply, {ok, SafeClock}, State}
+%% 	    end;
+%% 	error ->
+%% 	    NewSafeClock = dict:store(DcId,Timestamp,SafeClock),
+%% 	    try
+%% 		riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
+%% 		{reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
+%% 	    catch
+%% 		_:Reason ->
+%% 		    lager:error("Exception caught ~p", [Reason]),
+%% 		    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
+%% 	    end
+%%     end;
 
+
+
+handle_command({update_safe_clock, DcId, Timestamp}, _Sender,
+	       #currentclock{safe_clock=SafeClock
+%			     partition=Partition
+			     } = State) ->
+    case dict:find(DcId, SafeClock) of
+	true ->
+	    NewSafeClock = dict:update(DcId, fun(OldTimestamp) ->
+				      case OldTimestamp < Timestamp of
+					  true ->
+					      Timestamp;
+					  _ -> 
+					      OldTimestamp
+				      end
+			      end, SafeClock);
+	_ -> 
+	    NewSafeClock = dict:store(DcId, Timestamp, SafeClock)
+    end,
+    %% lager:info("Update safe clock to ~p at ~p", [NewSafeClock,Partition]),
+    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}};
 
 
 
 handle_command({update_safe_vector_local, Vector}, _Sender,
 	       #currentclock{safe_clock=SafeClock
 			     } = State) ->
+    lager:info("in update safe vector local"),
     NewSafeClock = dict:fold(fun(DcId,Timestamp,NewDict) ->
 				     case dict:find(DcId, NewDict) of
 					 true ->
@@ -197,80 +219,80 @@ handle_command({update_safe_vector_local, Vector}, _Sender,
 %% The sent clock is a value circulated around the local DC
 %% Keeps track of the number of updates a local partition has sent
 %% to each remote DC
-handle_command({update_sent_clock, DcId, SendPartition, Timestamp}, _Sender,
-	       #currentclock{sent_clock=SentClock
-			    } = State) ->
+%% handle_command({update_sent_clock, DcId, SendPartition, Timestamp}, _Sender,
+%% 	       #currentclock{sent_clock=SentClock
+%% 			    } = State) ->
     
-    case dict:find({DcId,SendPartition},SentClock) of
-	{ok,PartitionSentClock} ->
-	    case PartitionSentClock < Timestamp of
-		true ->
-		    NewSentClock = dict:store({DcId,SendPartition},Timestamp,SentClock),
-		    try
-			riak_core_metadata:put(?META_PREFIX_DC,{SendPartition,DcId},Timestamp),
-			{reply, {ok, NewSentClock},State#currentclock{sent_clock=NewSentClock}}
-		    catch
-			_:Reason ->
-			    lager:error("Exception caught ~p",[Reason]),
-			    {reply,{ok,NewSentClock},State}
-		    end;
-		false ->
-		    {reply, {ok, SentClock}, State}
-	    end;
-	error ->
-	    NewSentClock = dict:store({DcId,SendPartition},Timestamp,SentClock),
-	    try
-		riak_core_metadata:put(?META_PREFIX_DC, {SendPartition,DcId},Timestamp),
-		{reply,{ok,NewSentClock},State#currentclock{sent_clock=NewSentClock}}
-	    catch
-		_:Reason ->
-		    lager:error("Exception caught ~p!", [Reason]), 
-		    {reply,{ok,NewSentClock},State}
-	    end
-    end;
+%%     case dict:find({DcId,SendPartition},SentClock) of
+%% 	{ok,PartitionSentClock} ->
+%% 	    case PartitionSentClock < Timestamp of
+%% 		true ->
+%% 		    NewSentClock = dict:store({DcId,SendPartition},Timestamp,SentClock),
+%% 		    try
+%% 			riak_core_metadata:put(?META_PREFIX_DC,{SendPartition,DcId},Timestamp),
+%% 			{reply, {ok, NewSentClock},State#currentclock{sent_clock=NewSentClock}}
+%% 		    catch
+%% 			_:Reason ->
+%% 			    lager:error("Exception caught ~p",[Reason]),
+%% 			    {reply,{ok,NewSentClock},State}
+%% 		    end;
+%% 		false ->
+%% 		    {reply, {ok, SentClock}, State}
+%% 	    end;
+%% 	error ->
+%% 	    NewSentClock = dict:store({DcId,SendPartition},Timestamp,SentClock),
+%% 	    try
+%% 		riak_core_metadata:put(?META_PREFIX_DC, {SendPartition,DcId},Timestamp),
+%% 		{reply,{ok,NewSentClock},State#currentclock{sent_clock=NewSentClock}}
+%% 	    catch
+%% 		_:Reason ->
+%% 		    lager:error("Exception caught ~p!", [Reason]), 
+%% 		    {reply,{ok,NewSentClock},State}
+%% 	    end
+%%     end;
 
 
 
 %% This is an old way of updating sent clock, keeping for now for reference
 %% in case want to change back
-handle_command({update_sent_clock2, DcId, SendPartition, Timestamp}, _Sender,
-	       #currentclock{sent_clock=SentClock,
-			     partition=Partition
-			    } = State) ->
+%% handle_command({update_sent_clock2, DcId, SendPartition, Timestamp}, _Sender,
+%% 	       #currentclock{sent_clock=SentClock,
+%% 			     partition=Partition
+%% 			    } = State) ->
 
-    case dict:find(SendPartition, SentClock) of
-	{ok, PartitionSentClock} ->
-	    case dict:find(DcId, PartitionSentClock) < Timestamp of
-		true -> 
-		    NewPartitionSentClock = dict:store(DcId, Timestamp, vectorclock:vectorclock()),
-		    NewSentClock = dict:store(SendPartition, NewPartitionSentClock, SentClock),
-		    try
-			riak_core_metadata:put(?META_PREFIX_DC, {Partition,DcId}, NewPartitionSentClock),
-			{reply, {ok, NewPartitionSentClock},
-			 State#currentclock{sent_clock=NewSentClock}
-			}
-		    catch
-			_:Reason ->
-			    lager:error("Exception caught ~p!",[Reason]),
-			    {reply, {ok, SentClock},State}
-		    end;
-		false ->
-		    {reply, {ok, SentClock}, State}
-	    end;
-	error ->
-	    NewPartitionSentClock = dict:store(DcId, Timestamp, vectorclock:vectorclock()),
-	    NewSentClock = dict:store(SendPartition, NewPartitionSentClock, SentClock),
-	    try
-		riak_core_metadata:put(?META_PREFIX, Partition, NewSentClock),
-		{reply, {ok, NewSentClock},
-		 State#currentclock{sent_clock=NewSentClock}
-		}
-	    catch
-		_:Reason ->
-		    lager:error("Exception caught ~p!", [Reason]),
-		    {reply, {ok, State#currentclock{sent_clock=NewSentClock}}, State}
-	    end
-    end;
+%%     case dict:find(SendPartition, SentClock) of
+%% 	{ok, PartitionSentClock} ->
+%% 	    case dict:find(DcId, PartitionSentClock) < Timestamp of
+%% 		true -> 
+%% 		    NewPartitionSentClock = dict:store(DcId, Timestamp, vectorclock:vectorclock()),
+%% 		    NewSentClock = dict:store(SendPartition, NewPartitionSentClock, SentClock),
+%% 		    try
+%% 			riak_core_metadata:put(?META_PREFIX_DC, {Partition,DcId}, NewPartitionSentClock),
+%% 			{reply, {ok, NewPartitionSentClock},
+%% 			 State#currentclock{sent_clock=NewSentClock}
+%% 			}
+%% 		    catch
+%% 			_:Reason ->
+%% 			    lager:error("Exception caught ~p!",[Reason]),
+%% 			    {reply, {ok, SentClock},State}
+%% 		    end;
+%% 		false ->
+%% 		    {reply, {ok, SentClock}, State}
+%% 	    end;
+%% 	error ->
+%% 	    NewPartitionSentClock = dict:store(DcId, Timestamp, vectorclock:vectorclock()),
+%% 	    NewSentClock = dict:store(SendPartition, NewPartitionSentClock, SentClock),
+%% 	    try
+%% 		riak_core_metadata:put(?META_PREFIX, Partition, NewSentClock),
+%% 		{reply, {ok, NewSentClock},
+%% 		 State#currentclock{sent_clock=NewSentClock}
+%% 		}
+%% 	    catch
+%% 		_:Reason ->
+%% 		    lager:error("Exception caught ~p!", [Reason]),
+%% 		    {reply, {ok, State#currentclock{sent_clock=NewSentClock}}, State}
+%% 	    end
+%%     end;
 
 
 
@@ -281,47 +303,47 @@ handle_command({update_sent_clock2, DcId, SendPartition, Timestamp}, _Sender,
 %% if last_received_vectorclock[partition][dc] < time
 %%   vectorclock[partition][dc] = last_received_vectorclock[partition][dc]
 %% last_received_vectorclock[partition][dc] = time
-handle_command({update_clock, DcId, Timestamp}, _Sender,
-               #currentclock{last_received_clock=LastClock,
-                             safe_clock=VClock,
-                             partition=Partition
-                            } = State) ->
-    case dict:find(DcId, LastClock) of
-        {ok, LClock} ->
-            case LClock < Timestamp of
-                true ->
-                    NewLClock = dict:store(DcId, Timestamp, LastClock),
-                    NewPClock = dict:store(DcId, Timestamp-1, VClock),
-                    %% Broadcast new pvv to other partition
-                    try
-                        riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                        {reply, {ok, NewPClock},
-                         State#currentclock{last_received_clock=NewLClock,
-                                        safe_clock=NewPClock}
-                        }
-                    catch
-                        _:Reason ->
-                            lager:error("Exception caught ~p! ",[Reason]),
-                            {reply, {ok, VClock},State}
-                    end;
-                false ->
-                    {reply, {ok, VClock}, State}
-            end;
-        error ->
-            NewLClock = dict:store(DcId, Timestamp, LastClock),
-            NewPClock = dict:store(DcId, Timestamp - 1, VClock),
-            try
-                riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                {reply, {ok, NewPClock},
-                 State#currentclock{last_received_clock=NewLClock,
-                                    safe_clock=NewPClock}
-                }
-            catch
-                _:Reason ->
-                    lager:error("Exception caught ~p! ",[Reason]),
-                    {reply, {ok, VClock},State}
-            end
-    end;
+%% handle_command({update_clock, DcId, Timestamp}, _Sender,
+%%                #currentclock{last_received_clock=LastClock,
+%%                              safe_clock=VClock,
+%%                              partition=Partition
+%%                             } = State) ->
+%%     case dict:find(DcId, LastClock) of
+%%         {ok, LClock} ->
+%%             case LClock < Timestamp of
+%%                 true ->
+%%                     NewLClock = dict:store(DcId, Timestamp, LastClock),
+%%                     NewPClock = dict:store(DcId, Timestamp-1, VClock),
+%%                     %% Broadcast new pvv to other partition
+%%                     try
+%%                         riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+%%                         {reply, {ok, NewPClock},
+%%                          State#currentclock{last_received_clock=NewLClock,
+%%                                         safe_clock=NewPClock}
+%%                         }
+%%                     catch
+%%                         _:Reason ->
+%%                             lager:error("Exception caught ~p! ",[Reason]),
+%%                             {reply, {ok, VClock},State}
+%%                     end;
+%%                 false ->
+%%                     {reply, {ok, VClock}, State}
+%%             end;
+%%         error ->
+%%             NewLClock = dict:store(DcId, Timestamp, LastClock),
+%%             NewPClock = dict:store(DcId, Timestamp - 1, VClock),
+%%             try
+%%                 riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+%%                 {reply, {ok, NewPClock},
+%%                  State#currentclock{last_received_clock=NewLClock,
+%%                                     safe_clock=NewPClock}
+%%                 }
+%%             catch
+%%                 _:Reason ->
+%%                     lager:error("Exception caught ~p! ",[Reason]),
+%%                     {reply, {ok, VClock},State}
+%%             end
+%%     end;
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -359,11 +381,11 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-find_min([VClock], {PVV, StableClock}) ->
-    dict:fold(fun(Dc, _, Snapshot) ->
-                      {ok, Clock1} = vectorclock:get_clock_of_dc(Dc, VClock),
-                      {ok, Clock2} = vectorclock:get_clock_of_dc(Dc, Snapshot),
-                      dict:store(Dc, min(Clock1, Clock2), Snapshot)
-               end,
-               StableClock,
-               PVV).
+%% find_min([VClock], {PVV, StableClock}) ->
+%%     dict:fold(fun(Dc, _, Snapshot) ->
+%%                       {ok, Clock1} = vectorclock:get_clock_of_dc(Dc, VClock),
+%%                       {ok, Clock2} = vectorclock:get_clock_of_dc(Dc, Snapshot),
+%%                       dict:store(Dc, min(Clock1, Clock2), Snapshot)
+%%                end,
+%%                StableClock,
+%%                PVV).

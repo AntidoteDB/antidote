@@ -39,4 +39,10 @@ init([Port]) ->
     SupWorkers = {inter_dc_communication_fsm_sup,
                 {inter_dc_communication_fsm_sup, start_link, []},
                 permanent, 1000, supervisor, [inter_dc_communication_fsm_sup]},
-    {ok, {{one_for_one, 60, 3600}, [Listener, SupWorkers]}}.
+
+
+    SupWorkers2 = {inter_dc_communication_process_updates_fsm_sup,
+                {inter_dc_communication_process_updates_fsm_sup, start_link, []},
+                permanent, 1000, supervisor, [inter_dc_communication_process_updates_fsm_sup]},
+
+    {ok, {{one_for_one, 60, 3600}, [Listener, SupWorkers, SupWorkers2]}}.

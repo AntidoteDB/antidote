@@ -83,7 +83,7 @@ start_store_update(Transaction) ->
 %% TODO:  This only updates a single random partition's safe clock
 %% instead could use meta_data? Don't actually need to propagate it everywhere though
 %% What would be the best way to do this?
-	    {ok, _} = vectorclock:update_safe_clock(Dc, Ts);
+	    {ok, _} = vectorclock:update_safe_clock_local(Dc, Ts);
         _ ->
 %%  Maybe want to update recieved clock here? No because acks are sent from other DC
 %% Instead should check for recieving the safe messages (maybe those can be propagated
@@ -93,15 +93,28 @@ start_store_update(Transaction) ->
 %% beacuse the external DC doesn't know the partitioning of this DC
 	    
 %% Fix this: should first check if this op is replicated in this DC
-	    SeparatedTransactions = list:foldl(fun(Op1,Acc) ->
-						       {K1,_,_} = Op1#operation.payload#log_record.op_payload,
-						       dict:append(hd(log_utilities:get_preflist_from_key(K1)),
-								   Op1,Acc) end,
-					       dict:new(), Ops),
+	    {SeparatedTransactions, FinalOps} = lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->
+							lager:info("operation ~p", [Op1]),
+							lager:info("op payload ~p", [Op1#operation.payload#log_record.op_payload]),
+							case Op1#operation.payload#log_record.op_payload of
+							    {K1,_,_} ->
+								case clocksi_transaction_reader:is_replicated_here(K1) of
+								    true ->
+									NewDictNodeKey = dict:append(hd(log_utilities:get_preflist_from_key(K1)),
+												     Op1,DictNodeKey);
+								    _ ->
+									NewDictNodeKey = DictNodeKey end,
+								NewListXtraOps = ListXtraOps;
+							    _ ->
+								NewDictNodeKey = DictNodeKey,
+								NewListXtraOps = lists:append(ListXtraOps, [Op1])
+							end,
+							{NewDictNodeKey,NewListXtraOps} end,
+					       {dict:new(),[]}, Ops),
 
 %% Fix this: because sends a store_update per op, should instead send a message per partition
 	    dict:fold(fun(Node,Op2,_) ->
-			      store_update(Node,{Txid,Committime,ST,Op2}),
+			      store_update(Node,{Txid,Committime,ST,lists:append(Op2,FinalOps)}),
 %% Maybe should only run this once???
 			      riak_core_vnode_master:command(Node,{proceess_queue},
 							     inter_dc_recvr_vnode_master) end,
@@ -111,6 +124,7 @@ start_store_update(Transaction) ->
     ok.
 
 store_update(Node, Transaction) ->
+    lager:info("Storing update node ~p, trans ~p", [Node, Transaction]),
     riak_core_vnode_master:sync_command(Node,
                                         {store_update, Transaction},
                                         inter_dc_recvr_vnode_master).
@@ -138,6 +152,7 @@ init([Partition]) ->
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
 handle_command({store_update, Transaction}, _Sender, State) ->
+    lager:info("In store update ~p", [Transaction]),
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
                        Transaction, State),
     ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),

@@ -68,28 +68,37 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
         clocksi_transaction_reader:get_next_transactions(Reader),
     case dict:size(DictTransactionsDcs) of
         0 ->
-            %% Send heartbeat
-            Heartbeat = [#operation
-                         {payload =
-                              #log_record{op_type=noop, op_payload = Partition}
-                         }],
-            DcId = dc_utilities:get_my_dc_id(),
-            {ok, Clock} = vectorclock:get_clock(Partition),
-            Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
-            TxId = 0,
-            %% Receiving DC treats hearbeat like a transaction
-            %% So wrap heartbeat in a transaction structure
-            Transaction = {TxId, {DcId, Time}, Clock, Heartbeat},
-	    %% Send heartbeat to all DCs in partial replication alg
-	    %% Still need to decide what to do with heartbeats in partial replication alg
+            %% %% Send heartbeat
+            %% Heartbeat = [#operation
+            %%              {payload =
+            %%                   #log_record{op_type=noop, op_payload = Partition}
+            %%              }],
+            %% DcId = dc_utilities:get_my_dc_id(),
+            %% {ok, Clock} = vectorclock:get_clock(Partition),
+            %% Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
+            %% TxId = 0,
+            %% %% Receiving DC treats hearbeat like a transaction
+            %% %% So wrap heartbeat in a transaction structure
+            %% Transaction = {TxId, {DcId, Time}, Clock, Heartbeat},
+	    %% %% Send heartbeat to all DCs in partial replication alg
+	    %% %% Still need to decide what to do with heartbeats in partial replication alg
+	    %% {ok, DCs} = inter_dc_manager:get_dcs(),
+            %% case inter_dc_communication_sender:propagate_sync(
+            %%        dict:append(DCs, Transaction, dict:new()), StableTime, Partition) of
+            %%     ok ->
+            %%         NewReader = NewReaderState;
+            %%     _ ->
+            %%         NewReader = NewReaderState
+            %% end;
+
+	    %% No need to send a heartbeat
+	    %% have to send safe time
 	    {ok, DCs} = inter_dc_manager:get_dcs(),
-            case inter_dc_communication_sender:propagate_sync(
-                   dict:append(DCs, Transaction, dict:new()), StableTime, Partition) of
-                ok ->
-                    NewReader = NewReaderState;
-                _ ->
-                    NewReader = NewReaderState
-            end;
+	    lists:foldl(fun({DcAddress,Port},_Acc) ->
+				vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime)
+			end,
+			0, DCs),
+	    NewReader = Reader;
 	%% For partial replication, need to check if the external DC replicates
 	%% the ops before sending the transactions
 	%% For now this can be done just statically I guess

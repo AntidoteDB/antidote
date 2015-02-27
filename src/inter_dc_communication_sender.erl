@@ -187,7 +187,8 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             ok = inet:setopts(Socket, [{active, once}]),
             {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
         {error, _Reason} ->
-            %%lager:error("Couldnot connect to remote DC"),
+	    %% TODO, should be diferent
+            lager:error("Couldnot connect to remote DC"),
             {stop, normal, State}
     end.
 
@@ -196,6 +197,7 @@ wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message
 
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
+    lager:info("timeout in wait for ack"),
     {next_state,stop_error,State,0}.
 
 stop(timeout, State=#state{socket=Socket}) ->

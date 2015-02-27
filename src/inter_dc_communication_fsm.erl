@@ -30,7 +30,10 @@ receive_message(timeout, State=#state{socket=Socket}) ->
         {ok, Message} ->
             case binary_to_term(Message) of
                 {replicate, Updates} ->
-                    ok =  inter_dc_recvr_vnode:store_updates(Updates) ,
+                    %%ok =  inter_dc_recvr_vnode:store_updates(Updates),
+		    %% TODO: this is not safe because you can recieve a safe time beofre
+		    %% you have finished processing previous received update
+		    {ok, _} = inter_dc_communication_process_updates_fsm_sup:start_fsm([Updates]),
                     ok = gen_tcp:send(Socket, term_to_binary({acknowledge, inter_dc_manager:get_my_dc()}));
                 Unknown ->
                     lager:error("Weird message received in inter_dc_comm_fsm ~p end", [Unknown])
