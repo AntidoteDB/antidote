@@ -41,6 +41,7 @@
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
+-spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, term()} | {error, reason()}.
 append(Key, Type, {OpParam, Actor}) ->
     Operations = [{update, Key, Type, {OpParam, Actor}}],
     case clocksi_execute_tx(Operations) of
@@ -52,6 +53,7 @@ append(Key, Type, {OpParam, Actor}) ->
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
+-spec read(Key::key(), Type::type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
     case clocksi_read(Key, Type) of
         {ok,{_, [Val], _}} ->

@@ -34,17 +34,35 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, DownstreamOps) ->
                                       Key,
                                       Type) of
         {ok, Snapshot} ->
-            Snapshot2 = update_snapshot(Snapshot, DownstreamOps), 
-            {ok, NewState} = Type:update(Op, Actor, Snapshot2),
-            DownstreamOp = {merge, NewState},
-            {ok, DownstreamOp};
-        {error, Reason} ->
-            lager:info("Error: ~p", [Reason]),
-            {error, Reason}
+            DownstreamOp = case Type of
+                            crdt_bcounter ->
+                                Snapshot2 = apply_operations(Snapshot, Type, DownstreamOps),
+                                case Type:generate_downstream(Op, Actor, Snapshot2) of
+                                    {ok, OpParam} -> {update, OpParam};
+                                    {error, Error} -> {error, Error}
+                                end;
+                            crdt_orset ->
+                                Snapshot2 = apply_operations(Snapshot, Type, DownstreamOps),
+                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot2),
+                                {update, OpParam};
+                            crdt_pncounter ->
+                                Snapshot2 = apply_operations(Snapshot, Type, DownstreamOps),
+                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot2),
+                                {update, OpParam};
+                            _ ->
+                                Snapshot2 = update_snapshot(Snapshot, DownstreamOps), 
+                                {ok, NewState} = Type:update(Op, Actor, Snapshot2),
+                                {merge, NewState}
+                            end,
+            case DownstreamOp of
+                {error, Reason} -> {error, Reason};
+                _ -> {ok, DownstreamOp}
+            end;
+        {error, no_snapshot} ->
+            {error, no_snapshot}
     end.
 
 update_snapshot(Snapshot, DownstreamOps) ->
-    lager:info("DSOps: ~p", [DownstreamOps]),
     case DownstreamOps of
         [] ->
             Snapshot;
@@ -52,4 +70,11 @@ update_snapshot(Snapshot, DownstreamOps) ->
             {merge, Snapshot2} = lists:last(List),
             Snapshot2
     end.
-    
+
+apply_operations(Snapshot, _Type, []) ->
+    Snapshot;
+
+apply_operations(Snapshot, Type, [Op|Rest]) ->
+    {update, OpParam} = Op,
+    {ok, Snapshot2} = Type:update(OpParam, Snapshot),
+    apply_operations(Snapshot2, Type, Rest).
