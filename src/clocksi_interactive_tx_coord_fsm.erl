@@ -133,13 +133,12 @@ execute_op({Op_type, Args}, Sender,
                         error ->
                             []
                        end,
-            lager:info("Sending updates ~p", [Updates]),
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type, Updates) of
                 error ->
                     {reply, error, abort, SD0};
-                {error, _Reason} ->
-                    {next_state, abort, SD0};
+                {error, Reason} ->
+                    {reply, {error, Reason}, abort, SD0};
                 {ok, Snapshot} ->
                     ReadResult = Type:value(Snapshot),
                     {reply, {ok, ReadResult}, execute_op, SD0}
@@ -239,8 +238,10 @@ receive_prepared(timeout, S0) ->
     {next_state, abort, S0, 0}.
 
 single_committing({committed, CommitTime}, S0=#state{from=_From}) ->
-    {next_state, reply_to_client, S0#state{prepare_time=CommitTime, commit_time=CommitTime, state=committed}, 0}.
+    {next_state, reply_to_client, S0#state{prepare_time=CommitTime, commit_time=CommitTime, state=committed}, 0};
     
+single_committing(abort, S0) ->
+    {next_state, abort, S0, 0}.
 
 %% @doc after receiving all prepare_times, send the commit message to all
 %%      updated partitions, and go to the "receive_committed" state.

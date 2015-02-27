@@ -120,8 +120,8 @@ return(timeout, SD0=#state{key=Key,
                 {ok, Updates2} ->
                     Snapshot2=clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
                     Reply = {ok, Snapshot2};
-                error ->
-                    Reply={error, generation_downstream}
+                {error, Error} ->
+                    Reply={error, Error}
             end;
         {error, Reason} ->
             Reply={error, Reason}
@@ -154,8 +154,9 @@ generate_downstream_operations([{Type, Param}|Rest], Txn, IndexNode, Key, DownOp
     case clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param, DownOps0) of
         {ok, DownstreamRecord} ->
             generate_downstream_operations(Rest, Txn, IndexNode, Key, DownOps0 ++ [DownstreamRecord]);
-        {error, _} ->
-            error
+        {error, Reason} ->
+            lager:error("Error when generating downstream operation. Reason ~p",[Reason]),
+            {error, Reason}
     end.
 
 get_stable_time(Key) ->
