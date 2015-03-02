@@ -88,6 +88,7 @@ get_next_transactions(State=#state{partition = Partition,
     %% So it is safe to read all transactions committed before stable_time
     Stable_time = get_stable_time(Node, PrevStableTime),
     {ok, NewOps} = read_next_ops(Node, LogId, Last_read_opid),
+
     case NewOps of
         [] -> Newlast_read_opid = Last_read_opid;
         _ -> Newlast_read_opid = get_last_opid(NewOps)
@@ -98,25 +99,47 @@ get_next_transactions(State=#state{partition = Partition,
 
     Txns = get_sorted_commit_records(Commitrecords),
     %% "Before" contains all transactions committed before stable_time
-    {Before, After} = lists:splitwith(
-                        fun(Logrecord) ->
-                                {{_Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
-                                CommitTime < Stable_time
-                        end,
-                        Txns),
+    %% {Before, After} = lists:splitwith(
+    %%                     fun(Logrecord) ->
+    %%                             {{_Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
+    %%                             CommitTime < Stable_time
+    %%                     end,
+    %%                     Txns),
+    %% Also removed any external commited transactions since we don't want propagate those
+    DcId = dc_utilities:get_my_dc_id(),
+    {Before, After} = lists:foldl(
+			fun(Logrecord, {AccBefore, AccAfter}) ->
+				{{Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
+				case Dcid of
+				    DcId ->
+					case CommitTime < Stable_time of
+					    true ->
+						NewAccBefore = lists:append([Logrecord], AccBefore),
+						NewAccAfter = AccAfter;
+					    _ ->
+						NewAccAfter = lists:append([Logrecord], AccAfter),
+						NewAccBefore = AccBefore
+					end;
+				    _ ->
+					NewAccAfter = AccAfter,
+					NewAccBefore = AccBefore
+				    
+				end,
+				{NewAccBefore, NewAccAfter} end,
+			{[],[]}, Txns),
+
     {NewPendingOps, DictTransactionsDcs} =
         lists:foldl(
           fun(_Logrecord=#log_record{tx_id=TxId},
               {PendingOps, Transactions}) ->
                   {ok, Ops} = get_ops_of_txn(TxId,PendingOps),
-		  lager:info("Ahead of construct ~p", [Ops]),
                   {Txn, DCs}  = construct_transaction(Ops),
-		  lager:info("After of construct ~p", [Ops]),
                   NewTransactions = dict:append(DCs, Txn, Transactions),
                   NewPending = remove_txn_from_pending(TxId, PendingOps),
                   {NewPending, NewTransactions}
           end, {PendingOperations, dict:new()},
           Before),
+
     NewState = State#state{pending_operations = NewPendingOps,
                            pending_commit_records = After,
                            prev_stable_time = Stable_time,
@@ -169,7 +192,6 @@ get_prev_stable_time(Reader) ->
 % -spec construct_transaction(Ops::[#operation{}]) -> transaction().
 construct_transaction(Ops) ->
     DCs = lists:foldl(fun(Op, DcSet) ->
-			      lager:info("an op: ~p", [Op]),
 			      sets:union(DcSet,sets:from_list(
 						get_dc_replicas(Op)))
 		      end ,sets:new(), Ops),

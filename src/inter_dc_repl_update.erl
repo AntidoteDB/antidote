@@ -155,11 +155,11 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                                    Key = DownOp#clocksi_payload.key,
                                    ok = materializer_vnode:update_cache(Key, DownOp)
                            end, DownOps),
-            lager:debug("Update from remote DC applied:",[payload]),
+            lager:info("Update from remote DC applied: ~p",[Transaction]),
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
-            {ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
+            %%{ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
 	    %% Why is a stable snapshot calculated here??
             riak_core_vnode_master:command(
               {Partition,node()}, calculate_stable_snapshot,
@@ -180,9 +180,10 @@ finish_update_dc(Dc, DcQ, Cts,
     {ok, State#recvr_state{lastCommitted = LastCommNew, recQ = RecQNew}}.
 
 %% Checks depV against the committed timestamps
-check_dep(DepV, Localclock) ->
-    Result = vectorclock:ge(Localclock, DepV),
-    Result.
+check_dep(_DepV, _Localclock) ->
+    %% Result = vectorclock:ge(Localclock, DepV),
+    %% Result.
+    true.
 
 %%Set a new value to the key.
 set(Key, Value, Orddict) ->

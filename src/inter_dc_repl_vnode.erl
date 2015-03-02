@@ -46,7 +46,7 @@
                 reader}).
 
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 5000).
+-define(REPL_PERIOD, 50000).
 
 start_vnode(I) ->
     {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
@@ -98,7 +98,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 				vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime)
 			end,
 			0, DCs),
-	    NewReader = Reader;
+	    NewReader = NewReaderState;
 	%% For partial replication, need to check if the external DC replicates
 	%% the ops before sending the transactions
 	%% For now this can be done just statically I guess
@@ -109,8 +109,10 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
             case inter_dc_communication_sender:propagate_sync(
                    DictTransactionsDcs, StableTime, Partition) of
                 ok ->
+		    lager:info("Successful send"),
                     NewReader = NewReaderState;
                 _ ->
+		    lager:info("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
                     NewReader = Reader
             end
     end,

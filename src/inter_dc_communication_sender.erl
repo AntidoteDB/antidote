@@ -100,7 +100,8 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
     case length(Errors) of
         0 ->
             ok;
-        _ -> error
+        _ -> 
+	    error
     end.
 
 

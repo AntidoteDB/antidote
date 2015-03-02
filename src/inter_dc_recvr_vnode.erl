@@ -116,7 +116,7 @@ start_store_update(Transaction) ->
 	    dict:fold(fun(Node,Op2,_) ->
 			      store_update(Node,{Txid,Committime,ST,lists:append(Op2,FinalOps)}),
 %% Maybe should only run this once???
-			      riak_core_vnode_master:command(Node,{proceess_queue},
+			      riak_core_vnode_master:command(Node,{process_queue},
 							     inter_dc_recvr_vnode_master) end,
 		      ok,SeparatedTransactions)
     end,

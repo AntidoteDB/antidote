@@ -324,10 +324,10 @@ no_elements([LogId|Rest], Map) ->
 threshold_prune([], _From) ->
     [];
 threshold_prune([{_LogId, Operation}|T], From) ->
-    case Operation#operation.op_number =:= From of
-        true ->
+    case Operation#operation.op_number of
+        From ->
             T;
-        false ->
+        _ ->
             threshold_prune(T, From)
     end.
 
