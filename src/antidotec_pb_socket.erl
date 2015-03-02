@@ -27,8 +27,8 @@
 -define(TIMEOUT, 1000).
 
 %% The TCP/IP host name or address of the Riak node
--type address() :: string() | atom() | inet:ip_address(). 
- %% The TCP port number of the Riak node's Protocol Buffers interface
+-type address() :: string() | atom() | inet:ip_address().
+%% The TCP port number of the Riak node's Protocol Buffers interface
 -type portnum() :: non_neg_integer().
 -type msg_id() :: non_neg_integer().
 -type rpb_req() :: {tunneled, msg_id(), binary()} | atom() | tuple().
@@ -57,7 +57,9 @@
 
 -export([
          store_crdt/2,
-         get_crdt/3
+         get_crdt/3,
+         atomic_store_crdts/2,
+         snapshot_get_crdts/2
         ]).
 
 %% @private
@@ -111,24 +113,16 @@ handle_call(stop, _From, State) ->
 handle_info({_Proto, Sock, Data}, State=#state{active = (Active = #request{})}) ->
     <<MsgCode:8, MsgData/binary>> = Data,
     Resp = riak_pb_codec:decode(MsgCode, MsgData),
-    NewState = case Resp of
-                   %Must abstract message handling
-                   #fpboperationresp{success = true} ->
-                       cancel_req_timer(Active#request.tref),
-                       _ = send_caller(ok, Active),
-                       State#state{ active = undefined };
-                   #fpbgetcounterresp{value = Val} ->
-                       cancel_req_timer(Active#request.tref),
-                       _ = send_caller({ok,Val}, Active),
-                       State#state{ active = undefined };
-                   #fpbgetsetresp{value = Val} ->
-                       cancel_req_timer(Active#request.tref),
-                       _ = send_caller({ok,erlang:binary_to_term(Val)}, Active),
-                       State#state{ active = undefined };
-                   _ ->
-                       lager:warning("Unexpected Message ~p",[Resp]),
-                       State#state{ active = undefined }
-               end,
+    %%message handling
+    Result = case decode_response(Resp) of
+                 error -> error;
+                 {error,Reason} -> {error, Reason};
+                 ok -> ok;
+                 Val -> {ok, Val}
+             end,
+    cancel_req_timer(Active#request.tref),
+    _ = send_caller(Result, Active),
+    NewState = State#state{ active = undefined },
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, NewState};
 
@@ -191,7 +185,7 @@ disconnect(State) ->
 %% @private
 new_request(Msg, From, Timeout) ->
     Ref = make_ref(),
-    #request{ref = Ref, msg = Msg, from = From, timeout = Timeout, 
+    #request{ref = Ref, msg = Msg, from = From, timeout = Timeout,
              tref = create_req_timer(Timeout, Ref)}.
 
 %% @private
@@ -205,13 +199,16 @@ create_req_timer(Msecs, Ref) ->
 
 %% Send a request to the server and prepare the state for the response
 %% @private
-send_request(Request0, State) when State#state.active =:= undefined  -> 
+send_request(Request0, State) when State#state.active =:= undefined  ->
     {Request, Pkt} = encode_request_message(Request0),
     case gen_tcp:send(State#state.sock, Pkt) of
         ok ->
             maybe_reply({noreply,State#state{active = Request}});
         {error, Reason} ->
             lager:warning("Socket error while sending riakc request: ~p.", [Reason]),
+            gen_tcp:close(State#state.sock);
+        Other ->
+            lager:warning("Socket error while sending riakc request: ~p.", [Other]),
             gen_tcp:close(State#state.sock)
     end.
 
@@ -219,15 +216,14 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
 encode_request_message(#request{msg=Msg}=Req) ->
     {Req, riak_pb_codec:encode(Msg)}.
 
-%maybe_reply({reply, Reply, State = #state{active = Request}}) ->
-%    NewRequest = send_caller(Reply, Request),
-%    State#state{active = NewRequest};
+%% maybe_reply({reply, Reply, State = #state{active = Request}}) ->
+%%   NewRequest = send_caller(Reply, Request),
+%%   State#state{active = NewRequest};
 
 maybe_reply({noreply, State = #state{}}) ->
     State.
 
-
-% Replies the message and clears the requester id
+%% Replies the message and clears the requester id
 send_caller(Msg, #request{from = From}=Request) when From /= undefined ->
     gen_server:reply(From, Msg),
     Request#request{from = undefined}.
@@ -240,15 +236,15 @@ cancel_req_timer(Tref) ->
     _ = erlang:cancel_timer(Tref),
     ok.
 
-%Stores a client-side crdt to the storage by converting the object state to a
-%list of oeprations that will be appended to the log.
+%%Stores a client-side crdt to the storage by converting the object state to a
+%%list of oeprations that will be appended to the log.
 %% @todo: propagate only one operation with the list of updates to ensure atomicity.
 store_crdt(Obj, Pid) ->
     Mod = antidotec_datatype:module_for_term(Obj),
     Ops = Mod:to_ops(Obj),
     case Ops of
         undefined -> ok;
-        Ops -> 
+        Ops ->
             lists:foldl(fun(Op,Success) ->
                                 Result = call_infinity(Pid, {req, Op, ?TIMEOUT}),
                                 case Result of
@@ -258,8 +254,8 @@ store_crdt(Obj, Pid) ->
                         end, ok, Ops)
     end.
 
-%Reads an object from the storage and returns a client-side 
-%representation of the CRDT.
+%% Reads an object from the storage and returns a client-side
+%% representation of the CRDT.
 %% @todo Handle different return messages
 -spec get_crdt(term(), atom(), pid()) -> {ok, term()} | {error, term()}.
 get_crdt(Key, Type, Pid) ->
@@ -271,5 +267,97 @@ get_crdt(Key, Type, Pid) ->
         {error, Reason} -> {error, Reason}
     end.
 
+%% Atomically stores multiple CRDTs converting the object state to a
+%% list of operations that will be appended to the log.
+-spec atomic_store_crdts([term()], pid()) -> {ok, term()} | error | {error, term()}.
+atomic_store_crdts(Objects, Pid) ->
+    FoldFun = fun(Obj, List) ->
+                      Mod = antidotec_datatype:module_for_term(Obj),
+                      lists:append(List, Mod:to_ops(Obj))
+              end,
+    Operations = lists:foldl(FoldFun, [], Objects),
+    TxnRequest = #fpbatomicupdatetxnreq{clock=1,ops=encode_au_txn_ops(Operations)},
+    Result = call_infinity(Pid, {req, TxnRequest, ?TIMEOUT}),
+    case Result of
+        {ok, CommitTime} -> {ok, CommitTime};
+        error -> error;
+        {error, Reason} -> {error, Reason};
+        Other -> {error, Other}
+    end.
+
+%% Read multiple crdts from a consistent snapshot
+-spec snapshot_get_crdts([{term(), atom()}], pid()) ->  {ok, term()} | {error, term()}.
+snapshot_get_crdts(Objects, Pid) ->
+    MapFun = fun({Key,Type}) ->
+                     Mod = antidotec_datatype:module_for_type(Type),
+                     Mod:message_for_get(Key)
+             end,
+    Operations = lists:map(MapFun, Objects),
+    TxnRequest = #fpbsnapshotreadtxnreq{clock=1,ops=encode_snapshot_read_ops(Operations)},
+    Result = call_infinity(Pid, {req, TxnRequest, ?TIMEOUT}),
+    case Result of
+        {ok, Res} ->
+            Zipped = lists:zip(Objects, Res),
+            ReadObjects = lists:map(fun({{Key,Type},Val}) ->
+                                            Mod = antidotec_datatype:module_for_type(Type),
+                                            Mod:new(Key,Val)
+                                    end, Zipped),
+            {ok, ReadObjects};
+        error -> error;
+        Other ->
+            lager:error("Unknown message received ~p",[Other]),
+            {error, Other}
+    end.
+
+%% Encode Atomic store crdts request into the
+%% pb request message structure to be serialized
+-spec encode_au_txn_ops([term()]) -> [#fpbatomicupdatetxnop{}].
+encode_au_txn_ops(Operations) ->
+    lists:map(fun(Op) -> encode_au_txn_op(Op) end, Operations).
+
+encode_au_txn_op(Op=#fpbincrementreq{}) ->
+    #fpbatomicupdatetxnop{counterinc=Op};
+encode_au_txn_op(Op=#fpbdecrementreq{}) ->
+    #fpbatomicupdatetxnop{counterdec=Op};
+encode_au_txn_op(Op=#fpbsetupdatereq{}) ->
+    #fpbatomicupdatetxnop{setupdate=Op}.
 
 
+%% Encode Snapshot read request into the
+%% pb request message record to be serialized
+-spec encode_snapshot_read_ops([term()]) -> [#fpbsnapshotreadtxnop{}].
+encode_snapshot_read_ops(Operations) ->
+    lists:map(fun(Op) -> encode_snapshot_read_op(Op) end, Operations).
+
+encode_snapshot_read_op(Op=#fpbgetcounterreq{}) ->
+    #fpbsnapshotreadtxnop{counter=Op};
+encode_snapshot_read_op(Op=#fpbgetsetreq{}) ->
+    #fpbsnapshotreadtxnop{set=Op}.
+
+%% Decode response of pb request
+decode_response(#fpboperationresp{success = true}) -> ok;
+decode_response(#fpbgetcounterresp{value = Val}) ->
+    Val;
+decode_response(#fpbgetsetresp{value = Val}) ->
+    erlang:binary_to_term(Val);
+decode_response(#fpbatomicupdatetxnresp{success = Success, committime = CommitTime}) ->
+    case Success of
+        true ->
+            CommitTime;
+        false ->
+            error
+    end;
+decode_response(#fpbsnapshotreadtxnresp{success = Success, results=Result}) ->
+    case Success of
+        true ->
+            lists:map(fun(X) -> decode_response(X) end, Result);
+        _ ->
+            {error, request_failed}
+    end;
+decode_response(#fpbsnapshotreadtxnrespvalue{counter=Counter, set=undefined}) ->
+    decode_response(Counter);
+decode_response(#fpbsnapshotreadtxnrespvalue{counter=undefined, set=Set}) ->
+    decode_response(Set);
+decode_response(Resp) ->
+    lager:error("Unexpected Message ~p",[Resp]),
+    error.
