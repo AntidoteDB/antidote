@@ -269,14 +269,21 @@ get_crdt(Key, Type, Pid) ->
 
 %% Atomically stores multiple CRDTs converting the object state to a
 %% list of operations that will be appended to the log.
--spec atomic_store_crdts([term()], pid()) -> {ok, term()} | error | {error, term()}.
-atomic_store_crdts(Objects, Pid) ->
+atomic_store_crdts(Object,Pid) ->
+    atomic_store_crdts(Object, ignore, Pid).
+-spec atomic_store_crdts([term()], ignore|term(), pid()) -> {ok, term()} | error | {error, term()}.
+atomic_store_crdts(Objects, Clock, Pid) ->
     FoldFun = fun(Obj, List) ->
                       Mod = antidotec_datatype:module_for_term(Obj),
                       lists:append(List, Mod:to_ops(Obj))
               end,
     Operations = lists:foldl(FoldFun, [], Objects),
-    TxnRequest = #fpbatomicupdatetxnreq{clock=1,ops=encode_au_txn_ops(Operations)},
+    TxnRequest =  case Clock of 
+                      ignore ->
+                          #fpbatomicupdatetxnreq{ops=encode_au_txn_ops(Operations)};
+                      _ ->
+                          #fpbatomicupdatetxnreq{clock=Clock,ops=encode_au_txn_ops(Operations)}
+                  end,
     Result = call_infinity(Pid, {req, TxnRequest, ?TIMEOUT}),
     case Result of
         {ok, CommitTime} -> {ok, CommitTime};
@@ -286,23 +293,31 @@ atomic_store_crdts(Objects, Pid) ->
     end.
 
 %% Read multiple crdts from a consistent snapshot
+snapshot_get_crdts(Objects,Pid) ->
+    snapshot_get_crdts(Objects, ignore, Pid).
+
 -spec snapshot_get_crdts([{term(), atom()}], pid()) ->  {ok, term()} | {error, term()}.
-snapshot_get_crdts(Objects, Pid) ->
+snapshot_get_crdts(Objects, Clock, Pid) ->
     MapFun = fun({Key,Type}) ->
                      Mod = antidotec_datatype:module_for_type(Type),
                      Mod:message_for_get(Key)
              end,
     Operations = lists:map(MapFun, Objects),
-    TxnRequest = #fpbsnapshotreadtxnreq{clock=1,ops=encode_snapshot_read_ops(Operations)},
+    TxnRequest = case Clock of 
+                     ignore -> 
+                         #fpbsnapshotreadtxnreq{ops=encode_snapshot_read_ops(Operations)};
+                     _ ->
+                         #fpbsnapshotreadtxnreq{clock=Clock,ops=encode_snapshot_read_ops(Operations)}
+                 end,
     Result = call_infinity(Pid, {req, TxnRequest, ?TIMEOUT}),
     case Result of
-        {ok, Res} ->
+        {ok, {NewClock, Res}} ->
             Zipped = lists:zip(Objects, Res),
             ReadObjects = lists:map(fun({{Key,Type},Val}) ->
                                             Mod = antidotec_datatype:module_for_type(Type),
                                             Mod:new(Key,Val)
                                     end, Zipped),
-            {ok, ReadObjects};
+            {ok, NewClock, ReadObjects};
         error -> error;
         Other ->
             lager:error("Unknown message received ~p",[Other]),
@@ -340,17 +355,18 @@ decode_response(#fpbgetcounterresp{value = Val}) ->
     Val;
 decode_response(#fpbgetsetresp{value = Val}) ->
     erlang:binary_to_term(Val);
-decode_response(#fpbatomicupdatetxnresp{success = Success, committime = CommitTime}) ->
+decode_response(#fpbatomicupdatetxnresp{success = Success, clock = CommitTime}) ->
     case Success of
         true ->
             CommitTime;
         false ->
             error
     end;
-decode_response(#fpbsnapshotreadtxnresp{success = Success, results=Result}) ->
+decode_response(#fpbsnapshotreadtxnresp{success = Success, clock=Clock, results=Result}) ->
     case Success of
         true ->
-            lists:map(fun(X) -> decode_response(X) end, Result);
+            Res = lists:map(fun(X) -> decode_response(X) end, Result),
+            {Clock, Res};
         _ ->
             {error, request_failed}
     end;
