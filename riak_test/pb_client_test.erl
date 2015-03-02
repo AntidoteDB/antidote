@@ -39,7 +39,8 @@ confirm() ->
     pass = get_empty_crdt_test(<<"key0">>),
     pass = update_counter_crdt_test(<<"key1">>, 10),
     pass = update_counter_crdt_and_read_test(<<"key2">>, 15),
-
+    pass = atomic_update_txn_test(),
+    pass = snapshot_read_test(),
     pass.
 
 start_stop_test() ->
@@ -78,4 +79,42 @@ get_crdt_check_value(Key, Type, Expected) ->
     Mod = antidotec_datatype:module_for_type(Type),
     _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(Expected, Mod:value(Obj)),
+    pass.
+
+atomic_update_txn_test() ->
+    lager:info("Testing Atomic Updates"),
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, C1} = antidotec_pb_socket:get_crdt(<<"counter1">>, riak_dt_pncounter, Pid),
+    {ok, C2} = antidotec_pb_socket:get_crdt(<<"counter2">>, riak_dt_pncounter, Pid),
+    C11 = antidotec_counter:increment(1, C1),
+    C21 = antidotec_counter:increment(2, C2),
+    lager:info("Testing.. "),
+    Msg = riak_pb_messages:msg_code(fpbatomicupdatetxnreq),
+    lager:info("Msg Code is ~p",[Msg]),
+    Response = antidotec_pb_socket:atomic_store_crdts([C11,C21],Pid),
+    antidotec_pb_socket:stop(Pid),
+    ?assertMatch({ok,_},Response),
+
+    %Read your writes
+    pass = get_crdt_check_value(<<"counter1">>, riak_dt_pncounter, 1),
+    pass = get_crdt_check_value(<<"counter2">>, riak_dt_pncounter, 2),
+    pass.
+
+snapshot_read_test() ->
+    lager:info("Testing Snapshot Reads"),
+    Key1 = <<"read1">>,
+    Key2 = <<"read2">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, C1} = antidotec_pb_socket:get_crdt(Key1, riak_dt_pncounter, Pid),
+    {ok, C2} = antidotec_pb_socket:get_crdt(Key2, riak_dt_pncounter, Pid),
+    C11 = antidotec_counter:increment(1, C1),
+    C21 = antidotec_counter:increment(2, C2),
+    Response = antidotec_pb_socket:atomic_store_crdts([C11,C21],Pid),
+    ?assertMatch({ok,_},Response),
+
+    %Read your writes
+    {ok, [Counter1, Counter2]} = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_pncounter}, {Key2,riak_dt_pncounter}], Pid),
+    antidotec_pb_socket:stop(Pid),
+    ?assertMatch(1, antidotec_counter:value(Counter1)),
+    ?assertMatch(2, antidotec_counter:value(Counter2)),
     pass.
