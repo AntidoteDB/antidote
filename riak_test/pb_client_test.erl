@@ -113,8 +113,10 @@ snapshot_read_test() ->
     ?assertMatch({ok,_},Response),
 
     %Read your writes
-    {ok, [Counter1, Counter2]} = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_pncounter}, {Key2,riak_dt_pncounter}], Pid),
+    Result = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_pncounter}, {Key2,riak_dt_pncounter}], Pid),
+    {ok, _Clock, [Counter1, Counter2]} = Result,
     antidotec_pb_socket:stop(Pid),
     ?assertMatch(1, antidotec_counter:value(Counter1)),
     ?assertMatch(2, antidotec_counter:value(Counter2)),
+    %%TODO; Use Clock in next write/read transactions
     pass.

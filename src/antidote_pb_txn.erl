@@ -63,9 +63,11 @@ process(#fpbatomicupdatetxnreq{ops = Ops}, State) ->
     Updates = decode_au_txn_ops(Ops),
     case antidote:clocksi_bulk_update(Updates) of
         {error, _Reason} ->
-            {reply, #fpbatomicupdatetxnresp{success = false, committime=1}, State};
-        _ ->
-            {reply, #fpbatomicupdatetxnresp{success = true, committime=1}, State}
+            {reply, #fpbatomicupdatetxnresp{success = false}, State};
+        {ok, {_Txid, _ReadSet, CommitTime}} ->
+            {reply, #fpbatomicupdatetxnresp{success = true,
+                                            clock=term_to_binary(CommitTime)},
+             State}
     end;
 
 process(#fpbsnapshotreadtxnreq{ops = Ops}, State) ->
@@ -73,16 +75,18 @@ process(#fpbsnapshotreadtxnreq{ops = Ops}, State) ->
     ReadReqs = decode_snapshot_read_ops(Ops),
     %%TODO: change this to interactive reads
     case antidote:clocksi_execute_tx(ReadReqs) of
-        {ok, {_TxId, ReadSet, _CommitTime}} ->
+        {ok, {_TxId, ReadSet, CommitTime}} ->
             Zipped = lists:zip(ReadReqs, ReadSet),
             Reply = encode_snapshot_read_response(Zipped),
-            {reply, #fpbsnapshotreadtxnresp{success=true,results=Reply}, State};
+            {reply, #fpbsnapshotreadtxnresp{success=true,
+                                            clock= term_to_binary(CommitTime),
+                                            results=Reply}, State};
         Other ->
             lager:info("Clocksi execute received ~p",[Other]),
             {reply, #fpbsnapshotreadtxnresp{success=false}, State}
     end.
-            
-    
+
+
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.
 process_stream(_,_,State) ->
@@ -117,8 +121,8 @@ decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetcounterreq{key=Key}
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetsetreq{key=Key}}) ->
     {read,Key, riak_dt_orset}.
 
-                            
-                               
+
+
 
 encode_snapshot_read_response(Zipped) ->
     lists:map(fun(Resp) ->
@@ -128,5 +132,3 @@ encode_snapshot_read_resp({{read, Key, riak_dt_pncounter}, Result}) ->
     #fpbsnapshotreadtxnrespvalue{key=Key,counter=#fpbgetcounterresp{value =Result}};
 encode_snapshot_read_resp({{read,Key,riak_dt_orset}, Result}) ->
     #fpbsnapshotreadtxnrespvalue{key=Key,set=#fpbgetsetresp{value = term_to_binary(Result)}}.
-
-
