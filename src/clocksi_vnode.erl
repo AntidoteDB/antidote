@@ -27,6 +27,7 @@
          reply_coordinator/2,
          read_data_item/4,
          read_data_item/5,
+         batch_read/3,
          pre_prepare/4,
          prepare/5,
          commit/3,
@@ -90,6 +91,15 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
             lager:error("Exception caught: ~p", [Reason]),
             {error, Reason}
     end.
+    
+    
+%% @doc Sends a batch_read request to each node in ListOfNodes, for a list of keys in the 
+%% dictionary Reads.
+batch_read(ListofNodes, TxId, Reads) ->
+	riak_core_vnode_master:sync_command(ListofNodes,
+                                   {batch_read, TxId, Reads},
+                                   {fsm, undefined, self()},
+                                   ?CLOCKSI_MASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 pre_prepare(ListofNodes, TxId, Updates, TxType) ->
@@ -155,6 +165,14 @@ handle_command({read_data_item, Txn, Key, Type, Updates}, Sender,
     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
                                                  Key, Type, Updates),
     {noreply, State};
+    
+%% @doc starts a batch_read fsm to handle a batch_read operation.
+handle_command({batch_read, TxId, Reads}, Sender,
+               State = #state{partition=Partition}) ->
+    Vnode = {Partition, node()},
+    {ok, _Pid} = clocksi_batch_read_fsm:start_link(Vnode, Sender, TxId, Reads),
+    {noreply, State};    
+    
 
 handle_command({pre_prepare, Transaction, Updates, TxType}, Sender,
                State = #state{partition=Partition}) ->

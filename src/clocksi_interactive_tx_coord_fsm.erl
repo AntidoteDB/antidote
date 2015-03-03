@@ -38,7 +38,7 @@
 
 %% States
 -export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2,
-         receive_prepared/2, single_committing/2, committing_2pc/3, committing/2, receive_committed/2, abort/2,
+         receive_prepared/2, receive_batch_read/2, single_committing/2, committing_2pc/3, committing/2, receive_committed/2, abort/2,
          reply_to_client/2]).
 
 %%---------------------------------------------------------------------
@@ -62,6 +62,7 @@
           commit_time :: integer(),
           commit_protocol :: term(),
           buffer=dict:new() :: dict(),
+          batch_read_set=[] :: list(),
           state:: atom()}).
 
 %%%===================================================================
@@ -143,6 +144,15 @@ execute_op({Op_type, Args}, Sender,
                     ReadResult = Type:value(Snapshot),
                     {reply, {ok, ReadResult}, execute_op, SD0}
             end;
+            
+        batch_read ->
+        	{ReadBuffer, ReadPartitions}=Args,
+        	lists:foreach(fun(Partition) ->
+                            Reads = dict:fetch(Partition, ReadBuffer),
+                            clocksi_vnode:batch_read(Partition, Transaction, dict:to_list(Reads))
+                          end, ReadPartitions),
+            {next_state, receive_batch_read, SD0#state{num_to_ack=length(ReadPartitions)}};
+        
         update ->
             {Key, Type, Param}=Args,
             Preflist = log_utilities:get_preflist_from_key(Key),
@@ -159,6 +169,22 @@ execute_op({Op_type, Args}, Sender,
             Buffer = dict:store(IndexNode, Dict1, Buffer0),
             {reply, ok, execute_op, SD0#state{updated_partitions=UpdatedPartitions, buffer=Buffer}}
     end.
+    
+    
+%% @doc in this state, the fsm waits for the read results of each batch-read partition
+%%      and gathers all the results for forwarding them.
+receive_batch_read({batch_read_result, PartitionReadSet},
+                 S0=#state{num_to_ack=NumToAck,
+                           from=From, batch_read_set=BatchReadSet}) ->
+    BatchReadSet1 = lists:append(BatchReadSet, PartitionReadSet),
+    case NumToAck of 1 ->            
+			gen_fsm:reply(From, {ok, BatchReadSet1});
+        _ ->
+            {next_state, receive_batch_read,
+             S0#state{num_to_ack= NumToAck-1, batch_read_set=BatchReadSet1}}
+    end.
+    
+      
 
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.

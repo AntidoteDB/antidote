@@ -94,45 +94,73 @@ init([From, ClientClock, Operations]) ->
 execute_batch_ops(timeout, SD=#state{from = From,
                                      tx_id = TxId,
                                      tx_coord_pid = TxCoordPid,
-                                     operations = Operations}) ->
+                                     operations = Operations}) ->                     
+    
     ExecuteOp = fun (Operation, Acc) ->
     					case Acc of 
 						{error, Reason} ->
 							{error, Reason};
-						_ ->
+						{ReadBuffer, ReadPartitions} ->
 							case Operation of
 								{update, Key, Type, OpParams} ->
 									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
 									ok ->
-										Acc;
+										{ReadBuffer, ReadPartitions};
 									{error, Reason} ->
 										{error, Reason}
 									end;
 								{read, Key, Type} ->
-									case gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity) of
-									{ok, Value} ->
-										Acc++[Value];
-									{error, Reason} ->
-										{error, Reason}
+									Preflist = log_utilities:get_preflist_from_key(Key),
+									IndexNode = hd(Preflist),
+									case dict:find(IndexNode, ReadBuffer) of
+										{ok, Dict0} ->
+											Dict1 = dict:append(Key, Type, Dict0),
+											ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
+											{ReadPartitions, ReadBuffer1};
+										error ->
+											Dict0 = dict:new(),
+											Dict1 = dict:append(Key, Type, Dict0),
+											ReadPartitions1 = ReadPartitions ++ [IndexNode],
+											ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
+											{ReadPartitions1, ReadBuffer1}
 									end
 							end
 						end
                 end,
-    ReadSet = lists:foldl(ExecuteOp, [], Operations),
-    case ReadSet of 
-	{error, Reason} ->
-		From ! {error, Reason},
-		{stop, normal, SD};
+    {ReadBuffer, ReadPartitions} = lists:foldl(ExecuteOp, {dict:new(), []}, Operations), 
+    case dict:size(ReadBuffer) == 0 of
+    false ->			
+		case gen_fsm:sync_send_event(TxCoordPid, {batch_read, {ReadBuffer, ReadPartitions}}, infinity) of
+			{ok, ReadSet} ->
+				case ReadSet of 
+				{error, Reason} ->
+					From ! {error, Reason},
+					{stop, normal, SD};
+				_ ->
+					case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
+						{ok, {TxId, CommitTime}} ->
+							From ! {ok, {TxId, ReadSet, CommitTime}},
+							{stop, normal, SD};
+						_ ->
+							From ! {error, commit_fail},
+							{stop, normal, SD}
+					end
+				end;
+			{error, Reason} ->
+				{error, Reason}
+			end;
 	_ ->
-        case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-            {ok, {TxId, CommitTime}} ->
-                From ! {ok, {TxId, ReadSet, CommitTime}},
-                {stop, normal, SD};
-            _ ->
-                From ! {error, commit_fail},
-                {stop, normal, SD}
-        end
+		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
+		{ok, {TxId, CommitTime}} ->
+			From ! {ok, {TxId, [], CommitTime}},
+			{stop, normal, SD};
+		_ ->
+			From ! {error, commit_fail},
+			{stop, normal, SD}
+		end
 	end.
+			
+	
 
 
 %% =============================================================================
