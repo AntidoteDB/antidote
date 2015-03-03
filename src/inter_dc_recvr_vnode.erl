@@ -94,8 +94,6 @@ start_store_update(Transaction) ->
 	    
 %% Fix this: should first check if this op is replicated in this DC
 	    {SeparatedTransactions, FinalOps} = lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->
-							lager:info("operation ~p", [Op1]),
-							lager:info("op payload ~p", [Op1#operation.payload#log_record.op_payload]),
 							case Op1#operation.payload#log_record.op_payload of
 							    {K1,_,_} ->
 								case clocksi_transaction_reader:is_replicated_here(K1) of
@@ -124,7 +122,6 @@ start_store_update(Transaction) ->
     ok.
 
 store_update(Node, Transaction) ->
-    lager:info("Storing update node ~p, trans ~p", [Node, Transaction]),
     riak_core_vnode_master:sync_command(Node,
                                         {store_update, Transaction},
                                         inter_dc_recvr_vnode_master).
@@ -152,7 +149,6 @@ init([Partition]) ->
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
 handle_command({store_update, Transaction}, _Sender, State) ->
-    lager:info("In store update ~p", [Transaction]),
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
                        Transaction, State),
     ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),

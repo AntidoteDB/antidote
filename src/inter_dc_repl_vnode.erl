@@ -46,7 +46,7 @@
                 reader}).
 
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 50000).
+-define(REPL_PERIOD, 5000).
 
 start_vnode(I) ->
     {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
@@ -109,10 +109,14 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
             case inter_dc_communication_sender:propagate_sync(
                    DictTransactionsDcs, StableTime, Partition) of
                 ok ->
-		    lager:info("Successful send"),
+		    {ok, DCs} = inter_dc_manager:get_dcs(),
+		    lists:foldl(fun({DcAddress,Port},_Acc) ->
+					vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime)
+				end,
+				0, DCs),
                     NewReader = NewReaderState;
                 _ ->
-		    lager:info("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
+		    lager:error("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
                     NewReader = Reader
             end
     end,

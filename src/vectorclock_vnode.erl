@@ -47,20 +47,21 @@
 
 -ignore_xref([start_vnode/1]).
 
--define(META_PREFIX, {partition,vectorclock}).
+%%-define(META_PREFIX, {partition,vectorclock}).
 
--define(META_PREFIX_DC, {dcid,partition,vectorclock}).
 
--define(META_PREFIX_SAFE, {dcid,vectorclock}).
 
--record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
-                      partition_vectorclock :: vectorclock:vectorclock(),
-                      stable_snapshot :: vectorclock:vectorclock(),
-		      safe_clock :: vectorclock:vectorclock(),
-		      sent_clock :: dict(),
-		      safe_to_ack :: vectorclock:vectorclock(),
-                      partition,
-                      num_p}).
+-define(META_PREFIX_SAFE, {dcid,int}).
+
+-record(currentclock,{
+	  %% last_received_clock :: vectorclock:vectorclock(),
+	  %% partition_vectorclock :: vectorclock:vectorclock(),
+	  %% stable_snapshot :: vectorclock:vectorclock(),
+	  safe_clock :: vectorclock:vectorclock(),
+	  %% sent_clock :: dict(),
+	  %% safe_to_ack :: vectorclock:vectorclock(),
+	  partition
+	  }).
 
 %% API
 start_vnode(I) ->
@@ -68,34 +69,37 @@ start_vnode(I) ->
 
 %% @doc Initialize the clock
 init([Partition]) ->
-    NewPClock = dict:new(),
-    riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-    {ok, #currentclock{last_received_clock=dict:new(),
-                       partition_vectorclock=NewPClock,
-                       stable_snapshot = dict:new(),
-		       safe_clock = dict:new(),
-		       sent_clock = dict:new(),
-		       safe_to_ack = dict:new(),
-                       partition = Partition,
-                       num_p=0}}.
+%%    NewPClock = dict:new(),
+%%    riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+    {ok, #currentclock{
+	    %% last_received_clock=dict:new(),
+	    %% partition_vectorclock=NewPClock,
+	    %% stable_snapshot = dict:new(),
+	    safe_clock = dict:new(),
+	    %% sent_clock = dict:new(),
+	    %% safe_to_ack = dict:new(),
+	    partition = Partition
+	    }}.
 
 %% @doc returns physical clock?
-handle_command(get_clock, _Sender,
-               #currentclock{partition_vectorclock=Clock} = State) ->
-    {reply, {ok, Clock}, State};
+%% handle_command(get_clock, _Sender,
+%%                #currentclock{partition_vectorclock=Clock} = State) ->
+%%     {reply, {ok, Clock}, State};
 
 % old remove
-handle_command(get_stable_snapshot, _Sender,
-               State=#currentclock{stable_snapshot=Clock}) ->
-    {reply, {ok, Clock}, State};
+%% handle_command(get_stable_snapshot, _Sender,
+%%                State=#currentclock{stable_snapshot=Clock}) ->
+%%     {reply, {ok, Clock}, State};
 
 % returns safel time
-%% This is only called during the external read,
-%% should maybe advance the safe_clock by here
-%% unless meta-data is used
 handle_command(get_safe_time, _Sender,
-	       State=#currentclock{safe_clock=Clock}) ->
-    {reply, {ok, Clock}, State};
+	       State) ->
+    ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
+    
+    ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
+				    dict:store(Key,Val,NewAcc) end,
+			    dict:new(), ClockList),
+    {reply, {ok, ClockDict}, State};
 
 
 
@@ -132,86 +136,91 @@ handle_command(get_safe_time, _Sender,
 
 %% This update happens when a external DC sends an time saying
 %% all updates up to this time have been sent to this DC
-%% handle_command({update_safe_clock, IsLocal, DcId, Timestamp}, _Sender, 
-%% 	       #currentclock{safe_clock=SafeClock
-%% 			     } = State) ->
-%%     case dict:find(DcId,SafeClock) of
-%% 	{ok,DcSafeClock} ->
-%% 	    case DcSafeClock < Timestamp of
-%% 		true ->
-%% 		    NewSafeClock = dict:store(DcId,Timestamp,SafeClock),
-%% 		    case IsLocal of
-%% 			false ->
-%% 			    try
-%% 				riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
-%% 				{reply, {ok, NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-%% 			    catch
-%% 				_:Reason ->
-%% 				    lager:error("Exception caught ~p", [Reason]),
-%% 				    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-%% 			    end;
-%% 			true ->
-%% 			    {reply, {ok, NewSafeClock}, State#currentclock{safe_clock=NewSafeClock}}
-%% 		    end;
-%% 		false ->
-%% 		    {reply, {ok, SafeClock}, State}
-%% 	    end;
-%% 	error ->
-%% 	    NewSafeClock = dict:store(DcId,Timestamp,SafeClock),
-%% 	    try
-%% 		riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
-%% 		{reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-%% 	    catch
-%% 		_:Reason ->
-%% 		    lager:error("Exception caught ~p", [Reason]),
-%% 		    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}}
-%% 	    end
-%%     end;
+handle_command({update_safe_clock, _IsLocal, DcId, Timestamp}, _Sender, 
+	       State) ->
+    %%lager:info("in update safe clock local DCid ~p", [DcId]),
+    %%ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
+    
+    DcSafeClock = riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}]),
 
-
-
-handle_command({update_safe_clock, DcId, Timestamp}, _Sender,
-	       #currentclock{safe_clock=SafeClock
-%			     partition=Partition
-			     } = State) ->
-    case dict:find(DcId, SafeClock) of
+    case DcSafeClock < Timestamp of
 	true ->
-	    NewSafeClock = dict:update(DcId, fun(OldTimestamp) ->
-				      case OldTimestamp < Timestamp of
-					  true ->
-					      Timestamp;
-					  _ -> 
-					      OldTimestamp
-				      end
-			      end, SafeClock);
-	_ -> 
-	    NewSafeClock = dict:store(DcId, Timestamp, SafeClock)
-    end,
-    %% lager:info("Update safe clock to ~p at ~p", [NewSafeClock,Partition]),
-    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}};
+	    try
+		riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
+		{reply, {ok, Timestamp},State}
+	    catch
+		_:Reason ->
+		    lager:error("Exception caught ~p", [Reason]),
+		    {reply,{error,Reason},State}
+	    end;
+	false ->
+	    {reply, {ok, DcSafeClock}, State}
+    end;
+
+
+
+
+%% handle_command({update_safe_clock_local, DcId, Timestamp}, _Sender,
+%% 	       #currentclock{safe_clock=SafeClock
+%% %%			     partition=Partition
+%% 			     } = State) ->
+%%     lager:info("in update safe clock local"),
+%%     ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
+%%     lager:info("safe clock local meta data list ~p", [ClockList]),
+%%     case dict:find(DcId, SafeClock) of
+%% 	true ->
+%% 	    NewSafeClock = dict:update(DcId, fun(OldTimestamp) ->
+%% 				      case OldTimestamp < Timestamp of
+%% 					  true ->
+%% 					      Timestamp;
+%% 					  _ -> 
+%% 					      OldTimestamp
+%% 				      end
+%% 			      end, SafeClock);
+%% 	_ -> 
+%% 	    NewSafeClock = dict:store(DcId, Timestamp, SafeClock)
+%%     end,
+%% %%    lager:info("Update safe clock to ~p at ~p", [NewSafeClock,Partition]),
+%%     {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}};
 
 
 
 handle_command({update_safe_vector_local, Vector}, _Sender,
-	       #currentclock{safe_clock=SafeClock
-			     } = State) ->
-    lager:info("in update safe vector local"),
+	       State) ->
+    ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
+    
+    ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
+				    dict:store(Key,Val,NewAcc) end,
+			    dict:new(), ClockList),
+    
     NewSafeClock = dict:fold(fun(DcId,Timestamp,NewDict) ->
 				     case dict:find(DcId, NewDict) of
 					 true ->
 					     dict:update(DcId, fun(OldTimestamp) ->
 								       case OldTimestamp < Timestamp of
 									   true ->
+									       try
+										   riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
+									       catch
+										   _:Reason ->
+										       lager:error("Exception caught ~p", [Reason])
+									       end,
 									       Timestamp;
 									   _ -> 
 									       OldTimestamp
 								       end
 							       end, NewDict);
 					 false -> 
+					     try
+						 riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
+					     catch
+						 _:Reason ->
+						     lager:error("Exception caught ~p", [Reason])
+					     end,
 					     dict:store(DcId, Timestamp, NewDict)
 				     end
-			     end, SafeClock, Vector),
-    {reply,{ok,NewSafeClock},State#currentclock{safe_clock=NewSafeClock}};
+			     end, ClockDict, Vector),
+    {reply,{ok,NewSafeClock},State};
 
 		    
 %% Don't do this anymore, is expensive and unecessary,

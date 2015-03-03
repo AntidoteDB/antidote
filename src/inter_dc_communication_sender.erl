@@ -198,7 +198,7 @@ wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message
 
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
-    lager:info("timeout in wait for ack"),
+    lager:error("timeout in wait for ack"),
     {next_state,stop_error,State,0}.
 
 stop(timeout, State=#state{socket=Socket}) ->

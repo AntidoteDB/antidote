@@ -294,10 +294,7 @@ get_snapshot_time(ClientClock, externalTransaction) ->
 %% locally are already safe to read because it means the safe clock
 %% was already updated somewhere in this DC
 
-%% !!!!! Still need a way to be sure advance the safe_time if
-%% not using meta-data !!!!
 get_snapshot_time(ClientClock, localTransaction) ->
-    lager:info("in get ss time"),
     Now = clocksi_vnode:now_milisec(erlang:now()),
     case vectorclock:update_safe_vector_local(ClientClock) of
 	{ok, VecSnapshotTime} ->

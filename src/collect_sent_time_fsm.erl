@@ -143,5 +143,5 @@ terminate(_Reason, _SN) ->
 %% Helper function
 -spec get_atom(DcId :: term())
 	      -> atom().
-get_atom({DcAddr, _Port}) ->
-    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(DcAddr)).
+get_atom({DcAddr, Port}) ->
+    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(DcAddr) ++ integer_to_list(Port)).

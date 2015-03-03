@@ -23,6 +23,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
         terminate/2, code_change/3]).
 
+
+%%-define(META_PREFIX_DC, {dcid,port}).
+
 -record(state, {
 	  dcs,
 	  dcs_read,
@@ -31,6 +34,7 @@
 	  port_read,
 	  port_safe_send
     }).
+
 
 %% ===================================================================
 %% Public API
@@ -49,6 +53,7 @@ get_dcs() ->
     gen_server:call(?MODULE, get_dcs, infinity).
 
 add_dc(NewDC) ->
+%%    riak_core_metadata:put(?META_PREFIX_DC,dcList),
     gen_server:call(?MODULE, {add_dc, NewDC}, infinity).
 
 add_list_dcs(DCs) ->

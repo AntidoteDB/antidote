@@ -72,26 +72,24 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             Transaction = queue:get(DcQ),
             {_TxId, CommitTime, VecSnapshotTime, _Ops} = Transaction,
 
-	    %% Tyler: Not sure should set the sender DC time to 0?
+	    %% Tyler: Sets the time of the sending DC to 0 because
+	    %% ops are recieved in order by partition
             SnapshotTime = vectorclock:set_clock_of_dc(
                              Dc, 0, VecSnapshotTime),
             LocalDc = dc_utilities:get_my_dc_id(),
             {Dc, Ts} = CommitTime,
             %% Check for dependency of operations and write to log
 	    %% Gets safe_clock from the partition (instead of partition clock)
-            {ok, LC} = vectorclock:get_clock(Partition),
+            {ok, LC} = vectorclock:get_safe_time(Partition),
 	    %% Sets the time of the local DC in the safe clock to the current time,
-	    %% and the time of sending DC to 0
-            Localclock = vectorclock:set_clock_of_dc(
-                           Dc, 0,
-                           vectorclock:set_clock_of_dc(
-                             LocalDc, now_millisec(erlang:now()), LC)),
+            LocalSafeClock = vectorclock:set_clock_of_dc(
+			       LocalDc, now_millisec(erlang:now()), LC),
 	    %% It assumes it is a duplicate just if has a smaller CTS?
 	    %% Maybe should keep a CTS per partition?
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
                 {ok, CTS} ->
                     if Ts >= CTS ->
-                            check_and_update(SnapshotTime, Localclock,
+                            check_and_update(SnapshotTime, LocalSafeClock,
                                              Transaction,
                                              Dc, DcQ, Ts, StateData ) ;
                        true ->
@@ -103,7 +101,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                             NewState
                     end;
                 _ ->
-                    check_and_update(SnapshotTime, Localclock, Transaction,
+                    check_and_update(SnapshotTime, LocalSafeClock, Transaction,
                                      Dc, DcQ, Ts, StateData)
 
             end;
@@ -155,7 +153,6 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                                    Key = DownOp#clocksi_payload.key,
                                    ok = materializer_vnode:update_cache(Key, DownOp)
                            end, DownOps),
-            lager:info("Update from remote DC applied: ~p",[Transaction]),
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
