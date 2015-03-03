@@ -34,7 +34,7 @@ Using Antidote
 1. An unix-based OS.
 2. Erlang R16B02 
 
-## Get an Erlang
+## Erlang R16B02
 
 I strongly recommend you get R16B02 from
 <http://www.erlang.org/download.html> It is best to do a source
