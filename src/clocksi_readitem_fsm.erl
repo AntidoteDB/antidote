@@ -93,6 +93,7 @@ waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
     LocalClock = get_stable_time(Key),
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
+    lager:info("waiting1, local_time: ~p and snapshot_time: ~p", [LocalClock, SnapshotTime]),
     case LocalClock > SnapshotTime of
         false ->
             {next_state, waiting1, SDO, 1};
@@ -109,15 +110,19 @@ return(timeout, SD0=#state{key=Key,
                            tx_coordinator=Coordinator,
                            transaction=Transaction,
                            type=Type,
+                           vnode=IndexNode,
                            updates=Updates}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
         {ok, Snapshot} ->
-            Updates2=filter_updates_per_key(Updates, Key),
-            Snapshot2=clocksi_materializer:materialize_eager
-                        (Type, Snapshot, Updates2),
-            Reply={ok, Snapshot2};
+            case generate_downstream_operations(Updates, Transaction, IndexNode, Key, []) of
+                {ok, Updates2} ->
+                    Snapshot2=clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+                    Reply = {ok, Snapshot2};
+                {error, Error} ->
+                    Reply={error, Error}
+            end;
         {error, Reason} ->
             Reply={error, Reason}
     end,
@@ -142,19 +147,16 @@ terminate(_Reason, _SN, _SD) ->
 
 %% Internal functions
 
-filter_updates_per_key(Updates, Key) ->
-    int_filter_updates_key(Updates, Key, []).
+generate_downstream_operations([], _Txn, _IndexNode, _Key, DownOps) ->
+    {ok, DownOps};
 
-int_filter_updates_key([], _Key, Updates2) ->
-    Updates2;
-
-int_filter_updates_key([Next|Rest], Key, Updates2) ->
-    {_, {KeyPrime, _Type, Op}} = Next,
-    case KeyPrime==Key of
-        true ->
-            int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
-        false ->
-            int_filter_updates_key(Rest, Key, Updates2)
+generate_downstream_operations([{Type, Param}|Rest], Txn, IndexNode, Key, DownOps0) ->
+    case clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param, DownOps0) of
+        {ok, DownstreamRecord} ->
+            generate_downstream_operations(Rest, Txn, IndexNode, Key, DownOps0 ++ [DownstreamRecord]);
+        {error, Reason} ->
+            lager:error("Error when generating downstream operation. Reason ~p",[Reason]),
+            {error, Reason}
     end.
 
 get_stable_time(Key) ->

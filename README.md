@@ -32,7 +32,52 @@ Using Antidote
 -----------------
 ### Prerequisites ###
 1. An unix-based OS.
-2. Erlang R16B02 (read https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang).
+2. Erlang R16B02 
+
+## Erlang R16B02
+
+I strongly recommend you get R16B02 from
+<http://www.erlang.org/download.html> It is best to do a source
+install (IMO). Grab the src tar, unzip it, have a look at the
+`install.md`, and follow the instructions. If your on a Linux, then it
+should be as simple as
+
+    ./configure --prefix=$HOME/erlang-R16B02 --disable-hipe --without-odbc
+
+
+If on OS X then you'll also need
+
+    ./configure --prefix=$HOME/erlang-R16B02 --enable-darwin-64bit --disable-hipe --without-odbc
+
+If `configure` complains about anything other than ODBC or FOP being
+missing, then check you have the build requirements (it needs ncurses
+dev, ssl dev, g++, things like that.) On OS X running:
+
+    xcode-select --install
+    
+Solved all my dependancy issues.
+
+After configure, just
+
+    make
+    make install
+
+At this point I usually create a link
+
+    ln -s ~/erlang-R16B02 erlang
+
+And add `~/erlang/bin` to my path.
+
+If you now run `erl` you should see something like:-
+
+     15:34:39:db $ erl
+     Erlang R16B02 (erts-5.10.3) [source] [64-bit] [smp:4:4] [async-threads:10] [kernel-poll:false]
+
+    Eshell V5.10.3  (abort with ^G)
+    1>
+
+And you have an Erlang! Hit `Ctrl-g` then type `q` to quit the Erlang shell. 
+
 	
 	NOTE: use this Erlang version in order not to have problems.
 	
