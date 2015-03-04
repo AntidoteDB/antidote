@@ -147,9 +147,11 @@ execute_op({Op_type, Args}, Sender,
             
         batch_read ->
         	{ReadBuffer, ReadPartitions}=Args,
-        	lists:foreach(fun(Partition) ->
-                            Reads = dict:fetch(Partition, ReadBuffer),
-                            clocksi_vnode:batch_read(Partition, Transaction, dict:to_list(Reads))
+        	lists:foreach(fun(Vnode) ->
+                            Reads = dict:fetch(Vnode, ReadBuffer),
+                            %TxId = Transaction#transaction.txn_id,
+                            %lager:info("ReadstoPerform = ~p ~n Vnode ~p ~n Transaction ~p ~n",[dict:to_list(Reads), Vnode, TxId]),
+                            clocksi_vnode:batch_read(Vnode, Transaction, dict:to_list(Reads))
                           end, ReadPartitions),
             {next_state, receive_batch_read, SD0#state{num_to_ack=length(ReadPartitions)}};
         
@@ -175,14 +177,20 @@ execute_op({Op_type, Args}, Sender,
 %%      and gathers all the results for forwarding them.
 receive_batch_read({batch_read_result, PartitionReadSet},
                  S0=#state{num_to_ack=NumToAck,
-                           from=From, batch_read_set=BatchReadSet}) ->
+                           batch_read_set=BatchReadSet}) ->
     BatchReadSet1 = lists:append(BatchReadSet, PartitionReadSet),
     case NumToAck of 1 ->            
-			gen_fsm:reply(From, {ok, BatchReadSet1});
+			{reply, {ok, BatchReadSet1}, execute_op, S0};
+			%gen_fsm:reply(From, {ok, BatchReadSet1}),
+			%{next_state, execute_op, S0};
         _ ->
             {next_state, receive_batch_read,
              S0#state{num_to_ack= NumToAck-1, batch_read_set=BatchReadSet1}}
-    end.
+    end;
+    
+    
+receive_batch_read({error, _Reason}, S0) ->
+    {next_state, abort, S0=#state{state=batch_read_error}, 0}.
     
       
 

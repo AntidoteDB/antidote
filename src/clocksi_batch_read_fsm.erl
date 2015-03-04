@@ -109,8 +109,8 @@ return(timeout, SD0=#state{tx_coordinator=Coordinator,
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:multi_read(Vnode, Reads, VecSnapshotTime, TxId) of
-        {ok, Snapshots} ->
-			Reply = {ok, Snapshots};
+        {ok, PartitionReadSet} ->
+			Reply = {batch_read_result, PartitionReadSet};
         {error, Reason} ->
             Reply={error, Reason}
     end,

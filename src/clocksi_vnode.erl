@@ -95,8 +95,8 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     
 %% @doc Sends a batch_read request to each node in ListOfNodes, for a list of keys in the 
 %% dictionary Reads.
-batch_read(ListofNodes, TxId, Reads) ->
-	riak_core_vnode_master:sync_command(ListofNodes,
+batch_read(Vnode, TxId, Reads) ->
+	riak_core_vnode_master:command(Vnode,
                                    {batch_read, TxId, Reads},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
@@ -170,6 +170,7 @@ handle_command({read_data_item, Txn, Key, Type, Updates}, Sender,
 handle_command({batch_read, TxId, Reads}, Sender,
                State = #state{partition=Partition}) ->
     Vnode = {Partition, node()},
+    lager:info("starting the batch_read_fsm with Vnode=~p~n,Sender=~p~n,txid=~p~n,Reads=~p~n", [Vnode, Sender, TxId, Reads]),
     {ok, _Pid} = clocksi_batch_read_fsm:start_link(Vnode, Sender, TxId, Reads),
     {noreply, State};    
     

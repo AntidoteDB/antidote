@@ -68,9 +68,9 @@ read(Key, Type, SnapshotTime, TxId) ->
                                         materializer_vnode_master).
 
 %% @doc Reads multiple keys by calling multiple times the read function above.                                   
-multi_read(Reads, SnapshotTime, TxId, Vnode) ->
+multi_read(Vnode, Reads, VecSnapshotTime, TxId) ->
 	riak_core_vnode_master:sync_command(Vnode,
-                                        {multi_read, Reads, SnapshotTime, TxId},
+                                        {multi_read, Reads, VecSnapshotTime, TxId},
                                         materializer_vnode_master).
 
 
@@ -98,7 +98,7 @@ handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender,
     
 handle_command({multi_read, Reads, SnapshotTime, TxId}, _Sender,
                State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
-    Reply=internal_multi_read(Reads, SnapshotTime, TxId, OpsCache, SnapshotCache),    
+    Reply= internal_multi_read(Reads, SnapshotTime, TxId, OpsCache, SnapshotCache),    
 	%riak_core_vnode:reply(Sender, Reply);
 	{reply, Reply, State};
 	
@@ -168,7 +168,8 @@ internal_multi_read(ReadResults, [], _SnapshotTime, _TxId, _OpsCache, _SnapshotC
 	{ok, ReadResults};
 internal_multi_read(ReadResults, [H|T], SnapshotTime, TxId, OpsCache, SnapshotCache)->
     case H of
-        {Key, Type} ->
+        {Key, [Type]} ->
+			lager:info("H is: ~p~n", [H]),
             {ok, Value} = internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache),
         	internal_multi_read(lists:append(ReadResults, Value), T, SnapshotTime, TxId, OpsCache, SnapshotCache);
         WrongFormat ->

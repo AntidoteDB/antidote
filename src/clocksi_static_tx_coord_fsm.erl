@@ -127,7 +127,7 @@ execute_batch_ops(timeout, SD=#state{from = From,
 							end
 						end
                 end,
-    {ReadBuffer, ReadPartitions} = lists:foldl(ExecuteOp, {dict:new(), []}, Operations), 
+    {ReadPartitions, ReadBuffer} = lists:foldl(ExecuteOp, {dict:new(), []}, Operations), 
     case dict:size(ReadBuffer) == 0 of
     false ->			
 		case gen_fsm:sync_send_event(TxCoordPid, {batch_read, {ReadBuffer, ReadPartitions}}, infinity) of
@@ -136,7 +136,8 @@ execute_batch_ops(timeout, SD=#state{from = From,
 				{error, Reason} ->
 					From ! {error, Reason},
 					{stop, normal, SD};
-				_ ->
+				Other ->
+					lager:info("received reply ~p ~n ", [Other]),
 					case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
 						{ok, {TxId, CommitTime}} ->
 							From ! {ok, {TxId, ReadSet, CommitTime}},
