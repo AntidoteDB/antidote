@@ -63,21 +63,17 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
-                                             partition = Partition}) ->
+                                             partition = _Partition}) ->
     case queue:is_empty(DcQ) of
         false ->
             Transaction = queue:get(DcQ),
             {_TxId, CommitTime, VecSnapshotTime, _Ops} = Transaction,
-            SnapshotTime = vectorclock:set_clock_of_dc(
-                             Dc, 0, VecSnapshotTime),
-            LocalDc = dc_utilities:get_my_dc_id(),
+            SnapshotTime = VecSnapshotTime,
+            %LocalDc = dc_utilities:get_my_dc_id(),
             {Dc, Ts} = CommitTime,
             %% Check for dependency of operations and write to log
-            {ok, LC} = vectorclock:get_clock(Partition),
-            Localclock = vectorclock:set_clock_of_dc(
-                           Dc, 0,
-                           vectorclock:set_clock_of_dc(
-                             LocalDc, now_millisec(erlang:now()), LC)),
+            {ok, GST} = vectorclock:get_stable_snapshot(),
+            Localclock=GST,
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
                 {ok, CTS} ->
                     if Ts >= CTS ->
@@ -166,8 +162,7 @@ finish_update_dc(Dc, DcQ, Cts,
 
 %% Checks depV against the committed timestamps
 check_dep(DepV, Localclock) ->
-    Result = vectorclock:ge(Localclock, DepV),
-    Result.
+    Localclock >= DepV.
 
 %%Set a new value to the key.
 set(Key, Value, Orddict) ->
@@ -184,6 +179,3 @@ enqueue(Dc, Data, RecQ) ->
             Q2 = queue:in(Data,Q),
             set(Dc, Q2, RecQ)
     end.
-
-now_millisec({MegaSecs, Secs, MicroSecs}) ->
-    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

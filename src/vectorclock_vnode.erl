@@ -50,10 +50,11 @@
 -define(META_PREFIX, {partition,vectorclock}).
 
 -record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
-                      partition_vectorclock :: vectorclock:vectorclock(),
-                      stable_snapshot :: vectorclock:vectorclock(),
+                      partition_vectorclock :: vectorclock:vectorclock(), %% VV_n^m
+                      stable_snapshot :: non_neg_integer(), %% GST_n^m
                       partition,
-                      num_p}).
+                      num_p,
+                      lstnm :: non_neg_integer()}).
 
 %% API
 start_vnode(I) ->
@@ -65,8 +66,9 @@ init([Partition]) ->
     riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
     {ok, #currentclock{last_received_clock=dict:new(),
                        partition_vectorclock=NewPClock,
-                       stable_snapshot = dict:new(),
+                       stable_snapshot = 0,
                        partition = Partition,
+                       lstnm=0,
                        num_p=0}}.
 
 %% @doc
@@ -81,8 +83,9 @@ handle_command(get_stable_snapshot, _Sender,
 %% @doc : calculate stable snapshot from min of vectorclock (each entry)
 %% from all partitions
 handle_command(calculate_stable_snapshot, _Sender,
-               State=#currentclock{partition_vectorclock = Clock,
-                                   num_p=NumP}) ->
+               State=#currentclock{partition_vectorclock = _Clock,
+                                   num_p=NumP,
+                                   lstnm = LSTnm}) ->
     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
     NumPartitions = case NumP of
                         0 ->
@@ -91,18 +94,18 @@ handle_command(calculate_stable_snapshot, _Sender,
                             _ -> NumP
                           end,
     NumMetadata = length(riak_core_metadata:to_list(?META_PREFIX)),
-    Stable_snapshot =
+    Stable_snapshot =  %% Calculates GST_n^m
         %% If metadata doesnot contain clock of all partitions
         %% donot calculate stable snapshot
         case NumPartitions == NumMetadata of
             true ->
                 riak_core_metadata:fold(
                   fun({_Key, V}, A) ->
-                          find_min(V,{Clock,A})
+                          min(V,A)
                   end,
-                  Clock, ?META_PREFIX);
+                  LSTnm, ?META_PREFIX);
             false ->
-                dict:new()
+                0 %% Stable Time GST_n^m is a scalar
         end,
     {reply, {ok, Stable_snapshot},
      State#currentclock{stable_snapshot=Stable_snapshot,
@@ -122,13 +125,18 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
             case LClock < Timestamp of
                 true ->
                     NewLClock = dict:store(DcId, Timestamp, LastClock),
-                    NewPClock = dict:store(DcId, Timestamp-1, VClock),
+                    NewPClock = dict:store(DcId, Timestamp-1, VClock), 
+                    %% Calculate local stable time LST_n^m
+                    LSTnm = dict:fold(fun(_K,Time,Min) ->
+                                              min(Time,Min)
+                                      end, Timestamp, NewPClock),
                     %% Broadcast new pvv to other partition
                     try
-                        riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+                        riak_core_metadata:put(?META_PREFIX, Partition, LSTnm),
                         {reply, {ok, NewPClock},
                          State#currentclock{last_received_clock=NewLClock,
-                                        partition_vectorclock=NewPClock}
+                                            partition_vectorclock=NewPClock,
+                                            lstnm = LSTnm}
                         }
                     catch
                         _:Reason ->
@@ -141,11 +149,16 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
         error ->
             NewLClock = dict:store(DcId, Timestamp, LastClock),
             NewPClock = dict:store(DcId, Timestamp - 1, VClock),
+            %% Calculate local stable time LST_n^m
+            LSTnm = dict:fold(fun(_K,Time,Min) ->
+                                      min(Time,Min)
+                              end, Timestamp, NewPClock),
             try
-                riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+                riak_core_metadata:put(?META_PREFIX, Partition, LSTnm),
                 {reply, {ok, NewPClock},
                  State#currentclock{last_received_clock=NewLClock,
-                                    partition_vectorclock=NewPClock}
+                                    partition_vectorclock=NewPClock,
+                                    lstnm = LSTnm}
                 }
             catch
                 _:Reason ->
@@ -189,12 +202,3 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, _State) ->
     ok.
-
-find_min([VClock], {PVV, StableClock}) ->
-    dict:fold(fun(Dc, _, Snapshot) ->
-                      {ok, Clock1} = vectorclock:get_clock_of_dc(Dc, VClock),
-                      {ok, Clock2} = vectorclock:get_clock_of_dc(Dc, Snapshot),
-                      dict:store(Dc, min(Clock1, Clock2), Snapshot)
-               end,
-               StableClock,
-               PVV).

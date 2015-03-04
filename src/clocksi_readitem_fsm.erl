@@ -35,8 +35,7 @@
          terminate/3]).
 
 %% States
--export([check_clock/2,
-         waiting1/2,
+-export([
          return/2]).
 
 %% Spawn
@@ -70,39 +69,7 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
                 transaction=Transaction,
                 updates=Updates,
                 pending_txs=[]},
-    {ok, check_clock, SD, 0}.
-
-%% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behind, it sleeps the fms until the clock
-%%      catches up. CLOCK-SI: clock skew.
-%%
-check_clock(timeout, SD0=#state{transaction=Transaction}) ->
-    TxId = Transaction#transaction.txn_id,
-    T_TS = TxId#tx_id.snapshot_time,
-    Time = clocksi_vnode:now_microsec(erlang:now()),
-    case T_TS > Time of
-        true ->
-	    SleepMiliSec = (T_TS - Time) div 1000 + 1,
-            timer:sleep(SleepMiliSec),
-            {next_state, waiting1, SD0, 0};
-        false ->
-            {next_state, waiting1, SD0, 0}
-    end.
-
-waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
-    LocalClock = get_stable_time(Key),
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
-    lager:info("waiting1, local_time: ~p and snapshot_time: ~p", [LocalClock, SnapshotTime]),
-    case LocalClock > SnapshotTime of
-        false ->
-            {next_state, waiting1, SDO, 1};
-        true ->
-            {next_state, return, SDO, 0}
-    end;
-
-waiting1(_SomeMessage, SDO) ->
-    {next_state, waiting1, SDO,0}.
+    {ok, return, SD, 0}.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
@@ -112,9 +79,10 @@ return(timeout, SD0=#state{key=Key,
                            type=Type,
                            vnode=IndexNode,
                            updates=Updates}) ->
-    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+    Cgst = Transaction#transaction.snapshot_time,
+    GSTnm = max(Cgst, Transaction#transaction.vec_snapshot_time),
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
+    case materializer_vnode:read(Key, Type, GSTnm, TxId) of
         {ok, Snapshot} ->
             case generate_downstream_operations(Updates, Transaction, IndexNode, Key, []) of
                 {ok, Updates2} ->
@@ -157,23 +125,4 @@ generate_downstream_operations([{Type, Param}|Rest], Txn, IndexNode, Key, DownOp
         {error, Reason} ->
             lager:error("Error when generating downstream operation. Reason ~p",[Reason]),
             {error, Reason}
-    end.
-
-get_stable_time(Key) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    Node = hd(Preflist),
-    case riak_core_vnode_master:sync_command(
-           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
-        {ok, Active_txns} ->
-            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
-                                case Min_time > Snapshot_time of
-                                    true ->
-                                        Snapshot_time;
-                                    false ->
-                                        Min_time
-                                end
-                        end,
-                        clocksi_vnode:now_microsec(erlang:now()),
-                        Active_txns);
-        _ -> 0
     end.

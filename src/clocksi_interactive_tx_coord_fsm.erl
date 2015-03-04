@@ -72,7 +72,8 @@ start_link(From, Clientclock) ->
     gen_fsm:start_link(?MODULE, [From, Clientclock], []).
 
 start_link(From) ->
-    gen_fsm:start_link(?MODULE, [From, ignore], []).
+    Now = clocksi_vnode:now_microsec(erlang:now()), %%If client doesnot provide dependency, add current time
+    gen_fsm:start_link(?MODULE, [From, Now], []).
 
 finish_op(From, Key,Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -89,11 +90,10 @@ init([From, ClientClock]) ->
         _ ->
             get_snapshot_time(ClientClock)
     end,
-    DcId = dc_utilities:get_my_dc_id(),
-    {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
-    TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
-    Transaction = #transaction{snapshot_time=LocalClock,
-                               vec_snapshot_time=SnapshotTime,
+    Now = clocksi_vnode:now_microsec(erlang:now()),
+    TransactionId = #tx_id{snapshot_time=Now, server_pid=self()},
+    Transaction = #transaction{snapshot_time=ClientClock, %% Client provided DT
+                               vec_snapshot_time=SnapshotTime,  %% GST dependency time
                                txn_id=TransactionId},
     SD = #state{
             transaction = Transaction,
@@ -314,9 +314,9 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
         TxId = Transaction#transaction.txn_id,
         Reply = case TxState of
             committed ->
-                DcId = dc_utilities:get_my_dc_id(),
-                CausalClock = vectorclock:set_clock_of_dc(
-                  DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                %%DcId = dc_utilities:get_my_dc_id(),
+                CausalClock = CommitTime, %% vectorclock:set_clock_of_dc(
+                  %%DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                 {ok, {TxId, CausalClock}};
             aborted->
                 {aborted, TxId};
@@ -352,39 +352,21 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
-                       -> {ok, vectorclock:vectorclock()} | {error,term()}.
-get_snapshot_time(ClientClock) ->
-    wait_for_clock(ClientClock).
-
--spec get_snapshot_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
-get_snapshot_time() ->
-    Now = clocksi_vnode:now_microsec(erlang:now()),
-    case vectorclock:get_stable_snapshot() of
-        {ok, VecSnapshotTime} ->
-            DcId = dc_utilities:get_my_dc_id(),
-            SnapshotTime = dict:update(DcId,
-                                       fun (_Old) -> Now end,
-                                       Now, VecSnapshotTime),
-            {ok, SnapshotTime};
+-spec get_snapshot_time(ClientClock :: non_neg_integer())
+                       -> {ok, non_neg_integer()} | {error,term()}.
+get_snapshot_time(_ClientClock) ->
+    case get_snapshot_time() of
+        {ok, Time} ->
+            {ok, Time};
         {error, Reason} ->
             {error, Reason}
     end.
 
--spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-                           {ok, vectorclock:vectorclock()} | {error, term()}.
-wait_for_clock(Clock) ->
-   case get_snapshot_time() of
-       {ok, VecSnapshotTime} ->
-           case vectorclock:ge(VecSnapshotTime, Clock) of
-               true ->
-                   %% No need to wait
-                   {ok, VecSnapshotTime};
-               false ->
-                   %% wait for snapshot time to catch up with Client Clock
-                   timer:sleep(10),
-                   wait_for_clock(Clock)
-           end;
-       {error, Reason} ->
-          {error, Reason}
-  end.
+-spec get_snapshot_time() -> {ok, non_neg_integer()} | {error, term()}.
+get_snapshot_time() ->
+    case vectorclock:get_stable_snapshot() of
+        {ok, SnapshotTime} ->
+            {ok, SnapshotTime};
+        {error, Reason} ->
+            {error, Reason}
+    end.

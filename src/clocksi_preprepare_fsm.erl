@@ -71,13 +71,12 @@ init([Vnode, Coordinator, Transaction, Updates, TxType]) ->
     {ok, get_prepare_time, SD, 0}.
 
 get_prepare_time(timeout, SD0=#state{transaction=Transaction}) ->
-    Vclock = Transaction#transaction.vec_snapshot_time,
-    DcId = dc_utilities:get_my_dc_id(),
-    {ok, T_TS} = vectorclock:get_clock_of_dc(DcId, Vclock),
+    _Vclock = Transaction#transaction.vec_snapshot_time,
+    DT = Transaction#transaction.snapshot_time,
     Time = now_milisec(erlang:now()),
-    case T_TS > Time of
+    case DT > Time of
         true ->
-            timer:sleep((T_TS - Time) div 1000 + 1),
+            timer:sleep((DT - Time) div 1000 + 1),
             PrepareTime = now_milisec(erlang:now());
         false ->
             PrepareTime = Time

@@ -75,7 +75,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
                               #log_record{op_type=noop, op_payload = Partition}
                          }],
             DcId = dc_utilities:get_my_dc_id(),
-            {ok, Clock} = vectorclock:get_clock(Partition),
+            {ok, Clock} = vectorclock:get_stable_snapshot(),
             Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
             TxId = 0,
             %% Receiving DC treats hearbeat like a transaction

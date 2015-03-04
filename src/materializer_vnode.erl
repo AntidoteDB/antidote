@@ -255,9 +255,15 @@ filter_ops(_, _Acc) ->
 %%      Outptut: true or false
 -spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
                           SnapshotTime::vectorclock:vectorclock()) -> boolean().
-belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
-	{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
-	CommitTime =< Ts.
+belongs_to_snapshot({_Dc, CommitTime}, SnapshotTime) ->
+    %%case Dc == MyDcId of
+      %%  true ->  
+            %% Always take the latest operations committed in this DC
+       %%     true;
+       %% false ->
+            %% Updates from other DC should be taken only if it is in GSTnm
+            CommitTime =< SnapshotTime.
+    %%end.
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
@@ -332,12 +338,12 @@ filter_ops_test() ->
 belongs_to_snapshot_test()->
 	CommitTime1= 1,
 	CommitTime2= 1,
-	SnapshotClockDC1 = 5,
-	SnapshotClockDC2 = 5,
+	_SnapshotClockDC1 = 5,
+	_SnapshotClockDC2 = 5,
 	CommitTime3= 10,
 	CommitTime4= 10,
 
-	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
+	SnapshotVC= 5 ,%vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
 	?assertEqual(true, belongs_to_snapshot({1, CommitTime1}, SnapshotVC)),
 	?assertEqual(true, belongs_to_snapshot({2, CommitTime2}, SnapshotVC)),
 	?assertEqual(false, belongs_to_snapshot({1, CommitTime3}, SnapshotVC)),
@@ -363,7 +369,7 @@ seq_write_test() ->
                                     },
     op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache),
     io:format("after making the first write: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
-    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}]),ignore,  OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(ignore, Key, Type, 16,ignore,  OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
     io:format("after making the first read: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
     %% Insert second increment
@@ -376,12 +382,12 @@ seq_write_test() ->
 
     op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache),
     io:format("after making the second write: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
-    {ok, Res2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,21}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res2} = internal_read(ignore, Key, Type, 21, ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
     io:format("after making the second read: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}]), ignore, OpsCache, SnapshotCache),
+    {ok, ReadOld} = internal_read(ignore, Key, Type, 16, ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadOld)).
     
 
@@ -404,23 +410,23 @@ multipledc_write_test() ->
                                      txid = 1
                                     },
     op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache),
-    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(ignore, Key, Type, 16, ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
 
     %% Insert second increment in other DC
     {ok,Op2} = Type:update(increment, b, Res1),
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
                       op_param = {merge, Op2},
-                      snapshot_time=vectorclock:from_list([{DC2,16}, {DC1,16}]),
+                      snapshot_time=16,
                       commit_time = {DC2,20},
                       txid=2},
 
     op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache),
-    {ok, Res2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}, {DC2,21}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res2} = internal_read(ignore, Key, Type, 21, ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}, {DC2,16}]), ignore, OpsCache, SnapshotCache),
+    {ok, ReadOld} = internal_read(ignore, Key, Type, 16, ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadOld)).
 
 concurrent_write_test() ->
@@ -443,7 +449,7 @@ concurrent_write_test() ->
                                     },
     op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache),
     io:format("after inserting the first op: Opscache= ~p ~n SnapCache= ~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
-    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC2,1}, {DC1,0}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(ignore, Key, Type, 1 , ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
     io:format("after making the first read: Opscache= ~p ~n SnapCache= ~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
 
@@ -460,14 +466,14 @@ concurrent_write_test() ->
     io:format("after inserting the second op: Opscache= ~p ~n SnapCache= ~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
 									  
 	%% Read different snapshots
-    {ok, ReadDC1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,1}, {DC2, 0}]), ignore, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(ReadDC1)),
-        io:format("Result1 = ~p", [ReadDC1]),
-    {ok, ReadDC2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,0},{DC2,1}]), ignore, OpsCache, SnapshotCache),
-    io:format("Result2 = ~p", [ReadDC2]),
-    ?assertEqual(1, Type:value(ReadDC2)),
+    %{ok, ReadDC1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,1}, {DC2, 0}]), ignore, OpsCache, SnapshotCache),
+    %?assertEqual(1, Type:value(ReadDC1)),
+    %io:format("Result1 = ~p", [ReadDC1]),
+    %{ok, ReadDC2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,0},{DC2,1}]), ignore, OpsCache, SnapshotCache),
+    %io:format("Result2 = ~p", [ReadDC2]),
+    %?assertEqual(1, Type:value(ReadDC2)),
     
     %% Read snapshot including both increments
-    {ok, Res2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC2,1}, {DC1,1}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res2} = internal_read(ignore, Key, Type, 1, ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)).
 -endif.

@@ -29,6 +29,18 @@ confirm() ->
     atomicity_test(Cluster1,Cluster2),
     pass.
 
+wait_for_gst(Node, Time) ->
+   {ok, S} = rpc:call(Node, vectorclock, get_stable_snapshot,[]),
+    case Time =< S of
+        true ->
+            lager:info("CT ~p, GST ~p",[Time, S]),
+            ok;
+        false ->
+            timer:sleep(1000),
+            wait_for_gst(Node, Time)
+    end.
+    
+
 simple_replication_test(Cluster1, Cluster2) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
@@ -48,7 +60,7 @@ simple_replication_test(Cluster1, Cluster2) ->
     Result = rpc:call(Node1, antidote, read,
                       [key1, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, Result),
-
+    ok = wait_for_gst(Node2,CommitTime),
     ReadResult = rpc:call(Node2,
                           antidote, clocksi_read,
                           [CommitTime, key1, riak_dt_gcounter]),
@@ -72,6 +84,7 @@ multiple_keys_test(Cluster1, Cluster2) ->
 
     Result1 = multiple_reads(Node1, 1, 10, 10,CommitTime),
     ?assertEqual(length(Result1), 0),
+    ok = wait_for_gst(Node2,CommitTime),
     Result2 = multiple_reads(Node2, 1, 10, 10, CommitTime),
     ?assertEqual(length(Result2), 0),
     lager:info("Multiple key read-write test passed!"),
@@ -96,7 +109,7 @@ multiple_reads(Node, Start, End, Total, CommitTime) ->
                     {error, _} ->
                         [{N, error} | Acc];
                     {ok, {_,[Value],_}} ->
-                        ?assertEqual(Value, Total),
+                        ?assertEqual(Total,Value),
                         Acc
                 end
         end,
@@ -120,6 +133,7 @@ causality_test(Cluster1, Cluster2) ->
     ?assertMatch({ok, _}, AddResult2),
     {ok,{_,_,CommitTime}}=AddResult2,
 
+    ok = wait_for_gst(Node2,CommitTime),
     %% Remove one element from D2C
     RemoveResult = rpc:call(Node2,
                             antidote, clocksi_bulk_update,
@@ -134,7 +148,6 @@ causality_test(Cluster1, Cluster2) ->
     pass.
 
 %% This tests checks reads are atomic when replicated to other DCs
-%% TODO: need more deterministic test
 atomicity_test(Cluster1, Cluster2) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
