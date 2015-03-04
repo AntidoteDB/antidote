@@ -32,7 +32,7 @@ receive_message(timeout, State=#state{socket=Socket}) ->
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
             ReplyValue = case binary_to_term(Message) of
-			     {read_external, {{Key,Type},Transaction}} ->
+			     {read_external, {Key,Type,Transaction}} ->
 				 Preflist = log_utilities:get_preflist_from_key(Key),
 				 IndexNode = hd(Preflist),
 				 %% Is it safe to do a read like this from an external transaction?

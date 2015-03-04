@@ -195,7 +195,7 @@ handle_command({update_safe_vector_local, Vector}, _Sender,
     
     NewSafeClock = dict:fold(fun(DcId,Timestamp,NewDict) ->
 				     case dict:find(DcId, NewDict) of
-					 true ->
+					 {ok, _Val} ->
 					     dict:update(DcId, fun(OldTimestamp) ->
 								       case OldTimestamp < Timestamp of
 									   true ->
@@ -210,7 +210,7 @@ handle_command({update_safe_vector_local, Vector}, _Sender,
 									       OldTimestamp
 								       end
 							       end, NewDict);
-					 false -> 
+					 error -> 
 					     try
 						 riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
 					     catch

@@ -96,7 +96,7 @@ start_store_update(Transaction) ->
 	    {SeparatedTransactions, FinalOps} = lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->
 							case Op1#operation.payload#log_record.op_payload of
 							    {K1,_,_} ->
-								case clocksi_transaction_reader:is_replicated_here(K1) of
+								case replication_check:is_replicated_here(K1) of
 								    true ->
 									NewDictNodeKey = dict:append(hd(log_utilities:get_preflist_from_key(K1)),
 												     Op1,DictNodeKey);

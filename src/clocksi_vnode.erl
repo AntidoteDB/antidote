@@ -162,8 +162,12 @@ handle_command({read_data_item, Txn, Key, Type, IsLocal}, Sender,
                #state{write_set=WriteSet, partition=Partition}=State) ->
     Vnode = {Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
+
+    %% here check if replicated locally
     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
-                                                 Key, Type, Updates, IsLocal),
+						 Key, Type, Updates, IsLocal,
+						 replication_check:is_replicated_here(Key)),
+	    
     %% Tyler note: The reason why noreply is sent is because the readitem fsm
     %% will send the reply later using the riak_core_vnode:reply function
     {noreply, State};

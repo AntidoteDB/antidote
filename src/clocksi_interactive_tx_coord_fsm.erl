@@ -82,11 +82,11 @@ finish_op(From, Key,Result) ->
 %% @doc Initialize the state.
 init([From, ClientClock]) ->
     {ok, SnapshotTime} = case ClientClock of
-        ignore ->
-            get_snapshot_time(dict:new(),localTransaction);
-        _ ->
-            get_snapshot_time(ClientClock,localTransaction)
-    end,
+			     ignore ->
+				 get_snapshot_time(dict:new(),localTransaction);
+			     _ ->
+				 get_snapshot_time(ClientClock,localTransaction)
+			 end,
     DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
@@ -304,8 +304,10 @@ get_snapshot_time(ClientClock, localTransaction) ->
 	    %% So should be an older value (that is still consistent)
 	    %% Otw you will cause long waiting when doing external reads
 	    %% because they will have to wait until this time is reached
-	    {ok, dict:store(DcId, Now, VecSnapshotTime)};
+	    Clock = dict:store(DcId, Now, VecSnapshotTime),
+	    {ok, Clock};
 	{error, Reason} ->
+	    lager:info("Got an error ~p", [Reason]),
 	    {error, Reason}
     end.
 

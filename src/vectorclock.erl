@@ -156,7 +156,7 @@ update_safe_vector_local(Partition, Vector) ->
 	    {ok, Clock} ->
 		{ok, Clock};
 	    {error, Reason} ->
-		lager:info("Update safe clock failed ~p", [Reason]),
+		lager:info("Update safe vector failed ~p", [Reason]),
 		{error, Reason}
 	end
     catch

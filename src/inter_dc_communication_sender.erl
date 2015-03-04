@@ -144,7 +144,7 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
 %% ToDo, do this for a list of DCs, instead of just one
     case start_link(
-	   Port, DcAddress, [Key, Type, Transaction], self(), external_read) of
+	   Port, DcAddress, [read_external, {Key, Type, Transaction}], self(), read_external) of
 	{ok, _} ->
 	    receive
 		{done, normal, Reply} ->

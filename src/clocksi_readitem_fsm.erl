@@ -24,7 +24,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/7]).
+-export([start_link/8]).
 
 %% Callbacks
 -export([init/1,
@@ -36,6 +36,7 @@
 
 %% States
 -export([check_clock/2,
+	 send_external_read/2,
          waiting1/2,
          return/2]).
 
@@ -48,15 +49,16 @@
                 vnode,
                 updates,
                 pending_txs,
-		isLocal}).
+		is_local,
+		is_replicated}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, Tx, Key, Type, Updates, IsLocal) ->
+start_link(Vnode, Coordinator, Tx, Key, Type, Updates, IsLocal, IsReplicated) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
-                                 Tx, Key, Type, Updates, IsLocal], []).
+                                 Tx, Key, Type, Updates, IsLocal, IsReplicated], []).
 
 now_milisec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
@@ -65,7 +67,7 @@ now_milisec({MegaSecs, Secs, MicroSecs}) ->
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates, local]) ->
+init([Vnode, Coordinator, Transaction, Key, Type, Updates, local, true]) ->
     SD = #state{vnode=Vnode,
                 type=Type,
                 key=Key,
@@ -73,10 +75,11 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, local]) ->
                 transaction=Transaction,
                 updates=Updates,
                 pending_txs=[],
-		isLocal=true},
+		is_local=true,
+		is_replicated = true},
     {ok, check_clock, SD, 0};
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates, external]) ->
+init([Vnode, Coordinator, Transaction, Key, Type, Updates, local, false]) ->
     SD = #state{vnode=Vnode,
                 type=Type,
                 key=Key,
@@ -84,9 +87,50 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, external]) ->
                 transaction=Transaction,
                 updates=Updates,
                 pending_txs=[],
-		isLocal=false},
+		is_local=true,
+		is_replicated = false},
+    {ok, send_external_read, SD, 0};
+
+
+init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true]) ->
+    SD = #state{vnode=Vnode,
+                type=Type,
+                key=Key,
+                tx_coordinator=Coordinator,
+                transaction=Transaction,
+                updates=Updates,
+                pending_txs=[],
+		is_local=false,
+		is_replicated = true},
     {ok, check_clock, SD, 0}.
 
+
+
+%% helper function
+loop_reads([Dc|T], Type, Key, Transaction) ->
+    case inter_dc_communication_sender:perform_external_read(Dc,Key,Type,Transaction) of
+	{ok, Reply} ->
+	    {ok, Reply};
+	_ ->
+	    loop_reads(T,Type,Key,Transaction)
+    end;
+loop_reads([], _Type, _Key, _Transaction) ->
+    error.
+
+send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction,
+				       updates=Updates,tx_coordinator=Coordinator}) ->
+    case loop_reads(replication_check:get_dc_replicas(Key), Type, Key, Transaction) of
+        {ok, Snapshot} ->
+            Updates2=filter_updates_per_key(Updates, Key),
+            Snapshot2=clocksi_materializer:update_snapshot_eager
+                        (Type, Snapshot, Updates2),
+            Reply = {ok, Snapshot2};
+        error ->
+            Reply={error, failed_read_at_all_dcs}
+    end,
+    riak_core_vnode:reply(Coordinator, Reply),
+    {stop, normal, SD0}.
+    
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behinf, it sleeps the fms until the clock
@@ -94,7 +138,7 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, external]) ->
 %%
 %% For partial-rep, when a read is coming from another DC it also
 %% waits until all the dependencies of that read are satisfied
-check_clock(timeout, SD0=#state{transaction=Transaction,isLocal=IsLocal}) ->
+check_clock(timeout, SD0=#state{transaction=Transaction,is_local=IsLocal}) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = now_milisec(erlang:now()),

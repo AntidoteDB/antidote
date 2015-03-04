@@ -33,9 +33,7 @@
 -export([init/2,
          get_next_transactions/1,
          get_update_ops_from_transaction/1,
-         get_prev_stable_time/1,
-	 get_dc_replicas/1,
-	 is_replicated_here/1]).
+         get_prev_stable_time/1]).
 
 -export_type([transaction/0]).
 
@@ -193,7 +191,7 @@ get_prev_stable_time(Reader) ->
 construct_transaction(Ops) ->
     DCs = lists:foldl(fun(Op, DcSet) ->
 			      sets:union(DcSet,sets:from_list(
-						get_dc_replicas(Op)))
+						replication_check:get_dc_replicas(Op)))
 		      end ,sets:new(), Ops),
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
@@ -208,17 +206,6 @@ read_next_ops(Node, LogId, Last_read_opid) ->
         _ ->
             logging_vnode:read_from(Node, LogId, Last_read_opid)
     end.
-
-%% Need to actually implement this
-%% It should at least check a static function for knowing what
-%% DCs replicate what keys
-%% should return a list of DCs
-get_dc_replicas(_Op) ->
-    {ok, Dcs} = inter_dc_manager:get_dcs(),
-    Dcs.
-
-is_replicated_here(_Op) ->
-    true.
 
 get_ops_of_txn(TxId, PendingOps) ->
     dict:find(TxId, PendingOps).

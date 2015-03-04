@@ -162,7 +162,7 @@ handle_call({start_senders}, _From, State) ->
 
 handle_call({start_recvrs, ComPort, ReadPort}, _From, State) ->
     {ok, _} = antidote_sup:start_recvrs(ComPort,ReadPort),
-    {reply, ok, State};
+    {reply, {ok, {my_ip(),ComPort}}, State#state{port=ComPort,port_read=ReadPort}};
 
 
 
@@ -186,13 +186,8 @@ handle_call({start_recvrs, ComPort, ReadPort}, _From, State) ->
 %%     {reply, ok, State#state{dcs_safe_send=DCs1}};
 
 
-handle_call(set_replication_keys, _From, State) ->
-    %% TODO, this should setup the replication keys
-    {reply, ok, State}.
-
-
-
-
+handle_call({set_replication_keys, ReplicationKeys}, _From, State) ->
+    {reply, replication_check:set_replication(ReplicationKeys), State}.
 
 
 handle_cast(_Info, State) ->
