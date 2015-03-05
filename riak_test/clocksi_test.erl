@@ -69,16 +69,14 @@ clocksi_test1(Nodes) ->
     {ok, {_, ReadSet11, _}}=Result11, 
     ?assertMatch([0], ReadSet11),
 
-    %% Read what you wrote
+    %% write values 
     Result2=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
-                      [{read, key1, Type},
+                      [
                       {update, key1, Type, {increment, a}},
-                      {update, key2, Type, {increment, a}},
-                      {read, key1, Type}]]),
+                      {update, key2, Type, {increment, a}}
+                      ]]),
     ?assertMatch({ok, _}, Result2),
-    {ok, {_, ReadSet2, _}}=Result2, 
-    ?assertMatch([0,1], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,

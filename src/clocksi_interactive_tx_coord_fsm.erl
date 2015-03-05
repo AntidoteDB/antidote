@@ -149,8 +149,6 @@ execute_op({Op_type, Args}, Sender,
         	{ReadBuffer, ReadPartitions}=Args,
         	lists:foreach(fun(Vnode) ->
                             Reads = dict:fetch(Vnode, ReadBuffer),
-                            %TxId = Transaction#transaction.txn_id,
-                            %lager:info("ReadstoPerform = ~p ~n Vnode ~p ~n Transaction ~p ~n",[dict:to_list(Reads), Vnode, TxId]),
                             clocksi_vnode:batch_read(Vnode, Transaction, dict:to_list(Reads))
                           end, ReadPartitions),
             {next_state, receive_batch_read, SD0#state{num_to_ack=length(ReadPartitions), from=Sender}};
