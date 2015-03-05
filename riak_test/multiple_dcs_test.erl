@@ -51,12 +51,14 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     ?assertEqual({ok, 3}, ReadResult),
 
     lager:info("Done append in Node1"),
+    wait_for_gst(Node3,CommitTime),
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
                            [CommitTime, key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet1],_} }= ReadResult2,
     ?assertEqual(3, ReadSet1),
     lager:info("Done Read in Node3"),
+    wait_for_gst(Node2,CommitTime),
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
                            [CommitTime, key1, riak_dt_gcounter]),
@@ -71,6 +73,7 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     ?assertMatch({ok, _}, WriteResult4),
     {ok,{_,_,CommitTime2}}=WriteResult4,
     lager:info("Done append in Node2"),
+    wait_for_gst(Node3,CommitTime2),
     WriteResult5= rpc:call(Node3,
                            antidote, clocksi_bulk_update,
                            [CommitTime2,
@@ -80,6 +83,7 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     lager:info("Done append in Node3"),
     lager:info("Done waiting, I am gonna read"),
 
+    wait_for_gst(Node1,CommitTime3),
     SnapshotTime =
         CommitTime3,
     ReadResult4 = rpc:call(Node1,
@@ -88,6 +92,7 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     {ok, {_,[ReadSet4],_} }= ReadResult4,
     ?assertEqual(5, ReadSet4),
     lager:info("Done read in Node1"),
+    wait_for_gst(Node2,CommitTime3),
     ReadResult5 = rpc:call(Node2,
                            antidote, clocksi_read,
                            [SnapshotTime,key1, riak_dt_gcounter]),
@@ -119,24 +124,20 @@ parallel_writes_test(Cluster1, Cluster2, Cluster3) ->
                 {ok, CT2} ->
                 receive
                     {ok, CT3} ->
-                        Time = dict:merge(fun(_K, T1,T2) ->
-                                                  max(T1,T2)
-                                          end,
-                                          CT3, dict:merge(
-                                                 fun(_K, T1,T2) ->
-                                                         max(T1,T2)
-                                                 end,
-                                                 CT1, CT2)),
+                        Time = max(CT3,max(CT1,CT2) ),
+                        wait_for_gst(Node1,Time),
                         ReadResult1 = rpc:call(Node1,
                            antidote, clocksi_read,
                            [Time, Key, riak_dt_gcounter]),
                         {ok, {_,[ReadSet1],_} }= ReadResult1,
                         ?assertEqual(15, ReadSet1),
+                        wait_for_gst(Node2,Time),
                         ReadResult2 = rpc:call(Node2,
                            antidote, clocksi_read,
                            [Time, Key, riak_dt_gcounter]),
                         {ok, {_,[ReadSet2],_} }= ReadResult2,
                         ?assertEqual(15, ReadSet2),
+                        wait_for_gst(Node3,Time),
                         ReadResult3 = rpc:call(Node3,
                            antidote, clocksi_read,
                            [Time, Key, riak_dt_gcounter]),
@@ -173,3 +174,15 @@ multiple_writes(Node, Key, Actor, ReplyTo) ->
     ?assertMatch({ok, _}, WriteResult5),
     {ok,{_,_,CommitTime}}=WriteResult5,
     ReplyTo ! {ok, CommitTime}.
+
+
+wait_for_gst(Node, Time) ->
+   {ok, S} = rpc:call(Node, vectorclock, get_stable_snapshot,[]),
+    case Time =< S of
+        true ->
+            ok;
+        false ->
+            timer:sleep(1000),
+            wait_for_gst(Node, Time)
+    end.
+    
