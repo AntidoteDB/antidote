@@ -101,6 +101,7 @@ execute_batch_ops(timeout, SD=#state{from = From,
 						{error, Reason} ->
 							{error, Reason};
 						{ReadBuffer, ReadPartitions} ->
+							lager:info("partitions are: ~p~n buffer is: ~p~n",[ReadPartitions, ReadBuffer]),
 							case Operation of
 								{update, Key, Type, OpParams} ->
 									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
@@ -114,20 +115,20 @@ execute_batch_ops(timeout, SD=#state{from = From,
 									IndexNode = hd(Preflist),
 									case dict:find(IndexNode, ReadBuffer) of
 										{ok, Dict0} ->
-											Dict1 = dict:append(Key, Type, Dict0),
+											Dict1 = dict:store(Key, Type, Dict0),
 											ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
-											{ReadPartitions, ReadBuffer1};
+											{ReadBuffer1, ReadPartitions};
 										error ->
 											Dict0 = dict:new(),
-											Dict1 = dict:append(Key, Type, Dict0),
-											ReadPartitions1 = ReadPartitions ++ [IndexNode],
+											Dict1 = dict:store(Key, Type, Dict0),
+											ReadPartitions1 = lists:append(ReadPartitions, [IndexNode]),
 											ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
-											{ReadPartitions1, ReadBuffer1}
+											{ReadBuffer1, ReadPartitions1}
 									end
 							end
 						end
                 end,
-    {ReadPartitions, ReadBuffer} = lists:foldl(ExecuteOp, {dict:new(), []}, Operations), 
+    {ReadBuffer, ReadPartitions} = lists:foldl(ExecuteOp, {dict:new(), []}, Operations), 
     case dict:size(ReadBuffer) == 0 of
     false ->			
 		case gen_fsm:sync_send_event(TxCoordPid, {batch_read, {ReadBuffer, ReadPartitions}}, infinity) of

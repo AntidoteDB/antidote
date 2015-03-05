@@ -108,7 +108,7 @@ init([From, ClientClock]) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
-           SD0=#state{transaction=Transaction, from=_From,
+           SD0=#state{transaction=Transaction,
                       buffer=Buffer0,
                       updated_partitions=UpdatedPartitions0}) ->
     case Op_type of
@@ -153,7 +153,7 @@ execute_op({Op_type, Args}, Sender,
                             %lager:info("ReadstoPerform = ~p ~n Vnode ~p ~n Transaction ~p ~n",[dict:to_list(Reads), Vnode, TxId]),
                             clocksi_vnode:batch_read(Vnode, Transaction, dict:to_list(Reads))
                           end, ReadPartitions),
-            {next_state, receive_batch_read, SD0#state{num_to_ack=length(ReadPartitions)}};
+            {next_state, receive_batch_read, SD0#state{num_to_ack=length(ReadPartitions), from=Sender}};
         
         update ->
             {Key, Type, Param}=Args,
@@ -177,12 +177,13 @@ execute_op({Op_type, Args}, Sender,
 %%      and gathers all the results for forwarding them.
 receive_batch_read({batch_read_result, PartitionReadSet},
                  S0=#state{num_to_ack=NumToAck,
+                 			from=From,
                            batch_read_set=BatchReadSet}) ->
     BatchReadSet1 = lists:append(BatchReadSet, PartitionReadSet),
     case NumToAck of 1 ->            
-			{reply, {ok, BatchReadSet1}, execute_op, S0};
-			%gen_fsm:reply(From, {ok, BatchReadSet1}),
-			%{next_state, execute_op, S0};
+			%{reply, {ok, BatchReadSet1}, execute_op, S0};
+			gen_fsm:reply(From, {ok, BatchReadSet1}),
+			{next_state, execute_op, S0#state{num_to_ack= NumToAck-1, batch_read_set=BatchReadSet1}};
         _ ->
             {next_state, receive_batch_read,
              S0#state{num_to_ack= NumToAck-1, batch_read_set=BatchReadSet1}}

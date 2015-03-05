@@ -168,10 +168,15 @@ internal_multi_read(ReadResults, [], _SnapshotTime, _TxId, _OpsCache, _SnapshotC
 	{ok, ReadResults};
 internal_multi_read(ReadResults, [H|T], SnapshotTime, TxId, OpsCache, SnapshotCache)->
     case H of
-        {Key, [Type]} ->
-			lager:info("H is: ~p~n", [H]),
-            {ok, Value} = internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache),
-        	internal_multi_read(lists:append(ReadResults, Value), T, SnapshotTime, TxId, OpsCache, SnapshotCache);
+        {Key, Type} ->
+			lager:info("Read the following: key ~p~n, type ~p~n", [Key, Type]),
+            case internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) of
+            {ok, Value} ->
+				lager:info("Got value ~p~n", [Value]),    
+				internal_multi_read(lists:append(ReadResults, Value), T, SnapshotTime, TxId, OpsCache, SnapshotCache);
+			{error, Reason} ->
+				{error, Reason}
+			end;
         WrongFormat ->
             {error, {wrong_format, WrongFormat}}
     end.
@@ -181,26 +186,31 @@ internal_multi_read(ReadResults, [H|T], SnapshotTime, TxId, OpsCache, SnapshotCa
 %% vnode when the write function calls it. That is done for garbage collection.
 -spec internal_read(term(), atom(), vectorclock:vectorclock(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
+	lager:info("INTERNAL READ RECEIVED THE FOLLOWING PARAMETERS ~n Key ~p~n, Type ~p~n, SnapshotTime ~p~n, TxId ~p~n, OpsCache ~p~n, SnapshotCache ~p~n",[Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache]), 
     case ets:lookup(SnapshotCache, Key) of
         [] ->
         	SnapshotDict=orddict:new(),
             LatestSnapshot=clocksi_materializer:new(Type),
             SnapshotCommitTime = ignore,
+            lager:info("created new object:  ~p~n of type ~p~n with no commit time, EMPTY SNAPSHOTDICT", [LatestSnapshot, Type]), 
             ExistsSnapshot=false;
         [{_, SnapshotDict}] ->
             case get_latest_snapshot(SnapshotDict, SnapshotTime) of
                 {ok, {SnapshotCommitTime, LatestSnapshot}}->
+                lager:info("there exists a snapshot:  ~p~n commit time ~p~n", [LatestSnapshot, SnapshotCommitTime]), 
                     ExistsSnapshot=true;
                 {ok, no_snapshot} ->
                 	ExistsSnapshot=false,
-                    LatestSnapshot=clocksi_materializer:new(Type), 
+                    LatestSnapshot=clocksi_materializer:new(Type),
+                    lager:info("created new object:  ~p~n of type ~p~n", [LatestSnapshot, Type]), 
                     SnapshotCommitTime = ignore
             end
     end,
 	case ets:lookup(OpsCache, Key) of
 		[] ->
 			case ExistsSnapshot of
-			false ->        						
+			false ->  
+				lager:info("no operations, returned that. snapshot"),       						
 				{ok, LatestSnapshot};
 			true ->
 				{error, no_snapshot}
