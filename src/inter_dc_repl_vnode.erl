@@ -93,7 +93,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 
 	    %% No need to send a heartbeat
 	    %% have to send safe time
-	    {ok, DCs} = inter_dc_manager:get_dcs(),
+	    DCs = inter_dc_manager:get_dcs(),
 	    lists:foldl(fun({DcAddress,Port},_Acc) ->
 				vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime)
 			end,
@@ -109,7 +109,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
             case inter_dc_communication_sender:propagate_sync(
                    DictTransactionsDcs, StableTime, Partition) of
                 ok ->
-		    {ok, DCs} = inter_dc_manager:get_dcs(),
+		    DCs = inter_dc_manager:get_dcs(),
 		    lists:foldl(fun({DcAddress,Port},_Acc) ->
 					vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime)
 				end,

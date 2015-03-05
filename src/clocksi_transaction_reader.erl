@@ -190,8 +190,14 @@ get_prev_stable_time(Reader) ->
 % -spec construct_transaction(Ops::[#operation{}]) -> transaction().
 construct_transaction(Ops) ->
     DCs = lists:foldl(fun(Op, DcSet) ->
-			      sets:union(DcSet,sets:from_list(
-						replication_check:get_dc_replicas(Op)))
+			      case(Op#operation.payload#log_record.op_type) of
+				  update ->
+				      {Key,_ObjType,_ObjOp} = Op#operation.payload#log_record.op_payload,
+				      sets:union(DcSet,sets:from_list(
+							 replication_check:get_dc_replicas(Key, noSelf)));
+				  _ ->
+				      DcSet
+			      end
 		      end ,sets:new(), Ops),
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,

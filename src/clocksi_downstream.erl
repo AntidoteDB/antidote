@@ -33,11 +33,11 @@ generate_downstream_op(Transaction, Node, Key, Type, Update) ->
                                       Transaction,
                                       Key,
                                       Type) of
-        {ok, Snapshot} ->
+        {ok, Snapshot, internal} ->
             {ok, NewState} = Type:update(Op, Actor, Snapshot),
             DownstreamOp = {merge, NewState},
             {ok, DownstreamOp};
         {error, Reason} ->
-            lager:info("Error: ~p", [Reason]),
+            lager:error("Error: ~p", [Reason]),
             {error, Reason}
     end.

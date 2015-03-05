@@ -11,7 +11,8 @@
          handle_sync_event/4,
          terminate/3]).
 -export([receive_message/2,
-         close_socket/2
+         close_socket/2,
+	 close_socket/3
         ]).
 
 -define(TIMEOUT,10000).
@@ -40,12 +41,14 @@ receive_message(timeout, State=#state{socket=Socket}) ->
 				 case clocksi_vnode:read_data_item_external(IndexNode, Transaction,
 								   Key, Type) of
 				     error ->
-					 {reply, error, abort};
-				     {error, _Reason} ->
-					 {reply, error, abort};
-				     {ok, Snapshot} ->
+					 lager:error("error in cross read"),
+					 {error, abort};
+				     {error, Reason} ->
+					 lager:error("error in cross read reason ~p", [Reason]),
+					 {error, abort};
+				     {ok, Snapshot, internal} ->
 					 ReadResult = Type:value(Snapshot),
-					 {reply, {ok, ReadResult}}
+					 {ok, ReadResult}
 				 end;
 			     Unknown ->
 				 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),
@@ -57,7 +60,12 @@ receive_message(timeout, State=#state{socket=Socket}) ->
 	{error, Reason} ->
 	    lager:error("Problem with the socket, reason: ~p", [Reason])
     end,
-    {next_state, close_socket,State,0}.
+    {next_state, close_socket,State,?TIMEOUT}.
+
+
+close_socket(_Msg, _Sender, State=#state{socket=Socket}) ->
+    gen_tcp:close(Socket),
+    {stop, normal, State}.
 
 close_socket(timeout, State=#state{socket=Socket}) ->
     gen_tcp:close(Socket),

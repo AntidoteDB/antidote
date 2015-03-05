@@ -38,7 +38,7 @@
 -export([connect/2,
          wait_for_ack/2,
          stop/2,
-         stop_error/2
+	 connect_err/2
         ]).
 
 -record(state, {port, host, socket,message, caller, reply}). % the current socket
@@ -144,12 +144,12 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
 %% ToDo, do this for a list of DCs, instead of just one
     case start_link(
-	   Port, DcAddress, [read_external, {Key, Type, Transaction}], self(), read_external) of
-	{ok, _} ->
+	   Port, DcAddress, {read_external, {Key, Type, Transaction}}, self(), read_external) of
+	{ok, _Reply} ->
 	    receive
-		{done, normal, Reply} ->
-		    {ok, Reply};
-		{done, Other, _Reply} ->
+		{done, normal, Response} ->
+		    {ok, Response};
+		{done, Other, _Response} ->
 		    lager:error(
 		      "Send failed Reason:~p Message: ~p",
 		      [Other, Transaction]),
@@ -163,6 +163,7 @@ perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
 		    %%TODO: Retry if needed
 	    end;
 	_ ->
+	    lager:error("Nothing exit", []),
 	    error
     end.
 
@@ -177,20 +178,21 @@ init([Port,Host,Message,ReplyTo]) ->
     {ok, connect, #state{port=Port,
                          host=Host,
                          message=Message,
-                         caller=ReplyTo}, 0}.
+                         caller=ReplyTo,
+			 reply=empty}, 0}.
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
                           [{active,true},binary, {packet,2}], ?CONNECT_TIMEOUT) of
         { ok, Socket} ->
-            ok = inet:setopts(Socket, [{active, once}]),
+            %%ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
-            ok = inet:setopts(Socket, [{active, once}]),
+            %%ok = inet:setopts(Socket, [{active, once}]),
             {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
         {error, _Reason} ->
 	    %% TODO, should be diferent
             lager:error("Couldnot connect to remote DC"),
-            {stop, normal, State}
+            {next_state,connect_err, State, 0}
     end.
 
 wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message} )->
@@ -199,15 +201,14 @@ wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
     lager:error("timeout in wait for ack"),
-    {next_state,stop_error,State,0}.
+    {next_state,connect_err,State,0}.
 
 stop(timeout, State=#state{socket=Socket}) ->
     _ = gen_tcp:close(Socket),
     {stop, normal, State}.
 
-stop_error(timeout, State=#state{socket=Socket}) ->
-    _ = gen_tcp:close(Socket),
-    {stop, error, State}.
+connect_err(timeout, State) ->
+    {stop, normal, State#state{reply={error,connect_error}}}.
 
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
     _ = inet:setopts(Socket, [{active, once}]),

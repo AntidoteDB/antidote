@@ -163,7 +163,6 @@ handle_command({read_data_item, Txn, Key, Type, IsLocal}, Sender,
     Vnode = {Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
 
-    %% here check if replicated locally
     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
 						 Key, Type, Updates, IsLocal,
 						 replication_check:is_replicated_here(Key)),

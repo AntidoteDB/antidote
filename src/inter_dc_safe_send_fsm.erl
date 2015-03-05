@@ -54,7 +54,7 @@ start_link() ->
 %% riak_core_vnode call backs
 init([]) ->
     DcId = dc_utilities:get_my_dc_id(),
-    {ok, DCs} = inter_dc_manager:get_dcs(),
+    DCs = inter_dc_manager:get_dcs(),
     NewDcDict = lists:foldl(fun(Dc, DcDict) ->
     				   dict:store(Dc,0,DcDict)
     			   end,

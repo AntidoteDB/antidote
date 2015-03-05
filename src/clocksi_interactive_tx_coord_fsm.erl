@@ -39,7 +39,7 @@
 %% States
 -export([execute_op/3, finish_op/3, prepare/2,
          receive_prepared/2, committing/3, receive_committed/2, abort/2,
-         reply_to_client/2]).
+	 abort/3, reply_to_client/2]).
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
@@ -119,9 +119,11 @@ execute_op({Op_type, Args}, Sender,
                 error ->
                     {reply, error, abort, SD0};
                 {error, _Reason} ->
-                    {next_state, abort, SD0};
-                {ok, Snapshot} ->
+                    {reply, error, abort, SD0};
+                {ok, Snapshot, internal} ->
                     ReadResult = Type:value(Snapshot),
+                    {reply, {ok, ReadResult}, execute_op, SD0};
+		{ok, ReadResult, external} ->
                     {reply, {ok, ReadResult}, execute_op, SD0}
             end;
         update ->
@@ -229,12 +231,12 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
 abort(timeout, SD0=#state{transaction = Transaction,
                           updated_partitions=UpdatedPartitions}) ->
     clocksi_vnode:abort(UpdatedPartitions, Transaction),
-    {next_state, reply_to_client, SD0#state{state=aborted},0};
+    {next_state, reply_to_client, SD0#state{state=aborted},0}.
 
-abort(abort, SD0=#state{transaction = Transaction,
+abort(abort, Sender, SD0=#state{transaction = Transaction,
                         updated_partitions=UpdatedPartitions}) ->
     clocksi_vnode:abort(UpdatedPartitions, Transaction),
-    {next_state, reply_to_client, SD0#state{state=aborted},0}.
+    {next_state, reply_to_client, SD0#state{from=Sender,state=aborted},0}.
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
@@ -307,7 +309,7 @@ get_snapshot_time(ClientClock, localTransaction) ->
 	    Clock = dict:store(DcId, Now, VecSnapshotTime),
 	    {ok, Clock};
 	{error, Reason} ->
-	    lager:info("Got an error ~p", [Reason]),
+	    lager:error("Error getting snapshot time ~p", [Reason]),
 	    {error, Reason}
     end.
 

@@ -108,23 +108,27 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true]) ->
 
 %% helper function
 loop_reads([Dc|T], Type, Key, Transaction) ->
-    case inter_dc_communication_sender:perform_external_read(Dc,Key,Type,Transaction) of
-	{ok, Reply} ->
-	    {ok, Reply};
-	_ ->
+    try
+	case inter_dc_communication_sender:perform_external_read(Dc,Key,Type,Transaction) of
+	    {ok, {error, Reason1}} ->
+		loop_reads(T,Type,Key,Transaction);
+	    {ok, {{ok, Reply}, _Dc}} ->
+		{ok, Reply};
+	    Result ->
+		loop_reads(T,Type,Key,Transaction)
+	end
+    catch
+	_:_Reason ->
 	    loop_reads(T,Type,Key,Transaction)
     end;
 loop_reads([], _Type, _Key, _Transaction) ->
     error.
 
 send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction,
-				       updates=Updates,tx_coordinator=Coordinator}) ->
-    case loop_reads(replication_check:get_dc_replicas(Key), Type, Key, Transaction) of
+				       updates=_Updates,tx_coordinator=Coordinator}) ->
+    case loop_reads(replication_check:get_dc_replicas(Key,noSelf), Type, Key, Transaction) of
         {ok, Snapshot} ->
-            Updates2=filter_updates_per_key(Updates, Key),
-            Snapshot2=clocksi_materializer:update_snapshot_eager
-                        (Type, Snapshot, Updates2),
-            Reply = {ok, Snapshot2};
+            Reply = {ok, Snapshot, external};
         error ->
             Reply={error, failed_read_at_all_dcs}
     end,
@@ -187,8 +191,9 @@ return(timeout, SD0=#state{key=Key,
             Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
-            Reply = {ok, Snapshot2};
+            Reply = {ok, Snapshot2, internal};
         {error, Reason} ->
+	    lager:error("error in return read ~p", [Reason]),
             Reply={error, Reason}
     end,
     riak_core_vnode:reply(Coordinator, Reply),

@@ -27,7 +27,7 @@
 	start_collect_sent/0,
 	start_safe_time_sender/0,
 	start_senders/0,
-	start_recvrs/2]).
+	start_recvrs/3]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -42,16 +42,18 @@ start_link() ->
 %% @doc: start_rep(Port) - starts a server which listens for incomming
 %% tcp connection on port Port. Server receives updates to replicate 
 %% from other DCs 
-start_rep(Port) ->
+start_rep({DcIp,Port}) ->
     lager:info("Starting sup inter dc recvr..."),
+    inter_dc_manager:start_receiver({DcIp,Port}),
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
                     {inter_dc_communication_sup, start_link, [Port]},
 				     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
 
-start_cross_dc_read_communication_recvr(Port) ->
+start_cross_dc_read_communication_recvr({DcIp,Port}) ->
     lager:info("Starting sup cross read dc recvr..."),
-    supervisor:start_child(?MODULE, {inter_dc_,
+    inter_dc_manager:start_read_receiver({DcIp,Port}),
+    supervisor:start_child(?MODULE, {cross_dc_read_communication_sup,
                     {cross_dc_read_communication_sup, start_link, [Port]},
 				     permanent, 5000, supervisor, [cross_dc_read_communication_sup]}).
 
@@ -64,7 +66,7 @@ start_safe_time_sender() ->
     inter_dc_safe_send_sup:start_fsm([]).
 
 start_collect_sent() ->
-    {ok, DCs} = inter_dc_manager:get_dcs(),
+    DCs = inter_dc_manager:get_dcs(),
     lager:info("Starting sup collect sent..."),
     lists:foldl(fun(DcId, _Acc) ->
 			supervisor:start_child(?MODULE, {collect_sent_time_sup,
@@ -77,9 +79,9 @@ start_senders() ->
     %% start_collect_sent(),
     start_safe_time_sender().
 
-start_recvrs(Port1, Port2) ->
-    start_rep(Port1),
-    start_cross_dc_read_communication_recvr(Port2).
+start_recvrs(DcId, Port1, Port2) ->
+    start_rep({DcId, Port1}),
+    start_cross_dc_read_communication_recvr({DcId, Port2}).
     
 
 %% ===================================================================
@@ -123,9 +125,9 @@ init(_Args) ->
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
-    InterDcManager = {inter_dc_manager,
-                        {inter_dc_manager, start_link, []},
-                        permanent, 5000, worker, [inter_dc_manager]},
+    %% InterDcManager = {inter_dc_manager,
+    %%                     {inter_dc_manager, start_link, []},
+    %%                     permanent, 5000, worker, [inter_dc_manager]},
 
     {ok,
      {{one_for_one, 5, 10},
@@ -135,6 +137,6 @@ init(_Args) ->
        ClockSIiTxCoordSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
-       InterDcManager,
+       %% InterDcManager,
        VectorClockMaster,
        MaterializerMaster]}}.

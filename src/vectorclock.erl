@@ -156,7 +156,7 @@ update_safe_vector_local(Partition, Vector) ->
 	    {ok, Clock} ->
 		{ok, Clock};
 	    {error, Reason} ->
-		lager:info("Update safe vector failed ~p", [Reason]),
+		lager:error("Update safe vector failed ~p", [Reason]),
 		{error, Reason}
 	end
     catch
@@ -185,7 +185,7 @@ update_safe_clock_local(Dc_id, Partition, Timestamp) ->
 	    {ok, Clock} ->
 		{ok, Clock};
 	    {error, Reason} ->
-		lager:info("Update safe clock failed ~p",[Reason]),
+		lager:error("Update safe clock failed ~p",[Reason]),
 		{error, Reason}
 	end
     catch
@@ -258,6 +258,8 @@ wait_for_clock(Clock) ->
        {error, Reason} ->
           {error, Reason}
   end.
+%%lager:info("safe time ~p", [get_safe_time()]),
+%%{ok, get_safe_time()}.
 
 
 
