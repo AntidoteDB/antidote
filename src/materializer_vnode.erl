@@ -172,8 +172,9 @@ internal_multi_read(ReadResults, [H|T], SnapshotTime, TxId, OpsCache, SnapshotCa
 			lager:info("Read the following: key ~p~n, type ~p~n", [Key, Type]),
             case internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) of
             {ok, Value} ->
-				lager:info("Got value ~p~n", [Value]),    
-				internal_multi_read(lists:append(ReadResults, Value), T, SnapshotTime, TxId, OpsCache, SnapshotCache);
+            	Value2=clocksi_materializer:materialize_eager(Type, Value, []),
+				lager:info("Got value ~p~n", [Value2]),    
+				internal_multi_read(lists:append(ReadResults, Value2), T, SnapshotTime, TxId, OpsCache, SnapshotCache);
 			{error, Reason} ->
 				{error, Reason}
 			end;
