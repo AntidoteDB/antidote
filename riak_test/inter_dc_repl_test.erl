@@ -33,7 +33,6 @@ wait_for_gst(Node, Time) ->
    {ok, S} = rpc:call(Node, vectorclock, get_stable_snapshot,[]),
     case Time =< S of
         true ->
-            lager:info("CT ~p, GST ~p",[Time, S]),
             ok;
         false ->
             timer:sleep(1000),

@@ -63,7 +63,7 @@ start_vnode(I) ->
 %% @doc Initialize the clock
 init([Partition]) ->
     NewPClock = dict:new(),
-    riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+    riak_core_metadata:put(?META_PREFIX, Partition, 0),
     {ok, #currentclock{last_received_clock=dict:new(),
                        partition_vectorclock=NewPClock,
                        stable_snapshot = 0,
@@ -83,9 +83,9 @@ handle_command(get_stable_snapshot, _Sender,
 %% @doc : calculate stable snapshot from min of vectorclock (each entry)
 %% from all partitions
 handle_command(calculate_stable_snapshot, _Sender,
-               State=#currentclock{partition_vectorclock = _Clock,
-                                   num_p=NumP,
-                                   lstnm = LSTnm}) ->
+               State=#currentclock{ 
+                        num_p=NumP,
+                        lstnm = LSTnm}) ->
     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
     NumPartitions = case NumP of
                         0 ->
@@ -100,7 +100,7 @@ handle_command(calculate_stable_snapshot, _Sender,
         case NumPartitions == NumMetadata of
             true ->
                 riak_core_metadata:fold(
-                  fun({_Key, V}, A) ->
+                  fun({_Key, [V]}, A) ->
                           min(V,A)
                   end,
                   LSTnm, ?META_PREFIX);
