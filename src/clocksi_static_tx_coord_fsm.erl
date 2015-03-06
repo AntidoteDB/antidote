@@ -131,22 +131,17 @@ execute_batch_ops(timeout, SD=#state{from = From,
     false ->			
 		case gen_fsm:sync_send_event(TxCoordPid, {batch_read, {ReadBuffer, ReadPartitions}}, infinity) of
 			{ok, ReadSet} ->
-				case ReadSet of 
-				{error, Reason} ->
-					From ! {error, Reason},
-					{stop, normal, SD};
-				_ ->
-					case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-						{ok, {TxId, CommitTime}} ->
-							From ! {ok, {TxId, ReadSet, CommitTime}},
-							{stop, normal, SD};
-						_ ->
-							From ! {error, commit_fail},
-							{stop, normal, SD}
-					end
+				case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
+					{ok, {TxId, CommitTime}} ->
+						From ! {ok, {TxId, ReadSet, CommitTime}},
+						{stop, normal, SD};
+					_ ->
+						From ! {error, commit_fail},
+						{stop, normal, SD}
 				end;
 			{error, Reason} ->
-				{error, Reason}
+				From ! {error, Reason},
+				{stop, normal, SD}
 			end;
 	_ ->
 		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of

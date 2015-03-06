@@ -136,8 +136,8 @@ execute_op({Op_type, Args}, Sender,
                        end,
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type, Updates) of
-                error ->
-                    {reply, error, abort, SD0};
+%                error ->
+ %                   {reply, error, abort, SD0};
                 {error, Reason} ->
                     {reply, {error, Reason}, abort, SD0};
                 {ok, Snapshot} ->
@@ -188,8 +188,9 @@ receive_batch_read({batch_read_result, PartitionReadSet},
     end;
     
     
-receive_batch_read({error, _Reason}, S0) ->
-    {next_state, abort, S0=#state{state=batch_read_error}, 0}.
+receive_batch_read({error, Reason}, S0=#state{from=From}) ->
+	gen_fsm:reply(From, {error, Reason}),
+    {next_state, abort, S0, 0}.
     
       
 

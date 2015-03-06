@@ -119,8 +119,8 @@ return(timeout, SD0=#state{key=Key,
                 {ok, Updates2} ->
                     Snapshot2=clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
                     Reply = {ok, Snapshot2};
-                {error, Error} ->
-                    Reply={error, Error}
+                {error, Reason} ->
+                    Reply={error, Reason}
             end;
         {error, Reason} ->
             Reply={error, Reason}
