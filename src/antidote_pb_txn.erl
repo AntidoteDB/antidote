@@ -93,23 +93,33 @@ process_stream(_,_,State) ->
     {ignore, State}.
 
 decode_au_txn_ops(Ops) ->
-    lists:map(fun(Op) ->
-                      decode_au_txn_op(Op)
-              end, Ops).
+    lists:foldl(fun(Op, Acc) ->
+                     Acc ++ decode_au_txn_op(Op)
+                end, [], Ops).
+%% Counter
 decode_au_txn_op(#fpbatomicupdatetxnop{counterinc=#fpbincrementreq{key=Key, amount=Amount}}) ->
-    {update, Key, riak_dt_pncounter, {{increment, Amount}, node()}};
+    [{update, Key, riak_dt_pncounter, {{increment, Amount}, node()}}];
 decode_au_txn_op(#fpbatomicupdatetxnop{counterdec=#fpbdecrementreq{key=Key, amount=Amount}}) ->
-    {update, Key, riak_dt_pncounter, {{decrement, Amount}, node()}}.
-
-%% decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=AddElems, rems=RemElems}}) ->
-%%     AddOps = lists:map(fun(X) ->
-%%                                Elem = binary_to_term(X),
-%%                                {update, Key, riak_dt_orset, {{add,Elem}, node()}}
-%%                        end, AddElems),
-%%     RemOps = lists:map(fun(X) ->
-%%                                Elem = binary_to_term(X),
-%%                                {update, Key, riak_dt_orset, {{remove,Elem}, node()}}
-%%                        end, RemElems),
+    [{update, Key, riak_dt_pncounter, {{decrement, Amount}, node()}}];
+%% Set
+decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=AddElems, rems=RemElems}}) ->
+     Adds = lists:map(fun(X) ->
+                              binary_to_term(X)
+                      end, AddElems),
+     Rems = lists:map(fun(X) ->
+                              binary_to_term(X)
+                      end, RemElems),
+    Op = case length(Adds) of
+             0 -> [];
+             1 -> [{update, Key, riak_dt_orset, {{add,Adds}, node()}}];
+             _ -> [{update, Key, riak_dt_orset, {{add_all, Adds},node()}}]
+         end, 
+    case length(Rems) of
+        0 -> Op;
+        1 -> [{update, Key, riak_dt_orset, {{remove,Adds}, ignore}}] ++ Op;
+        _ -> [{update, Key, riak_dt_orset, {{remove_all, Adds},ignore}}] ++ Op
+    end.
+        
 
 decode_snapshot_read_ops(Ops) ->
     lists:map(fun(Op) ->
@@ -118,7 +128,7 @@ decode_snapshot_read_ops(Ops) ->
 
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetcounterreq{key=Key}}) ->
     {read, Key, riak_dt_pncounter};
-decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetsetreq{key=Key}}) ->
+decode_snapshot_read_op(#fpbsnapshotreadtxnop{set=#fpbgetsetreq{key=Key}}) ->
     {read,Key, riak_dt_orset}.
 
 

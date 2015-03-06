@@ -41,6 +41,7 @@ confirm() ->
     pass = update_counter_crdt_and_read_test(<<"key2">>, 15),
     pass = atomic_update_txn_test(),
     pass = snapshot_read_test(),
+    pass = transaction_orset_test(),
     pass.
 
 start_stop_test() ->
@@ -120,3 +121,31 @@ snapshot_read_test() ->
     ?assertMatch(2, antidotec_counter:value(Counter2)),
     %%TODO; Use Clock in next write/read transactions
     pass.
+
+transaction_orset_test() ->
+    lager:info("Testing transaction using orset"),
+    Key1 = <<"set1">>,
+    Key2 = <<"count1">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, C1} = antidotec_pb_socket:get_crdt(Key1, riak_dt_orset, Pid),
+    {ok, C2} = antidotec_pb_socket:get_crdt(Key2, riak_dt_pncounter, Pid),
+    C11 = antidotec_set:add(1, C1),
+    C12 = antidotec_set:add(2, C11),
+    C13 = antidotec_set:add(3, C12),
+    ?assertMatch(true, antidotec_set:contains(1,C13)),
+    C21 = antidotec_counter:increment(2, C2),
+    Response = antidotec_pb_socket:atomic_store_crdts([C13,C21],Pid),
+    ?assertMatch({ok,_},Response),
+
+    %Read your writes
+    Result = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_orset}, {Key2,riak_dt_pncounter}], Pid),
+    {ok, _Clock, [Set1, Counter2]} = Result,
+    antidotec_pb_socket:stop(Pid),
+%%    ?assertMatch(["1","2","3"], antidotec_set:value(Set1)),
+    ?assertMatch(2, antidotec_counter:value(Counter2)),
+    ?assertMatch(true, antidotec_set:contains(1,Set1)),
+    ?assertMatch(true, antidotec_set:contains(2,Set1)),
+    ?assertMatch(true, antidotec_set:contains(3,Set1)),
+    %%TODO; Use Clock in next write/read transactions
+    pass.
+    
