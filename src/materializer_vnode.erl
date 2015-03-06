@@ -169,11 +169,9 @@ internal_multi_read(ReadResults, [], _TxId, _OpsCache, _SnapshotCache)->
 internal_multi_read(ReadResults, [H|T], TxId, OpsCache, SnapshotCache)->
     case H of
         {Key, Type} ->
-			lager:info("Read the following: key ~p~n, type ~p~n", [Key, Type]),
             case internal_read(Key, Type, TxId, OpsCache, SnapshotCache) of
             {ok, Value} ->
             	Value2=Type:value(Value), 
-				lager:info("Got value ~p~n", [Value2]),    
 				internal_multi_read(lists:append(ReadResults, [Value2]), T, TxId, OpsCache, SnapshotCache);
 			{error, Reason} ->
 				{error, Reason}
@@ -185,25 +183,21 @@ internal_multi_read(ReadResults, [H|T], TxId, OpsCache, SnapshotCache)->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(term(), atom(), vectorclock:vectorclock(), tx_id() | ignore, atom() atom() ) -> {ok, term()} | {error, no_snapshot}.
+-spec internal_read(term(), atom(),tx_id() | ignore, atom() atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Key, Type, TxId, OpsCache, SnapshotCache) ->
-	lager:info("INTERNAL READ RECEIVED THE FOLLOWING PARAMETERS ~n Key ~p~n, Type ~p~n, SnapshotTime ~p~n, TxId ~p~n, OpsCache ~p~n, SnapshotCache ~p~n",[Key, Type, snapshottime, TxId, OpsCache, SnapshotCache]), 
     case ets:lookup(SnapshotCache, Key) of
 	[] ->
 		SnapshotDict=orddict:new(),
 		Snapshot, =ec_materializer:new(Type),
 		SnapshotCommitTime = ignore,
-		lager:info("created new object:  ~p~n of type ~p~n with no commit time, EMPTY SNAPSHOTDICT", [Snapshot, Type]), 
 		ExistsSnapshot=false;
 	[{_, {SnapshotCommitTime, Snapshot}}] ->
-			lager:info("there exists a snapshot:  ~p~n commit time ~p~n", [Snapshot, SnapshotCommitTime]), 
 				ExistsSnapshot=true;
     end,
 	case ets:lookup(OpsCache, Key) of
 		[] ->
 			case ExistsSnapshot of
 			false ->  
-				lager:info("no operations, returned that. snapshot"),       						
 				{ok, Snapshot};
 			true ->
 				{error, no_snapshot}

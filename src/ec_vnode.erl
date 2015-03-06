@@ -85,7 +85,6 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
                                             infinity)
     catch
         _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
             {error, Reason}
     end.
     
