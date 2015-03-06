@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_readitem_fsm).
+-module(ec_readitem_fsm).
 
 -behavior(gen_fsm).
 
@@ -43,11 +43,10 @@
 
 -record(state, {type,
                 key,
-                transaction,
+                tx_id,
                 tx_coordinator,
                 vnode,
-                updates,
-                pending_txs}).
+                updates}).
 
 %%%===================================================================
 %%% API
@@ -62,62 +61,29 @@ start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
+init([Vnode, Coordinator, TxId, Key, Type, Updates]) ->
     SD = #state{vnode=Vnode,
                 type=Type,
                 key=Key,
                 tx_coordinator=Coordinator,
-                transaction=Transaction,
+                tx_id=TxId,
                 updates=Updates,
                 pending_txs=[]},
-    {ok, check_clock, SD, 0}.
-
-%% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behind, it sleeps the fms until the clock
-%%      catches up. CLOCK-SI: clock skew.
-%%
-check_clock(timeout, SD0=#state{transaction=Transaction}) ->
-    TxId = Transaction#transaction.txn_id,
-    T_TS = TxId#tx_id.snapshot_time,
-    Time = clocksi_vnode:now_microsec(erlang:now()),
-    case T_TS > Time of
-        true ->
-	    SleepMiliSec = (T_TS - Time) div 1000 + 1,
-            timer:sleep(SleepMiliSec),
-            {next_state, waiting1, SD0, 0};
-        false ->
-            {next_state, waiting1, SD0, 0}
-    end.
-
-waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
-    LocalClock = get_stable_time(Key),
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
-    case LocalClock > SnapshotTime of
-        false ->
-            {next_state, waiting1, SDO, 1};
-        true ->
-            {next_state, return, SDO, 0}
-    end;
-
-waiting1(_SomeMessage, SDO) ->
-    {next_state, waiting1, SDO,0}.
+    {ok, return, SD, 0}.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
 return(timeout, SD0=#state{key=Key,
                            tx_coordinator=Coordinator,
-                           transaction=Transaction,
+                           tx_id=TxId,
                            type=Type,
                            vnode=IndexNode,
                            updates=Updates}) ->
-    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
+    case materializer_vnode:read(Key, Type) of
         {ok, Snapshot} ->
-            case generate_downstream_operations(Updates, Transaction, IndexNode, Key, []) of
+            case generate_downstream_operations(Updates, TxId, IndexNode, Key, []) of
                 {ok, Updates2} ->
-                    Snapshot2=clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+                    Snapshot2=ec_materializer:materialize_eager(Type, Snapshot, Updates2),
                     Reply = {ok, Snapshot2};
                 {error, Reason} ->
                     Reply={error, Reason}
@@ -150,28 +116,9 @@ generate_downstream_operations([], _Txn, _IndexNode, _Key, DownOps) ->
     {ok, DownOps};
 
 generate_downstream_operations([{Type, Param}|Rest], Txn, IndexNode, Key, DownOps0) ->
-    case clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param, DownOps0) of
+    case ec_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param, DownOps0) of
         {ok, DownstreamRecord} ->
             generate_downstream_operations(Rest, Txn, IndexNode, Key, DownOps0 ++ [DownstreamRecord]);
         {error, Reason} ->
             {error, Reason}
-    end.
-
-get_stable_time(Key) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    Node = hd(Preflist),
-    case riak_core_vnode_master:sync_command(
-           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
-        {ok, Active_txns} ->
-            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
-                                case Min_time > Snapshot_time of
-                                    true ->
-                                        Snapshot_time;
-                                    false ->
-                                        Min_time
-                                end
-                        end,
-                        clocksi_vnode:now_microsec(erlang:now()),
-                        Active_txns);
-        _ -> 0
     end.

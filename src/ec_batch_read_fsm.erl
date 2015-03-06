@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_batch_read_fsm).
+-module(ec_batch_read_fsm).
 
 -behavior(gen_fsm).
 
@@ -42,72 +42,36 @@
 %% Spawn
 
 -record(state, {reads,
-                transaction,
+                tx_id,
                 tx_coordinator,
-                vnode,
-                pending_txs}).
+                vnode}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, Tx, Reads) ->
+start_link(Vnode, Coordinator, TxId, Reads) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
-                                 Tx, Reads], []).
+                                 TxId, Reads], []).
 
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Reads]) ->
+init([Vnode, Coordinator, TxId, Reads]) ->
     SD = #state{vnode=Vnode,
                 tx_coordinator=Coordinator,
-                transaction=Transaction,
-                reads=Reads,
-                pending_txs=[]},
-    {ok, check_clock, SD, 0}.
-
-%% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behind, it sleeps the fms until the clock
-%%      catches up. CLOCK-SI: clock skew.
-%%
-check_clock(timeout, SD0=#state{transaction=Transaction}) ->
-    TxId = Transaction#transaction.txn_id,
-    T_TS = TxId#tx_id.snapshot_time,
-    Time = clocksi_vnode:now_microsec(erlang:now()),
-    case T_TS > Time of
-        true ->
-	    SleepMiliSec = (T_TS - Time) div 1000 + 1,
-            timer:sleep(SleepMiliSec),
-            {next_state, waiting1, SD0, 0};
-        false ->
-            {next_state, waiting1, SD0, 0}
-    end.
-
-waiting1(timeout, SDO=#state{transaction=Transaction, vnode=Vnode}) ->
-    LocalClock = get_stable_time(Vnode),
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
-    case LocalClock > SnapshotTime of
-        false ->
-            {next_state, waiting1, SDO, 1};
-        true ->
-            {next_state, return, SDO, 0}
-    end;
-
-waiting1(_SomeMessage, SDO) ->
-    {next_state, waiting1, SDO,0}.
+                tx_id=TxId,
+                reads=Reads},
+    {ok, return, SD, 0}.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
 return(timeout, SD0=#state{tx_coordinator=Coordinator,
-                           transaction=Transaction,
                            vnode=Vnode,
                            reads=Reads}) ->
-    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:multi_read(Vnode, Reads, VecSnapshotTime, TxId) of
+    case materializer_vnode:multi_read(Vnode, Reads) of
         {ok, PartitionReadSet} ->
 			Reply = {batch_read_result, PartitionReadSet};
         {error, Reason} ->
@@ -136,22 +100,3 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
     ok.
-
-%% Internal functions
-
-get_stable_time(Vnode) ->
-    case riak_core_vnode_master:sync_command(
-           Vnode, {get_active_txns}, ?CLOCKSI_MASTER) of
-        {ok, Active_txns} ->
-            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
-                                case Min_time > Snapshot_time of
-                                    true ->
-                                        Snapshot_time;
-                                    false ->
-                                        Min_time
-                                end
-                        end,
-                        clocksi_vnode:now_microsec(erlang:now()),
-                        Active_txns);
-        _ -> 0
-    end.

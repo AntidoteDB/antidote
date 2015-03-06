@@ -17,13 +17,13 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc The coordinator for a given Clock SI static transaction.
+%% @doc The coordinator for a given Clock SI static tx_id.
 %%      It handles the state of the tx and executes the operations sequentially
-%%      by sending each operation to the responsible clockSI_vnode of the
+%%      by sending each operation to the responsible ec_vnode of the
 %%      involved key. When a tx is finalized (committed or aborted), the fsm
 %%      also finishes.
 
--module(clocksi_static_tx_coord_fsm).
+-module(ec_static_tx_coord_fsm).
 
 -behavior(gen_fsm).
 
@@ -44,7 +44,7 @@
 %% @doc Data Type: state
 %% where:
 %%    from: the pid of the calling process.
-%%    state: state of the transaction: {active|prepared|committing|committed}
+%%    state: state of the tx_id: {active|prepared|committing|committed}
 %%----------------------------------------------------------------------
 -record(state, {
           from :: pid(),
@@ -72,9 +72,9 @@ start_link(From, Operations) ->
 init([From, ClientClock, Operations]) ->
     {ok, _Pid} = case ClientClock of
                      ignore ->
-                         clocksi_interactive_tx_coord_sup:start_fsm([self()]);
+                         ec_interactive_tx_coord_sup:start_fsm([self()]);
                      _ ->
-                         clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
+                         ec_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
                  end,
     receive
         {ok, TxId} ->
@@ -101,28 +101,28 @@ execute_batch_ops(timeout, SD=#state{from = From,
 							{error, Reason};
 						{ReadBuffer, ReadPartitions} ->
 							case Operation of
-								{update, Key, Type, OpParams} ->
-									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
-									ok ->
-										{ReadBuffer, ReadPartitions};
-									{error, Reason} ->
-										{error, Reason}
-									end;
-								{read, Key, Type} ->
-									Preflist = log_utilities:get_preflist_from_key(Key),
-									IndexNode = hd(Preflist),
-									case dict:find(IndexNode, ReadBuffer) of
-										{ok, Dict0} ->
-											Dict1 = dict:store(Key, Type, Dict0),
-											ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
-											{ReadBuffer1, ReadPartitions};
-										error ->
-											Dict0 = dict:new(),
-											Dict1 = dict:store(Key, Type, Dict0),
-											ReadPartitions1 = lists:append(ReadPartitions, [IndexNode]),
-											ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
-											{ReadBuffer1, ReadPartitions1}
-									end
+							{update, Key, Type, OpParams} ->
+								case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
+								ok ->
+									{ReadBuffer, ReadPartitions};
+								{error, Reason} ->
+									{error, Reason}
+								end;
+							{read, Key, Type} ->
+								Preflist = log_utilities:get_preflist_from_key(Key),
+								IndexNode = hd(Preflist),
+								case dict:find(IndexNode, ReadBuffer) of
+									{ok, Dict0} ->
+										Dict1 = dict:store(Key, Type, Dict0),
+										ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
+										{ReadBuffer1, ReadPartitions};
+									error ->
+										Dict0 = dict:new(),
+										Dict1 = dict:store(Key, Type, Dict0),
+										ReadPartitions1 = lists:append(ReadPartitions, [IndexNode]),
+										ReadBuffer1 = dict:store(IndexNode, Dict1, ReadBuffer),
+										{ReadBuffer1, ReadPartitions1}
+								end
 							end
 						end
                 end,
@@ -130,29 +130,23 @@ execute_batch_ops(timeout, SD=#state{from = From,
     case dict:size(ReadBuffer) == 0 of
     false ->			
 		case gen_fsm:sync_send_event(TxCoordPid, {batch_read, {ReadBuffer, ReadPartitions}}, infinity) of
-			{ok, ReadSet} ->
-				case ReadSet of 
-				{error, Reason} ->
-					From ! {error, Reason},
+		{ok, ReadSet} ->
+			case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
+				{ok, TxId} ->
+					From ! {ok, {TxId, ReadSet}},
 					{stop, normal, SD};
-				Other ->
-					case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-						{ok, TxId} ->
-							From ! {ok, {TxId, ReadSet}},
-							{stop, normal, SD};
-						_ ->
-							From ! {error, commit_fail},
-							{stop, normal, SD}
-					end
-				end;
-			{error, Reason} ->
-				From ! {error, Reason},
-				{stop, normal, SD}
+				_ ->
+					From ! {error, commit_fail},
+					{stop, normal, SD}
 			end;
+		{error, Reason} ->
+			From ! {error, Reason},
+			{stop, normal, SD}
+		end;
 	_ ->
 		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-		{ok, TxId} ->
-			From ! {ok, {TxId, []}},
+		{ok, {TxId, CommitTime}} ->
+			From ! {ok, {TxId, [], CommitTime}},
 			{stop, normal, SD};
 		_ ->
 			From ! {error, commit_fail},

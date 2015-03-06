@@ -17,10 +17,10 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_materializer).
+-module(ec_materializer).
 -include("antidote.hrl").
 
--ifdef(TEST).
+%-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
@@ -37,7 +37,7 @@ new(Type) ->
 
 
 %% @doc materialize_eager: apply updates in order without any checks
--spec materialize_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().
+-spec materialize_eager(type(), snapshot(), [ec_payload()]) -> snapshot().
 materialize_eager(_, Snapshot, []) ->
     Snapshot;
 materialize_eager(Type, Snapshot, [Op|Rest]) ->
@@ -52,19 +52,19 @@ materialize_eager(Type, Snapshot, [Op|Rest]) ->
 
 -ifdef(TEST).
 
-materializer_clocksi_test()->
+materializer_ec_test()->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
-    Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
+    Op1 = #ec_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,2},1}},
                            commit_time = {1, 1}, tx_id = 1},
-    Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
+    Op2 = #ec_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,1},1}},
                            commit_time = {1, 2}, tx_id = 2},
-    Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
+    Op3 = #ec_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,1},1}},
                            commit_time = {1, 3}, tx_id = 3},
-    Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
+    Op4 = #ec_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,2},1}},
                            commit_time = {1, 4}, tx_id = 4},
 
@@ -80,16 +80,16 @@ materializer_clocksi_test()->
                                    vectorclock:from_list([{1,7}]),Ops, ignore),
     ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
 
-materializer_clocksi_concurrent_test() ->
+materializer_ec_concurrent_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
-    Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
+    Op1 = #ec_payload{key = abc, type = crdt_pncounter,
                            op_param = {update, {{increment,2}, actor1}},
                            commit_time = {1, 1}, tx_id = 1},
-    Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
+    Op2 = #ec_payload{key = abc, type = crdt_pncounter,
                            op_param = {update, {{increment,1}, actor1}},
                            commit_time = {1, 2}, tx_id = 2},
-    Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
+    Op3 = #ec_payload{key = abc, type = crdt_pncounter,
                            op_param = {update, {{increment,1}, actor1}},
                            commit_time = {2, 1}, tx_id = 3},
 
@@ -116,7 +116,7 @@ materializer_clocksi_concurrent_test() ->
     ?assertEqual({2, {1,1}}, {crdt_pncounter:value(PNcounter5), CommitTime5}).
 
 %% @doc Testing gcounter with empty update log
-materializer_clocksi_noop_test() ->
+materializer_ec_noop_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Ops = [],
