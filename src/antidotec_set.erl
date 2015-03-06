@@ -103,7 +103,7 @@ contains(Elem, #antidote_set{set=Set, adds=Adds, rems=Rems}) ->
         true -> true;
         false ->
             case sets:is_element(Elem, Set) of
-                true -> sets:is_element(Elem, Rems);
+                true -> not sets:is_element(Elem, Rems);
                 false -> false
             end
     end.
