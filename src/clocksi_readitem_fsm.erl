@@ -107,32 +107,33 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true]) ->
 
 
 %% helper function
-loop_reads([Dc|T], Type, Key, Transaction) ->
+loop_reads([Dc|T], Type, Key, Transaction,WriteSet) ->
     try
-	case inter_dc_communication_sender:perform_external_read(Dc,Key,Type,Transaction) of
+	case inter_dc_communication_sender:perform_external_read(Dc,Key,Type,Transaction,WriteSet) of
 	    {ok, {error, Reason1}} ->
-		loop_reads(T,Type,Key,Transaction);
+		loop_reads(T,Type,Key,Transaction,WriteSet);
 	    {ok, {{ok, Reply}, _Dc}} ->
 		{ok, Reply};
 	    Result ->
-		loop_reads(T,Type,Key,Transaction)
+		loop_reads(T,Type,Key,Transaction,WriteSet)
 	end
     catch
 	_:_Reason ->
-	    loop_reads(T,Type,Key,Transaction)
+	    loop_reads(T,Type,Key,Transaction,WriteSet)
     end;
-loop_reads([], _Type, _Key, _Transaction) ->
+loop_reads([], _Type, _Key, _Transaction, _WriteSet) ->
     error.
 
 send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction,
-				       updates=_Updates,tx_coordinator=Coordinator}) ->
-    case loop_reads(replication_check:get_dc_replicas(Key,noSelf), Type, Key, Transaction) of
+				       updates=Updates,tx_coordinator=Coordinator}) ->
+    case loop_reads(replication_check:get_dc_replicas(Key,noSelf), Type, Key, Transaction, Updates) of
         {ok, Snapshot} ->
             Reply = {ok, Snapshot, external};
         error ->
             Reply={error, failed_read_at_all_dcs}
     end,
-    riak_core_vnode:reply(Coordinator, Reply),
+    %%riak_core_vnode:reply(Coordinator, Reply),
+    Coordinator ! Reply,
     {stop, normal, SD0}.
     
 
@@ -184,10 +185,11 @@ return(timeout, SD0=#state{key=Key,
                            tx_coordinator=Coordinator,
                            transaction=Transaction,
                            type=Type,
-                           updates=Updates}) ->
+                           updates=WriteSet}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     case materializer_vnode:read(Key, Type, VecSnapshotTime) of
         {ok, Snapshot} ->
+	    Updates=write_set_to_updates(Transaction#transaction.txn_id,WriteSet),
             Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
@@ -196,7 +198,8 @@ return(timeout, SD0=#state{key=Key,
 	    lager:error("error in return read ~p", [Reason]),
             Reply={error, Reason}
     end,
-    riak_core_vnode:reply(Coordinator, Reply),
+    %% riak_core_vnode:reply(Coordinator, Reply),
+    Coordinator ! Reply,
     {stop, normal, SD0};
 return(_SomeMessage, SDO) ->
     {next_state, return, SDO,0}.
@@ -216,6 +219,11 @@ terminate(_Reason, _SN, _SD) ->
     ok.
 
 %% Internal functions
+
+write_set_to_updates(TxId, WriteSet) ->
+    lists:foldl(fun(Write, Acc) ->
+		       Acc ++ [{TxId, Write}]
+	       end,[],WriteSet).
 
 filter_updates_per_key(Updates, Key) ->
     int_filter_updates_key(Updates, Key, []).

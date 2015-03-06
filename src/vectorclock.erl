@@ -241,25 +241,26 @@ update_safe_clock_local(Dc_id, Partition, Timestamp) ->
 %%     end.
 
 
+%% TODO, fix this
 -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
                            {ok, vectorclock:vectorclock()} | {error, term()}.
-wait_for_clock(Clock) ->
-   case get_safe_time() of
-       {ok, VecSnapshotTime} ->
-           case vectorclock:ge(VecSnapshotTime, Clock) of
-               true ->
-                   %% No need to wait
-                   {ok, VecSnapshotTime};
-               false ->
-                   %% wait for snapshot time to catch up with Client Clock
-                   timer:sleep(100),
-                   wait_for_clock(Clock)
-           end;
-       {error, Reason} ->
-          {error, Reason}
-  end.
+wait_for_clock(_Clock) ->
+  %%  case get_safe_time() of
+  %%      {ok, VecSnapshotTime} ->
+  %%          case vectorclock:ge(VecSnapshotTime, Clock) of
+  %%              true ->
+  %%                  %% No need to wait
+  %%                  {ok, VecSnapshotTime};
+  %%              false ->
+  %%                  %% wait for snapshot time to catch up with Client Clock
+  %%                  timer:sleep(100),
+  %%                  wait_for_clock(Clock)
+  %%          end;
+  %%      {error, Reason} ->
+  %%         {error, Reason}
+  %% end.
 %%lager:info("safe time ~p", [get_safe_time()]),
-%%{ok, get_safe_time()}.
+    {ok, get_safe_time()}.
 
 
 

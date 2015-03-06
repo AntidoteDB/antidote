@@ -21,18 +21,18 @@
 
 -include("antidote.hrl").
 
--export([generate_downstream_op/5]).
+-export([generate_downstream_op/6]).
 
 %% @doc Returns downstream operation for upstream operation
 -spec generate_downstream_op(#transaction{}, Node::term(), Key::key(),
-                             Type::type(), Update::op()) ->
+                             Type::type(), Update::op(), WriteSet::list()) ->
                                     {ok, op()} | {error, atom()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update) ->
+generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
     {Op, Actor} =  Update,
     case clocksi_vnode:read_data_item(Node,
                                       Transaction,
                                       Key,
-                                      Type) of
+                                      Type, WriteSet) of
         {ok, Snapshot, internal} ->
             {ok, NewState} = Type:update(Op, Actor, Snapshot),
             DownstreamOp = {merge, NewState},

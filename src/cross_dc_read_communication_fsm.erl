@@ -33,13 +33,13 @@ receive_message(timeout, State=#state{socket=Socket}) ->
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
             ReplyValue = case binary_to_term(Message) of
-			     {read_external, {Key,Type,Transaction}} ->
+			     {read_external, {Key,Type,Transaction,WriteSet}} ->
 				 Preflist = log_utilities:get_preflist_from_key(Key),
 				 IndexNode = hd(Preflist),
 				 %% Is it safe to do a read like this from an external transaction?
 				 %% Might cause blocking because external DC might be ahead in time
 				 case clocksi_vnode:read_data_item_external(IndexNode, Transaction,
-								   Key, Type) of
+								   Key, Type, WriteSet) of
 				     error ->
 					 lager:error("error in cross read"),
 					 {error, abort};

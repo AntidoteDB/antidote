@@ -106,7 +106,8 @@ init([From, ClientClock]) ->
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
            SD0=#state{transaction=Transaction, from=_From,
-                      updated_partitions=Updated_partitions}) ->
+                      updated_partitions=Updated_partitions
+		      }) ->
     case Op_type of
         prepare ->
             {next_state, prepare, SD0#state{from=Sender}, 0};
@@ -114,8 +115,14 @@ execute_op({Op_type, Args}, Sender,
             {Key, Type}=Args,
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
+	    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
+			   false ->
+			       [];
+			   AList ->
+			       AList
+		       end,
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
-                                              Key, Type) of
+                                              Key, Type, WriteSet) of
                 error ->
                     {reply, error, abort, SD0};
                 {error, _Reason} ->
@@ -128,29 +135,52 @@ execute_op({Op_type, Args}, Sender,
             end;
         update ->
             {Key, Type, Param}=Args,
-            Preflist = log_utilities:get_preflist_from_key(Key),
-            IndexNode = hd(Preflist),
-            case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
-                {ok, DownstreamRecord} ->
-                    case clocksi_vnode:update_data_item(IndexNode, Transaction,
-                                                Key, Type, DownstreamRecord) of
-                        ok ->
-                            case lists:member(IndexNode, Updated_partitions) of
-                                false ->
-                                    New_updated_partitions=
-                                        lists:append(Updated_partitions, [IndexNode]),
-                                    {reply, ok, execute_op,
-                                    SD0#state
-                                    {updated_partitions= New_updated_partitions}};
-                                true->
-                                    {reply, ok, execute_op, SD0}
-                            end;
-                        error ->
-                            {reply, error, abort, SD0}
-                    end;
-                {error, _} ->
-                    {reply, error, abort, SD0}
-            end
+	    case replication_check:is_replicated_here(Key) of
+		true ->
+		    Preflist = log_utilities:get_preflist_from_key(Key),
+		    IndexNode = hd(Preflist),
+		    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
+				   false ->
+				       [];
+				   AList ->
+				       AList
+			       end,
+		    case generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
+			{ok, DownstreamRecord} ->
+			    case clocksi_vnode:update_data_item(IndexNode, Transaction,
+								Key, Type, DownstreamRecord, WriteSet) of
+			       ok ->
+				    case WriteSet of
+					[] ->
+					    New_updated_partitions=
+						lists:append(Updated_partitions, [{IndexNode,[Args]}]),
+					    {reply, ok, execute_op,
+					     SD0#state
+					     {updated_partitions= New_updated_partitions}};
+					_ ->
+					    New_updated_partitions = lists:foldl(fun({NextIndexNode,ListArgs},NewAcc) ->
+											 case NextIndexNode of
+											     IndexNode ->
+												 NewAcc ++ [{IndexNode, ListArgs ++ [Args]}];
+											     _ ->
+												 NewAcc ++ [{NextIndexNode,ListArgs}]
+											 end
+										 end, [], Updated_partitions),
+					    {reply, ok, execute_op, SD0#state
+					     {updated_partitions= New_updated_partitions}}
+				    end;
+				error ->
+				    {reply, error, abort, SD0}
+			    end;
+			{error, _} ->
+			    {reply, error, abort, SD0}
+		    end;
+		false ->
+		    %%TODO 
+		    lager:error("not implemented updating non-replicated keys"),
+		    {reply, error, abort, SD0}
+	    
+	    end
     end.
 
 
@@ -353,5 +383,5 @@ get_snapshot_time(ClientClock, localTransaction) ->
 %%           {error, Reason}
 %%   end.
 
-generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
-    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param).
+generate_downstream_op(Txn, IndexNode, Key, Type, Param, WriteSet) ->
+    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param, WriteSet).
