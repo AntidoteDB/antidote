@@ -137,7 +137,6 @@ generate_downstream_key([Op|Rest], Key, Txn, Vnode, DSOps, PreviousDSOps) ->
     {Type, Param} = Op,
     case clocksi_downstream:generate_downstream_op(Txn, Vnode, Key, Type, Param, PreviousDSOps) of
         {ok, DownstreamRecord} ->
-            lager:info("Downstream generated"),
             generate_downstream_key(Rest, Key, Txn, Vnode, DSOps ++ [{Key, Type, DownstreamRecord}], PreviousDSOps ++ [DownstreamRecord]);
         {error, _} ->
             error

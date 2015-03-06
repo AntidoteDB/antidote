@@ -93,7 +93,6 @@ waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
     LocalClock = get_stable_time(Key),
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
-    lager:info("waiting1, local_time: ~p and snapshot_time: ~p", [LocalClock, SnapshotTime]),
     case LocalClock > SnapshotTime of
         false ->
             {next_state, waiting1, SDO, 1};
@@ -155,7 +154,6 @@ generate_downstream_operations([{Type, Param}|Rest], Txn, IndexNode, Key, DownOp
         {ok, DownstreamRecord} ->
             generate_downstream_operations(Rest, Txn, IndexNode, Key, DownOps0 ++ [DownstreamRecord]);
         {error, Reason} ->
-            lager:error("Error when generating downstream operation. Reason ~p",[Reason]),
             {error, Reason}
     end.
 

@@ -89,7 +89,6 @@ waiting1(timeout, SDO=#state{transaction=Transaction, vnode=Vnode}) ->
     LocalClock = get_stable_time(Vnode),
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
-    lager:info("waiting1, local_time: ~p and snapshot_time: ~p", [LocalClock, SnapshotTime]),
     case LocalClock > SnapshotTime of
         false ->
             {next_state, waiting1, SDO, 1};

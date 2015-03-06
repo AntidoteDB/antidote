@@ -88,7 +88,6 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
                                             infinity)
     catch
         _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
             {error, Reason}
     end.
     
@@ -170,7 +169,6 @@ handle_command({read_data_item, Txn, Key, Type, Updates}, Sender,
 handle_command({batch_read, TxId, Reads}, Sender,
                State = #state{partition=Partition}) ->
     Vnode = {Partition, node()},
-    lager:info("starting the batch_read_fsm with Vnode=~p~n,Sender=~p~n,txid=~p~n,Reads=~p~n", [Vnode, Sender, TxId, Reads]),
     {ok, _Pid} = clocksi_batch_read_fsm:start_link(Vnode, Sender, TxId, Reads),
     {noreply, State};    
     

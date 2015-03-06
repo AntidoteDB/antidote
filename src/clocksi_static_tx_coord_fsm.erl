@@ -83,7 +83,6 @@ init([From, ClientClock, Operations]) ->
                                            from = From, operations = Operations}, 0}
     after
         10000 ->
-            lager:error("Tx was not started!"),
             gen_fsm:reply(From, {error, timeout}),
             {stop, normal, #state{}}
     end.
@@ -101,7 +100,6 @@ execute_batch_ops(timeout, SD=#state{from = From,
 						{error, Reason} ->
 							{error, Reason};
 						{ReadBuffer, ReadPartitions} ->
-							lager:info("partitions are: ~p~n buffer is: ~p~n",[ReadPartitions, ReadBuffer]),
 							case Operation of
 								{update, Key, Type, OpParams} ->
 									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
@@ -137,8 +135,7 @@ execute_batch_ops(timeout, SD=#state{from = From,
 				{error, Reason} ->
 					From ! {error, Reason},
 					{stop, normal, SD};
-				Other ->
-					lager:info("received reply ~p ~n ", [Other]),
+				_ ->
 					case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
 						{ok, {TxId, CommitTime}} ->
 							From ! {ok, {TxId, ReadSet, CommitTime}},

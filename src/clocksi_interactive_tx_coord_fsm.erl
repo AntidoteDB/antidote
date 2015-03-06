@@ -233,7 +233,6 @@ prepare_2pc(timeout, SD0=#state{
         _->
             lists:foreach(fun(Partition) ->
                             Updates = dict:fetch(Partition, Buffer),
-                            lager:info("Sending prepare to ~p with updates: ~p", [Partition, dict:to_list(Updates)]),
                             clocksi_vnode:pre_prepare(Partition, Transaction, dict:to_list(Updates), multi)
                           end, Updated_partitions),
             Num_to_ack=length(Updated_partitions),
