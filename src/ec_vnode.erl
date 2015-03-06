@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_vnode).
+-module(ec_vnode).
 -behaviour(riak_core_vnode).
 
 -include("antidote.hrl").
@@ -54,19 +54,16 @@
 %% @doc Data Type: state
 %%      where:
 %%          partition: the partition that the vnode is responsible for.
-%%          prepared_tx: a list of prepared transactions.
-%%          committed_tx: a list of committed transactions.
-%%          active_txs_per_key: a list of the active transactions that
+%%          prepared_tx: a list of prepared tx_ids.
+%%          committed_tx: a list of committed tx_ids.
+%%          active_txs_per_key: a list of the active tx_ids that
 %%              have updated a key (but not yet finished).
 %%          downstream_set: a list of the downstream operations that the
-%%              transactions generate.
-%%          write_set: a list of the write sets that the transactions
+%%              tx_ids generate.
+%%          write_set: a list of the write sets that the tx_ids
 %%              generate.
 %%----------------------------------------------------------------------
 -record(state, {partition,
-                prepared_tx,
-                committed_tx,
-                active_txs_per_key,
                 write_set}).
 
 %%%===================================================================
@@ -117,16 +114,16 @@ prepare(ListofNodes, TxId, Updates, Coordinator, PrepareTime) ->
 %% @doc Sends prepare+commit to a single partition
 %%      Called by a Tx coordinator when the tx only
 %%      affects one partition
-single_commit(Node, TxId, Updates, Coordinator, PrepareTime) ->
+single_commit(Node, TxId, Updates, Coordinator) ->
     riak_core_vnode_master:command(Node,
-                                   {single_commit, TxId, Updates, Coordinator, PrepareTime},
+                                   {single_commit, TxId, Updates, Coordinator},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
-commit(ListofNodes, TxId, CommitTime) ->
+commit(ListofNodes, TxId) ->
     riak_core_vnode_master:command(ListofNodes,
-                                   {commit, TxId, CommitTime},
+                                   {commit, TxId},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
 
@@ -138,31 +135,19 @@ abort(ListofNodes, TxId) ->
                                    ?CLOCKSI_MASTER).
 
 %% @doc Initializes all data structures that vnode needs to track information
-%%      the transactions it participates on.
+%%      the tx_ids it participates on.
 init([Partition]) ->
-    PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++
-                                          integer_to_list(Partition)),
-                         [set, {write_concurrency, true}]),
-    CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
-                                           integer_to_list(Partition)),
-                          [set, {write_concurrency, true}]),
-    ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
-                                           ++ integer_to_list(Partition)),
-                              [bag, {write_concurrency, true}]),
     WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++
                                         integer_to_list(Partition)),
                        [duplicate_bag, {write_concurrency, true}]),
     {ok, #state{partition=Partition,
-                prepared_tx=PreparedTx,
-                committed_tx=CommittedTx,
-                write_set=WriteSet,
-                active_txs_per_key=ActiveTxsPerKey}}.
+                write_set=WriteSet}}.
 
 %% @doc starts a read_fsm to handle a read operation.
 handle_command({read_data_item, Txn, Key, Type, Updates}, Sender,
                #state{partition=Partition}=State) ->
     Vnode = {Partition, node()},
-    {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
+    {ok, _Pid} = ec_readitem_fsm:start_link(Vnode, Sender, Txn,
                                                  Key, Type, Updates),
     {noreply, State};
     
@@ -170,32 +155,28 @@ handle_command({read_data_item, Txn, Key, Type, Updates}, Sender,
 handle_command({batch_read, TxId, Reads}, Sender,
                State = #state{partition=Partition}) ->
     Vnode = {Partition, node()},
-    lager:info("starting the batch_read_fsm with Vnode=~p~n,Sender=~p~n,txid=~p~n,Reads=~p~n", [Vnode, Sender, TxId, Reads]),
-    {ok, _Pid} = clocksi_batch_read_fsm:start_link(Vnode, Sender, TxId, Reads),
+    {ok, _Pid} = ec_batch_read_fsm:start_link(Vnode, Sender, TxId, Reads),
     {noreply, State};    
     
 
-handle_command({pre_prepare, Transaction, Updates, TxType}, Sender,
+handle_command({pre_prepare, TxId, Updates, TxType}, Sender,
                State = #state{partition=Partition}) ->
     Vnode = {Partition, node()},
-    {ok, _Pid} = clocksi_preprepare_fsm:start_link(Vnode, Sender, Transaction, Updates, TxType),
+    {ok, _Pid} = ec_preprepare_fsm:start_link(Vnode, Sender, TxId, Updates, TxType),
     {noreply, State};
 
-handle_command({single_commit, Transaction, Updates, Coordinator, PrepareTime}, _Sender,
+handle_command({single_commit, TxId, Updates, Coordinator}, _Sender,
                State = #state{partition=_Partition,
-                              committed_tx=CommittedTx,
-                              active_txs_per_key=ActiveTxPerKey,
-                              prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
-    case update_data_item(Updates, Transaction, State) of
+    case update_data_item(Updates, TxId, State) of
         ok ->
-            Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+            Result = prepare(TxId, WriteSet),
             case Result of
                 {ok, _} ->
-                    ResultCommit = commit(Transaction, PrepareTime, WriteSet, PreparedTx, State),
+                    ResultCommit = commit(TxId, WriteSet, State),
                     case ResultCommit of
                         {ok, committed} ->
-                            reply_coordinator(Coordinator, {committed, PrepareTime});
+                            reply_coordinator(Coordinator, committed});
                         {error, materializer_failure} ->
                             reply_coordinator(Coordinator, {error, materializer_failure});
                         {error, timeout} ->
@@ -215,18 +196,15 @@ handle_command({single_commit, Transaction, Updates, Coordinator, PrepareTime}, 
     end,
     {noreply, State};
     
-handle_command({prepare, Transaction, Updates, Coordinator, PrepareTime}, _Sender,
+handle_command({prepare, TxId, Updates, Coordinator}, _Sender,
                State = #state{partition=_Partition,
-                              committed_tx=CommittedTx,
-                              active_txs_per_key=ActiveTxPerKey,
-                              prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
-    case update_data_item(Updates, Transaction, State) of
+    case update_data_item(Updates, TxId, State) of
         ok ->
-            Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+            Result = prepare(TxId, WriteSet),
             case Result of
                 {ok, _} ->
-                    reply_coordinator(Coordinator, {prepared, PrepareTime});
+                    reply_coordinator(Coordinator, prepared);
                 {error, timeout} ->
                     reply_coordinator(Coordinator, {error, timeout});
                 {error, no_updates} ->
@@ -239,14 +217,13 @@ handle_command({prepare, Transaction, Updates, Coordinator, PrepareTime}, _Sende
     end,
     {noreply, State};
 
-%% TODO: sending empty writeset to clocksi_downstream_generatro
+%% TODO: sending empty writeset to ec_downstream_generatro
 %% Just a workaround, need to delete downstream_generator_vnode
 %% eventually.
-handle_command({commit, Transaction, TxCommitTime}, _Sender,
+handle_command({commit, TxId}, _Sender,
                #state{partition=_Partition,
-                      committed_tx=CommittedTx,
                       write_set=WriteSet} = State) ->
-    Result = commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State),
+    Result = commit(TxId, WriteSet, State),
     case Result of
         {ok, committed} ->
             {reply, committed, State};
@@ -258,31 +235,20 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
             {reply, no_tx_record, State}
     end;
 
-handle_command({abort, Transaction}, _Sender,
+handle_command({abort, TxId}, _Sender,
                #state{partition=_Partition, write_set=WriteSet} = State) ->
-    TxId = Transaction#transaction.txn_id,
     Updates = ets:lookup(WriteSet, TxId),
     case Updates of
-    [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+		[{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
-            case Result of
-                {ok, _} ->
-                    clean_and_notify(TxId, Key, State);
-                {error, timeout} ->
-                    clean_and_notify(TxId, Key, State)
-            end,
             {reply, ack_abort, State};
         _ ->
             {reply, {error, no_tx_record}, State}
     end;
 
-%% @doc Return active transactions in prepare state with their preparetime
-handle_command({get_active_txns}, _Sender,
-               #state{prepared_tx=Prepared, partition=_Partition} = State) ->
-    ActiveTxs = ets:lookup(Prepared, active),
-    {reply, {ok, ActiveTxs}, State};
+
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -329,18 +295,15 @@ reply_coordinator(Coordinator, Reply) ->
 update_data_item([], _Txn, _State) ->
     ok;
 
-update_data_item([Op|Rest], Txn, State=#state{partition=_Partition,
-                      write_set=WriteSet,
-                      active_txs_per_key=ActiveTxsPerKey}) ->
+update_data_item([Op|Rest], TxId, State=#state{partition=_Partition,
+                      write_set=WriteSet}) ->
     {Key, Type, DownstreamRecord} = Op,
-    TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, DownstreamRecord}},
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
     Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
-            true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
             true = ets:insert(WriteSet, {TxId, {Key, Type, DownstreamRecord}}),
             update_data_item(Rest, Txn, State);
         {error, _Reason} ->
@@ -348,36 +311,25 @@ update_data_item([Op|Rest], Txn, State=#state{partition=_Partition,
     end.
 
 %% @doc Executes the prepare phase of this partition
-prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime)->
-    TxId = Transaction#transaction.txn_id,
+prepare(TxId, WriteSet)->
     TxWriteSet = ets:lookup(WriteSet, TxId),
-    case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
-        true ->
-            LogRecord = #log_record{tx_id=TxId,
-                                    op_type=prepare,
-                                    op_payload=PrepareTime},
-            true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
-            Updates = ets:lookup(WriteSet, TxId),
-            case Updates of 
-                [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
-                    LogId = log_utilities:get_logid_from_key(Key),
-                    [Node] = log_utilities:get_preflist_from_key(Key),
-                    logging_vnode:append(Node,LogId,LogRecord);
-                _ -> 
-                    {error, no_updates}
-            end;
-        false ->
-            {error, write_conflict}
+	LogRecord = #log_record{tx_id=TxId,
+							op_type=prepare},
+	Updates = ets:lookup(WriteSet, TxId),
+	case Updates of 
+		[{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+			LogId = log_utilities:get_logid_from_key(Key),
+			[Node] = log_utilities:get_preflist_from_key(Key),
+			logging_vnode:append(Node,LogId,LogRecord);
+		_ -> 
+			{error, no_updates}
     end.
 
 %% @doc Executes the commit phase of this partition
-commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State)->
-    TxId = Transaction#transaction.txn_id,
-    DcId = dc_utilities:get_my_dc_id(),
+commit(TxId, WriteSet, State)->
     LogRecord=#log_record{tx_id=TxId,
                           op_type=commit,
-                          op_payload={{DcId, TxCommitTime},
-                                      Transaction#transaction.vec_snapshot_time}},
+                          op_payload=TxId},
     Updates = ets:lookup(WriteSet, TxId),
     case Updates of
         [{_, {Key, _Type, {_Op, _Param}}} | _Rest] -> 
@@ -385,10 +337,8 @@ commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State)->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append(Node,LogId,LogRecord) of
                 {ok, _} ->
-                    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
-                    case update_materializer(Updates, Transaction, TxCommitTime) of
+                    case update_materializer(Updates, TxId) of
                         ok ->
-                            clean_and_notify(TxId, Key, State),
                             {ok, committed};
                         error ->
                             {error, materializer_failure}
@@ -400,70 +350,24 @@ commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State)->
             {error, no_updates}
     end.
 
-%% @doc clean_and_notify:
-%%      This function is used for cleanning the state a transaction
-%%      stores in the vnode while it is being procesed. Once a
-%%      transaction commits or aborts, it is necessary to:
-%%      1. notify all read_fsms that are waiting for this transaction to finish
-%%      2. clean the state of the transaction. Namely:
-%%      a. ActiteTxsPerKey,
-%%      b. PreparedTx
-%%
-clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
-                                    prepared_tx=PreparedTx,
-                                    write_set=WriteSet}) ->
-    true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
-    true = ets:delete(WriteSet, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
-%% @doc Performs a certification check when a transaction wants to move
-%%      to the prepared state.
-certification_check(_, [], _, _) ->
-    true;
-certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    {_, {Key, _Type, _}} = H,
-    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
-    case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true ->
-            false;
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
-    end.
 
-check_keylog(_, [], _) ->
-    false;
-check_keylog(TxId, [H|T], CommittedTx)->
-    {_Key, _Type, ThisTxId}=H,
-    case ThisTxId > TxId of
-        true ->
-            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            case CommitInfo of
-                [{_, _CommitTime}] ->
-                    true;
-                [] ->
-                    check_keylog(TxId, T, CommittedTx)
-            end;
-        false ->
-            check_keylog(TxId, T, CommittedTx)
-    end.
 
 -spec update_materializer(DownstreamOps :: [{term(),{key(),type(),op()}}],
-                          Transaction::tx(),TxCommitTime:: {term(), term()}) ->
+                          TxId::tx_id()) ->
                                  ok | error.
-update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
-    DcId = dc_utilities:get_my_dc_id(),
+update_materializer(DownstreamOps, TxId) ->
     UpdateFunction = fun ({_, {Key, Type, Op}}, AccIn) ->
                              CommittedDownstreamOp =
-                                 #clocksi_payload{
+                                 #ec_payload{
                                     key = Key,
                                     type = Type,
                                     op_param = Op,
-                                    snapshot_time = Transaction#transaction.vec_snapshot_time,
-                                    commit_time = {DcId, TxCommitTime},
-                                    txid = Transaction#transaction.txn_id},
+                                    tx_id = TxId,
                              AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)]
                      end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),

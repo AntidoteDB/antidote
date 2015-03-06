@@ -1,10 +1,10 @@
 -define(BUCKET, <<"antidote">>).
 -define(MASTER, antidote_vnode_master).
 -define(LOGGING_MASTER, logging_vnode_master).
--define(CLOCKSI_MASTER, clocksi_vnode_master).
--define(CLOCKSI_GENERATOR_MASTER,
-        clocksi_downstream_generator_vnode_master).
--define(CLOCKSI, clocksi).
+-define(ec_MASTER, ec_vnode_master).
+-define(ec_GENERATOR_MASTER,
+        ec_downstream_generator_vnode_master).
+-define(ec, ec).
 -define(REPMASTER, antidote_rep_vnode_master).
 -define(N, 1).
 -define(OP_TIMEOUT, infinity).
@@ -17,39 +17,25 @@
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
 -type operation() :: #operation{}.
--type vectorclock() :: dict().
+%-type vectorclock() :: dict().
 
 
 %% The way records are stored in the log.
--record(log_record, {tx_id :: txid(),
+-record(log_record, {tx_id :: tx_id(),
                      op_type:: update | prepare | commit | abort | noop,
                      op_payload}).
 
-%% Clock SI
 
-%% MIN is Used for generating the timeStamp of a new snapshot
-%% in the case that a client has already seen a snapshot time
-%% greater than the current time at the replica it is starting
-%% a new transaction.
--define(MIN, 1).
 
-%% DELTA has the same meaning as in the clock-SI paper.
--define(DELTA, 10000).
-
--define(CLOCKSI_TIMEOUT, 1000).
-
--record(tx_id, {snapshot_time, server_pid :: pid()}).
--record(clocksi_payload, {key :: key(),
+-record(tx_id, {time_id :: integer(), server_pid :: pid()}).
+-record(ec_payload, {key :: key(),
                           type :: type(),
                           op_param :: {term(), term()},
-                          snapshot_time :: snapshot_time(),
-                          commit_time :: commit_time(),
-                          txid :: txid()
+                          tx_id :: tx_id()
                          }).
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(), 
-                      vec_snapshot_time, 
-                      txn_id :: txid() }).
+                      txn_id :: tx_id() }).
 
 %%---------------------------------------------------------------------
 -type key() :: term().
@@ -68,11 +54,8 @@
 -type log_id() :: [partition_id()].
 -type type() :: atom().
 -type snapshot() :: term().
--type snapshot_time() ::  vectorclock:vectorclock().
--type commit_time() ::  {term(), non_neg_integer()}.
--type txid() :: #tx_id{}.
--type clocksi_payload() :: #clocksi_payload{}.
+-type tx_id() :: #tx_id{}.
+-type ec_payload() :: #ec_payload{}.
 -type dcid() :: term().
--type tx() :: #transaction{}.
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0]).
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, tx_id/0, tx/0]).

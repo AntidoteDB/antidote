@@ -48,7 +48,7 @@
 %%----------------------------------------------------------------------
 -record(state, {
           from :: pid(),
-          tx_id :: txid(),
+          tx_id :: tx_id(),
           tx_coord_pid :: pid(),
           operations :: list(),
           state:: atom()}).
@@ -140,8 +140,8 @@ execute_batch_ops(timeout, SD=#state{from = From,
 				Other ->
 					lager:info("received reply ~p ~n ", [Other]),
 					case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-						{ok, {TxId, CommitTime}} ->
-							From ! {ok, {TxId, ReadSet, CommitTime}},
+						{ok, TxId} ->
+							From ! {ok, {TxId, ReadSet}},
 							{stop, normal, SD};
 						_ ->
 							From ! {error, commit_fail},
@@ -153,8 +153,8 @@ execute_batch_ops(timeout, SD=#state{from = From,
 			end;
 	_ ->
 		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-		{ok, {TxId, CommitTime}} ->
-			From ! {ok, {TxId, [], CommitTime}},
+		{ok, TxId} ->
+			From ! {ok, {TxId, []}},
 			{stop, normal, SD};
 		_ ->
 			From ! {error, commit_fail},

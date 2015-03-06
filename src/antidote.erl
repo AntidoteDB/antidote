@@ -23,19 +23,19 @@
 
 -export([append/3,
          read/2,
-         clocksi_execute_tx/2,
-         clocksi_execute_tx/1,
-         clocksi_read/3,
-         clocksi_read/2,
-         clocksi_bulk_update/2,
-         clocksi_bulk_update/1,
-         clocksi_istart_tx/1,
-         clocksi_istart_tx/0,
-         clocksi_iread/3,
-         clocksi_iupdate/4,
-         clocksi_iprepare/1,
-         clocksi_full_icommit/1,
-         clocksi_icommit/1]).
+         ec_execute_tx/2,
+         ec_execute_tx/1,
+         ec_read/3,
+         ec_read/2,
+         ec_bulk_update/2,
+         ec_bulk_update/1,
+         ec_istart_tx/1,
+         ec_istart_tx/0,
+         ec_iread/3,
+         ec_iupdate/4,
+         ec_iprepare/1,
+         ec_full_icommit/1,
+         ec_icommit/1]).
 
 %% Public API
 
@@ -44,7 +44,7 @@
 -spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, term()} | {error, reason()}.
 append(Key, Type, {OpParam, Actor}) ->
     Operations = [{update, Key, Type, {OpParam, Actor}}],
-    case clocksi_execute_tx(Operations) of
+    case ec_execute_tx(Operations) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
@@ -55,93 +55,65 @@ append(Key, Type, {OpParam, Actor}) ->
 %%      object stored at some key.
 -spec read(Key::key(), Type::type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
-    case clocksi_read(Key, Type) of
+    case ec_read(Key, Type) of
         {ok,{_, [Val], _}} ->
             {ok, Val};
         {error, Reason} ->
             {error, Reason}
     end.
 
-%% Clock SI API
+%% EC-Antidote API
 
-%% @doc Starts a new ClockSI transaction.
+%% @doc Starts a new EC transaction.
 %%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Operations: the list of the operations the transaction involves.
 %%      Returns:
 %%      an ok message along with the result of the read operations involved in the
 %%      the transaction, in case the tx ends successfully.
 %%      error message in case of a failure.
 %%
--spec clocksi_execute_tx(Clock :: vectorclock:vectorclock(),
-                         Operations::[any()]) -> term().
-clocksi_execute_tx(Clock, Operations) ->
-    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
+-spec ec_execute_tx(Operations::[any()]) -> term().
+ec_execute_tx(Operations) ->
+    {ok, _} = ec_static_tx_coord_sup:start_fsm([self(), Operations]),
     receive
         EndOfTx ->
             EndOfTx
     end.
 
--spec clocksi_execute_tx(Operations::[any()]) -> term().
-clocksi_execute_tx(Operations) ->
-    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
-    receive
-        EndOfTx ->
-            EndOfTx
-    end.
-
-%% @doc Starts a new ClockSI interactive transaction.
-%%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
+%% @doc Starts a new EC interactive transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
--spec clocksi_istart_tx(Clock:: vectorclock:vectorclock()) -> term().
-clocksi_istart_tx(Clock) ->
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
+-spec ec_istart_tx() -> term().
+ec_istart_tx() ->
+    {ok, _} = ec_interactive_tx_coord_sup:start_fsm([self()]),
     receive
         TxId ->
             TxId
     end.
 
-clocksi_istart_tx() ->
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
-    receive
-        TxId ->
-            TxId
-    end.
+-spec ec_bulk_update(Operations :: [any()]) -> term().
+ec_bulk_update(Operations) ->
+    ec_execute_tx(Operations).
 
--spec clocksi_bulk_update(ClientClock:: vectorclock:vectorclock(),
-                          Operations::[any()]) -> term().
-clocksi_bulk_update(ClientClock, Operations) ->
-    clocksi_execute_tx(ClientClock, Operations).
+-spec ec_read(Key :: key(), Type:: type()) -> term().
+ec_read(Key, Type) ->
+    ec_execute_tx([{read, Key, Type}]).
 
--spec clocksi_bulk_update(Operations :: [any()]) -> term().
-clocksi_bulk_update(Operations) ->
-    clocksi_execute_tx(Operations).
-
--spec clocksi_read(ClientClock :: vectorclock:vectorclock(),
-                   Key :: key(), Type:: type()) -> term().
-clocksi_read(ClientClock, Key, Type) ->
-    clocksi_execute_tx(ClientClock, [{read, Key, Type}]).
-
-clocksi_read(Key, Type) ->
-    clocksi_execute_tx([{read, Key, Type}]).
-
-clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
+ec_iread({_, _, CoordFsmPid}, Key, Type) ->
     gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
 
-clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
+ec_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
 
 %% @doc This commits includes both prepare and commit phase. Thus
 %%      Client do not need to send to message to complete the 2PC
 %%      protocol. The Tx coordinator will pick the best strategie
 %%      automatically.
-clocksi_full_icommit({_, _, CoordFsmPid})->
+ec_full_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
     
-clocksi_iprepare({_, _, CoordFsmPid})->
+ec_iprepare({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}).
 
-clocksi_icommit({_, _, CoordFsmPid})->
+ec_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit).
