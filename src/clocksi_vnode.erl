@@ -152,13 +152,10 @@ init([Partition]) ->
 %% @doc starts a read_fsm to handle a read operation.
 handle_command({read_data_item, Txn, Key, Type}, Sender,
                #state{write_set=WriteSet, partition=Partition}=State) ->
-    lager:info("Read data item~n"),
     Vnode = {Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
-    lager:info("Starting read itme fsm ~w ~n", [Vnode]),
     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
                                                  Key, Type, Updates),
-    lager:info("Started read itme fsm~n"),
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition
@@ -166,15 +163,12 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                #state{partition=Partition,
                       write_set=WriteSet,
                       active_txs_per_key=_ActiveTxsPerKey}=State) ->
-    lager:info("Update data item~n"),
     TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update,
                             op_payload={Key, Type, Op}},
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
-    lager:info("Node is ~w ~n", [Node]),
     Result = logging_vnode:append(Node,LogId,LogRecord),
-    lager:info("Got reply~n"),
     case Result of
         {ok, _} ->
             %%true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
