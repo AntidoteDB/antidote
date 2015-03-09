@@ -27,6 +27,7 @@
 -export([start_vnode/1,
          read_data_item/5,
 	 read_data_item_external/5,
+	 read_data_item/6,
          update_data_item/6,
          prepare/2,
          commit/3,
@@ -233,7 +234,7 @@ handle_command({prepare, Transaction, TxWriteSet}, _Sender,
         true ->
 	    %% TODO: is this active thing necessary?
 	    %% adding after certification because 
-	    lists:foldl(fun({Key1,Type1,_Op}, _Acc) ->
+	    lists:foldl(fun({_Replicated,Key1,Type1,_Op}, _Acc) ->
 				true = ets:insert(ActiveTxPerKey, {Key1, Type1, TxId})
 			end, 0, TxWriteSet),
 	    PrepareTime = now_milisec(erlang:now()),
@@ -244,7 +245,7 @@ handle_command({prepare, Transaction, TxWriteSet}, _Sender,
             %% Updates = ets:lookup(WriteSet, TxId),
 	    Updates = TxWriteSet,
             case Updates of 
-                [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
+                [{_Rep, Key, _Type, {_Op, _Actor}} | _Rest] -> 
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
 		    NewUpdates = write_set_to_logrecord(TxId,Updates),
@@ -277,7 +278,7 @@ handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
                                       Transaction#transaction.vec_snapshot_time}},
     %% Updates = ets:lookup(WriteSet, TxId),
     case Updates of
-        [{Key, _Type, {_Op, _Param}} | _Rest] -> 
+        [{_Rep, Key, _Type, {_Op, _Param}} | _Rest] -> 
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append(Node,LogId,LogRecord) of
@@ -387,7 +388,7 @@ now_milisec({MegaSecs, Secs, MicroSecs}) ->
 certification_check(_, [], _, _) ->
     true;
 certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    {Key, _Type, _} = H,
+    {_Replicated, Key, _Type, _} = H,
     TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
     case check_keylog(TxId, TxsPerKey, CommittedTx) of
         true ->
@@ -413,21 +414,26 @@ check_keylog(TxId, [H|T], CommittedTx)->
             check_keylog(TxId, T, CommittedTx)
     end.
 
--spec update_materializer(DownstreamOps :: [{key(),type(),op()}],
+-spec update_materializer(DownstreamOps :: [{atom(),key(),type(),op()}],
                           Transaction::#transaction{},TxCommitTime:: {term(), term()}) ->
                                  ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
-    UpdateFunction = fun ({Key, Type, Op}, AccIn) ->
-                             CommittedDownstreamOp =
-                                 #clocksi_payload{
-                                    key = Key,
-                                    type = Type,
-                                    op_param = Op,
-                                    snapshot_time = Transaction#transaction.vec_snapshot_time,
-                                    commit_time = {DcId, TxCommitTime},
-                                    txid = Transaction#transaction.txn_id},
-                             AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)]
+    UpdateFunction = fun ({Rep, Key, Type, Op}, AccIn) ->
+			     case Rep of
+				 isReplicated ->
+				     CommittedDownstreamOp =
+					 #clocksi_payload{
+					    key = Key,
+					    type = Type,
+					    op_param = Op,
+					    snapshot_time = Transaction#transaction.vec_snapshot_time,
+					    commit_time = {DcId, TxCommitTime},
+					    txid = Transaction#transaction.txn_id},
+				     AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)];
+				 _ ->
+				     AccIn
+			     end
                      end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
@@ -439,7 +445,13 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     end.
 
 write_set_to_logrecord(TxId, WriteSet) ->
-    lists:foldl(fun({Key,Type,Op}, Acc) ->
-			Acc ++ [#log_record{tx_id=TxId, op_type=update,
+    lists:foldl(fun({Replicated, Key,Type,Op}, Acc) ->
+			case Replicated of
+			    isReplicated ->
+				OpType=update;
+			    notReplicated ->
+				OpType=nonRepUpdate
+			end,
+			Acc ++ [#log_record{tx_id=TxId, op_type=OpType,
 					    op_payload={Key, Type, Op}}]
-		end,[],WriteSet).
+		   end,[],WriteSet).

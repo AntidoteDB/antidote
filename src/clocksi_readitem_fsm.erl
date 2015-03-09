@@ -126,7 +126,7 @@ loop_reads([], _Type, _Key, _Transaction, _WriteSet) ->
 
 send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction,
 				       updates=Updates,tx_coordinator=Coordinator}) ->
-    case loop_reads(replication_check:get_dc_replicas(Key,noSelf), Type, Key, Transaction, Updates) of
+    case loop_reads(replication_check:get_dc_replicas_read(Key,noSelf), Type, Key, Transaction, Updates) of
         {ok, Snapshot} ->
             Reply = {ok, Snapshot, external};
         error ->
@@ -189,8 +189,8 @@ return(timeout, SD0=#state{key=Key,
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     case materializer_vnode:read(Key, Type, VecSnapshotTime) of
         {ok, Snapshot} ->
-	    Updates=write_set_to_updates(Transaction#transaction.txn_id,WriteSet),
-            Updates2=filter_updates_per_key(Updates, Key),
+	    Updates2=write_set_to_updates(Transaction,WriteSet,Key),
+            %% Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
             Reply = {ok, Snapshot2, internal};
@@ -220,25 +220,42 @@ terminate(_Reason, _SN, _SD) ->
 
 %% Internal functions
 
-write_set_to_updates(TxId, WriteSet) ->
-    lists:foldl(fun(Write, Acc) ->
-		       Acc ++ [{TxId, Write}]
-	       end,[],WriteSet).
+write_set_to_updates(Txn, WriteSet, Key) ->
+    NewWS=lists:foldl(fun({Replicated,KeyPrime,Type,Op}, Acc) ->
+			      case KeyPrime==Key of
+				  true ->
+				      case Replicated of
+					  isReplicated ->
+					      Acc ++ [{Replicated,KeyPrime,Type,Op}];
+					  notReplicated ->
+					      {ok, DownstreamRecord} = 
+						  clocksi_downstream:generate_downstream_op(
+						    Txn, Key, Type, Op, Acc, local),
+					      Acc ++ [{isReplicated,KeyPrime,Type,DownstreamRecord}]
+				      end;
+				  false ->
+				      Acc
+			      end
+		      end,[],WriteSet),
+    lists:foldl(fun({_Replicated,_Key2,_Type2,Update2}, Acc) ->
+			Acc ++ [Update2]
+		end,[],NewWS).
 
-filter_updates_per_key(Updates, Key) ->
-    int_filter_updates_key(Updates, Key, []).
 
-int_filter_updates_key([], _Key, Updates2) ->
-    Updates2;
+%% filter_updates_per_key(Updates, Key) ->
+%%     int_filter_updates_key(Updates, Key, []).
 
-int_filter_updates_key([Next|Rest], Key, Updates2) ->
-    {_, {KeyPrime, _Type, Op}} = Next,
-    case KeyPrime==Key of
-        true ->
-            int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
-        false ->
-            int_filter_updates_key(Rest, Key, Updates2)
-    end.
+%% int_filter_updates_key([], _Key, Updates2) ->
+%%     Updates2;
+
+%% int_filter_updates_key([Next|Rest], Key, Updates2) ->
+%%     {_, {KeyPrime, _Type, Op}} = Next,
+%%     case KeyPrime==Key of
+%%         true ->
+%%             int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
+%%         false ->
+%%             int_filter_updates_key(Rest, Key, Updates2)
+%%     end.
 
 get_stable_time(Key) ->
     Preflist = log_utilities:get_preflist_from_key(Key),

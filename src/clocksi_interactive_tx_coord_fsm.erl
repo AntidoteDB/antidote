@@ -118,8 +118,8 @@ execute_op({Op_type, Args}, Sender,
 	    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
 			   false ->
 			       [];
-			   AList ->
-			       AList
+			   {IndexNode, WS} ->
+			       WS
 		       end,
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type, WriteSet) of
@@ -135,53 +135,97 @@ execute_op({Op_type, Args}, Sender,
             end;
         update ->
             {Key, Type, Param}=Args,
+	    Preflist = log_utilities:get_preflist_from_key(Key),
+	    IndexNode = hd(Preflist),
 	    case replication_check:is_replicated_here(Key) of
 		true ->
-		    Preflist = log_utilities:get_preflist_from_key(Key),
-		    IndexNode = hd(Preflist),
 		    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
 				   false ->
 				       [];
-				   AList ->
-				       AList
+				   {IndexNode, WS} ->
+				       WS
 			       end,
-		    case generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
+		    case generate_downstream_op(Transaction, Key, Type, Param, WriteSet) of
 			{ok, DownstreamRecord} ->
-			    case clocksi_vnode:update_data_item(IndexNode, Transaction,
-								Key, Type, DownstreamRecord, WriteSet) of
-			       ok ->
-				    case WriteSet of
-					[] ->
-					    New_updated_partitions=
-						lists:append(Updated_partitions, [{IndexNode,[Args]}]),
-					    {reply, ok, execute_op,
-					     SD0#state
-					     {updated_partitions= New_updated_partitions}};
-					_ ->
-					    New_updated_partitions = lists:foldl(fun({NextIndexNode,ListArgs},NewAcc) ->
-											 case NextIndexNode of
-											     IndexNode ->
-												 NewAcc ++ [{IndexNode, ListArgs ++ [Args]}];
-											     _ ->
-												 NewAcc ++ [{NextIndexNode,ListArgs}]
-											 end
-										 end, [], Updated_partitions),
-					    {reply, ok, execute_op, SD0#state
-					     {updated_partitions= New_updated_partitions}}
-				    end;
-				error ->
-				    {reply, error, abort, SD0}
-			    end;
-			{error, _} ->
-			    {reply, error, abort, SD0}
+			    NewDownstream = DownstreamRecord,
+			    Replicated = isReplicated;
+			_ ->
+			    NewDownstream = Param,
+			    Replicated = error
 		    end;
 		false ->
-		    %%TODO 
-		    lager:error("not implemented updating non-replicated keys"),
-		    {reply, error, abort, SD0}
-	    
+		    NewDownstream = Param,
+		    Replicated = notReplicated
+	    end,
+	    case Replicated of
+		error ->
+		    {reply, error, abort, SD0};
+		_ ->
+		    case lists:keyfind(IndexNode, 1, Updated_partitions) of
+			false ->
+			    New_updated_partitions=
+				lists:append(Updated_partitions, [{IndexNode,[{Replicated,Key,Type,NewDownstream}]}]),
+			    {reply, ok, execute_op,
+			     SD0#state
+			     {updated_partitions= New_updated_partitions}};
+			{IndexNode, _Writesets} ->
+			    New_updated_partitions = lists:foldl(fun({NextIndexNode,ListRepArgs},NewAcc) ->
+									 case NextIndexNode of
+									     IndexNode ->
+										 NewAcc ++ [{IndexNode, ListRepArgs ++ [{Replicated,Key,Type,NewDownstream}]}];
+												_ ->
+										 NewAcc ++ [{NextIndexNode,ListRepArgs}]
+									 end
+								 end, [], Updated_partitions),
+			    {reply, ok, execute_op, SD0#state
+			     {updated_partitions= New_updated_partitions}}
+		    end
 	    end
     end.
+
+
+
+
+
+
+
+
+    %% 			    case clocksi_vnode:update_data_item(IndexNode, Transaction,
+    %% 								Key, Type, DownstreamRecord, WriteSet) of
+    %% 			       ok ->
+    %% 				    case lists:keyfind(IndexNode, 1, WriteSet) of
+    %% 					false ->
+    %% 					    New_updated_partitions=
+    %% 						lists:append(Updated_partitions, [{IndexNode,{[{Key,Type,DownstreamRecord}],[]}}]),
+    %% 					    {reply, ok, execute_op,
+    %% 					     SD0#state
+    %% 					     {updated_partitions= New_updated_partitions}};
+    %% 					_ ->
+    %% 					    New_updated_partitions = lists:foldl(fun({NextIndexNode,{ListRepArgs,ListNonRep}},NewAcc) ->
+    %% 											 case NextIndexNode of
+    %% 											     IndexNode ->
+    %% 												 NewAcc ++ [{IndexNode, {ListRepArgs ++ [Args],ListNonRep}}];
+    %% 											     _ ->
+    %% 												 NewAcc ++ [{NextIndexNode,{ListRepArgs,ListNonRep}}]
+    %% 											 end
+    %% 										 end, [], Updated_partitions),
+    %% 					    {reply, ok, execute_op, SD0#state
+    %% 					     {updated_partitions= New_updated_partitions}}
+    %% 				    end;
+    %% 				error ->
+    %% 				    %%{reply, error, abort, SD0}
+    %% 			    end;
+    %% 			{error, _} ->
+    %% 			    %% Error generating downstream
+    %% 			    %%{reply, error, abort, SD0}
+    %% 		    end;
+    %% 		false ->
+    %% 		    %%TODO 
+    %% 		    lager:error("not implemented updating non-replicated keys"),
+    %% 		    {reply, error, abort, SD0}
+	    
+    %% 	    end
+    %% end.
 
 
 %% @doc a message from a client wanting to start committing the tx.
@@ -383,5 +427,5 @@ get_snapshot_time(ClientClock, localTransaction) ->
 %%           {error, Reason}
 %%   end.
 
-generate_downstream_op(Txn, IndexNode, Key, Type, Param, WriteSet) ->
-    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param, WriteSet).
+generate_downstream_op(Txn, Key, Type, Param, WriteSet) ->
+    clocksi_downstream:generate_downstream_op(Txn, Key, Type, Param, WriteSet, local).

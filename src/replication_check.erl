@@ -1,14 +1,31 @@
 -module(replication_check).
 
--export([get_dc_replicas/2,
+-export([get_dc_replicas_read/2,
+	 get_dc_replicas_update/2,
 	 is_replicated_here/1,
 	 set_replication/1]).
 
--define(META_PREFIX_REPLI, {dcid,replication}).
+-define(META_PREFIX_REPLI_UPDATE, {dcidupdate,replication}).
+-define(META_PREFIX_REPLI_READ, {dcidread,replication}).
 
 
-get_dc_replicas(Key,WithSelf) ->
-    DcList = case riak_core_metadata:get(?META_PREFIX_REPLI,Key,[{default,[]}]) of
+get_dc_replicas_update(Key,WithSelf) ->
+    DcList = case riak_core_metadata:get(?META_PREFIX_REPLI_UPDATE,Key,[{default,[]}]) of
+		 [] ->
+		     inter_dc_manager:get_dcs();
+		 Dcs ->
+		     Dcs
+	     end,
+    case WithSelf of
+	noSelf ->
+	    lists:delete(inter_dc_manager:get_my_dc(),DcList);
+	withSelf ->
+	    DcList
+    end.
+    
+
+get_dc_replicas_read(Key,WithSelf) ->
+    DcList = case riak_core_metadata:get(?META_PREFIX_REPLI_READ,Key,[{default,[]}]) of
 		 [] ->
 		     inter_dc_manager:get_dcs();
 		 Dcs ->
@@ -20,11 +37,11 @@ get_dc_replicas(Key,WithSelf) ->
 	withSelf ->
 	    DcList
     end.
-    
+
     
 
 is_replicated_here(Key) ->
-    case riak_core_metadata:get(?META_PREFIX_REPLI,Key,[{default,[]}]) of
+    case riak_core_metadata:get(?META_PREFIX_REPLI_READ,Key,[{default,[]}]) of
 	[] ->
 	    true;
 	DcList ->
@@ -34,9 +51,10 @@ is_replicated_here(Key) ->
 
 
 set_replication(ListKeyDcsList) ->
-    lists:foldl(fun({Key,DcList},_Acc2) ->
+    lists:foldl(fun({Key,DcListRead,DcListUpdate},_Acc2) ->
 			try
-			    riak_core_metadata:put(?META_PREFIX_REPLI,Key,DcList)
+			    riak_core_metadata:put(?META_PREFIX_REPLI_READ,Key,DcListRead),
+			    riak_core_metadata:put(?META_PREFIX_REPLI_UPDATE,Key,DcListUpdate)
 			catch
 			    _:Reason ->
 				lager:error("Exception updating prelication meta data ~p", [Reason])

@@ -24,15 +24,13 @@
 -export([generate_downstream_op/6]).
 
 %% @doc Returns downstream operation for upstream operation
--spec generate_downstream_op(#transaction{}, Node::term(), Key::key(),
-                             Type::type(), Update::op(), WriteSet::list()) ->
+-spec generate_downstream_op(#transaction{}, Key::key(),
+                             Type::type(), Update::op(), WriteSet::list(), IsLocal::atom()) ->
                                     {ok, op()} | {error, atom()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
+generate_downstream_op(Transaction, Key, Type, Update, WriteSet, IsLocal) ->
     {Op, Actor} =  Update,
-    case clocksi_vnode:read_data_item(Node,
-                                      Transaction,
-                                      Key,
-                                      Type, WriteSet) of
+    case clocksi_vnode:read_data_item(Transaction,
+                                      Key, Type, IsLocal, self(), WriteSet) of
         {ok, Snapshot, internal} ->
             {ok, NewState} = Type:update(Op, Actor, Snapshot),
             DownstreamOp = {merge, NewState},

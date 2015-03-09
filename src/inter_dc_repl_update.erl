@@ -114,12 +114,15 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 check_and_update(SnapshotTime, Localclock, Transaction,
                  Dc, DcQ, Ts,
                  StateData = #recvr_state{partition = Partition} ) ->
-    {_,_,_,Ops} = Transaction,
+    {TxIdA,{DcIdA,CommitTimeA},VecSSA,Ops} = Transaction,
     Node = {Partition,node()},
     FirstOp = hd(Ops),
     FirstRecord = FirstOp#operation.payload,
     LogId = case FirstRecord#log_record.op_type of
                 update ->
+                    {Key1,_Type,_Op} = FirstRecord#log_record.op_payload,
+                    log_utilities:get_logid_from_key(Key1);
+                nonRepUpdate ->
                     {Key1,_Type,_Op} = FirstRecord#log_record.op_payload,
                     log_utilities:get_logid_from_key(Key1);
                 noop ->
@@ -132,23 +135,46 @@ check_and_update(SnapshotTime, Localclock, Transaction,
     %% is created it is only given snapshot times that are safe.
     case check_dep(SnapshotTime, Localclock) of
         true ->
-            lists:foreach(
-              fun(Op) ->
-                      Logrecord = Op#operation.payload,
-                      case Logrecord#log_record.op_type of
-                          noop ->
-                              lager:debug("Heartbeat Received");
-                          update ->
-                              logging_vnode:append(Node, LogId, Logrecord);
-                          _ -> %% prepare or commit
-                              logging_vnode:append(Node, LogId, Logrecord),
-                              lager:debug("Prepare/Commit record")
-                              %%TODO Write this to log
-                      end
-              end, Ops),
+            {TheNewOps,_NewWs} = lists:foldl(
+				   fun(Op,{NewOps,Ws}) ->
+					   Logrecord = Op#operation.payload,
+					   OpNum = Op#operation.op_number,
+					   TxId = Logrecord#log_record.tx_id,
+					   case Logrecord#log_record.op_type of
+					       noop ->
+						   lager:debug("Heartbeat Received");
+					       nonRepUpdate ->
+						   {Key2,Type2,Op2} = Logrecord#log_record.op_payload,
+
+%%-type transaction() :: {txid(), {dcid(), non_neg_integer()},
+%%                        vectorclock:vectorclock(), [#operation{}]}.
+%%-record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
+%% {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = Transaction,
+
+						   OrgTrans = #transaction{snapshot_time=CommitTimeA,
+									   server_pid=DcIdA,vec_snapshot_time=VecSSA,txn_id=TxIdA},
+						   {ok, Downstream} =
+						       clocksi_downstream:generate_downstream_op(OrgTrans,Key2,Type2,Op2,Ws,external),
+						   NewLogRecord = #log_record{tx_id=TxId,op_type=update,
+									      op_payload={Key2,Type2,Downstream}},
+						   NewOp = #operation{op_number=OpNum,payload=NewLogRecord},
+						   logging_vnode:append(Node, LogId, NewLogRecord),
+						   {NewOps ++ [NewOp],Ws ++ [{isReplicated,Key2,Type2,Downstream}]};
+					       update ->
+						   {Key2,Type2,Op2} = Logrecord#log_record.op_payload,
+						   logging_vnode:append(Node, LogId, Logrecord),
+						   {NewOps ++ [Op],Ws ++ [{isReplicated,Key2,Type2,Op2}]};
+					       _ -> %% prepare or commit
+						   logging_vnode:append(Node, LogId, Logrecord),
+						   lager:debug("Prepare/Commit record"),
+						   %%TODO Write this to log
+						   {NewOps ++ [Op],Ws}
+					       end
+				   end, {[],[]}, Ops),
+	    NewTrans = {TxIdA,{DcIdA,CommitTimeA},VecSSA,TheNewOps},
             DownOps =
                 clocksi_transaction_reader:get_update_ops_from_transaction(
-                  Transaction),
+                  NewTrans),
             lists:foreach( fun(DownOp) ->
                                    Key = DownOp#clocksi_payload.key,
                                    ok = materializer_vnode:update_cache(Key, DownOp)
