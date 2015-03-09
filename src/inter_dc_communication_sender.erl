@@ -45,7 +45,13 @@
 -define(TIMEOUT,20000).
 -define(CONNECT_TIMEOUT,5000).
 
+%% ===================================================================
+%% Public API
+%% ===================================================================
+
 %% Send a message to all DCs over a tcp connection
+%% Returns ok if all DCs have acknowledged with in the time TIMEOUT
+-spec propagate_sync(term(), [dc_address()]) -> ok | error.
 propagate_sync(Message, DCs) ->
     Errors = lists:foldl(
                fun({DcAddress, Port}, Acc) ->
@@ -79,8 +85,18 @@ propagate_sync(Message, DCs) ->
         _ -> error
     end.
 
-start_link(Port, Host, Message, ReplyTo) ->
-    gen_fsm:start_link(?MODULE, [Port, Host, Message, ReplyTo], []).
+%% Starts a process to send a message to a single Destination 
+%%  DestPort : TCP port on which destination DCs inter_dc_communication_recvr listens
+%%  DestHost : IP address (or hostname) of destination DC
+%%  Message : message to be sent
+%%  ReplyTo : Process id to which the success or failure message has
+%%             to be send (Usually the caller of this function) 
+start_link(DestPort, DestHost, Message, ReplyTo) ->
+    gen_fsm:start_link(?MODULE, [DestPort, DestHost, Message, ReplyTo], []).
+
+%% ===================================================================
+%% gen_fsm callbacks
+%% ===================================================================
 
 init([Port,Host,Message,ReplyTo]) ->
     {ok, connect, #state{port=Port,
@@ -116,6 +132,7 @@ stop_error(timeout, State=#state{socket=Socket}) ->
     _ = gen_tcp:close(Socket),
     {stop, error, State}.
 
+%% Converts incoming tcp message to an fsm event to self
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
     _ = inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(), binary_to_term(Bin)),

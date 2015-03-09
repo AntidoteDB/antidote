@@ -50,6 +50,9 @@ init(Port) ->
                            ]),
     {ok, accept, #state{port=Port, listener=ListenSocket},0}.
 
+%% Accepts an incoming tcp connection and spawn and new fsm 
+%% to process the connection, so that new connections could 
+%% be processed in parallel
 accept(timeout, State=#state{listener=ListenSocket}) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
     {ok, _} = inter_dc_communication_fsm_sup:start_fsm([AcceptSocket]),

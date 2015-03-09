@@ -28,6 +28,8 @@
 -export([start_link/1]).
 -export([init/1]).
 
+%% Starts tcp listening server on the "Port" and waits for incoming
+%% connection request from other DCs
 start_link(Port) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [Port]).
 
