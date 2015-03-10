@@ -109,15 +109,23 @@ read_data_item(Txn, Key, Type, IsLocal, Sender, WriteSet) ->
     Vnode = self(),
     %% Vnode = {Partition, node()},
     %% Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
-    
-    {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
+    {ok, Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
 						 Key, Type, WriteSet, IsLocal,
 						 replication_check:is_replicated_here(Key)),
     receive
-	Value ->
+	{Pid, Value} ->
 	    Value
-    end.
+    end.    
 
+%% rcv_msg(Pid) ->
+%%     receive
+%% 	{Pid, Value} ->
+%% 	    Value;
+%% 	Other ->
+%% 	    lager:info("Msg: ~p", [Other]),
+%% 	    rcv_msg(Pid)
+%%     end.
+	    
 
 %% @doc Sends an update request to the Node that is responsible for the Key
 update_data_item(_Node, _TxId, _Key, _Type, _Op, _WriteSet) ->

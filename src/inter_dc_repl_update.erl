@@ -135,42 +135,41 @@ check_and_update(SnapshotTime, Localclock, Transaction,
     %% is created it is only given snapshot times that are safe.
     case check_dep(SnapshotTime, Localclock) of
         true ->
-            {TheNewOps,_NewWs} = lists:foldl(
-				   fun(Op,{NewOps,Ws}) ->
-					   Logrecord = Op#operation.payload,
-					   OpNum = Op#operation.op_number,
-					   TxId = Logrecord#log_record.tx_id,
-					   case Logrecord#log_record.op_type of
-					       noop ->
-						   lager:debug("Heartbeat Received");
-					       nonRepUpdate ->
-						   {Key2,Type2,Op2} = Logrecord#log_record.op_payload,
-
+            {TheNewOps,_NewWs,NewLogRecords}
+		= lists:foldl(
+		    fun(Op,{NewOps,Ws,NewRecords}) ->
+			    Logrecord = Op#operation.payload,
+			    OpNum = Op#operation.op_number,
+			    TxId = Logrecord#log_record.tx_id,
+			    case Logrecord#log_record.op_type of
+				noop ->
+				    lager:debug("Heartbeat Received");
+				nonRepUpdate ->
+				    {Key2,Type2,Op2} = Logrecord#log_record.op_payload,
+				    
 %%-type transaction() :: {txid(), {dcid(), non_neg_integer()},
 %%                        vectorclock:vectorclock(), [#operation{}]}.
 %%-record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
 %% {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = Transaction,
 
-						   OrgTrans = #transaction{snapshot_time=CommitTimeA,
-									   server_pid=DcIdA,vec_snapshot_time=VecSSA,txn_id=TxIdA},
-						   {ok, Downstream} =
-						       clocksi_downstream:generate_downstream_op(OrgTrans,Key2,Type2,Op2,Ws,external),
-						   NewLogRecord = #log_record{tx_id=TxId,op_type=update,
-									      op_payload={Key2,Type2,Downstream}},
-						   NewOp = #operation{op_number=OpNum,payload=NewLogRecord},
-						   logging_vnode:append(Node, LogId, NewLogRecord),
-						   {NewOps ++ [NewOp],Ws ++ [{isReplicated,Key2,Type2,Downstream}]};
-					       update ->
-						   {Key2,Type2,Op2} = Logrecord#log_record.op_payload,
-						   logging_vnode:append(Node, LogId, Logrecord),
-						   {NewOps ++ [Op],Ws ++ [{isReplicated,Key2,Type2,Op2}]};
-					       _ -> %% prepare or commit
-						   logging_vnode:append(Node, LogId, Logrecord),
-						   lager:debug("Prepare/Commit record"),
-						   %%TODO Write this to log
-						   {NewOps ++ [Op],Ws}
-					       end
-				   end, {[],[]}, Ops),
+				    OrgTrans = #transaction{snapshot_time=CommitTimeA,
+							    server_pid=DcIdA,vec_snapshot_time=VecSSA,txn_id=TxIdA},
+				    {ok, Downstream} =
+					clocksi_downstream:generate_downstream_op(OrgTrans,Key2,Type2,Op2,Ws,external),
+				    NewLogRecord = #log_record{tx_id=TxId,op_type=update,
+							       op_payload={Key2,Type2,Downstream}},
+				    NewOp = #operation{op_number=OpNum,payload=NewLogRecord},
+				    {NewOps ++ [NewOp],Ws ++ [{isReplicated,Key2,Type2,Downstream}], NewRecords ++ [NewLogRecord]};
+				update ->
+				    {Key2,Type2,Op2} = Logrecord#log_record.op_payload,
+				    {NewOps ++ [Op],Ws ++ [{isReplicated,Key2,Type2,Op2}], NewRecords ++ [Logrecord]};
+				_ -> %% prepare or commit
+				    lager:debug("Prepare/Commit record"),
+				    %%TODO Write this to log
+				    {NewOps ++ [Op],Ws, NewRecords ++ [Logrecord]}
+			    end
+		    end, {[],[], []}, Ops),
+	    logging_vnode:append_group(Node, LogId, NewLogRecords),
 	    NewTrans = {TxIdA,{DcIdA,CommitTimeA},VecSSA,TheNewOps},
             DownOps =
                 clocksi_transaction_reader:get_update_ops_from_transaction(

@@ -224,8 +224,9 @@ handle_command({append_group, LogId, PayloadList}, Sender,
                       clock=Clock,
                       partition=Partition,
                       senders_awaiting_ack=SendersAwaitingAck0}=State) ->
-    {ErrorList, SuccList} = lists:foldl(fun(Payload, {AccErr, AccSucc}) ->
-						OpId = generate_op_id(Clock),
+    {ErrorList, SuccList, _NNC} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock}) ->
+						OpId = generate_op_id(NewClock),
+						{NewNewClock, _Node} = OpId,
 						case get_log_from_map(Map, Partition, LogId) of
 						    {ok, Log} ->
 							case insert_operation(Log, LogId, OpId, Payload) of
@@ -234,17 +235,17 @@ handle_command({append_group, LogId, PayloadList}, Sender,
 								    error ->
 									Me = self(),
 									Me ! {sync, Log, LogId},
-									{AccErr, AccSucc ++ [OpId]};
+									{AccErr, AccSucc ++ [OpId], NewNewClock};
 								    _ ->
-									{AccErr, AccSucc ++ [OpId]}
+									{AccErr, AccSucc ++ [OpId], NewNewClock}
 								end;
 							    {error, Reason} ->
-								{AccErr ++ [{reply, {error, Reason}, State}], AccSucc}
+								{AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
 							end;
 						    {error, Reason} ->
-							{AccErr ++ [{reply, {error, Reason}, State}], AccSucc}
+							{AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
 						end
-					end, {[],[]}, PayloadList),
+					end, {[],[],Clock}, PayloadList),
     case ErrorList of
 	[] ->
 	    [SuccId|_T] = SuccList,

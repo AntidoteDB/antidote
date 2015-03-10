@@ -37,5 +37,8 @@ generate_downstream_op(Transaction, Key, Type, Update, WriteSet, IsLocal) ->
             {ok, DownstreamOp};
         {error, Reason} ->
             lager:error("Error: ~p", [Reason]),
-            {error, Reason}
+            {error, Reason};
+	Reply ->
+	    lager:error("Got weird reply from read_data_item: ~p", [Reply]),
+	    {error, Reply}
     end.

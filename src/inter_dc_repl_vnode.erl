@@ -106,6 +106,11 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 	%% each DC at what time it is changing, so the external DCs can safely
 	%% send all the values for the new keys it is replicating
 	_ ->
+	    lists:foldl(fun({DCs,Message},_Acc) ->
+				lager:info("DCs to send the trans: ~p", [DCs]),
+				lager:info("The transaction: ~p", [Message])
+			end,0,dict:to_list(DictTransactionsDcs)),
+	    
             case inter_dc_communication_sender:propagate_sync(
                    DictTransactionsDcs, StableTime, Partition) of
                 ok ->

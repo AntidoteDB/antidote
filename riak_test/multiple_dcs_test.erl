@@ -16,18 +16,22 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
     timer:sleep(500), %%TODO: wait for inter_dc_manager to be up
-    {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, start_recvrs,[9000,9001]),
-    {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, start_recvrs,[9002,9003]),
-    {ok, DC3} = rpc:call(HeadCluster3, inter_dc_manager, start_recvrs,[9004,9005]),
-    lager:info("Receivers start results ~p, ~p and ~p", [DC1, DC2, DC3]),
+    {ok, DC1up,DC1read} = rpc:call(HeadCluster1, antidote_sup, start_recvrs,[local,9000,9001]),
+    {ok, DC2up,DC2read} = rpc:call(HeadCluster2, antidote_sup, start_recvrs,[local,9002,9003]),
+    {ok, DC3up,DC3read} = rpc:call(HeadCluster3, antidote_sup, start_recvrs,[local,9004,9005]),
+    lager:info("Receivers start results ~p, ~p and ~p", [DC1up, DC2up, DC3up]),
 
-    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2, DC3]]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1, DC3]]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1, DC2]]),
+    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2up, DC3up]]),
+    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1up, DC3up]]),
+    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1up, DC2up]]),
 
-    ok = rpc:call(HeadCluster1, inter_dc_manager, start_senders, []),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, start_senders, []),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, start_senders, []),
+    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_read_dcs,[[DC2read, DC3read]]),
+    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_read_dcs,[[DC1read, DC3read]]),
+    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_read_dcs,[[DC1read, DC2read]]),
+
+    ok = rpc:call(HeadCluster1, antidote_sup, start_senders, []),
+    ok = rpc:call(HeadCluster2, antidote_sup, start_senders, []),
+    ok = rpc:call(HeadCluster3, antidote_sup, start_senders, []),
 
     simple_replication_test(Cluster1, Cluster2, Cluster3),
     parallel_writes_test(Cluster1, Cluster2, Cluster3),
@@ -55,6 +59,7 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     ?assertEqual({ok, 3}, ReadResult),
 
     lager:info("Done append in Node1"),
+
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
                            [CommitTime, key1, riak_dt_gcounter]),

@@ -133,7 +133,7 @@ send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction
             Reply={error, failed_read_at_all_dcs}
     end,
     %%riak_core_vnode:reply(Coordinator, Reply),
-    Coordinator ! Reply,
+    Coordinator ! {self(), Reply},
     {stop, normal, SD0}.
     
 
@@ -199,7 +199,7 @@ return(timeout, SD0=#state{key=Key,
             Reply={error, Reason}
     end,
     %% riak_core_vnode:reply(Coordinator, Reply),
-    Coordinator ! Reply,
+    Coordinator ! {self(), Reply},
     {stop, normal, SD0};
 return(_SomeMessage, SDO) ->
     {next_state, return, SDO,0}.

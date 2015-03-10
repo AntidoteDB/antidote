@@ -47,7 +47,8 @@ start_rep({DcIp,Port}) ->
     inter_dc_manager:start_receiver({DcIp,Port}),
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
                     {inter_dc_communication_sup, start_link, [Port]},
-				     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
+				     permanent, 5000, supervisor, [inter_dc_communication_sup]}),
+    {ok, {DcIp,Port}}.
 
 
 start_cross_dc_read_communication_recvr({DcIp,Port}) ->
@@ -55,7 +56,8 @@ start_cross_dc_read_communication_recvr({DcIp,Port}) ->
     inter_dc_manager:start_read_receiver({DcIp,Port}),
     supervisor:start_child(?MODULE, {cross_dc_read_communication_sup,
                     {cross_dc_read_communication_sup, start_link, [Port]},
-				     permanent, 5000, supervisor, [cross_dc_read_communication_sup]}).
+				     permanent, 5000, supervisor, [cross_dc_read_communication_sup]}),
+    {ok, {DcIp,Port}}.
 
 
 start_safe_time_sender() ->
@@ -77,12 +79,24 @@ start_collect_sent() ->
 
 start_senders() ->
     %% start_collect_sent(),
-    start_safe_time_sender().
+    start_safe_time_sender(),
+    ok.
 
-start_recvrs(DcId, Port1, Port2) ->
-    start_rep({DcId, Port1}),
-    start_cross_dc_read_communication_recvr({DcId, Port2}).
+start_recvrs(AddrType, Port1, Port2) ->
+    Ip = my_ip(AddrType),
+    start_rep({Ip, Port1}),
+    start_cross_dc_read_communication_recvr({Ip, Port2}),
+    {ok,{Ip,Port1},{Ip,Port2}}.
     
+
+my_ip(internet) ->
+    {ok, List} = inet:getif(),
+    {Ip, _, _} = hd(List),
+    list_to_atom(inet_parse:ntoa(Ip));
+my_ip(local) ->
+    {ok, List} = inet:getif(),
+    {Ip, _, _} = lists:last(List),
+    list_to_atom(inet_parse:ntoa(Ip)).
 
 %% ===================================================================
 %% Supervisor callbacks
