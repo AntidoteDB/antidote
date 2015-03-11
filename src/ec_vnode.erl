@@ -326,9 +326,10 @@ prepare(TxId, WriteSet)->
 
 %% @doc Executes the commit phase of this partition
 commit(TxId, WriteSet, State)->
+    DcId = dc_utilities:get_my_dc_id(),
     LogRecord=#log_record{tx_id=TxId,
                           op_type=commit,
-                          op_payload=TxId},
+                          op_payload=DcId},
     Updates = ets:lookup(WriteSet, TxId),
     case Updates of
         [{_, {Key, _Type, {_Op, _Param}}} | _Rest] -> 

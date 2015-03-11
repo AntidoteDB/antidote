@@ -101,7 +101,7 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             {stop, normal, State}
     end.
 
-wait_for_ack(acknowledge, State=#state{socket=_Socket, message=_Message} )->
+wait_for_ack({acknowledge, _DC}, State=#state{socket=_Socket, message=_Message} )->
     {next_state, stop, State,0};
 
 wait_for_ack(timeout, State) ->
