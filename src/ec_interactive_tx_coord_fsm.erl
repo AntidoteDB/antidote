@@ -38,7 +38,7 @@
 
 %% States
 -export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2,
-         receive_prepared/2, receive_batch_read/2, single_committing/2, committing_2pc/3, committing/2, receive_committed/2, abort/2,
+         receive_prepared/2, receive_batch_read/2, single_committing/2, abort/2,
          reply_to_client/2]).
 
 %%---------------------------------------------------------------------
@@ -79,12 +79,11 @@ finish_op(From, Key,Result) ->
 
 %% @doc Initialize the state.
 init([From]) ->
-    TxIdId = #tx_id{ec_vnode:now_microsec(erlang:now()), server_pid=self()},
+    TxId = #tx_id{time_id=ec_vnode:now_microsec(erlang:now()), server_pid=self()},
     SD = #state{
-            tx_id = TxIdId,
-            updated_partitions=[],
-           },
-    From ! {ok, TxIdId},
+            tx_id = TxId,
+            updated_partitions=[]},
+    From ! {ok, TxId},
     {ok, execute_op, SD}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
@@ -183,9 +182,8 @@ prepare(timeout, SD0=#state{
                         updated_partitions=Updated_partitions, from=_From}) ->
     case length(Updated_partitions) of
         0->
-            Snapshot_time=TxId#tx_id.snapshot_time,
             {next_state, committing,
-            SD0#state{state=committing, commit_time=Snapshot_time}, 0};
+            SD0#state{state=committing}, 0};
         1-> 
             Updates = dict:fetch(hd(Updated_partitions), Buffer),
             ec_vnode:pre_prepare(Updated_partitions, TxId, dict:to_list(Updates), single),
@@ -208,7 +206,7 @@ prepare_2pc(timeout, SD0=#state{
                         updated_partitions=Updated_partitions, from=From}) ->
     case length(Updated_partitions) of
         0->
-            gen_fsm:reply(From, {ok, TimeId}),
+            gen_fsm:reply(From, {ok, TxId}),
             {next_state, committing_2pc,
             SD0#state{state=committing}};
         _->
@@ -224,7 +222,7 @@ prepare_2pc(timeout, SD0=#state{
 %% @doc in this state, the fsm waits for prepare_time from each updated
 %%      partitions in order to compute the final tx timestamp (the maximum
 %%      of the received prepare_time).
-receive_prepared({prepared, ReceivedPrepareTime},
+receive_prepared(prepared,
                  S0=#state{num_to_ack=NumToAck,
                            commit_protocol=CommitProtocol,
                            from=From}) ->
@@ -232,11 +230,11 @@ receive_prepared({prepared, ReceivedPrepareTime},
             case CommitProtocol of
             two_phase ->
                 gen_fsm:reply(From, ok),
-                {next_state, committing_2pc,
-                S0#state{state=committing}};
+                {next_state, reply_to_client,
+                S0#state{state=committed}};
             _ ->
-                {next_state, committing,
-                S0#state{state=committing}, 0}
+                {next_state, reply_to_client,
+                S0#state{state=committed}, 0}
             end;
         _ ->
             {next_state, receive_prepared,
@@ -255,55 +253,6 @@ single_committing({committed}, S0=#state{from=_From}) ->
 single_committing(abort, S0) ->
     {next_state, abort, S0, 0}.
 
-%% @doc after receiving all prepare_times, send the commit message to all
-%%      updated partitions, and go to the "receive_committed" state.
-%%      This state expects other process to sen the commit message to 
-%%      start the commit phase.
-committing_2pc(commit, Sender, SD0=#state{tx_id = TxId,
-                              updated_partitions=Updated_partitions}) ->
-    NumToAck=length(Updated_partitions),
-    case NumToAck of
-        0 ->
-            {next_state, reply_to_client,
-             SD0#state{state=committed, from=Sender},0};
-        _ ->
-            ec_vnode:commit(Updated_partitions, TxId),
-            {next_state, receive_committed,
-             SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
-    end.
-
-%% @doc after receiving all prepare_times, send the commit message to all
-%%      updated partitions, and go to the "receive_committed" state.
-%%      This state is used when no commit message from the client is
-%%      expected 
-committing(timeout, SD0=#state{tx_id = TxId,
-                              updated_partitions=Updated_partitions}) ->
-    NumToAck=length(Updated_partitions),
-    case NumToAck of
-        0 ->
-            {next_state, reply_to_client,
-             SD0#state{state=committed},0};
-        _ ->
-            ec_vnode:commit(Updated_partitions, TxId),
-            {next_state, receive_committed,
-             SD0#state{num_to_ack=NumToAck, state=committing}}
-    end.
-
-%% @doc the fsm waits for acks indicating that each partition has successfully
-
-%% @doc the fsm waits for acks indicating that each partition has successfully
-%%	committed the tx and finishes operation.
-%%      Should we retry sending the committed message if we don't receive a
-%%      reply from every partition?
-%%      What delivery guarantees does sending messages provide?
-receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
-    case NumToAck of
-        1 ->
-            {next_state, reply_to_client, S0#state{state=committed}, 0};
-        _ ->
-           {next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
-    end.
-
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the tx_id aborts.
 abort(timeout, SD0=#state{tx_id = TxId,
@@ -321,7 +270,6 @@ abort(abort, SD0=#state{tx_id = TxId,
 reply_to_client(timeout, SD=#state{from=From, tx_id=TxId,
                                    state=TxState}) ->
     if undefined =/= From ->
-        TxId = TxId#tx_id.txn_id,
         Reply = case TxState of
             committed ->
                 {ok, TxId};

@@ -35,9 +35,7 @@
          terminate/3]).
 
 %% States
--export([check_clock/2,
-         waiting1/2,
-         return/2]).
+-export([return/2]).
 
 %% Spawn
 

@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 %% @doc Supervise the fsm.
--module(clocksi_static_tx_coord_sup).
+-module(ec_static_tx_coord_sup).
 -behavior(supervisor).
 
 -export([start_fsm/1,
@@ -34,8 +34,8 @@ start_fsm(Args) ->
 %% @doc Starts the coordinator of a ClockSI static transaction.
 init([]) ->
     lager:info("clockSI_static_tx_coord_sup: Starting fsm..."),
-    Worker = {clocksi_static_tx_coord_fsm,
-              {clocksi_static_tx_coord_fsm, start_link, []},
-              transient, 5000, worker, [clocksi_static_tx_coord_fsm]},
+    Worker = {ec_static_tx_coord_fsm,
+              {ec_static_tx_coord_fsm, start_link, []},
+              transient, 5000, worker, [ec_static_tx_coord_fsm]},
     lager:info("clockSI_static_tx_coord_sup: done."),
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

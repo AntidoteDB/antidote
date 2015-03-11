@@ -17,20 +17,20 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_downstream).
+-module(ec_downstream).
 
 -include("antidote.hrl").
 
 -export([generate_downstream_op/6]).
 
 %% @doc Returns downstream operation for upstream operation
--spec generate_downstream_op(#transaction{}, Node::term(), Key::key(),
+-spec generate_downstream_op(#tx_id{}, Node::term(), Key::key(),
                              Type::type(), Update::op(), [DownstreamOps::term()]) ->
                                     {ok, op()} | {error, atom()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, DownstreamOps) ->
+generate_downstream_op(TxId, Node, Key, Type, Update, DownstreamOps) ->
     {Op, Actor} =  Update,
-    case clocksi_vnode:read_data_item(Node,
-                                      Transaction,
+    case ec_vnode:read_data_item(Node,
+                                      TxId,
                                       Key,
                                       Type) of
         {ok, Snapshot} ->

@@ -33,9 +33,6 @@
                           op_param :: {term(), term()},
                           tx_id :: tx_id()
                          }).
--record(transaction, {snapshot_time :: snapshot_time(),
-                      server_pid :: pid(), 
-                      txn_id :: tx_id() }).
 
 %%---------------------------------------------------------------------
 -type key() :: term().
@@ -58,4 +55,4 @@
 -type ec_payload() :: #ec_payload{}.
 -type dcid() :: term().
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, tx_id/0, tx/0]).
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, tx_id/0]).

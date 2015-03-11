@@ -17,14 +17,14 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(ec_readitem_fsm).
+-module(ec_preprepare_fsm).
 
 -behavior(gen_fsm).
 
 -include("antidote.hrl").
 
 %% API
--export([start_link/6]).
+-export([start_link/5]).
 
 %% Callbacks
 -export([init/1,
@@ -35,64 +35,56 @@
          terminate/3]).
 
 %% States
--export([return/2]).
+-export([downstream/2]).
 
 %% Spawn
 
--record(state, {type,
-                key,
+-record(state, {updates,
                 tx_id,
                 tx_coordinator,
                 vnode,
-                updates}).
+                tx_type,
+                prepare_time}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, TxId, Key, Type, Updates) ->
+start_link(Vnode, Coordinator, Transaction, Updates, TxType) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
-                                 TxId, Key, Type, Updates], []).
-
+                                 Transaction, Updates, TxType], []).
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, TxId, Key, Type, Updates]) ->
+init([Vnode, Coordinator, Transaction, Updates, TxType]) ->
     SD = #state{vnode=Vnode,
-                type=Type,
-                key=Key,
                 tx_coordinator=Coordinator,
-                tx_id=TxId,
+                tx_id=Transaction,
+                tx_type=TxType,
                 updates=Updates},
-    {ok, return, SD, 0}.
+    {ok, downstream, SD, 0}.
 
-%% @doc return:
-%%  - Reads and returns the log of specified Key using replication layer.
-return(timeout, SD0=#state{key=Key,
-                           tx_coordinator=Coordinator,
-                           tx_id=TxId,
-                           type=Type,
-                           vnode=IndexNode,
-                           updates=Updates}) ->
-    case materializer_vnode:read(Key, Type) of
-        {ok, Snapshot} ->
-            case generate_downstream_operations(Updates, TxId, IndexNode, Key, []) of
-                {ok, Updates2} ->
-                    Snapshot2=ec_materializer:materialize_eager(Type, Snapshot, Updates2),
-                    Reply = {ok, Snapshot2};
-                {error, Reason} ->
-                    Reply={error, Reason}
+
+downstream(timeout, SD0=#state{tx_id=TxId,
+                               updates=Updates,
+                               tx_type=TxType,
+                               tx_coordinator=Coordinator,
+                               vnode=Vnode}) ->
+    case generate_downstream_ops(Updates, TxId, Vnode, []) of        
+        {ok, Ops} ->
+            case TxType of
+                single ->
+                    ec_vnode:single_commit(Vnode, TxId, Ops, Coordinator);
+                multi ->
+                    ec_vnode:prepare(Vnode, TxId, Ops, Coordinator)
             end;
-        {error, Reason} ->
-            Reply={error, Reason}
+        error ->
+            ec_vnode:reply_coordinator(Coordinator, abort)
     end,
-    riak_core_vnode:reply(Coordinator, Reply),
-    {stop, normal, SD0};
-return(_SomeMessage, SDO) ->
-    {next_state, return, SDO,0}.
-
+    {stop, normal, SD0}.
+            
 handle_info(_Info, StateName, StateData) ->
     {next_state,StateName,StateData,1}.
 
@@ -109,13 +101,25 @@ terminate(_Reason, _SN, _SD) ->
 
 %% Internal functions
 
-generate_downstream_operations([], _Txn, _IndexNode, _Key, DownOps) ->
-    {ok, DownOps};
+generate_downstream_ops([], _TxId, _Vnode, Acc) ->
+    {ok, Acc};
 
-generate_downstream_operations([{Type, Param}|Rest], Txn, IndexNode, Key, DownOps0) ->
-    case ec_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param, DownOps0) of
+generate_downstream_ops([{Key, List}|Rest], TxId, Vnode, Acc0) ->
+    case generate_downstream_key(List, Key, TxId, Vnode, Acc0, []) of
+        {ok, Acc} ->
+            generate_downstream_ops(Rest, TxId, Vnode, Acc);
+        error ->
+            error
+    end.
+
+generate_downstream_key([], _Key, _TxId, _State, DSOps, _PreviousDSOps) ->
+    {ok, DSOps};
+
+generate_downstream_key([Op|Rest], Key, TxId, Vnode, DSOps, PreviousDSOps) ->
+    {Type, Param} = Op,
+    case ec_downstream:generate_downstream_op(TxId, Vnode, Key, Type, Param, PreviousDSOps) of
         {ok, DownstreamRecord} ->
-            generate_downstream_operations(Rest, Txn, IndexNode, Key, DownOps0 ++ [DownstreamRecord]);
-        {error, Reason} ->
-            {error, Reason}
+            generate_downstream_key(Rest, Key, TxId, Vnode, DSOps ++ [{Key, Type, DownstreamRecord}], PreviousDSOps ++ [DownstreamRecord]);
+        {error, _} ->
+            error
     end.

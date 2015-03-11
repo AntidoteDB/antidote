@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_transaction_reader).
+-module(ec_tx_id_reader).
 
 -include("antidote.hrl").
 
@@ -25,26 +25,18 @@
                 logid :: log_id(),
                 last_read_opid :: empty | op_id(),
                 pending_operations :: dict(),
-                pending_commit_records :: list(),
-                prev_stable_time :: non_neg_integer(),
-                dcid :: dcid()
                }).
 
 -export([init/2,
-         get_next_transactions/1,
-         get_update_ops_from_transaction/1,
+         get_next_tx_ids/1,
+         get_update_ops_from_tx_id/1,
          get_prev_stable_time/1]).
 
--export_type([transaction/0]).
 
-%% transaction = {TxId, {DcId, CommitTime}, VecSnapshotTime, [Operations]}
--type transaction() :: {txid(), {dcid(), non_neg_integer()},
-                        vectorclock:vectorclock(), [#operation{}]}.
-
-%% @doc Returns an iterator to read transactions from a partition
-%%  transactions can be read using get_next_transactions
--spec init(Partition::partition_id(), DcId::dcid()) -> {ok, #state{}}.
-init(Partition, DcId) ->
+%% @doc Returns an iterator to read tx_ids from a partition
+%%  tx_ids can be read using get_next_tx_ids
+-spec init(Partition::partition_id()) -> {ok, #state{}}.
+init(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     [Preflist] = lists:filtermap(fun([H|_T]) ->
@@ -59,28 +51,23 @@ init(Partition, DcId) ->
     {ok, #state{partition = Partition,
                 logid = LogId,
                 last_read_opid = empty,
-                pending_operations = dict:new(),
-                pending_commit_records = [],
-                prev_stable_time = 0,
-                dcid = DcId}}.
+                pending_operations = dict:new()}}.
 
-%% @doc get_next_transactions takes the iterator returned by init
-%%  it returns new iterator and a list of committed transactions in
-%%  commit time order. Transactions which are not committed will not be returned
-%% TODO: Deal with transactions committed in other DCs
--spec get_next_transactions(State::#state{}) -> {#state{}, [transaction()]}.
-get_next_transactions(State=#state{partition = Partition,
+%% @doc get_next_tx_ids takes the iterator returned by init
+%%  it returns new iterator and a list of committed tx_ids in
+%%  commit time order. TxIds which are not committed will not be returned
+%% TODO: Deal with tx_ids committed in other DCs
+-spec get_next_tx_ids(State::#state{}) -> {#state{}, [tx_id()]}.
+get_next_tx_ids(State=#state{partition = Partition,
                                    logid = LogId,
                                    pending_operations = Pending,
                                    pending_commit_records = PendingCommitRecords,
                                    prev_stable_time = PrevStableTime,
-                                   last_read_opid = Last_read_opid,
-                                   dcid = DcId}
+                                   last_read_opid = Last_read_opid}
                      ) ->
     Node = {Partition, node()},
-    %% No transactions will commit in future with commit time < stable_time
-    %% So it is safe to read all transactions committed before stable_time
-    Stable_time = get_stable_time(Node, PrevStableTime),
+    %% No tx_ids will commit in future with commit time < stable_time
+    %% So it is safe to read all tx_ids committed before stable_time
     {ok, NewOps} = read_next_ops(Node, LogId, Last_read_opid),
     case NewOps of
         [] -> Newlast_read_opid = Last_read_opid;
@@ -88,44 +75,44 @@ get_next_transactions(State=#state{partition = Partition,
     end,
 
     {PendingOperations, Commitrecords} =
-        add_to_pending_operations(Pending, PendingCommitRecords, NewOps, DcId),
+        add_to_pending_operations(Pending, PendingCommitRecords, NewOps),
 
     Txns = get_sorted_commit_records(Commitrecords),
-    %% "Before" contains all transactions committed before stable_time
+    %% "Before" contains all tx_ids committed before stable_time
     {Before, After} = lists:splitwith(
                         fun(Logrecord) ->
                                 {{_Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
                                 CommitTime < Stable_time
                         end,
                         Txns),
-    {NewPendingOps, ListTransactions} =
+    {NewPendingOps, ListTxIds} =
         lists:foldl(
           fun(_Logrecord=#log_record{tx_id=TxId},
-              {PendingOps, Transactions}) ->
+              {PendingOps, TxIds}) ->
                   {ok, Ops} = get_ops_of_txn(TxId,PendingOps),
-                  Txn = construct_transaction(Ops),
-                  NewTransactions = Transactions ++ [Txn],
+                  Txn = construct_tx_id(Ops),
+                  NewTxIds = TxIds ++ [Txn],
                   NewPending = remove_txn_from_pending(TxId, PendingOps),
-                  {NewPending, NewTransactions}
+                  {NewPending, NewTxIds}
           end, {PendingOperations, []},
           Before),
     NewState = State#state{pending_operations = NewPendingOps,
                            pending_commit_records = After,
                            prev_stable_time = Stable_time,
                            last_read_opid = Newlast_read_opid},
-    {NewState, ListTransactions}.
+    {NewState, ListTxIds}.
 
-%% @doc returns all update operations in a txn in #clocksi_payload{} format
--spec get_update_ops_from_transaction(Transaction::transaction()) ->
-                                             [#clocksi_payload{}].
-get_update_ops_from_transaction(Transaction) ->
-    {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = Transaction,
+%% @doc returns all update operations in a txn in #ec_payload{} format
+-spec get_update_ops_from_tx_id(TxId::tx_id()) ->
+                                             [#ec_payload{}].
+get_update_ops_from_tx_id(TxId) ->
+    {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = TxId,
     Downstreamrecord =
         fun(_Operation=#operation{payload=Logrecord}) ->
                 case Logrecord#log_record.op_type of
                     update ->
                         {Key, Type, Op} = Logrecord#log_record.op_payload,
-                        _NewRecord = #clocksi_payload{
+                        _NewRecord = #ec_payload{
                                         key = Key,
                                         type = Type,
                                         op_param = Op,
@@ -152,12 +139,12 @@ get_prev_stable_time(Reader) ->
     Reader#state.prev_stable_time.
 
 
-%% ---- Internal function ----- %%
+%% ---- Internal functions ----- %%
 
-%% @doc construct_transaction: Returns a structure of type transaction()
+%% @doc construct_tx_id: Returns a structure of type tx_id()
 %% from a list of update operations and prepare/commit records
--spec construct_transaction(Ops::[#operation{}]) -> transaction().
-construct_transaction(Ops) ->
+-spec construct_tx_id(Ops::[#operation{}]) -> tx_id().
+construct_tx_id(Ops) ->
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
     {CommitTime, VecSnapshotTime} = Commitrecord#log_record.op_payload,
@@ -193,11 +180,11 @@ get_sorted_commit_records(Commitrecords) ->
                  end,
     lists:sort(CompareFun, Commitrecords).
 
-%% @doc Return smallest snapshot time of active transactions.
+%% @doc Return smallest snapshot time of active tx_ids.
 %%      No new updates with smaller timestamp will occur in future.
 get_stable_time(Node, Prev_stable_time) ->
     case riak_core_vnode_master:sync_command(
-           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
+           Node, {get_active_txns}, ?EC_MASTER) of
         {ok, Active_txns} ->
             lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
                                 case Min_time > Snapshot_time of
@@ -207,14 +194,14 @@ get_stable_time(Node, Prev_stable_time) ->
                                         Min_time
                                 end
                         end,
-                        clocksi_vnode:now_microsec(erlang:now()),
+                        ec_vnode:now_microsec(erlang:now()),
                         Active_txns);
         _ -> Prev_stable_time
     end.
 
 
 %%@doc Add updates in writeset ot Pending operations to process downstream
-add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->
+add_to_pending_operations(Pending, Commitrecords, Ops) ->
     case Ops of
         [] ->
             {Pending,Commitrecords};
@@ -226,17 +213,17 @@ add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->
                       TxId = Logrecord#log_record.tx_id,
                       case Logrecord#log_record.op_type of
                           commit ->
-                              {{Dc,_CT},_ST} = Logrecord#log_record.op_payload,
-                              case Dc of
-                                  DcId ->
+                              %{{Dc,_CT},_ST} = Logrecord#log_record.op_payload,
+                              %case Dc of
+                                  %DcId ->
                                       NewCommit = ListCommits ++ [Logrecord],
                                       NewPending =
                                           dict:append(
                                             TxId, Operation, ListPending);
-                                  _ ->
-                                      NewCommit=ListCommits,
-                                      NewPending = dict:erase(TxId, ListPending)
-                              end;
+                                  %_ ->
+                                      %NewCommit=ListCommits,
+                                      %NewPending = dict:erase(TxId, ListPending)
+                              %end;
                           abort ->
                               NewCommit = ListCommits,
                               NewPending = dict:erase(TxId, ListPending);

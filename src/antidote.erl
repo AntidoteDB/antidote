@@ -23,13 +23,9 @@
 
 -export([append/3,
          read/2,
-         ec_execute_tx/2,
          ec_execute_tx/1,
-         ec_read/3,
          ec_read/2,
-         ec_bulk_update/2,
          ec_bulk_update/1,
-         ec_istart_tx/1,
          ec_istart_tx/0,
          ec_iread/3,
          ec_iupdate/4,
