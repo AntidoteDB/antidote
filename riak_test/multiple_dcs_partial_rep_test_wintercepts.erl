@@ -26,37 +26,27 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
     timer:sleep(500), %%TODO: wait for inter_dc_manager to be up
-    {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, start_receiver,[90021]),
-    {ok, DC1Read} = rpc:call(HeadCluster1, inter_dc_manager, start_read_receiver,[80001]),
-    {ok, DC1SafeSend} = rpc:call(HeadCluster1, inter_dc_manager, start_safe_send_receiver,[90001]),
 
-    {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, start_receiver,[90022]),
-    {ok, DC2Read} = rpc:call(HeadCluster2, inter_dc_manager, start_read_receiver,[80002]),
-    {ok, DC2SafeSend} = rpc:call(HeadCluster2, inter_dc_manager, start_safe_send_receiver,[90002]),
+    {ok, DC1up,DC1read} = rpc:call(HeadCluster1, antidote_sup, start_recvrs,[local,9021,8001]),
+    {ok, DC2up,DC2read} = rpc:call(HeadCluster2, antidote_sup, start_recvrs,[local,9022,8002]),
+    {ok, DC3up,DC3read} = rpc:call(HeadCluster3, antidote_sup, start_recvrs,[local,9023,8003]),
+    lager:info("Receivers start results ~p, ~p and ~p", [DC1up, DC2up, DC3up]),
 
-    {ok, DC3} = rpc:call(HeadCluster3, inter_dc_manager, start_receiver,[90023]),
-    {ok, DC3Read} = rpc:call(HeadCluster3, inter_dc_manager, start_read_receiver,[80003]),
-    {ok, DC3SafeSend} = rpc:call(HeadCluster3, inter_dc_manager, start_safe_send_receiver,[90003]),
+    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2up, DC3up]]),
+    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1up, DC3up]]),
+    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1up, DC2up]]),
 
-    lager:info("Receivers start results ~p, ~p and ~p", [DC1, DC2, DC3]),
-    lager:info("ReceiversRead start results ~p, ~p and ~p", [DC1Read, DC2Read, DC3Read]),
-    lager:info("ReceiversSafeSend start results ~p, ~p and ~p", [DC1SafeSend, DC2SafeSend, DC3SafeSend]),
+    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_read_dcs,[[DC2read, DC3read]]),
+    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_read_dcs,[[DC1read, DC3read]]),
+    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_read_dcs,[[DC1read, DC2read]]),
 
-    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2, DC3]]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1, DC3]]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1, DC2]]),
+    ok = rpc:call(HeadCluster1, antidote_sup, start_senders, []),
+    ok = rpc:call(HeadCluster2, antidote_sup, start_senders, []),
+    ok = rpc:call(HeadCluster3, antidote_sup, start_senders, []),
 
-    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_read_dcs,[[DC2Read, DC3Read]]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_read_dcs,[[DC1Read, DC3Read]]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_read_dcs,[[DC1Read, DC2Read]]),
-
-    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_safe_send_dcs,[[DC2SafeSend, DC3SafeSend]]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_safe_send_dcs,[[DC1SafeSend, DC3SafeSend]]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_safe_send_dcs,[[DC1SafeSend, DC2SafeSend]]),
-
-    ok = rpc:call(HeadCluster1, inter_dc_manager, set_replication_keys, [dc1_test_with_intercepts]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, set_replication_keys, [dc2_test_with_intercepts]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, set_replication_keys, [dc3_test_with_intercepts]),
+    ok = rpc:call(HeadCluster1, inter_dc_manager, set_replication_keys, [get_key_list(DC1read,DC1up,DC2read,DC2up,DC3read,DC3up)]),
+    ok = rpc:call(HeadCluster2, inter_dc_manager, set_replication_keys, [get_key_list(DC1read,DC1up,DC2read,DC2up,DC3read,DC3up)]),
+    ok = rpc:call(HeadCluster3, inter_dc_manager, set_replication_keys, [get_key_list(DC1read,DC1up,DC2read,DC2up,DC3read,DC3up)]),
 
     replication_intercept_test1(Cluster1, Cluster2, Cluster3),
     pass.
@@ -106,7 +96,7 @@ replication_intercept_test1(Cluster1, Cluster2, Cluster3) ->
     %%    {ok, {_,[ReadSet1],_} }= ReadResult3,
     %%    ?assertEqual(0, ReadSet1),
     ?assertMatch({error, _}, ReadResult3),
-    lager:info("Done Read in Node2"),
+    lager:info("Done Read in Node3"),
    
     ReadResult4 = rpc:call(Node2,
 			   antidote, clocksi_read,
@@ -114,6 +104,8 @@ replication_intercept_test1(Cluster1, Cluster2, Cluster3) ->
     %%   {ok, {_,[ReadSet2],_} }= ReadResult4,
     %%   ?assertEqual(0, ReadSet2),
     ?assertMatch({error, _}, ReadResult4),
-    lager:info("Done Read in Node3").
+    lager:info("Done Read in Node2").
 
 
+get_key_list(_DC1read,_DC1up,DC2read,DC2up,DC3read,DC3up) ->
+    [{key5,[DC2read,DC3read],[DC2up,DC3up]}].

@@ -76,6 +76,7 @@ external_read_causality_test(Cluster1, Cluster2, _Cluster3) ->
     ?assertMatch({ok, _}, WriteResult2),
     
     %%Let the updates have time to propagate
+    timer:sleep(10000),
     
     ReadResult = rpc:call(Node1,
 			   antidote, clocksi_read,
