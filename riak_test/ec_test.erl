@@ -21,8 +21,7 @@
 
 -export([confirm/0, ec_test1/1, ec_test2/1, ec_test3/1, ec_test5/1,
          ec_test_read_wait/1, ec_test4/1, ec_test_read_time/1,
-         ec_test_certification_check/1,
-         ec_multiple_test_certification_check/1, spawn_read/3]).
+         spawn_read/3]).
 
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
@@ -40,14 +39,12 @@ confirm() ->
     ec_test4 (Nodes),
     ec_test_read_time(Nodes),
     ec_test_read_wait(Nodes),
-    ec_test_certification_check(Nodes),
-    ec_multiple_test_certification_check(Nodes),
     ec_multiple_read_update_test(Nodes),
     ec_concurrency_test(Nodes),
     rt:clean_cluster(Nodes),
     pass.
 
-%% @doc The following function tests that ClockSI can run a non-interactive tx
+%% @doc The following function tests that EC can run a non-interactive tx
 %%      that updates multiple partitions.
 ec_test1(Nodes) ->
     FirstNode = hd(Nodes),
@@ -101,7 +98,7 @@ ec_test1(Nodes) ->
     ?assertEqual(3, hd(ReadSet6)),
     pass.
 
-%% @doc The following function tests that ClockSI can run an interactive tx.
+%% @doc The following function tests that EC can run an interactive tx.
 %%      that updates multiple partitions.
 ec_test2(Nodes) ->
     FirstNode = hd(Nodes),
@@ -141,7 +138,7 @@ ec_test2(Nodes) ->
     lager:info("Test2 passed"),
     pass.
 
-%% @doc The following function tests that ClockSI can run an interactive tx.
+%% @doc The following function tests that EC can run an interactive tx.
 %%      It tests the API operation that allows clients to run interactive txs
 %%      explicitely calling prepare and commit.
 ec_test3(Nodes) ->
@@ -180,7 +177,7 @@ ec_test3(Nodes) ->
     lager:info("Test3 passed"),
     pass.
 
-%% @doc The following function tests that ClockSI can run an interactive tx.
+%% @doc The following function tests that EC can run an interactive tx.
 %%      that updates only one partition. This type of txs use a only-one phase 
 %%      commit.
 ec_test5(Nodes) ->
@@ -219,7 +216,7 @@ ec_test5(Nodes) ->
     lager:info("Test5 passed"),
     pass.
 
-%% @doc Test to execute transaction with out explicit clock time
+%% @doc Test to execute transaction without explicit clock time
 ec_tx_noclock_test(Nodes) ->
     FirstNode = hd(Nodes),
     Key = itx,
@@ -251,7 +248,7 @@ ec_tx_noclock_test(Nodes) ->
     lager:info("Test3 passed"),
     pass.
 
-%% @doc The following function tests that ClockSI can run both a single
+%% @doc The following function tests that EC can run both a single
 %%      read and a bulk-update tx.
 ec_single_key_update_read_test(Nodes) ->
     lager:info("Test3 started"),
@@ -296,7 +293,7 @@ ec_multiple_key_update_read_test(Nodes) ->
     ?assertMatch(ReadResult3,1),
     pass.
 
-%% @doc The following function tests that ClockSI can excute a
+%% @doc The following function tests that EC can excute a
 %%      read-only interactive tx.
 ec_test4(Nodes) ->
     lager:info("Test4 started"),
@@ -319,7 +316,7 @@ ec_test4(Nodes) ->
     lager:info("Test 4 passed."),
     pass.
 
-%% @doc The following function tests that ClockSI waits, when reading,
+%% @doc The following function tests that EC DOES NOT wait, when reading,
 %%      for a tx that has updated an element that it wants to read and
 %%      has a smaller TxId, but has not yet committed.
 ec_test_read_time(Nodes) ->
@@ -367,7 +364,7 @@ ec_test_read_time(Nodes) ->
     lager:info("Test read_time passed"),
     pass.
 
-%% @doc The following function tests that ClockSI does not read values
+%% @doc The following function tests that EC DOES read values
 %%      inserted by a tx with higher commit timestamp than the snapshot time
 %%      of the reading tx.
 ec_test_read_wait(Nodes) ->
@@ -420,97 +417,6 @@ spawn_read(LastNode, TxId, Return) ->
     ReadResult=rpc:call(LastNode, antidote, ec_iread,
                         [TxId, read_wait_test, riak_dt_pncounter]),
     Return ! {self(), ReadResult}.
-
-%% @doc The following function tests the certification check algorithm,
-%%      when two concurrent txs modify a single object, one hast to abort.
-ec_test_certification_check(Nodes) ->
-    lager:info("clockSI_test_certification_check started"),
-    FirstNode = hd(Nodes),
-    LastNode= lists:last(Nodes),
-    lager:info("Node1: ~p", [FirstNode]),
-    lager:info("LastNode: ~p", [LastNode]),
-    Type = riak_dt_pncounter,
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId}=rpc:call(FirstNode, antidote, ec_istart_tx, []),
-    lager:info("Tx1 Started, id : ~p", [TxId]),
-    WriteResult=rpc:call(FirstNode, antidote, ec_iupdate,
-                         [TxId, write, Type, {increment, 1}]),
-    lager:info("Tx1 Writing..."),
-    ?assertEqual(ok, WriteResult),
-
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId1}=rpc:call(LastNode, antidote, ec_istart_tx, []),
-    lager:info("Tx2 Started, id : ~p", [TxId1]),
-    WriteResult1=rpc:call(LastNode, antidote, ec_iupdate,
-                          [TxId1, write, Type, {increment, 2}]),
-    lager:info("Tx2 Writing..."),
-    ?assertEqual(ok, WriteResult1),
-    lager:info("Tx1 finished concurrent write..."),
-
-    %% prepare and commit the second transaction.
-    CommitTime1=rpc:call(LastNode, antidote, ec_iprepare, [TxId1]),
-    ?assertMatch({ok, _}, CommitTime1),
-    lager:info("Tx2 sent prepare, got commitTime=..., id : ~p", [CommitTime1]),
-    End1=rpc:call(LastNode, antidote, ec_icommit, [TxId1]),
-    ?assertMatch({ok, _}, End1),
-    lager:info("Tx2 Committed."),
-
-    %% commit the first tx.
-    CommitTime=rpc:call(FirstNode, antidote, ec_iprepare, [TxId]),
-    ?assertMatch({aborted, TxId}, CommitTime),
-    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-    lager:info("Tx1 aborted. Test passed!"),
-    pass.
-
-%% @doc The following function tests the certification check algorithm.
-%%      when two concurrent txs modify a single object, one hast to abort.
-%%      Besides, it updates multiple partitions.
-ec_multiple_test_certification_check(Nodes) ->
-    lager:info("clockSI_test_certification_check started"),
-    FirstNode = hd(Nodes),
-    LastNode= lists:last(Nodes),
-    lager:info("Node1: ~p", [FirstNode]),
-    lager:info("LastNode: ~p", [LastNode]),
-    Type = riak_dt_pncounter,
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId}=rpc:call(FirstNode, antidote, ec_istart_tx, []),
-    lager:info("Tx1 Started, id : ~p", [TxId]),
-    WriteResult=rpc:call(FirstNode, antidote, ec_iupdate,
-                         [TxId, write, Type, {increment, 1}]),
-    lager:info("Tx1 Writing 1..."),
-    ?assertEqual(ok, WriteResult),
-    WriteResultb=rpc:call(FirstNode, antidote, ec_iupdate,
-                          [TxId, write2, Type, {increment, 1}]),
-    lager:info("Tx1 Writing 2..."),
-    ?assertEqual(ok, WriteResultb),
-    WriteResultc=rpc:call(FirstNode, antidote, ec_iupdate,
-                          [TxId, write3, Type, {increment, 1}]),
-    lager:info("Tx1 Writing 3..."),
-    ?assertEqual(ok, WriteResultc),
-
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId1}=rpc:call(LastNode, antidote, ec_istart_tx, []),
-    lager:info("Tx2 Started, id : ~p", [TxId1]),
-    WriteResult1=rpc:call(LastNode, antidote, ec_iupdate,
-                          [TxId1, write, Type, {increment, 2}]),
-    lager:info("Tx2 Writing..."),
-    ?assertEqual(ok, WriteResult1),
-    lager:info("Tx1 finished concurrent write..."),
-
-    %% prepare and commit the second transaction.
-    CommitTime1=rpc:call(LastNode, antidote, ec_iprepare, [TxId1]),
-    ?assertMatch({ok, _}, CommitTime1),
-    lager:info("Tx2 sent prepare, got commitTime=..., id : ~p", [CommitTime1]),
-    End1=rpc:call(LastNode, antidote, ec_icommit, [TxId1]),
-    ?assertMatch({ok, _}, End1),
-    lager:info("Tx2 Committed."),
-
-    %% commit the first tx.
-    CommitTime=rpc:call(FirstNode, antidote, ec_iprepare, [TxId]),
-    ?assertMatch({aborted, TxId}, CommitTime),
-    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-    lager:info("Tx1 aborted. Test passed!"),
-    pass.
 
 %% @doc Read an update a key multiple times.
 ec_multiple_read_update_test(Nodes) ->

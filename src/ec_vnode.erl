@@ -30,8 +30,8 @@
          batch_read/3,
          pre_prepare/4,
          prepare/5,
-         commit/3,
-         single_commit/5,
+         commit/2,
+         single_commit/4,
          abort/2,
          now_microsec/1,
          init/1,
@@ -81,7 +81,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     try
         riak_core_vnode_master:sync_command(Node,
                                             {read_data_item, TxId, Key, Type, Updates},
-                                            ?CLOCKSI_MASTER,
+                                            ?EC_MASTER,
                                             infinity)
     catch
         _:Reason ->
@@ -95,21 +95,21 @@ batch_read(Vnode, TxId, Reads) ->
 	riak_core_vnode_master:command(Vnode,
                                    {batch_read, TxId, Reads},
                                    {fsm, undefined, self()},
-                                   ?CLOCKSI_MASTER).
+                                   ?EC_MASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 pre_prepare(ListofNodes, TxId, Updates, TxType) ->
     riak_core_vnode_master:command(ListofNodes,
                                    {pre_prepare, TxId, Updates, TxType},
                                    {fsm, undefined, self()},
-                                   ?CLOCKSI_MASTER).
+                                   ?EC_MASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId, Updates, Coordinator, PrepareTime) ->
     riak_core_vnode_master:command(ListofNodes,
                                    {prepare, TxId, Updates, Coordinator, PrepareTime},
                                    {fsm, undefined, self()},
-                                   ?CLOCKSI_MASTER).
+                                   ?EC_MASTER).
 %% @doc Sends prepare+commit to a single partition
 %%      Called by a Tx coordinator when the tx only
 %%      affects one partition
@@ -117,21 +117,21 @@ single_commit(Node, TxId, Updates, Coordinator) ->
     riak_core_vnode_master:command(Node,
                                    {single_commit, TxId, Updates, Coordinator},
                                    {fsm, undefined, self()},
-                                   ?CLOCKSI_MASTER).
+                                   ?EC_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId) ->
     riak_core_vnode_master:command(ListofNodes,
                                    {commit, TxId},
                                    {fsm, undefined, self()},
-                                   ?CLOCKSI_MASTER).
+                                   ?EC_MASTER).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
     riak_core_vnode_master:command(ListofNodes,
                                    {abort, TxId},
                                    {fsm, undefined, self()},
-                                   ?CLOCKSI_MASTER).
+                                   ?EC_MASTER).
 
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the tx_ids it participates on.
@@ -175,7 +175,7 @@ handle_command({single_commit, TxId, Updates, Coordinator}, _Sender,
                     ResultCommit = commit(TxId, WriteSet, State),
                     case ResultCommit of
                         {ok, committed} ->
-                            reply_coordinator(Coordinator, committed});
+                            reply_coordinator(Coordinator, committed);
                         {error, materializer_failure} ->
                             reply_coordinator(Coordinator, {error, materializer_failure});
                         {error, timeout} ->
@@ -241,7 +241,7 @@ handle_command({abort, TxId}, _Sender,
 		[{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
+            _ = logging_vnode:append(Node,LogId,{TxId, aborted}),
             {reply, ack_abort, State};
         _ ->
             {reply, {error, no_tx_record}, State}
@@ -304,14 +304,13 @@ update_data_item([Op|Rest], TxId, State=#state{partition=_Partition,
     case Result of
         {ok, _} ->
             true = ets:insert(WriteSet, {TxId, {Key, Type, DownstreamRecord}}),
-            update_data_item(Rest, Txn, State);
+            update_data_item(Rest, TxId, State);
         {error, _Reason} ->
             error
     end.
 
 %% @doc Executes the prepare phase of this partition
 prepare(TxId, WriteSet)->
-    TxWriteSet = ets:lookup(WriteSet, TxId),
 	LogRecord = #log_record{tx_id=TxId,
 							op_type=prepare},
 	Updates = ets:lookup(WriteSet, TxId),
@@ -325,7 +324,7 @@ prepare(TxId, WriteSet)->
     end.
 
 %% @doc Executes the commit phase of this partition
-commit(TxId, WriteSet, State)->
+commit(TxId, WriteSet, _State)->
     DcId = dc_utilities:get_my_dc_id(),
     LogRecord=#log_record{tx_id=TxId,
                           op_type=commit,
@@ -367,7 +366,7 @@ update_materializer(DownstreamOps, TxId) ->
                                     key = Key,
                                     type = Type,
                                     op_param = Op,
-                                    tx_id = TxId,
+                                    tx_id = TxId},
                              AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)]
                      end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),

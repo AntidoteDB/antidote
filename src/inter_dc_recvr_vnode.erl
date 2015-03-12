@@ -55,7 +55,7 @@ start_vnode(I) ->
                    -> ok.
 store_updates(Transactions) ->
     Transaction = hd(Transactions),
-    {_Txid,_Commitime,_ST,Ops} = Transaction,
+    {_Txid, Ops} = Transaction,
     Operation = hd(Ops),
     Logrecord = Operation#operation.payload,
     Payload = Logrecord#log_record.op_payload,

@@ -25,19 +25,19 @@
                 logid :: log_id(),
                 last_read_opid :: empty | op_id(),
                 pending_operations :: dict(),
-                pending_commit_records :: list(),
-                prev_stable_time :: non_neg_integer(),
+                %pending_commit_records :: list(),
                 dcid :: dcid()
                }).
 
 -export([init/2,
          get_next_transactions/1,
-         get_update_ops_from_transaction/1,
-         get_prev_stable_time/1]).
+         get_update_ops_from_transaction/1
+         %get_prev_stable_time/1
+         ]).
 
 -export_type([transaction/0]).
 
-%% transaction = {TxId, {DcId, CommitTime}, VecSnapshotTime, [Operations]}
+%% transaction = {TxId, [Operations]}
 -type transaction() :: {tx_id(), [#operation{}]}.
 
 %% @doc Returns an iterator to read transactions from a partition
@@ -59,8 +59,7 @@ init(Partition, DcId) ->
                 logid = LogId,
                 last_read_opid = empty,
                 pending_operations = dict:new(),
-                pending_commit_records = [],
-                prev_stable_time = 0,
+               % pending_commit_records = [],
                 dcid = DcId}}.
 
 %% @doc get_next_transactions takes the iterator returned by init
@@ -71,8 +70,7 @@ init(Partition, DcId) ->
 get_next_transactions(State=#state{partition = Partition,
                                    logid = LogId,
                                    pending_operations = Pending,
-                                   pending_commit_records = PendingCommitRecords,
-                                   prev_stable_time = PrevStableTime,
+                                   %pending_commit_records = PendingCommitRecords,
                                    last_read_opid = Last_read_opid,
                                    dcid = DcId}
                      ) ->
@@ -87,17 +85,18 @@ get_next_transactions(State=#state{partition = Partition,
         _ -> Newlast_read_opid = get_last_opid(NewOps)
     end,
 
-    {PendingOperations, Commitrecords} =
-        add_to_pending_operations(Pending, PendingCommitRecords, NewOps, DcId),
+    {PendingOperations, CommitRecords} =
+        add_to_pending_operations(Pending, %PendingCommitRecords, 
+        									NewOps, DcId),
 
-    Txns = get_sorted_commit_records(Commitrecords),
+    %Txns = get_sorted_commit_records(CommitRecords),
     %% "Before" contains all transactions committed before stable_time
-    {Before, After} = lists:splitwith(
-                        fun(Logrecord) ->
-                                {{_Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
-                                CommitTime < Stable_time
-                        end,
-                        Txns),
+    %{Before, After} = lists:splitwith(
+     %                   fun(Logrecord) ->
+      %                          {{_Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
+     %                           CommitTime < Stable_time
+      %                  end,
+       %                 Txns),
     {NewPendingOps, ListTransactions} =
         lists:foldl(
           fun(_Logrecord=#log_record{tx_id=TxId},
@@ -108,10 +107,11 @@ get_next_transactions(State=#state{partition = Partition,
                   NewPending = remove_txn_from_pending(TxId, PendingOps),
                   {NewPending, NewTransactions}
           end, {PendingOperations, []},
-          Before),
+          %Before),
+          CommitRecords),
     NewState = State#state{pending_operations = NewPendingOps,
-                           pending_commit_records = After,
-                           prev_stable_time = Stable_time,
+                           %pending_commit_records = After,
+                           %prev_stable_time = Stable_time,
                            last_read_opid = Newlast_read_opid},
     {NewState, ListTransactions}.
 
@@ -119,7 +119,8 @@ get_next_transactions(State=#state{partition = Partition,
 -spec get_update_ops_from_transaction(Transaction::transaction()) ->
                                              [#ec_payload{}].
 get_update_ops_from_transaction(Transaction) ->
-    {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = Transaction,
+    {_TxId, %{DcId, CommitTime}, VecSnapshotTime, 
+    Ops} = Transaction,
     Downstreamrecord =
         fun(_Operation=#operation{payload=Logrecord}) ->
                 case Logrecord#log_record.op_type of
@@ -129,9 +130,9 @@ get_update_ops_from_transaction(Transaction) ->
                                         key = Key,
                                         type = Type,
                                         op_param = Op,
-                                        snapshot_time = VecSnapshotTime,
-                                        commit_time = {DcId, CommitTime},
-                                        txid =  Logrecord#log_record.tx_id
+                                        %snapshot_time = VecSnapshotTime,
+                                        %commit_time = {DcId, CommitTime},
+                                        tx_id =  Logrecord#log_record.tx_id
                                        };
                     _ ->
                         nothing
@@ -147,9 +148,9 @@ get_update_ops_from_transaction(Transaction) ->
                          end
                  end, [], Ops).
 
--spec get_prev_stable_time(Reader::#state{}) -> non_neg_integer().
-get_prev_stable_time(Reader) ->
-    Reader#state.prev_stable_time.
+%-spec get_prev_stable_time(Reader::#state{}) -> non_neg_integer().
+%get_prev_stable_time(Reader) ->
+%    Reader#state.prev_stable_time.
 
 
 %% ---- Internal function ----- %%
@@ -160,9 +161,10 @@ get_prev_stable_time(Reader) ->
 construct_transaction(Ops) ->
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
-    {CommitTime, VecSnapshotTime} = Commitrecord#log_record.op_payload,
+    %{CommitTime, VecSnapshotTime} = Commitrecord#log_record.op_payload,
     TxId = Commitrecord#log_record.tx_id,
-    {TxId, CommitTime, VecSnapshotTime, Ops}.
+    {TxId, %CommitTime, VecSnapshotTime, 
+    Ops}.
 
 read_next_ops(Node, LogId, Last_read_opid) ->
     case Last_read_opid of
@@ -184,20 +186,20 @@ get_last_opid(Ops) ->
     Operation#operation.op_number.
 
 %%@doc return all txnIds in sorted order committed befor stabletime
-get_sorted_commit_records(Commitrecords) ->
+%get_sorted_commit_records(CommitRecords) ->
     %%sort txns
-    CompareFun = fun(Commitrecord1, Commitrecord2) ->
-                         {{_DcId, CommitTime1},_} = Commitrecord1#log_record.op_payload,
-                         {{_DcId, CommitTime2},_} = Commitrecord2#log_record.op_payload,
-                         CommitTime1 =< CommitTime2
-                 end,
-    lists:sort(CompareFun, Commitrecords).
+ %   CompareFun = fun(Commitrecord1, Commitrecord2) ->
+ %                        {{_DcId, CommitTime1},_} = %Commitrecord1#log_record.op_payload,
+ %                        {{_DcId, CommitTime2},_} = %Commitrecord2#log_record.op_payload,
+ %                        CommitTime1 =< CommitTime2
+  %               end,
+   % lists:sort(CompareFun, CommitRecords).
 
 %%@doc Add updates in writeset ot Pending operations to process downstream
-add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->
+add_to_pending_operations(Pending, Ops, DcId) ->
     case Ops of
         [] ->
-            {Pending,Commitrecords};
+            {Pending, []}; %CommitRecords};
         _ ->
             lists:foldl(
               fun(Op, {ListPending, ListCommits}) ->
@@ -227,5 +229,5 @@ add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->
                       end,
                       {NewPending, NewCommit}
               end,
-              {Pending, Commitrecords}, Ops)
+              {Pending, []}, Ops)
     end.

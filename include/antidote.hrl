@@ -1,7 +1,7 @@
 -define(BUCKET, <<"antidote">>).
 -define(MASTER, antidote_vnode_master).
 -define(LOGGING_MASTER, logging_vnode_master).
--define(ec_MASTER, ec_vnode_master).
+-define(EC_MASTER, ec_vnode_master).
 -define(ec_GENERATOR_MASTER,
         ec_downstream_generator_vnode_master).
 -define(ec, ec).

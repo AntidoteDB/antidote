@@ -17,29 +17,10 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(ec_materializer).
--include("antidote.hrl").
+-module(dc_utilities).
 
--export([new/1,
-         materialize_eager/3]).
+-export([get_my_dc_id/0]).
 
-%% @doc Creates an empty CRDT
-%%      Input: Type: The type of CRDT to create
-%%      Output: The newly created CRDT
--spec new(type()) -> term().
-new(Type) ->
-    Type:new().
-
-
-%% @doc materialize_eager: apply updates in order without any checks
--spec materialize_eager(type(), snapshot(), [ec_payload()]) -> snapshot().
-materialize_eager(_, Snapshot, []) ->
-    Snapshot;
-materialize_eager(Type, Snapshot, [Op|Rest]) ->
-   case Op of
-        {merge, State} ->
-            NewSnapshot = Type:merge(Snapshot, State);
-        {update, DownstreamOp} ->
-            {ok, NewSnapshot} = Type:update(DownstreamOp, Snapshot)
-    end,
-    materialize_eager(Type, NewSnapshot, Rest).
+get_my_dc_id() ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    riak_core_ring:cluster_name(Ring).
