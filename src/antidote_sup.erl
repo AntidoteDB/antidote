@@ -66,12 +66,12 @@ init(_Args) ->
 
     EcsTxCoordSup =  { ec_static_tx_coord_sup,
                            {ec_static_tx_coord_sup, start_link, []},
-                           permanent, 5000, supervisor, [clockSI_static_tx_coord_sup]},
+                           permanent, 5000, supervisor, [ec_static_tx_coord_sup]},
 
     EciTxCoordSup =  { ec_interactive_tx_coord_sup,
                             {ec_interactive_tx_coord_sup, start_link, []},
                             permanent, 5000, supervisor,
-                            [clockSI_interactive_tx_coord_sup]},
+                            [ec_interactive_tx_coord_sup]},
 
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
