@@ -185,49 +185,6 @@ execute_op({Op_type, Args}, Sender,
 
 
 
-
-
-
-
-
-    %% 			    case clocksi_vnode:update_data_item(IndexNode, Transaction,
-    %% 								Key, Type, DownstreamRecord, WriteSet) of
-    %% 			       ok ->
-    %% 				    case lists:keyfind(IndexNode, 1, WriteSet) of
-    %% 					false ->
-    %% 					    New_updated_partitions=
-    %% 						lists:append(Updated_partitions, [{IndexNode,{[{Key,Type,DownstreamRecord}],[]}}]),
-    %% 					    {reply, ok, execute_op,
-    %% 					     SD0#state
-    %% 					     {updated_partitions= New_updated_partitions}};
-    %% 					_ ->
-    %% 					    New_updated_partitions = lists:foldl(fun({NextIndexNode,{ListRepArgs,ListNonRep}},NewAcc) ->
-    %% 											 case NextIndexNode of
-    %% 											     IndexNode ->
-    %% 												 NewAcc ++ [{IndexNode, {ListRepArgs ++ [Args],ListNonRep}}];
-    %% 											     _ ->
-    %% 												 NewAcc ++ [{NextIndexNode,{ListRepArgs,ListNonRep}}]
-    %% 											 end
-    %% 										 end, [], Updated_partitions),
-    %% 					    {reply, ok, execute_op, SD0#state
-    %% 					     {updated_partitions= New_updated_partitions}}
-    %% 				    end;
-    %% 				error ->
-    %% 				    %%{reply, error, abort, SD0}
-    %% 			    end;
-    %% 			{error, _} ->
-    %% 			    %% Error generating downstream
-    %% 			    %%{reply, error, abort, SD0}
-    %% 		    end;
-    %% 		false ->
-    %% 		    %%TODO 
-    %% 		    lager:error("not implemented updating non-replicated keys"),
-    %% 		    {reply, error, abort, SD0}
-	    
-    %% 	    end
-    %% end.
-
-
 %% @doc a message from a client wanting to start committing the tx.
 %%      this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
@@ -363,7 +320,7 @@ terminate(_Reason, _SN, _SD) ->
 -spec get_snapshot_time(ClientClock :: vectorclock:vectorclock(), term())
                        -> {ok, vectorclock:vectorclock()} | {error,term()}.
 get_snapshot_time(ClientClock, externalTransaction) ->
-    vectorclock:wait_for_clock(ClientClock),
+    %%vectorclock:wait_for_clock(ClientClock),
     get_snapshot_time(ClientClock, localTransaction);
 %% This should update the safe_time of the vectorclock vnode as well
 %% The reason is that any advances in the clock that have happened
@@ -371,6 +328,7 @@ get_snapshot_time(ClientClock, externalTransaction) ->
 %% was already updated somewhere in this DC
 
 get_snapshot_time(ClientClock, localTransaction) ->
+    vectorclock:wait_for_local_clock(ClientClock),
     Now = clocksi_vnode:now_milisec(erlang:now()),
     case vectorclock:update_safe_vector_local(ClientClock) of
 	{ok, VecSnapshotTime} ->
@@ -386,46 +344,6 @@ get_snapshot_time(ClientClock, localTransaction) ->
 	    lager:error("Error getting snapshot time ~p", [Reason]),
 	    {error, Reason}
     end.
-
-    
-
-
-%% This gets the actual safe_clock time without updating anything
-%% Should probably query meta-data or safe-time server so that clock is advanced
-%% because this is only called when waiting for a clock, which is done
-%% during an external read
-%% -spec get_safe_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
-%% get_safe_time() ->
-%%     Now = clocksi_vnode:now_milisec(erlang:now()),
-%%     %% Don't use stable snapshot, instead use safe time
-%%     case vectorclock:get_safe_time() of
-%%         {ok, VecSnapshotTime} ->
-%%             DcId = dc_utilities:get_my_dc_id(),
-%%             SnapshotTime = dict:update(DcId,
-%%                                        fun (_Old) -> Now end,
-%%                                        Now, VecSnapshotTime),
-%%             {ok, SnapshotTime};
-%%         {error, Reason} ->
-%%             {error, Reason}
-%%     end.
-
-%% -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-%%                            {ok, vectorclock:vectorclock()} | {error, term()}.
-%% wait_for_clock(Clock) ->
-%%    case get_safe_time() of
-%%        {ok, VecSnapshotTime} ->
-%%            case vectorclock:ge(VecSnapshotTime, Clock) of
-%%                true ->
-%%                    %% No need to wait
-%%                    {ok, VecSnapshotTime};
-%%                false ->
-%%                    %% wait for snapshot time to catch up with Client Clock
-%%                    timer:sleep(100),
-%%                    wait_for_clock(Clock)
-%%            end;
-%%        {error, Reason} ->
-%%           {error, Reason}
-%%   end.
 
 generate_downstream_op(Txn, Key, Type, Param, WriteSet) ->
     clocksi_downstream:generate_downstream_op(Txn, Key, Type, Param, WriteSet, local).

@@ -66,7 +66,7 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
-                                             partition = Partition}) ->
+                                             partition = _Partition}) ->
     case queue:is_empty(DcQ) of
         false ->
             Transaction = queue:get(DcQ),
@@ -80,7 +80,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             {Dc, Ts} = CommitTime,
             %% Check for dependency of operations and write to log
 	    %% Gets safe_clock from the partition (instead of partition clock)
-            {ok, LC} = vectorclock:get_safe_time(Partition),
+            {ok, LC} = vectorclock:get_safe_time(),
 	    %% Sets the time of the local DC in the safe clock to the current time,
             LocalSafeClock = vectorclock:set_clock_of_dc(
 			       LocalDc, now_millisec(erlang:now()), LC),

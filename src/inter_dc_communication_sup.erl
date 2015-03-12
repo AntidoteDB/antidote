@@ -32,6 +32,7 @@ start_link(Port) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [Port]).
 
 init([Port]) ->
+    lager:info("in inter dc comm sup"),
     Listener = {inter_dc_communication_recvr,
                 {inter_dc_communication_recvr, start_link, [Port]}, % pass the socket!
                 permanent, 1000, worker, [inter_dc_communication_recvr]},

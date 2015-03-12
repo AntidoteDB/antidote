@@ -28,7 +28,6 @@
          read_data_item/5,
 	 read_data_item_external/5,
 	 read_data_item/6,
-         update_data_item/6,
          prepare/2,
          commit/3,
          abort/2,
@@ -65,8 +64,7 @@
 -record(state, {partition,
                 prepared_tx,
                 committed_tx,
-                active_txs_per_key,
-                write_set}).
+                active_txs_per_key}).
 
 %%%===================================================================
 %%% API
@@ -77,70 +75,21 @@ start_vnode(I) ->
 
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(_Node, TxId, Key, Type, WriteSet) ->
-    %% try
-    %%     riak_core_vnode_master:sync_command(Node,
-    %%                                         {read_data_item, TxId, Key, Type, local},
-    %%                                         ?CLOCKSI_MASTER,
-    %%                                         infinity)
-    %% catch
-    %%     _:Reason ->
-    %%         lager:error("Exception caught: ~p", [Reason]),
-    %%         {error, Reason}
-    %% end.
     read_data_item(TxId,Key,Type,local,self(), WriteSet).
 
 
 read_data_item_external(_Node, TxId, Key, Type, WriteSet) ->
-    %% try
-    %%     riak_core_vnode_master:sync_command(Node,
-    %%                                         {read_data_item, TxId, Key, Type, external},
-    %%                                         ?CLOCKSI_MASTER,
-    %%                                         infinity)
-    %% catch
-    %%     _:Reason ->
-    %%         lager:error("Exception caught: ~p", [Reason]),
-    %%         {error, Reason}
-    %% end.
     read_data_item(TxId,Key,Type,external,self(),WriteSet).
 
 
 read_data_item(Txn, Key, Type, IsLocal, Sender, WriteSet) ->
-    %% i dont think this is right, but is doesn't maktter because its not used anyway
-    Vnode = self(),
-    %% Vnode = {Partition, node()},
-    %% Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
-    {ok, Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
+    {ok, Pid} = clocksi_readitem_fsm:start_link(self(), Sender, Txn,
 						 Key, Type, WriteSet, IsLocal,
 						 replication_check:is_replicated_here(Key)),
     receive
 	{Pid, Value} ->
 	    Value
     end.    
-
-%% rcv_msg(Pid) ->
-%%     receive
-%% 	{Pid, Value} ->
-%% 	    Value;
-%% 	Other ->
-%% 	    lager:info("Msg: ~p", [Other]),
-%% 	    rcv_msg(Pid)
-%%     end.
-	    
-
-%% @doc Sends an update request to the Node that is responsible for the Key
-update_data_item(_Node, _TxId, _Key, _Type, _Op, _WriteSet) ->
-    %% try
-    %%     riak_core_vnode_master:sync_command(Node,
-    %%                                         {update_data_item, TxId, Key, Type, Op},
-    %%                                         ?CLOCKSI_MASTER,
-    %%                                         infinity)
-    %% catch
-    %%     _:Reason ->
-    %%         lager:error("Exception caught: ~p", [Reason]),
-    %%         {error, Reason}
-    %% end.
-    ok.
-
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
@@ -181,67 +130,21 @@ init([Partition]) ->
     ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
                                            ++ integer_to_list(Partition)),
                               [bag, {write_concurrency, true}]),
-    WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++
-                                        integer_to_list(Partition)),
-                       [duplicate_bag, {write_concurrency, true}]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
-                write_set=WriteSet,
                 active_txs_per_key=ActiveTxsPerKey}}.
 
-%% @doc starts a read_fsm to handle a read operation.
-%% handle_command({read_data_item, Txn, Key, Type, IsLocal}, Sender,
-%%                #state{write_set=WriteSet, partition=Partition}=State) ->
-%%     Vnode = {Partition, node()},
-%%     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
-
-%%     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
-%% 						 Key, Type, Updates, IsLocal,
-%% 						 replication_check:is_replicated_here(Key)),
-	    
-%%     %% Tyler note: The reason why noreply is sent is because the readitem fsm
-%%     %% will send the reply later using the riak_core_vnode:reply function
-%%     {noreply, State};
-
-
-%% @doc handles an update operation at a Leader's partition
-%% handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
-%%                #state{partition=Partition,
-%%                       write_set=WriteSet,
-%%                       active_txs_per_key=ActiveTxsPerKey}=State) ->
-%%     TxId = Txn#transaction.txn_id,
-%%     LogRecord = #log_record{tx_id=TxId, op_type=update,
-%%                             op_payload={Key, Type, Op}},
-%%     LogId = log_utilities:get_logid_from_key(Key),
-%%     [Node] = log_utilities:get_preflist_from_key(Key),
-%%     Result = logging_vnode:append(Node,LogId,LogRecord),
-%%     case Result of
-%%         {ok, _} ->
-%%             true = ets:insert(ActiveTxsPerKey, {Key, Type, TxId}),
-%%             true = ets:insert(WriteSet, {TxId, {Key, Type, Op}}),
-%%             {ok, _Pid} = clocksi_updateitem_fsm:start_link(
-%%                            Sender,
-%%                            Txn#transaction.vec_snapshot_time,
-%%                            Partition),
-%%             {noreply, State};
-%%         {error, Reason} ->
-%%             {reply, {error, Reason}, State}
-%%     end;
 
 handle_command({prepare, Transaction, TxWriteSet}, _Sender,
                State = #state{partition=_Partition,
                               committed_tx=CommittedTx,
                               active_txs_per_key=ActiveTxPerKey,
-                              prepared_tx=PreparedTx,
-                              write_set=_WriteSet}) ->
+                              prepared_tx=PreparedTx}) ->
     %% TODO, not waiting in updates anymore, need to wait here?
     TxId = Transaction#transaction.txn_id,
-    %% TxWriteSet = ets:lookup(WriteSet, TxId),
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
         true ->
-	    %% TODO: is this active thing necessary?
-	    %% adding after certification because 
 	    lists:foldl(fun({_Replicated,Key1,Type1,_Op}, _Acc) ->
 				true = ets:insert(ActiveTxPerKey, {Key1, Type1, TxId})
 			end, 0, TxWriteSet),
@@ -250,7 +153,6 @@ handle_command({prepare, Transaction, TxWriteSet}, _Sender,
                                     op_type=prepare,
                                     op_payload=PrepareTime},
             true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
-            %% Updates = ets:lookup(WriteSet, TxId),
 	    Updates = TxWriteSet,
             case Updates of 
                 [{_Rep, Key, _Type, {_Op, _Actor}} | _Rest] -> 
@@ -276,15 +178,13 @@ handle_command({prepare, Transaction, TxWriteSet}, _Sender,
 %% eventually.
 handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
                #state{partition=_Partition,
-                      committed_tx=CommittedTx,
-                      write_set=_WriteSet} = State) ->
+                      committed_tx=CommittedTx} = State) ->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
     LogRecord=#log_record{tx_id=TxId,
                           op_type=commit,
                           op_payload={{DcId, TxCommitTime},
                                       Transaction#transaction.vec_snapshot_time}},
-    %% Updates = ets:lookup(WriteSet, TxId),
     case Updates of
         [{_Rep, Key, _Type, {_Op, _Param}} | _Rest] -> 
             LogId = log_utilities:get_logid_from_key(Key),
@@ -307,7 +207,7 @@ handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
     end;
 
 handle_command({abort, Transaction, Updates}, _Sender,
-               #state{partition=_Partition, write_set=_WriteSet} = State) ->
+               #state{partition=_Partition} = State) ->
     TxId = Transaction#transaction.txn_id,
     %% Updates = ets:lookup(WriteSet, TxId),
     case Updates of
@@ -382,10 +282,8 @@ terminate(_Reason, _State) ->
 %%      b. PreparedTx
 %%
 clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
-                                    prepared_tx=PreparedTx,
-                                    write_set=WriteSet}) ->
-    true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
-    true = ets:delete(WriteSet, TxId).
+                                    prepared_tx=PreparedTx}) ->
+    true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_milisec({MegaSecs, Secs, MicroSecs}) ->

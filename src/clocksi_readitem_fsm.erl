@@ -132,7 +132,6 @@ send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction
         error ->
             Reply={error, failed_read_at_all_dcs}
     end,
-    %%riak_core_vnode:reply(Coordinator, Reply),
     Coordinator ! {self(), Reply},
     {stop, normal, SD0}.
     
@@ -161,7 +160,7 @@ check_clock(timeout, SD0=#state{transaction=Transaction,is_local=IsLocal}) ->
 	    %% origin DC is using time:now() for its time, instead of using
 	    %% time based on one of its dependencies
 	    %% Should fix this
-	    vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
+	    %% vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
 	    {next_state, return, SD0, 0}
     end.
 
@@ -190,7 +189,6 @@ return(timeout, SD0=#state{key=Key,
     case materializer_vnode:read(Key, Type, VecSnapshotTime) of
         {ok, Snapshot} ->
 	    Updates2=write_set_to_updates(Transaction,WriteSet,Key),
-            %% Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:update_snapshot_eager
                         (Type, Snapshot, Updates2),
             Reply = {ok, Snapshot2, internal};
@@ -241,21 +239,6 @@ write_set_to_updates(Txn, WriteSet, Key) ->
 			Acc ++ [Update2]
 		end,[],NewWS).
 
-
-%% filter_updates_per_key(Updates, Key) ->
-%%     int_filter_updates_key(Updates, Key, []).
-
-%% int_filter_updates_key([], _Key, Updates2) ->
-%%     Updates2;
-
-%% int_filter_updates_key([Next|Rest], Key, Updates2) ->
-%%     {_, {KeyPrime, _Type, Op}} = Next,
-%%     case KeyPrime==Key of
-%%         true ->
-%%             int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
-%%         false ->
-%%             int_filter_updates_key(Rest, Key, Updates2)
-%%     end.
 
 get_stable_time(Key) ->
     Preflist = log_utilities:get_preflist_from_key(Key),

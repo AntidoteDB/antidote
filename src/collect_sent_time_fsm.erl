@@ -27,7 +27,7 @@
 -include("antidote.hrl").
 
 
--export([start_link/1]).
+-export([start_link/2]).
 -export([init/1,
 	 get_max_sent_time/2,
 	 update_sent_time/3,
@@ -44,43 +44,43 @@
 		num_partitions,
                 dcid}).
 
+-define(REGISTER, global).
+-define(REGNAME(MYDC,DC), {global,get_atom(MYDC,DC)}).
+
 
 %% LastSentTs is the last sent safe_time that was sent
 %% to the exernal DC, this value is included so that
 %% incase the server was restarted, this reinits the state
-get_max_sent_time(DcId, LastSentTs) ->
-    Pid = global:whereis_name(get_atom(DcId)),
-    %% Start this service if it is down
-    %% Should add a try_catch incase concurrent server creations/failures
-    case Pid of
-	undefined ->
-	    start_link([DcId, LastSentTs]);
-	_ -> Pid
-    end,
-    gen_server:call({global, get_atom(DcId)}, {get_max_sent_time}).
+get_max_sent_time(DcId, _LastSentTs) ->
+    try
+	gen_server:call(?REGNAME(inter_dc_manager:get_my_dc(),DcId),
+			{get_max_sent_time})
+    catch
+	_:R ->
+	    lager:error("Exception caught getting max sent time, DcId ~p, error: ~p", [DcId,R]),
+	    0
+    end.
 
 
 update_sent_time(DcId, Partition, Timestamp) ->
-    Pid = global:whereis_name(get_atom(DcId)),
-    %% Start this service if it is down
-    case Pid of
-	undefined ->
-	    start_link([DcId, 0]);
-	_ -> Pid
-    end,
-    gen_server:cast({global, get_atom(DcId)},
-		    {update_sent_time, Partition, Timestamp}).
+    try
+	gen_server:cast(?REGNAME(inter_dc_manager:get_my_dc(),DcId),
+			{update_sent_time, Partition, Timestamp})
+    catch
+	_:R ->
+	    lager:error("Exception caught updating sent time, DcId ~p, error: ~p", [DcId,R]),
+	    0
+    end.
 
 
-start_link([DcId, StartTimestamp]) ->
-    gen_server:start_link({global, get_atom(DcId)}, ?MODULE, [DcId, StartTimestamp], []).
+start_link(DcId, StartTimestamp) ->
+    gen_server:start_link({?REGISTER, get_atom(inter_dc_manager:get_my_dc(),DcId)},
+			  ?MODULE, [DcId, StartTimestamp], []).
 
 
-%% TODO, Fix, Are partitions based on numbers?? Or do they have an ID??
 init([DcId, _StartTimestamp]) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     NumPartitions = riak_core_ring:num_partitions(Ring),
-    %%SentTimes = min_dc_sent_dict(NumPartitions, StartTimestamp, dict:new()),
     SentTimes = dict:new(),
     {ok, #state{sent_times=SentTimes,
 		num_partitions=NumPartitions,
@@ -114,15 +114,6 @@ handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
     end.
 
 
-%% Is this the right way to get the partition ids?
-%% This is a helper function
-%%min_dc_sent_dict(-1,_StartTimestamp,DcSent) ->
-%%    DcSent;
-%%min_dc_sent_dict(N,StartTimestamp,DcSent) ->
-%%    min_dc_sent_dict(N-1, StartTimestamp, dict:store(N, StartTimestamp, DcSent)).
-
-
-%% FIX ToDo: should I remove these, or add others?
 handle_info(Message, StateData) ->
     lager:error("Recevied info:  ~p",[Message]),
     {stop,badmsg,StateData}.
@@ -138,10 +129,7 @@ code_change(_OldVsn, StateName, State) -> {ok, StateName, State}.
 terminate(_Reason, _SN) ->
     ok.
 
-
-
 %% Helper function
--spec get_atom(DcId :: term())
-	      -> atom().
-get_atom({DcAddr, Port}) ->
-    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(DcAddr) ++ integer_to_list(Port)).
+get_atom({MyDcAddr, MyPort}, {DcAddr, Port}) ->
+    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MyDcAddr) ++
+		     integer_to_list(MyPort) ++ atom_to_list(DcAddr) ++ integer_to_list(Port)).

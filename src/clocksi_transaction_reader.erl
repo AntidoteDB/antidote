@@ -97,12 +97,6 @@ get_next_transactions(State=#state{partition = Partition,
 
     Txns = get_sorted_commit_records(Commitrecords),
     %% "Before" contains all transactions committed before stable_time
-    %% {Before, After} = lists:splitwith(
-    %%                     fun(Logrecord) ->
-    %%                             {{_Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
-    %%                             CommitTime < Stable_time
-    %%                     end,
-    %%                     Txns),
     %% Also removed any external commited transactions since we don't want propagate those
     DcId = dc_utilities:get_my_dc_id(),
     {Before, After} = lists:foldl(
@@ -189,6 +183,8 @@ get_prev_stable_time(Reader) ->
 %% Will comment out the spec for now
 % -spec construct_transaction(Ops::[#operation{}]) -> transaction().
 construct_transaction(Ops) ->
+    %% ToDo: Only send the ops that are replicatied, not the whole transaction if it replicates
+    %% one of its keys
     DCs = lists:foldl(fun(Op, DcSet) ->
 			      case (Op#operation.payload#log_record.op_type == update)
 			      or (Op#operation.payload#log_record.op_type == nonRepUpdate) of

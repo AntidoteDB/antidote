@@ -188,7 +188,7 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             %%ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
             %%ok = inet:setopts(Socket, [{active, once}]),
-            {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
+            {next_state, wait_for_ack, State#state{socket=Socket},?TIMEOUT};
         {error, _Reason} ->
 	    %% TODO, should be diferent
             lager:error("Couldnot connect to remote DC"),

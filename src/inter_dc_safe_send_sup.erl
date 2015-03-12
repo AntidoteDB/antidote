@@ -34,9 +34,8 @@ start_link() ->
 start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
-%% TODO: is this the correct things for this
 init([]) ->
     Worker = {inter_dc_safe_send_fsm,
               {inter_dc_safe_send_fsm, start_link, []},
               permanent, 5000, worker, [inter_dc_safe_send_fsm]},
-    {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.
+    {ok, {{one_for_one, 5, 10}, [Worker]}}.

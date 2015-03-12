@@ -65,20 +65,18 @@ start_safe_time_sender() ->
     supervisor:start_child(?MODULE, {inter_dc_safe_send_sup,
                     {inter_dc_safe_send_sup, start_link, []},
 				     permanent, 5000, supervisor, [inter_dc_safe_send_sup]}),
-    inter_dc_safe_send_sup:start_fsm([]).
+    ok.
 
 start_collect_sent() ->
     DCs = inter_dc_manager:get_dcs(),
     lager:info("Starting sup collect sent..."),
-    lists:foldl(fun(DcId, _Acc) ->
-			supervisor:start_child(?MODULE, {collect_sent_time_sup,
-							 {collect_sent_time_sup, start_link, [DcId,0]},
-							 permanent, 5000, supervisor, [collect_sent_time_sup]})
-			    end,
-		0, DCs).
+    supervisor:start_child(?MODULE, {collect_sent_time_sup,
+				     {collect_sent_time_sup, start_link, [DCs,0]},
+				     permanent, 5000, supervisor, [collect_sent_time_sup]}),
+    ok.
 
 start_senders() ->
-    %% start_collect_sent(),
+    start_collect_sent(),
     start_safe_time_sender(),
     ok.
 
@@ -129,19 +127,11 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
 
-    VectorClockMaster = {vectorclock_vnode_master,
-                         {riak_core_vnode_master,  start_link,
-                          [vectorclock_vnode]},
-                         permanent, 5000, worker, [riak_core_vnode_master]},
-
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
-    %% InterDcManager = {inter_dc_manager,
-    %%                     {inter_dc_manager, start_link, []},
-    %%                     permanent, 5000, worker, [inter_dc_manager]},
 
     {ok,
      {{one_for_one, 5, 10},
@@ -151,6 +141,4 @@ init(_Args) ->
        ClockSIiTxCoordSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
-       %% InterDcManager,
-       VectorClockMaster,
        MaterializerMaster]}}.

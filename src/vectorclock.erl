@@ -25,115 +25,40 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([get_safe_time/1,
-	 %% get_clock_by_key/1,
-         is_greater_than/2,
+-export([is_greater_than/2,
          get_clock_of_dc/2,
          set_clock_of_dc/3,
-         %% get_stable_snapshot/0,
          from_list/1,
 	 wait_for_clock/1,
+	 wait_for_local_clock/1,
 	 get_random_node/0,
 	 update_sent_clock/3,
 	 update_safe_vector_local/1,
-	 update_safe_vector_local/2,
 	 update_safe_clock_local/2,
-	 update_safe_clock_local/3,
 	 get_safe_time/0,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
 
+-define(META_PREFIX_SAFE, {dcid,int}).
+
 -type vectorclock() :: dict().
 
-%% -spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
-%% get_clock_by_key(Key) ->
-%%     Preflist = log_utilities:get_preflist_from_key(Key),
-%%     Indexnode = hd(Preflist),
-%%     try
-%%         riak_core_vnode_master:sync_command(
-%%           Indexnode, get_clock, vectorclock_vnode_master)
-%%     catch
-%%         _:Reason ->
-%%             lager:error("Exception caught: ~p", [Reason]),
-%%             {error, Reason}
-%%     end.
-
--spec get_safe_time(Partition :: non_neg_integer())
+-spec get_safe_time()
                -> {ok, vectorclock()} | {error, term()}.
-get_safe_time(Partition) ->
-    Indexnode = {Partition, node()},
-    try
-%% Chage to get_safe_time from get_clock
-        riak_core_vnode_master:sync_command(
-           Indexnode, get_safe_time, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
-
-%% @doc get_stable_snapshot: Returns stable snapshot time
-%% in the current DC. stable snapshot time is the snapshot available at
-%% in all partitions
-%% -spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()} | {error, term()}.
-%% get_stable_snapshot() ->
-%%     Indexnode = vectorclock:get_random_node(),
-%%     try
-%%         riak_core_vnode_master:sync_command(
-%%           Indexnode, get_stable_snapshot, vectorclock_vnode_master)
-%%     catch
-%%         _:Reason ->
-%%             lager:error("Exception caught: ~p", [Reason]),
-%%             {error, Reason}
-%%     end.
+get_safe_time() ->
+    ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
+    ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
+				    dict:store(Key,Val,NewAcc) end,
+			    dict:new(), ClockList),
+    lager:info("safe time: ~p", [ClockDict]),
+    {ok, ClockDict}.
 
 
-
-%%update_sent_clock(Partition, Dc_id, Timestamp) ->
-    
 update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
-%% need to fix this so it takes the min of the stabletime and any live
-%% transactions
-%% Actaully this should be ok?? bc stable time comes from 
-%% clock_si_transaction_reader
     collect_sent_time_fsm:update_sent_time(
       {DcAddress,Port}, Partition, StableTime).
 
-
-
-%% update_sent_clock_old(Partition, Dc_id, Timestamp) ->
-%%     Indexnode = {Partition, node()},
-%%     try
-%%         case riak_core_vnode_master:sync_command(Indexnode,
-%%                                              {update_sent_clock, Dc_id, Partition, Timestamp},
-%%                                              vectorclock_vnode_master) of
-%%             {ok, Clock} ->
-%%                 {ok, Clock};
-%%             {error, Reason} ->
-%%                 lager:info("Update sent clock failed: ~p",[Reason]),
-%%                 {error, Reason}
-%%         end
-%%     catch
-%%         _:R ->
-%%             lager:error("Exception caught: ~p", [R]),
-%%             {error, R}
-%%     end.
-
-
-
--spec get_safe_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
-get_safe_time() ->
-    %% Right now this only gets the safe time of the local vector
-    Indexnode = vectorclock:get_random_node(),
-    try
-        riak_core_vnode_master:sync_command(
-          Indexnode, get_safe_time, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
 
 %% The update_safe_vector_local functions take a clock that is then used
 %% to update the safe time, and also returns a clock with the possibly
@@ -142,126 +67,103 @@ get_safe_time() ->
 -spec update_safe_vector_local(Vector :: vectorclock:vectorclock())
 			      -> {ok, vectorclock:vectorclock()} | {error, term()}.
 update_safe_vector_local(Vector) ->
-    Indexnode = vectorclock:get_random_node(),
-    update_safe_vector_local(Indexnode, Vector).
-
--spec update_safe_vector_local(Partition :: non_neg_integer(), Vector :: vectorclock:vectorclock())
-			      -> {ok, vectorclock:vectorclock()} | {error, term()}.
-update_safe_vector_local(Partition, Vector) ->
-    try
-%%	lager:info("in update safe vector local"),
-	case riak_core_vnode_master:sync_command(Partition,
-						 {update_safe_vector_local, Vector},
-						 vectorclock_vnode_master) of
-	    {ok, Clock} ->
-		{ok, Clock};
-	    {error, Reason} ->
-		lager:error("Update safe vector failed ~p", [Reason]),
-		{error, Reason}
-	end
-    catch
-	_:R ->
-	    lager:error("Exception caught: ~p", [R]),
-	    {error, R}
-    end.
-
-
-
--spec update_safe_clock_local(Dc_id :: term(), Timestamp :: non_neg_integer())
-			     -> {ok, non_neg_integer()} | {error, term()}.
-update_safe_clock_local(Dc_id, Timestamp) ->
-    Indexnode = vectorclock:get_random_node(),
-    update_safe_clock_local(Dc_id, Indexnode, Timestamp).
-
-
-%% This just updates the safeclock of the local partition
--spec update_safe_clock_local(Dc_id :: term(), Partition :: term(), Timestamp :: non_neg_integer())
-			     -> {ok, non_neg_integer()} | {error, term()}.
-update_safe_clock_local(Dc_id, Partition, Timestamp) ->
-    try
-	case riak_core_vnode_master:sync_command(Partition,
-						 {update_safe_clock, false, Dc_id, Timestamp},
-						 vectorclock_vnode_master) of
-	    {ok, Clock} ->
-		{ok, Clock};
-	    {error, Reason} ->
-		lager:error("Update safe clock failed ~p",[Reason]),
-		{error, Reason}
-	end
-    catch
-	_:R ->
-	    lager:error("Exception caught: ~p", [R]),
-	    {error, R}
-    end.
+    ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
     
-
-%% This updates the safeclock for all partitions by sending riak-core
-%% meta-data
-%% Dont use this for now
-%% -spec update_safe_clock(Dc_id :: term(), Timestamp :: non_neg_integer())
-%% 		       -> {ok, vectorclock()} | {error, term()}.
-%% update_safe_clock(Dc_id, Timestamp) ->
-%%     Indexnode = vectorclock:get_random_node(),
-%%     try
-%% 	case riak_core_vnode_master:sync_command(Indexnode,
-%% 						 {update_safe_clock, false, Dc_id, Timestamp},
-%% 						 vectorclock_vnode_master) of
-%% 	    {ok, Clock} ->
-%% 		{ok, Clock};
-%% 	    {error, Reason} ->
-%% 		lager:infor("Update safe clock failed ~p",[Reason]),
-%% 		{error, Reason}
-%% 	end
-%%     catch
-%% 	_:R ->
-%% 	    lager:error("Exception caught: ~p", [R]),
-%% 	    {error, R}
-%%     end.
+    ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
+				    dict:store(Key,Val,NewAcc) end,
+			    dict:new(), ClockList),
     
+    NewSafeClock = dict:fold(fun(DcId,Timestamp,NewDict) ->
+				     case dict:find(DcId, NewDict) of
+					 {ok, _Val} ->
+					     dict:update(DcId, fun(OldTimestamp) ->
+								       case OldTimestamp < Timestamp of
+									   true ->
+									       try
+										   riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
+									       catch
+										   _:Reason ->
+										       lager:error("Exception caught ~p", [Reason])
+									       end,
+									       Timestamp;
+									   _ -> 
+									       OldTimestamp
+								       end
+							       end, NewDict);
+					 error -> 
+					     try
+						 riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
+					     catch
+						 _:Reason ->
+						     lager:error("Exception caught ~p", [Reason])
+					     end,
+					     dict:store(DcId, Timestamp, NewDict)
+				     end
+			     end, ClockDict, Vector),
+    {ok,NewSafeClock}.
 
-%% -spec update_clock(Partition :: non_neg_integer(),
-%%                    Dc_id :: term(), Timestamp :: non_neg_integer())
-%%                   -> {ok, vectorclock()} | {error, term()}.
-%% update_clock(Partition, Dc_id, Timestamp) ->
-%%     Indexnode = {Partition, node()},
-%%     try
-%%         case riak_core_vnode_master:sync_command(Indexnode,
-%%                                              {update_clock, Dc_id, Timestamp},
-%%                                              vectorclock_vnode_master) of
-%%             {ok, Clock} ->
-%%                 {ok, Clock};
-%%             {error, Reason} ->
-%%                 lager:info("Update vector clock failed: ~p",[Reason]),
-%%                 {error, Reason}
-%%         end
-%%     catch
-%%         _:R ->
-%%             lager:error("Exception caught: ~p", [R]),
-%%             {error, R}
-%%     end.
+
+-spec update_safe_clock_local(DcId :: term(), Timestamp :: non_neg_integer())
+			     -> {ok, non_neg_integer()} | {error, term()}.
+update_safe_clock_local(DcId, Timestamp) ->
+    DcSafeClock = riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}]),
+    
+    case DcSafeClock < Timestamp of
+	true ->
+	    try
+		riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
+		{ok, Timestamp}
+	    catch
+		_:Reason ->
+		    lager:error("Exception caught ~p", [Reason]),
+		    {error,Reason}
+	    end;
+	false ->
+	    {ok, DcSafeClock}
+    end.
 
 
 %% TODO, fix this
 -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-                           {ok, vectorclock:vectorclock()} | {error, term()}.
-wait_for_clock(_Clock) ->
-  %%  case get_safe_time() of
-  %%      {ok, VecSnapshotTime} ->
-  %%          case vectorclock:ge(VecSnapshotTime, Clock) of
-  %%              true ->
-  %%                  %% No need to wait
-  %%                  {ok, VecSnapshotTime};
-  %%              false ->
-  %%                  %% wait for snapshot time to catch up with Client Clock
-  %%                  timer:sleep(100),
-  %%                  wait_for_clock(Clock)
-  %%          end;
-  %%      {error, Reason} ->
-  %%         {error, Reason}
-  %% end.
-%%lager:info("safe time ~p", [get_safe_time()]),
-    {ok, get_safe_time()}.
+			    ok | {error, term()}.
+wait_for_clock(Clock) ->
+    case get_safe_time() of
+	{ok, VecSnapshotTime} ->
+	    case vectorclock:ge(VecSnapshotTime, Clock) of
+		true ->
+		    %% No need to wait
+		    ok;
+		false ->
+		    %% wait for snapshot time to catch up with Client Clock
+		    timer:sleep(100),
+		    wait_for_clock(Clock)
+	    end;
+	{error, Reason} ->
+	    {error, Reason}
+    end.
 
+
+-spec wait_for_local_clock(Clock :: vectorclock:vectorclock()) ->
+                           ok | {error, term()}.
+wait_for_local_clock(Clock) ->
+    DcId = dc_utilities:get_my_dc_id(),
+    case dict:find(DcId,Clock) of
+	{ok,Time} ->
+	    wait_helper(Time);
+	error ->
+	    get_safe_time()
+    end.
+
+wait_helper(WaitForTime) ->
+    Now = clocksi_vnode:now_milisec(erlang:now()),
+    case Now < WaitForTime of
+	true ->
+	    lager:info("now ~p, wait to ~p, sleep time ~p", [Now,WaitForTime,(WaitForTime-Now)]),
+	    timer:sleep(WaitForTime - Now),
+	    wait_helper(WaitForTime);
+	false  ->
+	    ok
+    end.
 
 
 
@@ -277,8 +179,6 @@ get_random_node() ->
     random:seed(A1, A2, A3),
     Index = random:uniform(length(Prefnode)),
     lists:nth(Index, Prefnode).
-
-
 
 
 %% @doc Return true if Clock1 > Clock2
