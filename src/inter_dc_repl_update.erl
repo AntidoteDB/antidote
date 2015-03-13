@@ -131,8 +131,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                     lager:error("Wrong transaction record format"),
                     erlang:error(bad_transaction_record)
             end,
-    %% Would it be possbile to just log it directly, since when a new transaction
-    %% is created it is only given snapshot times that are safe.
+
     case check_dep(SnapshotTime, Localclock) of
         true ->
             {TheNewOps,_NewWs,NewLogRecords}
@@ -202,10 +201,8 @@ finish_update_dc(Dc, DcQ, Cts,
     {ok, State#recvr_state{lastCommitted = LastCommNew, recQ = RecQNew}}.
 
 %% Checks depV against the committed timestamps
-check_dep(_DepV, _Localclock) ->
-    %% Result = vectorclock:ge(Localclock, DepV),
-    %% Result.
-    true.
+check_dep(DepV, Localclock) ->
+    vectorclock:ge(Localclock, DepV).
 
 %%Set a new value to the key.
 set(Key, Value, Orddict) ->
