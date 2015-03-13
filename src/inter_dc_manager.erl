@@ -28,7 +28,8 @@
          start_receiver/1,
          get_dcs/0,
          add_dc/1,
-         add_list_dcs/1]).
+         add_list_dcs/1,
+         stop_receiver/0]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
         terminate/2, code_change/3]).
@@ -54,6 +55,9 @@ get_my_dc() ->
 start_receiver(Port) ->
     gen_server:call(?MODULE, {start_receiver, Port}, infinity).
 
+stop_receiver() ->
+    gen_server:call(?MODULE, {stop_receiver}, infinity).
+    
 %% Returns all DCs known to this DC.
 -spec get_dcs() ->{ok, [dc_address()]}.
 get_dcs() ->
@@ -84,6 +88,13 @@ handle_call(get_my_dc, _From, #state{port=Port} = State) ->
 handle_call({start_receiver, Port}, _From, State) ->
     {ok, _} = antidote_sup:start_rep(Port),
     {reply, {ok, {my_ip(),Port}}, State#state{port=Port}};
+
+handle_call({stop_receiver}, _From, State) ->
+    case antidote_sup:stop_rep() of
+        ok -> 
+            {reply, ok, State#state{port=0}};
+        _ -> {reply, error, State}
+    end;
 
 handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->
     {reply, {ok, DCs}, State};
