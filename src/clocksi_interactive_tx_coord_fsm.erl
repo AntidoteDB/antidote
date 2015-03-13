@@ -164,19 +164,22 @@ execute_op({Op_type, Args}, Sender,
 		    case lists:keyfind(IndexNode, 1, Updated_partitions) of
 			false ->
 			    New_updated_partitions=
-				lists:append(Updated_partitions, [{IndexNode,[{Replicated,Key,Type,NewDownstream}]}]),
+				lists:append(Updated_partitions,
+					     [{IndexNode,[{Replicated,Key,Type,NewDownstream}]}]),
 			    {reply, ok, execute_op,
 			     SD0#state
 			     {updated_partitions= New_updated_partitions}};
 			{IndexNode, _Writesets} ->
-			    New_updated_partitions = lists:foldl(fun({NextIndexNode,ListRepArgs},NewAcc) ->
-									 case NextIndexNode of
-									     IndexNode ->
-										 NewAcc ++ [{IndexNode, ListRepArgs ++ [{Replicated,Key,Type,NewDownstream}]}];
-												_ ->
-										 NewAcc ++ [{NextIndexNode,ListRepArgs}]
-									 end
-								 end, [], Updated_partitions),
+			    New_updated_partitions =
+				lists:foldl(fun({NextIndexNode,ListRepArgs},NewAcc) ->
+						    case NextIndexNode of
+							IndexNode ->
+							    NewAcc ++ [{IndexNode, ListRepArgs ++
+									    [{Replicated,Key,Type,NewDownstream}]}];
+							_ ->
+							    NewAcc ++ [{NextIndexNode,ListRepArgs}]
+						    end
+					    end, [], Updated_partitions),
 			    {reply, ok, execute_op, SD0#state
 			     {updated_partitions= New_updated_partitions}}
 		    end

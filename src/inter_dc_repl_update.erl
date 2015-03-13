@@ -176,7 +176,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                   NewTrans),
             lists:foreach( fun(DownOp) ->
                                    Key = DownOp#clocksi_payload.key,
-                                   ok = materializer_vnode:update_cache(Key, DownOp)
+                                   ok = materializer_vnode:update(Key, DownOp)
                            end, DownOps),
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(

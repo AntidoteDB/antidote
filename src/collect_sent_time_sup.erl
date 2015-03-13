@@ -35,7 +35,7 @@ start_fsm(Args) ->
 init([DcList,_TS]) ->
      Workers = lists:foldl(fun(DcId, Acc) ->
 				  Acc ++ [{{collect_sent_time_fsm,DcId},
-					   {collect_sent_time_fsm, start_link, [DcId, 0]}, % pass the socket!
+					   {collect_sent_time_fsm, start_link, [DcId, 0]},
 					   permanent, 1000, worker, [collect_sent_time_fsm]}]
 			  end, [], DcList),
     {ok, {{one_for_one, 5, 10}, Workers}}.

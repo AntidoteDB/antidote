@@ -76,7 +76,10 @@
 -type log_id() :: [partition_id()].
 -type type() :: atom().
 -type snapshot() :: term().
+-type snapshot_time() ::  vectorclock:vectorclock().
+-type commit_time() ::  {term(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
+-type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
 %-type transaction() :: term(). %% TODO: actually define the spec of a transaction
 -type transaction() :: {txid(), {dcid(), non_neg_integer()},

@@ -186,10 +186,11 @@ return(timeout, SD0=#state{key=Key,
                            type=Type,
                            updates=WriteSet}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime) of
+    TxId = Transaction#transaction.txn_id,
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
         {ok, Snapshot} ->
 	    Updates2=write_set_to_updates(Transaction,WriteSet,Key),
-            Snapshot2=clocksi_materializer:update_snapshot_eager
+            Snapshot2=clocksi_materializer:materialize_eager
                         (Type, Snapshot, Updates2),
             Reply = {ok, Snapshot2, internal};
         {error, Reason} ->

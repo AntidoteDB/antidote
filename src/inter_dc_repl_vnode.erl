@@ -76,11 +76,6 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 			0, DCs),
 	    NewReader = NewReaderState;
 	_ ->
-	    lists:foldl(fun({DCs,Message},_Acc) ->
-				lager:info("DCs to send the trans: ~p", [DCs]),
-				lager:info("The transaction: ~p", [Message])
-			end,0,dict:to_list(DictTransactionsDcs)),
-	    
             case inter_dc_communication_sender:propagate_sync(
                    DictTransactionsDcs, StableTime, Partition) of
                 ok ->

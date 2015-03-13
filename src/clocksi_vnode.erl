@@ -336,7 +336,7 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
 					    snapshot_time = Transaction#transaction.vec_snapshot_time,
 					    commit_time = {DcId, TxCommitTime},
 					    txid = Transaction#transaction.txn_id},
-				     AccIn++[materializer_vnode:update_cache(Key, CommittedDownstreamOp)];
+				     AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)];
 				 _ ->
 				     AccIn
 			     end
