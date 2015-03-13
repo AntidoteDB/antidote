@@ -53,7 +53,7 @@
 %% Returns ok if all DCs have acknowledged with in the time TIMEOUT
 -spec propagate_sync(term(), [dc_address()]) -> ok | error.
 propagate_sync(Message, DCs) ->
-    Errors = lists:foldl(
+    FailedDCs = lists:foldl(
                fun({DcAddress, Port}, Acc) ->
                        case inter_dc_communication_sender:start_link(
                               Port, DcAddress, Message, self()) of
@@ -65,24 +65,28 @@ propagate_sync(Message, DCs) ->
                                        lager:error(
                                          "Send failed Reason:~p Message: ~p",
                                          [Other, Message]),
-                                       Acc ++ [error]
+                                       Acc ++ [{DcAddress,Port}]
                                        %%TODO: Retry if needed
                                after ?TIMEOUT ->
                                        lager:error(
                                          "Send failed timeout Message ~p"
                                          ,[Message]),
-                                       Acc ++ [{error, timeout}]
+                                       Acc ++ [{DcAddress,Port}]
                                        %%TODO: Retry if needed
                                end;
                            _ ->
-                               Acc ++ [error]
+                               Acc ++ [{DcAddress,Port}]
                        end
                end, [],
                DCs),
-    case length(Errors) of
+    case length(FailedDCs) of
         0 ->
             ok;
-        _ -> error
+        _ ->
+            %% Retry until it is success
+            lager:error("Send Failed! Retrying.."),
+            propagate_sync(Message,FailedDCs)
+            %%error
     end.
 
 %% Starts a process to send a message to a single Destination 
@@ -114,7 +118,7 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
         {error, _Reason} ->
             lager:error("Couldnot connect to remote DC"),
-            {stop, normal, State}
+            {next_state, stop_error, State}
     end.
 
 wait_for_ack({acknowledge, _DC}, State=#state{socket=_Socket, message=_Message} )->
