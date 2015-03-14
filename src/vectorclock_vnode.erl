@@ -104,9 +104,8 @@ handle_command(calculate_stable_snapshot, _Sender,
             false ->
                 dict:new()
         end,
-    {reply, {ok, Stable_snapshot},
-     State#currentclock{stable_snapshot=Stable_snapshot,
-                        num_p = NumPartitions}};
+    {noreply, State#currentclock{
+      stable_snapshot=Stable_snapshot, num_p = NumPartitions}};
 
 %% @doc This function implements following code
 %% if last_received_vectorclock[partition][dc] < time
@@ -126,31 +125,31 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                     %% Broadcast new pvv to other partition
                     try
                         riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                        {reply, {ok, NewPClock},
+                        {reply, ok,
                          State#currentclock{last_received_clock=NewLClock,
                                         partition_vectorclock=NewPClock}
                         }
                     catch
                         _:Reason ->
                             lager:error("Exception caught ~p! ",[Reason]),
-                            {reply, {ok, VClock},State}
+                            {reply, ok, State}
                     end;
                 false ->
-                    {reply, {ok, VClock}, State}
+                    {reply, ok, State}
             end;
         error ->
             NewLClock = dict:store(DcId, Timestamp, LastClock),
             NewPClock = dict:store(DcId, Timestamp - 1, VClock),
             try
                 riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                {reply, {ok, NewPClock},
+                {reply, ok,
                  State#currentclock{last_received_clock=NewLClock,
                                     partition_vectorclock=NewPClock}
                 }
             catch
                 _:Reason ->
                     lager:error("Exception caught ~p! ",[Reason]),
-                    {reply, {ok, VClock},State}
+                    {reply, ok, State}
             end
     end;
 

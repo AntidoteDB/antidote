@@ -7,11 +7,18 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    % Must be a power of 2, minimum 8 and maximum 1024.
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Cluster1, Cluster2] = rt:build_clusters([1,1]),
 
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
-    timer:sleep(100), %%TODO: wait for inter_dc_manager to be up
+
+    rt:wait_until_registered(Node1, inter_dc_manager),
+    rt:wait_until_registered(Node2, inter_dc_manager),
+
     {ok, DC1} = rpc:call(Node1, inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, start_receiver,[8092]),
 

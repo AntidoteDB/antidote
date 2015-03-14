@@ -22,7 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/1]).
+-export([start_link/0, start_rep/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -34,12 +34,12 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% @doc: start_rep(Port) - starts a server which listens for incomming
-%% tcp connection on port Port. Server receives updates to replicate 
+%% @doc: start_rep(Port) - starts a server managed by Pid which listens for 
+%% incomming tcp connection on port Port. Server receives updates to replicate 
 %% from other DCs 
-start_rep(Port) ->
+start_rep(Pid, Port) ->
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
-                    {inter_dc_communication_sup, start_link, [Port]},
+                    {inter_dc_communication_sup, start_link, [Pid, Port]},
                     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
 %% ===================================================================

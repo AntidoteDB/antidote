@@ -34,6 +34,8 @@ confirm() ->
 
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
+    Node = hd(Nodes),
+    rt:wait_for_service(Node, antidote),
 
     pass = start_stop_test(),
     pass = get_empty_crdt_test(<<"key0">>),
