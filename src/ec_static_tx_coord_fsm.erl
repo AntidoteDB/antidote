@@ -145,8 +145,8 @@ execute_batch_ops(timeout, SD=#state{from = From,
 		end;
 	_ ->
 		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-		{ok, {TxId, CommitTime}} ->
-			From ! {ok, {TxId, [], CommitTime}},
+		{ok, TxId} ->
+			From ! {ok, {TxId, [], 0}},
 			{stop, normal, SD};
 		_ ->
 			From ! {error, commit_fail},
