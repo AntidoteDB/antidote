@@ -44,8 +44,6 @@ update_snapshot(Key, Type, Snapshot, [LogEntry|Rest]) ->
                 {Key, Type} ->
                     OpParam = Payload#payload.op_param,
                     Actor = Payload#payload.actor,
-                    lager:info("OpParam: ~p, Actor: ~p and Snapshot: ~p",
-                               [OpParam, Actor, Snapshot]),
                     {ok, Value} = Type:update(OpParam, Actor, Snapshot),
                     Value;
                 _ ->
