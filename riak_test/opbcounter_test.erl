@@ -111,7 +111,7 @@ transfer_test(Nodes) ->
     %% Test a forbidden transference.
     Result1 = rpc:call(FirstNode, antidote, append,
         [Key, Type, {{transfer, 3, r1}, r2}]),
-    ?assertEqual({error, no_permissions}, Result1),
+    ?assertEqual({error, commit_fail}, Result1),
     %% Test transfered permissions enable the previous operation.
     Result2 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
         [[{update, Key, Type, {{transfer, 2, r2}, r1}}, 

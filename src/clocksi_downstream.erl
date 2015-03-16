@@ -21,15 +21,13 @@
 
 -include("antidote.hrl").
 
--export([generate_downstream_op/5]).
+-export([generate_downstream_op/6]).
 
 %% @doc Returns downstream operation for upstream operation
-%%      input: Update - upstream operation
-%%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(Transaction::tx(), Node::term(), Key::key(),
-                             Type::type(), Update::op()) ->
+-spec generate_downstream_op(#transaction{}, Node::term(), Key::key(),
+                             Type::type(), Update::op(), [DownstreamOps::term()]) ->
                                     {ok, op()} | {error, atom()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update) ->
+generate_downstream_op(Transaction, Node, Key, Type, Update, DownstreamOps) ->
     {Op, Actor} =  Update,
     case clocksi_vnode:read_data_item(Node,
                                       Transaction,
@@ -38,18 +36,22 @@ generate_downstream_op(Transaction, Node, Key, Type, Update) ->
         {ok, Snapshot} ->
             DownstreamOp = case Type of
                             crdt_bcounter ->
-                                case Type:generate_downstream(Op, Actor, Snapshot) of
+                                Snapshot2 = apply_operations(Snapshot, Type, DownstreamOps),
+                                case Type:generate_downstream(Op, Actor, Snapshot2) of
                                     {ok, OpParam} -> {update, OpParam};
                                     {error, Error} -> {error, Error}
                                 end;
                             crdt_orset ->
-                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+                                Snapshot2 = apply_operations(Snapshot, Type, DownstreamOps),
+                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot2),
                                 {update, OpParam};
                             crdt_pncounter ->
-                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+                                Snapshot2 = apply_operations(Snapshot, Type, DownstreamOps),
+                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot2),
                                 {update, OpParam};
                             _ ->
-                                {ok, NewState} = Type:update(Op, Actor, Snapshot),
+                                Snapshot2 = update_snapshot(Snapshot, DownstreamOps), 
+                                {ok, NewState} = Type:update(Op, Actor, Snapshot2),
                                 {merge, NewState}
                             end,
             case DownstreamOp of
@@ -59,3 +61,20 @@ generate_downstream_op(Transaction, Node, Key, Type, Update) ->
         {error, no_snapshot} ->
             {error, no_snapshot}
     end.
+
+update_snapshot(Snapshot, DownstreamOps) ->
+    case DownstreamOps of
+        [] ->
+            Snapshot;
+        List ->
+            {merge, Snapshot2} = lists:last(List),
+            Snapshot2
+    end.
+
+apply_operations(Snapshot, _Type, []) ->
+    Snapshot;
+
+apply_operations(Snapshot, Type, [Op|Rest]) ->
+    {update, OpParam} = Op,
+    {ok, Snapshot2} = Type:update(OpParam, Snapshot),
+    apply_operations(Snapshot2, Type, Rest).
