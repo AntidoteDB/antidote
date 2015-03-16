@@ -37,6 +37,12 @@ start(_StartType, _StartArgs) ->
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
+
+            ok = riak_core:register([{vnode_module, eiger_vnode}]),
+            ok = riak_core_node_watcher:service_up(eiger, self()),
+
+            ok = riak_core:register([{vnode_module, eiger_materializer_vnode}]),
+            ok = riak_core_node_watcher:service_up(eiger_materializer, self()),
             %%ClockSI layer
 
             ok = riak_core:register([{vnode_module, clocksi_vnode}]),

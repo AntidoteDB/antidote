@@ -27,6 +27,10 @@
          clocksi_execute_tx/1,
          clocksi_read/3,
          clocksi_read/2,
+         eiger_readtx/1,
+         eiger_updatetx/2,
+         eiger_updatetx/3,
+         eiger_committx/1,
          clocksi_bulk_update/2,
          clocksi_bulk_update/1,
          clocksi_istart_tx/1,
@@ -38,6 +42,26 @@
          clocksi_icommit/1]).
 
 %% Public API
+
+
+eiger_readtx(Keys) ->
+    {ok, _} = eiger_readtx_coord_sup:start_fsm([self(), Keys]),
+    receive
+        EndOfTx ->
+            EndOfTx
+    end.
+
+eiger_updatetx(Updates, _Dependencies) ->
+    eiger_updatetx(Updates, _Dependencies, undefined).
+
+eiger_updatetx(Updates, _Dependencies, Debug) ->
+    [{Key, _Value}|_Rest] = Updates,
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    eiger_vnode:coordinate_tx(IndexNode, Updates, Debug).
+
+eiger_committx(Coordinator) ->
+    gen_fsm:sync_send_event(Coordinator, commit).
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.

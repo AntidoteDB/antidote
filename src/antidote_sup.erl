@@ -73,6 +73,11 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
 
+    EigerReadTxCoordSup =  {eiger_readtx_coord_sup,
+                           {eiger_readtx_coord_sup, start_link, []},
+                           permanent, 5000, supervisor,
+                           [eiger_readtx_coord_sup]},
+
     VectorClockMaster = {vectorclock_vnode_master,
                          {riak_core_vnode_master,  start_link,
                           [vectorclock_vnode]},
@@ -87,6 +92,14 @@ init(_Args) ->
                         {inter_dc_manager, start_link, []},
                         permanent, 5000, worker, [inter_dc_manager]},
 
+    EigerMaster = {eiger_vnode_master,
+                  {riak_core_vnode_master, start_link, [eiger_vnode]},
+                  permanent, 5000, worker, [riak_core_vnode_master]},
+
+    EigerMaterializerMaster = {eiger_materializer_vnode_master,
+                              {riak_core_vnode_master, start_link, [eiger_materializer_vnode]},
+                              permanent, 5000, worker, [riak_core_vnode_master]},
+
     {ok,
      {{one_for_one, 5, 10},
       [LoggingMaster,
@@ -97,4 +110,7 @@ init(_Args) ->
        InterDcRecvrMaster,
        InterDcManager,
        VectorClockMaster,
+       EigerReadTxCoordSup,
+       EigerMaster,
+       EigerMaterializerMaster,
        MaterializerMaster]}}.
