@@ -22,13 +22,14 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/1,
-	start_cross_dc_read_communication_recvr/1,
-	start_collect_sent/0,
-	start_safe_time_sender/0,
-	start_senders/0,
-	start_safe_recvr/0,
-	start_recvrs/3]).
+-export([start_link/0,
+	 %%start_rep/1,
+	 start_cross_dc_read_communication_recvr/1,
+	 start_collect_sent/0,
+	 start_safe_time_sender/0,
+	 start_senders/0,
+	 start_safe_recvr/0,
+	 start_recvrs/3]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -43,13 +44,13 @@ start_link() ->
 %% @doc: start_rep(Port) - starts a server which listens for incomming
 %% tcp connection on port Port. Server receives updates to replicate 
 %% from other DCs 
-start_rep({DcIp,Port}) ->
+start_rep({DcIp,Ports}) ->
     lager:info("Starting sup inter dc recvr..."),
-    inter_dc_manager:start_receiver({DcIp,Port}),
+    inter_dc_manager:start_receiver({DcIp,hd(Ports)}),
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
-                    {inter_dc_communication_sup, start_link, [Port]},
+                    {inter_dc_communication_sup, start_link, [Ports]},
 				     permanent, 5000, supervisor, [inter_dc_communication_sup]}),
-    {ok, {DcIp,Port}}.
+    {ok, {DcIp,hd(Ports)}}.
 
 
 start_cross_dc_read_communication_recvr({DcIp,Port}) ->
@@ -90,12 +91,12 @@ start_senders() ->
     start_safe_time_sender(),
     ok.
 
-start_recvrs(AddrType, Port1, Port2) ->
+start_recvrs(AddrType, RecvrPorts, ReadPort) ->
     Ip = my_ip(AddrType),
-    start_rep({Ip, Port1}),
-    start_cross_dc_read_communication_recvr({Ip, Port2}),
+    start_rep({Ip, RecvrPorts}),
+    start_cross_dc_read_communication_recvr({Ip, ReadPort}),
     start_safe_recvr(),
-    {ok,{Ip,Port1},{Ip,Port2}}.
+    {ok,{Ip,hd(RecvrPorts)},{Ip,ReadPort}}.
     
 
 my_ip(internet) ->

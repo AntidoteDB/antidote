@@ -92,20 +92,33 @@ start_store_update(Transaction) ->
 				    {NewDictNodeKey,NewListXtraOps} end,
 			    {dict:new(),[]}, Ops),
 	    %% Fix this: because sends a store_update per op, should instead send a message per partition
-	    dict:fold(fun(Node,Op2,_) ->
-			      store_update(Node,{Txid,Committime,ST,lists:append(Op2,FinalOps)}),
-			      %% Maybe should only run this once???
-			      riak_core_vnode_master:command(Node,{process_queue},
-							     inter_dc_recvr_vnode_master) end,
-		      ok,SeparatedTransactions)
+	    WaitCount = dict:fold(fun(Node,Op2,Count) ->
+					  %% Maybe should only run this once???
+					  %% store_update(Node,{Txid,Committime,ST,lists:append(Op2,FinalOps)}),
+					  riak_core_vnode_master:command(Node,{process_queue,
+									       {Txid,Committime,ST,lists:append(Op2,FinalOps)}, self()},
+									 inter_dc_recvr_vnode_master),
+					  Count + 1
+				  end, 0, SeparatedTransactions),
+	    receive_loop(WaitCount,self())
     end,
-
     ok.
 
-store_update(Node, Transaction) ->
-    riak_core_vnode_master:sync_command(Node,
-                                        {store_update, Transaction},
-                                        inter_dc_recvr_vnode_master).
+%% Helper function
+receive_loop(0,_MyPid) ->
+    ok;
+receive_loop(Count,MyPid) ->
+    receive
+	{MyPid, done_process} ->
+	    ok
+    end,
+    receive_loop(Count - 1,MyPid).
+    
+
+%% store_update(Node, Transaction) ->
+%%     riak_core_vnode_master:sync_command(Node,
+%%                                         {store_update, Transaction},
+%%                                         inter_dc_recvr_vnode_master).
 
 %% riak_core_vnode call backs
 init([Partition]) ->
@@ -129,16 +142,26 @@ init([Partition]) ->
 
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
-handle_command({store_update, Transaction}, _Sender, State) ->
+%% handle_command({store_update, Transaction}, _Sender, State) ->
+%%     {ok, NewState} = inter_dc_repl_update:enqueue_update(
+%%                        Transaction, State),
+%%     ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
+%%     {reply, ok, NewState};
+
+handle_command({process_queue, Transaction, From}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
                        Transaction, State),
-    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
-    {reply, ok, NewState};
+    %%ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
+    {ok, NewState2} = inter_dc_repl_update:process_queue(NewState),
+    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
+    From ! {From, done_process},
+    {noreply, NewState2};
 
 handle_command({process_queue}, _Sender, State) ->
-    {ok, NewState} = inter_dc_repl_update:process_queue(State),
-    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
-    {noreply, NewState}.
+    {ok, NewState2} = inter_dc_repl_update:process_queue(State),
+    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
+    {noreply, NewState2}.
+
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.

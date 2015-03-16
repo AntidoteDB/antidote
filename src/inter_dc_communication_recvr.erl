@@ -25,7 +25,7 @@
 -module(inter_dc_communication_recvr).
 -behaviour(gen_fsm).
 
--record(state, {port, listener}). % the current socket
+-record(state, {port, listener,last_child_pid}). % the current socket
 
 -export([start_link/1]).
 -export([init/1,
@@ -37,10 +37,13 @@
 -export([accept/2
         ]).
 
+-define(REGISTER, local).
+-define(REGNAME(MYDC,DC), {global,get_atom(MYDC,DC)}).
+
 -define(TIMEOUT,10000).
 
 start_link(Port) ->
-    gen_fsm:start_link(?MODULE, Port, []).
+    gen_fsm:start_link({?REGISTER, get_atom(inter_dc_manager:get_my_dc(),Port)},?MODULE, Port, []).
 
 init(Port) ->
     {ok, ListenSocket} = gen_tcp:listen(
@@ -48,12 +51,12 @@ init(Port) ->
                            [{active,false}, binary,
                             {packet,2},{reuseaddr, true}
                            ]),
-    {ok, accept, #state{port=Port, listener=ListenSocket},0}.
+    {ok, accept, #state{port=Port, listener=ListenSocket,last_child_pid=none},0}.
 
-accept(timeout, State=#state{listener=ListenSocket}) ->
+accept(timeout, State=#state{listener=ListenSocket,last_child_pid=LastPid}) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    {ok, _} = inter_dc_communication_fsm_sup:start_fsm([AcceptSocket]),
-    {next_state, accept, State, 0}.
+    {ok, Pid} = inter_dc_communication_fsm_sup:start_fsm([AcceptSocket,LastPid]),
+    {next_state, accept, State#state{last_child_pid=Pid}, 0}.
 
 handle_info(Message, _StateName, StateData) ->
     lager:error("Recevied info:  ~p",[Message]),
@@ -69,3 +72,8 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
     ok.
+
+%% Helper function
+get_atom({MyDcAddr, MyPort}, Port) ->
+    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MyDcAddr) ++
+		     integer_to_list(MyPort) ++ integer_to_list(Port)).

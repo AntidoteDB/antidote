@@ -61,7 +61,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 		       lists:foldl(
 			 fun({DcAddress, Port}, Acc) ->
 				 case start_link(
-					Port, DcAddress, {replicate, Message}, self(), send_propagate) of
+					Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), Message}, self(), send_propagate) of
 				     {ok, _} ->
 					 receive
 					     {done, normal, _Reply} ->
@@ -116,7 +116,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 			      -> ok | error.
 propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
     case start_link(
-	   Port, DcAddress, {replicate, [Transaction]}, self(), send_safe_time) of
+	   Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), [Transaction]}, self(), send_safe_time) of
 	{ok, _} ->
 	    receive
 		{done, normal, _Reply} ->

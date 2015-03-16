@@ -31,12 +31,13 @@
 start_link(Port) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [Port]).
 
-init([Port]) ->
-    lager:info("in inter dc comm sup"),
-    Listener = {inter_dc_communication_recvr,
-                {inter_dc_communication_recvr, start_link, [Port]}, % pass the socket!
-                permanent, 1000, worker, [inter_dc_communication_recvr]},
-
+init([Ports]) ->
+    Listeners = lists:foldl(fun(Port, Acc) ->
+				    Acc ++ [{{inter_dc_communication_recvr,Port},
+					    {inter_dc_communication_recvr, start_link, [Port]}, % pass the socket!
+					    permanent, 1000, worker, [inter_dc_communication_recvr]}]
+			    end,[],Ports),
+    
     SupWorkers = {inter_dc_communication_fsm_sup,
                 {inter_dc_communication_fsm_sup, start_link, []},
                 permanent, 1000, supervisor, [inter_dc_communication_fsm_sup]},
@@ -46,4 +47,4 @@ init([Port]) ->
                 {inter_dc_communication_process_updates_fsm_sup, start_link, []},
                 permanent, 1000, supervisor, [inter_dc_communication_process_updates_fsm_sup]},
 
-    {ok, {{one_for_one, 60, 3600}, [Listener, SupWorkers, SupWorkers2]}}.
+    {ok, {{one_for_one, 60, 3600}, Listeners ++ [SupWorkers, SupWorkers2]}}.

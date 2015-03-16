@@ -185,6 +185,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
             riak_core_vnode_master:command(
               {Partition,node()}, calculate_stable_snapshot,
               vectorclock_vnode_master),
+	    %% TODO: Is this necessary
             riak_core_vnode_master:command({Partition, node()}, {process_queue},
                                            inter_dc_recvr_vnode_master),
             NewState;

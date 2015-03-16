@@ -3,9 +3,9 @@
 -module(inter_dc_communication_process_updates_fsm).
 -behaviour(gen_fsm).
 
--record(state, {transactions}). % the current socket
+-record(state, {transactions,parent_pid,prev_child_pid}). % the current socket
 
--export([start_link/1]).
+-export([start_link/3]).
 -export([init/1,
          code_change/4,
          handle_event/3,
@@ -16,14 +16,16 @@
 
 -define(TIMEOUT,10000).
 
-start_link(Transactions) ->
-    gen_fsm:start_link(?MODULE, [Transactions], []).
+start_link(Transactions,ParentPid,PrevChildPid) ->
+    gen_fsm:start_link(?MODULE, [Transactions,ParentPid,PrevChildPid], []).
 
-init([Transactions]) ->
-    {ok, receive_message, #state{transactions=Transactions},0}.
+init([Transactions,ParentPid,PrevChildPid]) ->
+    {ok, receive_message, #state{transactions=Transactions,parent_pid=ParentPid,
+				prev_child_pid=PrevChildPid},0}.
 
-receive_message(timeout, State=#state{transactions=Transactions}) ->
+receive_message(timeout, State=#state{transactions=Transactions,parent_pid=ParentPid}) ->
     inter_dc_recvr_vnode:store_updates(Transactions),
+    ParentPid ! {self(), put_in_queue},
     {stop, normal, State}.
 
 handle_info(Message, _StateName, StateData) ->
