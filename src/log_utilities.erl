@@ -53,6 +53,7 @@ get_preflist_from_key(Key) ->
                         HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
                         abs(crypto:bytes_to_integer(HashedKey))
                 end,
+    %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     get_primaries_preflist(ConvertedKey).
 
 %% @doc get_primaries_preflist returns the preflist with the primary
@@ -62,6 +63,10 @@ get_preflist_from_key(Key) ->
 %%
 -spec get_primaries_preflist(integer()) -> preflist().
 get_primaries_preflist(Key)->
+    %{ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
+    %Itr = chashbin:iterator(Key, CHBin),
+    %{Primaries, _} = chashbin:itr_pop(?N, Itr),
+    %Primaries.
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),
     Pos = Key rem length(PartitionList) + 1,
