@@ -24,7 +24,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/2, start_link/1]).
+-export([start_link/2]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -41,9 +41,10 @@
 -record(state, {
           from,
           received=[] :: list(),
-          final_results=[] :: list()
+          final_results=[] :: list(),
           max_evt=0 :: integer(),
           eff_time,
+          keys,
           total :: integer()}).
 
 %%%===================================================================
@@ -60,7 +61,8 @@ start_link(From, Keys) ->
 %% @doc Initialize the state.
 init([From, Keys]) ->
     SD = #state{keys=Keys,
-                total=length(Keys)}
+                from=From,
+                total=length(Keys)},
     {ok, execute_op, SD, 0}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
@@ -70,7 +72,7 @@ execute_op(timeout, SD0=#state{keys=Keys}) ->
     lists:foreach(fun(Key) ->
                     Preflist = log_utilities:get_preflist_from_key(Key),
                     IndexNode = hd(Preflist),
-                    eiger:read_key(IndexNode, Key)
+                    eiger_vnode:read_key(IndexNode, Key)
                   end, Keys),
     {next_state, collect_reads, SD0}.
 
@@ -78,8 +80,9 @@ execute_op(timeout, SD0=#state{keys=Keys}) ->
 collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
                                                  max_evt=MaxEVT0,
                                                  total=Total}) ->
+    lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
     MaxEVT=max(MaxEVT0, EVT),
-    Received = Received ++ [{Key, Value, EVT, LVT}],
+    Received = Received0 ++ [{Key, Value, EVT, LVT}],
     case length(Received) of
         Total ->
             {next_state, compute_efft, SD0#state{received=Received, max_evt=MaxEVT}, 0};
@@ -93,7 +96,7 @@ compute_efft(timeout, SD0=#state{received=Received,
                         {_Key, _Value, _EVT, LVT} = Elem,
                         case LVT >= MaxEVT of
                             true ->
-                                case EffT of
+                                case Min of
                                     infinity ->
                                         LVT;
                                     _ ->
@@ -106,6 +109,7 @@ compute_efft(timeout, SD0=#state{received=Received,
     {next_state, second_round, SD0#state{eff_time=EffT}, 0}.
 
 second_round(timeout, SD0=#state{eff_time=EffT,
+                                 total=Total,
                                  received=Received}) ->
     FinalResults = lists:foldl(fun(Elem, Results) ->
                                 {Key, Value, _EVT, LVT} = Elem,
@@ -113,17 +117,22 @@ second_round(timeout, SD0=#state{eff_time=EffT,
                                     true ->
                                         Preflist = log_utilities:get_preflist_from_key(Key),
                                         IndexNode = hd(Preflist),
-                                        eiger:read_key_time(IndexNode, Key, EffT),
+                                        eiger_vnode:read_key_time(IndexNode, Key, EffT),
                                         Results;
                                     _ ->
                                         Results ++ [{Key, Value}]
                                 end
                                end, [], Received),
-    {next_state, collect_second_reads, SD0#state{final_results=FinalResults}}.
+    case length(FinalResults) of
+        Total ->
+            {next_state, reply, SD0#state{final_results=FinalResults}, 0};
+        _ ->
+            {next_state, collect_second_reads, SD0#state{final_results=FinalResults}}
+    end.
 
 collect_second_reads({Key, Value}, SD0=#state{final_results=FinalResults0,
                                               total=Total}) ->
-    FinalResults = FinalResults0 ++ [{Key, Value],
+    FinalResults = FinalResults0 ++ [{Key, Value}],
     case length(FinalResults) of
         Total ->
             {next_state, reply, SD0#state{final_results=FinalResults}, 0};
@@ -133,7 +142,8 @@ collect_second_reads({Key, Value}, SD0=#state{final_results=FinalResults0,
 
 reply(timeout, SD0=#state{final_results=FinalResults,
                           from=From}) ->
-    gen_fsm:reply(From, {ok, FinalResults}). 
+    From ! {ok, FinalResults},
+    {stop, normal, SD0}.
 
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
