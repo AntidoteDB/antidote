@@ -68,7 +68,7 @@
 %%%===================================================================
 
 start_link(From) ->
-    gen_fsm:start_link(?MODULE, [From, ignore], []).
+    gen_fsm:start_link(?MODULE, [From], []).
 
 finish_op(From, Key,Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -182,8 +182,8 @@ prepare(timeout, SD0=#state{
                         updated_partitions=Updated_partitions, from=_From}) ->
     case length(Updated_partitions) of
         0->
-            {next_state, committing,
-            SD0#state{state=committing}, 0};
+            {next_state, reply_to_client,
+            SD0#state{state=committed}, 0};
         1-> 
             Updates = dict:fetch(hd(Updated_partitions), Buffer),
             ec_vnode:pre_prepare(Updated_partitions, TxId, dict:to_list(Updates), single),
@@ -228,13 +228,13 @@ receive_prepared(prepared,
                            from=From}) ->
     case NumToAck of 1 ->
             case CommitProtocol of
-            two_phase ->
-                gen_fsm:reply(From, ok),
-                {next_state, reply_to_client,
-                S0#state{state=committed}};
-            _ ->
-                {next_state, reply_to_client,
-                S0#state{state=committed}, 0}
+                two_phase ->
+                    gen_fsm:reply(From, ok),
+                    {next_state, reply_to_client,
+                     S0#state{state=committed}};
+                _ ->
+                    {next_state, reply_to_client,
+                     S0#state{state=committed}, 0}
             end;
         _ ->
             {next_state, receive_prepared,
@@ -270,16 +270,16 @@ abort(abort, SD0=#state{tx_id = TxId,
 reply_to_client(timeout, SD=#state{from=From, tx_id=TxId,
                                    state=TxState}) ->
     if undefined =/= From ->
-        Reply = case TxState of
-            committed ->
-                {ok, TxId};
-            aborted->
-                {aborted, TxId};
-            Reason->
-                {TxId, Reason}
-        end,
-        gen_fsm:reply(From,Reply);
-      true -> ok
+            Reply = case TxState of
+                        committed ->
+                            {ok, TxId};
+                        aborted->
+                            {aborted, TxId};
+                        Reason->
+                            {TxId, Reason}
+                    end,
+            gen_fsm:reply(From,Reply);
+       true -> ok
     end,
     {stop, normal, SD}.
 
