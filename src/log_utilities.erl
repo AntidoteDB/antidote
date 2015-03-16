@@ -38,16 +38,22 @@
 %%
 -spec get_logid_from_key(key()) -> log_id().
 get_logid_from_key(Key) ->
-    HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    PreflistAnn = get_primaries_preflist(HashedKey),
+    %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+    PreflistAnn = get_preflist_from_key(Key),
     remove_node_from_preflist(PreflistAnn).
 
 %% @doc get_preflist_from_key returns a preference list where a given
 %%      key's logfile will be located.
 -spec get_preflist_from_key(key()) -> preflist().
 get_preflist_from_key(Key) ->
-    HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    get_primaries_preflist(HashedKey).
+    ConvertedKey = case is_integer(Key) of
+                    true ->
+                        abs(Key);
+                    false ->
+                        HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+                        abs(crypto:bytes_to_integer(HashedKey))
+                end,
+    get_primaries_preflist(ConvertedKey).
 
 %% @doc get_primaries_preflist returns the preflist with the primary
 %%      vnodes. No matter they are up or down.
@@ -55,11 +61,11 @@ get_preflist_from_key(Key) ->
 %%      Return: The primaries preflist
 %%
 -spec get_primaries_preflist(integer()) -> preflist().
-get_primaries_preflist(HashedKey)->
+get_primaries_preflist(Key)->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    Itr = chashbin:iterator(HashedKey, CHBin),
-    {Primaries, _} = chashbin:itr_pop(?N, Itr),
-    Primaries.
+    PartitionList = chashbin:to_list(CHBin),
+    Pos = Key rem length(PartitionList) + 1,
+    [lists:nth(Pos, PartitionList)].
 
 get_my_node(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
