@@ -36,11 +36,37 @@
 	 update_safe_vector_local/1,
 	 update_safe_clock_local/2,
 	 get_safe_time/0,
+	 now_microsec/1,
+	 now_microsec_behind/2,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
 
 -define(META_PREFIX_SAFE, {dcid,int}).
+-define(BEHIND_SEC, 10).
+
+
+
+now_microsec({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+
+
+
+now_microsec_behind(StartClock,{MegaSecs, Secs, MicroSecs}) ->
+    NowMicroBehind = vectorclock:now_microsec({MegaSecs, Secs, MicroSecs}) - (1000000 * ?BEHIND_SEC),
+    DcId = dc_utilities:get_my_dc_id(),
+    case dict:find(DcId,StartClock) of
+	{ok, Value} ->
+	    case Value > NowMicroBehind of
+		true ->
+		    Value;
+		false ->
+		    NowMicroBehind
+	    end;
+	error ->
+	    NowMicroBehind
+    end.
+	 
 
 -spec get_safe_time()
                -> {ok, vectorclock()} | {error, term()}.
@@ -49,8 +75,10 @@ get_safe_time() ->
     ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
 				    dict:store(Key,Val,NewAcc) end,
 			    dict:new(), ClockList),
-    lager:info("safe time: ~p", [ClockDict]),
-    {ok, ClockDict}.
+    LocalDc = dc_utilities:get_my_dc_id(),
+    LocalSafeClock = vectorclock:set_clock_of_dc(
+		       LocalDc, vectorclock:now_microsec(erlang:now()), ClockDict),
+    {ok, LocalSafeClock}.
 
 
 update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
@@ -133,7 +161,7 @@ wait_for_clock(Clock) ->
 		    ok;
 		false ->
 		    %% wait for snapshot time to catch up with Client Clock
-		    timer:sleep(100),
+		    timer:sleep(10),
 		    wait_for_clock(Clock)
 	    end;
 	{error, Reason} ->
@@ -153,10 +181,9 @@ wait_for_local_clock(Clock) ->
     end.
 
 wait_helper(WaitForTime) ->
-    Now = clocksi_vnode:now_milisec(erlang:now()),
+    Now = vectorclock:now_microsec(erlang:now()),
     case Now < WaitForTime of
 	true ->
-	    lager:info("now ~p, wait to ~p, sleep time ~p", [Now,WaitForTime,(WaitForTime-Now)]),
 	    timer:sleep(WaitForTime - Now),
 	    wait_helper(WaitForTime);
 	false  ->

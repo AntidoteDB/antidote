@@ -60,8 +60,6 @@ start_link(Vnode, Coordinator, Tx, Key, Type, Updates, IsLocal, IsReplicated) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
                                  Tx, Key, Type, Updates, IsLocal, IsReplicated], []).
 
-now_milisec({MegaSecs, Secs, MicroSecs}) ->
-    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 %%%===================================================================
 %%% States
@@ -145,12 +143,13 @@ send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction
 check_clock(timeout, SD0=#state{transaction=Transaction,is_local=IsLocal}) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
-    Time = now_milisec(erlang:now()),
+    Time = vectorclock:now_microsec(erlang:now()),
     case IsLocal of
 	true -> 
 	    case (T_TS) > Time of
 		true ->
-		    timer:sleep(T_TS - Time),
+		    SleepMiliSec = (T_TS - Time) div 1000 + 1,
+		    timer:sleep(SleepMiliSec),
 		    {next_state, waiting1, SD0, 0};
 		false ->
 		    {next_state, waiting1, SD0, 0}
@@ -160,7 +159,7 @@ check_clock(timeout, SD0=#state{transaction=Transaction,is_local=IsLocal}) ->
 	    %% origin DC is using time:now() for its time, instead of using
 	    %% time based on one of its dependencies
 	    %% Should fix this
-	    %% vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
+	    vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
 	    {next_state, return, SD0, 0}
     end.
 
@@ -255,7 +254,7 @@ get_stable_time(Key) ->
                                         Min_time
                                 end
                         end,
-                        now_milisec(erlang:now()),
+                        vectorclock:now_microsec(erlang:now()),
                         Active_txns);
         _ -> 0
     end.

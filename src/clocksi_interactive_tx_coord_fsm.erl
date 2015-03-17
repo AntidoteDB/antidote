@@ -326,7 +326,7 @@ terminate(_Reason, _SN, _SD) ->
 -spec get_snapshot_time(ClientClock :: vectorclock:vectorclock(), term())
                        -> {ok, vectorclock:vectorclock()} | {error,term()}.
 get_snapshot_time(ClientClock, externalTransaction) ->
-    %%vectorclock:wait_for_clock(ClientClock),
+    vectorclock:wait_for_clock(ClientClock),
     get_snapshot_time(ClientClock, localTransaction);
 %% This should update the safe_time of the vectorclock vnode as well
 %% The reason is that any advances in the clock that have happened
@@ -335,7 +335,6 @@ get_snapshot_time(ClientClock, externalTransaction) ->
 
 get_snapshot_time(ClientClock, localTransaction) ->
     vectorclock:wait_for_local_clock(ClientClock),
-    Now = clocksi_vnode:now_milisec(erlang:now()),
     case vectorclock:update_safe_vector_local(ClientClock) of
 	{ok, VecSnapshotTime} ->
 	    DcId = dc_utilities:get_my_dc_id(),
@@ -344,7 +343,8 @@ get_snapshot_time(ClientClock, localTransaction) ->
 	    %% So should be an older value (that is still consistent)
 	    %% Otw you will cause long waiting when doing external reads
 	    %% because they will have to wait until this time is reached
-	    Clock = dict:store(DcId, Now, VecSnapshotTime),
+	    NowBehind = vectorclock:now_microsec_behind(ClientClock,erlang:now()),
+	    Clock = dict:store(DcId, NowBehind, VecSnapshotTime),
 	    {ok, Clock};
 	{error, Reason} ->
 	    lager:error("Error getting snapshot time ~p", [Reason]),

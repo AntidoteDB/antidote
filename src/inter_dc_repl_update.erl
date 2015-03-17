@@ -83,7 +83,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             {ok, LC} = vectorclock:get_safe_time(),
 	    %% Sets the time of the local DC in the safe clock to the current time,
             LocalSafeClock = vectorclock:set_clock_of_dc(
-			       LocalDc, now_millisec(erlang:now()), LC),
+			       LocalDc, vectorclock:now_microsec(erlang:now()), LC),
 	    %% It assumes it is a duplicate just if has a smaller CTS?
 	    %% Maybe should keep a CTS per partition?
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
@@ -221,5 +221,5 @@ enqueue(Dc, Data, RecQ) ->
             set(Dc, Q2, RecQ)
     end.
 
-now_millisec({MegaSecs, Secs, MicroSecs}) ->
-    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+%% now_millisec({MegaSecs, Secs, MicroSecs}) ->
+%%     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
