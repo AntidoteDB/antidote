@@ -28,7 +28,6 @@
 	 start_collect_sent/0,
 	 start_safe_time_sender/0,
 	 start_senders/0,
-	 start_safe_recvr/0,
 	 start_recvrs/3]).
 
 %% Supervisor callbacks
@@ -77,14 +76,6 @@ start_collect_sent() ->
 				     permanent, 5000, supervisor, [collect_sent_time_sup]}),
     ok.
 
-start_safe_recvr() ->
-    DCs = inter_dc_manager:get_dcs(),
-    lager:info("Starting sup collect sent..."),
-    supervisor:start_child(?MODULE, {safe_recvr_sup,
-				     {safe_recvr_sup, start_link, [DCs]},
-				     permanent, 5000, supervisor, [safe_recvr_sup]}),
-    ok.
-
 
 start_senders() ->
     start_collect_sent(),
@@ -95,7 +86,6 @@ start_recvrs(AddrType, RecvrPorts, ReadPort) ->
     Ip = my_ip(AddrType),
     start_rep({Ip, RecvrPorts}),
     start_cross_dc_read_communication_recvr({Ip, ReadPort}),
-    start_safe_recvr(),
     {ok,{Ip,hd(RecvrPorts)},{Ip,ReadPort}}.
     
 
