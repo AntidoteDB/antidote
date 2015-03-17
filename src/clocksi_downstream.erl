@@ -24,7 +24,9 @@
 -export([generate_downstream_op/6]).
 
 %% @doc Returns downstream operation for upstream operation
--spec generate_downstream_op(#transaction{}, Key::key(),
+%%      input: Update - upstream operation
+%%      output: Downstream operation or {error, Reason}
+-spec generate_downstream_op(Transaction::tx(), Key::key(),
                              Type::type(), Update::op(), WriteSet::list(), IsLocal::atom()) ->
                                     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Key, Type, Update, WriteSet, IsLocal) ->
@@ -32,9 +34,29 @@ generate_downstream_op(Transaction, Key, Type, Update, WriteSet, IsLocal) ->
     case clocksi_vnode:read_data_item(Transaction,
                                       Key, Type, IsLocal, self(), WriteSet) of
         {ok, Snapshot, internal} ->
-            {ok, NewState} = Type:update(Op, Actor, Snapshot),
-            DownstreamOp = {merge, NewState},
-            {ok, DownstreamOp};
+            DownstreamOp = case Type of
+			       crdt_bcounter ->
+				   case Type:generate_downstream(Op, Actor, Snapshot) of
+				       {ok, OpParam} -> {update, OpParam};
+				       {error, Error} -> {error, Error}
+				   end;
+			       crdt_orset ->
+				   {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+				   {update, OpParam};
+			       crdt_pncounter ->
+				   {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+				   {update, OpParam};
+			       _ ->
+				   {ok, NewState} = Type:update(Op, Actor, Snapshot),
+				   {merge, NewState}
+			   end,
+            case DownstreamOp of
+                {error, Reason} -> {error, Reason};
+                _ -> {ok, DownstreamOp}
+            end;
+	{error, no_snapshot} ->
+            lager:error("Error: no_snapshot"),
+            {error, no_snapshot};
         {error, Reason} ->
             lager:error("Error: ~p", [Reason]),
             {error, Reason};

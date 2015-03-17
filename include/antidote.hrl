@@ -12,14 +12,16 @@
 -define(COMM_TIMEOUT, infinity).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
--record (payload, {key, type, op_param, actor}).
+-record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
--record(operation, {op_number, payload}).
+-record(operation, {op_number, payload :: payload()}).
 -type operation() :: #operation{}.
+-type vectorclock() :: dict().
+
 
 %% The way records are stored in the log.
--record(log_record, {tx_id,
+-record(log_record, {tx_id :: txid(),
                      op_type:: update | prepare | commit | abort | noop,
                      op_payload}).
 
@@ -36,28 +38,18 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
-%% Data Type: tx
-%% where:
-%%    snapshot_time:
-%%        clock time of the tx's originating partition as returned by now()
-%%    commit_time: final commit time of the tx.
-%%    prepare_time: intermediate prepare-commit tx time.
-%%    state:
-%%        the state of the transaction, {active|prepare|committing|committed}.
-%%     write_set: the tx's write set.
-%%     origin: the transaction's originating partition
-%%----------------------------------------------------------------------
-
-%% -record(tx, {id, snapshot_time, commit_time, prepare_time, state, origin}).
--record(tx_id, {snapshot_time, server_pid}).
--record(clocksi_payload, {key :: term(),
-                          type :: term(),
+-record(tx_id, {snapshot_time, server_pid :: pid()}).
+-record(clocksi_payload, {key :: key(),
+                          type :: type(),
                           op_param :: {term(), term()},
-                          snapshot_time :: vectorclock:vectorclock(),
-                          commit_time :: {term(), non_neg_integer()},
-                          txid :: #tx_id{}
+                          snapshot_time :: snapshot_time(),
+                          commit_time :: commit_time(),
+                          txid :: txid()
                          }).
--record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
+-record(transaction, {snapshot_time :: snapshot_time(),
+                      server_pid :: pid(), 
+                      vec_snapshot_time, 
+                      txn_id :: txid() }).
 
 %%---------------------------------------------------------------------
 -type key() :: term().
@@ -81,9 +73,6 @@
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
-%-type transaction() :: term(). %% TODO: actually define the spec of a transaction
--type transaction() :: {txid(), {dcid(), non_neg_integer()},
-                        vectorclock:vectorclock(), [#operation{}]}.
+-type tx() :: #transaction{}.
 
-
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0]).
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0]).

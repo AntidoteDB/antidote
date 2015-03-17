@@ -35,7 +35,7 @@
          get_update_ops_from_transaction/1,
          get_prev_stable_time/1]).
 
--export_type([transaction/0]).
+%%-export_type([transaction/0]).
 
 %% transaction = {TxId, {DcId, CommitTime}, VecSnapshotTime, [Operations]}
 %%-type transaction() :: {txid(), {dcid(), non_neg_integer()},
@@ -138,7 +138,7 @@ get_next_transactions(State=#state{partition = Partition,
     {NewState, DictTransactionsDcs, Stable_time}.
 
 %% @doc returns all update operations in a txn in #clocksi_payload{} format
--spec get_update_ops_from_transaction(Transaction::transaction()) ->
+-spec get_update_ops_from_transaction(Transaction::tx()) ->
                                              [#clocksi_payload{}].
 get_update_ops_from_transaction(Transaction) ->
     {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = Transaction,

@@ -112,7 +112,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 %% Sends a single transaction like a heartbeat, except with
 %% the min time of all the partitions of the local DC have sent to
 %% the desination DC
--spec propagate_sync_safe_time({DcAddress :: non_neg_integer(), Port :: port()}, Transaction :: transaction())
+-spec propagate_sync_safe_time({DcAddress :: non_neg_integer(), Port :: port()}, Transaction :: tx())
 			      -> ok | error.
 propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
     case start_link(
@@ -139,7 +139,7 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
     end.
 
 
--spec perform_external_read({DcAddress :: non_neg_integer(), Port :: port()}, Key :: key(), Type :: crdt(), Transaction :: transaction(), WriteSet :: list())
+-spec perform_external_read({DcAddress :: non_neg_integer(), Port :: port()}, Key :: key(), Type :: crdt(), Transaction :: tx(), WriteSet :: list())
 			      -> {ok, term()} | error.
 perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
 %% ToDo, do this for a list of DCs, instead of just one

@@ -137,7 +137,7 @@ send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction
     
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behinf, it sleeps the fms until the clock
+%%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
 %% For partial-rep, when a read is coming from another DC it also

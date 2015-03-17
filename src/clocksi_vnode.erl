@@ -320,8 +320,8 @@ check_keylog(TxId, [H|T], CommittedTx)->
             check_keylog(TxId, T, CommittedTx)
     end.
 
--spec update_materializer(DownstreamOps :: [{atom(),key(),type(),op()}],
-                          Transaction::#transaction{},TxCommitTime:: {term(), term()}) ->
+-spec update_materializer(DownstreamOps :: [{term(),key(),type(),op()}],
+                          Transaction::tx(),TxCommitTime:: {term(), term()}) ->
                                  ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),

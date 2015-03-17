@@ -42,8 +42,6 @@
 
 -define(META_PREFIX_SAFE, {dcid,int}).
 
--type vectorclock() :: dict().
-
 -spec get_safe_time()
                -> {ok, vectorclock()} | {error, term()}.
 get_safe_time() ->
