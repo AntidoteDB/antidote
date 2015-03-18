@@ -46,6 +46,10 @@
 -define(TIMEOUT,20000).
 -define(CONNECT_TIMEOUT,5000).
 
+%% ===================================================================
+%% Public API
+%% ===================================================================
+
 %% Send a message to all DCs over a tcp connection
 %% In partial repl alg this takes as input a dictionary with
 %% keys as list of DCs for transacitons that are replicated
@@ -103,9 +107,6 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
         _ -> 
 	    error
     end.
-
-
-    
 
 
 %% Used in partial repl alg
@@ -167,12 +168,22 @@ perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
 	    error
     end.
 
-
+%% Starts a process to send a message to a single Destination 
+%%  DestPort : TCP port on which destination DCs inter_dc_communication_recvr listens
+%%  DestHost : IP address (or hostname) of destination DC
+%%  Message : message to be sent
+%%  ReplyTo : Process id to which the success or failure message has
+%%             to be send (Usually the caller of this function) 
 -spec start_link(Port :: port(), Host :: non_neg_integer(), Message :: [term()], ReplyTo :: pid(), MsgType :: atom())
 		-> {ok, pid()} | ignore | {error, term()}.
 start_link(Port, Host, Message, ReplyTo, _MsgType) ->
 						% gen_fsm:start_link(list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MsgType)), [Port, Host, Message, ReplyTo], []).
     gen_fsm:start_link(?MODULE, [Port, Host, Message, ReplyTo], []).
+
+%% ===================================================================
+%% gen_fsm callbacks
+%% ===================================================================
+
 
 init([Port,Host,Message,ReplyTo]) ->
     {ok, connect, #state{port=Port,
@@ -183,7 +194,7 @@ init([Port,Host,Message,ReplyTo]) ->
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
-                          [{active,true},binary, {packet,2}], ?CONNECT_TIMEOUT) of
+                          [{active,once},binary, {packet,2}], ?CONNECT_TIMEOUT) of
         { ok, Socket} ->
             %%ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
@@ -198,6 +209,7 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
 wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message} )->
     {next_state, stop, State#state{reply=Reply},0};
 
+
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
     lager:error("timeout in wait for ack"),
@@ -210,8 +222,8 @@ stop(timeout, State=#state{socket=Socket}) ->
 connect_err(timeout, State) ->
     {stop, normal, State#state{reply={error,connect_error}}}.
 
+%% Converts incoming tcp message to an fsm event to self
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
-    _ = inet:setopts(Socket, [{active, once}]),
     gen_fsm:send_event(self(), binary_to_term(Bin)),
     {next_state, StateName, StateData};
 

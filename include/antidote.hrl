@@ -74,5 +74,7 @@
 -type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
 -type tx() :: #transaction{}.
+-type dc_address():: {inet:ip_address(),inet:port_number()}.
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0]).
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0,
+             dc_address/0]).

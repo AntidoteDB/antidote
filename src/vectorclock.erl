@@ -43,7 +43,7 @@
 -export_type([vectorclock/0]).
 
 -define(META_PREFIX_SAFE, {dcid,int}).
--define(BEHIND_SEC, 10).
+-define(BEHIND_SEC, 15).
 
 
 
@@ -161,7 +161,8 @@ wait_for_clock(Clock) ->
 		    ok;
 		false ->
 		    %% wait for snapshot time to catch up with Client Clock
-		    timer:sleep(10),
+		    lager:info("waiting for clock ~p safe ~p", [Clock,VecSnapshotTime]),
+		    timer:sleep(100),
 		    wait_for_clock(Clock)
 	    end;
 	{error, Reason} ->

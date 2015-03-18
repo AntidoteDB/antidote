@@ -40,15 +40,22 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% @doc: start_rep(Port) - starts a server which listens for incomming
-%% tcp connection on port Port. Server receives updates to replicate 
+%% @doc: start_rep(Port) - starts a server managed by Pid which listens for 
+%% incomming tcp connection on port Port. Server receives updates to replicate 
 %% from other DCs 
 start_rep({DcIp,Ports}) ->
     lager:info("Starting sup inter dc recvr..."),
     inter_dc_manager:start_receiver({DcIp,hd(Ports)}),
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
-                    {inter_dc_communication_sup, start_link, [Ports]},
+                    {inter_dc_communication_sup, start_link, [self(),Ports]},
 				     permanent, 5000, supervisor, [inter_dc_communication_sup]}),
+    lists:foldl(fun(_P,_Acc) ->
+    			receive
+    			    ready ->
+    				ok
+    			end
+    		end, 0, Ports),
+    lager:info("Done starting sup inter dc recvr..."),
     {ok, {DcIp,hd(Ports)}}.
 
 

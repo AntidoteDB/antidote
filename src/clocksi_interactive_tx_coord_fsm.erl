@@ -353,3 +353,4 @@ get_snapshot_time(ClientClock, localTransaction) ->
 
 generate_downstream_op(Txn, Key, Type, Param, WriteSet) ->
     clocksi_downstream:generate_downstream_op(Txn, Key, Type, Param, WriteSet, local).
+

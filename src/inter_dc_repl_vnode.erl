@@ -42,7 +42,7 @@
 
 -record(state, {partition,
                 dcid,
-                last_op=empty,
+                last_op,
                 reader}).
 
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
@@ -60,40 +60,50 @@ init([Partition]) ->
     {ok, Reader} = clocksi_transaction_reader:init(Partition, DcId),
     {ok, #state{partition=Partition,
                 dcid=DcId,
+		last_op=empty,
                 reader = Reader}}.
 
 handle_command(trigger, _Sender, State=#state{partition=Partition,
                                               reader=Reader}) ->
-    {NewReaderState, DictTransactionsDcs, StableTime} =
-        clocksi_transaction_reader:get_next_transactions(Reader),
-    case dict:size(DictTransactionsDcs) of
-        0 ->
-	    %% have to send safe time
-	    DCs = inter_dc_manager:get_dcs(),
-	    lists:foldl(fun({DcAddress,Port},_Acc) ->
-				vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime)
-			end,
-			0, DCs),
-	    NewReader = NewReaderState;
-	_ ->
-            case inter_dc_communication_sender:propagate_sync(
-                   DictTransactionsDcs, StableTime, Partition) of
-                ok ->
-		    DCs = inter_dc_manager:get_dcs(),
-		    lists:foldl(fun({DcAddress,Port},_Acc) ->
-					vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime)
-				end,
-				0, DCs),
-                    NewReader = NewReaderState;
-                _ ->
-		    lager:error("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
-                    NewReader = Reader
-            end
-    end,
+    DCList = inter_dc_manager:get_dcs(),
+    NewState = case DCList of
+		   [] -> State;
+		   DCList ->
+		       {NewReaderState, DictTransactionsDcs, StableTime} =
+			   clocksi_transaction_reader:get_next_transactions(Reader),
+		       NewReader = case dict:size(DictTransactionsDcs) of
+				       0 ->
+					   %% have to send safe time
+					   DCs = inter_dc_manager:get_dcs(),
+					   lists:foldl(fun({DcAddress,Port},_Acc) ->
+							       vectorclock:update_sent_clock(
+								 {DcAddress,Port}, Partition, StableTime)
+						       end,
+						       0, DCs),
+					   NewReaderState;
+				       _ ->
+					   case inter_dc_communication_sender:propagate_sync(
+						  DictTransactionsDcs, StableTime, Partition) of
+					       ok ->
+						   DCs = inter_dc_manager:get_dcs(),
+						   lists:foldl(fun({DcAddress,Port},_Acc) ->
+								       vectorclock:update_sent_clock(
+									 {DcAddress,Port}, Partition, StableTime)
+							       end,
+							       0, DCs),
+						   NewReaderState;
+					       _ ->
+						   lager:error("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
+						   Reader
+					   end
+				   end,
+		       State#state{reader=NewReader}
+	       end,
     timer:sleep(?REPL_PERIOD),
     riak_core_vnode:send_command(self(), trigger),
-    {reply, ok, State#state{reader=NewReader}}.
+    {noreply,NewState}.
 
+    
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
 

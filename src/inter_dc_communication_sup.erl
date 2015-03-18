@@ -25,16 +25,18 @@
 -module(inter_dc_communication_sup).
 -behaviour(supervisor).
 
--export([start_link/1]).
+-export([start_link/2]).
 -export([init/1]).
 
-start_link(Port) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [Port]).
+%% Starts tcp listening server on the "Port" and waits for incoming
+%% connection request from other DCs
+start_link(Pid, Ports) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [Pid,Ports]).
 
-init([Ports]) ->
+init([Pid,Ports]) ->
     Listeners = lists:foldl(fun(Port, Acc) ->
 				    Acc ++ [{{inter_dc_communication_recvr,Port},
-					    {inter_dc_communication_recvr, start_link, [Port]}, % pass the socket!
+					    {inter_dc_communication_recvr, start_link, [Pid,Port]}, % pass the socket!
 					    permanent, 1000, worker, [inter_dc_communication_recvr]}]
 			    end,[],Ports),
     

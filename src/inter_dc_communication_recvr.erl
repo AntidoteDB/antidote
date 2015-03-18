@@ -27,7 +27,7 @@
 
 -record(state, {port, listener,last_child_pid}). % the current socket
 
--export([start_link/1]).
+-export([start_link/2]).
 -export([init/1,
          code_change/4,
          handle_event/3,
@@ -42,17 +42,21 @@
 
 -define(TIMEOUT,10000).
 
-start_link(Port) ->
-    gen_fsm:start_link({?REGISTER, get_atom(inter_dc_manager:get_my_dc(),Port)},?MODULE, Port, []).
+start_link(Pid,Port) ->
+    gen_fsm:start_link({?REGISTER, get_atom(inter_dc_manager:get_my_dc(),Port)},?MODULE, [Pid,Port], []).
 
-init(Port) ->
+init([Pid, Port]) ->
     {ok, ListenSocket} = gen_tcp:listen(
                            Port,
                            [{active,false}, binary,
                             {packet,2},{reuseaddr, true}
                            ]),
+    Pid ! ready,
     {ok, accept, #state{port=Port, listener=ListenSocket,last_child_pid=none},0}.
 
+%% Accepts an incoming tcp connection and spawn and new fsm 
+%% to process the connection, so that new connections could 
+%% be processed in parallel
 accept(timeout, State=#state{listener=ListenSocket,last_child_pid=LastPid}) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
     {ok, Pid} = inter_dc_communication_fsm_sup:start_fsm([AcceptSocket,LastPid]),

@@ -94,7 +94,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                                              Dc, DcQ, Ts, StateData ) ;
                        true ->
                             %% TODO: Not right way check duplicates
-                            lager:info("Duplicate request"),
+                            lager:info("Duplicate request, ~p, lastCTS ~p", [Transaction,LastCTS]),
                             {ok, NewState} = finish_update_dc(
                                                Dc, DcQ, CTS, StateData),
                             %%Duplicate request, drop from queue
@@ -180,7 +180,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
-            %%{ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
+            %%{ok} = vectorclock:update_clock(Partition, Dc, Ts),
 	    %% Why is a stable snapshot calculated here??
             riak_core_vnode_master:command(
               {Partition,node()}, calculate_stable_snapshot,
