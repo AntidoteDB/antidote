@@ -84,36 +84,14 @@ store_update(Node, Transaction) ->
 
 %% riak_core_vnode call backs
 init([Partition]) ->
-    StateFile = string:concat(integer_to_list(Partition), "replstate"),
-    Path = filename:join(
-             app_helper:get_env(riak_core, platform_data_dir), StateFile),
-    case dets:open_file(StateFile, [{file, Path}, {type, set}]) of
-        {ok, StateStore} ->
-            case dets:lookup(StateStore, recvr_state) of
-                %%If file already exists read previous state from it.
-                [{recvr_state, State}] ->
-                    {ok, State};
-                [] ->
-                    {ok, State } = inter_dc_repl_update:init_state(Partition),
-                    {ok, State#recvr_state{statestore = StateStore}};
-                Error -> Error
-            end;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+   {ok, Partition}.
 
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
 handle_command({store_update, Transaction}, _Sender, State) ->
-    {ok, NewState} = inter_dc_repl_update:enqueue_update(
+    ok  = inter_dc_repl_update:process_update(
                        Transaction, State),
-    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
-    {reply, ok, NewState};
-
-handle_command({process_queue}, _Sender, State) ->
-    {ok, NewState} = inter_dc_repl_update:process_queue(State),
-    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
-    {noreply, NewState}.
+    {reply, ok, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
