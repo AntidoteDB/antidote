@@ -52,7 +52,7 @@
          handle_coverage/4,
          handle_exit/3]).
 
--record(state, {partition, ops_cache, snapshot_cache}).
+-record(state, {partition, snapshot_cache}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -86,33 +86,35 @@ update(Key, DownstreamOp) ->
                                         materializer_vnode_master).
 
 init([Partition]) ->
-    OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
-    {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+    {ok, #state{partition=Partition, snapshot_cache=SnapshotCache}}.
 
-handle_command({read, Key, Type, TxId}, _Sender,
-               State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
-    Reply=internal_read(Key, Type, TxId, OpsCache, SnapshotCache),
+handle_command({read, Key, Type, _TxId}, _Sender,
+               State = #state{snapshot_cache=SnapshotCache}) ->
+    {ok, Snapshot} = internal_read(Key, Type, SnapshotCache),
     %riak_core_vnode:reply(Sender, Reply);
-    {reply, Reply, State};
+    {reply, {ok, Snapshot}, State};
     
-handle_command({multi_read, Reads, TxId}, _Sender,
-               State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
-    Reply= internal_multi_read(Reads, TxId, OpsCache, SnapshotCache),    
-	%riak_core_vnode:reply(Sender, Reply);
-	{reply, Reply, State};
+handle_command({multi_read, Reads, _TxId}, _Sender,
+               State = #state{snapshot_cache=SnapshotCache}) ->
+    Reply= internal_multi_read(Reads, SnapshotCache),    
+    {reply, Reply, State};
 	
 handle_command({update, Key, DownstreamOp}, _Sender,
-               State = #state{ops_cache = OpsCache})->
-    true = op_insert(Key,DownstreamOp, OpsCache),
-    {reply, ok, State};
+               State = #state{snapshot_cache = SnapshotCache})->
+    Type = DownstreamOp#ec_payload.type,
+    case op_insert(Key, Type, DownstreamOp, SnapshotCache) of
+        true -> 
+            {reply, ok, State};
+        _ -> {reply, error, State}
+    end;
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
                        _Sender,
-                       State = #state{ops_cache = OpsCache}) ->
+                       State = #state{snapshot_cache = OpsCache}) ->
     F = fun({Key,Operation}, A) ->
                 Fun(Key, Operation, A)
         end,
@@ -128,7 +130,7 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(Data, State = #state{ops_cache = OpsCache}) ->
+handle_handoff_data(Data, State = #state{snapshot_cache = OpsCache}) ->
     {Key, Operation} = binary_to_term(Data),
     true = ets:insert(OpsCache, {Key, Operation}),
     {reply, ok, State}.
@@ -136,7 +138,7 @@ handle_handoff_data(Data, State = #state{ops_cache = OpsCache}) ->
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
 
-is_empty(State=#state{ops_cache = OpsCache}) ->
+is_empty(State=#state{snapshot_cache = OpsCache}) ->
     case ets:first(OpsCache) of
         '$end_of_table' ->
             {true, State};
@@ -144,7 +146,7 @@ is_empty(State=#state{ops_cache = OpsCache}) ->
             {false, State}
     end.
 
-delete(State=#state{ops_cache=OpsCache}) ->
+delete(State=#state{snapshot_cache=OpsCache}) ->
     true = ets:delete(OpsCache),
     {ok, State}.
 
@@ -159,79 +161,55 @@ terminate(_Reason, _State) ->
 
 
 
-%%---------------- Internal Functions -------------------%%
-
-internal_multi_read(Reads, TxId, OpsCache, SnapshotCache)->
-	internal_multi_read([], Reads, TxId, OpsCache, SnapshotCache).
-
-internal_multi_read(ReadResults, [], _TxId, _OpsCache, _SnapshotCache)->
-	{ok, ReadResults};
-internal_multi_read(ReadResults, [H|T], TxId, OpsCache, SnapshotCache)->
-    case H of
-        {Key, Type} ->
-            case internal_read(Key, Type, TxId, OpsCache, SnapshotCache) of
-            {ok, Value} ->
-            	Value2=Type:value(Value), 
-				internal_multi_read(lists:append(ReadResults, [Value2]), T, TxId, OpsCache, SnapshotCache);
-			{error, Reason} ->
-				{error, Reason}
-			end;
-        WrongFormat ->
-            {error, {wrong_format, WrongFormat}}
-    end.
-
-
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
 %% TODO: move this code to the materializer
--spec internal_read(term(), atom(),tx_id() | ignore, atom() ,atom() ) -> {ok, term()} | {error, no_snapshot}.
-internal_read(Key, Type, TxId, OpsCache, SnapshotCache) ->
+-spec internal_read(term(), term(), term()) -> {ok, term()} | {error, no_snapshot}.
+internal_read(Key, Type, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
 	[] ->
-		Snapshot=ec_materializer:new(Type),
-		ExistsSnapshot=false;
-	[{_, {TxId, Snapshot}}] ->
-		ExistsSnapshot=true
-    end,
-	case ets:lookup(OpsCache, Key) of
-		[] ->
-			case ExistsSnapshot of
-			false ->  
-				{ok, Snapshot};
-			true ->
-				{error, no_snapshot}
-			end;
-		[{_, OpsDict}] ->
-			%{ok, Ops}= filter_ops(OpsDict),
-			{ok, Ops}= dict:to_list(OpsDict),
-			case Ops of
-				[] ->
-					{ok, Snapshot};
-				[H|T] ->
-					case ec_materializer:materialize_eager(Type, Snapshot, [H|T]) of
-					{ok, Snapshot} ->
-							snapshot_insert(Key, TxId, SnapshotCache),
-							{ok, Snapshot};
-					{error, Reason} ->
-						{error, Reason}
-					end
-			end
-	end.
+		{ok, ec_materializer:new(Type)};		
+	[{_, Snapshot}] ->
+		{ok, Snapshot}
+    end.
 
+internal_multi_read(Reads, SnapshotCache)->    
+    internal_multi_read([], Reads, SnapshotCache).
 
+internal_multi_read(ReadResults, [], _SnapshotCache)->    
+    {ok, ReadResults};
 
-
-%% @doc Operation to insert a Snapshot in the cache and start
-%%      Garbage collection triggered by reads.
-snapshot_insert(Key, {CommitTime,Snapshot}, SnapshotCache)->
-            ets:insert(SnapshotCache, {Key, {CommitTime,Snapshot}}).
-
+internal_multi_read(ReadResults, [H|T], SnapshotCache)->
+    case H of
+        {Key, Type} ->
+            case internal_read(Key, Type, SnapshotCache) of
+            {ok, Value} ->
+                    Value2=Type:value(Value), 
+                    internal_multi_read(lists:append(ReadResults, [Value2]), T, SnapshotCache);
+                {error, Reason} ->
+                    {error, Reason}
+                        end;
+        WrongFormat ->
+            {error, {wrong_format, WrongFormat}}
+    end.
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert(term(), ec_payload(),
+-spec op_insert(term(), term(), ec_payload(),
                    atom() )-> true.
-op_insert(Key,DownstreamOp, OpsCache)->
-	ets:insert(OpsCache, {Key, DownstreamOp#ec_payload.tx_id, DownstreamOp}).
+op_insert(Key, Type, DownstreamOp, SnapshotCache)->
+    Snapshot = case ets:lookup(SnapshotCache, Key) of
+                   [] ->
+                       ec_materializer:new(Type);
+                   [{_, Val}] ->
+                       Val
+               end,
+    case ec_materializer:materialize_eager(Type, Snapshot, [DownstreamOp#ec_payload.op_param]) of
+        {error, Reason} ->
+            {error, Reason};
+           
+        NewSnapshot ->
+            ets:insert(SnapshotCache, {Key, NewSnapshot})
+    end.

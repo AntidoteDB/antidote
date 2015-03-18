@@ -68,8 +68,9 @@ init([Vnode, Coordinator, TxId, Reads]) ->
 %%  - Reads and returns the log of specified Key using replication layer.
 return(timeout, SD0=#state{tx_coordinator=Coordinator,
                            vnode=Vnode,
-                           reads=Reads}) ->
-    case materializer_vnode:multi_read(Vnode, Reads) of
+                           reads=Reads,
+                           tx_id=TxId}) ->
+    case materializer_vnode:multi_read(Vnode, Reads, TxId) of
         {ok, PartitionReadSet} ->
 			Reply = {batch_read_result, PartitionReadSet};
         {error, Reason} ->

@@ -52,7 +52,7 @@ append(Key, Type, {OpParam, Actor}) ->
 -spec read(Key::key(), Type::type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
     case ec_read(Key, Type) of
-        {ok,{_, [Val], _}} ->
+        {ok,{_, [Val]}} ->
             {ok, Val};
         {error, Reason} ->
             {error, Reason}

@@ -37,7 +37,8 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2,
+-export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2, committing/2, committing_2pc/3,
+         receive_committed/2,
          receive_prepared/2, receive_batch_read/2, single_committing/2, abort/2,
          reply_to_client/2]).
 
@@ -230,11 +231,11 @@ receive_prepared(prepared,
             case CommitProtocol of
                 two_phase ->
                     gen_fsm:reply(From, ok),
-                    {next_state, reply_to_client,
-                     S0#state{state=committed}};
+                    {next_state, committing_2pc,
+                     S0#state{state=committing}};
                 _ ->
-                    {next_state, reply_to_client,
-                     S0#state{state=committed}, 0}
+                    {next_state, committing,
+                     S0#state{state=committing}, 0}
             end;
         _ ->
             {next_state, receive_prepared,
@@ -247,11 +248,60 @@ receive_prepared(abort, S0) ->
 receive_prepared(timeout, S0) ->
     {next_state, abort, S0, 0}.
 
-single_committing({committed}, S0=#state{from=_From}) ->
+single_committing(committed, S0=#state{from=_From}) ->
     {next_state, reply_to_client, S0#state{state=committed}, 0};
     
 single_committing(abort, S0) ->
     {next_state, abort, S0, 0}.
+
+%% @doc after receiving all prepare_times, send the commit message to all
+%%      updated partitions, and go to the "receive_committed" state.
+%%      This state expects other process to sen the commit message to 
+%%      start the commit phase.
+committing_2pc(commit, Sender, SD0=#state{tx_id = TxId,
+                              updated_partitions=Updated_partitions}) ->
+    
+    NumToAck=length(Updated_partitions),
+        case NumToAck of
+        0 ->
+                            {next_state, reply_to_client,
+                             SD0#state{state=committed, from=Sender},0};
+                    _ ->            ec_vnode:commit(Updated_partitions, TxId),
+            {next_state, receive_committed,
+             SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
+    end.
+
+%% @doc after receiving all prepare_times, send the commit message to all
+%%      updated partitions, and go to the "receive_committed" state.
+%%      This state is used when no commit message from the client is
+%%      expected 
+committing(timeout, SD0=#state{tx_id = TxId,
+                              updated_partitions=Updated_partitions}) ->
+    NumToAck=length(Updated_partitions),
+    case NumToAck of
+        0 ->
+            {next_state, reply_to_client,
+             SD0#state{state=committed},0};
+        _ ->
+            ec_vnode:commit(Updated_partitions, TxId),
+            {next_state, receive_committed,
+             SD0#state{num_to_ack=NumToAck, state=committing}}
+    end.
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+%%committed the tx and finishes operation.
+%%      Should we retry sending the committed message if we don't receive a
+%%      reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
+    case NumToAck of
+        1 ->
+            {next_state, reply_to_client, S0#state{state=committed}, 0};
+        _ ->
+           {next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
+    end.
 
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the tx_id aborts.

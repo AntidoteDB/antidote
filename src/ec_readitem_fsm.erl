@@ -76,7 +76,7 @@ return(timeout, SD0=#state{key=Key,
                            type=Type,
                            vnode=IndexNode,
                            updates=Updates}) ->
-    case materializer_vnode:read(Key, Type) of
+    case materializer_vnode:read(Key, Type, TxId) of
         {ok, Snapshot} ->
             case generate_downstream_operations(Updates, TxId, IndexNode, Key, []) of
                 {ok, Updates2} ->

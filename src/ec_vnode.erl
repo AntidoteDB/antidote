@@ -29,7 +29,7 @@
          read_data_item/5,
          batch_read/3,
          pre_prepare/4,
-         prepare/5,
+         prepare/4,
          commit/2,
          single_commit/4,
          abort/2,
@@ -105,9 +105,9 @@ pre_prepare(ListofNodes, TxId, Updates, TxType) ->
                                    ?EC_MASTER).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
-prepare(ListofNodes, TxId, Updates, Coordinator, PrepareTime) ->
+prepare(ListofNodes, TxId, Updates, Coordinator) ->
     riak_core_vnode_master:command(ListofNodes,
-                                   {prepare, TxId, Updates, Coordinator, PrepareTime},
+                                   {prepare, TxId, Updates, Coordinator},
                                    {fsm, undefined, self()},
                                    ?EC_MASTER).
 %% @doc Sends prepare+commit to a single partition
@@ -161,6 +161,7 @@ handle_command({batch_read, TxId, Reads}, Sender,
 handle_command({pre_prepare, TxId, Updates, TxType}, Sender,
                State = #state{partition=Partition}) ->
     Vnode = {Partition, node()},
+    lager:info("Received preprepare"),
     {ok, _Pid} = ec_preprepare_fsm:start_link(Vnode, Sender, TxId, Updates, TxType),
     {noreply, State};
 
@@ -198,6 +199,7 @@ handle_command({single_commit, TxId, Updates, Coordinator}, _Sender,
 handle_command({prepare, TxId, Updates, Coordinator}, _Sender,
                State = #state{partition=_Partition,
                               write_set=WriteSet}) ->
+    lager:info("Received prepare"),
     case update_data_item(Updates, TxId, State) of
         ok ->
             Result = prepare(TxId, WriteSet),
@@ -222,6 +224,7 @@ handle_command({prepare, TxId, Updates, Coordinator}, _Sender,
 handle_command({commit, TxId}, _Sender,
                #state{partition=_Partition,
                       write_set=WriteSet} = State) ->
+    lager:info("Received commit"),
     Result = commit(TxId, WriteSet, State),
     case Result of
         {ok, committed} ->
@@ -336,6 +339,7 @@ commit(TxId, WriteSet, _State)->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append(Node,LogId,LogRecord) of
                 {ok, _} ->
+                    lager:info("Updating to materializer ~p",[Updates]),
                     case update_materializer(Updates, TxId) of
                         ok ->
                             {ok, committed};
