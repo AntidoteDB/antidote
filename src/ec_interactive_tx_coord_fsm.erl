@@ -56,7 +56,7 @@
 %%----------------------------------------------------------------------
 -record(state, {
           from,
-          tx_id :: tx_id(),
+          tx_id :: txid(),
           updated_partitions :: list(),
           num_to_ack :: integer(),
           buffer=dict:new() :: dict(),

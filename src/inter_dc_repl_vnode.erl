@@ -64,25 +64,28 @@ init([Partition]) ->
 
 handle_command(trigger, _Sender, State=#state{
                                               reader=Reader}) ->
-    {NewReaderState, Transactions} =
-        ec_transaction_reader:get_next_transactions(Reader),
-    {ok, DCs} = inter_dc_manager:get_dcs(),
-    case Transactions of
-        [] ->
-            %% No need to send heartbeats
-            NewReader = NewReaderState;            
-        [_H|_T] ->
-            case inter_dc_communication_sender:propagate_sync(
-                   {replicate, Transactions}, DCs) of
-                ok ->
-                    NewReader = NewReaderState;
-                _ ->
-                    NewReader = Reader
-            end
-    end,
     timer:sleep(?REPL_PERIOD),
+    {ok, DCs} = inter_dc_manager:get_dcs(),
+    NewState = case DCs of
+                   [] -> State;
+                   DCs ->
+                       {NewReaderState, Transactions} =
+                           ec_transaction_reader:get_next_transactions(Reader),
+                       NewReader = case Transactions of
+                                       [] ->
+                                           Reader;
+                                       %% No need to send heartbeats
+                                       [_H|_T] ->
+                                           case inter_dc_communication_sender:propagate_sync(
+                                                  {replicate, Transactions}, DCs) of
+                                               ok -> NewReaderState;
+                                               _  -> Reader
+                                           end
+                                   end,
+                       State#state{reader=NewReader}
+               end,
     riak_core_vnode:send_command(self(), trigger),
-    {reply, ok, State#state{reader=NewReader}}.
+    {noreply,NewState}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.

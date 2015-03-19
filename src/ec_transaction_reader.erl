@@ -38,7 +38,7 @@
 -export_type([transaction/0]).
 
 %% transaction = {TxId, [Operations]}
--type transaction() :: {tx_id(), [#operation{}]}.
+-type transaction() :: {txid(), [#operation{}]}.
 
 %% @doc Returns an iterator to read transactions from a partition
 %%  transactions can be read using get_next_transactions

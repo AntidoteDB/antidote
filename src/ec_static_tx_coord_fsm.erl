@@ -48,7 +48,7 @@
 %%----------------------------------------------------------------------
 -record(state, {
           from :: pid(),
-          tx_id :: tx_id(),
+          tx_id :: txid(),
           tx_coord_pid :: pid(),
           operations :: list(),
           state:: atom()}).

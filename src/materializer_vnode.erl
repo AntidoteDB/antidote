@@ -58,7 +58,7 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), tx_id()) -> {ok, term()} | {error, atom()}.
+-spec read(key(), type(), txid()) -> {ok, term()} | {error, atom()}.
 read(Key, Type, TxId) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),

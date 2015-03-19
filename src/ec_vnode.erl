@@ -361,7 +361,7 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 
 -spec update_materializer(DownstreamOps :: [{term(),{key(),type(),op()}}],
-                          TxId::tx_id()) ->
+                          TxId::txid()) ->
                                  ok | error.
 update_materializer(DownstreamOps, TxId) ->
     UpdateFunction = fun ({_, {Key, Type, Op}}, AccIn) ->
