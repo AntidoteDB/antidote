@@ -61,12 +61,14 @@ encode(Message) ->
 process(#fpbatomicupdatetxnreq{ops = Ops}, State) ->
     lager:info("Testing txn interface.. Received atomic update request  ~p", [Ops]),
     Updates = decode_au_txn_ops(Ops),
-    case antidote:clocksi_bulk_update(Updates) of
+    case antidote:ec_bulk_update(Updates) of
         {error, _Reason} ->
             {reply, #fpbatomicupdatetxnresp{success = false}, State};
-        {ok, {_Txid, _ReadSet, CommitTime}} ->
+        {ok, {_Txid, _ReadSet}} ->
             {reply, #fpbatomicupdatetxnresp{success = true,
-                                            clock=term_to_binary(CommitTime)},
+                                            clock=term_to_binary(0) %% no clock needed for eventual consistency, 
+                                            %% put 0 to keep the interface consistent with causal consistency
+                                           },
              State}
     end;
 
@@ -74,12 +76,12 @@ process(#fpbsnapshotreadtxnreq{ops = Ops}, State) ->
     lager:info("Testing txn interface.. Received snapshot read request  ~p", [Ops]),
     ReadReqs = decode_snapshot_read_ops(Ops),
     %%TODO: change this to interactive reads
-    case antidote:clocksi_execute_tx(ReadReqs) of
-        {ok, {_TxId, ReadSet, CommitTime}} ->
+    case antidote:ec_execute_tx(ReadReqs) of
+        {ok, {_TxId, ReadSet}} ->
             Zipped = lists:zip(ReadReqs, ReadSet),
             Reply = encode_snapshot_read_response(Zipped),
             {reply, #fpbsnapshotreadtxnresp{success=true,
-                                            clock= term_to_binary(CommitTime),
+                                            clock= term_to_binary(0),
                                             results=Reply}, State};
         Other ->
             lager:info("Clocksi execute received ~p",[Other]),

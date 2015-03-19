@@ -43,9 +43,6 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, ec_vnode}]),
             ok = riak_core_node_watcher:service_up(ec, self()),
 
-            ok = riak_core:register([{vnode_module, vectorclock_vnode}]),
-            ok = riak_core_node_watcher:service_up(vectorclock, self()),
-
             ok = riak_core:register([{vnode_module, materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(materializer, self()),
 
