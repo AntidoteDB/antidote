@@ -92,6 +92,7 @@ start_store_update(Transaction) ->
 				    {NewDictNodeKey,NewListXtraOps} end,
 			    {dict:new(),[]}, Ops),
 	    %% Fix this: because sends a store_update per op, should instead send a message per partition
+	    lager:info("rec commit time: ~p", [Committime]),
 	    WaitCount = dict:fold(fun(Node,Op2,Count) ->
 					  %% Maybe should only run this once???
 					  %% store_update(Node,{Txid,Committime,ST,lists:append(Op2,FinalOps)}),

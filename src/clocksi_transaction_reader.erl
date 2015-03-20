@@ -99,25 +99,26 @@ get_next_transactions(State=#state{partition = Partition,
     %% Also removed any external commited transactions since we don't want propagate those
     DcId = dc_utilities:get_my_dc_id(),
     {Before, After} = lists:foldl(
-			fun(Logrecord, {AccBefore, AccAfter}) ->
-				{{Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
-				case Dcid of
-				    DcId ->
-					case CommitTime < Stable_time of
-					    true ->
-						NewAccBefore = lists:append([Logrecord], AccBefore),
-						NewAccAfter = AccAfter;
-					    _ ->
-						NewAccAfter = lists:append([Logrecord], AccAfter),
-						NewAccBefore = AccBefore
-					end;
-				    _ ->
-					NewAccAfter = AccAfter,
-					NewAccBefore = AccBefore
+    			fun(Logrecord, {AccBefore, AccAfter}) ->
+    				{{Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
+    				case Dcid of
+    				    DcId ->
+    					case CommitTime < Stable_time of
+    					    true ->
+    						NewAccBefore = lists:append(AccBefore, [Logrecord]),
+    						NewAccAfter = AccAfter;
+    					    _ ->
+    						NewAccAfter = lists:append(AccAfter, [Logrecord]),
+    						NewAccBefore = AccBefore
+    					end;
+    				    _ ->
+    					NewAccAfter = AccAfter,
+    					NewAccBefore = AccBefore
 				    
-				end,
-				{NewAccBefore, NewAccAfter} end,
-			{[],[]}, Txns),
+    				end,
+    				{NewAccBefore, NewAccAfter} end,
+    			{[],[]}, Txns),
+    %%lager:info("Before ~p, After ~p", [Before, After]),
 
     {NewPendingOps, DictTransactionsDcs} =
         lists:foldl(
@@ -198,6 +199,7 @@ construct_transaction(Ops) ->
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
     {CommitTime, VecSnapshotTime} = Commitrecord#log_record.op_payload,
+    lager:info("next tx ct to list: ~p", [CommitTime]),
     TxId = Commitrecord#log_record.tx_id,
     {{TxId, CommitTime, VecSnapshotTime, Ops}, sets:to_list(DCs)}.
 

@@ -241,6 +241,7 @@ committing(commit, Sender, SD0=#state{transaction = Transaction,
             {next_state, reply_to_client,
              SD0#state{state=committed, from=Sender},0};
         _ ->
+	    lager:info("Commit time: ~p, now ~p", [Commit_time,vectorclock:now_microsec(erlang:now())]),
             clocksi_vnode:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
              SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
