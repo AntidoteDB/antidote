@@ -161,7 +161,6 @@ wait_for_clock(Clock) ->
 		    ok;
 		false ->
 		    %% wait for snapshot time to catch up with Client Clock
-		    lager:info("waiting for clock ~p safe ~p", [Clock,VecSnapshotTime]),
 		    timer:sleep(100),
 		    wait_for_clock(Clock)
 	    end;

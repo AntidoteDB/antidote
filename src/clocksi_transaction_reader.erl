@@ -118,7 +118,6 @@ get_next_transactions(State=#state{partition = Partition,
     				end,
     				{NewAccBefore, NewAccAfter} end,
     			{[],[]}, Txns),
-    %%lager:info("Before ~p, After ~p", [Before, After]),
 
     {NewPendingOps, DictTransactionsDcs} =
         lists:foldl(
@@ -199,7 +198,6 @@ construct_transaction(Ops) ->
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
     {CommitTime, VecSnapshotTime} = Commitrecord#log_record.op_payload,
-    lager:info("next tx ct to list: ~p", [CommitTime]),
     TxId = Commitrecord#log_record.tx_id,
     {{TxId, CommitTime, VecSnapshotTime, Ops}, sets:to_list(DCs)}.
 

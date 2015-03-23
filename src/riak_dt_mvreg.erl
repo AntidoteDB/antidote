@@ -43,8 +43,8 @@
 -module(riak_dt_mvreg).
 -behaviour(riak_dt).
 
--export([new/0, value/1, value/2, update/3, merge/2,
-         equal/2, to_binary/1, from_binary/1, stats/1, stat/2]).
+-export([new/0, value/1, value/2, update/3, merge/2, to_version/2,
+         equal/2, to_binary/1, to_binary/2, from_binary/1, stats/1, stat/2]).
 -export([parent_clock/2, update/4]).
 
 -ifdef(TEST).
@@ -240,6 +240,13 @@ stat(_, _) -> undefined.
 -spec to_binary(mvreg()) -> binary().
 to_binary(MVReg) ->
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(MVReg))/binary>>.
+
+to_binary(MVReg, _A) ->
+    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(MVReg))/binary>>.
+
+to_version(_A,_B) ->
+    ok.
+
 
 %% @doc Decode binary `mvreg()'
 -spec from_binary(binary()) -> mvreg().

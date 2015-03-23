@@ -124,9 +124,9 @@ execute_op({Op_type, Args}, Sender,
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
                                               Key, Type, WriteSet) of
                 error ->
-                    {reply, error, abort, SD0, 0};
-                {error, _Reason} ->
-                    {reply, error, abort, SD0, 0};
+                    {reply, {error, unknown}, abort, SD0, 0};
+                {error, Reason} ->
+                    {reply, {error, Reason}, abort, SD0, 0};
                 {ok, Snapshot, internal} ->
                     ReadResult = Type:value(Snapshot),
                     {reply, {ok, ReadResult}, execute_op, SD0};
@@ -241,7 +241,6 @@ committing(commit, Sender, SD0=#state{transaction = Transaction,
             {next_state, reply_to_client,
              SD0#state{state=committed, from=Sender},0};
         _ ->
-	    lager:info("Commit time: ~p, now ~p", [Commit_time,vectorclock:now_microsec(erlang:now())]),
             clocksi_vnode:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
              SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
