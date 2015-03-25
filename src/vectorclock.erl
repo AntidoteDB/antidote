@@ -43,7 +43,7 @@
 -export_type([vectorclock/0]).
 
 -define(META_PREFIX_SAFE, {dcid,int}).
--define(BEHIND_SEC, 15).
+-define(BEHIND_SEC, 0).
 
 
 
