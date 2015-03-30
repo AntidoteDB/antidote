@@ -143,12 +143,12 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 -spec perform_external_read({DcAddress :: non_neg_integer(), Port :: port()}, Key :: key(), Type :: crdt(), Transaction :: tx(), WriteSet :: list())
 			      -> {ok, term()} | error.
 perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
-%% ToDo, do this for a list of DCs, instead of just one
     case start_link(
 	   Port, DcAddress, {read_external, {Key, Type, Transaction,WriteSet}}, self(), read_external) of
 	{ok, _Reply} ->
 	    receive
 		{done, normal, Response} ->
+		    lager:info("response: ~p", [Response]),
 		    {ok, Response};
 		{done, Other, _Response} ->
 		    lager:error(

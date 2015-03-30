@@ -154,7 +154,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
 				    OrgTrans = #transaction{snapshot_time=CommitTimeA,
 							    server_pid=DcIdA,vec_snapshot_time=VecSSA,txn_id=TxIdA},
 				    {ok, Downstream} =
-					clocksi_downstream:generate_downstream_op(OrgTrans,Key2,Type2,Op2,Ws,external),
+					clocksi_downstream:generate_downstream_op(OrgTrans,Key2,Type2,Op2,Ws,local,[]),
 				    NewLogRecord = #log_record{tx_id=TxId,op_type=update,
 							       op_payload={Key2,Type2,Downstream}},
 				    NewOp = #operation{op_number=OpNum,payload=NewLogRecord},

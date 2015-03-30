@@ -38,7 +38,8 @@
 -export([check_clock/2,
 	 send_external_read/2,
          waiting1/2,
-         return/2]).
+         return/2,
+	 write_set_to_updates/3]).
 
 %% Spawn
 
@@ -110,8 +111,8 @@ loop_reads([Dc|T], Type, Key, Transaction,WriteSet) ->
 	case inter_dc_communication_sender:perform_external_read(Dc,Key,Type,Transaction,WriteSet) of
 	    {ok, {error, Reason1}} ->
 		loop_reads(T,Type,Key,Transaction,WriteSet);
-	    {ok, {{ok, Reply}, _Dc}} ->
-		{ok, Reply};
+	    {ok, {{ok, SS1, SS2}, _Dc}} ->
+		{ok, SS1, SS2};
 	    Result ->
 		loop_reads(T,Type,Key,Transaction,WriteSet)
 	end
@@ -125,8 +126,8 @@ loop_reads([], _Type, _Key, _Transaction, _WriteSet) ->
 send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction,
 				       updates=Updates,tx_coordinator=Coordinator}) ->
     case loop_reads(replication_check:get_dc_replicas_read(Key,noSelf), Type, Key, Transaction, Updates) of
-        {ok, Snapshot} ->
-            Reply = {ok, Snapshot, external};
+        {ok, Snapshot, Snapshot2} ->
+            Reply = {ok, Snapshot, Snapshot2, external};
         error ->
             Reply={error, failed_read_at_all_dcs}
     end,
@@ -183,15 +184,21 @@ return(timeout, SD0=#state{key=Key,
                            tx_coordinator=Coordinator,
                            transaction=Transaction,
                            type=Type,
+			   is_local=IsLocal,
                            updates=WriteSet}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
         {ok, Snapshot} ->
 	    Updates2=write_set_to_updates(Transaction,WriteSet,Key),
-            Snapshot2=clocksi_materializer:materialize_eager
-                        (Type, Snapshot, Updates2),
-            Reply = {ok, Snapshot2, internal};
+	    Snapshot2=clocksi_materializer:materialize_eager
+			(Type, Snapshot, Updates2),
+	    case IsLocal of
+		true ->
+		    Reply = {ok, Snapshot2, internal};
+		false ->
+		    Reply = {ok, Snapshot, Snapshot2, external}
+	    end;
         {error, Reason} ->
 	    lager:error("error in return read ~p", [Reason]),
             Reply={error, Reason}
@@ -216,7 +223,6 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 terminate(_Reason, _SN, _SD) ->
     ok.
 
-%% Internal functions
 
 write_set_to_updates(Txn, WriteSet, Key) ->
     NewWS=lists:foldl(fun({Replicated,KeyPrime,Type,Op}, Acc) ->
@@ -239,6 +245,8 @@ write_set_to_updates(Txn, WriteSet, Key) ->
 			Acc ++ [Update2]
 		end,[],NewWS).
 
+
+%% Internal functions
 
 get_stable_time(Key) ->
     Preflist = log_utilities:get_preflist_from_key(Key),

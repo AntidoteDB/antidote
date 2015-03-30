@@ -25,9 +25,9 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
-         read_data_item/5,
+         read_data_item/6,
 	 read_data_item_external/5,
-	 read_data_item/6,
+	 read_data_item/7,
          prepare/2,
          commit/3,
          abort/2,
@@ -74,21 +74,29 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Sends a read request to the Node that is responsible for the Key
-read_data_item(_Node, TxId, Key, Type, WriteSet) ->
-    read_data_item(TxId,Key,Type,local,self(), WriteSet).
+read_data_item(_Node, TxId, Key, Type, WriteSet, ExternalSnapshots) ->
+    read_data_item(TxId,Key,Type,local,self(), WriteSet,ExternalSnapshots).
 
 
 read_data_item_external(_Node, TxId, Key, Type, WriteSet) ->
-    read_data_item(TxId,Key,Type,external,self(),WriteSet).
+    read_data_item(TxId,Key,Type,external,self(),WriteSet,[]).
 
 
-read_data_item(Txn, Key, Type, IsLocal, Sender, WriteSet) ->
-    {ok, Pid} = clocksi_readitem_fsm:start_link(self(), Sender, Txn,
-						 Key, Type, WriteSet, IsLocal,
-						 replication_check:is_replicated_here(Key)),
-    receive
-	{Pid, Value} ->
-	    Value
+read_data_item(Txn, Key, Type, IsLocal, Sender, WriteSet, ExternalSnapshots) ->
+    case lists:keyfind(Key, 1, ExternalSnapshots) of
+	{Key, Snapshot} ->
+	    Updates2=clocksi_readitem_fsm:write_set_to_updates(Txn,WriteSet,Key),
+	    Snapshot2=clocksi_materializer:materialize_eager
+			(Type, Snapshot, Updates2),
+	    {ok, Snapshot2, internal};
+	false ->
+	    {ok, Pid} = clocksi_readitem_fsm:start_link(self(), Sender, Txn,
+							Key, Type, WriteSet, IsLocal,
+							replication_check:is_replicated_here(Key)),
+	    receive
+		{Pid, Value} ->
+		    Value
+	    end
     end.    
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId

@@ -15,7 +15,7 @@
 	 close_socket/3
         ]).
 
--define(TIMEOUT,10000).
+-define(TIMEOUT,20000).
 
 
 %% This fsm is receives connections from tx coordinators located
@@ -46,9 +46,9 @@ receive_message(timeout, State=#state{socket=Socket}) ->
 				     {error, Reason} ->
 					 lager:error("error in cross read reason ~p", [Reason]),
 					 {error, abort};
-				     {ok, Snapshot, internal} ->
-					 ReadResult = Type:value(Snapshot),
-					 {ok, ReadResult}
+				     {ok, Snapshot, Snapshot2, external} ->
+					 %%ReadResult = Type:value(Snapshot),
+					 {ok, Snapshot, Snapshot2}
 				 end;
 			     Unknown ->
 				 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),

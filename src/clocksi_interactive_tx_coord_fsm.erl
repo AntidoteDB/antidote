@@ -56,6 +56,7 @@
 -record(state, {
           from,
           transaction :: tx(),
+	  external_snapshots :: dict(),
           updated_partitions :: list(),
           num_to_ack :: integer(),
           prepare_time :: integer(),
@@ -95,6 +96,7 @@ init([From, ClientClock]) ->
                                txn_id=TransactionId},
     SD = #state{
             transaction = Transaction,
+	    external_snapshots = [],
             updated_partitions=[],
             prepare_time=0
            },
@@ -106,6 +108,7 @@ init([From, ClientClock]) ->
 %%       to execute the next operation.
 execute_op({Op_type, Args}, Sender,
            SD0=#state{transaction=Transaction, from=_From,
+		      external_snapshots=ExternalReads,
                       updated_partitions=Updated_partitions
 		      }) ->
     case Op_type of
@@ -122,7 +125,7 @@ execute_op({Op_type, Args}, Sender,
 			       WS
 		       end,
             case clocksi_vnode:read_data_item(IndexNode, Transaction,
-                                              Key, Type, WriteSet) of
+                                              Key, Type, WriteSet, ExternalReads) of
                 error ->
                     {reply, {error, unknown}, abort, SD0, 0};
                 {error, Reason} ->
@@ -130,14 +133,17 @@ execute_op({Op_type, Args}, Sender,
                 {ok, Snapshot, internal} ->
                     ReadResult = Type:value(Snapshot),
                     {reply, {ok, ReadResult}, execute_op, SD0};
-		{ok, ReadResult, external} ->
-                    {reply, {ok, ReadResult}, execute_op, SD0}
+		{ok, Snapshot, ResultSnapshot, external} ->
+                    ReadResult = Type:value(ResultSnapshot),
+                    {reply, {ok, ReadResult}, execute_op,
+		     SD0#state{external_snapshots=lists:keystore(Key,1,ExternalReads,{Key,Snapshot})}}
             end;
         update ->
             {Key, Type, Param}=Args,
 	    Preflist = log_utilities:get_preflist_from_key(Key),
 	    IndexNode = hd(Preflist),
-	    case replication_check:is_replicated_here(Key) of
+	    case replication_check:is_replicated_here(Key) or
+		lists:keymember(Key,1,ExternalReads) of
 		true ->
 		    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
 				   false ->
@@ -145,7 +151,7 @@ execute_op({Op_type, Args}, Sender,
 				   {IndexNode, WS} ->
 				       WS
 			       end,
-		    case generate_downstream_op(Transaction, Key, Type, Param, WriteSet) of
+		    case generate_downstream_op(Transaction, Key, Type, Param, WriteSet, ExternalReads) of
 			{ok, DownstreamRecord} ->
 			    NewDownstream = DownstreamRecord,
 			    Replicated = isReplicated;
@@ -351,6 +357,6 @@ get_snapshot_time(ClientClock, localTransaction) ->
 	    {error, Reason}
     end.
 
-generate_downstream_op(Txn, Key, Type, Param, WriteSet) ->
-    clocksi_downstream:generate_downstream_op(Txn, Key, Type, Param, WriteSet, local).
+generate_downstream_op(Txn, Key, Type, Param, WriteSet, ExternalReads) ->
+    clocksi_downstream:generate_downstream_op(Txn, Key, Type, Param, WriteSet, local, ExternalReads).
 
