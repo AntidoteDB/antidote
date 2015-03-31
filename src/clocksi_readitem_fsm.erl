@@ -39,7 +39,7 @@
 	 send_external_read/2,
          waiting1/2,
          return/2,
-	 write_set_to_updates/3]).
+	 write_set_to_updates/4]).
 
 %% Spawn
 
@@ -88,7 +88,7 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, local, false]) ->
                 pending_txs=[],
 		is_local=true,
 		is_replicated = false},
-    {ok, send_external_read, SD, 0};
+    {ok, send_e, SD, 0};
 
 
 init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true]) ->
@@ -123,10 +123,14 @@ loop_reads([Dc|T], Type, Key, Transaction,WriteSet) ->
 loop_reads([], _Type, _Key, _Transaction, _WriteSet) ->
     error.
 
+
+
 send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction,
 				       updates=Updates,tx_coordinator=Coordinator}) ->
     case loop_reads(replication_check:get_dc_replicas_read(Key,noSelf), Type, Key, Transaction, Updates) of
-        {ok, Snapshot, Snapshot2} ->
+        {ok, Snapshot, Snapshot2, Remainder, CT} ->
+	    %% Store the SS at the local materizlzer node
+	    materializer_vnode:store_ss(Key,Snapshot,Remainder,CT),
             Reply = {ok, Snapshot, Snapshot2, external};
         error ->
             Reply={error, failed_read_at_all_dcs}
@@ -185,27 +189,39 @@ return(timeout, SD0=#state{key=Key,
                            transaction=Transaction,
                            type=Type,
 			   is_local=IsLocal,
+			   is_replicated=IsReplicated,
                            updates=WriteSet}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
-        {ok, Snapshot} ->
-	    Updates2=write_set_to_updates(Transaction,WriteSet,Key),
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, IsReplicated) of
+        {ok, Snapshot, Remainder, CT} ->
+	    Updates2=write_set_to_updates(Transaction,WriteSet,Key, [{Key,Snapshot}]),
 	    Snapshot2=clocksi_materializer:materialize_eager
 			(Type, Snapshot, Updates2),
 	    case IsLocal of
 		true ->
 		    Reply = {ok, Snapshot2, internal};
 		false ->
-		    Reply = {ok, Snapshot, Snapshot2, external}
+		    Reply = {ok, Snapshot, Snapshot2, Remainder, CT, external}
 	    end;
         {error, Reason} ->
-	    lager:error("error in return read ~p", [Reason]),
-            Reply={error, Reason}
+	    case IsLocal of 
+		false ->
+		    Reply=noReply;
+		true ->
+		    lager:error("error in return read ~p", [Reason]),
+		    Reply={error, Reason}
+	    end
     end,
-    %% riak_core_vnode:reply(Coordinator, Reply),
-    Coordinator ! {self(), Reply},
-    {stop, normal, SD0};
+    case Reply of
+	noReply ->
+	    {next_state, send_external_read, SD0, 0};
+	_ ->
+	    %% riak_core_vnode:reply(Coordinator, Reply),
+	    Coordinator ! {self(), Reply},
+	    {stop, normal, SD0}
+    end;
+
 return(_SomeMessage, SDO) ->
     {next_state, return, SDO,0}.
 
@@ -224,7 +240,7 @@ terminate(_Reason, _SN, _SD) ->
     ok.
 
 
-write_set_to_updates(Txn, WriteSet, Key) ->
+write_set_to_updates(Txn, WriteSet, Key, ExtSnapshots) ->
     NewWS=lists:foldl(fun({Replicated,KeyPrime,Type,Op}, Acc) ->
 			      case KeyPrime==Key of
 				  true ->
@@ -234,7 +250,7 @@ write_set_to_updates(Txn, WriteSet, Key) ->
 					  notReplicated ->
 					      {ok, DownstreamRecord} = 
 						  clocksi_downstream:generate_downstream_op(
-						    Txn, Key, Type, Op, Acc, local),
+						    Txn, Key, Type, Op, Acc, local, ExtSnapshots),
 					      Acc ++ [{isReplicated,KeyPrime,Type,DownstreamRecord}]
 				      end;
 				  false ->

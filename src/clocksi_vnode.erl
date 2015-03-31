@@ -85,7 +85,7 @@ read_data_item_external(_Node, TxId, Key, Type, WriteSet) ->
 read_data_item(Txn, Key, Type, IsLocal, Sender, WriteSet, ExternalSnapshots) ->
     case lists:keyfind(Key, 1, ExternalSnapshots) of
 	{Key, Snapshot} ->
-	    Updates2=clocksi_readitem_fsm:write_set_to_updates(Txn,WriteSet,Key),
+	    Updates2=clocksi_readitem_fsm:write_set_to_updates(Txn,WriteSet,Key,ExternalSnapshots),
 	    Snapshot2=clocksi_materializer:materialize_eager
 			(Type, Snapshot, Updates2),
 	    {ok, Snapshot2, internal};

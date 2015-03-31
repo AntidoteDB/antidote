@@ -25,7 +25,7 @@
 -endif.
 
 -export([new/1,
-         materialize/6,
+         materialize/7,
          materialize_eager/3]).
 
 %% @doc Creates an empty CRDT
@@ -38,16 +38,14 @@ new(Type) ->
 
 %% @doc Calls the internal function materialize/6, with no TxId.
 -spec materialize(type(), snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
-                      snapshot_time(), 
-                      [clocksi_payload()], txid()) -> {ok, snapshot(), 
-                      {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-%materialize(_Type, Snapshot, _SnapshotTime, []) ->
-%    {ok, Snapshot};
-materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
-    case materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime) of
-    {ok, Val, CommitTime} ->
-    	{ok, Val, CommitTime};
+		  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
+		  snapshot_time(), snapshot_time(),
+		  [clocksi_payload()], txid()) -> {ok, snapshot(), 
+						   {dcid(),CommitTime::non_neg_integer()} | ignore, [clocksi_payload()]} | {error, term()}.
+materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, MaxSnapshotTime, Ops, TxId) ->
+    case materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, MaxSnapshotTime, Ops, TxId, SnapshotCommitTime, []) of
+    {ok, Val, CommitTime, Rem} ->
+    	{ok, Val, CommitTime, Rem};
     {error, Reason} ->
     	{error, Reason}
     end.
@@ -65,52 +63,66 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
 %%      Output: The CRDT after appliying the operations and its commit
 %%      time taken from the last operation that was applied to the snapshot.
 -spec materialize(type(), 
-					  snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
-                      snapshot_time(),
-                      [clocksi_payload()], 
-                      txid(), 
-                      LastOpCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore) ->
-                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-materialize(_, Snapshot, _SnapshotCommitTime, _SnapshotTime, [], _TxId, CommitTime) ->
-    {ok, Snapshot, CommitTime};
+		  snapshot(),
+		  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
+		  snapshot_time(),
+		  snapshot_time(),
+		  [clocksi_payload()], 
+		  txid(), 
+		  LastOpCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
+		  Remainder::[clocksi_payload]) ->
+			 {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore, [clocksi_payload()]} | {error, term()}.
+materialize(_Type, Snapshot, _SnapshotCommitTime, _MinSnapshotTime, _MaxSnapshotTime, [], _TxId, CommitTime, Remainder) ->
+    {ok, Snapshot, CommitTime, Remainder};
 
-materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, LastOpCommitTime) ->
+materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, MaxSnapshotTime, [Op|Rest], TxId, LastOpCommitTime, Remainder) ->
     case Type == Op#clocksi_payload.type of
         true ->
             OpCommitTime=Op#clocksi_payload.commit_time,
-            case (is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime)
+            case (is_op_in_snapshot(OpCommitTime, MinSnapshotTime, SnapshotCommitTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-                	    case Op#clocksi_payload.op_param of
+		    case Op#clocksi_payload.op_param of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
                             materialize(Type,
                                         NewSnapshot,
                                         SnapshotCommitTime,
-                                        SnapshotTime,
+                                        MinSnapshotTime,
+					MaxSnapshotTime,
                                         Rest,
                                         TxId,
-                                        OpCommitTime);
+                                        OpCommitTime,
+					Remainder);
                         {update, DownstreamOp} ->
                             case Type:update(DownstreamOp, Snapshot) of
                                 {ok, NewSnapshot} ->
                                     materialize(Type,
                                                 NewSnapshot,
                                                 SnapshotCommitTime,
-                                                SnapshotTime,
+                                                MinSnapshotTime,
+						MaxSnapshotTime,
                                                 Rest,
                                                 TxId,
-                                                OpCommitTime);
+                                                OpCommitTime,
+						Remainder);
                                 {error, Reason} ->
                                     {error, Reason}
                             end
                     end;
                 false ->
-                    materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Rest, TxId, LastOpCommitTime)
-            end;
-        false -> %% Op is not for this {Key, Type}
-            materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Rest, TxId, LastOpCommitTime)
+		    case MaxSnapshotTime /= ignore andalso 
+			is_op_in_snapshot(OpCommitTime, MaxSnapshotTime, SnapshotCommitTime) of
+			true ->
+			    materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime,
+					MaxSnapshotTime, Rest, TxId, LastOpCommitTime, Remainder ++ [Op]);
+			false ->
+			    materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime,
+					MaxSnapshotTime, Rest, TxId, LastOpCommitTime, Remainder)
+		    end
+	    end;
+	false -> %% Op is not for this {Key, Type}
+	    materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, MaxSnapshotTime, Rest, TxId, LastOpCommitTime, Remainder)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
@@ -128,6 +140,7 @@ is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
     ignore -> 
     	OpCommitTime =< Ts;
     {SnapshotDc, SnapshotCT} ->
+%%%% TODO:  Should this check the entire snapshot, not just of this DC?
     	case (SnapshotDc == OpDc) of
     	true ->
 			(OpCommitTime =< Ts) and (SnapshotCT < OpCommitTime);
@@ -169,15 +182,16 @@ materializer_clocksi_test()->
                            commit_time = {1, 4}, txid = 4},
 
     Ops = [Op1,Op2,Op3,Op4],
-    {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
-                                      PNCounter, ignore, vectorclock:from_list([{1,3}]),
-                                      Ops, ignore),
+    {ok, PNCounter2, CommitTime2, _Rem} = materialize(crdt_pncounter,
+						PNCounter, ignore, vectorclock:from_list([{1,3}]),
+						ignore,
+						Ops, ignore),
     ?assertEqual({4, {1,3}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
-    {ok, PNcounter3, CommitTime3} = materialize(crdt_pncounter, PNCounter, ignore,
-                                   vectorclock:from_list([{1,4}]),Ops, ignore),
+    {ok, PNcounter3, CommitTime3, _Rem} = materialize(crdt_pncounter, PNCounter, ignore,
+                                   vectorclock:from_list([{1,4}]), ignore ,Ops, ignore),
     ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
-    {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, PNCounter, ignore,
-                                   vectorclock:from_list([{1,7}]),Ops, ignore),
+    {ok, PNcounter4, CommitTime4, _Rem} = materialize(crdt_pncounter, PNCounter, ignore,
+                                   vectorclock:from_list([{1,7}]), ignore, Ops, ignore),
     ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
 
 materializer_clocksi_concurrent_test() ->
@@ -194,25 +208,25 @@ materializer_clocksi_concurrent_test() ->
                            commit_time = {2, 1}, txid = 3},
 
     Ops = [Op1,Op2,Op3],
-    {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
+    {ok, PNCounter2, CommitTime2, _Rem} = materialize(crdt_pncounter,
                                       PNCounter, ignore,
-                                      vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore, ignore),
+                                      vectorclock:from_list([{2,2},{1,2}]), ignore,
+                                      Ops, ignore, ignore, []),
     ?assertEqual({4, {2,1}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     
     
     
     Snapshot=new(crdt_pncounter),
-    {ok, PNcounter3, CommitTime3} = materialize(crdt_pncounter, Snapshot, ignore,
-                                   vectorclock:from_list([{1,2}]),Ops, ignore),
+    {ok, PNcounter3, CommitTime3, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
+                                   vectorclock:from_list([{1,2}]), ignore, Ops, ignore),
     ?assertEqual({3, {1,2}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
     
-    {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, Snapshot, ignore,
-                                   vectorclock:from_list([{2,1}]),Ops, ignore),
+    {ok, PNcounter4, CommitTime4, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
+                                   vectorclock:from_list([{2,1}]),ignore,Ops, ignore),
     ?assertEqual({1, {2,1}}, {crdt_pncounter:value(PNcounter4), CommitTime4}),
     
-    {ok, PNcounter5, CommitTime5} = materialize(crdt_pncounter, Snapshot, ignore,
-                                   vectorclock:from_list([{1,1}]),Ops, ignore),
+    {ok, PNcounter5, CommitTime5, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
+                                   vectorclock:from_list([{1,1}]),ignore,Ops, ignore),
     ?assertEqual({2, {1,1}}, {crdt_pncounter:value(PNcounter5), CommitTime5}).
 
 %% @doc Testing gcounter with empty update log
@@ -220,9 +234,9 @@ materializer_clocksi_noop_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Ops = [],
-    {ok, PNCounter2, ignore} = materialize(crdt_pncounter, PNCounter, ignore,
-                                vectorclock:from_list([{1,1}]),
-                                Ops, ignore, ignore),
+    {ok, PNCounter2, ignore, _Rem} = materialize(crdt_pncounter, PNCounter, ignore,
+                                vectorclock:from_list([{1,1}]), ignore,
+                                Ops, ignore, ignore, []),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
     
     

@@ -46,9 +46,9 @@ receive_message(timeout, State=#state{socket=Socket}) ->
 				     {error, Reason} ->
 					 lager:error("error in cross read reason ~p", [Reason]),
 					 {error, abort};
-				     {ok, Snapshot, Snapshot2, external} ->
+				     {ok, Snapshot, Snapshot2, Remainder, CT, external} ->
 					 %%ReadResult = Type:value(Snapshot),
-					 {ok, Snapshot, Snapshot2}
+					 {ok, Snapshot, Snapshot2, Remainder, CT}
 				 end;
 			     Unknown ->
 				 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),
