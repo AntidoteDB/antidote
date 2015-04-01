@@ -41,6 +41,7 @@
 -record(tx_id, {snapshot_time, server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
+			  op_generate=downstream :: atom(),
                           op_param :: {term(), term()},
                           snapshot_time :: snapshot_time(),
                           commit_time :: commit_time(),

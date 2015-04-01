@@ -51,7 +51,8 @@
                 updates,
                 pending_txs,
 		is_local,
-		is_replicated}).
+		is_replicated,
+		dcId}).
 
 %%%===================================================================
 %%% API
@@ -88,10 +89,10 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, local, false]) ->
                 pending_txs=[],
 		is_local=true,
 		is_replicated = false},
-    {ok, send_e, SD, 0};
+    {ok, check_clock, SD, 0};
 
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true]) ->
+init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true, DcId]) ->
     SD = #state{vnode=Vnode,
                 type=Type,
                 key=Key,
@@ -100,7 +101,8 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true]) ->
                 updates=Updates,
                 pending_txs=[],
 		is_local=false,
-		is_replicated = true},
+		is_replicated = true,
+	        dcId=DcId},
     {ok, check_clock, SD, 0}.
 
 
@@ -130,6 +132,7 @@ send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction
     case loop_reads(replication_check:get_dc_replicas_read(Key,noSelf), Type, Key, Transaction, Updates) of
         {ok, Snapshot, Snapshot2, Remainder, CT} ->
 	    %% Store the SS at the local materizlzer node
+	    %% TODO: merge ss with local updates
 	    materializer_vnode:store_ss(Key,Snapshot,Remainder,CT),
             Reply = {ok, Snapshot, Snapshot2, external};
         error ->
@@ -190,10 +193,21 @@ return(timeout, SD0=#state{key=Key,
                            type=Type,
 			   is_local=IsLocal,
 			   is_replicated=IsReplicated,
-                           updates=WriteSet}) ->
+                           updates=WriteSet,
+			   dcId=DcId}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, IsReplicated) of
+    case IsLocal of
+	false ->
+	    {ok, Time} = vectorclock:get_safe_time_dc(DcId),
+	    lager:info("min safe time: ~p for dc: ~p", [Time, DcId]),
+	    MinSnapshotTime = vectorclock:set_clock_of_dc(DcId,Time,VecSnapshotTime),
+	    MaxSnapshotTime = VecSnapshotTime;
+	true ->
+	    MinSnapshotTime = VecSnapshotTime,
+	    MaxSnapshotTime = ignore
+    end,
+    case materializer_vnode:read_dual_ss(Key, Type, MinSnapshotTime, MaxSnapshotTime, TxId, IsReplicated) of
         {ok, Snapshot, Remainder, CT} ->
 	    Updates2=write_set_to_updates(Transaction,WriteSet,Key, [{Key,Snapshot}]),
 	    Snapshot2=clocksi_materializer:materialize_eager
@@ -205,10 +219,10 @@ return(timeout, SD0=#state{key=Key,
 		    Reply = {ok, Snapshot, Snapshot2, Remainder, CT, external}
 	    end;
         {error, Reason} ->
-	    case IsLocal of 
-		false ->
-		    Reply=noReply;
+	    case IsLocal and (not IsReplicated) of 
 		true ->
+		    Reply=noReply;
+		false ->
 		    lager:error("error in return read ~p", [Reason]),
 		    Reply={error, Reason}
 	    end

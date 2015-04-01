@@ -27,6 +27,7 @@
 
 -export([is_greater_than/2,
          get_clock_of_dc/2,
+	 get_safe_time_dc/1,
          set_clock_of_dc/3,
          from_list/1,
 	 wait_for_clock/1,
@@ -67,6 +68,13 @@ now_microsec_behind(StartClock,{MegaSecs, Secs, MicroSecs}) ->
 	    NowMicroBehind
     end.
 	 
+
+
+-spec get_safe_time_dc(DcId :: term())
+			     -> {ok, non_neg_integer()} | {error, term()}.
+get_safe_time_dc(DcId) ->
+    {ok, riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}])}.
+
 
 -spec get_safe_time()
                -> {ok, vectorclock()} | {error, term()}.

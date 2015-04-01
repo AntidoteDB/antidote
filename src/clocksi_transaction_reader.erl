@@ -151,6 +151,7 @@ get_update_ops_from_transaction(Transaction) ->
                                         key = Key,
                                         type = Type,
                                         op_param = Op,
+					op_generate = downstream,
                                         snapshot_time = VecSnapshotTime,
                                         commit_time = {DcId, CommitTime},
                                         txid =  Logrecord#log_record.tx_id

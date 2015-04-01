@@ -31,7 +31,7 @@
 			     ExternalSnapshots::list()) ->
                                     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Key, Type, Update, WriteSet, IsLocal, ExternalSnapshots) ->
-    {Op, Actor} =  Update,
+    {Op, Actor} = Update,
     case clocksi_vnode:read_data_item(Transaction,
                                       Key, Type, IsLocal, self(), WriteSet, ExternalSnapshots) of
         {ok, Snapshot, internal} ->

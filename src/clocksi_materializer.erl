@@ -82,7 +82,16 @@ materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, MaxSnapshotTime
             case (is_op_in_snapshot(OpCommitTime, MinSnapshotTime, SnapshotCommitTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-		    case Op#clocksi_payload.op_param of
+		    Ds = case Op#clocksi_payload.op_generate of
+			     upstream ->
+				 {ok,DsOp} = clocksi_downstream:
+				     generate_downstream_op(#transaction{},Op#clocksi_payload.key,Type,
+							    Op#clocksi_payload.op_param,[],local,[{Op#clocksi_payload.key,Snapshot}]),
+				 DsOp;
+			     downstream ->
+				 Op#clocksi_payload.op_param
+			 end,
+		    case Ds of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
                             materialize(Type,

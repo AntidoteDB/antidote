@@ -334,21 +334,29 @@ check_keylog(TxId, [H|T], CommittedTx)->
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
     UpdateFunction = fun ({Rep, Key, Type, Op}, AccIn) ->
-			     case Rep of
-				 isReplicated ->
-				     CommittedDownstreamOp =
-					 #clocksi_payload{
-					    key = Key,
-					    type = Type,
-					    op_param = Op,
-					    snapshot_time = Transaction#transaction.vec_snapshot_time,
-					    commit_time = {DcId, TxCommitTime},
-					    txid = Transaction#transaction.txn_id},
-				     AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)];
-				 _ ->
-				     AccIn
-			     end
-                     end,
+			     CommittedDownstreamOp = case Rep of
+							 isReplicated ->
+							     #clocksi_payload{
+								key = Key,
+								type = Type,
+								op_param = Op,
+								op_generate = downstream,
+								snapshot_time = Transaction#transaction.vec_snapshot_time,
+								commit_time = {DcId, TxCommitTime},
+								txid = Transaction#transaction.txn_id};
+							 notReplicated ->
+								 #clocksi_payload{
+								    key = Key,
+								    type = Type,
+								    op_param = Op,
+								    op_generate = upstream,
+								    snapshot_time = Transaction#transaction.vec_snapshot_time,
+								    commit_time = {DcId, TxCommitTime},
+								    txid = Transaction#transaction.txn_id}
+						     end,
+			     AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp,
+							       replication_check:is_replicated_here(Key))]
+		     end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
     case length(Failures) of

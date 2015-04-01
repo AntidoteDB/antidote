@@ -144,7 +144,7 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 			      -> {ok, term()} | error.
 perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
     case start_link(
-	   Port, DcAddress, {read_external, {Key, Type, Transaction,WriteSet}}, self(), read_external) of
+	   Port, DcAddress, {read_external, {Key, Type, Transaction,WriteSet,dc_utilities:get_my_dc_id()}}, self(), read_external) of
 	{ok, _Reply} ->
 	    receive
 		{done, normal, Response} ->

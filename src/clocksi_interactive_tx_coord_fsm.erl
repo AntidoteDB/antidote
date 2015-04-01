@@ -142,6 +142,7 @@ execute_op({Op_type, Args}, Sender,
             {Key, Type, Param}=Args,
 	    Preflist = log_utilities:get_preflist_from_key(Key),
 	    IndexNode = hd(Preflist),
+	    %% TODO, this should also check the materializer to see if a valid SS is available
 	    case replication_check:is_replicated_here(Key) or
 		lists:keymember(Key,1,ExternalReads) of
 		true ->
