@@ -88,8 +88,9 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 	    %% Maybe should keep a CTS per partition?
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
                 {ok, CTS} ->
-                    if Ts >= CTS ->
-                            check_and_update(SnapshotTime, LocalSafeClock,
+                    if Ts >= CTS -> 
+			    %%lager:info("performing update1 ~p", [Transaction]),
+			    check_and_update(SnapshotTime, LocalSafeClock,
                                              Transaction,
                                              Dc, DcQ, Ts, StateData ) ;
                        true ->
@@ -101,6 +102,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                             NewState
                     end;
                 _ ->
+		    %%lager:info("performing update2 ~p", [Transaction]),
                     check_and_update(SnapshotTime, LocalSafeClock, Transaction,
                                      Dc, DcQ, Ts, StateData)
 
@@ -137,6 +139,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
             {TheNewOps,_NewWs,NewLogRecords}
 		= lists:foldl(
 		    fun(Op,{NewOps,Ws,NewRecords}) ->
+			    %%lager:info("op to record: ~p", [Op]),
 			    Logrecord = Op#operation.payload,
 			    OpNum = Op#operation.op_number,
 			    TxId = Logrecord#log_record.tx_id,
@@ -175,22 +178,22 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                   NewTrans),
             lists:foreach( fun(DownOp) ->
                                    Key = DownOp#clocksi_payload.key,
-                                   ok = materializer_vnode:update(Key, DownOp)
+                                   ok = materializer_vnode:update(Key, DownOp, true)
                            end, DownOps),
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
             %%{ok} = vectorclock:update_clock(Partition, Dc, Ts),
 	    %% Why is a stable snapshot calculated here??
-            riak_core_vnode_master:command(
-              {Partition,node()}, calculate_stable_snapshot,
-              vectorclock_vnode_master),
+            %% riak_core_vnode_master:command(
+            %%   {Partition,node()}, calculate_stable_snapshot,
+            %%   vectorclock_vnode_master),
 	    %% TODO: Is this necessary
             riak_core_vnode_master:command({Partition, node()}, {process_queue},
                                            inter_dc_recvr_vnode_master),
             NewState;
         false ->
-            lager:debug("Dep not satisfied ~p", [Transaction]),
+            lager:error("Dep not satisfied ~p", [Transaction]),
             StateData
     end.
 

@@ -38,13 +38,14 @@
 	 update_safe_clock_local/2,
 	 get_safe_time/0,
 	 now_microsec/1,
-	 now_microsec_behind/2,
+	 now_microsec_behind/3,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
 
 -define(META_PREFIX_SAFE, {dcid,int}).
--define(BEHIND_SEC, 0).
+-define(BEHIND_SEC_EXT, 5).
+-define(BEHIND_SEC_LOCAL, 10).
 
 
 
@@ -53,22 +54,34 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 
 
-now_microsec_behind(StartClock,{MegaSecs, Secs, MicroSecs}) ->
-    NowMicroBehind = vectorclock:now_microsec({MegaSecs, Secs, MicroSecs}) - (1000000 * ?BEHIND_SEC),
-    DcId = dc_utilities:get_my_dc_id(),
-    case dict:find(DcId,StartClock) of
-	{ok, Value} ->
-	    case Value > NowMicroBehind of
-		true ->
-		    Value;
-		false ->
-		    NowMicroBehind
-	    end;
+now_microsec_behind(ClientClock,SafeClock,{MegaSecs, Secs, MicroSecs}) ->
+    NowMicroBehind = vectorclock:now_microsec({MegaSecs, Secs, MicroSecs}) - (1000000 * ?BEHIND_SEC_LOCAL),
+    LocalDc = dc_utilities:get_my_dc_id(),
+    NewDict = dict:fold(fun(DcId, Clock, NewDict) ->
+				NewClock = case DcId of
+					       LocalDc ->
+						   NowMicroBehind;
+					       _ ->
+						   Clock - (1000000 * ?BEHIND_SEC_EXT)
+					   end,
+				case dict:find(DcId, ClientClock) of
+				    {ok, Time} ->
+					case Time > NewClock of
+					    true ->
+						dict:store(DcId, Time, NewDict);
+					    false ->
+						dict:store(DcId, NewClock, NewDict)
+					end;
+				    error ->
+					dict:store(DcId, NewClock, NewDict)
+				end
+			end, dict:new(), SafeClock),
+    case dict:find(LocalDc,NewDict) of
+	{ok, _T} ->
+	    NewDict;
 	error ->
-	    NowMicroBehind
+	    dict:store(LocalDc,NowMicroBehind,NewDict)
     end.
-	 
-
 
 -spec get_safe_time_dc(DcId :: term())
 			     -> {ok, non_neg_integer()} | {error, term()}.

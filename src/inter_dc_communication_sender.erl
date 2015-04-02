@@ -69,6 +69,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 				     {ok, _} ->
 					 receive
 					     {done, normal, _Reply} ->
+						 lager:info("sending transaction: ~p", [Message]),
 						 %% Update the sent clock for partial repl alg
 						 %% This DC should have recieved updates up to safe time
 						 %% Fix TODO: This should use the unique DcId

@@ -142,7 +142,6 @@ execute_op({Op_type, Args}, Sender,
             {Key, Type, Param}=Args,
 	    Preflist = log_utilities:get_preflist_from_key(Key),
 	    IndexNode = hd(Preflist),
-	    %% TODO, this should also check the materializer to see if a valid SS is available
 	    case replication_check:is_replicated_here(Key) or
 		lists:keymember(Key,1,ExternalReads) of
 		true ->
@@ -344,14 +343,7 @@ get_snapshot_time(ClientClock, localTransaction) ->
     vectorclock:wait_for_local_clock(ClientClock),
     case vectorclock:update_safe_vector_local(ClientClock) of
 	{ok, VecSnapshotTime} ->
-	    DcId = dc_utilities:get_my_dc_id(),
-	    %% ToDo!! Fix! This is probably not the right value to store here
-	    %% This is your local DC dependencies and not your commit time
-	    %% So should be an older value (that is still consistent)
-	    %% Otw you will cause long waiting when doing external reads
-	    %% because they will have to wait until this time is reached
-	    NowBehind = vectorclock:now_microsec_behind(ClientClock,erlang:now()),
-	    Clock = dict:store(DcId, NowBehind, VecSnapshotTime),
+	    Clock = vectorclock:now_microsec_behind(ClientClock, VecSnapshotTime, erlang:now()),
 	    {ok, Clock};
 	{error, Reason} ->
 	    lager:error("Error getting snapshot time ~p", [Reason]),
