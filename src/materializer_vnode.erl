@@ -328,11 +328,55 @@ filter_ops(_, _Acc) ->
 %%             CommitTime = local commit time of this Snapshot at DC
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
--spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
+-spec belongs_to_snapshot(vectorclock:vectorclock(),
                           SnapshotTime::vectorclock:vectorclock()) -> boolean().
-belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
-	{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
-	CommitTime =< Ts.
+%% belongs_to_snapshot({_Dc, CommitTime}, SnapshotTime) ->
+%%     dict:fold(fun(_TransDcId, TransTime, Acc) ->
+%% 		       case CommitTime =< TransTime of
+%% 			   true ->
+%% 			       Acc;
+%% 			   false ->
+%% 			       false
+%% 		       end
+%% 	       end, true, SnapshotTime).
+belongs_to_snapshot(SsToCheck, BelongsTo) ->
+    dict:fold(fun(OpDcId, OpTime, Acc) ->
+		      case dict:find(OpDcId,SsToCheck) of
+			  {ok, CheckTime} ->			   
+			      case CheckTime =< OpTime of
+				  true ->
+				      Acc;
+				  false ->
+				      false
+			      end;
+			  error ->
+			      lager:error("Should have all dcs in the SS ~p", [SsToCheck]),
+			      false
+		      end
+	      end, true, BelongsTo).
+
+
+%% {ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
+%% CommitTime =< Ts.
+
+%% Should be called doesn't belong in SS
+%% returns true if op is not in SS
+%% returns false otw
+belongs_to_snapshot_op(CheckSs, OpSs) ->
+    dict:fold(fun(OpDcId, OpTime, Acc) ->
+		      case dict:find(OpDcId,CheckSs) of
+			{ok, CheckTime} ->			   
+			      case CheckTime =< OpTime of
+				  true ->
+				      Acc;
+				  false ->
+				      false
+			      end;
+			  error ->
+			      lager:error("Should have all dcs in the SS ~p", [CheckSs]),
+			      false
+		      end
+	      end, true, OpSs).
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
@@ -341,10 +385,12 @@ belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
         true ->
+	    %% snapshots are no longer totally ordered
             PrunedSnapshots=orddict:from_list(lists:sublist(orddict:to_list(SnapshotDict), 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN)),
             FirstOp=lists:nth(1, PrunedSnapshots),
 	    lager:info("pruning ss!!!!\n\n\n"),
-	    lager:info("the ss: ~p\n\n\n", [FirstOp]),
+	    lager:info("the first ss: ~p\n\n\n", [FirstOp]),
+	    lager:info("the last ss: ~p\n\n\n", [lists:last(PrunedSnapshots)]),
             {CommitTime, _S} = FirstOp,
 	    lager:info("orig ops ~p\n\n\n", [OpsDict]),
             PrunedOps=prune_ops(OpsDict, CommitTime),
@@ -356,10 +402,15 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().
+-spec prune_ops(orddict:orddict(), vectorclock:vectorclock())-> orddict:orddict().
 prune_ops(OpsDict, Threshold)->
     orddict:filter(fun(_Key, Value) ->
-                           (belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
+			   Op=(lists:last(Value)),
+			   OpCommitTime=Op#clocksi_payload.commit_time,
+			   {OpCom,OpComTs}=OpCommitTime,
+			   OpSSCommit = dict:store(OpCom, OpComTs, Op#clocksi_payload.snapshot_time),
+                           (belongs_to_snapshot_op(Threshold,OpSSCommit))
+		   end, OpsDict).
 
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
@@ -428,10 +479,10 @@ belongs_to_snapshot_test()->
 	CommitTime4= 10,
 
 	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-	?assertEqual(true, belongs_to_snapshot({1, CommitTime1}, SnapshotVC)),
-	?assertEqual(true, belongs_to_snapshot({2, CommitTime2}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot({1, CommitTime3}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot({2, CommitTime4}, SnapshotVC)).
+	?assertEqual(true, belongs_to_snapshot([{1, CommitTime1}, {2,0}], SnapshotVC)),
+	?assertEqual(true, belongs_to_snapshot([{2, CommitTime2}, {1,0}], SnapshotVC)),
+	?assertEqual(false, belongs_to_snapshot([{1, CommitTime3}, {2,0}], SnapshotVC)),
+	?assertEqual(false, belongs_to_snapshot([{2, CommitTime4}, {1,0}], SnapshotVC)).
 
 
 seq_write_test() ->
@@ -489,12 +540,12 @@ multipledc_write_test() ->
     DownstreamOp1 = #clocksi_payload{key = Key,
                                      type = Type,
                                      op_param = {merge, Op1},
-                                     snapshot_time = vectorclock:from_list([{DC1,10}]),
+                                     snapshot_time = vectorclock:from_list([{DC2,0}, {DC1,10}]),
                                      commit_time = {DC1, 15},
                                      txid = 1
                                     },
     op_insert_gc(Key,DownstreamOp1, true,OpsCache, SnapshotCache),
-    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}]), ignore, true, OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16},{DC2,0}]), ignore, true, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
 
     %% Insert second increment in other DC
@@ -510,7 +561,7 @@ multipledc_write_test() ->
     ?assertEqual(2, Type:value(Res2)),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}, {DC2,16}]), ignore, true, OpsCache, SnapshotCache),
+    {ok, ReadOld} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,15}, {DC2,15}]), ignore, true, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadOld)).
 
 concurrent_write_test() ->
