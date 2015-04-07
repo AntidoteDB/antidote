@@ -84,7 +84,7 @@ handle_command({read, Key, Type, SnapshotTime, TxId}, Sender,
                State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
     _=internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache),
     {noreply, State};
-
+   
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
     true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),

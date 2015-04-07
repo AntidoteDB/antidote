@@ -81,7 +81,12 @@ collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
                                                  max_evt=MaxEVT0,
                                                  total=Total}) ->
     lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
-    MaxEVT=max(MaxEVT0, EVT),
+    MaxEVT = case EVT of
+                empty ->
+                    MaxEVT0;
+                _ ->
+                    max(MaxEVT0, EVT)
+             end,
     Received = Received0 ++ [{Key, Value, EVT, LVT}],
     case length(Received) of
         Total ->
@@ -112,8 +117,8 @@ second_round(timeout, SD0=#state{eff_time=EffT,
                                  total=Total,
                                  received=Received}) ->
     FinalResults = lists:foldl(fun(Elem, Results) ->
-                                {Key, Value, _EVT, LVT} = Elem,
-                                case LVT < EffT of
+                                {Key, Value, EVT, LVT} = Elem,
+                                case (LVT < EffT) orelse (EVT == empty) of
                                     true ->
                                         Preflist = log_utilities:get_preflist_from_key(Key),
                                         IndexNode = hd(Preflist),

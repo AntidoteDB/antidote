@@ -165,9 +165,10 @@ finish_update_dc(Dc, DcQ, Cts,
     {ok, State#recvr_state{lastCommitted = LastCommNew, recQ = RecQNew}}.
 
 %% Checks depV against the committed timestamps
-check_dep(DepV, Localclock) ->
-    Result = vectorclock:ge(Localclock, DepV),
-    Result.
+check_dep(_DepV, _Localclock) ->
+    %Result = vectorclock:ge(Localclock, DepV),
+    %Result.
+    true.
 
 %%Set a new value to the key.
 set(Key, Value, Orddict) ->

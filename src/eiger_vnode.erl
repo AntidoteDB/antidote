@@ -114,7 +114,7 @@ handle_command({read_key, Key}, _Sender,
                #state{clock=Clock, min_pendings=MinPendings}=State) ->
     case dict:find(Key, MinPendings) of
         {ok, _Min} ->
-            {reply, {empty, empty, empty, Clock}, State};
+            {reply, {Key, empty, empty, Clock}, State};
         error ->
             do_read(Key, latest, State)
     end;
@@ -150,7 +150,7 @@ handle_command({coordinate_tx, Updates, Debug}, Sender, #state{partition=Partiti
 handle_command({prepare, UId, CoordClock, Keys}, _Sender, #state{clock=Clock0, pending=Pending0, min_pendings=MinPendings0}=State) ->
     Clock = max(Clock0, CoordClock) + 1,
     {Pending, MinPendings} = lists:foldl(fun(Key, {P0, MP0}) ->
-                                            P = dict:append(Key, {UId, Clock}, P0),
+                                            P = dict:append(Key, {Clock, UId}, P0),
                                             MP = case dict:find(Key, MP0) of
                                                     {ok, _Min} ->
                                                         MP0;
@@ -159,13 +159,14 @@ handle_command({prepare, UId, CoordClock, Keys}, _Sender, #state{clock=Clock0, p
                                                  end,
                                             {P, MP}    
                                         end, {Pending0, MinPendings0}, Keys),
+    lager:info("Preparing tx at ~p for keys: ~p", [Clock, Keys]),
     {reply, {prepared, Clock}, State#state{clock=Clock, pending=Pending, min_pendings=MinPendings}};
 
 handle_command({commit, UId, Updates, CommitClock}, _Sender, State0=#state{clock=Clock0}) ->
     Clock = max(Clock0, CommitClock),
     case update_keys(Updates, UId, CommitClock, State0) of
         {ok, State} ->
-            {reply, {committed, Clock}, State#state{clock=Clock}};
+            {reply, {committed, CommitClock}, State#state{clock=Clock}};
         {error, Reason} ->
             {reply, {error, Reason}, State0#state{clock=Clock}}
     end;
@@ -255,7 +256,7 @@ update_keys([Update|Rest], UId, CommitTime, State0=#state{pending=Pending0,
                                         [] ->
                                             BufferedReads = dict:erase(Key, BufferedReads0);
                                         Orddict ->
-                                            BufferedReads = dict:erase(Key, Orddict, BufferedReads0)
+                                            BufferedReads = dict:store(Key, Orddict, BufferedReads0)
                                     end,
                                     State=State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
                                 error ->
@@ -273,7 +274,7 @@ delete_pending_entry([], _UId, List) ->
 
 delete_pending_entry([Element|Rest], UId, List) ->
     case Element of
-        {UId, PrepareTime} ->
+        {PrepareTime, UId} ->
             {List ++ Rest, PrepareTime};
         _ ->
             delete_pending_entry(Rest, UId, List ++ [Element])

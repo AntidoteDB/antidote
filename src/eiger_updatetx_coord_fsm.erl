@@ -83,35 +83,34 @@ scatter_updates(timeout, SD0=#state{vnode=Vnode, updates=Updates}) ->
                     eiger_vnode:prepare(IndexNode, UId, Clock, Keys)
                   end, dict:to_list(ScatteredUpdates)),
     Servers = length(dict:to_list(ScatteredUpdates)),
-    {next_state, gather_prepare, SD0#state{scattered_updates=ScatteredUpdates, servers=Servers, ack=0, uid=UId}}.
+    {next_state, gather_prepare, SD0#state{scattered_updates=ScatteredUpdates, servers=Servers, ack=0, uid=UId, commit_time=0}}.
 
-gather_prepare({prepared, Clock}, SD0=#state{vnode=Vnode, servers=Servers, ack=Ack0, from=From, debug=Debug}) ->
+gather_prepare({prepared, Clock}, SD0=#state{vnode=Vnode, servers=Servers, ack=Ack0, from=From, debug=Debug, commit_time=CommitTime0}) ->
     ok = eiger_vnode:update_clock(Vnode, Clock),
+    CommitTime = max(CommitTime0, Clock),
     Ack = Ack0 + 1,
     case Ack of
         Servers ->
             case Debug of
                 debug ->
                     riak_core_vnode:reply(From, {ok, self()}),
-                    {next_state, wait_for_commit, SD0#state{ack=0}};
+                    {next_state, wait_for_commit, SD0#state{ack=0, commit_time=CommitTime}};
                 undefined ->
-                    {next_state, send_commit, SD0#state{ack=0},0}
+                    {next_state, send_commit, SD0#state{ack=0, commit_time=CommitTime},0}
             end;
         _ ->
-            {next_state, gather_prepare, SD0#state{ack=Ack}}
+            {next_state, gather_prepare, SD0#state{ack=Ack, commit_time=CommitTime}}
     end.
 
 wait_for_commit(commit, Sender, SD0) ->
     {next_state, send_commit, SD0#state{from=Sender}, 0}.
 
-send_commit(timeout, SD0=#state{vnode=Vnode, scattered_updates=ScatteredUpdates, uid=UId}) ->
-    {ok, CommitTime} = eiger_vnode:get_clock(Vnode), 
-    ok = eiger_vnode:update_clock(Vnode, CommitTime+1),
+send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, uid=UId, commit_time=CommitTime}) ->
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, UId, ListUpdates, CommitTime+1)
+                    eiger_vnode:commit(IndexNode, UId, ListUpdates, CommitTime)
                   end, dict:to_list(ScatteredUpdates)),
-    {next_state, gather_commit, SD0#state{commit_time=CommitTime+1}}.
+    {next_state, gather_commit, SD0}.
 
 gather_commit({committed, Clock}, SD0=#state{vnode=Vnode, scattered_updates=_ScatteredUpdates, servers=Servers, ack=Ack0, from=From, commit_time=CommitTime, debug=Debug}) ->
     ok = eiger_vnode:update_clock(Vnode, Clock),

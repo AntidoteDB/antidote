@@ -45,20 +45,31 @@
 
 
 eiger_readtx(Keys) ->
-    {ok, _} = eiger_readtx_coord_sup:start_fsm([self(), Keys]),
-    receive
-        EndOfTx ->
-            EndOfTx
+    case Keys of
+        [] ->
+            {ok, empty};
+        _List ->
+            {ok, _} = eiger_readtx_coord_sup:start_fsm([self(), Keys]),
+            receive
+                EndOfTx ->
+                    EndOfTx
+            end
     end.
 
 eiger_updatetx(Updates, _Dependencies) ->
     eiger_updatetx(Updates, _Dependencies, undefined).
 
 eiger_updatetx(Updates, _Dependencies, Debug) ->
-    [{Key, _Value}|_Rest] = Updates,
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
-    eiger_vnode:coordinate_tx(IndexNode, Updates, Debug).
+    case Updates of
+        [{Key, _Value}|_Rest] ->
+            Preflist = log_utilities:get_preflist_from_key(Key),
+            IndexNode = hd(Preflist),
+            eiger_vnode:coordinate_tx(IndexNode, Updates, Debug);
+        [] ->
+            {ok, empty};
+        _ ->
+            {error, bad_format}
+    end.
 
 eiger_committx(Coordinator) ->
     gen_fsm:sync_send_event(Coordinator, commit).
