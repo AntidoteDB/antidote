@@ -253,7 +253,7 @@ internal_read_dual_ss(Sender, Key, Type, MinSnapshotTime, MaxSnapshotTime, TxId,
 			    {ok, LatestSnapshot};
 			[H|T] ->
 			    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, MaxSnapshotTime, [H|T], TxId) of
-				{ok, Snapshot, CommitTime, Remainder} ->
+				{ok, Snapshot, CommitTime, SnapshotSave, Remainder} ->
 				    %% the following checks for the case there was no snapshots and there were operations, but none was applicable
 				    %% for the given snapshot_time
 				    %% But is the snapshot not safe?
@@ -270,7 +270,7 @@ internal_read_dual_ss(Sender, Key, Type, MinSnapshotTime, MaxSnapshotTime, TxId,
 						false ->
 						    1=1
 					    end,
-					    SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
+					    SnapshotDict1=orddict:store(CommitTime,SnapshotSave, SnapshotDict),
 					    snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
 					    {ok, Snapshot}
 				    end;
@@ -288,12 +288,21 @@ internal_read_dual_ss(Sender, Key, Type, MinSnapshotTime, MaxSnapshotTime, TxId,
 -spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
                          -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
+    {FirstDc,FirstTime} = hd(dict:to_list(SnapshotTime)),
+    SSTime = dict:fold(fun(DcId,CT,{AccDc,AccTime}) ->
+			       case CT < AccTime of
+				   true ->
+				       {DcId,CT};
+				   false ->
+				       {AccDc,AccTime}
+			       end
+		       end, {FirstDc,FirstTime}, SnapshotTime),
     case SnapshotDict of
         []->
             {ok, no_snapshot};
         [H|T]->
             case orddict:filter(fun(Key, _Value) ->
-                                        belongs_to_snapshot(Key, SnapshotTime) end, [H|T]) of
+                                        belongs_to_snapshot(Key, SSTime) end, [H|T]) of
                 []->
                     {ok, no_snapshot};
                 [H1|T1]->
@@ -328,9 +337,9 @@ filter_ops(_, _Acc) ->
 %%             CommitTime = local commit time of this Snapshot at DC
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
--spec belongs_to_snapshot(vectorclock:vectorclock(),
-                          SnapshotTime::vectorclock:vectorclock()) -> boolean().
-%% belongs_to_snapshot({_Dc, CommitTime}, SnapshotTime) ->
+-spec belongs_to_snapshot({dcid(),non_neg_integer()},
+                          {dcid(),non_neg_integer()}) -> boolean().
+belongs_to_snapshot({_Dc, CommitTime}, {_OpDc,OpTime}) ->
 %%     dict:fold(fun(_TransDcId, TransTime, Acc) ->
 %% 		       case CommitTime =< TransTime of
 %% 			   true ->
@@ -339,44 +348,42 @@ filter_ops(_, _Acc) ->
 %% 			       false
 %% 		       end
 %% 	       end, true, SnapshotTime).
-belongs_to_snapshot(SsToCheck, BelongsTo) ->
-    dict:fold(fun(OpDcId, OpTime, Acc) ->
-		      case dict:find(OpDcId,SsToCheck) of
-			  {ok, CheckTime} ->			   
-			      case CheckTime =< OpTime of
-				  true ->
-				      Acc;
-				  false ->
-				      false
-			      end;
-			  error ->
-			      lager:error("Should have all dcs in the SS ~p", [SsToCheck]),
-			      false
-		      end
-	      end, true, BelongsTo).
-
-
-%% {ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
-%% CommitTime =< Ts.
+%%belongs_to_snapshot(SsToCheck, BelongsTo) ->
+    %% dict:fold(fun(OpDcId, OpTime, Acc) ->
+    %% 		      case dict:find(OpDcId,SsToCheck) of
+    %% 			  {ok, CheckTime} ->			   
+    %% 			      case CheckTime =< OpTime of
+    %% 				  true ->
+    %% 				      Acc;
+    %% 				  false ->
+    %% 				      false
+    %% 			      end;
+    %% 			  error ->
+    %% 			      lager:error("Should have all dcs in the SS ~p", [SsToCheck]),
+    %% 			      false
+    %% 		      end
+    %% 	      end, true, BelongsTo).
+    %%{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
+    CommitTime < OpTime.
 
 %% Should be called doesn't belong in SS
 %% returns true if op is not in SS
 %% returns false otw
-belongs_to_snapshot_op(CheckSs, OpSs) ->
-    dict:fold(fun(OpDcId, OpTime, Acc) ->
-		      case dict:find(OpDcId,CheckSs) of
-			{ok, CheckTime} ->			   
-			      case CheckTime =< OpTime of
-				  true ->
-				      Acc;
-				  false ->
-				      false
-			      end;
-			  error ->
-			      lager:error("Should have all dcs in the SS ~p", [CheckSs]),
-			      false
-		      end
-	      end, true, OpSs).
+%% belongs_to_snapshot_op(CheckSs, OpSs) ->
+%%     dict:fold(fun(OpDcId, OpTime, Acc) ->
+%% 		      case dict:find(OpDcId,CheckSs) of
+%% 			{ok, CheckTime} ->			   
+%% 			      case CheckTime =< OpTime of
+%% 				  true ->
+%% 				      Acc;
+%% 				  false ->
+%% 				      false
+%% 			      end;
+%% 			  error ->
+%% 			      lager:error("Should have all dcs in the SS ~p", [CheckSs]),
+%% 			      false
+%% 		      end
+%% 	      end, true, OpSs).
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
@@ -402,14 +409,15 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), vectorclock:vectorclock())-> orddict:orddict().
+-spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().
 prune_ops(OpsDict, Threshold)->
     orddict:filter(fun(_Key, Value) ->
 			   Op=(lists:last(Value)),
 			   OpCommitTime=Op#clocksi_payload.commit_time,
-			   {OpCom,OpComTs}=OpCommitTime,
-			   OpSSCommit = dict:store(OpCom, OpComTs, Op#clocksi_payload.snapshot_time),
-                           (belongs_to_snapshot_op(Threshold,OpSSCommit))
+			   %{OpCom,OpComTs}=OpCommitTime,
+			   %OpSSCommit = dict:store(OpCom, OpComTs, Op#clocksi_payload.snapshot_time),
+			   lager:info("pruning, threshold ~p, op com time: ~p", [Threshold, OpCommitTime]),
+                           (belongs_to_snapshot(Threshold,OpCommitTime))
 		   end, OpsDict).
 
 
@@ -429,8 +437,8 @@ op_insert_gc(Key,DownstreamOp, IsReplicated, OpsCache, SnapshotCache)->
     case (orddict:size(OpsDict))>=?OPS_THRESHOLD of
         true ->
 	    lager:info("Doing a clean!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n!!!!!!!"),
-            Type=DownstreamOp#clocksi_payload.type,
-            SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
+            %Type=DownstreamOp#clocksi_payload.type,
+            %SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             {_, _} = internal_read(ignore, Key, Type, SnapshotTime, ignore, IsReplicated, OpsCache, SnapshotCache),
@@ -440,14 +448,14 @@ op_insert_gc(Key,DownstreamOp, IsReplicated, OpsCache, SnapshotCache)->
 			      orddict:new();
 			  [{_, ADict}]->
 			      ADict
-		      end,
+		       end,
             OpsDict2=orddict:append(DownstreamOp#clocksi_payload.commit_time,
 				    DownstreamOp, OpsDict1),
             ets:insert(OpsCache, {Key, OpsDict2});
         false ->
             OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time,
 				    DownstreamOp, OpsDict),
-	    lager:info("appending op size: ~p", [orddict:size(OpsDict1)]),
+	    lager:info("appending op size: ~p, the op ~p\n\n", [orddict:size(OpsDict1),DownstreamOp]),
             ets:insert(OpsCache, {Key, OpsDict1})
     end.
 
@@ -478,11 +486,16 @@ belongs_to_snapshot_test()->
 	CommitTime3= 10,
 	CommitTime4= 10,
 
-	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-	?assertEqual(true, belongs_to_snapshot([{1, CommitTime1}, {2,0}], SnapshotVC)),
-	?assertEqual(true, belongs_to_snapshot([{2, CommitTime2}, {1,0}], SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot([{1, CommitTime3}, {2,0}], SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot([{2, CommitTime4}, {1,0}], SnapshotVC)).
+	%% SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
+	%% ?assertEqual(true, belongs_to_snapshot({1, CommitTime1}, SnapshotVC)),
+	%% ?assertEqual(true, belongs_to_snapshot({2, CommitTime2}, SnapshotVC)),
+	%% ?assertEqual(false, belongs_to_snapshot({1, CommitTime3}, SnapshotVC)),
+	%% ?assertEqual(false, belongs_to_snapshot({2, CommitTime4}, SnapshotVC)).
+	?assertEqual(true, belongs_to_snapshot({1, CommitTime1}, {1, SnapshotClockDC1})),
+	?assertEqual(true, belongs_to_snapshot({2, CommitTime2}, {2, SnapshotClockDC2})),
+	?assertEqual(false, belongs_to_snapshot({1, CommitTime3}, {1, SnapshotClockDC1})),
+	?assertEqual(false, belongs_to_snapshot({2, CommitTime4}, {2, SnapshotClockDC2})).
+
 
 
 seq_write_test() ->
