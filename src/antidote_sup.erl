@@ -49,14 +49,14 @@ start_rep({DcIp,Ports}) ->
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
                     {inter_dc_communication_sup, start_link, [self(),Ports]},
 				     permanent, 5000, supervisor, [inter_dc_communication_sup]}),
-    lists:foldl(fun(_P,_Acc) ->
-    			receive
-    			    ready ->
-    				ok
-    			end
-    		end, 0, Ports),
+    ListPorts = lists:foldl(fun(Port,Acc) ->
+				    receive
+					ready ->
+					    Acc ++ [{DcIp,Port}],
+				    end
+			    end, [], Ports),
     lager:info("Done starting sup inter dc recvr..."),
-    {ok, {DcIp,hd(Ports)}}.
+    {ok, ListPorts}.
 
 
 start_cross_dc_read_communication_recvr({DcIp,Port}) ->
@@ -91,9 +91,9 @@ start_senders() ->
 
 start_recvrs(AddrType, RecvrPorts, ReadPort) ->
     Ip = my_ip(AddrType),
-    start_rep({Ip, RecvrPorts}),
+    RepPorts = start_rep({Ip, RecvrPorts}),
     start_cross_dc_read_communication_recvr({Ip, ReadPort}),
-    {ok,{Ip,hd(RecvrPorts)},{Ip,ReadPort}}.
+    {ok,RepPorts,{Ip,ReadPort}}.
     
 
 my_ip(internet) ->
