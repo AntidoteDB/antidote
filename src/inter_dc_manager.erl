@@ -25,11 +25,14 @@
 -export([get_my_dc/0,
          start_receiver/1,
          get_dcs/0,
+	 get_dcs_wids/0,
          add_dc/1,
          add_list_dcs/1,
 	 get_my_read_dc/0,
+	 get_my_read_dc_wid/0,
          start_read_receiver/1,
          get_read_dcs/0,
+	 get_read_dcs_wids/0,
          add_read_dc/1,
          add_list_read_dcs/1,
 	 set_replication_keys/1
@@ -45,58 +48,80 @@
 %% ===================================================================
 
 
-get_my_dc() ->
+get_my_dc_wid() ->
     riak_core_metadata:get(?META_PREFIX_MY_DC,mydc).
 
-start_receiver({DcIp, Port}) ->
-    riak_core_metadata:put(?META_PREFIX_MY_DC,mydc,{DcIp,Port}),
+get_my_dc() ->
+    {_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_DC,mydc),
+    Dc.
+
+start_receiver({Id,{DcIp, Port}}) ->
+    riak_core_metadata:put(?META_PREFIX_MY_DC,mydc,{Id,{DcIp,Port}}),
     ok.
 
-
 %% Returns all DCs known to this DC.
--spec get_dcs() ->{ok, [dc_address()]}.
+-spec get_dcs() ->[dc_address()].
 get_dcs() ->
     DcList = riak_core_metadata:to_list(?META_PREFIX_DC),
-    lists:foldl(fun({DC,[0|_T]},NewAcc) ->
+    lists:foldl(fun({{_Id,DC},[0|_T]},NewAcc) ->
 			lists:append([DC],NewAcc) end,
 		[], DcList).
+
+get_dcs_wids() ->
+    DcList = riak_core_metadata:to_list(?META_PREFIX_DC),
+    lists:foldl(fun({{Id,DC},[0|_T]},NewAcc) ->
+			lists:append([{Id,DC}],NewAcc) end,
+		[], DcList).
+
 
 %% Add info about a new DC. This info could be
 %% used by other modules to communicate to other DC
 -spec add_dc(dc_address()) -> ok.
-add_dc(NewDC) ->
-    riak_core_metadata:put(?META_PREFIX_DC,NewDC,0),
+add_dc({Id,{Ip,Port}}) ->
+    riak_core_metadata:put(?META_PREFIX_DC,{Id,{Ip,Port}},0),
     ok.
 
 %% Add a list of DCs to this DC
 -spec add_list_dcs([dc_address()]) -> ok.
 add_list_dcs(DCs) ->
-    lists:foldl(fun(DC,_Acc) ->
-			riak_core_metadata:put(?META_PREFIX_DC,DC,0)
+    lists:foldl(fun({Id,{Ip,Port}},_Acc) ->
+			riak_core_metadata:put(?META_PREFIX_DC,{Id,{Ip,Port}},0)
 		end, 0, DCs),
     ok.
 
 
 get_my_read_dc() ->
+    {_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_READ_DC,mydc),
+    Dc.
+    
+get_my_read_dc_wid() ->
     riak_core_metadata:get(?META_PREFIX_MY_READ_DC,mydc).
 
-start_read_receiver({DcIp,Port}) ->
-    riak_core_metadata:put(?META_PREFIX_MY_READ_DC,mydc,{DcIp,Port}),
+
+start_read_receiver({Id,{DcIp,Port}}) ->
+    riak_core_metadata:put(?META_PREFIX_MY_READ_DC,mydc,{Id,{DcIp,Port}}),
     ok.
 
 get_read_dcs() ->
     DcList = riak_core_metadata:to_list(?META_PREFIX_READ_DC),
-    lists:foldl(fun({DC,[0|_T]},NewAcc) ->
+    lists:foldl(fun({{Id,DC},[0|_T]},NewAcc) ->
 			lists:append([DC],NewAcc) end,
 		[], DcList).
 
-add_read_dc(NewDC) ->
-    riak_core_metadata:put(?META_PREFIX_READ_DC,NewDC,0),
+get_read_dcs_wids() ->
+    DcList = riak_core_metadata:to_list(?META_PREFIX_READ_DC),
+    lists:foldl(fun({{Id,DC},[0|_T]},NewAcc) ->
+			lists:append([{Id,DC}],NewAcc) end,
+		[], DcList).
+
+
+add_read_dc({Id,{Ip,Port}}) ->
+    riak_core_metadata:put(?META_PREFIX_READ_DC,{Id,{Ip,Port}},0),
     ok.
 
 add_list_read_dcs(DCs) ->
-    lists:foldl(fun(DC,_Acc) ->
-			riak_core_metadata:put(?META_PREFIX_READ_DC,DC,0)
+    lists:foldl(fun({Id,{Ip,Port}},_Acc) ->
+			riak_core_metadata:put(?META_PREFIX_READ_DC,{Id,{Ip,Port}},0)
 		end, 0, DCs),
     ok.
 
