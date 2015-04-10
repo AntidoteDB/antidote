@@ -5,35 +5,39 @@ set -e
 
 : ${RTEE_DEST_DIR:="$HOME/rt/antidote"}
 
-echo "Making $(pwd) the current release:"
-cwd=$(pwd)
+cd "$( dirname "${BASH_SOURCE[0]}" )/../../"
+ANTIDOTE_DIR=$(pwd)
+
+echo "Making $ANTIDOTE_DIR the current release:"
 echo -n " - Determining version: "
 VERSION="current"
 
 # Uncomment this code to enable tag trackig and versioning.
 #
-# if [ -f $cwd/dependency_manifest.git ]; then
-#     VERSION=`cat $cwd/dependency_manifest.git | awk '/^-/ { print $NF }'`
+# if [ -f dependency_manifest.git ]; then
+#     VERSION=`cat dependency_manifest.git | awk '/^-/ { print $NF }'`
 # else
 #     VERSION="$(git describe --tags)-$(git branch | awk '/\*/ {print $2}')"
 # fi
 
 echo $VERSION
-mkdir $RTEE_DEST_DIR
-cd $RTEE_DEST_DIR
 
+echo " - Creating $HOME/.riak_test.config"
+cp -i riak_test/bin/.riak_test.config $HOME && \
+sed -i -e "s#TESTS_PATH#$ANTIDOTE_DIR\/riak_test#g" -e "s#RTDEV_PATH#$RTEE_DEST_DIR#g" $HOME/.riak_test.config
+
+mkdir -p $RTEE_DEST_DIR
+cd $RTEE_DEST_DIR
 echo " - Configure $RTEE_DEST_DIR"
 git init . > /dev/null 2>&1
 
 echo " - Creating $RTEE_DEST_DIR/current"
-mkdir $RTEE_DEST_DIR/current
-cd $cwd
+mkdir current
 
 echo " - Copying devrel to $RTEE_DEST_DIR/current"
-cp -p -P -R dev $RTEE_DEST_DIR/current
+cp -p -P -R $ANTIDOTE_DIR/dev current
 echo " - Writing $RTEE_DEST_DIR/current/VERSION"
-echo -n $VERSION > $RTEE_DEST_DIR/current/VERSION
-cd $RTEE_DEST_DIR
+echo -n $VERSION > current/VERSION
 
 echo " - Reinitializing git state"
 git add .

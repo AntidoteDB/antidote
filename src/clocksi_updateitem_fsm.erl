@@ -58,7 +58,7 @@ init([Coordinator, VecSnapshotTime, Partition]) ->
 check_clock(timeout, SD0=#state{vclock=Vclock}) ->
     DcId = dc_utilities:get_my_dc_id(),
     {ok, T_TS} = vectorclock:get_clock_of_dc(DcId, Vclock),
-    Time = now_milisec(erlang:now()),
+    Time = clocksi_vnode:now_microsec(erlang:now()),
     Newclock = dict:erase(DcId, Vclock),
     case T_TS > Time of
         true ->
@@ -92,5 +92,3 @@ terminate(_Reason, _SN, _SD) ->
 %%% Internal Functions
 %%%===================================================================
 
-now_milisec({MegaSecs, Secs, MicroSecs}) ->
-    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

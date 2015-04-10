@@ -120,7 +120,8 @@ execute_batch_ops(timeout, SD=#state{from = From,
                 end,
     ReadSet = lists:foldl(ExecuteOp, [], Operations),
     case ReadSet of 
-	{error, _Reason} ->
+	{error, Reason} ->
+		From ! {error, Reason},
 		{stop, normal, SD};
 	_ ->
 		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of

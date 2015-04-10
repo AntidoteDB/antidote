@@ -42,7 +42,9 @@ Using Antidote
 ### Building Antidote ###
 #### Single Node Cluster 
 Go to the Antidote directory (the one that you've just cloned using git) and:
+
 	make rel
+	
 Rebar will now pull all the dependencies it needs from github, and
 build the application, and make an erlang "release" of a single node.
 If all went well (if it didn't, send an email to the SyncFree
@@ -229,12 +231,6 @@ Running Tests
 	* git checkout features/csm/floppystore
 2. cd RIAK_TEST and run commands
 	* make
-5. Download and put `.riak_test.config` in home directory from following link
-	https://gist.github.com/cmeiklejohn/d96d7167e1a8ed4b128d
-6. Create directory `rt` in home
-7. Modify  `.riak_test.config` 
-	* Change rtdev\_path (line number 106) to point to your HOME/rt/antidote
-	* Add line `{test_paths, ["PATH TO ANTIDOTE/riak_test/ebin"]}`
 
 ### Building antidote for testing ###
 
@@ -247,10 +243,10 @@ Running Tests
 ### Running test ###
 
 1. Go to RIAK_TEST directory
-2. ./riak\_test -v -c antidote -v -t "TEST\_TO\_RUN"
+2. ./riak\_test -v -c antidote -t "TEST\_TO\_RUN"
 
 	TEST\_TO\_RUN is any test module in antidote/riak_test/
 
-	eg:- ./riak_test -v -c antidote -v -t antidote
+	eg:- ./riak_test -v -c antidote -t clocksi_test
 
 
