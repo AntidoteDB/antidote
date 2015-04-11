@@ -28,7 +28,7 @@
 	 start_collect_sent/0,
 	 start_safe_time_sender/0,
 	 start_senders/0,
-	 start_recvrs/3]).
+	 start_recvrs/4]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -52,7 +52,7 @@ start_rep({Id,{DcIp,Ports}}) ->
     ListPorts = lists:foldl(fun(Port,Acc) ->
 				    receive
 					ready ->
-					    Acc ++ [{DcIp,Port}],
+					    Acc ++ [{DcIp,Port}]
 				    end
 			    end, [], Ports),
     lager:info("Done starting sup inter dc recvr..."),
@@ -89,10 +89,10 @@ start_senders() ->
     start_safe_time_sender(),
     ok.
 
-start_recvrs(AddrType, RecvrPorts, ReadPort) ->
+start_recvrs(AddrType, Id, RecvrPorts, ReadPort) ->
     Ip = my_ip(AddrType),
-    RepPorts = start_rep({Ip, RecvrPorts}),
-    start_cross_dc_read_communication_recvr({Ip, ReadPort}),
+    RepPorts = start_rep({Id,{Ip, RecvrPorts}}),
+    start_cross_dc_read_communication_recvr({Id,{Ip, ReadPort}}),
     {ok,RepPorts,{Ip,ReadPort}}.
     
 

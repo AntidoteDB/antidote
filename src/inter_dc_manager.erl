@@ -23,6 +23,7 @@
 -include("antidote.hrl").
 
 -export([get_my_dc/0,
+	 get_my_dc_wid/0,
          start_receiver/1,
          get_dcs/0,
 	 get_dcs_wids/0,
@@ -35,7 +36,7 @@
 	 get_read_dcs_wids/0,
          add_read_dc/1,
          add_list_read_dcs/1,
-	 set_replication_keys/1
+	 set_replication_keys/2
 	]).
 
 -define(META_PREFIX_DC, {dcid,port}).
@@ -104,7 +105,7 @@ start_read_receiver({Id,{DcIp,Port}}) ->
 
 get_read_dcs() ->
     DcList = riak_core_metadata:to_list(?META_PREFIX_READ_DC),
-    lists:foldl(fun({{Id,DC},[0|_T]},NewAcc) ->
+    lists:foldl(fun({{_Id,DC},[0|_T]},NewAcc) ->
 			lists:append([DC],NewAcc) end,
 		[], DcList).
 
@@ -125,6 +126,6 @@ add_list_read_dcs(DCs) ->
 		end, 0, DCs),
     ok.
 
-set_replication_keys(KeyDescription) ->
-    replication_check:set_replication(KeyDescription).
+set_replication_keys(KeyDescription,Id) ->
+    replication_check:set_replication(KeyDescription,Id).
 

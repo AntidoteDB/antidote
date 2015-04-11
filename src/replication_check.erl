@@ -3,7 +3,7 @@
 -export([get_dc_replicas_read/2,
 	 get_dc_replicas_update/2,
 	 is_replicated_here/1,
-	 set_replication/1]).
+	 set_replication/2]).
 
 %-define(META_PREFIX_REPLI_UPDATE, {dcidupdate,replication}).
 %-define(META_PREFIX_REPLI_READ, {dcidread,replication}).
@@ -15,9 +15,10 @@
 get_dc_replicas_update(Key,WithSelf) ->
     DcList = case riak_core_metadata:get(?META_PREFIX_REPLI_FUNC,function,[{default,[]}]) of
 		 [] ->
-		     inter_dc_manager:get_dcs(),
+		     inter_dc_manager:get_dcs();
 		 Func ->
-		     DcIds = Func(Key),
+		     Key2 = get_key(Key),
+		     DcIds = Func(Key2),
 		     keep_dcs(DcIds,inter_dc_manager:get_dcs_wids())
 	     end,
     case WithSelf of
@@ -58,12 +59,13 @@ keep_dcs(Ids,DcList) ->
 
 get_dc_replicas_read(Key,WithSelf) ->
  DcList = case riak_core_metadata:get(?META_PREFIX_REPLI_FUNC,function,[{default,[]}]) of
-		 [] ->
-		     inter_dc_manager:get_read_dcs(),
-		 Func ->
-		     DcIds = Func(Key),
-		     keep_dcs(DcIds,inter_dc_manager:get_read_dcs_wids())
-	     end,
+	      [] ->
+		  inter_dc_manager:get_read_dcs();
+	      Func ->
+		  Key2 = get_key(Key),
+		  DcIds = Func(Key2),
+		  keep_dcs(DcIds,inter_dc_manager:get_read_dcs_wids())
+	  end,
     case WithSelf of
 	noSelf ->
 	    lists:delete(inter_dc_manager:get_my_dc(),DcList);
@@ -91,10 +93,13 @@ is_replicated_here(Key) ->
     case riak_core_metadata:get(?META_PREFIX_REPLI_FUNC,function,[{default,[]}]) of
 	[] ->
 	    true;
-	Func ->
-	    DcIds = Func(Key),
+	{Func} ->
+	    Key2 = get_key(Key),
+	    DcIds = Func(Key2),
 	    {MyId,_} = inter_dc_manager:get_my_read_dc_wid(),
-	    lists:keymember(MyId,1,DcIds)
+	    Result = lists:keymember(MyId,1,DcIds),
+	    lager:info("is replicated here ~p, ~p", [Key2,Result]),
+	    Result
     end.
 
 
@@ -111,8 +116,8 @@ is_replicated_here(Key) ->
 
 set_replication(KeyFunction,DcNum) ->
     try
-	riak_core_metadata:put(?META_PREFIX_REPLI_FUNCTION,function,KeyFunction),
-	riak_core_metadata:put(?META_PREFIX_REPLI_UPDATE,number,DcNum)
+	riak_core_metadata:put(?META_PREFIX_REPLI_FUNC,function,{KeyFunction}),
+	riak_core_metadata:put(?META_PREFIX_REPLI_DCNUM,number,DcNum)
     catch
 	_:Reason ->
 	    lager:error("Exception updating prelication meta data ~p", [Reason])
@@ -131,3 +136,11 @@ set_replication(KeyFunction,DcNum) ->
 %% 		end, 0, ListKeyDcsList),
 %%     ok.
 
+get_key(Key) ->
+    case is_binary(Key) of
+	true ->
+	    list_to_integer(binary_to_list(Key));
+	false ->
+	    Key
+    end.
+		

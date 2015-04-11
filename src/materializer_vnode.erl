@@ -233,7 +233,6 @@ internal_read_dual_ss(Sender, Key, Type, MinSnapshotTime, MaxSnapshotTime, TxId,
 	    %% so can remove the store_ss operation
 	    case ets:lookup(OpsCache, Key) of
 		[] ->
-		    lager:info("No ops for SS1 ~p", LatestSnapshot),
 		    case ExistsSnapshot of
 			false ->        						
 			    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, [], ignore}),
@@ -248,7 +247,6 @@ internal_read_dual_ss(Sender, Key, Type, MinSnapshotTime, MaxSnapshotTime, TxId,
 		    %lager:info("Filtered: ~p", [Ops]),
 		    case Ops of
 			[] ->
-			    lager:info("No ops for SS2 ~p", LatestSnapshot),
 			    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, [], ignore}),
 			    {ok, LatestSnapshot};
 			[H|T] ->
@@ -259,11 +257,9 @@ internal_read_dual_ss(Sender, Key, Type, MinSnapshotTime, MaxSnapshotTime, TxId,
 				    %% But is the snapshot not safe?
 				    case (CommitTime==ignore) of 
 					true->
-					    lager:info("the final ss1 ~p, remainder ~p, committime ~p", [Snapshot,Remainder,CommitTime]),
 					    riak_core_vnode:reply(Sender, {ok, Snapshot,Remainder,CommitTime}),
 					    {ok, Snapshot};
 					false->
-					    lager:info("the final ss2 ~p, remainder ~p, committime ~p", [Snapshot,Remainder,CommitTime]),
 					    case (Sender /= ignore) of
 						true ->
 						    riak_core_vnode:reply(Sender, {ok, Snapshot,Remainder,CommitTime});
@@ -395,13 +391,8 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
 	    %% snapshots are no longer totally ordered
             PrunedSnapshots=orddict:from_list(lists:sublist(orddict:to_list(SnapshotDict), 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN)),
             FirstOp=lists:nth(1, PrunedSnapshots),
-	    lager:info("pruning ss!!!!\n\n\n"),
-	    lager:info("the first ss: ~p\n\n\n", [FirstOp]),
-	    lager:info("the last ss: ~p\n\n\n", [lists:last(PrunedSnapshots)]),
             {CommitTime, _S} = FirstOp,
-	    lager:info("orig ops ~p\n\n\n", [OpsDict]),
             PrunedOps=prune_ops(OpsDict, CommitTime),
-	    lager:info("pruned ops ~p\n\n\n", [PrunedOps]),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
             ets:insert(OpsCache, {Key, PrunedOps});
         false ->
@@ -416,7 +407,6 @@ prune_ops(OpsDict, Threshold)->
 			   OpCommitTime=Op#clocksi_payload.commit_time,
 			   %{OpCom,OpComTs}=OpCommitTime,
 			   %OpSSCommit = dict:store(OpCom, OpComTs, Op#clocksi_payload.snapshot_time),
-			   lager:info("pruning, threshold ~p, op com time: ~p", [Threshold, OpCommitTime]),
                            (belongs_to_snapshot(Threshold,OpCommitTime))
 		   end, OpsDict).
 
@@ -436,7 +426,6 @@ op_insert_gc(Key,DownstreamOp, IsReplicated, OpsCache, SnapshotCache)->
               end,
     case (orddict:size(OpsDict))>=?OPS_THRESHOLD of
         true ->
-	    lager:info("Doing a clean!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n!!!!!!!"),
             %Type=DownstreamOp#clocksi_payload.type,
             %SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             Type=DownstreamOp#clocksi_payload.type,
@@ -455,7 +444,6 @@ op_insert_gc(Key,DownstreamOp, IsReplicated, OpsCache, SnapshotCache)->
         false ->
             OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time,
 				    DownstreamOp, OpsDict),
-	    lager:info("appending op size: ~p, the op ~p\n\n", [orddict:size(OpsDict1),DownstreamOp]),
             ets:insert(OpsCache, {Key, OpsDict1})
     end.
 
