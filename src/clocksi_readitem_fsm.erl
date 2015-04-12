@@ -23,6 +23,7 @@
 
 -include("antidote.hrl").
 
+
 %% API
 -export([start_link/8]).
 
@@ -42,6 +43,7 @@
 	 write_set_to_updates/4]).
 
 %% Spawn
+-define(CONNECTION_SLEEP, 100).
 
 -record(state, {type,
                 key,
@@ -107,28 +109,30 @@ init([Vnode, Coordinator, Transaction, Key, Type, Updates, external, true]) ->
 
 
 %% helper function
-loop_reads([Dc|T], Type, Key, Transaction,WriteSet) ->
+loop_reads([Dc|T], Type, Key, Transaction,WriteSet, AllDc) ->
     try
 	case inter_dc_communication_sender:perform_external_read(Dc,Key,Type,Transaction,WriteSet) of
 	    {ok, {error, Reason1}} ->
-		loop_reads(T,Type,Key,Transaction,WriteSet);
+		loop_reads(T,Type,Key,Transaction,WriteSet,AllDc);
 	    {ok, {{ok, SS1, SS2}, _Dc}} ->
 		{ok, SS1, SS2};
 	    Result ->
-		loop_reads(T,Type,Key,Transaction,WriteSet)
+		loop_reads(T,Type,Key,Transaction,WriteSet,AllDc)
 	end
     catch
 	_:_Reason ->
-	    loop_reads(T,Type,Key,Transaction,WriteSet)
+	    loop_reads(T,Type,Key,Transaction,WriteSet,AllDc)
     end;
-loop_reads([], _Type, _Key, _Transaction, _WriteSet) ->
-    error.
+loop_reads([], Type, Key, Transaction, WriteSet, AllDc) ->
+    timer:sleep(?CONNECTION_SLEEP),
+    loop_reads(AllDc,Type,Key,Transaction,WriteSet,AllDc).
 
 
 
 send_external_read(timeout, SD0=#state{type=Type,key=Key,transaction=Transaction,
 				       updates=Updates,tx_coordinator=Coordinator}) ->
-    case loop_reads(replication_check:get_dc_replicas_read(Key,noSelf), Type, Key, Transaction, Updates) of
+    Dcs = replication_check:get_dc_replicas_read(Key,noSelf),
+    case loop_reads(Dcs, Type, Key, Transaction, Updates,Dcs) of
         {ok, Snapshot, Snapshot2} ->
             Reply = {ok, Snapshot, Snapshot2, external};
         error ->
