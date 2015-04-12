@@ -16,7 +16,7 @@ get_dc_replicas_update(Key,WithSelf) ->
     DcList = case riak_core_metadata:get(?META_PREFIX_REPLI_FUNC,function,[{default,[]}]) of
 		 [] ->
 		     inter_dc_manager:get_dcs();
-		 Func ->
+		 {Func} ->
 		     Key2 = get_key(Key),
 		     DcIds = Func(Key2),
 		     keep_dcs(DcIds,inter_dc_manager:get_dcs_wids())
@@ -61,7 +61,7 @@ get_dc_replicas_read(Key,WithSelf) ->
  DcList = case riak_core_metadata:get(?META_PREFIX_REPLI_FUNC,function,[{default,[]}]) of
 	      [] ->
 		  inter_dc_manager:get_read_dcs();
-	      Func ->
+	      {Func} ->
 		  Key2 = get_key(Key),
 		  DcIds = Func(Key2),
 		  keep_dcs(DcIds,inter_dc_manager:get_read_dcs_wids())
