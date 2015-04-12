@@ -97,7 +97,7 @@ is_replicated_here(Key) ->
 	    Key2 = get_key(Key),
 	    DcIds = Func(Key2),
 	    {MyId,_} = inter_dc_manager:get_my_read_dc_wid(),
-	    lists:keymember(MyId,1,DcIds),
+	    lists:keymember(MyId,1,DcIds)
     end.
 
 
