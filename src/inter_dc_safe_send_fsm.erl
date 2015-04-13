@@ -41,7 +41,7 @@
                 dcid}).
 
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
--define(SAFE_SEND_PERIOD, 5000).
+-define(SAFE_SEND_PERIOD, 500).
 
 
 start_link() ->
