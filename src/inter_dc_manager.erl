@@ -53,9 +53,8 @@ get_my_dc_wid() ->
     riak_core_metadata:get(?META_PREFIX_MY_DC,mydc).
 
 get_my_dc() ->
-    dc_utilities:get_my_dc_id().
-    %%{_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_DC,mydc),
-    %%Dc.
+    {_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_DC,mydc),
+    Dc.
 
 start_receiver({Id,{DcIp, Port}}) ->
     riak_core_metadata:put(?META_PREFIX_MY_DC,mydc,{Id,{DcIp,Port}}),
