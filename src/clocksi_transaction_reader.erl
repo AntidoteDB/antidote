@@ -97,7 +97,7 @@ get_next_transactions(State=#state{partition = Partition,
     Txns = get_sorted_commit_records(Commitrecords),
     %% "Before" contains all transactions committed before stable_time
     %% Also removed any external commited transactions since we don't want propagate those
-    DcId = dc_utilities:get_my_dc_id(),
+    %%DcId = dc_utilities:get_my_dc_id(),
     {Before, After} = lists:foldl(
     			fun(Logrecord, {AccBefore, AccAfter}) ->
     				{{Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
