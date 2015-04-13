@@ -94,12 +94,16 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
                                              Transaction,
                                              Dc, DcQ, Ts, StateData ) ;
                        true ->
-                            %% TODO: Not right way check duplicates
-                            lager:info("Duplicate request, ~p, lastCTS ~p", [Transaction,LastCTS]),
-                            {ok, NewState} = finish_update_dc(
-                                               Dc, DcQ, CTS, StateData),
-                            %%Duplicate request, drop from queue
-                            NewState
+                            %% %% TODO: Not right way check duplicates
+                            %% lager:info("Duplicate request, ~p, lastCTS ~p", [Transaction,LastCTS]),
+                            %% {ok, NewState} = finish_update_dc(
+                            %%                    Dc, DcQ, CTS, StateData),
+                            %% %%Duplicate request, drop from queue
+                            %% NewState
+			    check_and_update(SnapshotTime, LocalSafeClock,
+                                             Transaction,
+                                             Dc, DcQ, Ts, StateData )
+
                     end;
                 _ ->
 		    %%lager:info("performing update2 ~p", [Transaction]),
