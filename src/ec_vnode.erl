@@ -161,7 +161,6 @@ handle_command({batch_read, TxId, Reads}, Sender,
 handle_command({pre_prepare, TxId, Updates, TxType}, Sender,
                State = #state{partition=Partition}) ->
     Vnode = {Partition, node()},
-    lager:info("Received preprepare"),
     {ok, _Pid} = ec_preprepare_fsm:start_link(Vnode, Sender, TxId, Updates, TxType),
     {noreply, State};
 
@@ -199,7 +198,6 @@ handle_command({single_commit, TxId, Updates, Coordinator}, _Sender,
 handle_command({prepare, TxId, Updates, Coordinator}, _Sender,
                State = #state{partition=_Partition,
                               write_set=WriteSet}) ->
-    lager:info("Received prepare"),
     case update_data_item(Updates, TxId, State) of
         ok ->
             Result = prepare(TxId, WriteSet),
@@ -224,7 +222,6 @@ handle_command({prepare, TxId, Updates, Coordinator}, _Sender,
 handle_command({commit, TxId}, _Sender,
                #state{partition=_Partition,
                       write_set=WriteSet} = State) ->
-    lager:info("Received commit"),
     Result = commit(TxId, WriteSet, State),
     case Result of
         {ok, committed} ->
@@ -339,7 +336,6 @@ commit(TxId, WriteSet, _State)->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append(Node,LogId,LogRecord) of
                 {ok, _} ->
-                    lager:info("Updating to materializer ~p",[Updates]),
                     case update_materializer(Updates, TxId) of
                         ok ->
                             {ok, committed};
