@@ -32,35 +32,12 @@ init([Socket]) ->
 receive_message(timeout, State=#state{socket=Socket}) ->
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
-            ReplyValue = case binary_to_term(Message) of
-			     {read_external, {Key,Type,Transaction,WriteSet,_DcId}} ->
-				 Preflist = log_utilities:get_preflist_from_key(Key),
-				 IndexNode = hd(Preflist),
-				 %% Is it safe to do a read like this from an external transaction?
-				 %% Might cause blocking because external DC might be ahead in time
-				 case clocksi_vnode:read_data_item_external(IndexNode, Transaction,
-								   Key, Type, WriteSet) of
-				     error ->
-					 lager:error("error in cross read"),
-					 {error, abort};
-				     {error, Reason} ->
-					 lager:error("error in cross read reason ~p", [Reason]),
-					 {error, abort};
-				     {ok, Snapshot, Snapshot2, external} ->
-					 %%ReadResult = Type:value(Snapshot),
-					 {ok, Snapshot, Snapshot2}
-				 end;
-			     Unknown ->
-				 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),
-				 Unknown
-			 end,
-	    ok = gen_tcp:send(Socket,
-			      term_to_binary({acknowledge,
-					      {ReplyValue, inter_dc_manager:get_my_dc()}}));
+	    {ok,_} = cross_dc_read_communication_perform_read_fsm_sup:start_fsm([Socket,Message]),
+	    {next_state,receive_message,State,0};
 	{error, Reason} ->
-	    lager:error("Problem with the socket, reason: ~p", [Reason])
-    end,
-    {next_state, close_socket,State,?TIMEOUT}.
+	    lager:error("Problem with the socket, reason: ~p", [Reason]),
+	    {next_state, close_socket,State,?TIMEOUT}
+    end.
 
 
 close_socket(_Msg, _Sender, State=#state{socket=Socket}) ->
