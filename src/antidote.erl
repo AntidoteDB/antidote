@@ -70,7 +70,7 @@ read(Key, Type) ->
 %%
 -spec ec_execute_tx(Operations::[any()]) -> term().
 ec_execute_tx(Operations) ->
-    {ok, _} = ec_static_tx_coord_sup:start_fsm([self(), Operations]),
+    ok = ec_tx_coord_server:run([self(), Operations]),
     receive
         EndOfTx ->
             EndOfTx

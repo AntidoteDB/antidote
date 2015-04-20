@@ -1,92 +1,69 @@
--module(ec_tx_coord_serv).
+-module(ec_tx_coord_server).
 -behaviour(gen_server).
--export([start/4, start_link/4, run/2, sync_queue/2, async_queue/2, stop/1]).
+-export([start/2, start_link/2, run/1, stop/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3, terminate/2]).
 
 %% The friendly supervisor is started dynamically!
--define(SPEC(MFA),
-        {worker_sup,
-         {ec_tx_coord_super_sup, start_link, [MFA]},
-          temporary,
-          10000,
-          supervisor,
-          [ec_tx_coord_super_sup]}).
+-record(state, {index=1,
+                limit=0,
+                tx_sups=[]
+                }).
 
--record(state, {limit=0,
-                sup,
-                refs,
-                queue=queue:new()}).
+start(Limit, Sup) when is_integer(Limit) ->
+    gen_server:start({local, ?MODULE}, ?MODULE, {Limit, Sup}, []).
 
-start(Name, Limit, Sup, MFA) when is_atom(Name), is_integer(Limit) ->
-    gen_server:start({local, Name}, ?MODULE, {Limit, MFA, Sup}, []).
+start_link(Limit, Sup) when is_integer(Limit) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, {Limit, Sup}, []).
 
-start_link(Name, Limit, Sup, MFA) when is_atom(Name), is_integer(Limit) ->
-    gen_server:start_link({local, Name}, ?MODULE, {Limit, MFA, Sup}, []).
+run(Args) ->
+    gen_server:cast(?MODULE, {async, Args}).
 
-run(Name, Args) ->
-    gen_server:call(Name, {async, Args}).
-
-stop(Name) ->
-    gen_server:call(Name, stop).
+stop() ->
+    gen_server:call(?MODULE, stop).
 
 %% Gen server
-init({Limit, MFA, Sup}) ->
-    %% We need to find the Pid of the worker supervisor from here,
-    %% but alas, this would be calling the supervisor while it waits for us!
-    self() ! {start_worker_supervisor, Sup, MFA},
-    {ok, #state{limit=Limit, refs=gb_sets:empty()}}.
+init({Limit, Sup}) ->
+    self() ! {start_sup, Sup},
+    {ok, #state{limit=Limit}}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Msg, _From, State) ->
     {noreply, State}.
 
-handle_cast({async, Args}, S=#state{limit=N, sup=Sup, refs=R}) when N > 0 ->
-    {ok, Pid} = supervisor:start_child(Sup, Args),
-    Ref = erlang:monitor(process, Pid),
-    {noreply, S#state{limit=N-1, refs=gb_sets:add(Ref,R)}};
-handle_cast({async, Args}, S=#state{limit=N, queue=Q}) when N =< 0 ->
-    {noreply, S#state{queue=queue:in(Args,Q)}};
+handle_cast({async, Args}, S=#state{index=Index, tx_sups=TxSups, limit=Limit}) ->
+    CurrentSup = lists:nth(Index, TxSups),
+    spawn(supervisor,start_child, [CurrentSup, Args]),
+    NewIndex= (Index rem Limit) + 1,
+    {noreply, S#state{index= NewIndex}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{refs=Refs}) ->
-    case gb_sets:is_element(Ref, Refs) of
-        true ->
-            handle_down_worker(Ref, S);
-        false -> %% Not our responsibility
-            {noreply, S}
-    end;
-handle_info({start_worker_supervisor, Sup, MFA}, S = #state{}) ->
-    {ok, Pid} = supervisor:start_child(Sup, ?SPEC(MFA)),
-    link(Pid),
-    {noreply, S#state{sup=Pid}};
-handle_info(Msg, State) ->
-    io:format("Unknown msg: ~p~n", [Msg]),
-    {noreply, State}.
+handle_info({start_sup, Sup}, S= #state{limit=Limit}) ->
+    SupId = wait_until_registered(Sup),
+    T = lists:seq(1, Limit),
+    TxSups=lists:foldl(fun(_, Acc) -> {ok,PId}=supervisor:start_child(SupId, []), [PId]++Acc end, [], T),
+    {noreply, S#state{limit=Limit, tx_sups=TxSups}};
+
+handle_info(_Info, State) ->
+    {ok, State}.
+
+wait_until_registered(Sup) ->
+    case whereis(Sup) of 
+        undefined ->
+            lager:info("Not registered ~w",[Sup]),
+            timer:sleep(100),
+            wait_until_registered(Sup);
+        PId ->
+            lager:info("Registered!"),
+            PId
+    end.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
     ok.
-
-handle_down_worker(Ref, S = #state{limit=L, sup=Sup, refs=Refs}) ->
-    case queue:out(S#state.queue) of
-        {{value, {From, Args}}, Q} ->
-            {ok, Pid} = supervisor:start_child(Sup, Args),
-            NewRef = erlang:monitor(process, Pid),
-            NewRefs = gb_sets:insert(NewRef, gb_sets:delete(Ref,Refs)),
-            gen_server:reply(From, {ok, Pid}),
-            {noreply, S#state{refs=NewRefs, queue=Q}};
-        {{value, Args}, Q} ->
-            {ok, Pid} = supervisor:start_child(Sup, Args),
-            NewRef = erlang:monitor(process, Pid),
-            NewRefs = gb_sets:insert(NewRef, gb_sets:delete(Ref,Refs)),
-            {noreply, S#state{refs=NewRefs, queue=Q}};
-        {empty, _} ->
-            {noreply, S#state{limit=L+1, refs=gb_sets:delete(Ref,Refs)}}
-    end.
 

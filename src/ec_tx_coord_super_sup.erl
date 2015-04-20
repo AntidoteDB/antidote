@@ -1,14 +1,14 @@
 -module(ec_tx_coord_super_sup).
--export([start_link/0, init/0]).
+-export([start_link/1, init/1]).
 -behaviour(supervisor).
 
-start_link() ->
-    supervisor:start_link(?MODULE, []).
+start_link(Name) ->
+    supervisor:start_link({local, Name}, ?MODULE, []).
 
-init() ->
+init(_Args) ->
     MaxRestart = 5,
-    MaxTime = 100,
+    MaxTime = 10,
     {ok, {{simple_one_for_one, MaxRestart, MaxTime},
-          [{ec_tx_coord_server,
-            {ec_tx_coord_server, start_link, []},
-            permanent, 5000, supervisor, [ec_tx_coord_server]}]}}.
+          [{ec_static_tx_coord_sup,
+            {ec_static_tx_coord_sup, start_link, []},
+            permanent, 5000, supervisor, [ec_static_tx_coord_sup]}]}}.
