@@ -37,8 +37,8 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([execute_op/3, finish_op/3, prepare/2,
-         receive_prepared/2, committing/3, receive_committed/2, abort/2,
+-export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2,
+         receive_prepared/2, single_committing/2, committing_2pc/3, committing/2, receive_committed/2, abort/2,
          reply_to_client/2]).
 
 %%---------------------------------------------------------------------
@@ -60,6 +60,7 @@
           num_to_ack :: integer(),
           prepare_time :: integer(),
           commit_time :: integer(),
+          commit_protocol :: term(),
           state:: atom()}).
 
 %%%===================================================================
@@ -109,7 +110,12 @@ execute_op({Op_type, Args}, Sender,
                       updated_partitions=Updated_partitions}) ->
     case Op_type of
         prepare ->
-            {next_state, prepare, SD0#state{from=Sender}, 0};
+            case Args of
+            two_phase ->
+                {next_state, prepare_2pc, SD0#state{from=Sender, commit_protocol=Args}, 0};
+            _ ->
+                {next_state, prepare, SD0#state{from=Sender, commit_protocol=Args}, 0}
+            end;
         read ->
             {Key, Type}=Args,
             Preflist = log_utilities:get_preflist_from_key(Key),
@@ -150,37 +156,62 @@ execute_op({Op_type, Args}, Sender,
     end.
 
 
-%% @doc a message from a client wanting to start committing the tx.
-%%      this state sends a prepare message to all updated partitions and goes
+%% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(timeout, SD0=#state{
+                        transaction = Transaction,
+                        updated_partitions=Updated_partitions, from=_From}) ->
+    case length(Updated_partitions) of
+        0->
+            Snapshot_time=Transaction#transaction.snapshot_time,
+            {next_state, committing,
+            SD0#state{state=committing, commit_time=Snapshot_time}, 0};
+        1-> 
+            clocksi_vnode:single_commit(Updated_partitions, Transaction),
+            {next_state, single_committing,
+            SD0#state{state=committing, num_to_ack=1}};
+        _->
+            clocksi_vnode:prepare(Updated_partitions, Transaction),
+            Num_to_ack=length(Updated_partitions),
+            {next_state, receive_prepared,
+            SD0#state{num_to_ack=Num_to_ack, state=prepared}}
+    end.
+%% @doc state called when 2pc is forced independently of the number of partitions
+%%      involved in the txs.
+prepare_2pc(timeout, SD0=#state{
                         transaction = Transaction,
                         updated_partitions=Updated_partitions, from=From}) ->
     case length(Updated_partitions) of
         0->
             Snapshot_time=Transaction#transaction.snapshot_time,
             gen_fsm:reply(From, {ok, Snapshot_time}),
-            {next_state, committing,
-             SD0#state{state=committing, commit_time=Snapshot_time}};
+            {next_state, committing_2pc,
+            SD0#state{state=committing, commit_time=Snapshot_time}};
         _->
             clocksi_vnode:prepare(Updated_partitions, Transaction),
             Num_to_ack=length(Updated_partitions),
             {next_state, receive_prepared,
-             SD0#state{num_to_ack=Num_to_ack, state=prepared}}
+            SD0#state{num_to_ack=Num_to_ack, state=prepared}}
     end.
 
 %% @doc in this state, the fsm waits for prepare_time from each updated
 %%      partitions in order to compute the final tx timestamp (the maximum
 %%      of the received prepare_time).
 receive_prepared({prepared, ReceivedPrepareTime},
-                 S0=#state{num_to_ack= NumToAck,
-                           from= From, prepare_time=PrepareTime}) ->
+                 S0=#state{num_to_ack=NumToAck,
+                           commit_protocol=CommitProtocol,
+                           from=From, prepare_time=PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 ->
-            gen_fsm:reply(From, {ok, MaxPrepareTime}),
-            {next_state, committing,
-             S0#state{prepare_time=MaxPrepareTime,
-                      commit_time=MaxPrepareTime, state=committing}};
+            case CommitProtocol of
+            two_phase ->
+                gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                {next_state, committing_2pc,
+                S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}};
+            _ ->
+                {next_state, committing,
+                S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}, 0}
+            end;
         _ ->
             {next_state, receive_prepared,
              S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
@@ -192,11 +223,17 @@ receive_prepared(abort, S0) ->
 receive_prepared(timeout, S0) ->
     {next_state, abort, S0, 0}.
 
+single_committing({committed, CommitTime}, S0=#state{from=_From}) ->
+    {next_state, reply_to_client, S0#state{prepare_time=CommitTime, commit_time=CommitTime, state=committed}, 0}.
+    
+
 %% @doc after receiving all prepare_times, send the commit message to all
-%%       updated partitions, and go to the "receive_committed" state.
-committing(commit, Sender, SD0=#state{transaction = Transaction,
-                                      updated_partitions=Updated_partitions,
-                                      commit_time=Commit_time}) ->
+%%      updated partitions, and go to the "receive_committed" state.
+%%      This state expects other process to sen the commit message to 
+%%      start the commit phase.
+committing_2pc(commit, Sender, SD0=#state{transaction = Transaction,
+                              updated_partitions=Updated_partitions,
+                              commit_time=Commit_time}) ->
     NumToAck=length(Updated_partitions),
     case NumToAck of
         0 ->
@@ -208,6 +245,25 @@ committing(commit, Sender, SD0=#state{transaction = Transaction,
              SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
     end.
 
+%% @doc after receiving all prepare_times, send the commit message to all
+%%      updated partitions, and go to the "receive_committed" state.
+%%      This state is used when no commit message from the client is
+%%      expected 
+committing(timeout, SD0=#state{transaction = Transaction,
+                              updated_partitions=Updated_partitions,
+                              commit_time=Commit_time}) ->
+    NumToAck=length(Updated_partitions),
+    case NumToAck of
+        0 ->
+            {next_state, reply_to_client,
+             SD0#state{state=committed},0};
+        _ ->
+            clocksi_vnode:commit(Updated_partitions, Transaction, Commit_time),
+            {next_state, receive_committed,
+             SD0#state{num_to_ack=NumToAck, state=committing}}
+    end.
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
 %%	committed the tx and finishes operation.
@@ -255,8 +311,6 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
       true -> ok
     end,
     {stop, normal, SD}.
-
-
 
 %% =============================================================================
 
