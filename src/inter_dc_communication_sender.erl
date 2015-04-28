@@ -36,7 +36,9 @@
          handle_sync_event/4,
          terminate/3]).
 -export([connect/2,
+	 send/2,
          wait_for_ack/2,
+	 wait_for_ack_no_close/2,
          stop/2,
 	 connect_err/2
         ]).
@@ -144,7 +146,8 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 			      -> {ok, term()} | error.
 perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
     case start_link(
-	   Port, DcAddress, {read_external, {Key, Type, Transaction,WriteSet,dc_utilities:get_my_dc_id()}}, self(), read_external) of
+	   data_vnode:get_socket(DcAddress,Port,Key), {read_external, self(), {Key, Type, Transaction,WriteSet,dc_utilities:get_my_dc_id()}},
+	   self(), read_external) of
 	{ok, _Reply} ->
 	    receive
 		{done, normal, Response} ->
@@ -179,6 +182,10 @@ start_link(Port, Host, Message, ReplyTo, _MsgType) ->
 						% gen_fsm:start_link(list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MsgType)), [Port, Host, Message, ReplyTo], []).
     gen_fsm:start_link(?MODULE, [Port, Host, Message, ReplyTo], []).
 
+start_link(Socket, Message, ReplyTo, _MsgType) ->
+    gen_fsm:start_link(?MODULE, [Socket, Message, ReplyTo], []).
+
+
 %% ===================================================================
 %% gen_fsm callbacks
 %% ===================================================================
@@ -189,7 +196,18 @@ init([Port,Host,Message,ReplyTo]) ->
                          host=Host,
                          message=Message,
                          caller=ReplyTo,
+			 reply=empty}, 0};
+
+init([Socket,Message,ReplyTo]) ->
+    {ok, send, #state{socket=Socket,
+                         message=Message,
+                         caller=ReplyTo,
 			 reply=empty}, 0}.
+
+
+send(timeout,State=#state{socket=Socket,message=Message}) ->
+    ok=gen_tcp:send(Socket,term_to_binary(Message)),
+    {next_state,wait_for_ack_no_close,State,?TIMEOUT}.
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
@@ -204,6 +222,15 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             lager:error("Couldnot connect to remote DC"),
             {next_state,connect_err, State, 0}
     end.
+
+
+wait_for_ack_no_close({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message} )->
+    {stop, normal, State#state{reply=Reply}};
+wait_for_ack_no_close(timeout, State) ->
+    %%TODO: Retry if needed
+    lager:error("timeout in wait for ack"),
+    {next_state,connect_err,State,0}.
+
 
 wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message} )->
     {next_state, stop, State#state{reply=Reply},0};

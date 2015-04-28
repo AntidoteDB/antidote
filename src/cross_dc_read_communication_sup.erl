@@ -36,7 +36,10 @@ init([Port]) ->
                 {cross_dc_read_communication_recvr, start_link, [Port]}, % pass the socket!
                 permanent, 1000, worker, [cross_dc_read_communication_recvr]},
 
-    SupWorkers = {cross_dc_read_communication_fsm_sup,
+    SupWorkers = {cross_dc_read_communication_perform_read_fsm_sup,
+		  {cross_dc_read_communication_perform_read_fsm_sup, start_link, []},
+		  permanent, 1000, supervisor, [cross_dc_read_communication_perform_read_fsm_sup]},
+    SupWorkers1 = {cross_dc_read_communication_fsm_sup,
 		  {cross_dc_read_communication_fsm_sup, start_link, []},
 		  permanent, 1000, supervisor, [cross_dc_read_communication_fsm_sup]},
-    {ok, {{one_for_one, 60, 3600}, [Listener, SupWorkers]}}.
+    {ok, {{one_for_one, 60, 3600}, [Listener, SupWorkers, SupWorkers1]}}.

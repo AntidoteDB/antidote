@@ -117,6 +117,10 @@ init(_Args) ->
                       {riak_core_vnode_master, start_link, [clocksi_vnode]},
                       permanent, 5000, worker, [riak_core_vnode_master]},
 
+    DataMaster = { data_vnode_master,
+                      {riak_core_vnode_master, start_link, [data_vnode]},
+                      permanent, 5000, worker, [riak_core_vnode_master]},
+
     InterDcRepMaster = {inter_dc_repl_vnode_master,
                         {riak_core_vnode_master, start_link,
                          [inter_dc_repl_vnode]},
@@ -146,6 +150,7 @@ init(_Args) ->
      {{one_for_one, 5, 10},
       [LoggingMaster,
        ClockSIMaster,
+       DataMaster,
        ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
        InterDcRepMaster,

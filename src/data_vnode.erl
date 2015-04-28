@@ -18,8 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc : This vnode is responsible for sending transaction committed in local
-%%  DCs to remote DCs in commit-time order
+%% @doc : This vnode is responsible for being responsible
 
 -module(data_vnode).
 -behaviour(riak_core_vnode).
@@ -31,6 +30,7 @@
          handle_command/3,
          is_empty/1,
          delete/1,
+	 get_socket/3,
          handle_handoff_command/3,
          handoff_starting/2,
          handoff_cancelled/1,
@@ -43,9 +43,8 @@
 -record(state, {partition,
                 dcid,
 		socket_dict
-                }).
+	       }).
 
-%% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(CONNECT_TIMEOUT, 1000).
 
 start_vnode(I) ->
@@ -61,21 +60,30 @@ init([Partition]) ->
                 }}.
 
 
-handle_command({get_socket,DcAddress,Port},Sender,#state{socket_dict=SocketDict}) ->
+get_socket(DcAddress,Port,Key) ->
+    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
+    [{NewPref,_}] = Preflist,
+    {ok,Socket}=riak_core_vnode_master:sync_command(NewPref,{get_socket,DcAddress,Port},data_vnode_master),
+    Socket.
+
+
+handle_command({perform_read,DcAddress,Port,_Key,_MsgId},_Sender,State=#state{socket_dict=SocketDict}) ->
     Result = case dict:find({DcAddress,Port},SocketDict) of
-	{ok,Val} ->
-	    case erlang:port_info(Val) of
-		undefined ->
-		    error;
-		_ ->
-		    {ok,Val}
-	    end;
-	error ->
-	    error
-    end,
+		 {ok,Val} ->
+		     case erlang:port_info(Val) of
+			 undefined ->
+			     error;
+			 _ ->
+			     {ok,Val}
+		     end;
+		 error ->
+		     error
+	     end,
     Result2 = case Result of
 		  error ->
-		      case gen_tcp:connect(Host, Port,
+		      lager:info("creating a new data node connection"),
+		      case gen_tcp:connect(DcAddress, Port,
 					   [{active,false},binary, {packet,2}], ?CONNECT_TIMEOUT) of
 			  { ok, Socket} ->
 			      NewDict = dict:store({DcAddress,Port},Socket,SocketDict),
@@ -85,11 +93,20 @@ handle_command({get_socket,DcAddress,Port},Sender,#state{socket_dict=SocketDict}
 			      NewDict = SocketDict,
 			      error
 		      end;
-		  {ok,Val} ->
+		  {ok,Val1} ->
 		      NewDict = SocketDict,
-		      {ok,Val}
+		      {ok,Val1}
 	      end,
-    {reply,Result2,State=#state{socket_dict=NewDict}}.
+
+    {reply,Result2,State#state{socket_dict=NewDict}}.
+
+%handle_command({get_result},_Sender) ->
+%    receive ->
+%	    {tcp,_Socket,Msg} ->
+%		    case binary_to_term(Msg) of
+%			{acknowledge,MsgId,Reply} ->
+			    
+
 
 
 handle_handoff_command(_Message, _Sender, State) ->

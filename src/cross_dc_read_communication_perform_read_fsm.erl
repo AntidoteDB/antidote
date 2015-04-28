@@ -3,16 +3,14 @@
 
 -record(state, {socket,message}). % the current socket
 
--export([start_link/1]).
+-export([start_link/2]).
 -export([init/1,
          code_change/4,
          handle_event/3,
          handle_info/3,
          handle_sync_event/4,
          terminate/3]).
--export([receive_message/2,
-         close_socket/2,
-	 close_socket/3
+-export([receive_message/2
         ]).
 
 -define(TIMEOUT,20000).
@@ -30,30 +28,30 @@ init([Socket,Message]) ->
 
 
 receive_message(timeout, State=#state{socket=Socket,message=Message}) ->
-    ReplyValue = case binary_to_term(Message) of
-		     {read_external, MsgId, {Key,Type,Transaction,WriteSet,_DcId}} ->
-			 Preflist = log_utilities:get_preflist_from_key(Key),
-			 IndexNode = hd(Preflist),
-			 %% Is it safe to do a read like this from an external transaction?
-			 %% Might cause blocking because external DC might be ahead in time
-			 case clocksi_vnode:read_data_item_external(IndexNode, Transaction,
-								    Key, Type, WriteSet) of
-			     error ->
-				 lager:error("error in cross read"),
-				 {error, abort};
-			     {error, Reason} ->
-				 lager:error("error in cross read reason ~p", [Reason]),
-				 {error, abort};
-			     {ok, Snapshot, Snapshot2, external} ->
-				 %%ReadResult = Type:value(Snapshot),
-				 {ok, Snapshot, Snapshot2}
-			 end;
-		     Unknown ->
-			 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),
-			 Unknown
-		 end,
+    {ReplyValue,MsgId1} = case binary_to_term(Message) of
+			     {read_external, MsgId, {Key,Type,Transaction,WriteSet,_DcId}} ->
+				 Preflist = log_utilities:get_preflist_from_key(Key),
+				 IndexNode = hd(Preflist),
+				 %% Is it safe to do a read like this from an external transaction?
+				 %% Might cause blocking because external DC might be ahead in time
+				 case clocksi_vnode:read_data_item_external(IndexNode, Transaction,
+									    Key, Type, WriteSet) of
+				     error ->
+					 lager:error("error in cross read"),
+					 {{error, abort},MsgId};
+				     {error, Reason} ->
+					 lager:error("error in cross read reason ~p", [Reason]),
+					 {{error, abort},MsgId};
+				     {ok, Snapshot, Snapshot2, external} ->
+					 %%ReadResult = Type:value(Snapshot),
+					 {{ok, Snapshot, Snapshot2},MsgId}
+				 end;
+			     Unknown ->
+				 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),
+				 {Unknown,0}
+			 end,
     ok = gen_tcp:send(Socket,
-		      term_to_binary({acknowledge, MsgId,
+		      term_to_binary({acknowledge, MsgId1,
 				      {ReplyValue, inter_dc_manager:get_my_dc()}})),
     {stop, normal, State}.
 
