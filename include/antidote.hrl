@@ -12,6 +12,14 @@
 -define(COMM_TIMEOUT, infinity).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
+-define(SEND_TIMEOUT,20000).
+-define(CONNECT_TIMEOUT,10000).
+-define(EXT_READ_TIMEOUT,10000).
+-define(CONNECTION_SLEEP_EXT_READ_LOOP, 1000).
+%% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
+-define(SAFE_SEND_PERIOD, 500).
+
+
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer

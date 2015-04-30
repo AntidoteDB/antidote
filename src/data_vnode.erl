@@ -45,7 +45,6 @@
 		socket_dict
 	       }).
 
--define(CONNECT_TIMEOUT, 1000).
 
 start_vnode(I) ->
     {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
@@ -68,7 +67,7 @@ get_socket(DcAddress,Port,Key) ->
     Socket.
 
 
-handle_command({perform_read,DcAddress,Port,_Key,_MsgId},_Sender,State=#state{socket_dict=SocketDict}) ->
+handle_command({get_socket,DcAddress,Port},_Sender,State=#state{socket_dict=SocketDict}) ->
     Result = case dict:find({DcAddress,Port},SocketDict) of
 		 {ok,Val} ->
 		     case erlang:port_info(Val) of
@@ -97,15 +96,7 @@ handle_command({perform_read,DcAddress,Port,_Key,_MsgId},_Sender,State=#state{so
 		      NewDict = SocketDict,
 		      {ok,Val1}
 	      end,
-
     {reply,Result2,State#state{socket_dict=NewDict}}.
-
-%handle_command({get_result},_Sender) ->
-%    receive ->
-%	    {tcp,_Socket,Msg} ->
-%		    case binary_to_term(Msg) of
-%			{acknowledge,MsgId,Reply} ->
-			    
 
 
 

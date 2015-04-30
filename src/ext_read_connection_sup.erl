@@ -18,26 +18,33 @@
 %%
 %% -------------------------------------------------------------------
 %% @doc Supervise the fsm.
--module(collect_sent_time_sup).
+-module(ext_read_connection_sup).
 -behavior(supervisor).
 
--export([start_link/2,start_fsm/1]).
+-export([start_link/1,start_fsm/1]).
 -export([init/1]).
 
 
-start_link(DcId, StartTimestamp) ->
-    supervisor:start_link(?MODULE, [DcId, StartTimestamp]).
-
+start_link(DcId) ->
+    supervisor:start_link(?MODULE, [DcId]).
+	
 
 start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
-init([DcList,_TS]) ->
-     Workers = lists:foldl(fun(DcId, Acc) ->
-				  Acc ++ [{{collect_sent_time_fsm,DcId},
-					   {collect_sent_time_fsm, start_link, [DcId, 0]},
-					   permanent, 1000, worker, [collect_sent_time_fsm]}]
+init([DcList]) ->
+    Workers = lists:foldl(fun(DcId, Acc) ->
+				  Acc ++ [{{ext_read_connection_fsm,DcId},
+					   {ext_read_connection_fsm, start_link, [DcId]},
+					   permanent, 1000, worker, [ext_read_connection_fsm]}]
 			  end, [], DcList),
     {ok, {{one_for_one, 5, 10}, Workers}}.
 
+%% get_atom({DcAddr, Port}) ->
+%%     list_to_atom(atom_to_list(?MODULE) ++ my_ip() ++
+%% 		     atom_to_list(DcAddr) ++ integer_to_list(Port)).
 
+%% my_ip() ->
+%%     {ok, List} = inet:getif(),
+%%     {Ip, _, _} = hd(List),
+%%     inet_parse:ntoa(Ip).

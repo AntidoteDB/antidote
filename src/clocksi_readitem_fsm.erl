@@ -43,7 +43,6 @@
 	 write_set_to_updates/4]).
 
 %% Spawn
--define(CONNECTION_SLEEP, 100).
 
 -record(state, {type,
                 key,
@@ -124,7 +123,7 @@ loop_reads([Dc|T], Type, Key, Transaction,WriteSet, AllDc) ->
 	    loop_reads(T,Type,Key,Transaction,WriteSet,AllDc)
     end;
 loop_reads([], Type, Key, Transaction, WriteSet, AllDc) ->
-    timer:sleep(?CONNECTION_SLEEP),
+    timer:sleep(?CONNECTION_SLEEP_EXT_READ_LOOP),
     loop_reads(AllDc,Type,Key,Transaction,WriteSet,AllDc).
 
 

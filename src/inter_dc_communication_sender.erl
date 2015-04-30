@@ -45,8 +45,7 @@
 
 -record(state, {port, host, socket,message, caller, reply}). % the current socket
 
--define(TIMEOUT,20000).
--define(CONNECT_TIMEOUT,5000).
+
 
 %% ===================================================================
 %% Public API
@@ -91,7 +90,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 						   [Other, Message]),
 						 Acc ++ [error]
 						 %%TODO: Retry if needed
-					 after ?TIMEOUT ->
+					 after ?SEND_TIMEOUT ->
 						 lager:error(
 						   "Send failed timeout Message ~p"
 							    ,[Message]),
@@ -130,7 +129,7 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 		      [Other, Transaction]),
 		    error
 		    %%TODO: Retry if needed
-	    after ?TIMEOUT ->
+	    after ?SEND_TIMEOUT ->
 		    lager:error(
 		      "Send failed timeout Message ~p"
 			       ,[Transaction]),
@@ -140,35 +139,50 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 	_ ->
 	    error
     end.
+
 
 
 -spec perform_external_read({DcAddress :: non_neg_integer(), Port :: port()}, Key :: key(), Type :: crdt(), Transaction :: tx(), WriteSet :: list())
-			      -> {ok, term()} | error.
+			   -> {ok, term()} | error.
 perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
-    case start_link(
-	   data_vnode:get_socket(DcAddress,Port,Key), {read_external, self(), {Key, Type, Transaction,WriteSet,dc_utilities:get_my_dc_id()}},
-	   self(), read_external) of
-	{ok, _Reply} ->
-	    receive
-		{done, normal, Response} ->
-		    {ok, Response};
-		{done, Other, _Response} ->
-		    lager:error(
-		      "Send failed Reason:~p Message: ~p",
-		      [Other, Transaction]),
-		    error
-		    %%TODO: Retry if needed
-	    after ?TIMEOUT ->
-		    lager:error(
-		      "Send failed timeout Message ~p"
-			       ,[Transaction]),
-		    error
-		    %%TODO: Retry if needed
-	    end;
-	_ ->
-	    lager:error("Nothing exit", []),
-	    error
+    MyPid = self(),
+    ext_read_connection_fsm:perform_read(DcAddress,Port, {read_external, MyPid, {Key, Type, Transaction,WriteSet,dc_utilities:get_my_dc_id()}}),
+    receive
+	{acknowledge, MyPid, Reply} ->
+	    {ok, Reply}
+    after
+	?EXT_READ_TIMEOUT ->
+	    {ok, error, timeout}
     end.
+
+
+%% -spec perform_external_read({DcAddress :: non_neg_integer(), Port :: port()}, Key :: key(), Type :: crdt(), Transaction :: tx(), WriteSet :: list())
+%% 			      -> {ok, term()} | error.
+%% perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
+%%     case start_link(
+%% 	   data_vnode:perform_read(DcAddress,Port,Key), {read_external, self(), {Key, Type, Transaction,WriteSet,dc_utilities:get_my_dc_id()}},
+%% 	   self(), read_external) of
+%% 	{ok, _Reply} ->
+%% 	    receive
+%% 		{done, normal, Response} ->
+%% 		    {ok, Response};
+%% 		{done, Other, _Response} ->
+%% 		    lager:error(
+%% 		      "Send failed Reason:~p Message: ~p",
+%% 		      [Other, Transaction]),
+%% 		    error
+%% 		    %%TODO: Retry if needed
+%% 	    after ?TIMEOUT ->
+%% 		    lager:error(
+%% 		      "Send failed timeout Message ~p"
+%% 			       ,[Transaction]),
+%% 		    error
+%% 		    %%TODO: Retry if needed
+%% 	    end;
+%% 	_ ->
+%% 	    lager:error("Nothing exit", []),
+%% 	    error
+%%     end.
 
 %% Starts a process to send a message to a single Destination 
 %%  DestPort : TCP port on which destination DCs inter_dc_communication_recvr listens
@@ -182,8 +196,8 @@ start_link(Port, Host, Message, ReplyTo, _MsgType) ->
 						% gen_fsm:start_link(list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MsgType)), [Port, Host, Message, ReplyTo], []).
     gen_fsm:start_link(?MODULE, [Port, Host, Message, ReplyTo], []).
 
-start_link(Socket, Message, ReplyTo, _MsgType) ->
-    gen_fsm:start_link(?MODULE, [Socket, Message, ReplyTo], []).
+%% start_link(Socket, Message, ReplyTo, _MsgType) ->
+%%     gen_fsm:start_link(?MODULE, [Socket, Message, ReplyTo], []).
 
 
 %% ===================================================================
@@ -207,7 +221,7 @@ init([Socket,Message,ReplyTo]) ->
 
 send(timeout,State=#state{socket=Socket,message=Message}) ->
     ok=gen_tcp:send(Socket,term_to_binary(Message)),
-    {next_state,wait_for_ack_no_close,State,?TIMEOUT}.
+    {next_state,wait_for_ack_no_close,State,?SEND_TIMEOUT}.
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
@@ -216,7 +230,7 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             %%ok = inet:setopts(Socket, [{active, once}]),
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
             %%ok = inet:setopts(Socket, [{active, once}]),
-            {next_state, wait_for_ack, State#state{socket=Socket},?TIMEOUT};
+            {next_state, wait_for_ack, State#state{socket=Socket},?SEND_TIMEOUT};
         {error, _Reason} ->
 	    %% TODO, should be diferent
             lager:error("Couldnot connect to remote DC"),

@@ -27,6 +27,7 @@
 	 start_cross_dc_read_communication_recvr/1,
 	 start_collect_sent/0,
 	 start_safe_time_sender/0,
+	 start_ext_read_connection/0,
 	 start_senders/0,
 	 start_recvrs/4]).
 
@@ -84,6 +85,15 @@ start_collect_sent() ->
     ok.
 
 
+start_ext_read_connection() ->
+    DCs = inter_dc_manager:get_read_dcs(),
+    lager:info("Starting external read connection..."),
+    supervisor:start_child(?MODULE, {ext_read_connection_sup,
+				     {ext_read_connection_sup, start_link, [DCs]},
+				     permanent, 5000, supervisor, [ext_read_connection_sup]}),
+    ok.
+
+
 start_senders() ->
     start_collect_sent(),
     start_safe_time_sender(),
@@ -117,9 +127,9 @@ init(_Args) ->
                       {riak_core_vnode_master, start_link, [clocksi_vnode]},
                       permanent, 5000, worker, [riak_core_vnode_master]},
 
-    DataMaster = { data_vnode_master,
-                      {riak_core_vnode_master, start_link, [data_vnode]},
-                      permanent, 5000, worker, [riak_core_vnode_master]},
+    %% DataMaster = { data_vnode_master,
+    %%                   {riak_core_vnode_master, start_link, [data_vnode]},
+    %%                   permanent, 5000, worker, [riak_core_vnode_master]},
 
     InterDcRepMaster = {inter_dc_repl_vnode_master,
                         {riak_core_vnode_master, start_link,
@@ -150,7 +160,7 @@ init(_Args) ->
      {{one_for_one, 5, 10},
       [LoggingMaster,
        ClockSIMaster,
-       DataMaster,
+       %% DataMaster,
        ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
        InterDcRepMaster,
