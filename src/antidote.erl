@@ -43,9 +43,11 @@
 %%      object stored at some key.
 -spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, term()} | {error, reason()}.
 append(Key, Type, {OpParam, Actor}) ->
+    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
     Operations = [{update, Key, Type, {OpParam, Actor}}],
     case clocksi_execute_tx(Operations) of
         {ok, Result} ->
+            lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
             {ok, Result};
         {error, Reason} ->
             {error, Reason}

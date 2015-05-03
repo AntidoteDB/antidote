@@ -29,6 +29,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_fsm(Args) ->
+    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
     supervisor:start_child(?MODULE, Args).
 
 %% @doc Starts the coordinator of a ClockSI static transaction.

@@ -163,6 +163,7 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                #state{partition=Partition,
                       write_set=WriteSet,
                       active_txs_per_key=_ActiveTxsPerKey}=State) ->
+    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
     TxId = Txn#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update,
                             op_payload={Key, Type, Op}},
@@ -177,6 +178,7 @@ handle_command({update_data_item, Txn, Key, Type, Op}, Sender,
                            Sender,
                            Txn#transaction.vec_snapshot_time,
                            Partition),
+            lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
             {noreply, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -188,10 +190,12 @@ handle_command({single_commit, Transaction}, _Sender,
                               active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx,
                               write_set=WriteSet}) ->
+    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
     PrepareTime = now_microsec(erlang:now()),
     Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
+            lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
             ResultCommit = commit(Transaction, PrepareTime, WriteSet, PreparedTx, State),
             case ResultCommit of
                 {ok, committed} ->
@@ -237,6 +241,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                #state{partition=_Partition,
                       committed_tx=CommittedTx,
                       write_set=WriteSet} = State) ->
+    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
     Result = commit(Transaction, TxCommitTime, WriteSet, CommittedTx, State),
     case Result of
         {ok, committed} ->

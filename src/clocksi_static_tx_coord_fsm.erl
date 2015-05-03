@@ -70,15 +70,19 @@ start_link(From, Operations) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
+    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
     {ok, _Pid} = case ClientClock of
                      ignore ->
+                         lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
                          clocksi_interactive_tx_coord_sup:start_fsm([self()]);
                      _ ->
+                         lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
                          clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
                  end,
     receive
         {ok, TxId} ->
             {_, _, TxCoordPid} = TxId,
+            lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
             {ok, execute_batch_ops, #state{tx_id=TxId, tx_coord_pid = TxCoordPid,
                                            from = From, operations = Operations}, 0}
     after
@@ -102,8 +106,10 @@ execute_batch_ops(timeout, SD=#state{from = From,
 						_ ->
 							case Operation of
 								{update, Key, Type, OpParams} ->
+                                    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
 									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
 									ok ->
+                                        lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
 										Acc;
 									{error, Reason} ->
 										{error, Reason}
