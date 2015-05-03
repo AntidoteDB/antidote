@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(antidotec_pb_socket).
 
--include_lib("riak_pb/include/antidote_pb.hrl").
+-include_lib("include/antidote_pb.hrl").
 
 -behaviour(gen_server).
 
@@ -351,6 +351,7 @@ encode_snapshot_read_op(Op=#fpbgetsetreq{}) ->
 
 %% Decode response of pb request
 decode_response(#fpboperationresp{success = true}) -> ok;
+decode_response(#fpboperationresp{success = false}) -> error;
 decode_response(#fpbgetcounterresp{value = Val}) ->
     Val;
 decode_response(#fpbgetsetresp{value = Val}) ->
