@@ -60,13 +60,21 @@ encode(Message) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbincrementreq{key=Key, amount=Amount}, State) ->
-    {ok, _Result} = antidote:append(Key, riak_dt_pncounter, {{increment, Amount}, node()}),
-    {reply, #fpboperationresp{success = true}, State};
+    case antidote:append(Key, riak_dt_pncounter, {{increment, Amount}, node()}) of
+        {ok, _Result} ->
+            {reply, #fpboperationresp{success = true}, State};
+        {error, _Reason} ->
+            {reply, #fpboperationresp{success = false}, State}
+    end;
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbdecrementreq{key=Key, amount=Amount}, State) ->
-    {ok, _Result} = antidote:append(Key, riak_dt_pncounter, {{decrement, Amount}, node()}),
-    {reply, #fpboperationresp{success = true}, State};
+    case antidote:append(Key, riak_dt_pncounter, {{decrement, Amount}, node()}) of
+        {ok, _Result} ->
+            {reply, #fpboperationresp{success = true}, State};
+        {error, _Reason} ->
+            {reply, #fpboperationresp{success = false}, State}
+    end;
 
 %% @doc process/2 callback. Handles an incoming request message.
 %% @todo accept different types of counters.
