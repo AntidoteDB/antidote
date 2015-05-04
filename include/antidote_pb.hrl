@@ -57,3 +57,63 @@
     value = erlang:error({required, value})
 }).
 -endif.
+
+-ifndef(FPBATOMICUPDATETXNOP_PB_H).
+-define(FPBATOMICUPDATETXNOP_PB_H, true).
+-record(fpbatomicupdatetxnop, {
+    counterinc,
+    counterdec,
+    setupdate
+}).
+-endif.
+
+-ifndef(FPBATOMICUPDATETXNREQ_PB_H).
+-define(FPBATOMICUPDATETXNREQ_PB_H, true).
+-record(fpbatomicupdatetxnreq, {
+    clock,
+    ops = []
+}).
+-endif.
+
+-ifndef(FPBATOMICUPDATETXNRESP_PB_H).
+-define(FPBATOMICUPDATETXNRESP_PB_H, true).
+-record(fpbatomicupdatetxnresp, {
+    success = erlang:error({required, success}),
+    clock
+}).
+-endif.
+
+-ifndef(FPBSNAPSHOTREADTXNOP_PB_H).
+-define(FPBSNAPSHOTREADTXNOP_PB_H, true).
+-record(fpbsnapshotreadtxnop, {
+    counter,
+    set
+}).
+-endif.
+
+-ifndef(FPBSNAPSHOTREADTXNREQ_PB_H).
+-define(FPBSNAPSHOTREADTXNREQ_PB_H, true).
+-record(fpbsnapshotreadtxnreq, {
+    clock,
+    ops = []
+}).
+-endif.
+
+-ifndef(FPBSNAPSHOTREADTXNRESPVALUE_PB_H).
+-define(FPBSNAPSHOTREADTXNRESPVALUE_PB_H, true).
+-record(fpbsnapshotreadtxnrespvalue, {
+    key = erlang:error({required, key}),
+    counter,
+    set
+}).
+-endif.
+
+-ifndef(FPBSNAPSHOTREADTXNRESP_PB_H).
+-define(FPBSNAPSHOTREADTXNRESP_PB_H, true).
+-record(fpbsnapshotreadtxnresp, {
+    success = erlang:error({required, success}),
+    clock,
+    results = []
+}).
+-endif.
+
