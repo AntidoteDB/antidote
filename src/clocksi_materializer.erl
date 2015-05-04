@@ -38,18 +38,27 @@ new(Type) ->
 
 %% @doc Calls the internal function materialize/6, with no TxId.
 -spec materialize(type(), snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
-                      snapshot_time(), 
-                      [clocksi_payload()], txid()) -> {ok, snapshot(), 
-                      {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-%materialize(_Type, Snapshot, _SnapshotTime, []) ->
-%    {ok, Snapshot};
-materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
-    case materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime) of
-    {ok, Val, CommitTime} ->
-    	{ok, Val, CommitTime};
-    {error, Reason} ->
-    	{error, Reason}
+		  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
+		  snapshot_time(),
+		  [clocksi_payload()], txid()) -> {ok, snapshot(), 
+						   {dcid(),CommitTime::non_neg_integer()} | ignore, snapshot(), [clocksi_payload()]} | {error, term()}.
+materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
+    {FirstDc,FirstTime} = hd(dict:to_list(MinSnapshotTime)),
+    %% This is the time of the snapshot that will be cached
+    %% It is the smallest time of the snapshot being requested by the transaction
+    SSTime = dict:fold(fun(DcId,CT,{AccDc,AccTime}) ->
+			       case CT < AccTime of
+				   true ->
+				       {DcId,CT};
+				   false ->
+				       {AccDc,AccTime}
+			       end
+		       end, {FirstDc,FirstTime}, MinSnapshotTime),
+    case materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, Ops, TxId, Snapshot, SnapshotCommitTime, []) of
+	{ok, Val, CommitTime, SnapshotSave, Rem} ->
+	    {ok, Val, CommitTime, SnapshotSave, Rem};
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 
@@ -65,53 +74,143 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
 %%      Output: The CRDT after appliying the operations and its commit
 %%      time taken from the last operation that was applied to the snapshot.
 -spec materialize(type(), 
-					  snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
-                      snapshot_time(),
-                      [clocksi_payload()], 
-                      txid(), 
-                      LastOpCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore) ->
-                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-materialize(_, Snapshot, _SnapshotCommitTime, _SnapshotTime, [], _TxId, CommitTime) ->
-    {ok, Snapshot, CommitTime};
+		  snapshot(),
+		  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
+		  {dcid(),non_neg_integer()},
+		  snapshot_time(),
+		  [clocksi_payload()], 
+		  txid(), 
+		  snapshot(),
+		  {dcid(),non_neg_integer()} | ignore,
+		  Remainder::[clocksi_payload]) ->
+			 {ok,snapshot(), {dcid(),non_neg_integer()} | ignore, snapshot(), [clocksi_payload()]} | {error, term()}.
+materialize(_Type, Snapshot, _SnapshotCommitTime, {SSDcId,SSTime}, _MinSnapshotTime, [], _TxId, SnapshotUse, LastOpCt, Remainder) ->
+    %% case AddedOp of
+    %% 	dont_ignore ->
+    %% 	    SSTime = dict:fold(fun(DcId,Time,{PrevDcId,PrevTime}) ->
+    %% 					case Time < PrevTime of
+    %% 					    true ->
+    %% 						{DcId,Time};
+    %% 					    false ->
+    %% 						{PrevDcId,PrevTime}
+    %% 					end
+    %% 				end, hd(dict:to_list(MinSnapshotTime)),MinSnapshotTime),
+    %% 	    {ok, Snapshot, SSTime, Remainder};
+    %% 	ignore ->
+    %% 	    {ok, Snapshot, ignore, Remainder}
+    %% end;
+    RetSS = case LastOpCt of
+		ignore ->
+		    ignore;
+		{LastOpDcId,LastOpTime} ->
+		    case SSTime > LastOpTime of
+			true ->
+			    {LastOpDcId,LastOpTime};
+			false ->
+			    {SSDcId,SSTime}
+		    end
+	    end,
+    {ok, Snapshot, RetSS, SnapshotUse, Remainder};
 
-materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, LastOpCommitTime) ->
+materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Rest], TxId, SnapshotSave, LastOpCt, Remainder) ->
     case Type == Op#clocksi_payload.type of
         true ->
-            OpCommitTime=Op#clocksi_payload.commit_time,
-            case (is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime)
+            OpCom=Op#clocksi_payload.commit_time,
+	    OpSS=Op#clocksi_payload.snapshot_time,
+            case (is_op_in_snapshot(OpCom, OpSS, MinSnapshotTime, SnapshotCommitTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-                	    case Op#clocksi_payload.op_param of
+		    Ds = Op#clocksi_payload.op_param,
+		    case Ds of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
-                            materialize(Type,
-                                        NewSnapshot,
-                                        SnapshotCommitTime,
-                                        SnapshotTime,
-                                        Rest,
-                                        TxId,
-                                        OpCommitTime);
+			    case materializer_vnode:belongs_to_snapshot_op(SSTime,OpCom,OpSS) of
+				false ->
+				    materialize(Type,
+						NewSnapshot,
+						SnapshotCommitTime,
+						SSTime,
+						MinSnapshotTime,
+						Rest,
+						TxId,
+					        Type:merge(SnapshotSave, State),
+						OpCom,
+						Remainder);
+				true ->
+				    materialize(Type,
+						NewSnapshot,
+						SnapshotCommitTime,
+						SSTime,
+						MinSnapshotTime,
+						Rest,
+						TxId,
+					        SnapshotSave,
+						LastOpCt,
+						Remainder)
+			    end;
                         {update, DownstreamOp} ->
                             case Type:update(DownstreamOp, Snapshot) of
                                 {ok, NewSnapshot} ->
-                                    materialize(Type,
-                                                NewSnapshot,
-                                                SnapshotCommitTime,
-                                                SnapshotTime,
-                                                Rest,
-                                                TxId,
-                                                OpCommitTime);
+				    case materializer_vnode:belongs_to_snapshot_op(SSTime,OpCom,OpSS) of
+					false ->
+					    case Type:update(DownstreamOp, SnapshotSave) of
+						{ok, NewSnapshotSave} ->
+						    materialize(Type,
+								NewSnapshot,
+								SnapshotCommitTime,
+								SSTime,
+								MinSnapshotTime,
+								Rest,
+								TxId,
+							        NewSnapshotSave,
+								OpCom,
+								Remainder);
+						{error, Reason} ->
+						    {error, Reason}
+					    end;
+					true ->
+					    materialize(Type,
+							NewSnapshot,
+							SnapshotCommitTime,
+							SSTime,
+							MinSnapshotTime,
+							Rest,
+							TxId,
+						        SnapshotSave,
+							LastOpCt,
+							Remainder)
+				    end;
                                 {error, Reason} ->
                                     {error, Reason}
                             end
                     end;
                 false ->
-                    materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Rest, TxId, LastOpCommitTime)
-            end;
-        false -> %% Op is not for this {Key, Type}
-            materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Rest, TxId, LastOpCommitTime)
+		    materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime,
+				Rest, TxId, SnapshotSave, LastOpCt, Remainder)
+	    end;
+	false -> %% Op is not for this {Key, Type}
+	    materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, Rest, TxId, SnapshotSave, LastOpCt, Remainder)
     end.
+
+%% max_ss(PrevSS,OpSS) ->
+%%     dict:fold(fun(DcId,Time,Acc) ->
+%% 		      case dict:find(DcId,Acc) of
+%% 			  {ok, ATime} ->
+%% 			      case ATime > Time of
+%% 				  true ->
+%% 				      dict:store(DcId,ATime,Acc);
+%% 				  false ->
+%% 				      dict:store(DcId,Time,Acc)
+%% 			      end;
+%% 			  error ->
+%% 			      dict:store(DcId,Time,Acc)
+%% 		      end
+%% 	      end, PrevSS, OpSS).
+
+
+%% -spec is_op_in_min_snapshot({dcid(),non_neg_integer()}, non_neg_integer()) -> boolean().
+%% is_op_in_min_snapshot({_OpDc,OpCommitTime},MinSnapshotTime) ->
+%%     OpCommitTime =< MinSnapshotTime.
 
 %% @doc Check whether an udpate is included in a snapshot and also
 %%		if that update is newer than a snapshot's commit time
@@ -120,21 +219,37 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%			   SnapshotCommitTime = commit time of that snapshot.
 %%      Outptut: true or false
--spec is_op_in_snapshot({term(), non_neg_integer()}, vectorclock:vectorclock(), {term(),non_neg_integer()} | ignore) -> boolean().
-is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
-	{OpDc, OpCommitTime}= OperationCommitTime,
-    {ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
-    case SnapshotCommitTime of
-    ignore -> 
-    	OpCommitTime =< Ts;
-    {SnapshotDc, SnapshotCT} ->
-    	case (SnapshotDc == OpDc) of
-    	true ->
-			(OpCommitTime =< Ts) and (SnapshotCT < OpCommitTime);
-		false ->
-			OpCommitTime =< Ts
-		end
-	end.
+%% SnapshotCommitTime time is the snapshot that already exists, so if this op
+%% is already in the snapshot, should not include it
+-spec is_op_in_snapshot({dcid(),non_neg_integer()}, vectorclock:vectorclock(), vectorclock:vectorclock(),
+			{dcid(),non_neg_integer()} | ignore) -> boolean().
+is_op_in_snapshot({OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot) ->
+    %% First check if the op was already included in the previous snapshot
+    case materializer_vnode:belongs_to_snapshot_op(
+	   LastSnapshot,{OpDc,OpCommitTime},SnapshotTime) of
+	true ->
+	    %% If not, check if it should be included in the new snapshot
+	    %% Replace the snapshot time of the dc where the transaction committed with the commit time
+	    io:format("dict ~w~n", [OperationSnapshotTime]),
+	    OpSSCommit = dict:store(OpDc, OpCommitTime, OperationSnapshotTime),
+    	    dict:fold(fun(DcIdOp,TimeOp,Acc) ->
+			      case dict:find(DcIdOp,SnapshotTime) of
+				  {ok, TimeSS} ->
+				      case TimeSS < TimeOp of
+					  true ->
+					      false;
+					  false ->
+					      Acc
+				      end;
+				  error ->
+				      lager:error("Could not find DC in SS ~p", [SnapshotTime]),
+				      false
+			      end
+		      end, true, OpSSCommit);
+	false->
+	    false
+    end.
+	    
 
 %% @doc materialize_eager: apply updates in order without any checks
 -spec materialize_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().
@@ -155,63 +270,64 @@ materialize_eager(Type, Snapshot, [Op|Rest]) ->
 materializer_clocksi_test()->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    %%  need to add the snapshot time for these for the test to pass
     Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,2},1}},
-                           commit_time = {1, 1}, txid = 1},
+                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1,1}])},
     Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,1},1}},
-                           commit_time = {1, 2}, txid = 2},
+                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1,2}])},
     Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,1},1}},
-                           commit_time = {1, 3}, txid = 3},
+                           commit_time = {1, 3}, txid = 3, snapshot_time=vectorclock:from_list([{1,3}])},
     Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,2},1}},
-                           commit_time = {1, 4}, txid = 4},
+                           commit_time = {1, 4}, txid = 4, snapshot_time=vectorclock:from_list([{1,4}])},
 
     Ops = [Op1,Op2,Op3,Op4],
-    {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
-                                      PNCounter, ignore, vectorclock:from_list([{1,3}]),
-                                      Ops, ignore),
+    {ok, PNCounter2, CommitTime2, _SsSave, _Rem} = materialize(crdt_pncounter,
+						PNCounter, ignore, vectorclock:from_list([{1,3}]),
+						Ops, ignore),
     ?assertEqual({4, {1,3}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
-    {ok, PNcounter3, CommitTime3} = materialize(crdt_pncounter, PNCounter, ignore,
-                                   vectorclock:from_list([{1,4}]),Ops, ignore),
+    {ok, PNcounter3, CommitTime3, _SsSave1, _Rem} = materialize(crdt_pncounter, PNCounter, ignore,
+                                   vectorclock:from_list([{1,4}]), Ops, ignore),
     ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
-    {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, PNCounter, ignore,
-                                   vectorclock:from_list([{1,7}]),Ops, ignore),
-    ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
+    {ok, PNcounter4, CommitTime4, SsSave2, _Rem} = materialize(crdt_pncounter, PNCounter, ignore,
+                                   vectorclock:from_list([{1,7}]), Ops, ignore),
+    ?assertEqual({6, {1,4}, {6,0}}, {crdt_pncounter:value(PNcounter4), CommitTime4, SsSave2}).
 
 materializer_clocksi_concurrent_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update, {{increment,2}, actor1}},
-                           commit_time = {1, 1}, txid = 1},
+                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1,1}])},
     Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update, {{increment,1}, actor1}},
-                           commit_time = {1, 2}, txid = 2},
+                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1,2}])},
     Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update, {{increment,1}, actor1}},
-                           commit_time = {2, 1}, txid = 3},
+                           commit_time = {2, 1}, txid = 3, snapshot_time=vectorclock:from_list([{2,1}])},
 
     Ops = [Op1,Op2,Op3],
-    {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
-                                      PNCounter, ignore,
+    {ok, PNCounter2, CommitTime2, _SsSave, _Rem} = materialize(crdt_pncounter,
+                                      PNCounter, ignore, {2,1},
                                       vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore, ignore),
+                                      Ops, ignore, PNCounter, ignore, []),
     ?assertEqual({4, {2,1}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     
     
     
     Snapshot=new(crdt_pncounter),
-    {ok, PNcounter3, CommitTime3} = materialize(crdt_pncounter, Snapshot, ignore,
-                                   vectorclock:from_list([{1,2}]),Ops, ignore),
+    {ok, PNcounter3, CommitTime3, _SsSave1, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
+                                   vectorclock:from_list([{1,2}]), Ops, ignore),
     ?assertEqual({3, {1,2}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
     
-    {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, Snapshot, ignore,
+    {ok, PNcounter4, CommitTime4, _SsSave2, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
                                    vectorclock:from_list([{2,1}]),Ops, ignore),
     ?assertEqual({1, {2,1}}, {crdt_pncounter:value(PNcounter4), CommitTime4}),
     
-    {ok, PNcounter5, CommitTime5} = materialize(crdt_pncounter, Snapshot, ignore,
+    {ok, PNcounter5, CommitTime5, _SsSave3, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
                                    vectorclock:from_list([{1,1}]),Ops, ignore),
     ?assertEqual({2, {1,1}}, {crdt_pncounter:value(PNcounter5), CommitTime5}).
 
@@ -220,20 +336,21 @@ materializer_clocksi_noop_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Ops = [],
-    {ok, PNCounter2, ignore} = materialize(crdt_pncounter, PNCounter, ignore,
+    {ok, PNCounter2, ignore, _SsSave, _Rem} = materialize(crdt_pncounter, PNCounter, ignore, {1,1},
                                 vectorclock:from_list([{1,1}]),
-                                Ops, ignore, ignore),
+                                Ops, ignore, PNCounter, ignore, []),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
     
     
     
     
 is_op_in_snapshot_test()->
-	OpCT1 = {dc1, 1},
-	ST1 = vectorclock:from_list([{dc1, 2}]),
-	ST2 = vectorclock:from_list([{dc1, 0}]),
-	true = is_op_in_snapshot(OpCT1, ST1, ignore),
-	false = is_op_in_snapshot(OpCT1, ST2, ignore).
+    OpCT1 = {dc1, 1},
+    OpCT1SS = vectorclock:from_list([OpCT1]),
+    ST1 = vectorclock:from_list([{dc1, 2}]),
+    ST2 = vectorclock:from_list([{dc1, 0}]),
+    true = is_op_in_snapshot(OpCT1, OpCT1SS, ST1, ignore),
+    false = is_op_in_snapshot(OpCT1, OpCT1SS, ST2, ignore).
     
     
 -endif.
