@@ -350,13 +350,8 @@ encode_snapshot_read_op(Op=#fpbgetsetreq{}) ->
     #fpbsnapshotreadtxnop{set=Op}.
 
 %% Decode response of pb request
-decode_response(#fpboperationresp{success = Success}) ->
-    case Success of
-        true ->
-            ok;
-        false ->
-            {error, failed}
-    end;
+decode_response(#fpboperationresp{success = true}) -> ok;
+decode_response(#fpboperationresp{success = false}) -> {error, failed};
 decode_response(#fpbgetcounterresp{value = Val}) ->
     Val;
 decode_response(#fpbgetsetresp{value = Val}) ->
