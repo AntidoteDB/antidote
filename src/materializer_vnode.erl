@@ -203,34 +203,32 @@ internal_read(Sender, Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache)
 	[] ->
 	    case ExistsSnapshot of
 		false ->        						
-		    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, [], ignore}),
+		    riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
 		    {ok, LatestSnapshot};
 		true ->
 		    riak_core_vnode:reply(Sender, {error, no_snapshot}),
 		    {error, no_snapshot}
 	    end;
 	[{_, OpsDict}] ->
-						%lager:info("Ops to perform ~p", [OpsDict]),
 	    {ok, Ops}= filter_ops(OpsDict),
-						%lager:info("Filtered: ~p", [Ops]),
 	    case Ops of
 		[] ->
-		    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, [], ignore}),
+		    riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
 		    {ok, LatestSnapshot};
 		[H|T] ->
 		    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, [H|T], TxId) of
-			{ok, Snapshot, CommitTime, SnapshotSave, Remainder} ->
+			{ok, Snapshot, CommitTime, SnapshotSave} ->
 			    %% the following checks for the case there was no snapshots and there were operations, but none was applicable
 			    %% for the given snapshot_time
 			    %% But is the snapshot not safe?
 			    case (CommitTime==ignore) of 
 				true->
-				    riak_core_vnode:reply(Sender, {ok, Snapshot,Remainder,CommitTime}),
+				    riak_core_vnode:reply(Sender, {ok, Snapshot}),
 				    {ok, Snapshot};
 				false->
 				    case (Sender /= ignore) of
 					true ->
-					    riak_core_vnode:reply(Sender, {ok, Snapshot,Remainder,CommitTime});
+					    riak_core_vnode:reply(Sender, {ok, Snapshot});
 					false ->
 					    1=1
 				    end,
@@ -303,30 +301,6 @@ filter_ops(_, _Acc) ->
 -spec belongs_to_snapshot({dcid(),non_neg_integer()},
                           {dcid(),non_neg_integer()}) -> boolean().
 belongs_to_snapshot({_Dc, CommitTime}, {_OpDc,OpTime}) ->
-%%     dict:fold(fun(_TransDcId, TransTime, Acc) ->
-%% 		       case CommitTime =< TransTime of
-%% 			   true ->
-%% 			       Acc;
-%% 			   false ->
-%% 			       false
-%% 		       end
-%% 	       end, true, SnapshotTime).
-%%belongs_to_snapshot(SsToCheck, BelongsTo) ->
-    %% dict:fold(fun(OpDcId, OpTime, Acc) ->
-    %% 		      case dict:find(OpDcId,SsToCheck) of
-    %% 			  {ok, CheckTime} ->			   
-    %% 			      case CheckTime =< OpTime of
-    %% 				  true ->
-    %% 				      Acc;
-    %% 				  false ->
-    %% 				      false
-    %% 			      end;
-    %% 			  error ->
-    %% 			      lager:error("Should have all dcs in the SS ~p", [SsToCheck]),
-    %% 			      false
-    %% 		      end
-    %% 	      end, true, BelongsTo).
-    %%{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
     CommitTime < OpTime.
 
 %% Should be called doesn't belong in SS
@@ -373,8 +347,6 @@ prune_ops(OpsDict, Threshold)->
     orddict:filter(fun(_Key, Value) ->
 			   Op=(lists:last(Value)),
 			   OpCommitTime=Op#clocksi_payload.commit_time,
-			   %{OpCom,OpComTs}=OpCommitTime,
-			   %OpSSCommit = dict:store(OpCom, OpComTs, Op#clocksi_payload.snapshot_time),
                            (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
 		   end, OpsDict).
 
@@ -394,8 +366,6 @@ op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
               end,
     case (orddict:size(OpsDict))>=?OPS_THRESHOLD of
         true ->
-            %Type=DownstreamOp#clocksi_payload.type,
-            %SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             {_, _} = internal_read(ignore, Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),

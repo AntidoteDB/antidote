@@ -36,7 +36,22 @@ new(Type) ->
     Type:new().
 
 
-%% @doc Calls the internal function materialize/6, with no TxId.
+%% @doc Applies the operation of a list to a CRDT. Only the
+%%      operations with smaller timestamp than the specified
+%%      are considered. Newer operations are discarded.
+%%      Two materialized objects are returned, one that will be cached
+%%      and one that will be returned to the read.
+%%      Input:
+%%      Type: The type of CRDT to create
+%%      Snapshot: Current state of the CRDT
+%%      SnapshotCommitTime: The time used to describe the state of the CRDT given in Snapshot
+%%      MinFromSnapshotTime: The threshold time given by the reading transaction
+%%      Ops: The list of operations to apply in causal order
+%%      TxId: The Id of the transaction requesting the snapshot
+%%      Output: The CRDT after appliying the operations and its commit
+%%      time taken from the last operation that was applied to the snapshot.
+%%      SnapshotSave is the snapshot that will be cached and is described by time
+%%      CommitTime
 -spec materialize(type(), snapshot(),
 		  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
 		  snapshot_time(),
@@ -44,8 +59,10 @@ new(Type) ->
 						   {dcid(),CommitTime::non_neg_integer()} | ignore, snapshot(), [clocksi_payload()]} | {error, term()}.
 materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
     {FirstDc,FirstTime} = hd(dict:to_list(MinSnapshotTime)),
-    %% This is the time of the snapshot that will be cached
-    %% It is the smallest time of the snapshot being requested by the transaction
+    %% SSTime is the time of the snapshot that will be cached
+    %% It is described by a single scalar, so that the cached snapshots can be ordred
+    %% (also reducing the number of snapshots stored)
+    %% It is the smallest entry of the vector provided for the read
     SSTime = dict:fold(fun(DcId,CT,{AccDc,AccTime}) ->
 			       case CT < AccTime of
 				   true ->
@@ -54,25 +71,9 @@ materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
 				       {AccDc,AccTime}
 			       end
 		       end, {FirstDc,FirstTime}, MinSnapshotTime),
-    case materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, Ops, TxId, Snapshot, SnapshotCommitTime, []) of
-	{ok, Val, CommitTime, SnapshotSave, Rem} ->
-	    {ok, Val, CommitTime, SnapshotSave, Rem};
-	{error, Reason} ->
-	    {error, Reason}
-    end.
+    materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, Ops, TxId, Snapshot, SnapshotCommitTime).
 
 
-
-%% @doc Applies the operation of a list to a CRDT. Only the
-%%      operations with smaller timestamp than the specified
-%%      are considered. Newer operations are discarded.
-%%      Input:
-%%      Type: The type of CRDT to create
-%%      Snapshot: Current state of the CRDT
-%%      SnapshotTime: Threshold for the operations to be applied.
-%%      Ops: The list of operations to apply in causal order
-%%      Output: The CRDT after appliying the operations and its commit
-%%      time taken from the last operation that was applied to the snapshot.
 -spec materialize(type(), 
 		  snapshot(),
 		  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
@@ -81,42 +82,17 @@ materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
 		  [clocksi_payload()], 
 		  txid(), 
 		  snapshot(),
-		  {dcid(),non_neg_integer()} | ignore,
-		  Remainder::[clocksi_payload]) ->
+		  {dcid(),non_neg_integer()} | ignore) ->
 			 {ok,snapshot(), {dcid(),non_neg_integer()} | ignore, snapshot(), [clocksi_payload()]} | {error, term()}.
-materialize(_Type, Snapshot, _SnapshotCommitTime, {SSDcId,SSTime}, _MinSnapshotTime, [], _TxId, SnapshotUse, LastOpCt, Remainder) ->
-    %% case AddedOp of
-    %% 	dont_ignore ->
-    %% 	    SSTime = dict:fold(fun(DcId,Time,{PrevDcId,PrevTime}) ->
-    %% 					case Time < PrevTime of
-    %% 					    true ->
-    %% 						{DcId,Time};
-    %% 					    false ->
-    %% 						{PrevDcId,PrevTime}
-    %% 					end
-    %% 				end, hd(dict:to_list(MinSnapshotTime)),MinSnapshotTime),
-    %% 	    {ok, Snapshot, SSTime, Remainder};
-    %% 	ignore ->
-    %% 	    {ok, Snapshot, ignore, Remainder}
-    %% end;
-    RetSS = case LastOpCt of
-		ignore ->
-		    ignore;
-		{LastOpDcId,LastOpTime} ->
-		    case SSTime > LastOpTime of
-			true ->
-			    {LastOpDcId,LastOpTime};
-			false ->
-			    {SSDcId,SSTime}
-		    end
-	    end,
-    {ok, Snapshot, RetSS, SnapshotUse, Remainder};
+materialize(_Type, Snapshot, _SnapshotCommitTime, {SSDcId,SSTime}, _MinSnapshotTime, [], _TxId, SnapshotUse, _LastOpCt) ->
+    {ok, Snapshot, {SSDcId,SSTime}, SnapshotUse};
 
-materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Rest], TxId, SnapshotSave, LastOpCt, Remainder) ->
+materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Rest], TxId, SnapshotSave, LastOpCt) ->
     case Type == Op#clocksi_payload.type of
         true ->
             OpCom=Op#clocksi_payload.commit_time,
 	    OpSS=Op#clocksi_payload.snapshot_time,
+	    %% Check if the op is not in the previous snapshot and should be included in the new one
             case (is_op_in_snapshot(OpCom, OpSS, MinSnapshotTime, SnapshotCommitTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
@@ -124,6 +100,7 @@ materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Res
 		    case Ds of
                         {merge, State} ->
                             NewSnapshot = Type:merge(Snapshot, State),
+			    %% Check if the op should be included in the snapshot that will be cached
 			    case materializer_vnode:belongs_to_snapshot_op(SSTime,OpCom,OpSS) of
 				false ->
 				    materialize(Type,
@@ -134,8 +111,8 @@ materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Res
 						Rest,
 						TxId,
 					        Type:merge(SnapshotSave, State),
-						OpCom,
-						Remainder);
+						OpCom
+						);
 				true ->
 				    materialize(Type,
 						NewSnapshot,
@@ -145,12 +122,13 @@ materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Res
 						Rest,
 						TxId,
 					        SnapshotSave,
-						LastOpCt,
-						Remainder)
+						LastOpCt
+						)
 			    end;
                         {update, DownstreamOp} ->
                             case Type:update(DownstreamOp, Snapshot) of
                                 {ok, NewSnapshot} ->
+				    %% Check if the op should be included in the snapshot that will be cached
 				    case materializer_vnode:belongs_to_snapshot_op(SSTime,OpCom,OpSS) of
 					false ->
 					    case Type:update(DownstreamOp, SnapshotSave) of
@@ -163,8 +141,8 @@ materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Res
 								Rest,
 								TxId,
 							        NewSnapshotSave,
-								OpCom,
-								Remainder);
+								OpCom
+								);
 						{error, Reason} ->
 						    {error, Reason}
 					    end;
@@ -177,8 +155,8 @@ materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Res
 							Rest,
 							TxId,
 						        SnapshotSave,
-							LastOpCt,
-							Remainder)
+							LastOpCt
+							)
 				    end;
                                 {error, Reason} ->
                                     {error, Reason}
@@ -186,31 +164,11 @@ materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, [Op|Res
                     end;
                 false ->
 		    materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime,
-				Rest, TxId, SnapshotSave, LastOpCt, Remainder)
+				Rest, TxId, SnapshotSave, LastOpCt)
 	    end;
 	false -> %% Op is not for this {Key, Type}
-	    materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, Rest, TxId, SnapshotSave, LastOpCt, Remainder)
+	    materialize(Type, Snapshot, SnapshotCommitTime, SSTime, MinSnapshotTime, Rest, TxId, SnapshotSave, LastOpCt)
     end.
-
-%% max_ss(PrevSS,OpSS) ->
-%%     dict:fold(fun(DcId,Time,Acc) ->
-%% 		      case dict:find(DcId,Acc) of
-%% 			  {ok, ATime} ->
-%% 			      case ATime > Time of
-%% 				  true ->
-%% 				      dict:store(DcId,ATime,Acc);
-%% 				  false ->
-%% 				      dict:store(DcId,Time,Acc)
-%% 			      end;
-%% 			  error ->
-%% 			      dict:store(DcId,Time,Acc)
-%% 		      end
-%% 	      end, PrevSS, OpSS).
-
-
-%% -spec is_op_in_min_snapshot({dcid(),non_neg_integer()}, non_neg_integer()) -> boolean().
-%% is_op_in_min_snapshot({_OpDc,OpCommitTime},MinSnapshotTime) ->
-%%     OpCommitTime =< MinSnapshotTime.
 
 %% @doc Check whether an udpate is included in a snapshot and also
 %%		if that update is newer than a snapshot's commit time
@@ -230,7 +188,6 @@ is_op_in_snapshot({OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, Las
 	true ->
 	    %% If not, check if it should be included in the new snapshot
 	    %% Replace the snapshot time of the dc where the transaction committed with the commit time
-	    io:format("dict ~w~n", [OperationSnapshotTime]),
 	    OpSSCommit = dict:store(OpDc, OpCommitTime, OperationSnapshotTime),
     	    dict:fold(fun(DcIdOp,TimeOp,Acc) ->
 			      case dict:find(DcIdOp,SnapshotTime) of
@@ -285,16 +242,16 @@ materializer_clocksi_test()->
                            commit_time = {1, 4}, txid = 4, snapshot_time=vectorclock:from_list([{1,4}])},
 
     Ops = [Op1,Op2,Op3,Op4],
-    {ok, PNCounter2, CommitTime2, _SsSave, _Rem} = materialize(crdt_pncounter,
+    {ok, PNCounter2, CommitTime2, _SsSave} = materialize(crdt_pncounter,
 						PNCounter, ignore, vectorclock:from_list([{1,3}]),
 						Ops, ignore),
     ?assertEqual({4, {1,3}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
-    {ok, PNcounter3, CommitTime3, _SsSave1, _Rem} = materialize(crdt_pncounter, PNCounter, ignore,
+    {ok, PNcounter3, CommitTime3, _SsSave1} = materialize(crdt_pncounter, PNCounter, ignore,
                                    vectorclock:from_list([{1,4}]), Ops, ignore),
     ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
-    {ok, PNcounter4, CommitTime4, SsSave2, _Rem} = materialize(crdt_pncounter, PNCounter, ignore,
+    {ok, PNcounter4, CommitTime4, SsSave2} = materialize(crdt_pncounter, PNCounter, ignore,
                                    vectorclock:from_list([{1,7}]), Ops, ignore),
-    ?assertEqual({6, {1,4}, {6,0}}, {crdt_pncounter:value(PNcounter4), CommitTime4, SsSave2}).
+    ?assertEqual({6, {1,7}, {6,0}}, {crdt_pncounter:value(PNcounter4), CommitTime4, SsSave2}).
 
 materializer_clocksi_concurrent_test() ->
     PNCounter = new(crdt_pncounter),
@@ -310,24 +267,24 @@ materializer_clocksi_concurrent_test() ->
                            commit_time = {2, 1}, txid = 3, snapshot_time=vectorclock:from_list([{2,1}])},
 
     Ops = [Op1,Op2,Op3],
-    {ok, PNCounter2, CommitTime2, _SsSave, _Rem} = materialize(crdt_pncounter,
+    {ok, PNCounter2, CommitTime2, _SsSave} = materialize(crdt_pncounter,
                                       PNCounter, ignore, {2,1},
                                       vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore, PNCounter, ignore, []),
+                                      Ops, ignore, PNCounter, ignore),
     ?assertEqual({4, {2,1}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     
     
     
     Snapshot=new(crdt_pncounter),
-    {ok, PNcounter3, CommitTime3, _SsSave1, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
+    {ok, PNcounter3, CommitTime3, _SsSave1} = materialize(crdt_pncounter, Snapshot, ignore,
                                    vectorclock:from_list([{1,2}]), Ops, ignore),
     ?assertEqual({3, {1,2}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
     
-    {ok, PNcounter4, CommitTime4, _SsSave2, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
+    {ok, PNcounter4, CommitTime4, _SsSave2} = materialize(crdt_pncounter, Snapshot, ignore,
                                    vectorclock:from_list([{2,1}]),Ops, ignore),
     ?assertEqual({1, {2,1}}, {crdt_pncounter:value(PNcounter4), CommitTime4}),
     
-    {ok, PNcounter5, CommitTime5, _SsSave3, _Rem} = materialize(crdt_pncounter, Snapshot, ignore,
+    {ok, PNcounter5, CommitTime5, _SsSave3} = materialize(crdt_pncounter, Snapshot, ignore,
                                    vectorclock:from_list([{1,1}]),Ops, ignore),
     ?assertEqual({2, {1,1}}, {crdt_pncounter:value(PNcounter5), CommitTime5}).
 
@@ -336,9 +293,9 @@ materializer_clocksi_noop_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Ops = [],
-    {ok, PNCounter2, ignore, _SsSave, _Rem} = materialize(crdt_pncounter, PNCounter, ignore, {1,1},
+    {ok, PNCounter2, {1,1}, _SsSave} = materialize(crdt_pncounter, PNCounter, ignore, {1,1},
                                 vectorclock:from_list([{1,1}]),
-                                Ops, ignore, PNCounter, ignore, []),
+                                Ops, ignore, PNCounter, ignore),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
     
     
