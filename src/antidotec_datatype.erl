@@ -41,7 +41,7 @@
 
 %% @doc Constructs a new container for the type with the specified
 %% value and key. This should only be used internally by the client code.
--callback new(Key::binary(), Value::term()) -> datatype().
+-callback new(Key::integer(), Value::term()) -> datatype().
 
 %% @doc Returns the original, unmodified value of the object. This does
 %% not include the execution of any locally-queued operations.
