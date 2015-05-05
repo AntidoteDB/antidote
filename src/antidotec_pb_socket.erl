@@ -320,7 +320,6 @@ snapshot_get_crdts(Objects, Clock, Pid) ->
             {ok, NewClock, ReadObjects};
         error -> error;
         Other ->
-            lager:error("Unknown message received ~p",[Other]),
             {error, Other}
     end.
 
