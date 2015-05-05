@@ -82,7 +82,7 @@ process(#fpbsnapshotreadtxnreq{ops = Ops}, State) ->
                                             clock= term_to_binary(CommitTime),
                                             results=Reply}, State};
         Other ->
-            lager:info("Clocksi execute received ~p",[Other]),
+            lager:error("Clocksi execute received ~p",[Other]),
             {reply, #fpbsnapshotreadtxnresp{success=false}, State}
     end.
 
@@ -143,7 +143,9 @@ encode_snapshot_read_response(Zipped) ->
     lists:map(fun(Resp) ->
                       encode_snapshot_read_resp(Resp)
               end, Zipped).
-encode_snapshot_read_resp({{read, Key, riak_dt_pncounter}, Result}) ->
+encode_snapshot_read_resp({{read, KeyInt, riak_dt_pncounter}, Result}) ->
+    Key = list_to_binary(integer_to_list(KeyInt)),
     #fpbsnapshotreadtxnrespvalue{key=Key,counter=#fpbgetcounterresp{value =Result}};
-encode_snapshot_read_resp({{read,Key,riak_dt_orset}, Result}) ->
+encode_snapshot_read_resp({{read,KeyInt,riak_dt_orset}, Result}) ->
+    Key = list_to_binary(integer_to_list(KeyInt)),
     #fpbsnapshotreadtxnrespvalue{key=Key,set=#fpbgetsetresp{value = term_to_binary(Result)}}.

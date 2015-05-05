@@ -48,10 +48,8 @@ get_logid_from_key(Key) ->
 get_preflist_from_key(Key) ->
     ConvertedKey = case is_integer(Key) of
                     true ->
-			lager:info("Is integer!"),
                         abs(Key);
                     false ->
-			lager:info("Not integer!"),
                         HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
                         abs(crypto:bytes_to_integer(HashedKey))
                 end,
