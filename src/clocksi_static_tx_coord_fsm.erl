@@ -70,7 +70,7 @@ start_link(From, Operations) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
-    lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
+    _ = random:seed(erlang:now()),
     {ok, _Pid} = case ClientClock of
                      ignore ->
                          lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
