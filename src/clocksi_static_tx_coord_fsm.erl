@@ -70,6 +70,7 @@ start_link(From, Operations) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
+    _ = random:seed(erlang:now()),
     {ok, _Pid} = case ClientClock of
                      ignore ->
                          clocksi_interactive_tx_coord_sup:start_fsm([self()]);

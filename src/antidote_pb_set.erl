@@ -58,15 +58,30 @@ encode(Message) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
-    lists:foreach(fun(X) ->
-                          Elem = erlang:binary_to_term(X),
-                          antidote:append(Key, riak_dt_orset, {{add, Elem}, node()})
-                  end,AddsBin),
-    lists:foreach(fun(X) ->
-                          Elem = erlang:binary_to_term(X),
-                          antidote:append(Key, riak_dt_orset, {{remove, Elem}, node()})
-                  end,RemsBin),
-    {reply, #fpboperationresp{success = true}, State};
+    NumError1 = lists:foldl(fun(X, Error) ->
+                            Elem = erlang:binary_to_term(X),
+                            case antidote:append(Key, riak_dt_orset, {{add, Elem}, node()}) of
+                                {ok, _} ->
+                                    Error;
+                                {error, _} ->
+                                    Error+1
+                            end
+                            end, 0, AddsBin),
+    NumError2 = lists:foreach(fun(X, Error) ->
+                            Elem = erlang:binary_to_term(X),
+                            case antidote:append(Key, riak_dt_orset, {{remove, Elem}, node()}) of
+                                {ok, _} ->
+                                    Error;
+                                {error, _} ->
+                                    Error+1
+                            end
+                            end, NumError1, RemsBin),
+    case NumError2 of
+        0 ->
+            {reply, #fpboperationresp{success = true}, State};
+        _ ->
+            {reply, #fpboperationresp{success = false}, State}
+    end;
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbgetsetreq{key=Key}, State) ->

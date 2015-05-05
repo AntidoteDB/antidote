@@ -26,7 +26,7 @@
 
 
 -define(SNAPSHOT_THRESHOLD, 10).
--define(SNAPSHOT_MIN, 2).
+-define(SNAPSHOT_MIN, 5).
 -define(OPS_THRESHOLD, 50).
 
 -ifdef(TEST).
@@ -59,10 +59,9 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time
 -spec read(key(), type(), vectorclock:vectorclock(), txid()) -> {ok, term()} | {error, atom()}.
 read(Key, Type, SnapshotTime, TxId) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref,
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    riak_core_vnode_master:sync_command(IndexNode,
                                         {read, Key, Type, SnapshotTime, TxId},
                                         materializer_vnode_master).
 
