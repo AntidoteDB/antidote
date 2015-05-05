@@ -319,6 +319,7 @@ snapshot_get_crdts(Objects, Clock, Pid) ->
                                     end, Zipped),
             {ok, NewClock, ReadObjects};
         error -> error;
+        {error, Reason} -> {error, Reason};
         Other ->
             {error, Other}
     end.
@@ -375,5 +376,5 @@ decode_response(#fpbsnapshotreadtxnrespvalue{counter=Counter, set=undefined}) ->
 decode_response(#fpbsnapshotreadtxnrespvalue{counter=undefined, set=Set}) ->
     decode_response(Set);
 decode_response(Resp) ->
-    lager:error("Unexpected Message WRONG ~p",[Resp]),
+    lager:error("Unexpected Message ~p",[Resp]),
     error.
