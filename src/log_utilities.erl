@@ -46,13 +46,7 @@ get_logid_from_key(Key) ->
 %%      key's logfile will be located.
 -spec get_preflist_from_key(key()) -> preflist().
 get_preflist_from_key(Key) ->
-    ConvertedKey = case is_integer(Key) of
-                    true ->
-                        abs(Key);
-                    false ->
-                        HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-                        abs(crypto:bytes_to_integer(HashedKey))
-                end,
+    ConvertedKey = convert_key(Key),
     %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     get_primaries_preflist(ConvertedKey).
 
@@ -89,7 +83,33 @@ remove_node_from_preflist(Preflist) ->
     end,
     lists:foldl(F, [], Preflist).
 
+%% @doc Convert key. If the key is integer(or integer in form of binary),
+%% directly use it to get the partition. If it is not integer, convert it
+%% to integer using hash.
+-spec convert_key(key()) -> non_neg_integer().
+convert_key(Key) ->
+    case is_binary(Key) of
+        true ->
+            KeyInt = (catch list_to_integer(binary_to_list(Key))),
+            case is_integer(KeyInt) of 
+                true -> abs(KeyInt);
+                false ->
+                    HashedKey = riak_core_util:chash_key({?BUCKET, Key}),
+                    abs(crypto:bytes_to_integer(HashedKey))
+            end;
+        false ->
+            case is_integer(Key) of 
+                true ->
+                    abs(Key);
+                false ->
+                    HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+                    abs(crypto:bytes_to_integer(HashedKey))
+            end
+    end.
+
 -ifdef(TEST).
+
+
 
 %% @doc Testing remove_node_from_preflist
 remove_node_from_preflist_test()->
@@ -98,5 +118,13 @@ remove_node_from_preflist_test()->
                 {partition3, node}],
     ?assertEqual([partition1, partition2, partition3],
                  remove_node_from_preflist(Preflist)).
+
+%% @doc Testing convert key
+convert_key_test()->
+    ?assertEqual(1, convert_key(1)),
+    ?assertEqual(1, convert_key(-1)),
+    ?assertEqual(0, convert_key(0)),
+    ?assertEqual(45, convert_key(<<"45">>)),
+    ?assertEqual(45, convert_key(<<"-45">>)).
 
 -endif.
