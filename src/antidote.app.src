@@ -7,6 +7,7 @@
   {applications, [
                   kernel,
                   stdlib,
+                  antidote_pb,
                   riak_pb,
                   riak_api,
                   riak_core

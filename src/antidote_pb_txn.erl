@@ -98,14 +98,11 @@ decode_au_txn_ops(Ops) ->
                 end, [], Ops).
 %% Counter
 decode_au_txn_op(#fpbatomicupdatetxnop{counterinc=#fpbincrementreq{key=Key, amount=Amount}}) ->
-    KeyInt = list_to_integer(binary_to_list(Key)),
-    [{update, KeyInt, riak_dt_pncounter, {{increment, Amount}, node()}}];
+    [{update, Key, riak_dt_pncounter, {{increment, Amount}, node()}}];
 decode_au_txn_op(#fpbatomicupdatetxnop{counterdec=#fpbdecrementreq{key=Key, amount=Amount}}) ->
-    KeyInt = list_to_integer(binary_to_list(Key)),
-    [{update, KeyInt, riak_dt_pncounter, {{decrement, Amount}, node()}}];
+    [{update, Key, riak_dt_pncounter, {{decrement, Amount}, node()}}];
 %% Set
 decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=AddElems, rems=RemElems}}) ->
-    KeyInt = list_to_integer(binary_to_list(Key)),
      Adds = lists:map(fun(X) ->
                               binary_to_term(X)
                       end, AddElems),
@@ -114,13 +111,13 @@ decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=
                       end, RemElems),
     Op = case length(Adds) of
              0 -> [];
-             1 -> [{update, KeyInt, riak_dt_orset, {{add,Adds}, node()}}];
-             _ -> [{update, KeyInt, riak_dt_orset, {{add_all, Adds},node()}}]
+             1 -> [{update, Key, riak_dt_orset, {{add,Adds}, node()}}];
+             _ -> [{update, Key, riak_dt_orset, {{add_all, Adds},node()}}]
          end, 
     case length(Rems) of
         0 -> Op;
-        1 -> [{update, KeyInt, riak_dt_orset, {{remove,Adds}, ignore}}] ++ Op;
-        _ -> [{update, KeyInt, riak_dt_orset, {{remove_all, Adds},ignore}}] ++ Op
+        1 -> [{update, Key, riak_dt_orset, {{remove,Adds}, ignore}}] ++ Op;
+        _ -> [{update, Key, riak_dt_orset, {{remove_all, Adds},ignore}}] ++ Op
     end.
         
 
@@ -130,11 +127,9 @@ decode_snapshot_read_ops(Ops) ->
               end, Ops).
 
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetcounterreq{key=Key}}) ->
-    KeyInt = list_to_integer(binary_to_list(Key)),
-    {read, KeyInt, riak_dt_pncounter};
+    {read, Key, riak_dt_pncounter};
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{set=#fpbgetsetreq{key=Key}}) ->
-    KeyInt = list_to_integer(binary_to_list(Key)),
-    {read, KeyInt, riak_dt_orset}.
+    {read, Key, riak_dt_orset}.
 
 
 
@@ -143,9 +138,7 @@ encode_snapshot_read_response(Zipped) ->
     lists:map(fun(Resp) ->
                       encode_snapshot_read_resp(Resp)
               end, Zipped).
-encode_snapshot_read_resp({{read, KeyInt, riak_dt_pncounter}, Result}) ->
-    Key = list_to_binary(integer_to_list(KeyInt)),
+encode_snapshot_read_resp({{read, Key, riak_dt_pncounter}, Result}) ->
     #fpbsnapshotreadtxnrespvalue{key=Key,counter=#fpbgetcounterresp{value =Result}};
-encode_snapshot_read_resp({{read,KeyInt,riak_dt_orset}, Result}) ->
-    Key = list_to_binary(integer_to_list(KeyInt)),
+encode_snapshot_read_resp({{read,Key,riak_dt_orset}, Result}) ->
     #fpbsnapshotreadtxnrespvalue{key=Key,set=#fpbgetsetresp{value = term_to_binary(Result)}}.
