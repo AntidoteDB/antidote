@@ -152,63 +152,46 @@ terminate(_Reason, _State) ->
 -spec internal_read(pid() | ignore, key(), type(), snapshot_time(), txid() | ignore, ets:tid() , ets:tid() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
-        [] ->
-        	SnapshotDict=orddict:new(),
-            LatestSnapshot=clocksi_materializer:new(Type),
-            SnapshotCommitTime = ignore,
-            ExistsSnapshot=false;
-        [{_, SnapshotDict}] ->
-            case get_latest_snapshot(SnapshotDict, SnapshotTime) of
-                {ok, {SnapshotCommitTime, LatestSnapshot}}->
-                    ExistsSnapshot=true;
-                {ok, no_snapshot} ->
-                	ExistsSnapshot=false,
-                    LatestSnapshot=clocksi_materializer:new(Type), 
-                    SnapshotCommitTime = ignore
-            end
-    end,
+	[] ->
+		SnapshotDict=orddict:new(),
+		LatestSnapshot= clocksi_materializer:new(Type),
+		SnapshotCommitTime = ignore;        	
+	[{_, SnapshotDict}] ->
+		case get_latest_snapshot(SnapshotDict, SnapshotTime) of
+		{ok, no_snapshot} ->
+			LatestSnapshot=clocksi_materializer:new(Type),
+			SnapshotCommitTime = ignore;
+		{ok, {SCT, LS}}->
+			{SnapshotCommitTime, LatestSnapshot} = {SCT, LS}
+		end
+	end,	
 	case ets:lookup(OpsCache, Key) of
-		[] ->
-			case ExistsSnapshot of
-			false ->        						
-				riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
-				{ok, LatestSnapshot};
-			true ->
+	[] ->
+		riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
+		{ok, LatestSnapshot};
+	[{_, OpsDict}] ->
+		{ok, Ops}= filter_ops(OpsDict),
+		case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) of
+		{ok, Snapshot, CommitTime} ->
+			%% the following checks for the case there were no snapshots and there were operations, but none was applicable
+			%% for the given snapshot_time
+			case (CommitTime==ignore) of 
+			true->
 				riak_core_vnode:reply(Sender, {error, no_snapshot}),
-				{error, no_snapshot}
+				{error, no_snapshot};
+			false->
+				riak_core_vnode:reply(Sender, {ok, Snapshot}),
+				SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
+				snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
+				{ok, Snapshot}
 			end;
-		[{_, OpsDict}] ->
-			{ok, Ops}= filter_ops(OpsDict),
-			case Ops of
-				[] ->
-					riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
-					{ok, LatestSnapshot};
-				[H|T] ->
-					case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, SnapshotTime, [H|T], TxId) of
-					{ok, Snapshot, CommitTime} ->
-						%% the following checks for the case there was no snapshots and there were operations, but none was applicable
-						%% for the given snapshot_time
-						case (CommitTime==ignore) of 
-						true->
-							riak_core_vnode:reply(Sender, {error, no_snapshot}),
-							{error, no_snapshot};
-						false->
-							case (Sender /= ignore) of
-							  true ->
-								  riak_core_vnode:reply(Sender, {ok, Snapshot});
-							  false ->
-								  1=1
-							  end,
-							SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
-							snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
-							{ok, Snapshot}
-						end;
-					{error, Reason} ->
-						riak_core_vnode:reply(Sender, {error, Reason}),
-						{error, Reason}
-					end
-			end
+		{error, Reason} ->
+			riak_core_vnode:reply(Sender, {error, Reason}),
+			{error, Reason}
+		end
 	end.
+	
+	
 
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
