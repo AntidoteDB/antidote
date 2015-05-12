@@ -26,7 +26,7 @@
 
 -behaviour(riak_api_pb_service).
 
--include_lib("riak_pb/include/antidote_pb.hrl").
+-include_lib("antidote_pb/include/antidote_pb.hrl").
 
 -export([init/0,
          decode/2,
@@ -44,7 +44,7 @@ init() ->
 
 %% @doc decode/2 callback. Decodes an incoming message.
 decode(Code, Bin) ->
-    % lager:info("Decoding Txn Req ~p",[Code]),
+    %% lager:info("Decoding Txn Req ~p ~p",[Code, Bin]),
     Msg = riak_pb_codec:decode(Code, Bin),
     case Msg of
         #fpbatomicupdatetxnreq{} ->
