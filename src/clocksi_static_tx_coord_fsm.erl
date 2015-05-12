@@ -63,7 +63,6 @@ start_link(From, ClientClock, Operations) ->
 start_link(From, Operations) ->
     gen_fsm:start_link(?MODULE, [From, ignore, Operations], []).
 
-
 %%%===================================================================
 %%% States
 %%%===================================================================
@@ -91,51 +90,49 @@ init([From, ClientClock, Operations]) ->
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
-%%       to execute the next operation.
+%%      to execute the next operation.
 execute_batch_ops(timeout, SD=#state{from = From,
                                      tx_id = TxId,
                                      tx_coord_pid = TxCoordPid,
                                      operations = Operations}) ->
     ExecuteOp = fun (Operation, Acc) ->
-    					case Acc of 
-						{error, Reason} ->
-							{error, Reason};
-						_ ->
-							case Operation of
-								{update, Key, Type, OpParams} ->
-									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
-									ok ->
-										Acc;
-									{error, Reason} ->
-										{error, Reason}
-									end;
-								{read, Key, Type} ->
-									case gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity) of
-									{ok, Value} ->
-										Acc++[Value];
-									{error, Reason} ->
-										{error, Reason}
-									end
-							end
-						end
-                end,
+            case Acc of
+                {error, Reason} ->
+                  {error, Reason};
+                _ ->
+                    case Operation of
+                        {update, Key, Type, OpParams} ->
+                            case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
+                                ok ->
+                                    Acc;
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end;
+                        {read, Key, Type} ->
+                            case gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity) of
+                                {ok, Value} ->
+                                    [Value|Acc];
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end
+                    end
+            end
+    end,
     ReadSet = lists:foldl(ExecuteOp, [], Operations),
-    case ReadSet of 
-	{error, Reason} ->
-		From ! {error, Reason},
-		{stop, normal, SD};
-	_ ->
-		case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-        {ok, {TxId, CommitTime}} ->
-            From ! {ok, {TxId, ReadSet, CommitTime}},
+    case ReadSet of
+        {error, Reason} ->
+            From ! {error, Reason},
             {stop, normal, SD};
         _ ->
-            From ! {error, commit_fail},
-            {stop, normal, SD}
-		end
-	end.
-	
-
+            case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
+                {ok, {TxId, CommitTime}} ->
+                    From ! {ok, {TxId, lists:reverse(ReadSet), CommitTime}},
+                    {stop, normal, SD};
+                _ ->
+                    From ! {error, commit_fail},
+                    {stop, normal, SD}
+            end
+    end.
 
 %% =============================================================================
 
