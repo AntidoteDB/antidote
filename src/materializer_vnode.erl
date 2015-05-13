@@ -33,6 +33,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+%API
 -export([start_vnode/1,
          read/4,
          update/2]).
@@ -51,13 +52,17 @@
          handle_coverage/4,
          handle_exit/3]).
 
--record(state, {partition, ops_cache, snapshot_cache}).
+-record(state, {
+          partition :: partition_id(),
+          ops_cache :: ets:tid(), 
+          snapshot_cache :: ets:tid()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), vectorclock:vectorclock(), txid()) -> {ok, term()} | {error, atom()}.
+%% @todo What does this actually return???
+-spec read(key(), type(), snapshot_time(), txid()) -> {ok, term()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
@@ -68,12 +73,14 @@ read(Key, Type, SnapshotTime, TxId) ->
 
 
 %%@doc write operation to cache for future read
--spec update(key(), #clocksi_payload{}) -> ok | {error, atom()}.
+-spec update(key(), clocksi_payload()) -> ok | {error, reason()}.
 update(Key, DownstreamOp) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
+
+
 
 init([Partition]) ->
     OpsCache = ets:new(ops_cache, [set]),
@@ -146,7 +153,8 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
+%% @todo Better description + what is returned???
+-spec internal_read(pid() | ignore, key(), type(), snapshot_time(), txid() | ignore, ets:tid() , ets:tid() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
@@ -210,8 +218,8 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
--spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
-                         -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
+-spec get_latest_snapshot(orddict:orddict(), snapshot_time())
+                         -> {ok, {term(),term()}} | {ok, no_snapshot}| {error, wrong_format, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
         []->
@@ -230,21 +238,10 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     end.
 
 %% @doc Get a list of operations from an orddict of operations
--spec filter_ops(orddict:orddict()) -> {ok, list()} | {error, wrong_format}.
+-spec filter_ops(list()) -> {ok, list()}.
 filter_ops(Ops) ->
-    filter_ops(Ops, []).
--spec filter_ops(orddict:orddict(), list()) -> {ok, list()} | {error, wrong_format}.
-filter_ops([], Acc) ->
-    {ok, Acc};
-filter_ops([H|T], Acc) ->
-    case H of
-        {_Key, Ops} ->
-            filter_ops(T,lists:append(Acc, Ops));
-        _ ->
-            {error, wrong_format}
-    end;
-filter_ops(_, _Acc) ->
-    {error, wrong_format}.
+    {ok, lists:map(fun({_Key, [Value]}) -> Value end, Ops)}.
+
 
 
 %% @doc Check whether a Key's operation or stored snapshot is included
@@ -253,16 +250,15 @@ filter_ops(_, _Acc) ->
 %%             CommitTime = local commit time of this Snapshot at DC
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
--spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
-                          SnapshotTime::vectorclock:vectorclock()) -> boolean().
+-spec belongs_to_snapshot(commit_time(), snapshot_time()) -> boolean().
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 	{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
 	CommitTime =< Ts.
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
--spec snapshot_insert_gc(Key::term(), SnapshotDict::orddict:orddict(),
-                         OpsDict::orddict:orddict(), atom() , atom() ) -> true.
+-spec snapshot_insert_gc(key(), orddict:orddict(),
+                         orddict:orddict(), ets:tid() , ets:tid() ) -> true.
 snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
         true ->
@@ -277,7 +273,7 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().
+-spec prune_ops(orddict:orddict(), commit_time())-> orddict:orddict().
 prune_ops(OpsDict, Threshold)->
     orddict:filter(fun(_Key, Value) ->
                            (belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
@@ -287,8 +283,8 @@ prune_ops(OpsDict, Threshold)->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(term(), clocksi_payload(),
-                   atom() , atom() )-> true.
+-spec op_insert_gc(key(), clocksi_payload(),
+                   ets:tid() , ets:tid() )-> true.
 op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
     OpsDict = case ets:lookup(OpsCache, Key) of
                   []->
@@ -321,12 +317,8 @@ filter_ops_test() ->
 	Ops2=orddict:append(key2, [b1, b2], Ops1),
 	Ops3=orddict:append(key3, [c1, c2], Ops2),
 	Result=filter_ops(Ops3),
-	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}),
-	Result1=filter_ops({some, thing}),
-	?assertEqual(Result1, {error, wrong_format}),
-	Result2=filter_ops([anything]),
-	?assertEqual(Result2, {error, wrong_format}).   
-	
+	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}).
+
 %% @doc Testing belongs_to_snapshot returns true when a commit time 
 %% is smaller than a snapshot time
 belongs_to_snapshot_test()->
