@@ -175,22 +175,18 @@ handle_command({read_from, LogId, _From}, _Sender,
                #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case disk_log:sync(Log) of
-                ok ->
-                    {Continuation, Ops} = 
-                    case disk_log:chunk(Log, Lastread) of
-                        {error, Reason} -> {error, Reason};
-                        {C, O} -> {C,O};
-                        {C, O, _} -> {C,O};
-                        eof -> {eof, []}
-                    end,
-                    case Continuation of
-                        error -> {reply, {error, Ops}, State};
-                        eof -> {reply, {ok, Ops}, State};
-                        _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-                    end;
-                _ ->
-                    {reply, {error, disklog_write_failed}, State}
+            disk_log:sync(Log),
+            {Continuation, Ops} = 
+                case disk_log:chunk(Log, Lastread) of
+                    {error, Reason} -> {error, Reason};
+                    {C, O} -> {C,O};
+                    {C, O, _} -> {C,O};
+                    eof -> {eof, []}
+                end,
+            case Continuation of
+                error -> {reply, {error, Ops}, State};
+                eof -> {reply, {ok, Ops}, State};
+                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
