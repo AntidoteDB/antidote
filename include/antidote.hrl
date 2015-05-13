@@ -67,7 +67,7 @@
 -type partition_id()  :: non_neg_integer().
 -type log_id() :: [partition_id()].
 -type type() :: atom().
--type snapshot() :: term().
+-type snapshot() :: crdt().
 -type snapshot_time() ::  vectorclock:vectorclock().
 -type commit_time() ::  {term(), non_neg_integer()}.
 -type txid() :: #tx_id{}.

@@ -37,20 +37,14 @@ new(Type) ->
 
 
 %% @doc Calls the internal function materialize/6, with no TxId.
+%% FIXME: Documentation!
 -spec materialize(type(), snapshot(),
 					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
                       snapshot_time(), 
                       [clocksi_payload()], txid()) -> {ok, snapshot(), 
                       {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-%materialize(_Type, Snapshot, _SnapshotTime, []) ->
-%    {ok, Snapshot};
 materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
-    case materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime) of
-    {ok, Val, CommitTime} ->
-    	{ok, Val, CommitTime};
-    {error, Reason} ->
-    	{error, Reason}
-    end.
+    materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime).
 
 
 
