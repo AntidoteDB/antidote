@@ -219,7 +219,7 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
 -spec get_latest_snapshot(orddict:orddict(), snapshot_time())
-                         -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
+                         -> {ok, {term(),term()}} | {ok, no_snapshot}| {error, wrong_format, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
         []->
@@ -238,22 +238,10 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     end.
 
 %% @doc Get a list of operations from an orddict of operations
--spec filter_ops(orddict:orddict()) -> {ok, list()} | {error, wrong_format}.
+-spec filter_ops(list()) -> {ok, list()}.
 filter_ops(Ops) ->
-    filter_ops(Ops, []).
+    {ok, lists:map(fun({_Key, [Value]}) -> Value end, Ops)}.
 
--spec filter_ops(orddict:orddict(), list()) -> {ok, list()} | {error, wrong_format}.
-filter_ops([], Acc) ->
-    {ok, Acc};
-filter_ops([H|T], Acc) ->
-    case H of
-        {_Key, Ops} ->
-            filter_ops(T,lists:append(Acc, Ops));
-        _ ->
-            {error, wrong_format}
-    end;
-filter_ops(_, _Acc) ->
-    {error, wrong_format}.
 
 
 %% @doc Check whether a Key's operation or stored snapshot is included
@@ -262,8 +250,7 @@ filter_ops(_, _Acc) ->
 %%             CommitTime = local commit time of this Snapshot at DC
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
--spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
-                          snapshot_time()) -> boolean().
+-spec belongs_to_snapshot(commit_time(), snapshot_time()) -> boolean().
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 	{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
 	CommitTime =< Ts.
@@ -286,7 +273,7 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().
+-spec prune_ops(orddict:orddict(), commit_time())-> orddict:orddict().
 prune_ops(OpsDict, Threshold)->
     orddict:filter(fun(_Key, Value) ->
                            (belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
@@ -296,8 +283,8 @@ prune_ops(OpsDict, Threshold)->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(term(), clocksi_payload(),
-                   atom() , atom() )-> true.
+-spec op_insert_gc(key(), clocksi_payload(),
+                   ets:tid() , ets:tid() )-> true.
 op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
     OpsDict = case ets:lookup(OpsCache, Key) of
                   []->
@@ -330,12 +317,8 @@ filter_ops_test() ->
 	Ops2=orddict:append(key2, [b1, b2], Ops1),
 	Ops3=orddict:append(key3, [c1, c2], Ops2),
 	Result=filter_ops(Ops3),
-	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}),
-	Result1=filter_ops({some, thing}),
-	?assertEqual(Result1, {error, wrong_format}),
-	Result2=filter_ops([anything]),
-	?assertEqual(Result2, {error, wrong_format}).   
-	
+	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}).
+
 %% @doc Testing belongs_to_snapshot returns true when a commit time 
 %% is smaller than a snapshot time
 belongs_to_snapshot_test()->

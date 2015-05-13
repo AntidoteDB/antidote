@@ -38,11 +38,9 @@ new(Type) ->
 
 %% @doc Calls the internal function materialize/6, with no TxId.
 %% FIXME: Documentation!
--spec materialize(type(), snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
-                      snapshot_time(), 
-                      [clocksi_payload()], txid()) -> {ok, snapshot(), 
-                      {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
+-spec materialize(type(), snapshot(), commit_time() | ignore, snapshot_time(), 
+                      [clocksi_payload()], txid()) 
+                    -> {ok, snapshot(), commit_time() | ignore} | {error, reason()}.
 materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
     materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime).
 
@@ -58,14 +56,12 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
 %%      Ops: The list of operations to apply in causal order
 %%      Output: The CRDT after appliying the operations and its commit
 %%      time taken from the last operation that was applied to the snapshot.
--spec materialize(type(), 
-					  snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
+-spec materialize(type(), snapshot(),	commit_time() | ignore,
                       snapshot_time(),
                       [clocksi_payload()], 
                       txid(), 
-                      LastOpCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore) ->
-                             {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
+                      commit_time() | ignore) ->
+                             {ok,snapshot(), commit_time() | ignore} | {error, reason()}.
 materialize(_, Snapshot, _SnapshotCommitTime, _SnapshotTime, [], _TxId, CommitTime) ->
     {ok, Snapshot, CommitTime};
 
@@ -114,21 +110,17 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%			   SnapshotCommitTime = commit time of that snapshot.
 %%      Outptut: true or false
--spec is_op_in_snapshot({term(), non_neg_integer()}, vectorclock:vectorclock(), {term(),non_neg_integer()} | ignore) -> boolean().
-is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
-	{OpDc, OpCommitTime}= OperationCommitTime,
-    {ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
+-spec is_op_in_snapshot(commit_time(), snapshot_time(), commit_time() | ignore) -> boolean().
+is_op_in_snapshot({OpDc, OpCommitTime}, SnapshotTime, SnapshotCommitTime) ->
+	{ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
+  SnapshotIncluded =  
     case SnapshotCommitTime of
-    ignore -> 
-    	OpCommitTime =< Ts;
-    {SnapshotDc, SnapshotCT} ->
-    	case (SnapshotDc == OpDc) of
-    	true ->
-			(OpCommitTime =< Ts) and (SnapshotCT < OpCommitTime);
-		false ->
-			OpCommitTime =< Ts
-		end
-	end.
+      {SnapshotDc, SnapshotCT} ->
+    	  (SnapshotDc /= OpDc) or (SnapshotCT < OpCommitTime);
+      ignore ->
+        true
+	 end,
+  (OpCommitTime =< Ts) and SnapshotIncluded.
 
 %% @doc materialize_eager: apply updates in order without any checks
 -spec materialize_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().

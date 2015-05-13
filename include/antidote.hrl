@@ -69,7 +69,7 @@
 -type type() :: atom().
 -type snapshot() :: crdt().
 -type snapshot_time() ::  vectorclock:vectorclock().
--type commit_time() ::  {term(), non_neg_integer()}.
+-type commit_time() ::  {dcid(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
