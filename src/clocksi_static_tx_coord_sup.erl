@@ -28,7 +28,7 @@
 
 -export([init/1]).
 
--define(NUM, 100).
+-define(NUM, 1).
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
