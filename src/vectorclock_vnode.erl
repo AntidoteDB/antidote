@@ -52,8 +52,8 @@
 -record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
                       partition_vectorclock :: vectorclock:vectorclock(),
                       stable_snapshot :: vectorclock:vectorclock(),
-                      partition,
-                      num_p}).
+                      partition :: partition_id(),
+                      num_p :: non_neg_integer()}).
 
 %% API
 start_vnode(I) ->

@@ -282,12 +282,12 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
-                       -> {ok, vectorclock:vectorclock()} | {error,term()}.
+-spec get_snapshot_time(ClientClock :: snapshot_time())
+                       -> {ok, snapshot_time()} | {error, term()}.
 get_snapshot_time(ClientClock) ->
     wait_for_clock(ClientClock).
 
--spec get_snapshot_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
+-spec get_snapshot_time() -> {ok, snapshot_time()} | {error, term()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     case vectorclock:get_stable_snapshot() of
@@ -301,8 +301,8 @@ get_snapshot_time() ->
             {error, Reason}
     end.
 
--spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-                           {ok, vectorclock:vectorclock()} | {error, term()}.
+-spec wait_for_clock(Clock :: snapshot_time()) ->
+                           {ok, snapshot_time()} | {error, term()}.
 wait_for_clock(Clock) ->
    case get_snapshot_time() of
        {ok, VecSnapshotTime} ->

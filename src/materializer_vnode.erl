@@ -51,13 +51,16 @@
          handle_coverage/4,
          handle_exit/3]).
 
--record(state, {partition, ops_cache, snapshot_cache}).
+-record(state, {
+  partition :: partition_id(), 
+  ops_cache :: ets:tid(),
+  snapshot_cache :: ets:tid()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), vectorclock:vectorclock(), txid()) -> {ok, term()} | {error, atom()}.
+-spec read(key(), type(), snapshot_time(), txid()) -> {ok, term()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
@@ -68,7 +71,7 @@ read(Key, Type, SnapshotTime, TxId) ->
 
 
 %%@doc write operation to cache for future read
--spec update(key(), #clocksi_payload{}) -> ok | {error, atom()}.
+-spec update(key(), clocksi_payload()) -> ok | {error, reason()}.
 update(Key, DownstreamOp) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -146,7 +149,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
+-spec internal_read(pid() | ignore, key(), type(), snapshot_time(), txid() | ignore, ets:tid() , ets:tid() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
@@ -210,7 +213,7 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
--spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
+-spec get_latest_snapshot(orddict:orddict(), snapshot_time())
                          -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
@@ -253,16 +256,14 @@ filter_ops(_, _Acc) ->
 %%             CommitTime = local commit time of this Snapshot at DC
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
--spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
-                          SnapshotTime::vectorclock:vectorclock()) -> boolean().
+-spec belongs_to_snapshot(commit_time(), snapshot_time()) -> boolean().
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 	{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
 	CommitTime =< Ts.
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
--spec snapshot_insert_gc(Key::term(), SnapshotDict::orddict:orddict(),
-                         OpsDict::orddict:orddict(), atom() , atom() ) -> true.
+-spec snapshot_insert_gc(key(), orddict:orddict(), orddict:orddict(), ets:tid() , ets:tid() ) -> true.
 snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
         true ->
@@ -277,7 +278,7 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().
+-spec prune_ops(orddict:orddict(), commit_time())-> orddict:orddict().
 prune_ops(OpsDict, Threshold)->
     orddict:filter(fun(_Key, Value) ->
                            (belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
@@ -287,9 +288,8 @@ prune_ops(OpsDict, Threshold)->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(term(), clocksi_payload(),
-                   atom() , atom() )-> true.
-op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
+-spec op_insert_gc(key(), clocksi_payload(), ets:tid(), ets:tid()) -> true.
+op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     OpsDict = case ets:lookup(OpsCache, Key) of
                   []->
                       orddict:new();
