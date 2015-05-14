@@ -146,15 +146,16 @@ receive_prepared({prepared, ReceivedPrepareTime},
                            commit_protocol=CommitProtocol,
                            from=From, prepare_time=PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
-    case NumToAck of 1 ->
+    case NumToAck of 
+        1 ->
             case CommitProtocol of
-            two_phase ->
-                gen_fsm:reply(From, {ok, MaxPrepareTime}),
-                {next_state, committing_2pc,
-                S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}};
-            _ ->
-                {next_state, committing,
-                S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}, 0}
+                two_phase ->
+                    gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                    {next_state, committing_2pc,
+                    S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}};
+                _ ->
+                    {next_state, committing,
+                    S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}, 0}
             end;
         _ ->
             {next_state, receive_prepared,
@@ -222,12 +223,12 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction, read_set=
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case TxState of
-            committed ->
-                CausalClock = vectorclock:set_clock_of_dc(
-                  DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
-                {ok, {TxId, ReadSet, CausalClock}};
-            aborted->
-                {error, commit_fail}
+                    committed ->
+                        CausalClock = vectorclock:set_clock_of_dc(
+                            DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                        {ok, {TxId, ReadSet, CausalClock}};
+                    aborted->
+                        {error, commit_fail}
                 end,
         From ! Reply
     end,
@@ -260,7 +261,7 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(DcId :: term(), ClientClock :: vectorclock:vectorclock())
+-spec get_snapshot_time(DcId :: dcid(), ClientClock :: vectorclock:vectorclock())
                        -> {ok, vectorclock:vectorclock()} | {error,term()}.
 get_snapshot_time(DcId, ClientClock) ->
     wait_for_clock(DcId, ClientClock).
@@ -300,7 +301,7 @@ perform_operations([{update, Key, Type, Param}|Rest], Transaction, ReadSet, Part
     end.
 
 
--spec get_snapshot_time(DcId :: term()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
+-spec get_snapshot_time(DcId :: dcid()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_snapshot_time(DcId) ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     case vectorclock:get_stable_snapshot() of
@@ -313,7 +314,7 @@ get_snapshot_time(DcId) ->
             {error, Reason}
     end.
 
--spec wait_for_clock(DcId :: term(), Clock :: vectorclock:vectorclock()) ->
+-spec wait_for_clock(DcId :: dcid(), Clock :: vectorclock:vectorclock()) ->
                            {ok, vectorclock:vectorclock()} | {error, term()}.
 wait_for_clock(DcId, Clock) ->
    case get_snapshot_time(DcId) of
