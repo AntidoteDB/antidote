@@ -51,13 +51,16 @@
          handle_coverage/4,
          handle_exit/3]).
 
--record(state, {partition, ops_cache, snapshot_cache}).
+-record(state, {
+  partition :: partition_id(), 
+  ops_cache :: ets:tid(),
+  snapshot_cache :: ets:tid()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), vectorclock:vectorclock(), txid()) -> {ok, term()} | {error, atom()}.
+-spec read(key(), type(), snapshot_time(), txid()) -> {ok, term()} | {error, atom()}.
 read(Key, Type, SnapshotTime, TxId) ->
     DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
@@ -146,7 +149,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
+-spec internal_read(term(),term(), atom(), snapshot_time(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
@@ -210,7 +213,7 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
--spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
+-spec get_latest_snapshot(SnapshotDict::orddict:orddict(), snapshot_time())
                          -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
@@ -253,8 +256,8 @@ filter_ops(_, _Acc) ->
 %%             CommitTime = local commit time of this Snapshot at DC
 %%             SnapshotTime = vector clock
 %%      Outptut: true or false
--spec belongs_to_snapshot({Dc::term(),CommitTime::non_neg_integer()},
-                          SnapshotTime::vectorclock:vectorclock()) -> boolean().
+-spec belongs_to_snapshot(commit_time(),
+                          snapshot_time()) -> boolean().
 belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 	{ok, Ts}= vectorclock:get_clock_of_dc(Dc, SnapshotTime),
 	CommitTime =< Ts.
@@ -277,7 +280,7 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().
+-spec prune_ops(orddict:orddict(), commit_time())-> orddict:orddict().
 prune_ops(OpsDict, Threshold)->
     orddict:filter(fun(_Key, Value) ->
                            (belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
