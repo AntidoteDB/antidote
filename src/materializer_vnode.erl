@@ -149,7 +149,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(pid(), key(), type(), snapshot_time(), txid() | ignore, ets:tid() , ets:tid() ) -> {ok, term()} | {error, no_snapshot}.
+-spec internal_read(pid() | ignore, key(), type(), snapshot_time(), txid() | ignore, ets:tid() , ets:tid() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
@@ -213,7 +213,7 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
--spec get_latest_snapshot(SnapshotDict::orddict:orddict(), snapshot_time())
+-spec get_latest_snapshot(orddict:orddict(), snapshot_time())
                          -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
