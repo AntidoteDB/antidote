@@ -45,12 +45,7 @@ new(Type) ->
 %materialize(_Type, Snapshot, _SnapshotTime, []) ->
 %    {ok, Snapshot};
 materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
-    case materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime) of
-    {ok, Val, CommitTime} ->
-    	{ok, Val, CommitTime};
-    {error, Reason} ->
-    	{error, Reason}
-    end.
+    materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId,SnapshotCommitTime).
 
 
 
