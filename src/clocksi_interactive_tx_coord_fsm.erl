@@ -41,6 +41,7 @@
          receive_prepared/2, single_committing/2, committing_2pc/3, committing/2, receive_committed/2, abort/2,
          reply_to_client/2]).
 
+-export([get_snapshot_time/0]).
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:

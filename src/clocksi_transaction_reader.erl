@@ -223,6 +223,7 @@ add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->
               fun(Op, {ListPending, ListCommits}) ->
                       {_Logid, Operation} = Op,
                       Logrecord = Operation#operation.payload,
+                      lager:info("Log record: ~p", [Logrecord]),
                       TxId = Logrecord#log_record.tx_id,
                       case Logrecord#log_record.op_type of
                           commit ->

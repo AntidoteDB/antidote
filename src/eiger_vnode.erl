@@ -26,8 +26,8 @@
 -define(EIGER_MASTER, eiger_vnode_master).
 
 -export([start_vnode/1,
-         read_key/2,
-         read_key_time/3,
+         read_key/4,
+         read_key_time/5,
          prepare/4,
          commit/4,
          coordinate_tx/3,
@@ -63,27 +63,27 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 
-read_key(Node, Key) ->
+read_key(Node, Key, Type, TxId) ->
     riak_core_vnode_master:command(Node,
-                                   {read_key, Key},
+                                   {read_key, Key, Type, TxId},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
-read_key_time(Node, Key, Clock) ->
+read_key_time(Node, Key, Type, TxId, Clock) ->
     riak_core_vnode_master:command(Node,
-                                   {read_key_time, Key, Clock},
+                                   {read_key_time, Key, Type, TxId, Clock},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
-prepare(Node, UId, Clock, Keys) ->
+prepare(Node, Transaction, Clock, Keys) ->
     riak_core_vnode_master:command(Node,
-                                   {prepare, UId, Clock, Keys},
+                                   {prepare, Transaction, Clock, Keys},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
-commit(Node, UId, Updates, Clock) ->
+commit(Node, Transaction, Updates, Clock) ->
     riak_core_vnode_master:command(Node,
-                                   {commit, UId, Updates, Clock},
+                                   {commit, Transaction, Updates, Clock},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
@@ -110,16 +110,16 @@ init([Partition]) ->
     {ok, #state{partition=Partition}}.
 
 %% @doc starts a read_fsm to handle a read operation.
-handle_command({read_key, Key}, _Sender,
+handle_command({read_key, Key, Type, TxId}, _Sender,
                #state{clock=Clock, min_pendings=MinPendings}=State) ->
     case dict:find(Key, MinPendings) of
         {ok, _Min} ->
             {reply, {Key, empty, empty, Clock}, State};
         error ->
-            do_read(Key, latest, State)
+            do_read(Key, Type, TxId, latest, State)
     end;
 
-handle_command({read_key_time, Key, Time}, Sender,
+handle_command({read_key_time, Key, Type, TxId, Time}, Sender,
                #state{clock=Clock0, buffered_reads=BufferedReads0, min_pendings=MinPendings}=State) ->
     Clock = max(Clock0, Time),
     case dict:find(Key, MinPendings) of
@@ -128,18 +128,18 @@ handle_command({read_key_time, Key, Time}, Sender,
                 true ->
                     case dict:find(Key, BufferedReads0) of
                         {ok, Orddict0} ->
-                            Orddict = orddict:store(Time, Sender, Orddict0);
+                            Orddict = orddict:store(Time, {Sender, Type, TxId}, Orddict0);
                         error ->
                             Orddict0 = orddict:new(),
-                            Orddict = orddict:store(Time, Sender, Orddict0)
+                            Orddict = orddict:store(Time, {Sender, Type, TxId}, Orddict0)
                     end,
                     BufferedReads = dict:store(Key, Orddict, BufferedReads0),
                     {noreply, State#state{clock=Clock, buffered_reads=BufferedReads}};
                 false ->
-                    do_read(Key, Time, State#state{clock=Clock})
+                    do_read(Key, Type, TxId, Time, State#state{clock=Clock})
             end;
         error ->
-            do_read(Key, Time, State#state{clock=Clock})
+            do_read(Key, Type, TxId, Time, State#state{clock=Clock})
     end;
 
 handle_command({coordinate_tx, Updates, Debug}, Sender, #state{partition=Partition}=State) ->
@@ -147,10 +147,10 @@ handle_command({coordinate_tx, Updates, Debug}, Sender, #state{partition=Partiti
     {ok, _Pid} = eiger_updatetx_coord_fsm:start_link(Vnode, Sender, Updates, Debug),
     {noreply, State};
 
-handle_command({prepare, UId, CoordClock, Keys}, _Sender, #state{clock=Clock0, pending=Pending0, min_pendings=MinPendings0}=State) ->
+handle_command({prepare, Transaction, CoordClock, Keys}, _Sender, #state{clock=Clock0, pending=Pending0, min_pendings=MinPendings0}=State) ->
     Clock = max(Clock0, CoordClock) + 1,
     {Pending, MinPendings} = lists:foldl(fun(Key, {P0, MP0}) ->
-                                            P = dict:append(Key, {Clock, UId}, P0),
+                                            P = dict:append(Key, {Clock, Transaction#transaction.txn_id}, P0),
                                             MP = case dict:find(Key, MP0) of
                                                     {ok, _Min} ->
                                                         MP0;
@@ -159,12 +159,11 @@ handle_command({prepare, UId, CoordClock, Keys}, _Sender, #state{clock=Clock0, p
                                                  end,
                                             {P, MP}    
                                         end, {Pending0, MinPendings0}, Keys),
-    lager:info("Preparing tx at ~p for keys: ~p", [Clock, Keys]),
     {reply, {prepared, Clock}, State#state{clock=Clock, pending=Pending, min_pendings=MinPendings}};
 
-handle_command({commit, UId, Updates, CommitClock}, _Sender, State0=#state{clock=Clock0}) ->
+handle_command({commit, Transaction, Updates, CommitClock}, _Sender, State0=#state{clock=Clock0}) ->
     Clock = max(Clock0, CommitClock),
-    case update_keys(Updates, UId, CommitClock, State0) of
+    case update_keys(Updates, deps, Transaction, CommitClock, State0) of
         {ok, State} ->
             {reply, {committed, CommitClock}, State#state{clock=Clock}};
         {error, Reason} ->
@@ -214,89 +213,125 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-update_keys([], _UId, _CommitTime, State) ->
+update_keys([], _Deps, _Transaction, _CommitTime, State) ->
     {ok, State};
 
-update_keys([Update|Rest], UId, CommitTime, State0=#state{pending=Pending0,
+update_keys([Update|Rest], Deps, Transaction, CommitTime, State0=#state{pending=Pending0,
                                                          min_pendings=MinPendings0,
                                                          clock=Clock,
                                                          buffered_reads=BufferedReads0}) ->
-    {Key, Value} = Update,
-    case eiger_materializer_vnode:update(Key, Value, CommitTime) of
-        ok ->
-            List0 = dict:fetch(Key, Pending0),
-            {List, PrepareTime} = delete_pending_entry(List0, UId, []),
-            case List of
-                [] ->
-                    Pending = dict:erase(Key, Pending0),
-                    MinPendings = dict:erase(Key, MinPendings0),
-                    case dict:find(Key, BufferedReads0) of
-                        {ok, Orddict0} ->
-                            lists:foreach(fun({Time, Client}) ->
-                                            {reply, Reply, _S} = do_read(Key, Time, State0),
-                                            riak_core_vnode:reply(Client, Reply)
-                                          end, Orddict0),
-                            BufferedReads=dict:erase(Key, BufferedReads0),
-                            State=State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
-                        error ->
-                            State=State0#state{pending=Pending, min_pendings=MinPendings}
+    {Key, Type, _} = Update,
+    DSOp = eiger_downstream:generate_downstream_op(Update),
+    TxId = Transaction#transaction.txn_id,
+    LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, DSOp}},
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    Result = logging_vnode:append(Node,LogId,LogRecord),
+    case Result of
+        {ok, _} ->
+            PreparedLogRecord = #log_record{tx_id=TxId,
+                                            op_type=prepare,
+                                            op_payload=CommitTime},
+            logging_vnode:append(Node,LogId,PreparedLogRecord),
+            DcId = dc_utilities:get_my_dc_id(),
+            CommitLogRecord=#log_record{tx_id=TxId,
+                                  op_type=commit,
+                                  op_payload={{DcId, CommitTime},
+                                              Transaction#transaction.vec_snapshot_time}},
+            case logging_vnode:append(Node,LogId,CommitLogRecord) of
+                {ok, _} ->
+                    CommittedDownstreamOp =
+                                 #clocksi_payload{
+                                    key = Key,
+                                    type = Type,
+                                    op_param = DSOp,
+                                    snapshot_time = Transaction#transaction.vec_snapshot_time,
+                                    commit_time = {DcId, CommitTime},
+                                    txid = Transaction#transaction.txn_id},
+                    case eiger_materializer_vnode:update(Key, CommittedDownstreamOp) of
+                        ok ->
+                            List0 = dict:fetch(Key, Pending0),
+                            {List, PrepareTime} = delete_pending_entry(List0, TxId, []),
+                            case List of
+                                [] ->
+                                    Pending = dict:erase(Key, Pending0),
+                                    MinPendings = dict:erase(Key, MinPendings0),
+                                    case dict:find(Key, BufferedReads0) of
+                                        {ok, Orddict0} ->
+                                            lists:foreach(fun({Time, {Client, TypeB, TxIdB}}) ->
+                                                            {reply, Reply, _S} = do_read(Key, TypeB, TxIdB, Time, State0),
+                                                            riak_core_vnode:reply(Client, Reply)
+                                                          end, Orddict0),
+                                            BufferedReads=dict:erase(Key, BufferedReads0),
+                                            State=State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
+                                        error ->
+                                            State=State0#state{pending=Pending, min_pendings=MinPendings}
+                                    end;
+                                _ ->
+                                    Pending = dict:store(Key, List, Pending0),
+                                    case dict:fetch(Key, MinPendings0) < PrepareTime of
+                                        true ->
+                                            State=State0#state{pending=Pending};
+                                        false ->
+                                            Times = [PT || {_TxId, PT} <- List],
+                                            Min = lists:min(Times),
+                                            MinPendings =  dict:store(Key, Min, MinPendings0),
+                                            case dict:find(Key, BufferedReads0) of
+                                                {ok, Orddict0} ->
+                                                    case handle_pending_reads(Orddict0, CommitTime, Key, Clock) of
+                                                        [] ->
+                                                            BufferedReads = dict:erase(Key, BufferedReads0);
+                                                        Orddict ->
+                                                            BufferedReads = dict:store(Key, Orddict, BufferedReads0)
+                                                    end,
+                                                    State=State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
+                                                error ->
+                                                    State=State0#state{pending=Pending, min_pendings=MinPendings}
+                                            end
+                                    end
+                            end,
+                            update_keys(Rest, Deps, Transaction, CommitTime, State);
+                        {error, Reason} ->
+                            {error, Reason}
                     end;
-                _ ->
-                    Pending = dict:store(Key, List, Pending0),
-                    case dict:fetch(Key, MinPendings0) < PrepareTime of
-                        true ->
-                            State=State0#state{pending=Pending};
-                        false ->
-                            Times = [PT || {_UId, PT} <- List],
-                            Min = lists:min(Times),
-                            MinPendings =  dict:store(Key, Min, MinPendings0),
-                            case dict:find(Key, BufferedReads0) of
-                                {ok, Orddict0} ->
-                                    case handle_pending_reads(Orddict0, CommitTime, Key, Clock) of
-                                        [] ->
-                                            BufferedReads = dict:erase(Key, BufferedReads0);
-                                        Orddict ->
-                                            BufferedReads = dict:store(Key, Orddict, BufferedReads0)
-                                    end,
-                                    State=State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
-                                error ->
-                                    State=State0#state{pending=Pending, min_pendings=MinPendings}
-                            end
-                    end
-            end,
-            update_keys(Rest, UId, CommitTime, State);
-        {error, Reason} ->
-            {error, Reason}
+                {error, timeout} ->
+                    {error, timeout}
+            end;
+        {error, _Reason} ->
+            error
     end.
     
-delete_pending_entry([], _UId, List) ->
+delete_pending_entry([], _TxId, List) ->
     {List, not_found};
 
-delete_pending_entry([Element|Rest], UId, List) ->
+delete_pending_entry([Element|Rest], TxId, List) ->
     case Element of
-        {PrepareTime, UId} ->
+        {PrepareTime, TxId} ->
             {List ++ Rest, PrepareTime};
         _ ->
-            delete_pending_entry(Rest, UId, List ++ [Element])
+            delete_pending_entry(Rest, TxId, List ++ [Element])
     end.
 
 handle_pending_reads([], _CommitTime, _Key, _Clock) ->
     [];
 
 handle_pending_reads([Element|Rest], CommitTime, Key, Clock) ->
-    {Time, Client} = Element,
+    {Time, Type, TxId, Client} = Element,
     case Time < CommitTime of
         true ->
-            {reply, Reply, _State} = do_read(Key, Time, #state{clock=Clock}),
+            {reply, Reply, _State} = do_read(Key, Type, TxId, Time, #state{clock=Clock}),
             riak_core_vnode:reply(Client, Reply),
             handle_pending_reads(Rest, CommitTime, Key, Clock);
         false ->
             [Element|Rest]
     end.
 
-do_read(Key, Time, State=#state{clock=Clock}) -> 
-    case eiger_materializer_vnode:read(Key, Time) of
-        {ok, {EVT, Value}} ->
+do_read(Key, Type, TxId, Time, State=#state{clock=Clock}) -> 
+    DcId = dc_utilities:get_my_dc_id(),
+    VecSnapshotTime = vectorclock:from_list([{DcId, Time}]),
+    case eiger_materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
+    %case eiger_materializer_vnode:read(Key, Time) of
+        {ok, {Value, EVT}} ->
             case Time of
                 latest -> 
                     Reply = {Key, Value, EVT, Clock};

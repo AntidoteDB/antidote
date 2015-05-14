@@ -40,47 +40,55 @@
 
 -record(state, {
           from,
+          transaction,
           received=[] :: list(),
           final_results=[] :: list(),
           max_evt=0 :: integer(),
           eff_time,
-          keys,
+          keys_type,
           total :: integer()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(From, Keys) ->
-    gen_fsm:start_link(?MODULE, [From, Keys], []).
+start_link(From, KeysType) ->
+    gen_fsm:start_link(?MODULE, [From, KeysType], []).
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([From, Keys]) ->
-    SD = #state{keys=Keys,
+init([From, KeysType]) ->
+    SD = #state{keys_type=KeysType,
                 from=From,
-                total=length(Keys)},
+                total=length(KeysType)},
     {ok, execute_op, SD, 0}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-execute_op(timeout, SD0=#state{keys=Keys}) ->
-    lists:foreach(fun(Key) ->
+execute_op(timeout, SD0=#state{keys_type=KeysType}) ->
+    {ok, SnapshotTime} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
+    DcId = dc_utilities:get_my_dc_id(),
+    {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
+    TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
+    Transaction = #transaction{snapshot_time=LocalClock,
+                               vec_snapshot_time=SnapshotTime,
+                               txn_id=TransactionId},
+    lists:foreach(fun({Key, Type}) ->
                     Preflist = log_utilities:get_preflist_from_key(Key),
                     IndexNode = hd(Preflist),
-                    eiger_vnode:read_key(IndexNode, Key)
-                  end, Keys),
-    {next_state, collect_reads, SD0}.
+                    eiger_vnode:read_key(IndexNode, Key, Type, TransactionId)
+                  end, KeysType),
+    {next_state, collect_reads, SD0#state{transaction=Transaction}}.
 
 
 collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
                                                  max_evt=MaxEVT0,
                                                  total=Total}) ->
-    lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
+    %lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
     MaxEVT = case EVT of
                 empty ->
                     MaxEVT0;

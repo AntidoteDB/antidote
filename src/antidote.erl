@@ -44,12 +44,12 @@
 %% Public API
 
 
-eiger_readtx(Keys) ->
-    case Keys of
+eiger_readtx(KeysType) ->
+    case KeysType of
         [] ->
             {ok, empty};
         _List ->
-            {ok, _} = eiger_readtx_coord_sup:start_fsm([self(), Keys]),
+            {ok, _} = eiger_readtx_coord_sup:start_fsm([self(), KeysType]),
             receive
                 EndOfTx ->
                     EndOfTx
@@ -61,7 +61,7 @@ eiger_updatetx(Updates, _Dependencies) ->
 
 eiger_updatetx(Updates, _Dependencies, Debug) ->
     case Updates of
-        [{Key, _Value}|_Rest] ->
+        [{Key, _Type, _Param}|_Rest] ->
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             eiger_vnode:coordinate_tx(IndexNode, Updates, Debug);
