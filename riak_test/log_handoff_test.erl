@@ -75,6 +75,7 @@ test_handoff(RootNode, NewNode, NTestItems) ->
     %% added to the root node.  Note: systest_read() returns
     %% /non-matching/ items, so getting nothing back is good:
     lager:info("Validating data after handoff:"),
+    sleep(100),
     Results = multiple_reads(NewNode, 1, NTestItems),
     lager:info("The read data looks like: ~p", [Results]),
     ?assertEqual(0, length(Results)),
