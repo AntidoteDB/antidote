@@ -59,6 +59,7 @@
           commit_protocol :: term(),
           read_set :: [term()],
           operations :: list(),
+          dc_id :: term(),
           state:: atom()}).
 
 %%%===================================================================
@@ -77,13 +78,13 @@ start_link(From, Operations) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
+    DcId = dc_utilities:get_my_dc_id(),
     {ok, SnapshotTime} = case ClientClock of
         ignore ->
-            get_snapshot_time();
+            get_snapshot_time(DcId);
         _ ->
-            get_snapshot_time(ClientClock)
+            get_snapshot_time(DcId, ClientClock)
     end,
-    DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
@@ -91,6 +92,7 @@ init([From, ClientClock, Operations]) ->
                                txn_id=TransactionId},
     SD = #state{
             from = From,
+            dc_id = DcId,
             transaction = Transaction,
             operations = Operations,
             updated_partitions=[],
@@ -215,13 +217,12 @@ abort(abort, SD0=#state{transaction = Transaction,
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(timeout, SD=#state{from=From, transaction=Transaction, read_set=ReadSet,
-                                   state=TxState, commit_time=CommitTime}) ->
+reply_to_client(timeout, SD=#state{from=From, transaction=Transaction, read_set=ReadSet, 
+                                dc_id=DcId, state=TxState, commit_time=CommitTime}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case TxState of
             committed ->
-                DcId = dc_utilities:get_my_dc_id(),
                 CausalClock = vectorclock:set_clock_of_dc(
                   DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                 {ok, {TxId, ReadSet, CausalClock}};
@@ -259,10 +260,10 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(ClientClock :: vectorclock:vectorclock())
+-spec get_snapshot_time(DcId :: term(), ClientClock :: vectorclock:vectorclock())
                        -> {ok, vectorclock:vectorclock()} | {error,term()}.
-get_snapshot_time(ClientClock) ->
-    wait_for_clock(ClientClock).
+get_snapshot_time(DcId, ClientClock) ->
+    wait_for_clock(DcId, ClientClock).
 
 
 perform_operations([], _Transaction, ReadSet, Partitions) ->
@@ -299,12 +300,11 @@ perform_operations([{update, Key, Type, Param}|Rest], Transaction, ReadSet, Part
     end.
 
 
--spec get_snapshot_time() -> {ok, vectorclock:vectorclock()} | {error, term()}.
-get_snapshot_time() ->
+-spec get_snapshot_time(DcId :: term()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
+get_snapshot_time(DcId) ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     case vectorclock:get_stable_snapshot() of
         {ok, VecSnapshotTime} ->
-            DcId = dc_utilities:get_my_dc_id(),
             SnapshotTime = dict:update(DcId,
                                        fun (_Old) -> Now end,
                                        Now, VecSnapshotTime),
@@ -313,10 +313,10 @@ get_snapshot_time() ->
             {error, Reason}
     end.
 
--spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
+-spec wait_for_clock(DcId :: term(), Clock :: vectorclock:vectorclock()) ->
                            {ok, vectorclock:vectorclock()} | {error, term()}.
-wait_for_clock(Clock) ->
-   case get_snapshot_time() of
+wait_for_clock(DcId, Clock) ->
+   case get_snapshot_time(DcId) of
        {ok, VecSnapshotTime} ->
            case vectorclock:ge(VecSnapshotTime, Clock) of
                true ->
@@ -325,7 +325,7 @@ wait_for_clock(Clock) ->
                false ->
                    %% wait for snapshot time to catch up with Client Clock
                    timer:sleep(10),
-                   wait_for_clock(Clock)
+                   wait_for_clock(DcId, Clock)
            end;
        {error, Reason} ->
           {error, Reason}
