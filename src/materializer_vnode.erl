@@ -232,7 +232,15 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
 %% @doc Get a list of operations from an orddict of operations
 -spec filter_ops(orddict:orddict()) -> {ok, list()}.
 filter_ops(Ops) ->
-     {ok, lists:map(fun({_Key, [Value]}) -> Value end, Ops)}.
+    FoldFun = fun(X, Acc) ->
+            case X of
+                {_Key, Value} ->
+                    lists:append(Acc, Value);
+                _ ->
+                    Acc
+            end
+    end,
+    {ok, lists:foldl(FoldFun, [], Ops)}.
 
 %% @doc Check whether a Key's operation or stored snapshot is included
 %%		in a snapshot defined by a vector clock
