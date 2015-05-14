@@ -115,7 +115,7 @@ init([Partition]) ->
     LogFile = integer_to_list(Partition),
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
-    Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, [], GrossPreflists),
+    Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
     case open_logs(LogFile, Preflists, dict:new()) of
         {error, Reason} ->
             {error, Reason};
