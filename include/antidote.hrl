@@ -41,11 +41,10 @@
 -record(tx_id, {snapshot_time, server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
-                          op_param :: {term(), term()},
+                          op_param :: op(),
                           snapshot_time :: snapshot_time(),
                           commit_time :: commit_time(),
-                          txid :: txid()
-                         }).
+                          txid :: txid() }).
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(), 
                       vec_snapshot_time, 

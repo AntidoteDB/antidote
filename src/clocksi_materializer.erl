@@ -28,12 +28,10 @@
          materialize/6,
          materialize_eager/3]).
 
-%% @doc Creates an empty CRDT
-%%      Input: Type: The type of CRDT to create
-%%      Output: The newly created CRDT
--spec new(type()) -> term().
+%% @doc Creates an empty CRDT for a given type.
+-spec new(type()) -> snapshot().
 new(Type) ->
-    Type:new().
+    materializer:create_snapshot(Type).
 
 
 %% @doc Calls the internal function materialize/6, with no TxId.
@@ -125,18 +123,11 @@ is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
 		end
 	end.
 
-%% @doc materialize_eager: apply updates in order without any checks
--spec materialize_eager(type(), snapshot(), [clocksi_payload()]) -> snapshot().
-materialize_eager(_, Snapshot, []) ->
-    Snapshot;
-materialize_eager(Type, Snapshot, [Op|Rest]) ->
-   case Op of
-        {merge, State} ->
-            NewSnapshot = Type:merge(Snapshot, State);
-        {update, DownstreamOp} ->
-            {ok, NewSnapshot} = Type:update(DownstreamOp, Snapshot)
-    end,
-    materialize_eager(Type, NewSnapshot, Rest).
+%% @doc Apply updates in given order without any checks.
+%% Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
+-spec materialize_eager(type(), snapshot(), [op()]) -> snapshot().
+materialize_eager(Type, Snapshot, Ops) ->
+    materializer:materialize_eager(Type, Snapshot, Ops).
 
 
 -ifdef(TEST).
@@ -168,6 +159,21 @@ materializer_clocksi_test()->
     {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, PNCounter, ignore,
                                    vectorclock:from_list([{1,7}]),Ops, ignore),
     ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
+
+materializer_eager_clocksi_test()->
+    PNCounter = new(crdt_pncounter),
+    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    % test - no ops
+    PNCounter2 = materialize_eager(crdt_pncounter, PNCounter, []]),
+    ?assertEqual(0, crdt_pncounter:value(PNCounter2)).
+    % test - several ops
+    Op1 = {update,{{increment,1},1}},
+    Op2 = {update,{{increment,2},1}},
+    Op3 = {update,{{increment,3},1}},
+    Op4 = {update,{{increment,4},1}},
+    Ops = [Op1,Op2,Op3,Op4],  
+    PNCounter3 = materialize_eager(crdt_pncounter, PNCounter, Ops),
+    ?assertEqual(10, crdt_pncounter:value(PNCounter3)).
 
 materializer_clocksi_concurrent_test() ->
     PNCounter = new(crdt_pncounter),
