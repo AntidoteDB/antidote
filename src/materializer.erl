@@ -63,12 +63,21 @@ materialize_eager(Type, Snapshot, [Op|Rest]) ->
 -ifdef(TEST).
 
 %% @doc Testing update with pn_counter.
-update_counter_withlog_test() ->
+update_pncounter_test() ->
     Counter = create_snapshot(crdt_pncounter),
     ?assertEqual(0, crdt_pncounter:value(Counter)),
     Op = {update, {{increment, 1}, actor1}},
     {ok, Counter2} = update_snapshot(crdt_pncounter, Counter, Op),
     ?assertEqual(1, crdt_pncounter:value(Counter2)).    
+
+%% @doc Testing update with gcounter and merge.
+update_gcounter_test() ->
+    Counter1 = riak_dt_gcounter:new(actor1,5),
+    Counter2 = riak_dt_gcounter:new(actor2,2),
+    ?assertEqual(5, riak_dt_gcounter:value(Counter1)),
+    ?assertEqual(2, riak_dt_gcounter:value(Counter2)),
+    {ok, Counter3} = update_snapshot(riak_dt_gcounter, Counter1, {merge, Counter2}),
+    ?assertEqual(7, riak_dt_gcounter:value(Counter3)).    
 
 
 %% @doc Testing pn_counter with update log
@@ -98,6 +107,6 @@ materializer_error_nocreate_test() ->
 materializer_error_invalidupdate_test() ->
     Counter = create_snapshot(crdt_pncounter),
     ?assertEqual(0, crdt_pncounter:value(Counter)),
-    Ops = [{update, {non_existing_op, actor1}}],
-    ?assertException(error, function_clause, materialize_eager(crdt_pncounter, Counter, Ops)).
+    Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
+    ?assertEqual({error, unexpected_format}, materialize_eager(crdt_pncounter, Counter, Ops)).
 -endif.
