@@ -443,4 +443,15 @@ concurrent_write_test() ->
     %% Read snapshot including both increments
     {ok, Res2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC2,1}, {DC1,1}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)).
+    
+%% Check that a read to a key that has never been read or updated, returns the CRDTs initial value
+%% E.g., for a gcounter, return 0.
+read_nonexisting_key_test() ->
+	OpsCache = ets:new(ops_cache, [set]),
+    SnapshotCache = ets:new(snapshot_cache, [set]),
+    Type = riak_dt_gcounter,
+    {ok, ReadResult} = internal_read(ignore, key, Type, vectorclock:from_list([{dc1,1}, {dc2, 0}]), ignore, OpsCache, SnapshotCache),
+    ?assertEqual(0, Type:value(ReadResult)).
+    
+    
 -endif.
