@@ -233,22 +233,17 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     end.
 
 %% @doc Get a list of operations from an orddict of operations
--spec filter_ops(orddict:orddict()) -> {ok, list()} | {error, wrong_format}.
+-spec filter_ops(orddict:orddict()) -> {ok, list()}.
 filter_ops(Ops) ->
-    filter_ops(Ops, []).
--spec filter_ops(orddict:orddict(), list()) -> {ok, list()} | {error, wrong_format}.
-filter_ops([], Acc) ->
-    {ok, Acc};
-filter_ops([H|T], Acc) ->
-    case H of
-        {_Key, Ops} ->
-            filter_ops(T,lists:append(Acc, Ops));
-        _ ->
-            {error, wrong_format}
-    end;
-filter_ops(_, _Acc) ->
-    {error, wrong_format}.
-
+    FoldFun = fun(X, Acc) ->
+            case X of
+                {_Key, Value} ->
+                    lists:append(Acc, Value);
+                _ ->
+                    Acc
+            end
+    end,
+    {ok, lists:foldl(FoldFun, [], Ops)}.
 
 %% @doc Check whether a Key's operation or stored snapshot is included
 %%		in a snapshot defined by a vector clock
@@ -313,19 +308,14 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
 
 -ifdef(TEST).
 
-%% @doc Testing filter_ops works in both situations, when the function receives
-%%      what it expects and when it receives something in an unexpected format.
+%% @doc Testing filter_ops.
 filter_ops_test() ->
 	Ops=orddict:new(),
 	Ops1=orddict:append(key1, [a1, a2], Ops),
 	Ops2=orddict:append(key2, [b1, b2], Ops1),
 	Ops3=orddict:append(key3, [c1, c2], Ops2),
 	Result=filter_ops(Ops3),
-	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}),
-	Result1=filter_ops({some, thing}),
-	?assertEqual(Result1, {error, wrong_format}),
-	Result2=filter_ops([anything]),
-	?assertEqual(Result2, {error, wrong_format}).   
+	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}).   
 	
 %% @doc Testing belongs_to_snapshot returns true when a commit time 
 %% is smaller than a snapshot time
