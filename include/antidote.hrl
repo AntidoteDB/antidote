@@ -44,11 +44,11 @@
                           op_param :: op(),
                           snapshot_time :: snapshot_time(),
                           commit_time :: commit_time(),
-                          txid :: txid() }).
+                          txid :: txid()}).
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(), 
                       vec_snapshot_time, 
-                      txn_id :: txid() }).
+                      txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
 -type key() :: term().

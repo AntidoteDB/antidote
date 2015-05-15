@@ -100,22 +100,25 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
     end.
 
 %% @doc Checks whether a commit time is included in a snapshot time and, if not ignored,
-%%		whether the commit time is more recent than some commit time.
+%%		whether the commit time is from the same DC and more recent than some commit time.
 -spec is_op_in_snapshot(commit_time(), snapshot_time(), commit_time() | ignore) -> boolean().
 is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
 	{OpDc, OpCommitTime} = OperationCommitTime,
-    {ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
-    case SnapshotCommitTime of
+  {ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
+  InSnapshot = OpCommitTime =< Ts,
+  case SnapshotCommitTime of
     ignore -> 
-    	OpCommitTime =< Ts;
-    {SnapshotDc, SnapshotCT} ->
-    	case (SnapshotDc == OpDc) of
-    	true ->
-			(OpCommitTime =< Ts) and (SnapshotCT < OpCommitTime);
-		false ->
-			OpCommitTime =< Ts
-		end
+    	InSnapshot;
+    {_SnapshotDc, _SnapshotCT} ->
+		    	InSnapshot andalso is_smaller(SnapshotCommitTime, OperationCommitTime)
 	end.
+
+%% @doc Checks whether a commit time is smaller than another one.
+%%    Returns also false if times are incomparable.
+%% @todo Fix the types! It should be:
+%-spec is_smaller(commit_time(), commit_time()) -> boolean.
+is_smaller({OpDc1, OpCommitTime1}, {OpDc2, OpCommitTime2}) ->
+  (OpDc1 /= OpDc2) or (OpCommitTime1 < OpCommitTime2).
 
 %% @doc Apply updates in given order without any checks.
 %%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
@@ -219,7 +222,7 @@ materializer_eager_clocksi_test()->
 is_op_in_snapshot_test()->
 	OpCommitTime = {dc1, 5},
 	SnapshotTime1 = vectorclock:from_list([{dc1, 10}]),
-	SnapshotTime2 = vectorclock:from_list([{dc1, 0}]),
+	SnapshotTime2 = vectorclock:from_list([{dc1, 1}]),
 	SnapshotTime3 = vectorclock:from_list([{dc2, 6}]),
   ?assertEqual(true,  is_op_in_snapshot(OpCommitTime, SnapshotTime1, ignore)),
 	?assertEqual(false, is_op_in_snapshot(OpCommitTime, SnapshotTime2, ignore)),
