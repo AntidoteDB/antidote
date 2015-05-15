@@ -99,17 +99,11 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, L
             materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Rest, TxId, LastOpCommitTime)
     end.
 
-%% @doc Check whether an udpate is included in a snapshot and also
-%%		if that update is newer than a snapshot's commit time
-%%      Input: Dc = Datacenter Id
-%%             CommitTime = local commit time of this update at DC
-%%             SnapshotTime = Orddict of [{Dc, Ts}]
-%%			   SnapshotCommitTime = commit time of that snapshot.
-%%      Outptut: true or false
--spec is_op_in_snapshot(commit_time(), snapshot_time(), commit_time() | ignore) -> 
-  boolean().
+%% @doc Checks whether a commit time is included in a snapshot time and, if not ignored,
+%%		whether the commit time is more recent than some commit time.
+-spec is_op_in_snapshot(commit_time(), snapshot_time(), commit_time() | ignore) -> boolean().
 is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
-	{OpDc, OpCommitTime}= OperationCommitTime,
+	{OpDc, OpCommitTime} = OperationCommitTime,
     {ok, Ts} = vectorclock:get_clock_of_dc(OpDc, SnapshotTime),
     case SnapshotCommitTime of
     ignore -> 
@@ -124,7 +118,7 @@ is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
 	end.
 
 %% @doc Apply updates in given order without any checks.
-%% Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
+%%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
 -spec materialize_eager(type(), snapshot(), [op()]) -> snapshot().
 materialize_eager(Type, Snapshot, Ops) ->
     materializer:materialize_eager(Type, Snapshot, Ops).
@@ -135,6 +129,7 @@ materialize_eager(Type, Snapshot, Ops) ->
 materializer_clocksi_test()->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    
     Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,2},1}},
                            commit_time = {1, 1}, txid = 1},
@@ -147,8 +142,8 @@ materializer_clocksi_test()->
     Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
                            op_param = {update,{{increment,2},1}},
                            commit_time = {1, 4}, txid = 4},
+    Ops = [Op1, Op2, Op3, Op4],
 
-    Ops = [Op1,Op2,Op3,Op4],
     {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
                                       PNCounter, ignore, vectorclock:from_list([{1,3}]),
                                       Ops, ignore),
@@ -160,20 +155,6 @@ materializer_clocksi_test()->
                                    vectorclock:from_list([{1,7}]),Ops, ignore),
     ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
 
-materializer_eager_clocksi_test()->
-    PNCounter = new(crdt_pncounter),
-    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
-    % test - no ops
-    PNCounter2 = materialize_eager(crdt_pncounter, PNCounter, []]),
-    ?assertEqual(0, crdt_pncounter:value(PNCounter2)).
-    % test - several ops
-    Op1 = {update,{{increment,1},1}},
-    Op2 = {update,{{increment,2},1}},
-    Op3 = {update,{{increment,3},1}},
-    Op4 = {update,{{increment,4},1}},
-    Ops = [Op1,Op2,Op3,Op4],  
-    PNCounter3 = materialize_eager(crdt_pncounter, PNCounter, Ops),
-    ?assertEqual(10, crdt_pncounter:value(PNCounter3)).
 
 materializer_clocksi_concurrent_test() ->
     PNCounter = new(crdt_pncounter),
@@ -219,16 +200,37 @@ materializer_clocksi_noop_test() ->
                                 vectorclock:from_list([{1,1}]),
                                 Ops, ignore, ignore),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
-    
-    
-    
-    
+
+materializer_eager_clocksi_test()->
+    PNCounter = new(crdt_pncounter),
+    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    % test - no ops
+    PNCounter2 = materialize_eager(crdt_pncounter, PNCounter, []),
+    ?assertEqual(0, crdt_pncounter:value(PNCounter2)),
+    % test - several ops
+    Op1 = {update,{{increment,1},1}},
+    Op2 = {update,{{increment,2},1}},
+    Op3 = {update,{{increment,3},1}},
+    Op4 = {update,{{increment,4},1}},
+    Ops = [Op1, Op2, Op3, Op4],  
+    PNCounter3 = materialize_eager(crdt_pncounter, PNCounter, Ops),
+    ?assertEqual(10, crdt_pncounter:value(PNCounter3)).
+   
 is_op_in_snapshot_test()->
-	OpCT1 = {dc1, 1},
-	ST1 = vectorclock:from_list([{dc1, 2}]),
-	ST2 = vectorclock:from_list([{dc1, 0}]),
-	true = is_op_in_snapshot(OpCT1, ST1, ignore),
-	false = is_op_in_snapshot(OpCT1, ST2, ignore).
+	OpCommitTime = {dc1, 5},
+	SnapshotTime1 = vectorclock:from_list([{dc1, 10}]),
+	SnapshotTime2 = vectorclock:from_list([{dc1, 0}]),
+	SnapshotTime3 = vectorclock:from_list([{dc2, 6}]),
+  ?assertEqual(true,  is_op_in_snapshot(OpCommitTime, SnapshotTime1, ignore)),
+	?assertEqual(false, is_op_in_snapshot(OpCommitTime, SnapshotTime2, ignore)),
+  ?assertEqual(false, is_op_in_snapshot(OpCommitTime, SnapshotTime3, ignore)),
     
-    
+  OpCommitTime2 = {dc1, 2},
+  ?assertEqual(true,  is_op_in_snapshot(OpCommitTime, SnapshotTime1, OpCommitTime2)),
+  ?assertEqual(false, is_op_in_snapshot(OpCommitTime, SnapshotTime2, OpCommitTime2)),
+  
+  OpCommitTime3 = {dc1, 8},
+  ?assertEqual(false, is_op_in_snapshot(OpCommitTime, SnapshotTime1, OpCommitTime3)),
+  ?assertEqual(false, is_op_in_snapshot(OpCommitTime, SnapshotTime2, OpCommitTime3)).
+  
 -endif.
