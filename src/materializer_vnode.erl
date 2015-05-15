@@ -52,7 +52,7 @@
          handle_exit/3]).
 
 -record(state, {
-  partition :: partition_id(), 
+  partition :: partition_id(),
   ops_cache :: ets:tid(),
   snapshot_cache :: ets:tid()}).
 
@@ -152,47 +152,44 @@ terminate(_Reason, _State) ->
 -spec internal_read(pid() | ignore, key(), type(), snapshot_time(), txid() | ignore, ets:tid() , ets:tid() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
-	[] ->
-		SnapshotDict = orddict:new(),
-		LatestSnapshot = clocksi_materializer:new(Type),
-		SnapshotCommitTime = ignore;        	
-	[{_, SnapshotDict}] ->
-		case get_latest_snapshot(SnapshotDict, SnapshotTime) of
-		{ok, no_snapshot} ->
-			LatestSnapshot = clocksi_materializer:new(Type),
-			SnapshotCommitTime = ignore;
-		{ok, {SCT, LS}}->
-			{SnapshotCommitTime, LatestSnapshot} = {SCT, LS}
-		end
-	end,	
-	case ets:lookup(OpsCache, Key) of
-	[] ->
-		riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
-		{ok, LatestSnapshot};
-	[{_, OpsDict}] ->
-		{ok, Ops} = filter_ops(OpsDict),
-		case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) of
-		{ok, Snapshot, CommitTime} ->
-			%% the following checks for the case there were no snapshots and there were operations, but none was applicable
-			%% for the given snapshot_time
-			case (CommitTime == ignore) of 
-			true->
-				riak_core_vnode:reply(Sender, {error, no_snapshot}),
-				{error, no_snapshot};
-			false->
-				riak_core_vnode:reply(Sender, {ok, Snapshot}),
-				SnapshotDict1 = orddict:store(CommitTime,Snapshot, SnapshotDict),
-				snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
-				{ok, Snapshot}
-			end;
-		{error, Reason} ->
-			riak_core_vnode:reply(Sender, {error, Reason}),
-			{error, Reason}
-		end
-	end.
-	
-	
-
+        [] ->
+            SnapshotDict = orddict:new(),
+            LatestSnapshot = clocksi_materializer:new(Type),
+            SnapshotCommitTime = ignore;
+        [{_, SnapshotDict}] ->
+            case get_latest_snapshot(SnapshotDict, SnapshotTime) of
+                {ok, no_snapshot} ->
+                    LatestSnapshot = clocksi_materializer:new(Type),
+                    SnapshotCommitTime = ignore;
+                {ok, {SCT, LS}}->
+                    {SnapshotCommitTime, LatestSnapshot} = {SCT, LS}
+            end
+    end,
+    case ets:lookup(OpsCache, Key) of
+        [] ->
+            riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
+            {ok, LatestSnapshot};
+        [{_, OpsDict}] ->
+            {ok, Ops} = filter_ops(OpsDict),
+            case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) of
+                {ok, Snapshot, CommitTime} ->
+                    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+                    %% for the given snapshot_time
+                    case (CommitTime == ignore) of
+                        true->
+                            riak_core_vnode:reply(Sender, {error, no_snapshot}),
+                            {error, no_snapshot};
+                        false->
+                            riak_core_vnode:reply(Sender, {ok, Snapshot}),
+                            SnapshotDict1 = orddict:store(CommitTime,Snapshot, SnapshotDict),
+                            snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
+                            {ok, Snapshot}
+                    end;
+                {error, Reason} ->
+                    riak_core_vnode:reply(Sender, {error, Reason}),
+                    {error, Reason}
+            end
+    end.
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
@@ -298,9 +295,9 @@ filter_ops_test() ->
 	Ops2=orddict:append(key2, [b1, b2], Ops1),
 	Ops3=orddict:append(key3, [c1, c2], Ops2),
 	Result=filter_ops(Ops3),
-	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}).   
-	
-%% @doc Testing belongs_to_snapshot returns true when a commit time 
+	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}).
+
+%% @doc Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time
 belongs_to_snapshot_test()->
 	CommitTime1= 1,
