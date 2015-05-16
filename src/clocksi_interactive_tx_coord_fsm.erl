@@ -44,7 +44,7 @@
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:
-%%    from: the pid of the calling process 
+%%    from: the pid of the calling process
 %%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
 %%    updated_partitions: the partitions where update operations take place.
 %%    num_to_ack: when sending prepare_commit,
@@ -54,7 +54,7 @@
 %%    state: state of the transaction
 %%----------------------------------------------------------------------
 -record(state, {
-          from, % @todo Fix the type!!
+          from :: {pid(), term()},
           transaction :: tx(),
           updated_partitions :: preflist(),
           num_to_ack :: non_neg_integer(),
@@ -222,8 +222,8 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
            {next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
     end.
 
-%% @doc when an error occurs or an updated partition 
-%% does not pass the certification check, the transaction aborts.
+%% @doc When an error occurs or an updated partition
+%%      does not pass the certification check, the transaction aborts.
 abort(timeout, SD0=#state{transaction = Transaction,
                           updated_partitions=UpdatedPartitions}) ->
     clocksi_vnode:abort(UpdatedPartitions, Transaction),
