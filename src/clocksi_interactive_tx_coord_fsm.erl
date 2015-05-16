@@ -44,23 +44,23 @@
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:
-%%    from: the pid of the calling process.
+%%    from: the pid of the calling process 
 %%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
 %%    updated_partitions: the partitions where update operations take place.
 %%    num_to_ack: when sending prepare_commit,
 %%                number of partitions that have acked.
 %%    prepare_time: transaction prepare time.
 %%    commit_time: transaction commit time.
-%%    state: state of the transaction: {active|prepared|committing|committed}
+%%    state: state of the transaction
 %%----------------------------------------------------------------------
 -record(state, {
-          from,
+          from, % @todo Fix the type!!
           transaction :: tx(),
-          updated_partitions :: list(),
-          num_to_ack :: integer(),
-          prepare_time :: integer(),
-          commit_time :: integer(),
-          state:: atom()}).
+          updated_partitions :: preflist(),
+          num_to_ack :: non_neg_integer(),
+          prepare_time :: non_neg_integer(),
+          commit_time :: non_neg_integer(),
+          state :: active | prepared | committing | committed | undefined | aborted}).
 
 %%%===================================================================
 %%% API
@@ -282,12 +282,12 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(ClientClock :: snapshot_time())
-                       -> {ok, snapshot_time()} | {error, term()}.
+-spec get_snapshot_time(snapshot_time())
+                       -> {ok, snapshot_time()} | {error, reason()}.
 get_snapshot_time(ClientClock) ->
     wait_for_clock(ClientClock).
 
--spec get_snapshot_time() -> {ok, snapshot_time()} | {error, term()}.
+-spec get_snapshot_time() -> {ok, snapshot_time()} | {error, reason()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     case vectorclock:get_stable_snapshot() of
@@ -301,8 +301,8 @@ get_snapshot_time() ->
             {error, Reason}
     end.
 
--spec wait_for_clock(Clock :: snapshot_time()) ->
-                           {ok, snapshot_time()} | {error, term()}.
+-spec wait_for_clock(snapshot_time()) ->
+                           {ok, snapshot_time()} | {error, reason()}.
 wait_for_clock(Clock) ->
    case get_snapshot_time() of
        {ok, VecSnapshotTime} ->
