@@ -126,7 +126,7 @@ execute_op({Op_type, Args}, Sender,
             {Key, Type, Param}=Args,
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
-            case generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
+            case clocksi_downstream:generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
                     case clocksi_vnode:update_data_item(IndexNode, Transaction,
                                                 Key, Type, DownstreamRecord) of
@@ -318,6 +318,3 @@ wait_for_clock(Clock) ->
        {error, Reason} ->
           {error, Reason}
   end.
-
-generate_downstream_op(Txn, IndexNode, Key, Type, Param) ->
-    clocksi_downstream:generate_downstream_op(Txn, IndexNode, Key, Type, Param).
