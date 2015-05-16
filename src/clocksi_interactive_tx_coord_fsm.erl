@@ -134,7 +134,7 @@ execute_op({Op_type, Args}, Sender,
                             case lists:member(IndexNode, Updated_partitions) of
                                 false ->
                                     New_updated_partitions=
-                                        [IndexNode | Updated_partitions], %lists:append(Updated_partitions, [IndexNode]),
+                                        [IndexNode | Updated_partitions],
                                     {reply, ok, execute_op,
                                     SD0#state
                                     {updated_partitions= New_updated_partitions}};
