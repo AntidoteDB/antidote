@@ -238,9 +238,10 @@ abort(abort, SD0=#state{transaction = Transaction,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
                                    state=TxState, commit_time=CommitTime}) ->
-    if undefined =/= From ->
-        TxId = Transaction#transaction.txn_id,
-        Reply = case TxState of
+    case undefined =/= From of
+        true ->
+          TxId = Transaction#transaction.txn_id,
+          Reply = case TxState of
             committed ->
                 DcId = dc_utilities:get_my_dc_id(),
                 CausalClock = vectorclock:set_clock_of_dc(
@@ -250,9 +251,9 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
                 {aborted, TxId};
             Reason->
                 {TxId, Reason}
-        end,
-        gen_fsm:reply(From,Reply);
-      true -> ok
+          end,
+          gen_fsm:reply(From, Reply);
+        false -> ok
     end,
     {stop, normal, SD}.
 
