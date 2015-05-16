@@ -34,71 +34,64 @@ new(Type) ->
     materializer:create_snapshot(Type).
 
 
-%% @doc Calls the internal function materialize/6, with no TxId.
+%% @doc Applies a list of operations to a CRDT.
+%%    The operations are given as part of clocksi_payloads, i.e. with some additional meta-data.
+%%    Only the operations with belonging to the snapshot_time are applied. More recent operations are discarded.
+%%    The list of operations must be in causal order and is applied in the specified order.
+%%   
+%%      Type: Type of the CRDT;
+%%      Snapshot: Current state of the CRDT;
+%%      SnapshotCommitTime: Commit time corresponding to the snapshot;
+%%      SnapshotTime: Threshold for the operations to be applied, only operations included in the SnapshotTime are applied;
+%%      Ops: The list of clocksi_payloads containing the operations to apply in causal order
+%%      TxId: ???
+%% 
+%%     It returns the CRDT after applying the operations and its commit
+%%     time taken from the last operation that was applied to the snapshot.
+
 -spec materialize(type(), snapshot(), commit_time() | ignore, snapshot_time(), 
   [clocksi_payload()], txid()) -> 
   {ok, snapshot(), commit_time() | ignore} | {error, reason()}.
-%materialize(_Type, Snapshot, _SnapshotTime, []) ->
-%    {ok, Snapshot};
+
 materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
-    materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId,SnapshotCommitTime).
+    materialize_intern(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime).
 
 
-
-%% @doc Applies the operation of a list to a CRDT. Only the
-%%      operations with smaller timestamp than the specified
-%%      are considered. Newer operations are discarded.
-%%      Input:
-%%      Type: The type of CRDT to create
-%%      Snapshot: Current state of the CRDT
-%%      SnapshotTime: Threshold for the operations to be applied.
-%%      Ops: The list of operations to apply in causal order
-%%      Output: The CRDT after appliying the operations and its commit
-%%      time taken from the last operation that was applied to the snapshot.
--spec materialize(type(), snapshot(), commit_time() | ignore, snapshot_time(),
+-spec materialize_intern(type(), snapshot(), commit_time() | ignore, snapshot_time(),
   [clocksi_payload()], txid(), commit_time() | ignore) ->
   {ok, snapshot(), commit_time() | ignore} | {error, reason()}.
-materialize(_, Snapshot, _SnapshotCommitTime, _SnapshotTime, [], _TxId, CommitTime) ->
-    {ok, Snapshot, CommitTime};
 
-materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, LastOpCommitTime) ->
-    case Type == Op#clocksi_payload.type of
+materialize_intern(_, Snapshot, _SnapshotCommitTime, _SnapshotTime, [], _TxId, CommitTime) ->
+    {ok, Snapshot, CommitTime};
+materialize_intern(Type, Snapshot, SnapshotCommitTime, SnapshotTime, [Op|Rest], TxId, LastOpCommitTime) ->
+    % Check whether operation is for the right crdt type
+    Result = case Type == Op#clocksi_payload.type of
         true ->
             OpCommitTime=Op#clocksi_payload.commit_time,
+            % Check whether operation is contained in the snapshot time, but not already applied, or belongs to a txn
             case (is_op_in_snapshot(OpCommitTime, SnapshotTime, SnapshotCommitTime)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-                	    case Op#clocksi_payload.op_param of
-                        {merge, State} ->
-                            NewSnapshot = Type:merge(Snapshot, State),
-                            materialize(Type,
-                                        NewSnapshot,
-                                        SnapshotCommitTime,
-                                        SnapshotTime,
-                                        Rest,
-                                        TxId,
-                                        OpCommitTime);
-                        {update, DownstreamOp} ->
-                            case Type:update(DownstreamOp, Snapshot) of
-                                {ok, NewSnapshot} ->
-                                    materialize(Type,
-                                                NewSnapshot,
-                                                SnapshotCommitTime,
-                                                SnapshotTime,
-                                                Rest,
-                                                TxId,
-                                                OpCommitTime);
-                                {error, Reason} ->
-                                    {error, Reason}
-                            end
+                    case materializer:update_snapshot(Type, Snapshot, Op#clocksi_payload.op_param) of
+                        {ok, NewSnapshot} -> 
+                            {ok, NewSnapshot, OpCommitTime};
+                	      {error, Reason} ->
+                            {error, Reason}
                     end;
                 false ->
-                    materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Rest, TxId, LastOpCommitTime)
+                    {ok, Snapshot, LastOpCommitTime} % no update
             end;
         false -> %% Op is not for this {Key, Type}
-            materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Rest, TxId, LastOpCommitTime)
+            %% @todo THIS CASE PROBABLY SHOULD NOT HAPPEN?! 
+            {ok, Snapshot, LastOpCommitTime} %% no update
+    end,
+    case Result of
+      {error, Reason1} ->
+          {error, Reason1};
+      {ok, NewSnapshot1, NewLastOpCommitTime1} -> 
+          materialize_intern(Type, NewSnapshot1, SnapshotCommitTime, SnapshotTime, Rest, TxId, NewLastOpCommitTime1)
     end.
-
+    
 %% @doc Checks whether a commit time is included in a snapshot time and, if not ignored,
 %%		whether the commit time is from the same DC and more recent than some commit time.
 -spec is_op_in_snapshot(commit_time(), snapshot_time(), commit_time() | ignore) -> boolean().
@@ -108,9 +101,9 @@ is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
   InSnapshot = OpCommitTime =< Ts,
   case SnapshotCommitTime of
     ignore -> 
-    	InSnapshot;
+    	  InSnapshot;
     {_SnapshotDc, _SnapshotCT} ->
-		    	InSnapshot andalso is_smaller(SnapshotCommitTime, OperationCommitTime)
+		    InSnapshot andalso is_smaller(SnapshotCommitTime, OperationCommitTime)
 	end.
 
 %% @doc Checks whether a commit time is smaller than another one.
@@ -118,7 +111,7 @@ is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
 %% @todo Fix the types! It should be:
 %-spec is_smaller(commit_time(), commit_time()) -> boolean.
 is_smaller({OpDc1, OpCommitTime1}, {OpDc2, OpCommitTime2}) ->
-  (OpDc1 /= OpDc2) or (OpCommitTime1 < OpCommitTime2).
+    (OpDc1 /= OpDc2) or (OpCommitTime1 < OpCommitTime2).
 
 %% @doc Apply updates in given order without any checks.
 %%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
@@ -176,7 +169,7 @@ materializer_clocksi_concurrent_test() ->
     {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
                                       PNCounter, ignore,
                                       vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore, ignore),
+                                      Ops, ignore),
     ?assertEqual({4, {2,1}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     
     
@@ -201,7 +194,7 @@ materializer_clocksi_noop_test() ->
     Ops = [],
     {ok, PNCounter2, ignore} = materialize(crdt_pncounter, PNCounter, ignore,
                                 vectorclock:from_list([{1,1}]),
-                                Ops, ignore, ignore),
+                                Ops, ignore),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
 
 materializer_eager_clocksi_test()->
