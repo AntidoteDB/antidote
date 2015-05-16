@@ -175,3 +175,30 @@ get_stable_time(Key) ->
                         Active_txns);
         _ -> 0
     end.
+
+-ifdef(TEST).
+
+%% @doc Testing remove_node_from_preflist
+filter_updates_per_key_test()->
+    Op1 = {update, {{increment,1}, actor1},
+    Op2 = {update, {{increment,2}, actor1},
+    Op3 = {update, {{increment,3}, actor1}
+    Op4 = {update, {{increment,4}, actor1}
+
+    ClockSIOp1 = #clocksi_payload{key = a, type = crdt_pncounter,
+                           op_param = Op1},
+                           commit_time = {1, 1}, txid = 1},
+    ClockSIOp2 = #clocksi_payload{key = b, type = crdt_pncounter,
+                           op_param = Op2},
+                           commit_time = {1, 2}, txid = 2},
+    ClockSIOp3 = #clocksi_payload{key = c, type = crdt_pncounter,
+                           op_param = Op3},
+                           commit_time = {1, 3}, txid = 3},
+    ClockSIOp4 = #clocksi_payload{key = a, type = crdt_pncounter,
+                           op_param = Op4},
+                           commit_time = {1, 4}, txid = 4},
+    
+    ?assertEqual([Op1, Op2, Op3, Op4],
+                 filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4]])).
+
+-endif.
