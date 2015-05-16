@@ -23,6 +23,10 @@
 
 -include("antidote.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% API
 -export([start_link/6]).
 
@@ -141,21 +145,14 @@ terminate(_Reason, _SN, _SD) ->
     ok.
 
 %% Internal functions
-
 filter_updates_per_key(Updates, Key) ->
-    int_filter_updates_key(Updates, Key, []).
-
-int_filter_updates_key([], _Key, Updates2) ->
-    Updates2;
-
-int_filter_updates_key([Next|Rest], Key, Updates2) ->
-    {_, {KeyPrime, _Type, Op}} = Next,
-    case KeyPrime==Key of
-        true ->
-            int_filter_updates_key(Rest, Key, lists:append(Updates2, [Op]));
-        false ->
-            int_filter_updates_key(Rest, Key, Updates2)
-    end.
+    FilterMapFun = fun ({_, {KeyPrime, _Type, Op}}) ->
+        case KeyPrime == Key of
+            true  -> {true, Op};
+            false -> false
+        end
+    end,
+    lists:filtermap(FilterMapFun, Updates).
 
 get_stable_time(Key) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -178,27 +175,19 @@ get_stable_time(Key) ->
 
 -ifdef(TEST).
 
-%% @doc Testing remove_node_from_preflist
+%% @doc Testing filter_updates_per_key.
 filter_updates_per_key_test()->
-    Op1 = {update, {{increment,1}, actor1},
-    Op2 = {update, {{increment,2}, actor1},
-    Op3 = {update, {{increment,3}, actor1}
-    Op4 = {update, {{increment,4}, actor1}
+    Op1 = {update, {{increment,1}, actor1}},
+    Op2 = {update, {{increment,2}, actor1}},
+    Op3 = {update, {{increment,3}, actor1}},
+    Op4 = {update, {{increment,4}, actor1}},
 
-    ClockSIOp1 = #clocksi_payload{key = a, type = crdt_pncounter,
-                           op_param = Op1},
-                           commit_time = {1, 1}, txid = 1},
-    ClockSIOp2 = #clocksi_payload{key = b, type = crdt_pncounter,
-                           op_param = Op2},
-                           commit_time = {1, 2}, txid = 2},
-    ClockSIOp3 = #clocksi_payload{key = c, type = crdt_pncounter,
-                           op_param = Op3},
-                           commit_time = {1, 3}, txid = 3},
-    ClockSIOp4 = #clocksi_payload{key = a, type = crdt_pncounter,
-                           op_param = Op4},
-                           commit_time = {1, 4}, txid = 4},
-    
-    ?assertEqual([Op1, Op2, Op3, Op4],
-                 filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4]])).
+    ClockSIOp1 = {xxx, {a, crdt_pncounter, Op1}},
+    ClockSIOp2 = {xxx, {b, crdt_pncounter, Op2}},
+    ClockSIOp3 = {xxx, {c, crdt_pncounter, Op3}},
+    ClockSIOp4 = {xxx, {a, crdt_pncounter, Op4}},
+
+    ?assertEqual([Op1, Op4], 
+        filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
 
 -endif.

@@ -215,15 +215,15 @@ get_latest_snapshot(SnapshotDict, SnapshotTime) ->
 %% @doc Get a list of operations from an orddict of operations
 -spec filter_ops(orddict:orddict()) -> {ok, list()}.
 filter_ops(Ops) ->
-    FoldFun = fun(X, Acc) ->
+    FilterMapFun = fun(X) ->
             case X of
-                {_Key, Value} ->
-                    lists:append(Acc, Value);
+                {_Key, [Value]} ->
+                    {true, Value};
                 _ ->
-                    Acc
+                    false
             end
     end,
-    {ok, lists:foldl(FoldFun, [], Ops)}.
+    {ok, lists:filtermap(FilterMapFun, Ops)}.
 
 %% @doc Check whether a Key's operation or stored snapshot is included
 %%		in a snapshot defined by a vector clock
@@ -295,7 +295,7 @@ filter_ops_test() ->
 	Ops2=orddict:append(key2, [b1, b2], Ops1),
 	Ops3=orddict:append(key3, [c1, c2], Ops2),
 	Result=filter_ops(Ops3),
-	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}).
+	?assertEqual({ok, [[a1,a2], [b1,b2], [c1,c2]]}, Result).
 
 %% @doc Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time
