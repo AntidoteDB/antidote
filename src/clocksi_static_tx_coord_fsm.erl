@@ -56,7 +56,6 @@
           num_to_ack :: integer(),
           prepare_time :: integer(),
           commit_time :: integer(),
-          commit_protocol :: term(),
           read_set :: [term()],
           operations :: list(),
           dc_id :: term(),
@@ -142,21 +141,12 @@ prepare(timeout, SD0=#state{
 %%      partitions in order to compute the final tx timestamp (the maximum
 %%      of the received prepare_time).
 receive_prepared({prepared, ReceivedPrepareTime},
-                 S0=#state{num_to_ack=NumToAck,
-                           commit_protocol=CommitProtocol,
-                           from=From, prepare_time=PrepareTime}) ->
+                 S0=#state{num_to_ack=NumToAck, prepare_time=PrepareTime}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 
         1 ->
-            case CommitProtocol of
-                two_phase ->
-                    gen_fsm:reply(From, {ok, MaxPrepareTime}),
-                    {next_state, committing_2pc,
-                    S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}};
-                _ ->
-                    {next_state, committing,
-                    S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}, 0}
-            end;
+             {next_state, committing,
+                S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}, 0};
         _ ->
             {next_state, receive_prepared,
              S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
@@ -220,17 +210,21 @@ abort(abort, SD0=#state{transaction = Transaction,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(timeout, SD=#state{from=From, transaction=Transaction, read_set=ReadSet, 
                                 dc_id=DcId, state=TxState, commit_time=CommitTime}) ->
-    if undefined =/= From ->
-        TxId = Transaction#transaction.txn_id,
-        Reply = case TxState of
-                    committed ->
-                        CausalClock = vectorclock:set_clock_of_dc(
-                            DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
-                        {ok, {TxId, ReadSet, CausalClock}};
-                    aborted->
-                        {error, commit_fail}
-                end,
-        From ! Reply
+    _ = if undefined =/= From ->
+            TxId = Transaction#transaction.txn_id,
+            Reply = case TxState of
+                        committed ->
+                            CausalClock = vectorclock:set_clock_of_dc(
+                                DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                            {ok, {TxId, ReadSet, CausalClock}};
+                        aborted->
+                            {error, commit_fail};
+                        Reason->
+                            {TxId, Reason}
+                    end,
+            From ! Reply;
+        true ->
+            ok
     end,
     {stop, normal, SD}.
 
