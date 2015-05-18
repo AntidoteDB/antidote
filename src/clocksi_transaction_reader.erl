@@ -160,9 +160,9 @@ get_prev_stable_time(Reader) ->
 construct_transaction(Ops) ->
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
-    {CommitTime, VecSnapshotTime} = Commitrecord#log_record.op_payload,
+    {CommitTime, VecSnapshotTime, Deps} = Commitrecord#log_record.op_payload,
     TxId = Commitrecord#log_record.tx_id,
-    {TxId, CommitTime, VecSnapshotTime, Ops}.
+    {TxId, CommitTime, VecSnapshotTime, Deps, Ops}.
 
 read_next_ops(Node, LogId, Last_read_opid) ->
     case Last_read_opid of

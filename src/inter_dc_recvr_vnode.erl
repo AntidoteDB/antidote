@@ -29,6 +29,7 @@
 -export([start_vnode/1,
          %%API begin
          store_updates/1,
+         scatter_transactions/1,
          %%API end
          init/1,
          terminate/2,
@@ -49,13 +50,25 @@ start_vnode(I) ->
 
 %% public API
 
+scatter_transactions(Transactions) ->
+    lists:foreach(fun(Tx) ->
+                    {_TxId, _CommitTime, _ST, _Deps, Ops} = Tx,
+                    Operation = hd(Ops),
+                    Logrecord = Operation#operation.payload,
+                    Payload = Logrecord#log_record.op_payload,
+                    {Key,_Type,_Op} = Payload,
+                    Preflist = log_utilities:get_preflist_from_key(Key),
+                    IndexNode = hd(Preflist),
+                    riak_core_vnode_master:command(IndexNode, {process_propagation, Tx}, inter_dc_recvr_vnode_master)
+                  end, Transactions).
+
 %% @doc store_updates: sends the updates from remote DC to corresponding
 %%  partition's vnode. Input is a list of transactions from remote DC.
 -spec store_updates(Transactions::[clocksi_transaction_reader:transaction()])
                    -> ok.
 store_updates(Transactions) ->
     Transaction = hd(Transactions),
-    {_Txid,_Commitime,_ST,Ops} = Transaction,
+    {_Txid,_Commitime,_ST, _Deps, Ops} = Transaction,
     Operation = hd(Ops),
     Logrecord = Operation#operation.payload,
     Payload = Logrecord#log_record.op_payload,
@@ -101,6 +114,10 @@ init([Partition]) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+handle_command({process_propagation, Transaction}, _Sender, State) ->
+    {ok, _Pid} = eiger_replicatedtx_coord_fsm:start_link(Transaction),
+    {noreply, State};
 
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
