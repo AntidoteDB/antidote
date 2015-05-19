@@ -64,9 +64,13 @@ init(_Args) ->
                             [inter_dc_recvr_vnode]},
                            permanent, 5000, worker, [riak_core_vnode_master]},
 
-    EcsTxCoordSup =  { ec_static_tx_coord_sup,
-                           {ec_static_tx_coord_sup, start_link, []},
-                           permanent, 5000, supervisor, [ec_static_tx_coord_sup]},
+    EcsTxSuperSup =  { ec_tx_coord_super_sup,
+                           {ec_tx_coord_super_sup, start_link, [ec_tx_coord_super_sup]},
+                           permanent, 5000, supervisor, [ec_tx_coord_super_sup]},
+
+    EcsTxServer =  { ec_tx_coord_server,
+                           {ec_tx_coord_server, start_link, [5, ec_tx_coord_super_sup]},
+                           permanent, 5000, worker, [ec_tx_coord_server]},
 
     EciTxCoordSup =  { ec_interactive_tx_coord_sup,
                             {ec_interactive_tx_coord_sup, start_link, []},
@@ -86,7 +90,8 @@ init(_Args) ->
      {{one_for_one, 5, 10},
       [LoggingMaster,
        EcMaster,
-       EcsTxCoordSup,
+       EcsTxSuperSup,
+       EcsTxServer,
        EciTxCoordSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
