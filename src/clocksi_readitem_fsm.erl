@@ -24,7 +24,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/6]).
+-export([start_link/7]).
 
 %% Callbacks
 -export([init/1,
@@ -47,29 +47,31 @@
                 tx_coordinator,
                 vnode,
                 updates,
-                pending_txs}).
+                pending_txs,
+		partition}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
+start_link(Vnode, Coordinator, Tx, Key, Type, Updates, Partition) ->
     gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
-                                 Tx, Key, Type, Updates], []).
+                                 Tx, Key, Type, Updates, Partition], []).
 
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
+init([Vnode, Coordinator, Transaction, Key, Type, Updates, Partition]) ->
     SD = #state{vnode=Vnode,
                 type=Type,
                 key=Key,
                 tx_coordinator=Coordinator,
                 transaction=Transaction,
                 updates=Updates,
-                pending_txs=[]},
+                pending_txs=[],
+		partition=Partition},
     {ok, check_clock, SD, 0}.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -109,10 +111,11 @@ return(timeout, SD0=#state{key=Key,
                            tx_coordinator=Coordinator,
                            transaction=Transaction,
                            type=Type,
-                           updates=Updates}) ->
+                           updates=Updates,
+			   partition=Partition}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, Partition) of
         {ok, Snapshot} ->
             Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:materialize_eager

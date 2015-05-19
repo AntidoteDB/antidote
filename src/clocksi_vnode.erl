@@ -147,7 +147,7 @@ handle_command({read_data_item, Txn, Key, Type}, Sender,
     Vnode = {Partition, node()},
     Updates = ets:lookup(WriteSet, Txn#transaction.txn_id),
     {ok, _Pid} = clocksi_readitem_fsm:start_link(Vnode, Sender, Txn,
-                                                 Key, Type, Updates),
+                                                 Key, Type, Updates,Partition),
     {noreply, State};
 
 %% @doc handles an update operation at a Leader's partition

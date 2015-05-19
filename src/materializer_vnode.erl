@@ -34,8 +34,8 @@
 -endif.
 
 -export([start_vnode/1,
-         read/4,
-	 store_ss/4,
+         read/5,
+	 store_ss/3,
          update/2,
 	 belongs_to_snapshot_op/3]).
 
@@ -59,16 +59,21 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), vectorclock:vectorclock(), txid()) -> {ok, term()} | {error, atom()}.
-read(Key, Type, SnapshotTime, TxId) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref,
-                                        {read, Key, Type, SnapshotTime, TxId},
-                                        materializer_vnode_master).
+-spec read(key(), type(), vectorclock:vectorclock(), txid(), non_neg_integer()) -> {ok, term()} | {error, atom()}.
+read(Key, Type, SnapshotTime, TxId,Partition) ->
+    %% DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+    %% Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
+    %% [{NewPref,_}] = Preflist,
+    %% riak_core_vnode_master:sync_command(NewPref,
+    %%                                     {read, Key, Type, SnapshotTime, TxId},
+    %%                                     materializer_vnode_master).
+    OpsCache = get_cache_name(Partition,ops_cache),
+    SnapshotCache = get_cache_name(Partition,snapshot_cache),
+    internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache).
 
 
+get_cache_name(Partition,Base) ->
+    list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 %%@doc write operation to cache for future read
 -spec update(key(), #clocksi_payload{}) -> ok | {error, atom()}.
@@ -78,21 +83,21 @@ update(Key, DownstreamOp) ->
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
 
-store_ss(Key, Snapshot, Ops, CommitTime) ->
+store_ss(Key, Snapshot, CommitTime) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    riak_core_vnode_master:command(IndexNode, {store_ss,Key, Snapshot, Ops, CommitTime},
+    riak_core_vnode_master:command(IndexNode, {store_ss,Key, Snapshot, CommitTime},
                                         materializer_vnode_master).
 
 init([Partition]) ->
-    OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
+    OpsCache = ets:new(get_cache_name(Partition,ops_cache), [set,protected,named_table]),
+    SnapshotCache = ets:new(get_cache_name(Partition,snapshot_cache), [set,protected,named_table]),
     {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
-handle_command({read, Key, Type, SnapshotTime, TxId}, Sender,
-               State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
-    _=internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache),
-    {noreply, State};
+%% handle_command({read, Key, Type, SnapshotTime, TxId}, Sender,
+%%                State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
+%%     _=internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache),
+%%     {noreply, State};
 
 
 handle_command({update, Key, DownstreamOp}, _Sender,
@@ -101,27 +106,9 @@ handle_command({update, Key, DownstreamOp}, _Sender,
     {reply, ok, State};
 
 
-handle_command({store_ss, Key, Snapshot, Ops, CommitTime}, _Sender,
+handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
-    lists:foldl(fun(NextOp, _Acc) ->
-			true = op_insert_gc(Key,NextOp,OpsCache, SnapshotCache)
-		end, [], Ops),
-    OpsDict = case ets:lookup(OpsCache, Key) of
-                  []->
-                      OpsDict1 = orddict:new(),
-		      ets:insert(OpsCache, {Key, OpsDict1}),
-		      OpsDict1;
-                  [{_, Dict}]->
-                      Dict
-              end,
-    SnapshotDict = case ets:lookup(SnapshotCache, Key) of
-		       [] ->
-			   orddict:new();
-		       [{_, SnapshotDictA}] ->
-			   SnapshotDictA
-		   end,
-    SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
-    snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
+    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache),
     {noreply, State};
 
 
@@ -179,65 +166,77 @@ terminate(_Reason, _State) ->
 
 %%---------------- Internal Functions -------------------%%
 
+
+internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
+    SnapshotDict = case ets:lookup(SnapshotCache, Key) of
+		       [] ->
+			   vector_orddict:new();
+		       [{_, SnapshotDictA}] ->
+			   SnapshotDictA
+		   end,
+    io:format("commit: ~w, snapshot ~w~n",[CommitTime,Snapshot]),
+    SnapshotDict1=vector_orddict:insert(CommitTime,Snapshot, SnapshotDict),
+    snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache).
+
+
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(term(),term(), atom(), vectorclock:vectorclock(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
-internal_read(Sender, Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
+-spec internal_read(term(), atom(), vectorclock:vectorclock(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, term()}.
+internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
-	    SnapshotDict=orddict:new(),
+	    %%SnapshotDict=vector_orddict:new(),
             LatestSnapshot=clocksi_materializer:new(Type),
-            SnapshotCommitTime = ignore,
-            ExistsSnapshot=false;
+	    IsFirst=true,
+            SnapshotCommitTime = ignore;
         [{_, SnapshotDict}] ->
-            case get_latest_snapshot(SnapshotDict, MinSnapshotTime) of
-                {ok, {SnapshotCommitTime, LatestSnapshot}}->
-                    ExistsSnapshot=true;
-                {ok, no_snapshot} ->
-		    ExistsSnapshot=false,
-                    LatestSnapshot=clocksi_materializer:new(Type), 
-                    SnapshotCommitTime = ignore
+	    lager:info("the dict ~w, minss ~w~n", [SnapshotDict,MinSnapshotTime]),
+            case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
+                {undefined, IsF} ->
+                    LatestSnapshot = clocksi_materializer:new(Type),
+		    IsFirst = IsF,
+                    SnapshotCommitTime = ignore;
+                {{SCT, LS},IsF}->
+		    IsFirst = IsF,
+                    {SnapshotCommitTime, LatestSnapshot} = {SCT, LS}
             end
     end,
     case ets:lookup(OpsCache, Key) of
-	[] ->
-	    case ExistsSnapshot of
-		false ->        						
-		    riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
+       [] ->
+            {ok, LatestSnapshot};
+
+	[{_, Ops}] ->
+	    %%{ok, Ops}= filter_ops(OpsDict),
+	    %% This should be a list already
+	    case length(Ops) of
+		0 ->
 		    {ok, LatestSnapshot};
-		true ->
-		    riak_core_vnode:reply(Sender, {error, no_snapshot}),
-		    {error, no_snapshot}
-	    end;
-	[{_, OpsDict}] ->
-	    {ok, Ops}= filter_ops(OpsDict),
-	    case Ops of
-		[] ->
-		    riak_core_vnode:reply(Sender, {ok, LatestSnapshot}),
-		    {ok, LatestSnapshot};
-		[H|T] ->
-		    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, [H|T], TxId) of
-			{ok, Snapshot, CommitTime, SnapshotSave} ->
-			    %% the following checks for the case there was no snapshots and there were operations, but none was applicable
+		_ ->
+		    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
+			{ok, Snapshot, CommitTime, NewSS} ->
+			    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
 			    %% for the given snapshot_time
 			    %% But is the snapshot not safe?
 			    case (CommitTime==ignore) of 
 				true->
-				    riak_core_vnode:reply(Sender, {ok, Snapshot}),
 				    {ok, Snapshot};
 				false->
-				    case (Sender /= ignore) of
+				    case NewSS and IsFirst of
+					%% Only store the snapshot if it would be at the end of the list and has new operations added to the
+					%% previous snapshot
 					true ->
-					    riak_core_vnode:reply(Sender, {ok, Snapshot});
-					false ->
-					    1=1
+					    case TxId of
+						ignore ->
+						    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache);
+						_ ->
+						    materializer_vnode:store_ss(Key,Snapshot,CommitTime)
+					    end;
+					_ ->
+					    ok
 				    end,
-				    SnapshotDict1=orddict:store(CommitTime,SnapshotSave, SnapshotDict),
-				    snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
 				    {ok, Snapshot}
 			    end;
 			{error, Reason} ->
-			    riak_core_vnode:reply(Sender, {error, Reason}),
 			    {error, Reason}
 		    end
 	    end
@@ -246,94 +245,105 @@ internal_read(Sender, Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache)
 
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
--spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
-                         -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
-get_latest_snapshot(SnapshotDict, SnapshotTime) ->
-    {FirstDc,FirstTime} = hd(dict:to_list(SnapshotTime)),
-    SSTime = dict:fold(fun(DcId,CT,{AccDc,AccTime}) ->
-			       case CT < AccTime of
-				   true ->
-				       {DcId,CT};
-				   false ->
-				       {AccDc,AccTime}
-			       end
-		       end, {FirstDc,FirstTime}, SnapshotTime),
-    case SnapshotDict of
-        []->
-            {ok, no_snapshot};
-        [H|T]->
-            case orddict:filter(fun(Key, _Value) ->
-                                        belongs_to_snapshot(Key, SSTime) end, [H|T]) of
-                []->
-                    {ok, no_snapshot};
-                [H1|T1]->
-                    {CommitTime, Snapshot} = lists:last([H1|T1]),
-                    {ok, {CommitTime, Snapshot}}
-            end;
-        Anything ->
-            {error, wrong_format, Anything}
-    end.
+%% -spec get_latest_snapshot(SnapshotDict::orddict:orddict(), SnapshotTime::vectorclock:vectorclock())
+%%                          -> {ok, term()} | {ok, no_snapshot}| {error, wrong_format, term()}.
+%% get_latest_snapshot(SnapshotDict, SnapshotTime) ->
+%%     {FirstDc,FirstTime} = hd(dict:to_list(SnapshotTime)),
+%%     SSTime = dict:fold(fun(DcId,CT,{AccDc,AccTime}) ->
+%% 			       case CT < AccTime of
+%% 				   true ->
+%% 				       {DcId,CT};
+%% 				   false ->
+%% 				       {AccDc,AccTime}
+%% 			       end
+%% 		       end, {FirstDc,FirstTime}, SnapshotTime),
+%%     case SnapshotDict of
+%%         []->
+%%             {ok, no_snapshot};
+%%         [H|T]->
+%%             case orddict:filter(fun(Key, _Value) ->
+%%                                         belongs_to_snapshot(Key, SSTime) end, [H|T]) of
+%%                 []->
+%%                     {ok, no_snapshot};
+%%                 [H1|T1]->
+%%                     {CommitTime, Snapshot} = lists:last([H1|T1]),
+%%                     {ok, {CommitTime, Snapshot}}
+%%             end;
+%%         Anything ->
+%%             {error, wrong_format, Anything}
+%%     end.
 
 %% @doc Get a list of operations from an orddict of operations
--spec filter_ops(orddict:orddict()) -> {ok, list()} | {error, wrong_format}.
-filter_ops(Ops) ->
-    filter_ops(Ops, []).
--spec filter_ops(orddict:orddict(), list()) -> {ok, list()} | {error, wrong_format}.
-filter_ops([], Acc) ->
-    {ok, Acc};
-filter_ops([H|T], Acc) ->
-    case H of
-        {_Key, Ops} ->
-            filter_ops(T,lists:append(Acc, Ops));
-        _ ->
-            {error, wrong_format}
-    end;
-filter_ops(_, _Acc) ->
-    {error, wrong_format}.
+%% -spec filter_ops(orddict:orddict()) -> {ok, list()} | {error, wrong_format}.
+%% filter_ops(Ops) ->
+%%     filter_ops(Ops, []).
+%% -spec filter_ops(orddict:orddict(), list()) -> {ok, list()} | {error, wrong_format}.
+%% filter_ops([], Acc) ->
+%%     {ok, Acc};
+%% filter_ops([H|T], Acc) ->
+%%     case H of
+%%         {_Key, Ops} ->
+%%             filter_ops(T,lists:append(Acc, Ops));
+%%         _ ->
+%%             {error, wrong_format}
+%%     end;
+%% filter_ops(_, _Acc) ->
+%%     {error, wrong_format}.
 
 
-%% @doc Check whether a Key's operation or stored snapshot is included
-%%		in a snapshot defined by a vector clock
-%%      Input: Dc = Datacenter Id
-%%             CommitTime = local commit time of this Snapshot at DC
-%%             SnapshotTime = vector clock
-%%      Outptut: true or false
--spec belongs_to_snapshot({dcid(),non_neg_integer()},
-                          {dcid(),non_neg_integer()}) -> boolean().
-belongs_to_snapshot({_Dc, CommitTime}, {_OpDc,OpTime}) ->
-    CommitTime < OpTime.
+%% %% @doc Check whether a Key's operation or stored snapshot is included
+%% %%		in a snapshot defined by a vector clock
+%% %%      Input: Dc = Datacenter Id
+%% %%             CommitTime = local commit time of this Snapshot at DC
+%% %%             SnapshotTime = vector clock
+%% %%      Outptut: true or false
+%% -spec belongs_to_snapshot({dcid(),non_neg_integer()},
+%%                           {dcid(),non_neg_integer()}) -> boolean().
+%% belongs_to_snapshot({_Dc, CommitTime}, {_OpDc,OpTime}) ->
+%%     CommitTime < OpTime.
+
 
 %% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
 belongs_to_snapshot_op(ignore, {_OpDc,_OpCommitTime}, _OpSs) ->
     true;
-belongs_to_snapshot_op({_Dc,CommitTime}, {_OpDc,OpCommitTime}, OpSs) ->
-    case CommitTime < OpCommitTime of
-	true ->
-	    true;
-	false ->
-	    dict:fold(fun(_OpDcId, OpTime, Acc) ->
-			      case CommitTime < OpTime of
-				  true ->
-				      true;
-				  false ->
-				      Acc
-			      end
-		      end, false, OpSs)
-    end.
+%% belongs_to_snapshot_op({_Dc,CommitTime}, {_OpDc,OpCommitTime}, OpSs) ->
+%%     case CommitTime < OpCommitTime of
+%% 	true ->
+%% 	    true;
+%% 	false ->
+%% 	    dict:fold(fun(_OpDcId, OpTime, Acc) ->
+%% 			      case CommitTime < OpTime of
+%% 				  true ->
+%% 				      true;
+%% 				  false ->
+%% 				      Acc
+%% 			      end
+%% 		      end, false, OpSs)
+%%     end;
+belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
+    OpSs1 = dict:store(OpDc,OpCommitTime,OpSs),
+    not vectorclock:le(OpSs1,SSTime).
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(Key::term(), SnapshotDict::orddict:orddict(),
-                         OpsDict::orddict:orddict(), atom() , atom() ) -> true.
-snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
-    case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
+                         atom() , atom() ) -> true.
+snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
+    case (vector_orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
         true ->
 	    %% snapshots are no longer totally ordered
-            PrunedSnapshots=orddict:from_list(lists:sublist(orddict:to_list(SnapshotDict), 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN)),
-            FirstOp=lists:nth(1, PrunedSnapshots),
+            %% PrunedSnapshots=orddict:from_list(lists:sublist(orddict:to_list(SnapshotDict), 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN)),
+	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN),
+            FirstOp=vector_orddict:first(PrunedSnapshots),
             {CommitTime, _S} = FirstOp,
+	    OpsDict = case ets:lookup(OpsCache, Key) of
+			  []->
+			      [];
+			  [{_, Dict}]->
+			      Dict
+		      end,
             PrunedOps=prune_ops(OpsDict, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
             ets:insert(OpsCache, {Key, PrunedOps});
@@ -342,10 +352,16 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), {Dc::term(),CommitTime::non_neg_integer()})-> orddict:orddict().
+-spec prune_ops(list(), vectorclock:vectorclock())-> list().
 prune_ops(OpsDict, Threshold)->
-    orddict:filter(fun(_Key, Value) ->
-			   Op=(lists:last(Value)),
+%% should write custom function for this in the vector_orddict
+%% or have to just traverse the entire list?
+%% since the list is ordered, can just stop when all values of
+%% the op is smaller (i.e. not concurrent)
+%% So can add a stop function to ordered_filter
+%% Or can have the filter function return a tuple, one vale for stopping
+%% one for including
+    lists:filter(fun(Op) ->
 			   OpCommitTime=Op#clocksi_payload.commit_time,
                            (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
 		   end, OpsDict).
@@ -360,28 +376,26 @@ prune_ops(OpsDict, Threshold)->
 op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
     OpsDict = case ets:lookup(OpsCache, Key) of
                   []->
-                      orddict:new();
+                      [];
                   [{_, Dict}]->
                       Dict
               end,
-    case (orddict:size(OpsDict))>=?OPS_THRESHOLD of
+    case (length(OpsDict))>=?OPS_THRESHOLD of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
-            {_, _} = internal_read(ignore, Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
+            {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    OpsDict1 = case ets:lookup(OpsCache, Key) of
-			  []->
-			      orddict:new();
-			  [{_, ADict}]->
-			      ADict
-		       end,
-            OpsDict2=orddict:append(DownstreamOp#clocksi_payload.commit_time,
-				    DownstreamOp, OpsDict1),
+	    		  []->
+	    		      [];
+	    		  [{_, ADict}]->
+	    		      ADict
+	    	       end,
+            OpsDict2=[DownstreamOp|OpsDict1],
             ets:insert(OpsCache, {Key, OpsDict2});
         false ->
-            OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time,
-				    DownstreamOp, OpsDict),
+            OpsDict1=[DownstreamOp|OpsDict],
             ets:insert(OpsCache, {Key, OpsDict1})
     end.
 
@@ -390,38 +404,46 @@ op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
 
 %% @doc Testing filter_ops works in both situations, when the function receives
 %%      what it expects and when it receives something in an unexpected format.
-filter_ops_test() ->
-	Ops=orddict:new(),
-	Ops1=orddict:append(key1, [a1, a2], Ops),
-	Ops2=orddict:append(key2, [b1, b2], Ops1),
-	Ops3=orddict:append(key3, [c1, c2], Ops2),
-	Result=filter_ops(Ops3),
-	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}),
-	Result1=filter_ops({some, thing}),
-	?assertEqual(Result1, {error, wrong_format}),
-	Result2=filter_ops([anything]),
-	?assertEqual(Result2, {error, wrong_format}).   
+%% filter_ops_test() ->
+%% 	Ops=[],
+%% 	Ops1=orddict:append(key1, [a1, a2], Ops),
+%% 	Ops2=orddict:append(key2, [b1, b2], Ops1),
+%% 	Ops3=orddict:append(key3, [c1, c2], Ops2),
+%% 	Result=filter_ops(Ops3),
+%% 	?assertEqual(Result, {ok, [[a1,a2], [b1,b2], [c1,c2]]}),
+%% 	Result1=filter_ops({some, thing}),
+%% 	?assertEqual(Result1, {error, wrong_format}),
+%% 	Result2=filter_ops([anything]),
+%% 	?assertEqual(Result2, {error, wrong_format}).   
 	
 %% @doc Testing belongs_to_snapshot returns true when a commit time 
 %% is smaller than a snapshot time
 belongs_to_snapshot_test()->
-	CommitTime1= 1,
-	CommitTime2= 1,
+	CommitTime1a= 1,
+	CommitTime2a= 1,
+	CommitTime1b= 1,
+	CommitTime2b= 7,
 	SnapshotClockDC1 = 5,
 	SnapshotClockDC2 = 5,
-	CommitTime3= 10,
-	CommitTime4= 10,
+	CommitTime3a= 5,
+	CommitTime4a= 5,
+	CommitTime3b= 10,
+	CommitTime4b= 10,
 
-	?assertEqual(true, belongs_to_snapshot({1, CommitTime1}, {1, SnapshotClockDC1})),
-	?assertEqual(true, belongs_to_snapshot({2, CommitTime2}, {2, SnapshotClockDC2})),
-	?assertEqual(false, belongs_to_snapshot({1, CommitTime3}, {1, SnapshotClockDC1})),
-	?assertEqual(false, belongs_to_snapshot({2, CommitTime4}, {2, SnapshotClockDC2})),
+	%% ?assertEqual(true, belongs_to_snapshot({1, CommitTime1}, {1, SnapshotClockDC1})),
+	%% ?assertEqual(true, belongs_to_snapshot({2, CommitTime2}, {2, SnapshotClockDC2})),
+	%% ?assertEqual(false, belongs_to_snapshot({1, CommitTime3}, {1, SnapshotClockDC1})),
+	%% ?assertEqual(false, belongs_to_snapshot({2, CommitTime4}, {2, SnapshotClockDC2})),
 
 	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-	?assertEqual(true, belongs_to_snapshot_op({1, CommitTime1}, {1, SnapshotClockDC1}, SnapshotVC)),
-	?assertEqual(true, belongs_to_snapshot_op({2, CommitTime2}, {2, SnapshotClockDC2}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot_op({1, CommitTime3}, {1, SnapshotClockDC1}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot_op({2, CommitTime4}, {2, SnapshotClockDC2}, SnapshotVC)).
+	?assertEqual(true, belongs_to_snapshot_op(
+			     vectorclock:from_list([{1, CommitTime1a},{2,CommitTime1b}]), {1, SnapshotClockDC1}, SnapshotVC)),
+	?assertEqual(true, belongs_to_snapshot_op(
+			     vectorclock:from_list([{1, CommitTime2a},{2,CommitTime2b}]), {2, SnapshotClockDC2}, SnapshotVC)),
+	?assertEqual(false, belongs_to_snapshot_op(
+			      vectorclock:from_list([{1, CommitTime3a},{2,CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
+	?assertEqual(false, belongs_to_snapshot_op(
+			      vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 
 
 
@@ -444,7 +466,7 @@ seq_write_test() ->
                                     },
     op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache),
     io:format("after making the first write: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
-    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}]),ignore, OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
     io:format("after making the first read: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
     %% Insert second increment
@@ -457,12 +479,12 @@ seq_write_test() ->
 
     op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache),
     io:format("after making the second write: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
-    {ok, Res2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,21}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,21}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
     io:format("after making the second read: Opscache= ~p~n SnapCache=~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}]), ignore, OpsCache, SnapshotCache),
+    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadOld)).
     
 
@@ -485,7 +507,7 @@ multipledc_write_test() ->
                                      txid = 1
                                     },
     op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache),
-    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16},{DC2,0}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,16},{DC2,0}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
 
     %% Insert second increment in other DC
@@ -497,11 +519,11 @@ multipledc_write_test() ->
                       txid=2},
 
     op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache),
-    {ok, Res2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,16}, {DC2,21}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}, {DC2,21}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,15}, {DC2,15}]), ignore, OpsCache, SnapshotCache),
+    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1,15}, {DC2,15}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadOld)).
 
 concurrent_write_test() ->
@@ -524,7 +546,7 @@ concurrent_write_test() ->
                                     },
     op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache),
     io:format("after inserting the first op: Opscache= ~p ~n SnapCache= ~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
-    {ok, Res1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC2,1}, {DC1,0}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC2,1}, {DC1,0}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
     io:format("after making the first read: Opscache= ~p ~n SnapCache= ~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
 
@@ -541,14 +563,14 @@ concurrent_write_test() ->
     io:format("after inserting the second op: Opscache= ~p ~n SnapCache= ~p", [orddict:to_list(OpsCache), orddict:to_list(SnapshotCache)]),
 									  
 	%% Read different snapshots
-    {ok, ReadDC1} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,1}, {DC2, 0}]), ignore, OpsCache, SnapshotCache),
+    {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1,1}, {DC2, 0}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadDC1)),
         io:format("Result1 = ~p", [ReadDC1]),
-    {ok, ReadDC2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC1,0},{DC2,1}]), ignore, OpsCache, SnapshotCache),
+    {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1,0},{DC2,1}]), ignore, OpsCache, SnapshotCache),
     io:format("Result2 = ~p", [ReadDC2]),
     ?assertEqual(1, Type:value(ReadDC2)),
     
     %% Read snapshot including both increments
-    {ok, Res2} = internal_read(ignore, Key, Type, vectorclock:from_list([{DC2,1}, {DC1,1}]), ignore, OpsCache, SnapshotCache),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC2,1}, {DC1,1}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)).
 -endif.
