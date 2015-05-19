@@ -52,7 +52,9 @@
          handle_coverage/4,
          handle_exit/3]).
 
--record(state, {partition, snapshot_cache}).
+-record(state, {
+  partition :: partition_id(),
+  snapshot_cache :: ets:tid()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).

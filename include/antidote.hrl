@@ -29,10 +29,10 @@
 
 -record(tx_id, {time_id :: integer(), server_pid :: pid()}).
 -record(ec_payload, {key :: key(),
-                          type :: type(),
-                          op_param :: {term(), term()},
-                          tx_id :: txid()
-                         }).
+                     type :: type(),
+                     op_param :: {term(), term()},
+                     tx_id :: txid()
+                     }).
 
 %%---------------------------------------------------------------------
 -type key() :: term().
