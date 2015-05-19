@@ -85,8 +85,13 @@ process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbgetsetreq{key=Key}, State) ->
-    {ok, Result} = antidote:read(Key, riak_dt_orset),
-    {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State}.
+    case antidote:read(Key, riak_dt_orset) of
+        {ok, Result} ->
+            {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State};
+        {error, Reason} ->
+            lager:error("Operation failed due to ~p", [Reason]),
+            {reply, #fpboperationresp{success = false}, State}
+    end.
 
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.
