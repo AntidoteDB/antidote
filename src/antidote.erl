@@ -73,7 +73,7 @@ read(Key, Type) ->
 %%      the transaction, in case the tx ends successfully.
 %%      error message in case of a failure.
 %%
--spec clocksi_execute_tx(Clock :: vectorclock:vectorclock(),
+-spec clocksi_execute_tx(Clock :: snapshot_time(),
                          Operations::[any()]) -> term().
 clocksi_execute_tx(Clock, Operations) ->
     {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
@@ -95,7 +95,7 @@ clocksi_execute_tx(Operations) ->
 %%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
--spec clocksi_istart_tx(Clock:: vectorclock:vectorclock()) -> term().
+-spec clocksi_istart_tx(Clock:: snapshot_time()) -> term().
 clocksi_istart_tx(Clock) ->
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
     receive
@@ -110,7 +110,7 @@ clocksi_istart_tx() ->
             TxId
     end.
 
--spec clocksi_bulk_update(ClientClock:: vectorclock:vectorclock(),
+-spec clocksi_bulk_update(ClientClock:: snapshot_time(),
                           Operations::[any()]) -> term().
 clocksi_bulk_update(ClientClock, Operations) ->
     clocksi_execute_tx(ClientClock, Operations).
@@ -119,7 +119,7 @@ clocksi_bulk_update(ClientClock, Operations) ->
 clocksi_bulk_update(Operations) ->
     clocksi_execute_tx(Operations).
 
--spec clocksi_read(ClientClock :: vectorclock:vectorclock(),
+-spec clocksi_read(ClientClock :: snapshot_time(),
                    Key :: key(), Type:: type()) -> term().
 clocksi_read(ClientClock, Key, Type) ->
     clocksi_execute_tx(ClientClock, [{read, Key, Type}]).

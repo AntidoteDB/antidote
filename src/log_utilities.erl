@@ -72,11 +72,8 @@ get_my_node(Partition) ->
 %%
 -spec remove_node_from_preflist(preflist()) -> [partition_id()].
 remove_node_from_preflist(Preflist) ->
-    F = fun(Elem, Acc) ->
-            {P,_} = Elem,
-            lists:append(Acc, [P])
-    end,
-    lists:foldl(F, [], Preflist).
+    F = fun({P,_}) -> P end,
+    lists:map(F, Preflist).
 
 -ifdef(TEST).
 
