@@ -88,7 +88,7 @@ process(#fpbgetsetreq{key=Key}, State) ->
     case antidote:read(Key, riak_dt_orset) of
         {ok, Result} ->
             {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State};
-        {error, Reason} ->
+        {error, _Reason} ->
             {reply, #fpboperationresp{success = false}, State}
     end.
 

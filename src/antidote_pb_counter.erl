@@ -63,7 +63,7 @@ process(#fpbincrementreq{key=Key, amount=Amount}, State) ->
     case antidote:append(Key, riak_dt_pncounter, {{increment, Amount}, node()}) of
         {ok, _Result} ->
              {reply, #fpboperationresp{success = true}, State};
-        {error, Result} ->
+        {error, _Result} ->
             {reply, #fpboperationresp{success = false}, State}
     end;
 
@@ -72,7 +72,7 @@ process(#fpbdecrementreq{key=Key, amount=Amount}, State) ->
     case antidote:append(Key, riak_dt_pncounter, {{decrement, Amount}, node()}) of
         {ok, _Result} ->
             {reply, #fpboperationresp{success = true}, State};
-        {error, Result} ->
+        {error, _Result} ->
             {reply, #fpboperationresp{success = false}, State}
     end;    
 
@@ -81,7 +81,7 @@ process(#fpbgetcounterreq{key=Key}, State) ->
     case antidote:read(Key, riak_dt_pncounter) of
         {ok, Result} ->
             {reply, #fpbgetcounterresp{value = Result}, State};
-        {error, Reason} ->
+        {error, _Reason} ->
             {reply, #fpboperationresp{success = false}, State}
     end.
 
