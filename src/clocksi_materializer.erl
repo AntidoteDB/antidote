@@ -58,19 +58,6 @@ new(Type) ->
 		  [clocksi_payload()], txid()) -> {ok, snapshot(), 
 						   {dcid(),CommitTime::non_neg_integer()} | ignore, snapshot(), [clocksi_payload()]} | {error, term()}.
 materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
-    %% {FirstDc,FirstTime} = hd(dict:to_list(MinSnapshotTime)),
-    %% %% SSTime is the time of the snapshot that will be cached
-    %% %% It is described by a single scalar, so that the cached snapshots can be ordred
-    %% %% (also reducing the number of snapshots stored)
-    %% %% It is the smallest entry of the vector provided for the read
-    %% SSTime = dict:fold(fun(DcId,CT,{AccDc,AccTime}) ->
-    %% 			       case CT < AccTime of
-    %% 				   true ->
-    %% 				       {DcId,CT};
-    %% 				   false ->
-    %% 				       {AccDc,AccTime}
-    %% 			       end
-    %% 		       end, {FirstDc,FirstTime}, MinSnapshotTime),
     materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId, SnapshotCommitTime,false).
 
 
@@ -174,7 +161,6 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
 								lager:error("Could not find DC in SS ~p", [SnapshotTime]),
 								false
 							end,
-						 io:format("prevtime ~w~n", [PrevTime3]),
 						 Res2 = dict:update(DcIdOp,fun(Val) ->
 										   case TimeOp > Val of
 										       true ->

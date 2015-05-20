@@ -46,7 +46,6 @@ get_smaller(Vector,{List,_Size}) ->
 get_smaller_internal(_Vector,[],IsFirst) ->
     {undefined,IsFirst};
 get_smaller_internal(Vector,[{FirstClock,FirstVal}|Rest],IsFirst) ->
-    io:format("first ~w, firstVal ~w, vector ~w~n", [FirstClock,FirstVal,Vector]),
     case vectorclock:le(FirstClock,Vector) of
 	true ->
 	    {{FirstClock,FirstVal},IsFirst};
