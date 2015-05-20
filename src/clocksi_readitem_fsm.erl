@@ -149,7 +149,7 @@ terminate(_Reason, _SN, _SD) ->
 
 %% Internal functions
 filter_updates_per_key(Updates, Key) ->
-    FilterMapFun = fun ({_, {KeyPrime, _Type, Op}}) ->
+    FilterMapFun = fun ({KeyPrime, _Type, Op}) ->
         case KeyPrime == Key of
             true  -> {true, Op};
             false -> false
@@ -185,10 +185,10 @@ filter_updates_per_key_test()->
     Op3 = {update, {{increment,3}, actor1}},
     Op4 = {update, {{increment,4}, actor1}},
 
-    ClockSIOp1 = {xxx, {a, crdt_pncounter, Op1}},
-    ClockSIOp2 = {xxx, {b, crdt_pncounter, Op2}},
-    ClockSIOp3 = {xxx, {c, crdt_pncounter, Op3}},
-    ClockSIOp4 = {xxx, {a, crdt_pncounter, Op4}},
+    ClockSIOp1 = {a, crdt_pncounter, Op1},
+    ClockSIOp2 = {b, crdt_pncounter, Op2},
+    ClockSIOp3 = {c, crdt_pncounter, Op3},
+    ClockSIOp4 = {a, crdt_pncounter, Op4},
 
     ?assertEqual([Op1, Op4], 
         filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).

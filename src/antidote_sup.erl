@@ -73,6 +73,12 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
 
+    PerformReadMaster = {perform_read_vnode_master,
+                         {riak_core_vnode_master,  start_link,
+                          [perform_read_vnode]},
+                         permanent, 5000, worker, [riak_core_vnode_master]},
+
+
     VectorClockMaster = {vectorclock_vnode_master,
                          {riak_core_vnode_master,  start_link,
                           [vectorclock_vnode]},
@@ -96,5 +102,6 @@ init(_Args) ->
        InterDcRepMaster,
        InterDcRecvrMaster,
        InterDcManager,
+       PerformReadMaster,
        VectorClockMaster,
        MaterializerMaster]}}.

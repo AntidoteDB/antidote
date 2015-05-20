@@ -34,6 +34,7 @@
          read/2,
          asyn_append/3,
          append/3,
+	 append_group/3,
          asyn_read_from/3,
          read_from/3]).
 
@@ -105,6 +106,12 @@ asyn_append(Preflist, Log, Payload) ->
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, Payload},
+                                        ?LOGGING_MASTER,
+                                        infinity).
+
+append_group(IndexNode, LogId, Payload) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {append_group, LogId, Payload},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -203,6 +210,45 @@ handle_command({append, LogId, Payload}, Sender,
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
+
+
+handle_command({append_group, LogId, PayloadList}, Sender,
+               #state{logs_map=Map,
+                      clock=Clock,
+                      partition=Partition,
+                      senders_awaiting_ack=SendersAwaitingAck0}=State) ->
+    {ErrorList, SuccList, _NNC} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock}) ->
+						      OpId = generate_op_id(NewClock),
+						      {NewNewClock, _Node} = OpId,
+						      case get_log_from_map(Map, Partition, LogId) of
+							  {ok, Log} ->
+							      case insert_operation(Log, LogId, OpId, Payload) of
+								  {ok, OpId} ->
+								      case dict:find(LogId, SendersAwaitingAck0) of
+									  error ->
+									      Me = self(),
+									      Me ! {sync, Log, LogId},
+									      {AccErr, AccSucc ++ [OpId], NewNewClock};
+									  _ ->
+									      {AccErr, AccSucc ++ [OpId], NewNewClock}
+								      end;
+								  {error, Reason} ->
+								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
+							      end;
+							  {error, Reason} ->
+							      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
+						      end
+					      end, {[],[],Clock}, PayloadList),
+    case ErrorList of
+	[] ->
+	    [SuccId|_T] = SuccList,
+	    {NewC, _Node} = lists:last(SuccList),
+	    SendersAwaitingAck = dict:append(LogId, {Sender, SuccId}, SendersAwaitingAck0),
+	    {noreply, State#state{senders_awaiting_ack=SendersAwaitingAck, clock=NewC}};
+	[Error|_T] ->
+	    {reply, Error, State}
+    end;
+
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.

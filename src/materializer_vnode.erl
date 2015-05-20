@@ -28,6 +28,7 @@
 -define(SNAPSHOT_THRESHOLD, 10).
 -define(SNAPSHOT_MIN, 2).
 -define(OPS_THRESHOLD, 50).
+-define(TABLE_CONCURRENCY, {read_concurrency,true}).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -36,6 +37,7 @@
 %% API
 -export([start_vnode/1,
          read/5,
+	 get_cache_name/2,
 	 store_ss/3,
          update/2,
 	 belongs_to_snapshot_op/3]).
@@ -64,10 +66,8 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), snapshot_time(), txid(), non_neg_integer()) -> {ok, snapshot()} | {error, reason()}.
-read(Key, Type, SnapshotTime, TxId,Partition) ->
-    OpsCache = get_cache_name(Partition,ops_cache),
-    SnapshotCache = get_cache_name(Partition,snapshot_cache),
+-spec read(key(), type(), snapshot_time(), txid(), {ets:tid(),ets:tid()}) -> {ok, snapshot()} | {error, reason()}.
+read(Key, Type, SnapshotTime, TxId,{OpsCache,SnapshotCache}) ->
     internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache).
 
 get_cache_name(Partition,Base) ->
@@ -88,8 +88,8 @@ store_ss(Key, Snapshot, CommitTime) ->
                                         materializer_vnode_master).
 
 init([Partition]) ->
-    OpsCache = ets:new(get_cache_name(Partition,ops_cache), [set,protected,named_table]),
-    SnapshotCache = ets:new(get_cache_name(Partition,snapshot_cache), [set,protected,named_table]),
+    OpsCache = ets:new(get_cache_name(Partition,ops_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
+    SnapshotCache = ets:new(get_cache_name(Partition,snapshot_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
     {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
 handle_command({update, Key, DownstreamOp}, _Sender,
