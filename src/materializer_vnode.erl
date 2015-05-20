@@ -239,11 +239,12 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
 -spec snapshot_insert_gc(key(), orddict:orddict(),
                          ets:tid(),ets:tid() ) -> true.
 snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
+    %% Should check op size here also, when run from op gc
     case (vector_orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
         true ->
 	    %% snapshots are no longer totally ordered
-	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN),
-            FirstOp=vector_orddict:first(PrunedSnapshots),
+	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
+            FirstOp=vector_orddict:last(PrunedSnapshots),
             {CommitTime, _S} = FirstOp,
 	    OpsDict = case ets:lookup(OpsCache, Key) of
 			  []->

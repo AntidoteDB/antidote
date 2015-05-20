@@ -33,6 +33,7 @@
 	 to_list/1,
 	 from_list/1,
 	 first/1,
+	 last/1,
 	 filter/2]).
 
 
@@ -86,6 +87,9 @@ from_list(List) ->
 
 first({[First|_Rest],_Size}) ->
     First.
+
+last({List,_Size}) ->
+    lists:last(List).
 
 filter(Fun,{List,_Size}) ->
     Result = lists:filter(Fun,List),
