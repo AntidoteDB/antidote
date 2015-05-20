@@ -38,8 +38,8 @@
 -export_type([transaction/0]).
 
 %% transaction = {TxId, {DcId, CommitTime}, VecSnapshotTime, [Operations]}
--type transaction() :: {txid(), {dcid(), non_neg_integer()},
-                        vectorclock:vectorclock(), [#operation{}]}.
+-type transaction() :: {txid(), commit_time(),
+                        snapshot_time(), [#operation{}]}.
 
 %% @doc Returns an iterator to read transactions from a partition
 %%  transactions can be read using get_next_transactions
