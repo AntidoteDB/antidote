@@ -64,7 +64,6 @@ process(#fpbincrementreq{key=Key, amount=Amount}, State) ->
         {ok, _Result} ->
              {reply, #fpboperationresp{success = true}, State};
         {error, Result} ->
-            lager:error("Operation failed due to ~p",[Result]),
             {reply, #fpboperationresp{success = false}, State}
     end;
 
@@ -74,7 +73,6 @@ process(#fpbdecrementreq{key=Key, amount=Amount}, State) ->
         {ok, _Result} ->
             {reply, #fpboperationresp{success = true}, State};
         {error, Result} ->
-            lager:error("Operation failed due to ~p",[Result]),
             {reply, #fpboperationresp{success = false}, State}
     end;    
 
@@ -84,7 +82,6 @@ process(#fpbgetcounterreq{key=Key}, State) ->
         {ok, Result} ->
             {reply, #fpbgetcounterresp{value = Result}, State};
         {error, Reason} ->
-            lager:error("Operation failed due to ~p",[Reason]),
             {reply, #fpboperationresp{success = false}, State}
     end.
 

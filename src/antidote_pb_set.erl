@@ -89,7 +89,6 @@ process(#fpbgetsetreq{key=Key}, State) ->
         {ok, Result} ->
             {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State};
         {error, Reason} ->
-            lager:error("Operation failed due to ~p", [Reason]),
             {reply, #fpboperationresp{success = false}, State}
     end.
 
