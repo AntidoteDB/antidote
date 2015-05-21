@@ -402,7 +402,7 @@ open_logs(LogFile, [Next|Rest], Map)->
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2);
         {repaired, Log, _, _} ->
-            %lager:info("Repaired log ~p", [Log]),
+            lager:info("Repaired log ~p", [Log]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2);
         {error, Reason} ->

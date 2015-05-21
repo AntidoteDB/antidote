@@ -26,7 +26,7 @@
 
 
 -define(SNAPSHOT_THRESHOLD, 10).
--define(SNAPSHOT_MIN, 2).
+-define(SNAPSHOT_MIN, 5).
 -define(OPS_THRESHOLD, 50).
 -define(TABLE_CONCURRENCY, {read_concurrency,true}).
 

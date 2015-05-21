@@ -26,7 +26,7 @@
 
 -behaviour(riak_api_pb_service).
 
--include_lib("riak_pb/include/antidote_pb.hrl").
+-include_lib("antidote_pb/include/antidote_pb.hrl").
 
 -export([init/0,
          decode/2,
@@ -79,7 +79,7 @@ process(#fpbsnapshotreadtxnreq{ops = Ops}, State) ->
                                             clock= term_to_binary(CommitTime),
                                             results=Reply}, State};
         Other ->
-            lager:info("Clocksi execute received ~p",[Other]),
+            lager:error("Clocksi execute received ~p",[Other]),
             {reply, #fpbsnapshotreadtxnresp{success=false}, State}
     end.
 
@@ -126,7 +126,7 @@ decode_snapshot_read_ops(Ops) ->
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetcounterreq{key=Key}}) ->
     {read, Key, riak_dt_pncounter};
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{set=#fpbgetsetreq{key=Key}}) ->
-    {read,Key, riak_dt_orset}.
+    {read, Key, riak_dt_orset}.
 
 
 

@@ -18,7 +18,6 @@
 %%
 %% -------------------------------------------------------------------
 -module(clocksi_vnode).
-
 -behaviour(riak_core_vnode).
 
 -include("antidote.hrl").
@@ -28,6 +27,7 @@
 	 read_data_item/5,
          prepare/2,
          commit/3,
+         single_commit/2,
          abort/2,
          now_microsec/1,
          init/1,
@@ -84,6 +84,16 @@ prepare(ListofNodes, TxId) ->
 						       ?CLOCKSI_MASTER)
 		end, 0, ListofNodes).
 
+
+%% @doc Sends prepare+commit to a single partition
+%%      Called by a Tx coordinator when the tx only
+%%      affects one partition
+single_commit([{Node,WriteSet}], TxId) ->
+    riak_core_vnode_master:command(Node,
+                                   {single_commit, TxId,WriteSet},
+                                   {fsm, undefined, self()},
+                                   ?CLOCKSI_MASTER).
+
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
     lists:foldl(fun({Node,WriteSet},_Acc) ->
@@ -120,40 +130,51 @@ init([Partition]) ->
                 active_txs_per_key=ActiveTxsPerKey}}.
 
 
-handle_command({prepare, Transaction, TxWriteSet}, _Sender,
+handle_command({prepare, Transaction, WriteSet}, _Sender,
                State = #state{partition=_Partition,
                               committed_tx=CommittedTx,
                               active_txs_per_key=ActiveTxPerKey,
-                              prepared_tx=PreparedTx}) ->
-    %% TODO, not waiting in updates anymore, need to wait here?
-    TxId = Transaction#transaction.txn_id,
-    case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
-        true ->
-	    lists:foldl(fun({Key1,Type1,_Op}, _Acc) ->
-				true = ets:insert(ActiveTxPerKey, {Key1, Type1, TxId})
-			end, 0, TxWriteSet),
-	    PrepareTime = now_microsec(erlang:now()),
-            LogRecord = #log_record{tx_id=TxId,
-                                    op_type=prepare,
-                                    op_payload=PrepareTime},
-            true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
-	    Updates = TxWriteSet,
-            case Updates of 
-                [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
-                    LogId = log_utilities:get_logid_from_key(Key),
-                    [Node] = log_utilities:get_preflist_from_key(Key),
-		    NewUpdates = write_set_to_logrecord(TxId,Updates),
-                    Result = logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]),
-                    case Result of
-                        {ok, _} ->
-                            {reply, {prepared, PrepareTime}, State};
-                        {error, timeout} ->
-                            {reply, {error, timeout}, State}
-                    end;
-                _ -> 
-                    {reply, {error, no_tx_record}, State}
+                              prepared_tx=PreparedTx
+                              }) ->
+    PrepareTime = now_microsec(erlang:now()),
+    Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+    case Result of
+        {ok, _} ->
+            {reply, {prepared, PrepareTime}, State};
+        {error, timeout} ->
+            {reply, {error, timeout}, State};
+        {error, no_updates} ->
+            {reply, {error, no_tx_record}, State};
+        {error, write_conflict} ->
+            {reply, abort, State}
+    end;
+
+handle_command({single_commit, Transaction, WriteSet}, _Sender,
+               State = #state{partition=_Partition,
+                              committed_tx=CommittedTx,
+                              active_txs_per_key=ActiveTxPerKey,
+                              prepared_tx=PreparedTx
+                              }) ->
+    PrepareTime = now_microsec(erlang:now()),
+    Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+    case Result of
+        {ok, _} ->
+            ResultCommit = commit(Transaction, PrepareTime, WriteSet, PreparedTx, State),
+            case ResultCommit of
+                {ok, committed} ->
+                    {reply, {committed, PrepareTime}, State};
+                {error, materializer_failure} ->
+                    {reply, {error, materializer_failure}, State};
+                {error, timeout} ->
+                    {reply, {error, timeout}, State};
+                {error, no_updates} ->
+                    {reply, no_tx_record, State}
             end;
-        false ->
+        {error, timeout} ->
+            {reply, {error, timeout}, State};
+        {error, no_updates} ->
+            {reply, {error, no_tx_record}, State};
+        {error, write_conflict} ->
             {reply, abort, State}
     end;
 
@@ -162,32 +183,18 @@ handle_command({prepare, Transaction, TxWriteSet}, _Sender,
 %% eventually.
 handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
                #state{partition=_Partition,
-                      committed_tx=CommittedTx} = State) ->
-    TxId = Transaction#transaction.txn_id,
-    DcId = dc_utilities:get_my_dc_id(),
-    LogRecord=#log_record{tx_id=TxId,
-                          op_type=commit,
-                          op_payload={{DcId, TxCommitTime},
-                                      Transaction#transaction.vec_snapshot_time}},
-    case Updates of
-        [{Key, _Type, {_Op, _Param}} | _Rest] -> 
-            LogId = log_utilities:get_logid_from_key(Key),
-            [Node] = log_utilities:get_preflist_from_key(Key),
-            case logging_vnode:append(Node,LogId,LogRecord) of
-                {ok, _} ->
-                    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
-                    case update_materializer(Updates, Transaction, TxCommitTime) of
-                        ok ->
-                            clean_and_notify(TxId, Key, State),
-                            {reply, committed, State};
-                        error ->
-                            {reply, {error, materializer_failure}, State}
-                    end;
-                {error, timeout} ->
-                    {reply, {error, timeout}, State}
-            end;
-        _ -> 
-            {reply, {error, no_tx_record}, State}
+                      committed_tx=CommittedTx
+                      } = State) ->
+    Result = commit(Transaction, TxCommitTime, Updates, CommittedTx, State),
+    case Result of
+        {ok, committed} ->
+            {reply, committed, State};
+        {error, materializer_failure} ->
+            {reply, {error, materializer_failure}, State};
+        {error, timeout} ->
+            {reply, {error, timeout}, State};
+        {error, no_updates} ->
+            {reply, no_tx_record, State}
     end;
 
 handle_command({abort, Transaction, Updates}, _Sender,
@@ -254,6 +261,63 @@ terminate(_Reason, _State) ->
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
+
+prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime)->
+    %% TODO, not waiting in updates anymore, need to wait here?
+    TxId = Transaction#transaction.txn_id,
+    case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
+        true ->
+	    lists:foldl(fun({Key1,Type1,_Op}, _Acc) ->
+				true = ets:insert(ActiveTxPerKey, {Key1, Type1, TxId})
+			end, 0, TxWriteSet),
+            LogRecord = #log_record{tx_id=TxId,
+                                    op_type=prepare,
+                                    op_payload=PrepareTime},
+            true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
+	    Updates = TxWriteSet,
+            case Updates of 
+                [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
+                    LogId = log_utilities:get_logid_from_key(Key),
+                    [Node] = log_utilities:get_preflist_from_key(Key),
+		    NewUpdates = write_set_to_logrecord(TxId,Updates),
+                    logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]);
+		_ ->
+		    {error, no_updates}
+	    end;
+	false ->
+	     {error, write_conflict}
+    end.
+
+commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
+    TxId = Transaction#transaction.txn_id,
+    DcId = dc_utilities:get_my_dc_id(),
+    LogRecord=#log_record{tx_id=TxId,
+                          op_type=commit,
+                          op_payload={{DcId, TxCommitTime},
+                                      Transaction#transaction.vec_snapshot_time}},
+    case Updates of
+        [{Key, _Type, {_Op, _Param}} | _Rest] -> 
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            case logging_vnode:append(Node,LogId,LogRecord) of
+                {ok, _} ->
+                    %true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+                    case update_materializer(Updates, Transaction, TxCommitTime) of
+                        ok ->
+                            clean_and_notify(TxId, Key, State),
+                            {ok, committed};
+                        error ->
+                            {error, materializer_failure}
+                    end;
+                {error, timeout} ->
+                    {error, timeout}
+            end;
+        _ -> 
+            {error, no_updates}
+    end.
+
+
+
 
 %% @doc clean_and_notify:
 %%      This function is used for cleanning the state a transaction

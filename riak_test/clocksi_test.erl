@@ -19,10 +19,9 @@
 %% -------------------------------------------------------------------
 -module(clocksi_test).
 
--export([confirm/0, clocksi_test1/1, clocksi_test2/1,
+-export([confirm/0, clocksi_test1/1, clocksi_test2/1, clocksi_test3/1, clocksi_test5/1,
          clocksi_test_read_wait/1, clocksi_test4/1, clocksi_test_read_time/1,
-         clocksi_test_certification_check/1,
-         clocksi_multiple_test_certification_check/1, spawn_read/3]).
+         spawn_read/3]).
 
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
@@ -31,15 +30,15 @@ confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
     clocksi_test1(Nodes),
-    clocksi_test2 (Nodes),
+    clocksi_test2(Nodes),
+    clocksi_test3(Nodes),
+    clocksi_test5(Nodes),
     clocksi_tx_noclock_test(Nodes),
     clocksi_single_key_update_read_test(Nodes),
     clocksi_multiple_key_update_read_test(Nodes),
     clocksi_test4 (Nodes),
     clocksi_test_read_time(Nodes),
     clocksi_test_read_wait(Nodes),
-    clocksi_test_certification_check(Nodes),
-    clocksi_multiple_test_certification_check(Nodes),
     clocksi_multiple_read_update_test(Nodes),
     clocksi_concurrency_test(Nodes),
     rt:clean_cluster(Nodes),
@@ -139,6 +138,84 @@ clocksi_test2(Nodes) ->
     {ok, {_,[ReadVal],_}} = ReadResult3,
     ?assertEqual(ReadVal, 1),
     lager:info("Test2 passed"),
+    pass.
+
+%% @doc The following function tests that ClockSI can run an interactive tx.
+%%      It tests the API operation that allows clients to run interactive txs
+%%      explicitely calling prepare and commit.
+clocksi_test3(Nodes) ->
+    FirstNode = hd(Nodes),
+    lager:info("Test2 started"),
+    Type = riak_dt_pncounter,
+    {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, abc, riak_dt_pncounter]),
+    ?assertEqual({ok, 1}, ReadResult0),
+    WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                         [TxId, abc, Type, {increment, 4}]),
+    ?assertEqual(ok, WriteResult),
+    ReadResult=rpc:call(FirstNode, antidote, clocksi_iread,
+                        [TxId, abc, riak_dt_pncounter]),
+    ?assertEqual({ok, 2}, ReadResult),
+    WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                          [TxId, bcd, Type, {increment, 4}]),
+    ?assertEqual(ok, WriteResult1),
+    ReadResult1=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, bcd, riak_dt_pncounter]),
+    ?assertEqual({ok, 2}, ReadResult1),
+    WriteResult2=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                          [TxId, cde, Type, {increment, 4}]),
+    ?assertEqual(ok, WriteResult2),
+    ReadResult2=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, cde, riak_dt_pncounter]),
+    ?assertEqual({ok, 2}, ReadResult2),
+    End=rpc:call(FirstNode, antidote, clocksi_full_icommit, [TxId]),
+    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End),
+    {ok,{_Txid, CausalSnapshot}} = End,
+    ReadResult3 = rpc:call(FirstNode, antidote, clocksi_read,
+                           [CausalSnapshot, abc, Type]),
+    {ok, {_,[ReadVal],_}} = ReadResult3,
+    ?assertEqual(ReadVal, 2),
+    lager:info("Test3 passed"),
+    pass.
+
+%% @doc The following function tests that ClockSI can run an interactive tx.
+%%      that updates only one partition. This type of txs use a only-one phase 
+%%      commit.
+clocksi_test5(Nodes) ->
+    FirstNode = hd(Nodes),
+    lager:info("Test2 started"),
+    Type = riak_dt_pncounter,
+    {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, abc, riak_dt_pncounter]),
+    ?assertEqual({ok, 2}, ReadResult0),
+    WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                         [TxId, abc, Type, {increment, 4}]),
+    ?assertEqual(ok, WriteResult),
+    ReadResult=rpc:call(FirstNode, antidote, clocksi_iread,
+                        [TxId, abc, riak_dt_pncounter]),
+    ?assertEqual({ok, 3}, ReadResult),
+    WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                          [TxId, abc, Type, {increment, 4}]),
+    ?assertEqual(ok, WriteResult1),
+    ReadResult1=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, abc, riak_dt_pncounter]),
+    ?assertEqual({ok, 4}, ReadResult1),
+    WriteResult2=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                          [TxId, abc, Type, {increment, 4}]),
+    ?assertEqual(ok, WriteResult2),
+    ReadResult2=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, abc, riak_dt_pncounter]),
+    ?assertEqual({ok, 5}, ReadResult2),
+    End=rpc:call(FirstNode, antidote, clocksi_full_icommit, [TxId]),
+    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End),
+    {ok,{_Txid, CausalSnapshot}} = End,
+    ReadResult3 = rpc:call(FirstNode, antidote, clocksi_read,
+                           [CausalSnapshot, abc, Type]),
+    {ok, {_,[ReadVal],_}} = ReadResult3,
+    ?assertEqual(ReadVal, 5),
+    lager:info("Test5 passed"),
     pass.
 
 %% @doc Test to execute transaction with out explicit clock time
@@ -342,97 +419,6 @@ spawn_read(LastNode, TxId, Return) ->
     ReadResult=rpc:call(LastNode, antidote, clocksi_iread,
                         [TxId, read_wait_test, riak_dt_pncounter]),
     Return ! {self(), ReadResult}.
-
-%% @doc The following function tests the certification check algorithm,
-%%      when two concurrent txs modify a single object, one hast to abort.
-clocksi_test_certification_check(Nodes) ->
-    lager:info("clockSI_test_certification_check started"),
-    FirstNode = hd(Nodes),
-    LastNode= lists:last(Nodes),
-    lager:info("Node1: ~p", [FirstNode]),
-    lager:info("LastNode: ~p", [LastNode]),
-    Type = riak_dt_pncounter,
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    lager:info("Tx1 Started, id : ~p", [TxId]),
-    WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
-                         [TxId, write, Type, {increment, 1}]),
-    lager:info("Tx1 Writing..."),
-    ?assertEqual(ok, WriteResult),
-
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId1}=rpc:call(LastNode, antidote, clocksi_istart_tx, []),
-    lager:info("Tx2 Started, id : ~p", [TxId1]),
-    WriteResult1=rpc:call(LastNode, antidote, clocksi_iupdate,
-                          [TxId1, write, Type, {increment, 2}]),
-    lager:info("Tx2 Writing..."),
-    ?assertEqual(ok, WriteResult1),
-    lager:info("Tx1 finished concurrent write..."),
-
-    %% prepare and commit the second transaction.
-    CommitTime1=rpc:call(LastNode, antidote, clocksi_iprepare, [TxId1]),
-    ?assertMatch({ok, _}, CommitTime1),
-    lager:info("Tx2 sent prepare, got commitTime=..., id : ~p", [CommitTime1]),
-    End1=rpc:call(LastNode, antidote, clocksi_icommit, [TxId1]),
-    ?assertMatch({ok, _}, End1),
-    lager:info("Tx2 Committed."),
-
-    %% commit the first tx.
-    CommitTime=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
-    ?assertMatch({aborted, TxId}, CommitTime),
-    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-    lager:info("Tx1 aborted. Test passed!"),
-    pass.
-
-%% @doc The following function tests the certification check algorithm.
-%%      when two concurrent txs modify a single object, one hast to abort.
-%%      Besides, it updates multiple partitions.
-clocksi_multiple_test_certification_check(Nodes) ->
-    lager:info("clockSI_test_certification_check started"),
-    FirstNode = hd(Nodes),
-    LastNode= lists:last(Nodes),
-    lager:info("Node1: ~p", [FirstNode]),
-    lager:info("LastNode: ~p", [LastNode]),
-    Type = riak_dt_pncounter,
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    lager:info("Tx1 Started, id : ~p", [TxId]),
-    WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
-                         [TxId, write, Type, {increment, 1}]),
-    lager:info("Tx1 Writing 1..."),
-    ?assertEqual(ok, WriteResult),
-    WriteResultb=rpc:call(FirstNode, antidote, clocksi_iupdate,
-                          [TxId, write2, Type, {increment, 1}]),
-    lager:info("Tx1 Writing 2..."),
-    ?assertEqual(ok, WriteResultb),
-    WriteResultc=rpc:call(FirstNode, antidote, clocksi_iupdate,
-                          [TxId, write3, Type, {increment, 1}]),
-    lager:info("Tx1 Writing 3..."),
-    ?assertEqual(ok, WriteResultc),
-
-    %% Start a new tx,  perform an update over key write.
-    {ok,TxId1}=rpc:call(LastNode, antidote, clocksi_istart_tx, []),
-    lager:info("Tx2 Started, id : ~p", [TxId1]),
-    WriteResult1=rpc:call(LastNode, antidote, clocksi_iupdate,
-                          [TxId1, write, Type, {increment, 2}]),
-    lager:info("Tx2 Writing..."),
-    ?assertEqual(ok, WriteResult1),
-    lager:info("Tx1 finished concurrent write..."),
-
-    %% prepare and commit the second transaction.
-    CommitTime1=rpc:call(LastNode, antidote, clocksi_iprepare, [TxId1]),
-    ?assertMatch({ok, _}, CommitTime1),
-    lager:info("Tx2 sent prepare, got commitTime=..., id : ~p", [CommitTime1]),
-    End1=rpc:call(LastNode, antidote, clocksi_icommit, [TxId1]),
-    ?assertMatch({ok, _}, End1),
-    lager:info("Tx2 Committed."),
-
-    %% commit the first tx.
-    CommitTime=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
-    ?assertMatch({aborted, TxId}, CommitTime),
-    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-    lager:info("Tx1 aborted. Test passed!"),
-    pass.
 
 %% @doc Read an update a key multiple times.
 clocksi_multiple_read_update_test(Nodes) ->

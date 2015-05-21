@@ -26,7 +26,7 @@
 
 -behaviour(riak_api_pb_service).
 
--include_lib("riak_pb/include/antidote_pb.hrl").
+-include_lib("antidote_pb/include/antidote_pb.hrl").
 
 -export([init/0,
          decode/2,
@@ -67,7 +67,8 @@ process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
                                     Error+1
                             end
                             end, 0, AddsBin),
-    NumError2 = lists:foldl(fun(X, Error) ->
+
+    NumError2 = lists:foreach(fun(X, Error) ->
                             Elem = erlang:binary_to_term(X),
                             case antidote:append(Key, riak_dt_orset, {{remove, Elem}, node()}) of
                                 {ok, _} ->

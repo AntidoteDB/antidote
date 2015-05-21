@@ -34,6 +34,7 @@
          clocksi_iread/3,
          clocksi_iupdate/4,
          clocksi_iprepare/1,
+         clocksi_full_icommit/1,
          clocksi_icommit/1]).
 
 %% Public API
@@ -132,8 +133,15 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
 
-clocksi_iprepare({_, _, CoordFsmPid})->
+%% @doc This commits includes both prepare and commit phase. Thus
+%%      Client do not need to send to message to complete the 2PC
+%%      protocol. The Tx coordinator will pick the best strategie
+%%      automatically.
+clocksi_full_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
+    
+clocksi_iprepare({_, _, CoordFsmPid})->
+    gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}).
 
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit).
