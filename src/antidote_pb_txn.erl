@@ -44,7 +44,6 @@ init() ->
 
 %% @doc decode/2 callback. Decodes an incoming message.
 decode(Code, Bin) ->
-    lager:info("Decoding Txn Req ~p",[Code]),
     Msg = riak_pb_codec:decode(Code, Bin),
     case Msg of
         #fpbatomicupdatetxnreq{} ->
@@ -59,7 +58,6 @@ encode(Message) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbatomicupdatetxnreq{ops = Ops}, State) ->
-    lager:info("Testing txn interface.. Received atomic update request  ~p", [Ops]),
     Updates = decode_au_txn_ops(Ops),
     case antidote:clocksi_bulk_update(Updates) of
         {error, _Reason} ->
@@ -71,7 +69,6 @@ process(#fpbatomicupdatetxnreq{ops = Ops}, State) ->
     end;
 
 process(#fpbsnapshotreadtxnreq{ops = Ops}, State) ->
-    lager:info("Testing txn interface.. Received snapshot read request  ~p", [Ops]),
     ReadReqs = decode_snapshot_read_ops(Ops),
     %%TODO: change this to interactive reads
     case antidote:clocksi_execute_tx(ReadReqs) of

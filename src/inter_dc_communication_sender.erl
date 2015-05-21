@@ -106,7 +106,7 @@ init([Port,Host,Message,ReplyTo]) ->
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
-                          [{active,once}, binary, {packet,2}], ?CONNECT_TIMEOUT) of
+                          [{active,once}, binary, {packet,4}], ?CONNECT_TIMEOUT) of
         {ok, Socket} ->
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
             {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};

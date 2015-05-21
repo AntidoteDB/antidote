@@ -46,7 +46,7 @@ init([Pid, Port]) ->
     {ok, ListenSocket} = gen_tcp:listen(
                            Port,
                            [{active,false}, binary,
-                            {packet,2},{reuseaddr, true}
+                            {packet,4},{reuseaddr, true}
                            ]),
     Pid ! ready,
     {ok, accept, #state{port=Port, listener=ListenSocket},0}.
