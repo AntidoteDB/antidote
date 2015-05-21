@@ -274,34 +274,36 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 %% @doc Performs a certification check when a transaction wants to move
 %%      to the prepared state.
-certification_check(_, [], _, _) ->
-    true;
-certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    {Key, _Type, _} = H,
-    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
-    case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true ->
-            false;
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
-    end.
+certification_check(_TxId, _H, _CommittedTx, _ActiveTxPerKey) ->
+    true.
+%% certification_check(_, [], _, _) ->
+%%     true;
+%% certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
+%%     {Key, _Type, _} = H,
+%%     TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
+%%     case check_keylog(TxId, TxsPerKey, CommittedTx) of
+%%         true ->
+%%             false;
+%%         false ->
+%%             certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
+%%     end.
 
-check_keylog(_, [], _) ->
-    false;
-check_keylog(TxId, [H|T], CommittedTx)->
-    {_Key, _Type, ThisTxId}=H,
-    case ThisTxId > TxId of
-        true ->
-            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            case CommitInfo of
-                [{_, _CommitTime}] ->
-                    true;
-                [] ->
-                    check_keylog(TxId, T, CommittedTx)
-            end;
-        false ->
-            check_keylog(TxId, T, CommittedTx)
-    end.
+%% check_keylog(_, [], _) ->
+%%     false;
+%% check_keylog(TxId, [H|T], CommittedTx)->
+%%     {_Key, _Type, ThisTxId}=H,
+%%     case ThisTxId > TxId of
+%%         true ->
+%%             CommitInfo = ets:lookup(CommittedTx, ThisTxId),
+%%             case CommitInfo of
+%%                 [{_, _CommitTime}] ->
+%%                     true;
+%%                 [] ->
+%%                     check_keylog(TxId, T, CommittedTx)
+%%             end;
+%%         false ->
+%%             check_keylog(TxId, T, CommittedTx)
+%%     end.
 
 -spec update_materializer(DownstreamOps :: [{term(),key(),type(),op()}],
                           Transaction::tx(),TxCommitTime:: {term(), term()}) ->
