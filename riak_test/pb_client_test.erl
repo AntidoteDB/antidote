@@ -124,6 +124,10 @@ snapshot_read_test() ->
     %%TODO; Use Clock in next write/read transactions
     pass.
 
+%% @doc This test tests 
+%%         - add and remove operations of set
+%%         - Use of set and counter in snapshotreads and atomic updates
+%%         - Use of clock in snapshotreads and atomic updates
 transaction_orset_test() ->
     lager:info("Testing transaction using orset"),
     Key1 = <<"set1">>,
@@ -138,16 +142,23 @@ transaction_orset_test() ->
     C21 = antidotec_counter:increment(2, C2),
     Response = antidotec_pb_socket:atomic_store_crdts([C13,C21],Pid),
     ?assertMatch({ok,_},Response),
-
+    {ok, Clock} = Response,
     %Read your writes
-    Result = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_orset}, {Key2,riak_dt_pncounter}], Pid),
-    {ok, _Clock, [Set1, Counter2]} = Result,
-    antidotec_pb_socket:stop(Pid),
-%%    ?assertMatch(["1","2","3"], antidotec_set:value(Set1)),
+    Result = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_orset}, {Key2,riak_dt_pncounter}], Clock, Pid),
+    {ok, Clock1, [Set1, Counter2]} = Result,
+    
     ?assertMatch(2, antidotec_counter:value(Counter2)),
     ?assertMatch(true, antidotec_set:contains(1,Set1)),
     ?assertMatch(true, antidotec_set:contains(2,Set1)),
     ?assertMatch(true, antidotec_set:contains(3,Set1)),
-    %%TODO; Use Clock in next write/read transactions
+    %% Use Clock in next write/read transactions
+    C14 = antidotec_set:remove(3,Set1),
+    Response2 = antidotec_pb_socket:atomic_store_crdts([C14], Clock1, Pid),
+    ?assertMatch({ok, _}, Response2),
+    {ok, Clock2} = Response2,
+    Result2 = antidotec_pb_socket:snapshot_get_crdts([{Key1,riak_dt_orset}], Clock2, Pid),
+    {ok, _, [Set2]} = Result2,
+    ?assertMatch(false, antidotec_set:contains(3,Set2)),
+    antidotec_pb_socket:stop(Pid),    
     pass.
     
