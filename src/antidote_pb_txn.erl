@@ -113,8 +113,8 @@ decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=
          end, 
     case length(Rems) of
         0 -> Op;
-        1 -> [{update, Key, riak_dt_orset, {{remove,Adds}, ignore}}] ++ Op;
-        _ -> [{update, Key, riak_dt_orset, {{remove_all, Adds},ignore}}] ++ Op
+        1 -> [{update, Key, riak_dt_orset, {{remove, hd(Rems)}, ignore}}] ++ Op;
+        _ -> [{update, Key, riak_dt_orset, {{remove_all, Rems},ignore}}] ++ Op
     end.
         
 
