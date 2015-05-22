@@ -57,9 +57,17 @@ encode(Message) ->
     {ok, riak_pb_codec:encode(Message)}.
 
 %% @doc process/2 callback. Handles an incoming request message.
-process(#fpbatomicupdatetxnreq{ops = Ops}, State) ->
+process(#fpbatomicupdatetxnreq{clock=BClock,ops = Ops}, State) ->
     Updates = decode_au_txn_ops(Ops),
-    case antidote:clocksi_bulk_update(Updates) of
+    Clock = binary_to_term(BClock),
+    Response =
+        case Clock of 
+            ignore -> 
+                antidote:clocksi_bulk_update(Updates);
+            _ -> 
+                antidote:clocksi_bulk_update(Clock, Updates)
+        end,
+    case Response of 
         {error, _Reason} ->
             {reply, #fpbatomicupdatetxnresp{success = false}, State};
         {ok, {_Txid, _ReadSet, CommitTime}} ->
@@ -68,10 +76,17 @@ process(#fpbatomicupdatetxnreq{ops = Ops}, State) ->
              State}
     end;
 
-process(#fpbsnapshotreadtxnreq{ops = Ops}, State) ->
+process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
     ReadReqs = decode_snapshot_read_ops(Ops),
     %%TODO: change this to interactive reads
-    case antidote:clocksi_execute_tx(ReadReqs) of
+    Clock = binary_to_term(BClock),
+    Response = 
+        case Clock of 
+            ignore -> 
+                antidote:clocksi_execute_tx(ReadReqs);
+            _ -> antidote:clocksi_execute_tx(Clock, ReadReqs)
+        end,
+    case Response of 
         {ok, {_TxId, ReadSet, CommitTime}} ->
             Zipped = lists:zip(ReadReqs, ReadSet),
             Reply = encode_snapshot_read_response(Zipped),
