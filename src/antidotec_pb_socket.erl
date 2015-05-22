@@ -59,7 +59,9 @@
          store_crdt/2,
          get_crdt/3,
          atomic_store_crdts/2,
-         snapshot_get_crdts/2
+         atomic_store_crdts/3,
+         snapshot_get_crdts/2,
+         snapshot_get_crdts/3
         ]).
 
 %% @private
