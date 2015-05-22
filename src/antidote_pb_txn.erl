@@ -62,13 +62,13 @@ process(#fpbatomicupdatetxnreq{clock=BClock,ops = Ops}, State) ->
     Updates = decode_au_txn_ops(Ops),
     Clock = binary_to_term(BClock),
     Response =
-        case Clock of 
-            ignore -> 
+        case Clock of
+            ignore ->
                 antidote:clocksi_bulk_update(Updates);
-            _ -> 
+            _ ->
                 antidote:clocksi_bulk_update(Clock, Updates)
         end,
-    case Response of 
+    case Response of
         {error, _Reason} ->
             {reply, #fpbatomicupdatetxnresp{success = false}, State};
         {ok, {_Txid, _ReadSet, CommitTime}} ->
@@ -81,13 +81,13 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
     ReadReqs = decode_snapshot_read_ops(Ops),
     %%TODO: change this to interactive reads
     Clock = binary_to_term(BClock),
-    Response = 
-        case Clock of 
-            ignore -> 
+    Response =
+        case Clock of
+            ignore ->
                 antidote:clocksi_execute_tx(ReadReqs);
             _ -> antidote:clocksi_execute_tx(Clock, ReadReqs)
         end,
-    case Response of 
+    case Response of
         {ok, {_TxId, ReadSet, CommitTime}} ->
             Zipped = lists:zip(ReadReqs, ReadSet),
             Reply = encode_snapshot_read_response(Zipped),
@@ -105,7 +105,9 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
 process_stream(_,_,State) ->
     {ignore, State}.
 
--spec decode_au_txn_ops([#fpbatomicupdatetxnop{}]) -> 
+%% @doc decode_au_txn_ops : converts the pb messages for atomic update
+%% transaction into update messages for interface in antidote.erl
+-spec decode_au_txn_ops([#fpbatomicupdatetxnop{}]) ->
                                [{update, key(), type(), op()}].
 decode_au_txn_ops(Ops) ->
     lists:foldl(fun(Op, Acc) ->
@@ -117,7 +119,7 @@ decode_au_txn_op(#fpbatomicupdatetxnop{counterinc=#fpbincrementreq{key=Key, amou
 decode_au_txn_op(#fpbatomicupdatetxnop{counterdec=#fpbdecrementreq{key=Key, amount=Amount}}) ->
     [{update, Key, riak_dt_pncounter, {{decrement, Amount}, node()}}];
 %% Set
-decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=AddElems, rems=RemElems}}) ->
+decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key,adds=AddElems, rems=RemElems}}) ->
      Adds = lists:map(fun(X) ->
                               binary_to_term(X)
                       end, AddElems),
@@ -128,13 +130,15 @@ decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=
              0 -> [];
              1 -> [{update, Key, riak_dt_orset, {{add,Adds}, node()}}];
              _ -> [{update, Key, riak_dt_orset, {{add_all, Adds},node()}}]
-         end, 
+         end,
     case length(Rems) of
         0 -> Op;
         1 -> [{update, Key, riak_dt_orset, {{remove, hd(Rems)}, ignore}}] ++ Op;
         _ -> [{update, Key, riak_dt_orset, {{remove_all, Rems},ignore}}] ++ Op
     end.
-        
+
+%% @doc decode_snapshot_read_ops : converts the pb messages for snapshot
+%%  read transaction into read messages.
 -spec decode_snapshot_read_ops([#fpbsnapshotreadtxnop{}]) ->
                                       [{read, key(), type()}].
 decode_snapshot_read_ops(Ops) ->
@@ -147,7 +151,7 @@ decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetcounterreq{key=Key}
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{set=#fpbgetsetreq{key=Key}}) ->
     {read,Key, riak_dt_orset}.
 
-
+%% @doc encodes the response for snapshot read into pb messages
 encode_snapshot_read_response(Zipped) ->
     lists:map(fun(Resp) ->
                       encode_snapshot_read_resp(Resp)
