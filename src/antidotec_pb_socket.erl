@@ -282,7 +282,7 @@ atomic_store_crdts(Objects, Clock, Pid) ->
     Operations = lists:foldl(FoldFun, [], Objects),
     TxnRequest =  case Clock of 
                       ignore ->
-                          #fpbatomicupdatetxnreq{clock=ignore,ops=encode_au_txn_ops(Operations)};
+                          #fpbatomicupdatetxnreq{clock=term_to_binary(ignore),ops=encode_au_txn_ops(Operations)};
                       _ ->
                           #fpbatomicupdatetxnreq{clock=Clock,ops=encode_au_txn_ops(Operations)}
                   end,
@@ -307,7 +307,7 @@ snapshot_get_crdts(Objects, Clock, Pid) ->
     Operations = lists:map(MapFun, Objects),
     TxnRequest = case Clock of 
                      ignore -> 
-                         #fpbsnapshotreadtxnreq{clock=ignore, ops=encode_snapshot_read_ops(Operations)};
+                         #fpbsnapshotreadtxnreq{clock=term_to_binary(ignore), ops=encode_snapshot_read_ops(Operations)};
                      _ ->
                          #fpbsnapshotreadtxnreq{clock=Clock, ops=encode_snapshot_read_ops(Operations)}
                  end,
