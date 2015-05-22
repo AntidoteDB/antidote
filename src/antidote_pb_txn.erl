@@ -27,6 +27,7 @@
 -behaviour(riak_api_pb_service).
 
 -include_lib("riak_pb/include/antidote_pb.hrl").
+-include("antidote.hrl").
 
 -export([init/0,
          decode/2,
@@ -104,6 +105,8 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
 process_stream(_,_,State) ->
     {ignore, State}.
 
+-spec decode_au_txn_ops([#fpbatomicupdatetxnop{}]) -> 
+                               [{update, key(), type(), op()}].
 decode_au_txn_ops(Ops) ->
     lists:foldl(fun(Op, Acc) ->
                      Acc ++ decode_au_txn_op(Op)
@@ -132,7 +135,8 @@ decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key, adds=
         _ -> [{update, Key, riak_dt_orset, {{remove_all, Rems},ignore}}] ++ Op
     end.
         
-
+-spec decode_snapshot_read_ops([#fpbsnapshotreadtxnop{}]) ->
+                                      [{read, key(), type()}].
 decode_snapshot_read_ops(Ops) ->
     lists:map(fun(Op) ->
                       decode_snapshot_read_op(Op)
@@ -142,8 +146,6 @@ decode_snapshot_read_op(#fpbsnapshotreadtxnop{counter=#fpbgetcounterreq{key=Key}
     {read, Key, riak_dt_pncounter};
 decode_snapshot_read_op(#fpbsnapshotreadtxnop{set=#fpbgetsetreq{key=Key}}) ->
     {read,Key, riak_dt_orset}.
-
-
 
 
 encode_snapshot_read_response(Zipped) ->
