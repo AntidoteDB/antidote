@@ -87,8 +87,7 @@ handle_call({start_receiver, Port}, _From, State) ->
 handle_call({stop_receiver}, _From, State) ->
     case antidote_sup:stop_rep() of
         ok -> 
-            {reply, ok, State#state{port=0}};
-        _ -> {reply, error, State}
+            {reply, ok, State#state{port=0}}
     end;
 
 handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->

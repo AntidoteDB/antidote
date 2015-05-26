@@ -51,7 +51,7 @@
 
 %% Send a message to all DCs over a tcp connection
 %% Returns ok if all DCs have acknowledged with in the time TIMEOUT
--spec propagate_sync(term(), [dc_address()]) -> ok | error.
+-spec propagate_sync(term(), [dc_address()]) -> ok.
 propagate_sync(Message, DCs) ->
     FailedDCs = lists:foldl(
                fun({DcId, {DcAddress, Port}}, Acc) ->
