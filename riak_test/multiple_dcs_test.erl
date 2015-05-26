@@ -183,6 +183,9 @@ multiple_writes(Node, Key, Actor, ReplyTo) ->
     {ok,{_,_,CommitTime}}=WriteResult5,
     ReplyTo ! {ok, CommitTime}.
 
+%% Test: when a DC is disconnected for a while and connected back it should
+%%  be able to read the missing updates. This should not affect the causal 
+%%  dependency protocol
 failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
@@ -202,7 +205,6 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
     %% Induce some delay
     rpc:call(Node3, antidote, read,
              [ftkey1, riak_dt_gcounter]),
-    timer:sleep(5000),
 
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
