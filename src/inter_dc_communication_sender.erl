@@ -54,7 +54,7 @@
 -spec propagate_sync(term(), [dc_address()]) -> ok | error.
 propagate_sync(Message, DCs) ->
     FailedDCs = lists:foldl(
-               fun({_DcId, {DcAddress, Port}}, Acc) ->
+               fun({DcId, {DcAddress, Port}}, Acc) ->
                        case inter_dc_communication_sender:start_link(
                               Port, DcAddress, Message, self()) of
                            {ok, _} ->
@@ -71,11 +71,11 @@ propagate_sync(Message, DCs) ->
                                        lager:error(
                                          "Send failed timeout Message ~p"
                                          ,[Message]),
-                                       Acc ++ [{DcAddress,Port}]
+                                       Acc ++ [{DcId, {DcAddress,Port}}]
                                        %%TODO: Retry if needed
                                end;
                            _ ->
-                               Acc ++ [{DcAddress,Port}]
+                               Acc ++ [{DcId, {DcAddress,Port}}]
                        end
                end, [],
                DCs),
