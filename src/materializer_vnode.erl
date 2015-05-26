@@ -165,7 +165,7 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
 		       [{_, SnapshotDictA}] ->
 			   SnapshotDictA
 		   end,
-    SnapshotDict1=vector_orddict:insert(CommitTime,Snapshot, SnapshotDict),
+    SnapshotDict1=vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict),
     snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache).
 
 

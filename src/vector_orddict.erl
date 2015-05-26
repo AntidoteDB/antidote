@@ -28,6 +28,7 @@
 -export([new/0,
 	 get_smaller/2,
 	 insert/3,
+	 insert_bigger/3,
 	 sublist/3,
 	 size/1,
 	 to_list/1,
@@ -58,8 +59,6 @@ get_smaller_internal(Vector,[{FirstClock,FirstVal}|Rest],IsFirst) ->
 insert(Vector,Val,{List,Size}) ->
     insert_internal(Vector,Val,List,Size+1,[]).
 
-
-
 insert_internal(Vector,Val,[],Size,PrevList) ->
     {lists:reverse([{Vector,Val}|PrevList]),Size};
 
@@ -71,6 +70,22 @@ insert_internal(Vector,Val,[{FirstClock,FirstVal}|Rest],Size,PrevList) ->
 	false ->
 	    insert_internal(Vector,Val,Rest,Size,[{FirstClock,FirstVal}|PrevList])
     end.
+
+
+insert_bigger(Vector,Val,{List,Size}) ->
+    insert_bigger_internal(Vector,Val,List,Size).
+
+insert_bigger_internal(Vector,Val,[],0) ->
+    {[{Vector,Val}],1};
+
+insert_bigger_internal(Vector,Val,[{FirstClock,FirstVal}|Rest],Size) ->
+    case vectorclock:is_greater_than(Vector,FirstClock) of
+	true ->
+	    {[{Vector,Val}|[{FirstClock,FirstVal}|Rest]],Size+1};
+	false ->
+	    {[{FirstClock,FirstVal}|Rest],Size}
+    end.
+
 
 sublist({List,_Size}, Start, Len) ->
     Res = lists:sublist(List,Start,Len),
