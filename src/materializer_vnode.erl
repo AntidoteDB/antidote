@@ -196,22 +196,21 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
 -spec get_latest_snapshot(orddict:orddict(), snapshot_time())
-                         -> {ok, {commit_time(), snapshot()}} | {ok, no_snapshot} | {error, wrong_format, term()}.
+                         -> {ok, {commit_time(), snapshot()}} | {ok, no_snapshot}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
-        []->
+        [] ->
             {ok, no_snapshot};
-        [H|T]->
+        [H|T] ->
             case orddict:filter(fun(Key, _Value) ->
                                         belongs_to_snapshot(Key, SnapshotTime) end, [H|T]) of
-                []->
+                [] ->
                     {ok, no_snapshot};
-                [H1|T1]->
+                [H1|T1] ->
+                    % @todo The SnapshotDict should be organized such that the latest snapshot is in front.
                     {CommitTime, Snapshot} = lists:last([H1|T1]),
                     {ok, {CommitTime, Snapshot}}
-            end;
-        Anything ->
-            {error, wrong_format, Anything}
+            end
     end.
 
 %% @doc Get a list of operations from an orddict of operations
