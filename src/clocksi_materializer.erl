@@ -108,8 +108,7 @@ is_op_in_snapshot(OperationCommitTime, SnapshotTime, SnapshotCommitTime) ->
 
 %% @doc Checks whether a commit time is smaller than another one.
 %%    Returns also false if times are incomparable.
-%% @todo Fix the types! It should be:
-%-spec is_smaller(commit_time(), commit_time()) -> boolean.
+-spec is_smaller(commit_time(), commit_time()) -> boolean().
 is_smaller({OpDc1, OpCommitTime1}, {OpDc2, OpCommitTime2}) ->
     (OpDc1 /= OpDc2) or (OpCommitTime1 < OpCommitTime2).
 

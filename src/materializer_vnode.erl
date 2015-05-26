@@ -53,10 +53,12 @@
          handle_coverage/4,
          handle_exit/3]).
 
+-type cache_id() :: ets:tid().
+
 -record(state, {
   partition :: partition_id(),
-  ops_cache :: ets:tid(),
-  snapshot_cache :: ets:tid()}).
+  ops_cache :: cache_id(),
+  snapshot_cache :: cache_id()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -152,7 +154,7 @@ terminate(_Reason, _State) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(pid() | ignore, key(), type(), snapshot_time(), txid() | ignore, ets:tid(), ets:tid()) -> {ok, snapshot()} | {error, no_snapshot}.
+-spec internal_read(pid() | ignore, key(), type(), snapshot_time(), txid() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
     {SnapDict, LatestSnapshot, SnapshotCommitTime} = case ets:lookup(SnapshotCache, Key) of
         [] ->
@@ -194,26 +196,25 @@ internal_read(Sender, Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache) ->
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
 %% a snapshot identified by SnapshotTime
 -spec get_latest_snapshot(orddict:orddict(), snapshot_time())
-                         -> {ok, {commit_time(), snapshot()}} | {ok, no_snapshot} | {error, wrong_format, term()}.
+                         -> {ok, {commit_time(), snapshot()}} | {ok, no_snapshot}.
 get_latest_snapshot(SnapshotDict, SnapshotTime) ->
     case SnapshotDict of
-        []->
+        [] ->
             {ok, no_snapshot};
-        [H|T]->
+        [H|T] ->
             case orddict:filter(fun(Key, _Value) ->
                                         belongs_to_snapshot(Key, SnapshotTime) end, [H|T]) of
-                []->
+                [] ->
                     {ok, no_snapshot};
-                [H1|T1]->
+                [H1|T1] ->
+                    % @todo The SnapshotDict should be organized such that the latest snapshot is in front.
                     {CommitTime, Snapshot} = lists:last([H1|T1]),
                     {ok, {CommitTime, Snapshot}}
-            end;
-        Anything ->
-            {error, wrong_format, Anything}
+            end
     end.
 
 %% @doc Get a list of operations from an orddict of operations
--spec filter_ops(orddict:orddict()) -> {ok, list()}.
+-spec filter_ops([{any(),any()}]) -> {ok, [any()]}.
 filter_ops(Ops) ->
     MapFun = fun(X) ->
             case X of
@@ -233,7 +234,7 @@ belongs_to_snapshot({Dc, CommitTime}, SnapshotTime) ->
 
 %% @doc Operation to insert a snapshot in the cache and start
 %%      garbage collection triggered by reads.
--spec snapshot_insert_gc(key(), orddict:orddict(), orddict:orddict(), ets:tid() , ets:tid() ) -> true.
+-spec snapshot_insert_gc(key(), orddict:orddict(), orddict:orddict(), cache_id(), cache_id()) -> true.
 snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     case (orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
         true ->
@@ -248,8 +249,8 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(orddict:orddict(), commit_time())-> orddict:orddict().
-prune_ops(OpsDict, Threshold)->
+-spec prune_ops(orddict:orddict(), commit_time()) -> orddict:orddict().
+prune_ops(OpsDict, Threshold) ->
     orddict:filter(fun(_Key, Value) ->
                            (belongs_to_snapshot(Threshold,(lists:last(Value))#clocksi_payload.snapshot_time)) end, OpsDict).
 
@@ -258,7 +259,7 @@ prune_ops(OpsDict, Threshold)->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), clocksi_payload(), ets:tid(), ets:tid()) -> true.
+-spec op_insert_gc(key(), clocksi_payload(), cache_id(), cache_id()) -> true.
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     OpsDict = case ets:lookup(OpsCache, Key) of
                   []->
