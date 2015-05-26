@@ -32,6 +32,7 @@ confirm() ->
     rt:wait_until_ring_converged(Nodes),
 
     Node = hd(Nodes),
+    rt:wait_for_service(Node, antidote),
 
     rt:log_to_nodes(Nodes, "Starting write operation 1"),
 

@@ -86,19 +86,12 @@ get_stable_snapshot() ->
 
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())
-                  -> {ok, vectorclock()} | {error, term()}.
+                  -> ok | {error, term()}.
 update_clock(Partition, Dc_id, Timestamp) ->
     Indexnode = {Partition, node()},
     try
-        case riak_core_vnode_master:sync_command(Indexnode,
-                                             {update_clock, Dc_id, Timestamp},
-                                             vectorclock_vnode_master) of
-            {ok, Clock} ->
-                {ok, Clock};
-            {error, Reason} ->
-                lager:info("Update vector clock failed: ~p",[Reason]),
-                {error, Reason}
-        end
+        riak_core_vnode_master:sync_command(Indexnode,
+          {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master)
     catch
         _:R ->
             lager:error("Exception caught: ~p", [R]),

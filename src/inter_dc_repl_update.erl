@@ -145,7 +145,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
-            {ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
+            ok = vectorclock:update_clock(Partition, Dc, Ts),
             riak_core_vnode_master:command(
               {Partition,node()}, calculate_stable_snapshot,
               vectorclock_vnode_master),
@@ -166,8 +166,7 @@ finish_update_dc(Dc, DcQ, Cts,
 
 %% Checks depV against the committed timestamps
 check_dep(DepV, Localclock) ->
-    Result = vectorclock:ge(Localclock, DepV),
-    Result.
+    vectorclock:ge(Localclock, DepV).
 
 %%Set a new value to the key.
 set(Key, Value, Orddict) ->
