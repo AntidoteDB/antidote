@@ -28,7 +28,6 @@
 -define(SNAPSHOT_THRESHOLD, 10).
 -define(SNAPSHOT_MIN, 5).
 -define(OPS_THRESHOLD, 50).
--define(TABLE_CONCURRENCY, {read_concurrency,true}).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -67,7 +66,7 @@ start_vnode(I) ->
 
 %% @doc Read state of key at given snapshot time
 -spec read(key(), type(), snapshot_time(), txid(), {ets:tid(),ets:tid()}) -> {ok, snapshot()} | {error, reason()}.
-read(Key, Type, SnapshotTime, TxId,{OpsCache,SnapshotCache}) ->
+read(Key, Type, SnapshotTime, TxId,{OpsCache,SnapshotCache,_PreparedCache}) ->
     internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache).
 
 get_cache_name(Partition,Base) ->

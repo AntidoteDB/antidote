@@ -45,7 +45,8 @@
 
 -record(state, {partition :: partition_id(),
                 ops_cache :: ets:tid(),
-                snapshot_cache :: ets:tid()
+                snapshot_cache :: ets:tid(),
+		prepared_cache :: ets:tid()
 	       }).
 
 %%%===================================================================
@@ -75,14 +76,17 @@ read_data_item(Node, TxId, Key, Type, WriteSet) ->
 init([Partition]) ->
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
-    {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+    PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
+    {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache,
+	       prepared_cache=PreparedCache}}.
 
 
 %% @doc Return active transactions in prepare state with their preparetime
 handle_command({read,Node,TxId,Key,Type,WriteSet}, Sender,
-               #state{ops_cache=OpsCache,snapshot_cache=SnapshotCache} = State) ->
+               #state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,
+		     prepared_cache=PreparedCache} = State) ->
     clocksi_readitem_fsm:start_link(Node, Sender, TxId,
-				    Key, Type, WriteSet,{OpsCache,SnapshotCache}),
+				    Key, Type, WriteSet,{OpsCache,SnapshotCache,PreparedCache}),
     {noreply,State};
 
 handle_command(_Message, _Sender, State) ->

@@ -25,6 +25,7 @@
 
 -export([start_vnode/1,
 	 read_data_item/5,
+	 get_cache_name/2,
          prepare/2,
          commit/3,
          single_commit/2,
@@ -112,18 +113,18 @@ abort(ListofNodes, TxId) ->
 						       ?CLOCKSI_MASTER)
 		end, 0, ListofNodes).
 
+
+get_cache_name(Partition,Base) ->
+    list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
+
+
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
 init([Partition]) ->
-    PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++
-                                          integer_to_list(Partition)),
-                         [set, {write_concurrency, true}]),
-    CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
-                                           integer_to_list(Partition)),
-                          [set, {write_concurrency, true}]),
-    ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
-                                           ++ integer_to_list(Partition)),
-                              [bag, {write_concurrency, true}]),
+    PreparedTx = ets:new(get_cache_name(Partition,prepared),
+			 [set,protected,named_table,?TABLE_CONCURRENCY]),
+    CommittedTx = ets:new(committed_tx,[set]),
+    ActiveTxsPerKey = ets:new(active_txs_per_key,[bag]),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
@@ -137,10 +138,10 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
                               prepared_tx=PreparedTx
                               }) ->
     PrepareTime = now_microsec(erlang:now()),
-    Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+    {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
-            {reply, {prepared, PrepareTime}, State};
+            {reply, {prepared, NewPrepare}, State};
         {error, timeout} ->
             {reply, {error, timeout}, State};
         {error, no_updates} ->
@@ -156,13 +157,13 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
                               prepared_tx=PreparedTx
                               }) ->
     PrepareTime = now_microsec(erlang:now()),
-    Result = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+    {Result,NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
-            ResultCommit = commit(Transaction, PrepareTime, WriteSet, PreparedTx, State),
+            ResultCommit = commit(Transaction, NewPrepare, WriteSet, PreparedTx, State),
             case ResultCommit of
                 {ok, committed} ->
-                    {reply, {committed, PrepareTime}, State};
+                    {reply, {committed, NewPrepare}, State};
                 {error, materializer_failure} ->
                     {reply, {error, materializer_failure}, State};
                 {error, timeout} ->
@@ -267,20 +268,30 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
     TxId = Transaction#transaction.txn_id,
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
         true ->
-	    lists:foldl(fun({Key1,Type1,_Op}, _Acc) ->
-				true = ets:insert(ActiveTxPerKey, {Key1, Type1, TxId})
-			end, 0, TxWriteSet),
+	    %% What is this for????
+	    %% lists:foldl(fun({Key1,Type1,_Op}, _Acc) ->
+	    %% 			true = ets:insert(ActiveTxPerKey, {Key1, Type1, TxId})
+	    %% 		end, 0, TxWriteSet),
             LogRecord = #log_record{tx_id=TxId,
                                     op_type=prepare,
                                     op_payload=PrepareTime},
-            true = ets:insert(PreparedTx, {active, {TxId, PrepareTime}}),
+	    ActiveTxs = case ets:lookup(PreparedTx, active) of
+			    [] ->
+				[];
+			    [{active, List}] ->
+				List
+			end,
+            true = ets:insert(PreparedTx, {active, [{TxId, PrepareTime}|ActiveTxs]}),
+	    NewPrepare = now_microsec(erlang:now()),
+            true = ets:insert(PreparedTx, {active, [{TxId, NewPrepare}|ActiveTxs]}),
 	    Updates = TxWriteSet,
             case Updates of 
                 [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
 		    NewUpdates = write_set_to_logrecord(TxId,Updates),
-                    logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]);
+                    Result = logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]),
+		    {Result, NewPrepare};
 		_ ->
 		    {error, no_updates}
 	    end;
@@ -330,7 +341,10 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
 %%
 clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
                                     prepared_tx=PreparedTx}) ->
-    true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}).
+    [{active,ActiveTxs}] = ets:lookup(PreparedTx, active),
+    NewActive = lists:keydelete(TxId,1,ActiveTxs),
+    true = ets:insert(PreparedTx, {active, NewActive}).
+
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_microsec({MegaSecs, Secs, MicroSecs}) ->

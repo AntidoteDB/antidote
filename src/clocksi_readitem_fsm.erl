@@ -40,6 +40,7 @@
 
 %% States
 -export([check_clock/2,
+	 check_prepared/2,
          waiting1/2,
          return/2]).
 
@@ -94,19 +95,47 @@ check_clock(timeout, SD0=#state{transaction=Transaction}) ->
             {next_state, waiting1, SD0, 0}
     end.
 
-waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
-    LocalClock = get_stable_time(Key),
+waiting1(timeout, SDO=#state{transaction=Transaction}) ->
+    LocalClock = clocksi_vnode:now_microsec(erlang:now()),
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
     case LocalClock > SnapshotTime of
         false ->
-            {next_state, waiting1, SDO, 1};
+            {next_state, waiting1, SDO, 10};
         true ->
-            {next_state, return, SDO, 0}
+            {next_state, check_prepared, SDO, 0}
     end;
+
 
 waiting1(_SomeMessage, SDO) ->
     {next_state, waiting1, SDO,0}.
+
+
+check_prepared(timeout, SD0=#state{transaction=Transaction,
+				   partition={_OpsCache,_SnapshotCache,PreparedCache}}) ->
+    TxId = Transaction#transaction.txn_id,
+    SnapshotTime = TxId#tx_id.snapshot_time,
+    ActiveTxs = case ets:lookup(PreparedCache, active) of
+		    [] ->
+			[];
+		    [{active,AList}] ->
+			AList
+		end,
+    case ActiveTxs of
+	[] ->
+	    {next_state, return, SD0, 0};
+	List ->
+	    {_TxId,Time} = lists:last(List),
+	    case Time =< SnapshotTime of
+		true ->
+		    %% How long should sleep here?
+		    {next_state, check_prepared, 10};
+		false ->
+		    {next_state, return, SD0, 0}
+	    end
+    end;
+check_prepared(_SomeMessage, SD0) ->
+    {next_state, check_prepared, SD0, 0}.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
@@ -156,24 +185,6 @@ filter_updates_per_key(Updates, Key) ->
     end,
     lists:filtermap(FilterMapFun, Updates).
 
-get_stable_time(Key) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    Node = hd(Preflist),
-    case riak_core_vnode_master:sync_command(
-           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
-        {ok, Active_txns} ->
-            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
-                                case Min_time > Snapshot_time of
-                                    true ->
-                                        Snapshot_time;
-                                    false ->
-                                        Min_time
-                                end
-                        end,
-                        clocksi_vnode:now_microsec(erlang:now()),
-                        Active_txns);
-        _ -> 0
-    end.
 
 -ifdef(TEST).
 
