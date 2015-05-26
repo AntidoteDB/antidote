@@ -52,14 +52,14 @@
 -record(state, {
           from :: pid(),
           transaction :: tx(),
-          updated_partitions :: list(),
-          num_to_ack :: integer(),
-          prepare_time :: integer(),
-          commit_time :: integer(),
+          updated_partitions :: preflist(),
+          num_to_ack :: non_neg_integer(),
+          prepare_time :: non_neg_integer(),
+          commit_time :: non_neg_integer(),
           read_set :: [term()],
           operations :: list(),
           dc_id :: term(),
-          state:: atom()}).
+          state :: active | prepared | committing | committed | undefined | aborted}).
 
 %%%===================================================================
 %%% API
@@ -255,8 +255,8 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(DcId :: dcid(), ClientClock :: vectorclock:vectorclock())
-                       -> {ok, vectorclock:vectorclock()} | {error,term()}.
+-spec get_snapshot_time(dcid(), snapshot_time())
+                       -> {ok, snapshot_time()} | {error,term()}.
 get_snapshot_time(DcId, ClientClock) ->
     wait_for_clock(DcId, ClientClock).
 
@@ -295,7 +295,7 @@ perform_operations([{update, Key, Type, Param}|Rest], Transaction, ReadSet, Part
     end.
 
 
--spec get_snapshot_time(DcId :: dcid()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
+-spec get_snapshot_time(dcid()) -> {ok, snapshot_time()} | {error, term()}.
 get_snapshot_time(DcId) ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     case vectorclock:get_stable_snapshot() of
@@ -308,8 +308,8 @@ get_snapshot_time(DcId) ->
             {error, Reason}
     end.
 
--spec wait_for_clock(DcId :: dcid(), Clock :: vectorclock:vectorclock()) ->
-                           {ok, vectorclock:vectorclock()} | {error, term()}.
+-spec wait_for_clock(dcid(), snapshot_time()) ->
+                           {ok, snapshot_time()} | {error, term()}.
 wait_for_clock(DcId, Clock) ->
    case get_snapshot_time(DcId) of
        {ok, VecSnapshotTime} ->

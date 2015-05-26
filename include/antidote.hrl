@@ -41,15 +41,14 @@
 -record(tx_id, {snapshot_time, server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
-                          op_param :: {term(), term()},
+                          op_param :: op(),
                           snapshot_time :: snapshot_time(),
                           commit_time :: commit_time(),
-                          txid :: txid()
-                         }).
+                          txid :: txid()}).
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(), 
                       vec_snapshot_time, 
-                      txn_id :: txid() }).
+                      txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
 -type key() :: term().
@@ -69,7 +68,7 @@
 -type type() :: atom().
 -type snapshot() :: term().
 -type snapshot_time() ::  vectorclock:vectorclock().
--type commit_time() ::  {term(), non_neg_integer()}.
+-type commit_time() ::  {dcid(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: 'undefined' | {_,_}.
