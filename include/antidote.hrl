@@ -13,6 +13,7 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(TABLE_CONCURRENCY, {read_concurrency,true}).
+-define(SPIN_WAIT,10).
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer

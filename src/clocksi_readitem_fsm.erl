@@ -101,7 +101,7 @@ waiting1(timeout, SDO=#state{transaction=Transaction}) ->
     SnapshotTime = TxId#tx_id.snapshot_time,
     case LocalClock > SnapshotTime of
         false ->
-            {next_state, waiting1, SDO, 10};
+            {next_state, waiting1, SDO, ?SPIN_WAIT};
         true ->
             {next_state, check_prepared, SDO, 0}
     end;
@@ -129,7 +129,7 @@ check_prepared(timeout, SD0=#state{transaction=Transaction,
 	    case Time =< SnapshotTime of
 		true ->
 		    %% How long should sleep here?
-		    {next_state, check_prepared, 10};
+		    {next_state, check_prepared, SD0, ?SPIN_WAIT};
 		false ->
 		    {next_state, return, SD0, 0}
 	    end
