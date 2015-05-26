@@ -71,7 +71,7 @@
 -type commit_time() ::  {dcid(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
--type dcid() :: term().
+-type dcid() :: 'undefined' | {_,_}.
 -type tx() :: #transaction{}.
 -type dc_address():: {inet:ip_address(),inet:port_number()}.
 

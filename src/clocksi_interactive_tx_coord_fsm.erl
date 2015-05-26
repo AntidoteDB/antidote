@@ -71,6 +71,7 @@
         updated_partitions :: preflist(),
         num_to_ack :: non_neg_integer(),
         prepare_time :: non_neg_integer(),
+        dc_id :: dcid(),
         commit_time :: non_neg_integer(),
         commit_protocol :: term(),
         state :: active | prepared | committing | committed | undefined | aborted}).
@@ -94,19 +95,20 @@ finish_op(From, Key,Result) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock]) ->
+    DcId = dc_utilities:get_my_dc_id(),
     {ok, SnapshotTime} = case ClientClock of
         ignore ->
-            get_snapshot_time();
+            get_snapshot_time(DcId);
         _ ->
-            get_snapshot_time(ClientClock)
+            get_snapshot_time(DcId, ClientClock)
     end,
-    DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
                                vec_snapshot_time=SnapshotTime,
                                txn_id=TransactionId},
-    SD = #state{transaction=Transaction, updated_partitions=[], prepare_time=0},
+    SD = #state{transaction=Transaction, updated_partitions=[], prepare_time=0
+            , dc_id=DcId},
     From ! {ok, TransactionId},
     {ok, execute_op, SD}.
 
@@ -337,17 +339,16 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(snapshot_time())
-                       -> {ok, snapshot_time()} | {error, reason()}.
-get_snapshot_time(ClientClock) ->
-    wait_for_clock(ClientClock).
+-spec get_snapshot_time(dcid(), snapshot_time())
+                       -> {ok, snapshot_time()} | {error,reason()}.
+get_snapshot_time(DcId, ClientClock) ->
+    wait_for_clock(DcId, ClientClock).
 
--spec get_snapshot_time() -> {ok, snapshot_time()} | {error, reason()}.
-get_snapshot_time() ->
+-spec get_snapshot_time(dcid()) -> {ok, snapshot_time()} | {error, reason()}.
+get_snapshot_time(DcId) ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     case vectorclock:get_stable_snapshot() of
         {ok, VecSnapshotTime} ->
-            DcId = dc_utilities:get_my_dc_id(),
             SnapshotTime = dict:update(DcId,
                                        fun (_Old) -> Now end,
                                        Now, VecSnapshotTime),
@@ -356,10 +357,10 @@ get_snapshot_time() ->
             {error, Reason}
     end.
 
--spec wait_for_clock(snapshot_time()) ->
+-spec wait_for_clock(dcid(), snapshot_time()) ->
                            {ok, snapshot_time()} | {error, reason()}.
-wait_for_clock(Clock) ->
-   case get_snapshot_time() of
+wait_for_clock(DcId, Clock) ->
+   case get_snapshot_time(DcId) of
        {ok, VecSnapshotTime} ->
            case vectorclock:ge(VecSnapshotTime, Clock) of
                true ->
@@ -368,7 +369,7 @@ wait_for_clock(Clock) ->
                false ->
                    %% wait for snapshot time to catch up with Client Clock
                    timer:sleep(10),
-                   wait_for_clock(Clock)
+                   wait_for_clock(DcId, Clock)
            end;
        {error, Reason} ->
           {error, Reason}

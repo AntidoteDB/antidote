@@ -168,7 +168,7 @@ handle_command({read_from, LogId, _From}, _Sender,
                #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            disk_log:sync(Log),
+            ok = disk_log:sync(Log),
             {Continuation, Ops} = 
                 case disk_log:chunk(Log, Lastread) of
                     {error, Reason} -> {error, Reason};
