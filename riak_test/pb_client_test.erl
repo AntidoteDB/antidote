@@ -67,7 +67,7 @@ update_counter_crdt_test(Key, Amount) ->
     {ok, Obj} = antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid),
     Obj2 = antidotec_counter:increment(Amount, Obj),
     Result = antidotec_pb_socket:store_crdt(Obj2, Pid),
-     _Disconnected = antidotec_pb_socket:stop(Pid),
+    _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(ok, Result),
     pass.
 
@@ -91,14 +91,11 @@ atomic_update_txn_test() ->
     {ok, C2} = antidotec_pb_socket:get_crdt(<<"counter2">>, riak_dt_pncounter, Pid),
     C11 = antidotec_counter:increment(1, C1),
     C21 = antidotec_counter:increment(2, C2),
-    lager:info("Testing.. "),
-    Msg = riak_pb_messages:msg_code(fpbatomicupdatetxnreq),
-    lager:info("Msg Code is ~p",[Msg]),
     Response = antidotec_pb_socket:atomic_store_crdts([C11,C21],Pid),
     antidotec_pb_socket:stop(Pid),
     ?assertMatch({ok,_},Response),
 
-    %Read your writes
+    %%Read your writes
     pass = get_crdt_check_value(<<"counter1">>, riak_dt_pncounter, 1),
     pass = get_crdt_check_value(<<"counter2">>, riak_dt_pncounter, 2),
     pass.
@@ -115,16 +112,15 @@ snapshot_read_test() ->
     Response = antidotec_pb_socket:atomic_store_crdts([C11,C21],Pid),
     ?assertMatch({ok,_},Response),
 
-    %Read your writes
+    %%Read your writes
     Result = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_pncounter}, {Key2,riak_dt_pncounter}], Pid),
     {ok, _Clock, [Counter1, Counter2]} = Result,
     antidotec_pb_socket:stop(Pid),
     ?assertMatch(1, antidotec_counter:value(Counter1)),
     ?assertMatch(2, antidotec_counter:value(Counter2)),
-    %%TODO; Use Clock in next write/read transactions
     pass.
 
-%% @doc This test tests 
+%% @doc This test tests
 %%         - add and remove operations of set
 %%         - Use of set and counter in snapshotreads and atomic updates
 %%         - Use of clock in snapshotreads and atomic updates
@@ -143,10 +139,10 @@ transaction_orset_test() ->
     Response = antidotec_pb_socket:atomic_store_crdts([C13,C21],Pid),
     ?assertMatch({ok,_},Response),
     {ok, Clock} = Response,
-    %Read your writes
+    %%Read your writes
     Result = antidotec_pb_socket:snapshot_get_crdts([{Key1, riak_dt_orset}, {Key2,riak_dt_pncounter}], Clock, Pid),
     {ok, Clock1, [Set1, Counter2]} = Result,
-    
+
     ?assertMatch(2, antidotec_counter:value(Counter2)),
     ?assertMatch(true, antidotec_set:contains(1,Set1)),
     ?assertMatch(true, antidotec_set:contains(2,Set1)),
@@ -159,6 +155,5 @@ transaction_orset_test() ->
     Result2 = antidotec_pb_socket:snapshot_get_crdts([{Key1,riak_dt_orset}], Clock2, Pid),
     {ok, _, [Set2]} = Result2,
     ?assertMatch(false, antidotec_set:contains(3,Set2)),
-    antidotec_pb_socket:stop(Pid),    
+    antidotec_pb_socket:stop(Pid),
     pass.
-    
