@@ -56,10 +56,12 @@
          handle_coverage/4,
          handle_exit/3]).
 
+-type cache_id() :: ets:tid().
+
 -record(state, {
   partition :: partition_id(),
-  ops_cache :: ets:tid(),
-  snapshot_cache :: ets:tid()}).
+  ops_cache :: cache_id(),
+  snapshot_cache :: cache_id()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -171,7 +173,7 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(key(), type(), snapshot_time(), txid() | ignore, ets:tid(), ets:tid()) -> {ok, snapshot()} | {error, reason()}.
+-spec internal_read(key(), type(), snapshot_time(), txid() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
 internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
     {LatestSnapshot,SnapshotCommitTime,IsFirst} =
 	case ets:lookup(SnapshotCache, Key) of
@@ -223,7 +225,6 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 	    end
     end.
 
-
 %% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
@@ -236,7 +237,7 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(key(), orddict:orddict(),
-                         ets:tid(),ets:tid() ) -> true.
+                         cache_id(),cache_id() ) -> true.
 snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
     %% Should check op size here also, when run from op gc
     case (vector_orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
@@ -273,12 +274,11 @@ prune_ops(OpsDict, Threshold)->
                            (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
 		   end, OpsDict).
 
-
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), clocksi_payload(), ets:tid(), ets:tid()) -> true.
+-spec op_insert_gc(key(), clocksi_payload(), cache_id(), cache_id()) -> true.
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     OpsDict = case ets:lookup(OpsCache, Key) of
                   []->

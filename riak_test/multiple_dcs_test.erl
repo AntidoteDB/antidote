@@ -35,6 +35,7 @@ confirm() ->
 
     simple_replication_test(Cluster1, Cluster2, Cluster3),
     parallel_writes_test(Cluster1, Cluster2, Cluster3),
+    failure_test({Cluster1, 8091}, {Cluster2,8092}, {Cluster3,8093}),
     pass.
 
 simple_replication_test(Cluster1, Cluster2, Cluster3) ->
@@ -181,3 +182,54 @@ multiple_writes(Node, Key, Actor, ReplyTo) ->
     ?assertMatch({ok, _}, WriteResult5),
     {ok,{_,_,CommitTime}}=WriteResult5,
     ReplyTo ! {ok, CommitTime}.
+
+%% Test: when a DC is disconnected for a while and connected back it should
+%%  be able to read the missing updates. This should not affect the causal 
+%%  dependency protocol
+failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
+    Node1 = hd(Cluster1),
+    Node2 = hd(Cluster2),
+    Node3 = hd(Cluster3),
+    WriteResult1 = rpc:call(Node1,
+                            antidote, append,
+                            [ftkey1, riak_dt_gcounter, {increment, ucl}]),
+    ?assertMatch({ok, _}, WriteResult1),
+
+    %% Simulate failure of NODE3 by stoping the receiver
+    ok = rpc:call(Node3, inter_dc_manager, stop_receiver, []),
+
+    WriteResult2 = rpc:call(Node1,
+                            antidote, append,
+                            [ftkey1, riak_dt_gcounter, {increment, ucl}]),
+    ?assertMatch({ok, _}, WriteResult2),
+    %% Induce some delay
+    rpc:call(Node3, antidote, read,
+             [ftkey1, riak_dt_gcounter]),
+
+    WriteResult3 = rpc:call(Node1,
+                            antidote, append,
+                            [ftkey1, riak_dt_gcounter, {increment, ucl}]),
+    ?assertMatch({ok, _}, WriteResult3),
+    {ok,{_,_,CommitTime}}=WriteResult3,
+    ReadResult = rpc:call(Node1, antidote, read,
+                          [ftkey1, riak_dt_gcounter]),
+    ?assertEqual({ok, 3}, ReadResult),
+    lager:info("Done append in Node1"),
+
+    %% NODE3 comes back 
+    {ok, _} = rpc:call(Node3, inter_dc_manager, start_receiver, [Port3]),
+
+    ReadResult3 = rpc:call(Node2,
+                           antidote, clocksi_read,
+                           [CommitTime, ftkey1, riak_dt_gcounter]),
+    {ok, {_,[ReadSet2],_} }= ReadResult3,
+    ?assertEqual(3, ReadSet2),
+    lager:info("Done read from Node2"),
+    ReadResult2 = rpc:call(Node3,
+                           antidote, clocksi_read,
+                           [CommitTime, ftkey1, riak_dt_gcounter]),
+    {ok, {_,[ReadSet1],_} }= ReadResult2,
+    ?assertEqual(3, ReadSet1),
+    lager:info("Done Read in Node3"),
+    pass.
+   

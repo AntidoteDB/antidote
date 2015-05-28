@@ -89,11 +89,9 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
                         {replicate, [Transaction]}, DCs),
                     NewReaderState;
                 [_H|_T] ->
-                    case inter_dc_communication_sender:propagate_sync(
-                           {replicate, Transactions}, DCs) of
-                        ok -> NewReaderState;
-                        _  -> Reader
-                    end
+                    ok = inter_dc_communication_sender:propagate_sync(
+                           {replicate, Transactions}, DCs),
+                    NewReaderState
             end,
             State#state{reader=NewReader}
     end,

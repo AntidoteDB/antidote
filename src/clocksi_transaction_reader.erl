@@ -37,9 +37,8 @@
 
 -export_type([transaction/0]).
 
-%% transaction = {TxId, {DcId, CommitTime}, VecSnapshotTime, [Operations]}
 -type transaction() :: {txid(), commit_time(),
-                        snapshot_time(), [#operation{}]}.
+                        snapshot_time(), [operation()]}.
 
 %% @doc Returns an iterator to read transactions from a partition
 %%  transactions can be read using get_next_transactions
@@ -156,7 +155,7 @@ get_prev_stable_time(Reader) ->
 
 %% @doc construct_transaction: Returns a structure of type transaction()
 %% from a list of update operations and prepare/commit records
--spec construct_transaction(Ops::[#operation{}]) -> transaction().
+-spec construct_transaction([operation()]) -> transaction().
 construct_transaction(Ops) ->
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
