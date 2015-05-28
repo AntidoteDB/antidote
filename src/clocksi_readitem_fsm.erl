@@ -100,6 +100,7 @@ generate_random_server_name(Partition) ->
     generate_server_name(Partition, random:uniform(?READ_CONCURRENCY)).
 
 init([Partition, Id]) ->
+    lager:info("starting read server ~w,~w~n", [Partition,Id]),
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
     PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
@@ -114,7 +115,7 @@ handle_call({perform_read, Key, Type, Transaction, Updates},Coordinator,
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
-    {stop,handoff,ok,SD0}.
+    {stop,shutdown,ok,SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, Updates},
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
