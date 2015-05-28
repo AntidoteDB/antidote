@@ -89,6 +89,9 @@ init([From, ClientClock]) ->
 				 get_snapshot_time(ClientClock)
 			 end,
     DcId = dc_utilities:get_my_dc_id(),
+    %% Seed the random because you pick a random read server, this is stored in the process state
+    {A1,A2,A3} = now(),
+    random:seed(A1, A2, A3),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
@@ -127,8 +130,7 @@ execute_op({Op_type, Args}, Sender,
 			   {IndexNode, WS} ->
 			       WS
 		       end,
-            case clocksi_vnode:read_data_item(IndexNode, Transaction,
-                                              Key, Type, WriteSet) of
+            case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, WriteSet) of
                 error ->
                     {reply, {error, unknown}, abort, SD0, 0};
                 {error, Reason} ->

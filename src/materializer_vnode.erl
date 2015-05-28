@@ -35,7 +35,7 @@
 
 %% API
 -export([start_vnode/1,
-         read/5,
+         read/6,
 	 get_cache_name/2,
 	 store_ss/3,
          update/2,
@@ -65,8 +65,8 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), snapshot_time(), txid(), {ets:tid(),ets:tid()}) -> {ok, snapshot()} | {error, reason()}.
-read(Key, Type, SnapshotTime, TxId,{OpsCache,SnapshotCache,_PreparedCache}) ->
+-spec read(key(), type(), snapshot_time(), txid(),ets:tid(), ets:tid()) -> {ok, snapshot()} | {error, reason()}.
+read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache) ->
     internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache).
 
 get_cache_name(Partition,Base) ->

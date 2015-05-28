@@ -74,7 +74,7 @@ start_vnode(I) ->
 
 %% @doc Sends a read request to the Node that is responsible for the Key
 read_data_item(Node, TxId, Key, Type, WriteSet) ->
-    perform_read_vnode:read_data_item(Node,TxId,Key,Type,WriteSet).
+    clocksi_readitem_fsm:read_data_item(Node,Key,Type,TxId,WriteSet).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
@@ -125,6 +125,7 @@ init([Partition]) ->
 			 [set,protected,named_table,?TABLE_CONCURRENCY]),
     CommittedTx = ets:new(committed_tx,[set]),
     ActiveTxsPerKey = ets:new(active_txs_per_key,[bag]),
+    clocksi_readitem_fsm:start_read_servers(Partition),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,

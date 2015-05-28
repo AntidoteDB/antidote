@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(clocksi_readitem_fsm).
 
--behavior(gen_fsm).
+-behavior(gen_server).
 
 -include("antidote.hrl").
 
@@ -28,91 +28,122 @@
 -endif.
 
 %% API
--export([start_link/7]).
+-export([start_link/2]).
 
 %% Callbacks
 -export([init/1,
-         code_change/4,
+	 handle_call/3,
+	 handle_cast/2,
+         code_change/3,
          handle_event/3,
-         handle_info/3,
+         handle_info/2,
          handle_sync_event/4,
-         terminate/3]).
+         terminate/2]).
 
 %% States
--export([check_clock/2,
-	 check_prepared/2,
-         waiting1/2,
-         return/2]).
+-export([read_data_item/5,
+	 start_read_servers/1]).
 
 %% Spawn
 
--record(state, {type,
-                key,
-                transaction,
-                tx_coordinator,
-                vnode,
-                updates,
-                pending_txs,
-		partition}).
+-record(state, {partition,id,ops_cache,snapshot_cache,prepared_cache,self}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, Tx, Key, Type, Updates, Partition) ->
-    gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
-                                 Tx, Key, Type, Updates, Partition], []).
+start_link(Partition,Id) ->
+    gen_server:start_link({global,generate_server_name(Partition,Id)}, ?MODULE, [Partition,Id], []).
+
+start_read_servers(Partition) ->
+    start_read_servers_internal(Partition, ?READ_CONCURRENCY).
+
+read_data_item({Partition,_Node},Key,Type,Transaction,Updates) ->
+    try
+	gen_server:call({global,generate_random_server_name(Partition)},
+			{perform_read,Key,Type,Transaction,Updates})
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p", [Reason]),
+            {error, Reason}
+    end.
+
+
 
 
 %%%===================================================================
-%%% States
+%%% Internal
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates, Partition]) ->
-    SD = #state{vnode=Vnode,
-                type=Type,
-                key=Key,
-                tx_coordinator=Coordinator,
-                transaction=Transaction,
-                updates=Updates,
-                pending_txs=[],
-		partition=Partition},
-    {ok, check_clock, SD, 0}.
+start_read_servers_internal(_Partition,0) ->
+    ok;
+start_read_servers_internal(Partition, Num) ->
+    clocksi_readitem_sup:start_fsm(Partition,Num),
+    start_read_servers_internal(Partition, Num-1).
+
+generate_server_name(Partition, Id) ->
+    list_to_atom(integer_to_list(Id) ++ "rs" ++ integer_to_list(Partition)).
+
+generate_random_server_name(Partition) ->
+    generate_server_name(Partition, random:uniform(?READ_CONCURRENCY)).
+
+init([Partition, Id]) ->
+    OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
+    SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
+    PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
+    Self = generate_server_name(Partition,Id),
+    {ok, #state{partition=Partition, id=Id, ops_cache=OpsCache,
+		snapshot_cache=SnapshotCache,
+		prepared_cache=PreparedCache,self=Self}}.
+
+handle_call({perform_read, Key, Type, Transaction, Updates},Coordinator,
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
+    perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self),
+    {noreply,SD0}.
+
+handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, Updates},
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
+    perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self),
+    {noreply,SD0}.
+
+perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self) ->
+    case check_clock(Transaction,PreparedCache) of
+	not_ready ->
+	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
+	ready ->
+	    return(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache)
+    end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
-check_clock(timeout, SD0=#state{transaction=Transaction}) ->
+check_clock(Transaction,PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = clocksi_vnode:now_microsec(erlang:now()),
     case T_TS > Time of
         true ->
-            timer:sleep((T_TS - Time) div 1000 +1 ),
-            {next_state, waiting1, SD0, 0};
+	    %% dont sleep
+            timer:sleep((T_TS - Time) div 1000 +1 );
         false ->
-            {next_state, waiting1, SD0, 0}
-    end.
+		ok	    
+    end,
+    waiting1(Transaction,PreparedCache).
 
-waiting1(timeout, SDO=#state{transaction=Transaction}) ->
+waiting1(Transaction,PreparedCache) ->
     LocalClock = clocksi_vnode:now_microsec(erlang:now()),
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
     case LocalClock > SnapshotTime of
         false ->
-            {next_state, waiting1, SDO, ?SPIN_WAIT};
+	    not_ready;
         true ->
-            {next_state, check_prepared, SDO, 0}
-    end;
+	    check_prepared(Transaction,PreparedCache)
+    end.
 
 
-waiting1(_SomeMessage, SDO) ->
-    {next_state, waiting1, SDO,0}.
-
-
-check_prepared(timeout, SD0=#state{transaction=Transaction,
-				   partition={_OpsCache,_SnapshotCache,PreparedCache}}) ->
+check_prepared(Transaction,PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
     ActiveTxs = case ets:lookup(PreparedCache, active) of
@@ -123,31 +154,25 @@ check_prepared(timeout, SD0=#state{transaction=Transaction,
 		end,
     case ActiveTxs of
 	[] ->
-	    {next_state, return, SD0, 0};
+	    ready;
 	List ->
 	    {_TxId,Time} = lists:last(List),
 	    case Time =< SnapshotTime of
 		true ->
 		    %% How long should sleep here?
-		    {next_state, check_prepared, SD0, ?SPIN_WAIT};
+		    not_ready;
 		false ->
-		    {next_state, return, SD0, 0}
+		    ready
 	    end
-    end;
-check_prepared(_SomeMessage, SD0) ->
-    {next_state, check_prepared, SD0, 0}.
+    end.
+
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
-return(timeout, SD0=#state{key=Key,
-                           tx_coordinator=Coordinator,
-                           transaction=Transaction,
-                           type=Type,
-                           updates=Updates,
-			   partition=Partition}) ->
+return(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, Partition) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache) of
         {ok, Snapshot} ->
             Updates2=filter_updates_per_key(Updates, Key),
             Snapshot2=clocksi_materializer:materialize_eager
@@ -156,13 +181,10 @@ return(timeout, SD0=#state{key=Key,
         {error, Reason} ->
             Reply={error, Reason}
     end,
-    riak_core_vnode:reply(Coordinator, Reply),
-    {stop, normal, SD0};
-return(_SomeMessage, SDO) ->
-    {next_state, return, SDO,0}.
+    gen_server:reply(Coordinator, Reply).
 
-handle_info(_Info, StateName, StateData) ->
-    {next_state,StateName,StateData,1}.
+handle_info(_Info, StateData) ->
+    {no_reply,StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -170,9 +192,9 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
-code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-terminate(_Reason, _SN, _SD) ->
+terminate(_Reason, _SD) ->
     ok.
 
 %% Internal functions
