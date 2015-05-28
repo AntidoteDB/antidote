@@ -143,15 +143,16 @@ waiting1(Transaction,PreparedCache) ->
     end.
 
 
-check_prepared(Transaction,PreparedCache) ->
+check_prepared(Transaction,_PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
-    ActiveTxs = case ets:lookup(PreparedCache, active) of
-		    [] ->
-			[];
-		    [{active,AList}] ->
-			AList
-		end,
+    ActiveTxs = [],
+%% case ets:lookup(PreparedCache, active) of
+%% 		    [] ->
+%% 			[];
+%% 		    [{active,AList}] ->
+%% 			AList
+%% 		end,
     case ActiveTxs of
 	[] ->
 	    ready;
