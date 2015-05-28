@@ -42,7 +42,8 @@
 
 %% States
 -export([read_data_item/5,
-	 start_read_servers/1]).
+	 start_read_servers/1,
+	 stop_read_servers/1]).
 
 %% Spawn
 
@@ -57,6 +58,10 @@ start_link(Partition,Id) ->
 
 start_read_servers(Partition) ->
     start_read_servers_internal(Partition, ?READ_CONCURRENCY).
+
+stop_read_servers(Partition) ->
+    stop_read_servers_internal(Partition, ?READ_CONCURRENCY).
+
 
 read_data_item({Partition,_Node},Key,Type,Transaction,Updates) ->
     try
@@ -81,6 +86,13 @@ start_read_servers_internal(Partition, Num) ->
     clocksi_readitem_sup:start_fsm(Partition,Num),
     start_read_servers_internal(Partition, Num-1).
 
+stop_read_servers_internal(_Partition,0) ->
+    ok;
+stop_read_servers_internal(Partition, Num) ->
+    gen_server:call({global,generate_server_name(Partition,Num)},{go_down}),
+    stop_read_servers_internal(Partition, Num-1).
+
+
 generate_server_name(Partition, Id) ->
     list_to_atom(integer_to_list(Id) ++ "rs" ++ integer_to_list(Partition)).
 
@@ -99,7 +111,10 @@ init([Partition, Id]) ->
 handle_call({perform_read, Key, Type, Transaction, Updates},Coordinator,
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
     perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self),
-    {noreply,SD0}.
+    {noreply,SD0};
+
+handle_call({go_down},_Sender,SD0) ->
+    {stop,handoff,ok,SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, Updates},
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
@@ -143,16 +158,16 @@ waiting1(Transaction,PreparedCache) ->
     end.
 
 
-check_prepared(Transaction,_PreparedCache) ->
+check_prepared(Transaction,PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
-    ActiveTxs = [],
-%% case ets:lookup(PreparedCache, active) of
-%% 		    [] ->
-%% 			[];
-%% 		    [{active,AList}] ->
-%% 			AList
-%% 		end,
+    ActiveTxs = 
+	case ets:lookup(PreparedCache, active) of
+	    [] ->
+		[];
+	    [{active,AList}] ->
+		AList
+	end,
     case ActiveTxs of
 	[] ->
 	    ready;

@@ -224,19 +224,29 @@ handle_command({get_active_txns}, _Sender,
     ActiveTxs = ets:lookup(Prepared, active),
     {reply, {ok, ActiveTxs}, State};
 
+handle_command({start_read_servers}, _Sender,
+               #state{partition=Partition} = State) ->
+    clocksi_readitem_fsm:start_read_servers(Partition),
+    {reply, ok, State};
+
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handoff_starting(_TargetNode, State) ->
+handoff_starting(_TargetNode, #state{partition=Partition} = State) ->
+    clocksi_readitem_fsm:stop_read_servers(Partition),
     {true, State}.
 
 handoff_cancelled(State) ->
     {ok, State}.
 
-handoff_finished(_TargetNode, State) ->
+handoff_finished(TargetNode, State) ->
+    riak_core_vnode_master:command(TargetNode,
+				   {start_read_servers},
+				   {fsm, undefined, self()},
+				   ?CLOCKSI_MASTER),
     {ok, State}.
 
 handle_handoff_data(_Data, State) ->
