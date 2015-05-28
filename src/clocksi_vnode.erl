@@ -236,14 +236,14 @@ handle_command(_Message, _Sender, State) ->
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handoff_starting(_TargetNode, #state{partition=Partition} = State) ->
-    clocksi_readitem_fsm:stop_read_servers(Partition),
+handoff_starting(_TargetNode, #state{partition=_Partition} = State) ->
     {true, State}.
 
 handoff_cancelled(State) ->
     {ok, State}.
 
-handoff_finished(TargetNode, #state{partition=_Partition} = State) ->
+handoff_finished(TargetNode, #state{partition=Partition} = State) ->
+    clocksi_readitem_fsm:stop_read_servers(Partition),
     riak_core_vnode_master:command(TargetNode,
 				   {start_read_servers},
 				   {fsm, undefined, self()},
