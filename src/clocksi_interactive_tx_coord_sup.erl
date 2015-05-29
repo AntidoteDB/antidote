@@ -23,12 +23,12 @@
 
 -behavior(supervisor).
 
+-include("antidote.hrl").
+
 -export([start_fsm/1,
          start_link/0]).
 
 -export([init/1]).
-
--define(NUM, 20).
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
@@ -36,7 +36,7 @@ start_link() ->
 start_fsm(Args) ->
     {A1,A2,A3} = now(),
     random:seed(A1, A2, A3),
-    Random = random:uniform(?NUM),
+    Random = random:uniform(?NUM_SUP),
     Module = generate_module_name(Random),
     supervisor:start_child(Module, Args).
 
@@ -51,5 +51,5 @@ generate_supervisor_spec(N) ->
 
 %% @doc Starts the coordinator of a ClockSI interactive transaction.
 init([]) ->
-    Pool = [generate_supervisor_spec(N) || N <- lists:seq(1, ?NUM)],
+    Pool = [generate_supervisor_spec(N) || N <- lists:seq(1, ?NUM_SUP)],
     {ok, {{one_for_one, 5, 10}, Pool}}.

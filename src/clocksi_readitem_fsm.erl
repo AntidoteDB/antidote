@@ -47,7 +47,12 @@
 
 %% Spawn
 
--record(state, {partition,id,ops_cache,snapshot_cache,prepared_cache,self}).
+-record(state, {partition :: non_neg_integer(),
+		id :: non_neg_integer(),
+		ops_cache :: cache_id(),
+		snapshot_cache :: cache_id(),
+		prepared_cache :: cache_id(),
+		self :: atom()}).
 
 %%%===================================================================
 %%% API

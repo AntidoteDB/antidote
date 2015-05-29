@@ -60,11 +60,10 @@
 %%          write_set: a list of the write sets that the transactions
 %%              generate.
 %%----------------------------------------------------------------------
--record(state, {partition,
-                prepared_tx,
-                committed_tx,
-                active_txs_per_key,
-	        tables_ready=false}).
+-record(state, {partition :: non_neg_integer(),
+                prepared_tx :: cache_id(),
+                committed_tx :: cache_id(),
+                active_txs_per_key :: cache_id()}).
 
 %%%===================================================================
 %%% API
@@ -130,8 +129,7 @@ init([Partition]) ->
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
-                active_txs_per_key=ActiveTxsPerKey,
-		tables_ready=true}}.
+                active_txs_per_key=ActiveTxsPerKey}}.
 
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
@@ -222,7 +220,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
 
 %% @doc Return active transactions in prepare state with their preparetime
 handle_command({get_active_txns}, _Sender,
-               #state{prepared_tx=Prepared, partition=_Partition} = State) ->
+               #state{prepared_tx=Prepared} = State) ->
     ActiveTxs = ets:lookup(Prepared, active),
     {reply, {ok, ActiveTxs}, State};
 
@@ -238,20 +236,13 @@ handle_command(_Message, _Sender, State) ->
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handoff_starting(_TargetNode, #state{partition=_Partition,tables_ready=_TablesReady} = State) ->
+handoff_starting(_TargetNode, State) ->
     {true, State}.
 
 handoff_cancelled(State) ->
     {ok, State}.
 
-handoff_finished(_TargetNode, #state{partition=_Partition} = State) ->
-    %% lager:info("stopping read servers ~w~n~n~n",[Partition]),
-    %% clocksi_readitem_fsm:stop_read_servers(Partition),
-    %% riak_core_vnode_master:command(TargetNode,
-    %% 				   {start_read_servers},
-    %% 				   {fsm, undefined, self()},
-    %% 				   ?CLOCKSI_MASTER),
-    %% {ok, State#state{tables_ready=true}}.
+handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(_Data, State) ->
@@ -260,13 +251,7 @@ handle_handoff_data(_Data, State) ->
 encode_handoff_item(StatName, Val) ->
     term_to_binary({StatName,Val}).
 
-is_empty(#state{partition=_Partition,tables_ready=_TablesReady} = State) ->
-    %% case TablesReady of
-    %% 	true ->
-    %% 	    {false,State#state{tables_ready=false}};
-    %% 	false ->
-    %% 	    {true,State}
-    %% end.
+is_empty(State) ->
     {true,State}.
 
 delete(State) ->
@@ -278,7 +263,7 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{partition=Partition,tables_ready=_TablesReady} = _State) ->
+terminate(_Reason, #state{partition=Partition} = _State) ->
     ets:delete(get_cache_name(Partition,prepared)),
     clocksi_readitem_fsm:stop_read_servers(Partition),    
     ok.
@@ -288,14 +273,9 @@ terminate(_Reason, #state{partition=Partition,tables_ready=_TablesReady} = _Stat
 %%%===================================================================
 
 prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime)->
-    %% TODO, not waiting in updates anymore, need to wait here?
     TxId = Transaction#transaction.txn_id,
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
         true ->
-	    %% What is this for????
-	    %% lists:foldl(fun({Key1,Type1,_Op}, _Acc) ->
-	    %% 			true = ets:insert(ActiveTxPerKey, {Key1, Type1, TxId})
-	    %% 		end, 0, TxWriteSet),
             LogRecord = #log_record{tx_id=TxId,
                                     op_type=prepare,
                                     op_payload=PrepareTime},
@@ -308,12 +288,11 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
             true = ets:insert(PreparedTx, {active, [{TxId, PrepareTime}|ActiveTxs]}),
 	    NewPrepare = now_microsec(erlang:now()),
             true = ets:insert(PreparedTx, {active, [{TxId, NewPrepare}|ActiveTxs]}),
-	    Updates = TxWriteSet,
-            case Updates of 
+            case TxWriteSet of 
                 [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
-		    NewUpdates = write_set_to_logrecord(TxId,Updates),
+		    NewUpdates = write_set_to_logrecord(TxId,TxWriteSet),
                     Result = logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]),
 		    {Result, NewPrepare};
 		_ ->
@@ -336,7 +315,6 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append(Node,LogId,LogRecord) of
                 {ok, _} ->
-                    %true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
                             clean_and_notify(TxId, Key, State),

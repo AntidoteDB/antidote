@@ -55,27 +55,7 @@ append(Key, Type, {OpParam, Actor}) ->
 %%      object stored at some key.
 -spec read(Key::key(), Type::type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
-    DcId = dc_utilities:get_my_dc_id(),
-    %% Seed the random because you pick a random read server, this is stored in the process state
-    {A1,A2,A3} = now(),
-    random:seed(A1, A2, A3),
-    {ok, SnapshotTime} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
-    {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
-    TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
-    Transaction = #transaction{snapshot_time=LocalClock,
-                               vec_snapshot_time=SnapshotTime,
-                               txn_id=TransactionId},
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
-    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, []) of
-	error ->
-	    {error, unknown};
-	{error, Reason} ->
-	    {error, Reason};
-	{ok, Snapshot} ->
-	    ReadResult = Type:value(Snapshot),
-	    {ok, ReadResult}
-    end.
+    clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type).
 
 %% Clock SI API
 

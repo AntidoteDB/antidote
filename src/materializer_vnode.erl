@@ -56,7 +56,6 @@
          handle_coverage/4,
          handle_exit/3]).
 
--type cache_id() :: ets:tid().
 
 -record(state, {
   partition :: partition_id(),
@@ -67,10 +66,11 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), snapshot_time(), txid(),ets:tid(), ets:tid()) -> {ok, snapshot()} | {error, reason()}.
+-spec read(key(), type(), snapshot_time(), txid(),cache_id(), cache_id()) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache) ->
     internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache).
 
+-spec get_cache_name(non_neg_integer(),atom()) -> atom().
 get_cache_name(Partition,Base) ->
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
@@ -82,6 +82,7 @@ update(Key, DownstreamOp) ->
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
 
+-spec store_ss(key(), snapshot_time(), commit_time()) -> ok | {error, reason()}.
 store_ss(Key, Snapshot, CommitTime) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -160,7 +161,7 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 
 %%---------------- Internal Functions -------------------%%
 
-
+-spec internal_store_ss(key(), snapshot_time(), commit_time(), cache_id(), cache_id()) -> true.
 internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
@@ -229,6 +230,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 %% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
+-spec belongs_to_snapshot_op(snapshot_time() | ignore, commit_time(), snapshot_time()) -> boolean().
 belongs_to_snapshot_op(ignore, {_OpDc,_OpCommitTime}, _OpSs) ->
     true;
 belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->

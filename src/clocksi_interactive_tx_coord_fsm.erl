@@ -39,7 +39,7 @@
 %% States
 -export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2,
          receive_prepared/2, single_committing/2, committing_2pc/3, committing/2, receive_committed/2, abort/2,
-	 get_snapshot_time/0,
+	 perform_singleitem_read/2,
          reply_to_client/2]).
 
 %%---------------------------------------------------------------------
@@ -83,6 +83,17 @@ finish_op(From, Key,Result) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock]) ->
+    {Transaction,TransactionId} = create_transaction_record(ClientClock),
+    SD = #state{
+            transaction = Transaction,
+            updated_partitions=[],
+            prepare_time=0
+           },
+    From ! {ok, TransactionId},
+    {ok, execute_op, SD}.
+
+-spec create_transaction_record(snapshot_time()) -> {txid(),tx()}.
+create_transaction_record(ClientClock) ->
     {ok, SnapshotTime} = case ClientClock of
 			     ignore ->
 				 get_snapshot_time();
@@ -98,13 +109,24 @@ init([From, ClientClock]) ->
     Transaction = #transaction{snapshot_time=LocalClock,
                                vec_snapshot_time=SnapshotTime,
                                txn_id=TransactionId},
-    SD = #state{
-            transaction = Transaction,
-            updated_partitions=[],
-            prepare_time=0
-           },
-    From ! {ok, TransactionId},
-    {ok, execute_op, SD}.
+    {Transaction,TransactionId}.
+
+-spec perform_singleitem_read(key(),type()) -> {ok,val()} | {error,reason()}.
+perform_singleitem_read(Key,Type) ->
+    {Transaction,_TransactionId} = create_transaction_record(ignore),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, []) of
+	error ->
+	    {error, unknown};
+	{error, Reason} ->
+	    {error, Reason};
+	{ok, Snapshot} ->
+	    ReadResult = Type:value(Snapshot),
+	    {ok, ReadResult}
+    end.
+
+
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
@@ -357,7 +379,7 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, snapshot_time()} | {error, reason()}.
 get_snapshot_time() ->
-    Now = clocksi_vnode:now_microsec(erlang:now()) - 3000,
+    Now = clocksi_vnode:now_microsec(erlang:now()) - ?OLD_SS_MICROSEC,
     case vectorclock:get_stable_snapshot() of
         {ok, VecSnapshotTime} ->
             DcId = dc_utilities:get_my_dc_id(),
