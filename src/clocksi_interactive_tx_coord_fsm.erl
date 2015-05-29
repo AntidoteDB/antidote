@@ -357,7 +357,7 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, snapshot_time()} | {error, reason()}.
 get_snapshot_time() ->
-    Now = clocksi_vnode:now_microsec(erlang:now()) - 15000,
+    Now = clocksi_vnode:now_microsec(erlang:now()) - 3000,
     case vectorclock:get_stable_snapshot() of
         {ok, VecSnapshotTime} ->
             DcId = dc_utilities:get_my_dc_id(),
