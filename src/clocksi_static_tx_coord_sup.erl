@@ -28,13 +28,15 @@
 
 -export([init/1]).
 
--define(NUM, 1).
+-define(NUM, 20).
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_fsm(Args) ->
     %%lager:info("Time ~w ~w", [?MODULE, clocksi_vnode:now_microsec(erlang:now())]),
+    {A1,A2,A3} = now(),
+    random:seed(A1, A2, A3),
     Random = random:uniform(?NUM),
     Module = generate_module_name(Random),
     supervisor:start_child(Module, Args).

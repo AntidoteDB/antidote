@@ -151,7 +151,9 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache}) ->
+    ets:delete(OpsCache),
+    ets:delete(SnapshotCache),
     ok.
 
 
