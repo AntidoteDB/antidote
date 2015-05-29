@@ -39,6 +39,7 @@
 %% States
 -export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2,
          receive_prepared/2, single_committing/2, committing_2pc/3, committing/2, receive_committed/2, abort/2,
+	 get_snapshot_time/0,
          reply_to_client/2]).
 
 %%---------------------------------------------------------------------
