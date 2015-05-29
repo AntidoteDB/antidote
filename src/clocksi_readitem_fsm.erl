@@ -54,18 +54,21 @@
 %%%===================================================================
 
 start_link(Partition,Id) ->
-    gen_server:start_link({global,generate_server_name(Partition,Id)}, ?MODULE, [Partition,Id], []).
+    Addr = node(),
+    gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
 
 start_read_servers(Partition) ->
-    start_read_servers_internal(Partition, ?READ_CONCURRENCY).
+    Addr = node(),
+    start_read_servers_internal(Addr, Partition, ?READ_CONCURRENCY).
 
 stop_read_servers(Partition) ->
-    stop_read_servers_internal(Partition, ?READ_CONCURRENCY).
+    Addr = node(),
+    stop_read_servers_internal(Addr, Partition, ?READ_CONCURRENCY).
 
 
-read_data_item({Partition,_Node},Key,Type,Transaction,Updates) ->
+read_data_item({Partition,Node},Key,Type,Transaction,Updates) ->
     try
-	gen_server:call({global,generate_random_server_name(Partition)},
+	gen_server:call({global,generate_random_server_name(Node,Partition)},
 			{perform_read,Key,Type,Transaction,Updates})
     catch
         _:Reason ->
@@ -80,31 +83,36 @@ read_data_item({Partition,_Node},Key,Type,Transaction,Updates) ->
 %%% Internal
 %%%===================================================================
 
-start_read_servers_internal(_Partition,0) ->
+start_read_servers_internal(_Node,_Partition,0) ->
     ok;
-start_read_servers_internal(Partition, Num) ->
+start_read_servers_internal(Node, Partition, Num) ->
     clocksi_readitem_sup:start_fsm(Partition,Num),
-    start_read_servers_internal(Partition, Num-1).
+    start_read_servers_internal(Node, Partition, Num-1).
 
-stop_read_servers_internal(_Partition,0) ->
+stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
-stop_read_servers_internal(Partition, Num) ->
-    gen_server:call({global,generate_server_name(Partition,Num)},{go_down}),
-    stop_read_servers_internal(Partition, Num-1).
+stop_read_servers_internal(Node,Partition, Num) ->
+    try
+	gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
+    catch
+	_:_Reason->
+	    ok
+    end,
+    stop_read_servers_internal(Node, Partition, Num-1).
 
 
-generate_server_name(Partition, Id) ->
-    list_to_atom(integer_to_list(Id) ++ "rs" ++ integer_to_list(Partition)).
+generate_server_name(Node, Partition, Id) ->
+    list_to_atom(integer_to_list(Id) ++ "rs" ++ integer_to_list(Partition) ++ atom_to_list(Node)).
 
-generate_random_server_name(Partition) ->
-    generate_server_name(Partition, random:uniform(?READ_CONCURRENCY)).
+generate_random_server_name(Node, Partition) ->
+    generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
 
 init([Partition, Id]) ->
-    lager:info("starting read server ~w,~w~n", [Partition,Id]),
+    Addr = node(),
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
     PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
-    Self = generate_server_name(Partition,Id),
+    Self = generate_server_name(Addr,Partition,Id),
     {ok, #state{partition=Partition, id=Id, ops_cache=OpsCache,
 		snapshot_cache=SnapshotCache,
 		prepared_cache=PreparedCache,self=Self}}.

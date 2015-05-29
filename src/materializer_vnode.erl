@@ -142,8 +142,7 @@ is_empty(State=#state{ops_cache=OpsCache}) ->
             {false, State}
     end.
 
-delete(State=#state{ops_cache=OpsCache}) ->
-    true = ets:delete(OpsCache),
+delete(State=#state{ops_cache=_OpsCache}) ->
     {ok, State}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) ->

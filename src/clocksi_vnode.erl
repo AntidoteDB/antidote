@@ -63,7 +63,8 @@
 -record(state, {partition,
                 prepared_tx,
                 committed_tx,
-                active_txs_per_key}).
+                active_txs_per_key,
+	        tables_ready=false}).
 
 %%%===================================================================
 %%% API
@@ -129,7 +130,8 @@ init([Partition]) ->
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
-                active_txs_per_key=ActiveTxsPerKey}}.
+                active_txs_per_key=ActiveTxsPerKey,
+		tables_ready=true}}.
 
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
@@ -226,7 +228,7 @@ handle_command({get_active_txns}, _Sender,
 
 handle_command({start_read_servers}, _Sender,
                #state{partition=Partition} = State) ->
-    lager:info("Starting read servers"),
+    clocksi_readitem_fsm:stop_read_servers(Partition),
     clocksi_readitem_fsm:start_read_servers(Partition),
     {reply, ok, State};
 
@@ -236,28 +238,36 @@ handle_command(_Message, _Sender, State) ->
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handoff_starting(_TargetNode, #state{partition=_Partition} = State) ->
+handoff_starting(_TargetNode, #state{partition=_Partition,tables_ready=_TablesReady} = State) ->
     {true, State}.
 
 handoff_cancelled(State) ->
     {ok, State}.
 
-handoff_finished(TargetNode, #state{partition=Partition} = State) ->
-    clocksi_readitem_fsm:stop_read_servers(Partition),
-    riak_core_vnode_master:command(TargetNode,
-				   {start_read_servers},
-				   {fsm, undefined, self()},
-				   ?CLOCKSI_MASTER),
+handoff_finished(_TargetNode, #state{partition=_Partition} = State) ->
+    %% lager:info("stopping read servers ~w~n~n~n",[Partition]),
+    %% clocksi_readitem_fsm:stop_read_servers(Partition),
+    %% riak_core_vnode_master:command(TargetNode,
+    %% 				   {start_read_servers},
+    %% 				   {fsm, undefined, self()},
+    %% 				   ?CLOCKSI_MASTER),
+    %% {ok, State#state{tables_ready=true}}.
     {ok, State}.
 
 handle_handoff_data(_Data, State) ->
     {reply, ok, State}.
 
-encode_handoff_item(_ObjectName, _ObjectValue) ->
-    <<>>.
+encode_handoff_item(StatName, Val) ->
+    term_to_binary({StatName,Val}).
 
-is_empty(State) ->
-    {true, State}.
+is_empty(#state{partition=_Partition,tables_ready=_TablesReady} = State) ->
+    %% case TablesReady of
+    %% 	true ->
+    %% 	    {false,State#state{tables_ready=false}};
+    %% 	false ->
+    %% 	    {true,State}
+    %% end.
+    {true,State}.
 
 delete(State) ->
     {ok, State}.
@@ -268,7 +278,9 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{partition=Partition,tables_ready=_TablesReady} = _State) ->
+    ets:delete(get_cache_name(Partition,prepared)),
+    clocksi_readitem_fsm:stop_read_servers(Partition),    
     ok.
 
 %%%===================================================================
