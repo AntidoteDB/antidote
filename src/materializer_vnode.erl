@@ -336,6 +336,91 @@ belongs_to_snapshot_test()->
 			      vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 
 
+%% @doc This tests to make sure when garbage collection happens, no updates are lost
+gc_test() ->
+    OpsCache = ets:new(ops_cache, [set]),
+    SnapshotCache = ets:new(snapshot_cache, [set]),
+    Key = mycount,
+    DC1 = 1,
+    Type = riak_dt_gcounter,
+
+    %% Make 10 snapshots
+
+    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1,2}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(0, Type:value(Res0)),
+    
+    op_insert_gc(Key, generate_payload(10,11,Res0,a1), OpsCache, SnapshotCache),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,12}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(1, Type:value(Res1)),
+
+    op_insert_gc(Key, generate_payload(20,21,Res1,a2), OpsCache, SnapshotCache),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,22}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(2, Type:value(Res2)),
+    
+    op_insert_gc(Key, generate_payload(30,31,Res2,a3), OpsCache, SnapshotCache),
+    {ok, Res3} = internal_read(Key, Type, vectorclock:from_list([{DC1,32}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(3, Type:value(Res3)),
+    
+    op_insert_gc(Key, generate_payload(40,41,Res3,a4), OpsCache, SnapshotCache),
+    {ok, Res4} = internal_read(Key, Type, vectorclock:from_list([{DC1,42}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(4, Type:value(Res4)),
+    
+    op_insert_gc(Key, generate_payload(50,51,Res4,a5), OpsCache, SnapshotCache),
+    {ok, Res5} = internal_read(Key, Type, vectorclock:from_list([{DC1,52}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(5, Type:value(Res5)),
+    
+    op_insert_gc(Key, generate_payload(60,61,Res5,a6), OpsCache, SnapshotCache),
+    {ok, Res6} = internal_read(Key, Type, vectorclock:from_list([{DC1,62}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(6, Type:value(Res6)),
+    
+    op_insert_gc(Key, generate_payload(70,71,Res6,a7), OpsCache, SnapshotCache),
+    {ok, Res7} = internal_read(Key, Type, vectorclock:from_list([{DC1,72}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(7, Type:value(Res7)),
+    
+    op_insert_gc(Key, generate_payload(80,81,Res7,a8), OpsCache, SnapshotCache),
+    {ok, Res8} = internal_read(Key, Type, vectorclock:from_list([{DC1,82}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(8, Type:value(Res8)),
+    
+    op_insert_gc(Key, generate_payload(90,91,Res8,a9), OpsCache, SnapshotCache),
+    {ok, Res9} = internal_read(Key, Type, vectorclock:from_list([{DC1,92}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(9, Type:value(Res9)),
+    
+    op_insert_gc(Key, generate_payload(100,101,Res9,a10), OpsCache, SnapshotCache),
+
+    %% Insert some new values
+
+    op_insert_gc(Key, generate_payload(15,111,Res1,a11), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(16,121,Res1,a12), OpsCache, SnapshotCache),
+
+    %% Trigger the clean
+    {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1,102}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(10, Type:value(Res10)),
+
+    op_insert_gc(Key, generate_payload(102,131,Res9,a13), OpsCache, SnapshotCache),
+
+    %% Be sure you didn't loose any updates
+    {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1,142}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(13, Type:value(Res13)).
+
+    
+
+
+generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
+    Key = mycount,
+    Type = riak_dt_gcounter,
+    DC1 = 1,
+
+    {ok,Op1} = Type:update(increment, Name, Prev),
+    #clocksi_payload{key = Key,
+		     type = Type,
+		     op_param = {merge, Op1},
+		     snapshot_time = vectorclock:from_list([{DC1,SnapshotTime}]),
+		     commit_time = {DC1,CommitTime},
+		     txid = 1
+		    }.
+
+
+
 seq_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),

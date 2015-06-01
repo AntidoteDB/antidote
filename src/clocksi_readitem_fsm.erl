@@ -136,7 +136,7 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, Updates},
     {noreply,SD0}.
 
 perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self) ->
-    case check_clock(Transaction,PreparedCache) of
+    case check_clock(Key,Transaction,PreparedCache) of
 	not_ready ->
 	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
 	ready ->
@@ -147,20 +147,20 @@ perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,Snapshot
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
-check_clock(Transaction,PreparedCache) ->
+check_clock(Key,Transaction,PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = clocksi_vnode:now_microsec(erlang:now()),
     case T_TS > Time of
         true ->
-	    %% dont sleep
-            timer:sleep((T_TS - Time) div 1000 +1 );
+	    %% dont sleep in case there is another read waiting
+            %% timer:sleep((T_TS - Time) div 1000 +1 );
+	    not_ready;
         false ->
-		ok	    
-    end,
-    waiting1(Transaction,PreparedCache).
+	    waiting1(Key,Transaction,PreparedCache)
+    end.
 
-waiting1(Transaction,PreparedCache) ->
+waiting1(Key,Transaction,PreparedCache) ->
     LocalClock = clocksi_vnode:now_microsec(erlang:now()),
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
@@ -168,11 +168,11 @@ waiting1(Transaction,PreparedCache) ->
         false ->
 	    not_ready;
         true ->
-	    check_prepared(Transaction,PreparedCache)
+	    check_prepared(Key,Transaction,PreparedCache)
     end.
 
 
-check_prepared(Transaction,PreparedCache) ->
+check_prepared(Key,Transaction,PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
     ActiveTxs = 
@@ -182,20 +182,22 @@ check_prepared(Transaction,PreparedCache) ->
 	    [{active,AList}] ->
 		AList
 	end,
-    case ActiveTxs of
-	[] ->
-	    ready;
-	List ->
-	    {_TxId,Time} = lists:last(List),
-	    case Time =< SnapshotTime of
+    check_prepared_list(Key,SnapshotTime,ActiveTxs).
+
+check_prepared_list(_Key,_SnapshotTime,[]) ->
+    ready;
+check_prepared_list(Key,SnapshotTime,[{_TxId,Time,WriteSet}|Rest]) ->
+    case Time =< SnapshotTime of
+	true ->
+	    case lists:keymember(Key,1,WriteSet) of
 		true ->
-		    %% How long should sleep here?
 		    not_ready;
 		false ->
-		    ready
-	    end
+		    check_prepared_list(Key,SnapshotTime,Rest)
+	    end;
+	false ->
+	    ready
     end.
-
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.

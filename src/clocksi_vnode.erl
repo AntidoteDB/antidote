@@ -285,9 +285,9 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 			    [{active, List}] ->
 				List
 			end,
-            true = ets:insert(PreparedTx, {active, [{TxId, PrepareTime}|ActiveTxs]}),
+            true = ets:insert(PreparedTx, {active, [{TxId, PrepareTime,TxWriteSet}|ActiveTxs]}),
 	    NewPrepare = now_microsec(erlang:now()),
-            true = ets:insert(PreparedTx, {active, [{TxId, NewPrepare}|ActiveTxs]}),
+            true = ets:insert(PreparedTx, {active, [{TxId, NewPrepare,TxWriteSet}|ActiveTxs]}),
             case TxWriteSet of 
                 [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
                     LogId = log_utilities:get_logid_from_key(Key),

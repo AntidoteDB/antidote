@@ -21,10 +21,13 @@
 
 -export([confirm/0, clocksi_test1/1, clocksi_test2/1, clocksi_test3/1, clocksi_test5/1,
          clocksi_test_read_wait/1, clocksi_test4/1, clocksi_test_read_time/1,
-         spawn_read/3]).
+         spawn_read/3, clocksi_test_prepare/1, spawn_com/2]).
 
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
+
+%% This should be the same as in antidote.hrl
+-define(OLD_SS_MICROSEC,3000 * 2).
 
 confirm() ->
     [Nodes] = rt:build_clusters([3]),
@@ -32,6 +35,7 @@ confirm() ->
     clocksi_test1(Nodes),
     clocksi_test2(Nodes),
     clocksi_test3(Nodes),
+    clocksi_test_prepare(Nodes),
     clocksi_test5(Nodes),
     clocksi_tx_noclock_test(Nodes),
     clocksi_single_key_update_read_test(Nodes),
@@ -78,6 +82,7 @@ clocksi_test1(Nodes) ->
     ?assertMatch([0,1], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{read, key1, Type},
@@ -87,12 +92,14 @@ clocksi_test1(Nodes) ->
     ?assertEqual([1,1], ReadSet3),
 
     %% Multiple updates to a key in a transaction works
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{update, key1, Type, {increment, a}},
                       {update, key1, Type, {increment, a}}]]),
     ?assertMatch({ok,_}, Result5),
 
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result6=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{read, key1, Type}]]),
@@ -179,6 +186,79 @@ clocksi_test3(Nodes) ->
     lager:info("Test3 passed"),
     pass.
 
+
+%% @doc This test makes sure to block pending reads when a prepare is in progress
+%% that could violate atomicity if not blocked
+clocksi_test_prepare(Nodes) ->
+    FirstNode = hd(Nodes),
+    lager:info("Test prepare started"),
+    Type = riak_dt_pncounter,
+
+    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa],1),
+    IndexNode = hd(Preflist),
+
+    Key2 = find_key_same_node(FirstNode,IndexNode,1),
+
+    {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, aaa, riak_dt_pncounter]),
+    ?assertEqual({ok, 0}, ReadResult0),
+    WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                         [TxId, aaa, Type, {increment, a1}]),
+    ?assertEqual(ok, WriteResult),
+    ReadResult=rpc:call(FirstNode, antidote, clocksi_iread,
+                        [TxId, aaa, riak_dt_pncounter]),
+    ?assertEqual({ok, 1}, ReadResult),
+    CommitTime=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
+    ?assertMatch({ok, _}, CommitTime),
+
+    timer:sleep(3000),
+
+    {ok,TxIdRead}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),    
+
+    timer:sleep(3000),
+
+    {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                         [TxId1, Key2, Type, {increment, a2}]),
+    ?assertEqual(ok, WriteResult1),
+    ReadResult1=rpc:call(FirstNode, antidote, clocksi_iread,
+                        [TxId1, Key2, riak_dt_pncounter]),
+    ?assertEqual({ok, 1}, ReadResult1),
+    CommitTime1=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
+    ?assertMatch({ok, _}, CommitTime1),
+       
+    spawn(?MODULE, spawn_com, [FirstNode, TxId]),
+
+    ReadResultR=rpc:call(FirstNode, antidote, clocksi_iread,
+			 [TxIdRead, aaa, riak_dt_pncounter]),
+    ?assertEqual({ok, 1}, ReadResultR),
+
+    End1=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
+    
+    lager:info("Test prepare passed"),
+
+    pass.
+
+
+find_key_same_node(FirstNode,IndexNode,Num) ->
+    NewKey = list_to_atom(atom_to_list(aaa) ++ integer_to_list(Num)),
+    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
+    case hd(Preflist) == IndexNode of
+	true ->
+	    NewKey;
+	false ->
+	    find_key_same_node(FirstNode,IndexNode,Num+1)
+    end.
+
+spawn_com(FirstNode, TxId) ->
+    timer:sleep(3000),
+    End1 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
+    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1).
+    
+
+
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %%      that updates only one partition. This type of txs use a only-one phase 
 %%      commit.
@@ -234,6 +314,7 @@ clocksi_tx_noclock_test(Nodes) ->
     ?assertMatch({ok, _}, CommitTime),
     End=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
     ?assertMatch({ok, _}, End),
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     ReadResult1 = rpc:call(FirstNode, antidote, clocksi_read,
                            [Key, riak_dt_pncounter]),
     {ok, {_, ReadSet1, _}}= ReadResult1,
@@ -243,6 +324,7 @@ clocksi_tx_noclock_test(Nodes) ->
     WriteResult1 = rpc:call(FirstNode, antidote, clocksi_bulk_update,
                             [[{update, Key, Type, {increment, a}}]]),
     ?assertMatch({ok, _}, WriteResult1),
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     ReadResult2= rpc:call(FirstNode, antidote, clocksi_read,
                           [Key, riak_dt_pncounter]),
     {ok, {_, ReadSet2, _}}=ReadResult2,
@@ -386,6 +468,7 @@ clocksi_test_read_wait(Nodes) ->
     {ok, CommitTime}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
     lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]),
     %% start a different tx and try to read key read_wait_test.
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     {ok,TxId1}=rpc:call(LastNode, antidote, clocksi_istart_tx,
                         []),
     lager:info("Tx2 Started, id : ~p", [TxId1]),
@@ -438,10 +521,12 @@ clocksi_multiple_read_update_test(Nodes) ->
 %% @doc Test updating prior to a read.
 read_update_test(Node, Key) ->
     Type = riak_dt_pncounter,
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     {ok,Result1} = rpc:call(Node, antidote, read,
                        [Key, Type]),
     {ok,_} = rpc:call(Node, antidote, clocksi_bulk_update,
                       [[{update, Key, Type, {increment,a}}]]),
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     {ok,Result2} = rpc:call(Node, antidote, read,
                        [Key, Type]),
     ?assertEqual(Result1+1,Result2),
@@ -466,7 +551,7 @@ clocksi_concurrency_test(Nodes) ->
     Pid = self(),
     spawn( fun() ->
                    rpc:call(Node, antidote, clocksi_iupdate,
-                            [TxId2, Key, riak_dt_gcounter, {increment, ucl}]),
+                            [TxId2, Key, riak_dt_gcounter, {increment, ucl1}]),
                    rpc:call(Node, antidote, clocksi_iprepare, [TxId2]),
                    {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId2]),
                    Pid ! ok
@@ -475,6 +560,7 @@ clocksi_concurrency_test(Nodes) ->
     {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId1]),
      receive
          ok ->
+	     timer:sleep(?OLD_SS_MICROSEC div 1000),
              Result= rpc:call(Node,
                               antidote, read, [Key, riak_dt_gcounter]),
              ?assertEqual({ok, 2}, Result),
