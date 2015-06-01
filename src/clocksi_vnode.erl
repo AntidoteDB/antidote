@@ -121,8 +121,7 @@ get_cache_name(Partition,Base) ->
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
 init([Partition]) ->
-    PreparedTx = ets:new(get_cache_name(Partition,prepared),
-			 [set,protected,named_table,?TABLE_CONCURRENCY]),
+    PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx,[set]),
     ActiveTxsPerKey = ets:new(active_txs_per_key,[bag]),
     clocksi_readitem_fsm:start_read_servers(Partition),
@@ -130,6 +129,17 @@ init([Partition]) ->
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
                 active_txs_per_key=ActiveTxsPerKey}}.
+
+
+open_table(Partition) ->
+    try
+	ets:new(get_cache_name(Partition,prepared),
+		[set,protected,named_table,?TABLE_CONCURRENCY])
+    catch
+	_:_Reason ->
+	    %% Someone hasn't finished cleaning up yet
+	    open_table(Partition)
+    end.
 
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
