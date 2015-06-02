@@ -196,7 +196,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 	    case length(Ops) of
 		0 ->
 		    {ok, LatestSnapshot};
-		_ ->
+		_Len ->
 		    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
 			{ok, Snapshot, CommitTime, NewSS} ->
 			    %% the following checks for the case there were no snapshots and there were operations, but none was applicable

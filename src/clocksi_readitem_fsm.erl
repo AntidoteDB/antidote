@@ -138,7 +138,9 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, Updates},
 perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self) ->
     case check_clock(Key,Transaction,PreparedCache) of
 	not_ready ->
-	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
+	    lager:info("performing cast!!!!~n",[]),
+	    %%gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
+	    perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self);
 	ready ->
 	    return(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache)
     end.
@@ -153,6 +155,7 @@ check_clock(Key,Transaction,PreparedCache) ->
     Time = clocksi_vnode:now_microsec(erlang:now()),
     case T_TS > Time of
         true ->
+	    lager:info("should sleep!!!!!!!~n",[]),
 	    %% dont sleep in case there is another read waiting
             %% timer:sleep((T_TS - Time) div 1000 +1 );
 	    not_ready;
@@ -176,25 +179,20 @@ check_prepared(Key,Transaction,PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
     ActiveTxs = 
-	case ets:lookup(PreparedCache, active) of
+	case ets:lookup(PreparedCache, Key) of
 	    [] ->
 		[];
-	    [{active,AList}] ->
+	    [{Key,AList}] ->
 		AList
 	end,
     check_prepared_list(Key,SnapshotTime,ActiveTxs).
 
 check_prepared_list(_Key,_SnapshotTime,[]) ->
     ready;
-check_prepared_list(Key,SnapshotTime,[{_TxId,Time,WriteSet}|Rest]) ->
+check_prepared_list(_Key,SnapshotTime,[{_TxId,Time}|_Rest]) ->
     case Time =< SnapshotTime of
 	true ->
-	    case lists:keymember(Key,1,WriteSet) of
-		true ->
-		    not_ready;
-		false ->
-		    check_prepared_list(Key,SnapshotTime,Rest)
-	    end;
+	    not_ready;
 	false ->
 	    ready
     end.

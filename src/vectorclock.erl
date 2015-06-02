@@ -68,21 +68,23 @@ get_clock(Partition) ->
 -spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_stable_snapshot() ->
     %% Ask a random vnode for current stable snapshot time
-    Node = node(),
-    Preflist = riak_core_apl:active_owners(vectorclock),
-    Prefnode = [{Partition, Node1} ||
-                   {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
-    %% Take a random vnode
-    Index = random:uniform(length(Prefnode)),
-    Indexnode = lists:nth(Index, Prefnode),
-    try
-        riak_core_vnode_master:sync_command(
-          Indexnode, get_stable_snapshot, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
+    %% Node = node(),
+    %% Preflist = riak_core_apl:active_owners(vectorclock),
+    %% Prefnode = [{Partition, Node1} ||
+    %%                {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
+    %% %% Take a random vnode
+    %% Index = random:uniform(length(Prefnode)),
+    %% Indexnode = lists:nth(Index, Prefnode),
+    %% try
+    %%     riak_core_vnode_master:sync_command(
+    %%       Indexnode, get_stable_snapshot, vectorclock_vnode_master)
+    %% catch
+    %%     _:Reason ->
+    %%         lager:error("Exception caught: ~p", [Reason]),
+    %%         {error, Reason}
+    %% end.
+    {ok,dict:new()}.
+    
 
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())

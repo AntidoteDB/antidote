@@ -84,6 +84,7 @@ handle_command(calculate_stable_snapshot, _Sender,
                State=#currentclock{partition_vectorclock = Clock,
                                    num_p=NumP}) ->
     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
+    lager:info("in calc stable ss"),
     NumPartitions = case NumP of
                         0 ->
                             {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -116,6 +117,7 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                              partition_vectorclock=VClock,
                              partition=Partition
                             } = State) ->
+    lager:info("in update clock"),
     case dict:find(DcId, LastClock) of
         {ok, LClock} ->
             case LClock < Timestamp of

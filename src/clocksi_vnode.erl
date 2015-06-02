@@ -286,20 +286,14 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
     TxId = Transaction#transaction.txn_id,
     case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
         true ->
-            LogRecord = #log_record{tx_id=TxId,
-                                    op_type=prepare,
-                                    op_payload=PrepareTime},
-	    ActiveTxs = case ets:lookup(PreparedTx, active) of
-			    [] ->
-				[];
-			    [{active, List}] ->
-				List
-			end,
-            true = ets:insert(PreparedTx, {active, [{TxId, PrepareTime,TxWriteSet}|ActiveTxs]}),
-	    NewPrepare = now_microsec(erlang:now()),
-            true = ets:insert(PreparedTx, {active, [{TxId, NewPrepare,TxWriteSet}|ActiveTxs]}),
             case TxWriteSet of 
-                [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
+                [{Key, Type, {Op, Actor}} | Rest] -> 
+		    PrepList = set_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,PrepareTime,[]),
+		    NewPrepare = now_microsec(erlang:now()),
+		    reset_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,NewPrepare,PrepList),
+		    LogRecord = #log_record{tx_id=TxId,
+					    op_type=prepare,
+					    op_payload=NewPrepare},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
 		    NewUpdates = write_set_to_logrecord(TxId,TxWriteSet),
@@ -309,8 +303,28 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 		    {error, no_updates}
 	    end;
 	false ->
-	     {error, write_conflict}
+	    {error, write_conflict}
     end.
+
+
+set_prepared(_PreparedTx,[],_TxId,_Time,Acc) ->
+    lists:reverse(Acc);
+set_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,Acc) ->
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+		    [] ->
+			[];
+		    [{Key, List}] ->
+			List
+		end,
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}),
+    set_prepared(PreparedTx,Rest,TxId,Time,[ActiveTxs|Acc]).
+
+reset_prepared(_PreparedTx,[],_TxId,_Time,[]) ->
+    ok;
+reset_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,[ActiveTxs|Rest2]) ->
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}),
+    set_prepared(PreparedTx,Rest,TxId,Time,Rest2).
+
 
 commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
     TxId = Transaction#transaction.txn_id,
@@ -327,7 +341,7 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
                 {ok, _} ->
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
-                            clean_and_notify(TxId, Key, State),
+                            clean_and_notify(TxId,Updates,State),
                             {ok, committed};
                         error ->
                             {error, materializer_failure}
@@ -351,11 +365,18 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
 %%      a. ActiteTxsPerKey,
 %%      b. PreparedTx
 %%
-clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
-                                    prepared_tx=PreparedTx}) ->
-    [{active,ActiveTxs}] = ets:lookup(PreparedTx, active),
+clean_and_notify(TxId, Updates, #state{active_txs_per_key=_ActiveTxsPerKey,
+			      prepared_tx=PreparedTx}) ->
+    clean_prepared(PreparedTx,Updates,TxId).
+
+clean_prepared(_PreparedTx,[],_TxId) ->
+    ok;
+clean_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId) ->
+    [{Key,ActiveTxs}] = ets:lookup(PreparedTx, Key),
     NewActive = lists:keydelete(TxId,1,ActiveTxs),
-    true = ets:insert(PreparedTx, {active, NewActive}).
+    true = ets:insert(PreparedTx, {Key, NewActive}),
+    clean_prepared(PreparedTx,Rest,TxId).
+
 
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds

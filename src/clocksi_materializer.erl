@@ -56,7 +56,7 @@ new(Type) ->
 		  [clocksi_payload()], txid() | ignore) -> {ok, snapshot(), 
 						   snapshot_time() | ignore, boolean()} | {error, reason()}.
 materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
-    materialize_intern(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId, SnapshotCommitTime,false).
+    materialize_intern(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId, SnapshotCommitTime,false,0).
 
 
 -spec materialize_intern(type(), 
@@ -66,12 +66,12 @@ materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
 		  [clocksi_payload()], 
 		  txid() | ignore, 
 		  snapshot_time() | ignore,
-		  boolean()) ->
+		  boolean(), non_neg_integer()) ->
 			 {ok,snapshot(),snapshot_time()|ignore,boolean()} | {error, reason()}.
-materialize_intern(_Type, Snapshot, _SnapshotCommitTime, _MinSnapshotTime, [], _TxId, LastOpCt, NewSS) ->
+materialize_intern(_Type, Snapshot, _SnapshotCommitTime, _MinSnapshotTime, [], _TxId, LastOpCt, NewSS, _Count) ->
     {ok, Snapshot, LastOpCt, NewSS};
 
-materialize_intern(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, [Op|Rest], TxId, LastOpCt, NewSS) ->
+materialize_intern(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, [Op|Rest], TxId, LastOpCt, NewSS,Count) ->
     Result = case Type == Op#clocksi_payload.type of
 		 true ->
 		     OpCom=Op#clocksi_payload.commit_time,
@@ -98,10 +98,10 @@ materialize_intern(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, [Op|Rest
 	{error, Reason1} ->
 	    {error,Reason1};
 	{ok, NewSnapshot1, NewLastOpCt, false, NewSS1} ->
-	    materialize_intern(Type,NewSnapshot1,SnapshotCommitTime,MinSnapshotTime,Rest,TxId,NewLastOpCt,NewSS1);
+	    materialize_intern(Type,NewSnapshot1,SnapshotCommitTime,MinSnapshotTime,Rest,TxId,NewLastOpCt,NewSS1,Count+1);
 	{ok, NewSnapshot1, NewLastOpCt, true, NewSS1} ->
 	    %% can skip the rest of the ops because they are already included in the SS
-	    materialize_intern(Type,NewSnapshot1,SnapshotCommitTime,MinSnapshotTime,[],TxId,NewLastOpCt,NewSS1)
+	    materialize_intern(Type,NewSnapshot1,SnapshotCommitTime,MinSnapshotTime,[],TxId,NewLastOpCt,NewSS1,Count+1)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
@@ -220,7 +220,7 @@ materializer_clocksi_concurrent_test() ->
     {ok, PNCounter2, CommitTime2, _Keep} = materialize_intern(crdt_pncounter,
                                       PNCounter, ignore,
                                       vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore, ignore, false),
+                                      Ops, ignore, ignore, false,0),
     ?assertEqual({4, vectorclock:from_list([{1,2},{2,2}])}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     
     Snapshot=new(crdt_pncounter),
@@ -243,7 +243,7 @@ materializer_clocksi_noop_test() ->
     Ops = [],
     {ok, PNCounter2, ignore, _SsSave} = materialize_intern(crdt_pncounter, PNCounter, ignore,
 						    vectorclock:from_list([{1,1}]),
-						    Ops, ignore, ignore, false),
+						    Ops, ignore, ignore, false,0),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
 
 materializer_eager_clocksi_test()->

@@ -386,6 +386,7 @@ get_snapshot_time() ->
             SnapshotTime = dict:update(DcId,
                                        fun (_Old) -> Now end,
                                        Now, VecSnapshotTime),
+
             {ok, SnapshotTime};
         {error, Reason} ->
             {error, Reason}
