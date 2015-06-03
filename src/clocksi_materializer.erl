@@ -150,7 +150,7 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
 										       false ->
 											   Val
 										   end
-									   end,PrevTime3),
+									   end,0,PrevTime3),
 						 {Res1,Res2}
 					 end, {true,PrevTime2}, OpSSCommit),
 	    case Result of

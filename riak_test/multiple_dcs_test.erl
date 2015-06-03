@@ -6,6 +6,10 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
+%% This should be the same as in antidote.hrl
+-define(OLD_SS_MICROSEC,3000 * 2).
+
+
 confirm() ->
     % Must be a power of 2, minimum 8 and maximum 1024.
     rt:update_app_config(all,[
@@ -23,6 +27,9 @@ confirm() ->
     rt:wait_until_registered(HeadCluster1, inter_dc_manager),
     rt:wait_until_registered(HeadCluster2, inter_dc_manager),
     rt:wait_until_registered(HeadCluster3, inter_dc_manager),
+
+    %% Sleep 30 seconds to be sure that all the ets tables and server processes are ready
+    timer:sleep(30000),
 
     {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, start_receiver,[8092]),
@@ -44,17 +51,18 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     Node3 = hd(Cluster3),
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl}]),
+                            [key1, riak_dt_gcounter, {increment, ucl1}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl}]),
+                            [key1, riak_dt_gcounter, {increment, ucl2}]),
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl}]),
+                            [key1, riak_dt_gcounter, {increment, ucl3}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     ReadResult = rpc:call(Node1, antidote, read,
                           [key1, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, ReadResult),
@@ -76,14 +84,14 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     WriteResult4= rpc:call(Node2,
                            antidote, clocksi_bulk_update,
                            [ CommitTime,
-                             [{update, key1, riak_dt_gcounter, {increment, ucl}}]]),
+                             [{update, key1, riak_dt_gcounter, {increment, ucl4}}]]),
     ?assertMatch({ok, _}, WriteResult4),
     {ok,{_,_,CommitTime2}}=WriteResult4,
     lager:info("Done append in Node2"),
     WriteResult5= rpc:call(Node3,
                            antidote, clocksi_bulk_update,
                            [CommitTime2,
-                            [{update, key1, riak_dt_gcounter, {increment, ucl}}]]),
+                            [{update, key1, riak_dt_gcounter, {increment, ucl5}}]]),
     ?assertMatch({ok, _}, WriteResult5),
     {ok,{_,_,CommitTime3}}=WriteResult5,
     lager:info("Done append in Node3"),
@@ -162,23 +170,23 @@ parallel_writes_test(Cluster1, Cluster2, Cluster3) ->
 multiple_writes(Node, Key, Actor, ReplyTo) ->
     WriteResult1 = rpc:call(Node,
                             antidote, append,
-                            [Key, riak_dt_gcounter, {increment, Actor}]),
+                            [Key, riak_dt_gcounter, {increment, list_to_atom(atom_to_list(Actor) ++ atom_to_list(ucl6))}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node,
                             antidote, append,
-                            [Key, riak_dt_gcounter, {increment, Actor}]),
+                            [Key, riak_dt_gcounter, {increment, list_to_atom(atom_to_list(Actor) ++ atom_to_list(ucl7))}]),
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node,
                             antidote, append,
-                            [Key, riak_dt_gcounter, {increment, Actor}]),
+                            [Key, riak_dt_gcounter, {increment, list_to_atom(atom_to_list(Actor) ++ atom_to_list(ucl8))}]),
     ?assertMatch({ok, _}, WriteResult3),
     WriteResult4 = rpc:call(Node,
                             antidote, append,
-                            [Key, riak_dt_gcounter, {increment, Actor}]),
+                            [Key, riak_dt_gcounter, {increment, list_to_atom(atom_to_list(Actor) ++ atom_to_list(ucl9))}]),
     ?assertMatch({ok, _}, WriteResult4),
     WriteResult5 = rpc:call(Node,
                             antidote, append,
-                            [Key, riak_dt_gcounter, {increment, Actor}]),
+                            [Key, riak_dt_gcounter, {increment, list_to_atom(atom_to_list(Actor) ++ atom_to_list(ucl10))}]),
     ?assertMatch({ok, _}, WriteResult5),
     {ok,{_,_,CommitTime}}=WriteResult5,
     ReplyTo ! {ok, CommitTime}.
@@ -192,7 +200,7 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
     Node3 = hd(Cluster3),
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [ftkey1, riak_dt_gcounter, {increment, ucl}]),
+                            [ftkey1, riak_dt_gcounter, {increment, ucl11}]),
     ?assertMatch({ok, _}, WriteResult1),
 
     %% Simulate failure of NODE3 by stoping the receiver
@@ -200,15 +208,16 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
 
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [ftkey1, riak_dt_gcounter, {increment, ucl}]),
+                            [ftkey1, riak_dt_gcounter, {increment, ucl12}]),
     ?assertMatch({ok, _}, WriteResult2),
     %% Induce some delay
+    timer:sleep(?OLD_SS_MICROSEC div 1000),
     rpc:call(Node3, antidote, read,
              [ftkey1, riak_dt_gcounter]),
 
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [ftkey1, riak_dt_gcounter, {increment, ucl}]),
+                            [ftkey1, riak_dt_gcounter, {increment, ucl13}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
     ReadResult = rpc:call(Node1, antidote, read,

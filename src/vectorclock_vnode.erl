@@ -32,6 +32,7 @@
 -export([start_vnode/1]).
 
 -export([init/1,
+	 get_stable_snapshot/0,
          terminate/2,
          handle_command/3,
          is_empty/1,
@@ -48,6 +49,7 @@
 -ignore_xref([start_vnode/1]).
 
 -define(META_PREFIX, {partition,vectorclock}).
+-define(META_PREFIX_SS, {partition_ss,vectorclock}).
 
 -record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
                       partition_vectorclock :: vectorclock:vectorclock(),
@@ -69,6 +71,10 @@ init([Partition]) ->
                        partition = Partition,
                        num_p=0}}.
 
+
+get_stable_snapshot() ->
+    riak_core_metadata:get(?META_PREFIX_SS,1,[{default,dict:new()}]).
+
 %% @doc
 handle_command(get_clock, _Sender,
                #currentclock{partition_vectorclock=Clock} = State) ->
@@ -84,7 +90,6 @@ handle_command(calculate_stable_snapshot, _Sender,
                State=#currentclock{partition_vectorclock = Clock,
                                    num_p=NumP}) ->
     %% Calculate stable_snapshot from minimum of vectorclock of all partitions
-    lager:info("in calc stable ss"),
     NumPartitions = case NumP of
                         0 ->
                             {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -105,6 +110,14 @@ handle_command(calculate_stable_snapshot, _Sender,
             false ->
                 dict:new()
         end,
+    try
+	%% Not sure this is the best way to do it because everyone will be putting to the same key
+	%% which might cause conlifcts, but they are resloved anyway on read
+	riak_core_metadata:put(?META_PREFIX_SS, 1, Stable_snapshot)
+    catch
+	_:Reason ->
+	    lager:error("Exception caught ~p! ",[Reason])
+    end,
     {noreply, State#currentclock{
       stable_snapshot=Stable_snapshot, num_p = NumPartitions}};
 
@@ -117,7 +130,6 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                              partition_vectorclock=VClock,
                              partition=Partition
                             } = State) ->
-    lager:info("in update clock"),
     case dict:find(DcId, LastClock) of
         {ok, LClock} ->
             case LClock < Timestamp of

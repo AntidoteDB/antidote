@@ -40,10 +40,10 @@
          stop_error/2
         ]).
 
--record(state, {port, host, socket,message, caller}). % the current socket
+-record(state, {port, host, socket,message, caller, reason}). % the current socket
 
--define(TIMEOUT,20000).
--define(CONNECT_TIMEOUT,5000).
+-define(TIMEOUT,40000).
+-define(CONNECT_TIMEOUT,20000).
 
 %% ===================================================================
 %% Public API
@@ -65,15 +65,21 @@ propagate_sync(Message, DCs) ->
                                        lager:error(
                                          "Send failed Reason:~p Message: ~p",
                                          [Other, Message]),
-                                       Acc ++ [{DcAddress,Port}]
-                                       %%TODO: Retry if needed
-                               after ?TIMEOUT ->
-                                       lager:error(
-                                         "Send failed timeout Message ~p"
-                                         ,[Message]),
                                        Acc ++ [{DcId, {DcAddress,Port}}]
+
+				       %% This seems to be done strangely
+				       %% The sender should be started by a supervisor right?
+				       %% Then you wouldnt wait for this because it would always
+				       %% tell you if it was successful or not
+				       %% and if the sender crashed the supervisor would restart it
                                        %%TODO: Retry if needed
-                               end;
+				       %% after ?TIMEOUT ->
+				       %%         lager:error(
+				       %%           "Send failed timeout Message ~p"
+				       %%           ,[Message]),
+				       %%         Acc ++ [{DcId, {DcAddress,Port}}]
+				       %%         %%TODO: Retry if needed
+			       end;
                            _ ->
                                Acc ++ [{DcId, {DcAddress,Port}}]
                        end
@@ -116,15 +122,16 @@ connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
             {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
         {error, Reason} ->
             lager:error("Couldnot connect to remote DC: ~p", [Reason]),
-            {next_state, stop_error, State}
+            {stop, normal, State#state{reason=Reason}}
     end.
 
 wait_for_ack(acknowledge, State)->
-    {next_state, stop, State,0};
+    {next_state, stop, State#state{reason=normal},0};
 
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
-    {next_state,stop_error,State,0}.
+    lager:error("Timeout in wait for ACK",[]),
+    {next_state,stop_error,State#state{reason=timeout},0}.
 
 stop(timeout, State=#state{socket=Socket}) ->
     _ = gen_tcp:close(Socket),
@@ -132,7 +139,7 @@ stop(timeout, State=#state{socket=Socket}) ->
 
 stop_error(timeout, State=#state{socket=Socket}) ->
     _ = gen_tcp:close(Socket),
-    {stop, error, State}.
+    {stop, normal, State}.
 
 %% Converts incoming tcp message to an fsm event to self
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
@@ -156,6 +163,6 @@ handle_sync_event(_Event, _From, _StateName, StateData) ->
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(Reason, _SN, _State = #state{caller = Caller}) ->
-    Caller ! {done, Reason},
+terminate(_Reason, _SN, _State = #state{caller = Caller, reason=Res}) ->
+    Caller ! {done, Res},
     ok.

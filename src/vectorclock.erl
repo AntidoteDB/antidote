@@ -83,7 +83,13 @@ get_stable_snapshot() ->
     %%         lager:error("Exception caught: ~p", [Reason]),
     %%         {error, Reason}
     %% end.
-    {ok,dict:new()}.
+
+    %% This is just a way to get a random partition, should probably do this differently
+    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+    %% to riak core meta-data) otherwise will have to change this
+    %%Preflist = log_utilities:get_preflist_from_key(random:uniform(100)),
+    %%IndexNode = hd(Preflist),
+    {ok,vectorclock_vnode:get_stable_snapshot()}.
     
 
 -spec update_clock(Partition :: non_neg_integer(),

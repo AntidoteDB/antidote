@@ -107,7 +107,7 @@ stop_read_servers_internal(Node,Partition, Num) ->
 
 
 generate_server_name(Node, Partition, Id) ->
-    list_to_atom(integer_to_list(Id) ++ "rs" ++ integer_to_list(Partition) ++ atom_to_list(Node)).
+    list_to_atom(integer_to_list(Id) ++ integer_to_list(Partition) ++ atom_to_list(Node)).
 
 generate_random_server_name(Node, Partition) ->
     generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
@@ -139,8 +139,9 @@ perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,Snapshot
     case check_clock(Key,Transaction,PreparedCache) of
 	not_ready ->
 	    lager:info("performing cast!!!!~n",[]),
-	    %%gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
-	    perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self);
+	    timer:sleep(?SPIN_WAIT),
+	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
+	    %%perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self);
 	ready ->
 	    return(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache)
     end.
@@ -160,17 +161,6 @@ check_clock(Key,Transaction,PreparedCache) ->
             %% timer:sleep((T_TS - Time) div 1000 +1 );
 	    not_ready;
         false ->
-	    waiting1(Key,Transaction,PreparedCache)
-    end.
-
-waiting1(Key,Transaction,PreparedCache) ->
-    LocalClock = clocksi_vnode:now_microsec(erlang:now()),
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
-    case LocalClock > SnapshotTime of
-        false ->
-	    not_ready;
-        true ->
 	    check_prepared(Key,Transaction,PreparedCache)
     end.
 

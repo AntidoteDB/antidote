@@ -94,6 +94,9 @@ init([From, ClientClock]) ->
 
 -spec create_transaction_record(snapshot_time()) -> {txid(),tx()}.
 create_transaction_record(ClientClock) ->
+    %% Seed the random because you pick a random read server, this is stored in the process state
+    {A1,A2,A3} = now(),
+    random:seed(A1, A2, A3),
     {ok, SnapshotTime} = case ClientClock of
 			     ignore ->
 				 get_snapshot_time();
@@ -101,9 +104,6 @@ create_transaction_record(ClientClock) ->
 				 get_snapshot_time(ClientClock)
 			 end,
     DcId = dc_utilities:get_my_dc_id(),
-    %% Seed the random because you pick a random read server, this is stored in the process state
-    {A1,A2,A3} = now(),
-    random:seed(A1, A2, A3),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
@@ -397,6 +397,9 @@ get_snapshot_time() ->
 wait_for_clock(Clock) ->
    case get_snapshot_time() of
        {ok, VecSnapshotTime} ->
+	   %% dict:fold(fun(Dc,Time,_Acc) ->
+	   %% 		     lager:info("Dc ~w, time ~w~n", [Dc,Time])
+	   %% 	     end, 0, VecSnapshotTime),
            case vectorclock:ge(VecSnapshotTime, Clock) of
                true ->
                    %% No need to wait
