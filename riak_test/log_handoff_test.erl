@@ -40,6 +40,9 @@ confirm() ->
     [RootNode | TestNodes] = rt:deploy_nodes(Versions,[logging]),
     rt:wait_for_service(RootNode, logging),
 
+    %% Sleeping to setup ets tables, maybe a better way to do this?
+    timer:sleep(30000),
+
     lager:info("Populating root node."),
     multiple_writes(RootNode, 1, NTestItems, ucl),
 
@@ -70,6 +73,9 @@ test_handoff(RootNode, NewNode, NTestItems) ->
     rt:join(NewNode, RootNode),
     ?assertEqual(ok, rt:wait_until_nodes_ready([RootNode, NewNode])),
     rt:wait_until_no_pending_changes([RootNode, NewNode]),
+
+    %% Sleeping to setup ets tables, maybe a better way to do this?
+    timer:sleep(30000),
 
     %% See if we get the same data back from the joined node that we
     %% added to the root node.  Note: systest_read() returns
