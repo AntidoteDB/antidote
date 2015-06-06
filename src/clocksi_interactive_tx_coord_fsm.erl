@@ -225,6 +225,8 @@ abort(abort, SD0=#state{transaction=Transaction,
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
+reply_to_client(abort, SD) ->
+    reply_to_client(timeout, SD);
 reply_to_client(timeout, SD=#state{from=From, transaction=Transaction, state=TxState, commit_time=CommitTime}) ->
     case undefined =/= From of
         true ->
