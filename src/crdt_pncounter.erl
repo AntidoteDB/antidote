@@ -148,7 +148,7 @@ equal({Inc1, Dec1}, {Inc2, Dec2}) ->
             false
     end.
 
--include("../deps/riak_dt/include/riak_dt_tags.hrl").
+-include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(TAG, ?DT_PNCOUNTER_TAG).
 -define(V1_VERS, 1).
 -define(V2_VERS, 2).

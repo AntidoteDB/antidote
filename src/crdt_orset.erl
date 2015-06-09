@@ -171,7 +171,7 @@ stat(element_count, ORSet) ->
     orddict:size(ORSet);
 stat(_, _) -> undefined.
 
--include("../deps/riak_dt/include/riak_dt_tags.hrl").
+-include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(TAG, ?DT_ORSET_TAG).
 -define(V1_VERS, 1).
 
