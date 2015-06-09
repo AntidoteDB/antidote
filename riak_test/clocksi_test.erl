@@ -33,7 +33,7 @@ confirm() ->
     [Nodes] = rt:build_clusters([3]),
 
     %% Sleeping to setup ets tables, maybe a better way to do this?
-    timer:sleep(30000),
+    timer:sleep(60000),
     lager:info("Nodes: ~p", [Nodes]),
     clocksi_test1(Nodes),
     clocksi_test2(Nodes),

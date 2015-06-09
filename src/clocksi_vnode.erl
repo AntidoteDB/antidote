@@ -73,8 +73,17 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Sends a read request to the Node that is responsible for the Key
-read_data_item(Node, TxId, Key, Type, WriteSet) ->
-    clocksi_readitem_fsm:read_data_item(Node,Key,Type,TxId,WriteSet).
+read_data_item(Node, TxId, Key, Type, Updates) ->
+    case clocksi_readitem_fsm:read_data_item(Node,Key,Type,TxId) of
+        {ok, Snapshot} ->
+	    Updates2=filter_updates_per_key(Updates, Key),
+	    Snapshot2=clocksi_materializer:materialize_eager
+			(Type, Snapshot, Updates2),
+	    {ok, Snapshot2};
+	Other ->
+	    Other
+    end.
+
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
@@ -446,3 +455,34 @@ write_set_to_logrecord(TxId, WriteSet) ->
 			Acc ++ [#log_record{tx_id=TxId, op_type=update,
 					    op_payload={Key, Type, Op}}]
 		end,[],WriteSet).
+
+
+%% Internal functions
+filter_updates_per_key(Updates, Key) ->
+    FilterMapFun = fun ({KeyPrime, _Type, Op}) ->
+        case KeyPrime == Key of
+            true  -> {true, Op};
+            false -> false
+        end
+    end,
+    lists:filtermap(FilterMapFun, Updates).
+
+
+-ifdef(TEST).
+
+%% @doc Testing filter_updates_per_key.
+filter_updates_per_key_test()->
+    Op1 = {update, {{increment,1}, actor1}},
+    Op2 = {update, {{increment,2}, actor1}},
+    Op3 = {update, {{increment,3}, actor1}},
+    Op4 = {update, {{increment,4}, actor1}},
+
+    ClockSIOp1 = {a, crdt_pncounter, Op1},
+    ClockSIOp2 = {b, crdt_pncounter, Op2},
+    ClockSIOp3 = {c, crdt_pncounter, Op3},
+    ClockSIOp4 = {a, crdt_pncounter, Op4},
+
+    ?assertEqual([Op1, Op4], 
+        filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
+
+-endif.

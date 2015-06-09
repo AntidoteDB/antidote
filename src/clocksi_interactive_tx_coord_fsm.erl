@@ -116,7 +116,7 @@ perform_singleitem_read(Key,Type) ->
     {Transaction,_TransactionId} = create_transaction_record(ignore),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, []) of
+    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
 	error ->
 	    {error, unknown};
 	{error, Reason} ->
@@ -153,7 +153,7 @@ execute_op({Op_type, Args}, Sender,
 			   {IndexNode, WS} ->
 			       WS
 		       end,
-            case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, WriteSet) of
+            case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
                 error ->
                     {reply, {error, unknown}, abort, SD0, 0};
                 {error, Reason} ->

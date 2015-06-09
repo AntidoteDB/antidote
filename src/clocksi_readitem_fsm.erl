@@ -41,7 +41,7 @@
          terminate/2]).
 
 %% States
--export([read_data_item/5,
+-export([read_data_item/4,
 	 start_read_servers/1,
 	 stop_read_servers/1]).
 
@@ -71,10 +71,10 @@ stop_read_servers(Partition) ->
     stop_read_servers_internal(Addr, Partition, ?READ_CONCURRENCY).
 
 
-read_data_item({Partition,Node},Key,Type,Transaction,Updates) ->
+read_data_item({Partition,Node},Key,Type,Transaction) ->
     try
 	gen_server:call({global,generate_random_server_name(Node,Partition)},
-			{perform_read,Key,Type,Transaction,Updates})
+			{perform_read,Key,Type,Transaction})
     catch
         _:Reason ->
             lager:error("Exception caught: ~p", [Reason]),
@@ -122,27 +122,36 @@ init([Partition, Id]) ->
 		snapshot_cache=SnapshotCache,
 		prepared_cache=PreparedCache,self=Self}}.
 
-handle_call({perform_read, Key, Type, Transaction, Updates},Coordinator,
+handle_call({perform_read, Key, Type, Transaction},Coordinator,
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
-    perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self),
+    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
-handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, Updates},
+handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
-    perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self),
+    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
     {noreply,SD0}.
 
-perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self) ->
+perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self) ->
     case check_clock(Key,Transaction,PreparedCache) of
 	not_ready ->
-	    timer:sleep(?SPIN_WAIT),
-	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
-	    %%perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self);
+	    spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+	    %%perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	ready ->
-	    return(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache)
+	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache)
+    end.
+
+spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self) ->
+    {message_queue_len,Length} = process_info(self(), message_queue_len),
+    case Length of
+	0 ->
+	    timer:sleep(?SPIN_WAIT),
+	    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+	_ ->
+	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction})
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -155,7 +164,6 @@ check_clock(Key,Transaction,PreparedCache) ->
     Time = clocksi_vnode:now_microsec(erlang:now()),
     case T_TS > Time of
         true ->
-	    lager:info("should sleep!!!!!!!~n",[]),
 	    %% dont sleep in case there is another read waiting
             %% timer:sleep((T_TS - Time) div 1000 +1 );
 	    not_ready;
@@ -178,25 +186,22 @@ check_prepared(Key,Transaction,PreparedCache) ->
 
 check_prepared_list(_Key,_SnapshotTime,[]) ->
     ready;
-check_prepared_list(_Key,SnapshotTime,[{_TxId,Time}|_Rest]) ->
+check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
     case Time =< SnapshotTime of
 	true ->
 	    not_ready;
 	false ->
-	    ready
+	    check_prepared_list(Key,SnapshotTime,Rest)
     end.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
-return(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache) ->
+return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache) of
         {ok, Snapshot} ->
-            Updates2=filter_updates_per_key(Updates, Key),
-            Snapshot2=clocksi_materializer:materialize_eager
-                        (Type, Snapshot, Updates2),
-            Reply={ok, Snapshot2};
+            Reply={ok, Snapshot};
         {error, Reason} ->
             Reply={error, Reason}
     end,
@@ -216,32 +221,3 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, _SD) ->
     ok.
 
-%% Internal functions
-filter_updates_per_key(Updates, Key) ->
-    FilterMapFun = fun ({KeyPrime, _Type, Op}) ->
-        case KeyPrime == Key of
-            true  -> {true, Op};
-            false -> false
-        end
-    end,
-    lists:filtermap(FilterMapFun, Updates).
-
-
--ifdef(TEST).
-
-%% @doc Testing filter_updates_per_key.
-filter_updates_per_key_test()->
-    Op1 = {update, {{increment,1}, actor1}},
-    Op2 = {update, {{increment,2}, actor1}},
-    Op3 = {update, {{increment,3}, actor1}},
-    Op4 = {update, {{increment,4}, actor1}},
-
-    ClockSIOp1 = {a, crdt_pncounter, Op1},
-    ClockSIOp2 = {b, crdt_pncounter, Op2},
-    ClockSIOp3 = {c, crdt_pncounter, Op3},
-    ClockSIOp4 = {a, crdt_pncounter, Op4},
-
-    ?assertEqual([Op1, Op4], 
-        filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
-
--endif.
