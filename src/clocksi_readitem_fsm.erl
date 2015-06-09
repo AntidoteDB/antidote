@@ -138,7 +138,6 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, Updates},
 perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self) ->
     case check_clock(Key,Transaction,PreparedCache) of
 	not_ready ->
-	    lager:info("performing cast!!!!~n",[]),
 	    timer:sleep(?SPIN_WAIT),
 	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction,Updates});
 	    %%perform_read_internal(Coordinator,Key,Type,Transaction,Updates,OpsCache,SnapshotCache,PreparedCache,Self);
