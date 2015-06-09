@@ -27,6 +27,9 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+%% Helper macro for declaring children of supervisor
+-define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+
 %% ===================================================================
 %% API functions
 %% ===================================================================
@@ -106,6 +109,8 @@ init(_Args) ->
                         {inter_dc_manager, start_link, []},
                         permanent, 5000, worker, [inter_dc_manager]},
 
+    ZMQContextManager = ?CHILD(zmq_context, worker),
+
     {ok,
      {{one_for_one, 5, 10},
       [LoggingMaster,
@@ -118,4 +123,5 @@ init(_Args) ->
        InterDcManager,
        VectorClockMaster,
        InterDcSenderSup,
-       MaterializerMaster]}}.
+       MaterializerMaster,
+       ZMQContextManager]}}.
