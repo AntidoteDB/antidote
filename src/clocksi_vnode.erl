@@ -36,6 +36,7 @@
          handle_command/3,
          is_empty/1,
          delete/1,
+	 check_tables_ready/0,
          handle_handoff_command/3,
          handoff_starting/2,
          handoff_cancelled/1,
@@ -138,6 +139,30 @@ init([Partition]) ->
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
                 active_txs_per_key=ActiveTxsPerKey}}.
+
+
+
+check_tables_ready() ->
+    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
+    PartitionList = chashbin:to_list(CHBin),
+    check_table_ready(PartitionList).
+
+
+check_table_ready([]) ->
+    true;
+check_table_ready([{Partition,_Node}|Rest]) ->
+    Result = case ets:info(get_cache_name(Partition,prepared)) of
+		 undefined ->
+		     false;
+		 _ ->
+		     true
+	     end,
+    case Result of
+	true ->
+	    check_table_ready(Rest);
+	false ->
+	    false
+    end.
 
 
 open_table(Partition) ->

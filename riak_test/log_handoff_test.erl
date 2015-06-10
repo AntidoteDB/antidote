@@ -40,8 +40,10 @@ confirm() ->
     [RootNode | TestNodes] = rt:deploy_nodes(Versions,[logging]),
     rt:wait_for_service(RootNode, logging),
 
-    %% Sleeping to setup ets tables, maybe a better way to do this?
-    timer:sleep(30000),
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(RootNode,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     lager:info("Populating root node."),
     multiple_writes(RootNode, 1, NTestItems, ucl),

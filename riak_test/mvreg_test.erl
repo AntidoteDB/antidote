@@ -33,6 +33,13 @@ confirm() ->
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
 
+    lager:info("Waiting until vnodes are started up"),
+    lists:foreach(fun(Node) ->
+			  rt:wait_until(Node, fun wait_init:check_ready/1)
+		  end, Nodes),
+    lager:info("Vnodes are started up"),
+
+
     F = fun(Elem) ->
             Node = lists:nth(Elem, Nodes),
             lager:info("Sending asign to Node ~w~n",[Node]),

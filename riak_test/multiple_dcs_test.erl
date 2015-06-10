@@ -28,8 +28,11 @@ confirm() ->
     rt:wait_until_registered(HeadCluster2, inter_dc_manager),
     rt:wait_until_registered(HeadCluster3, inter_dc_manager),
 
-    %% Sleep 30 seconds to be sure that all the ets tables and server processes are ready
-    timer:sleep(30000),
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(HeadCluster1,fun wait_init:check_ready/1),
+    rt:wait_until(HeadCluster2,fun wait_init:check_ready/1),
+    rt:wait_until(HeadCluster3,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, start_receiver,[8092]),

@@ -31,9 +31,13 @@
 
 confirm() ->
     [Nodes] = rt:build_clusters([3]),
+    lager:info("Waiting for ring to converge."),
+    rt:wait_until_ring_converged(Nodes),
 
-    %% Sleeping to setup ets tables, maybe a better way to do this?
-    timer:sleep(60000),
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
+
     lager:info("Nodes: ~p", [Nodes]),
     clocksi_test1(Nodes),
     clocksi_test2(Nodes),

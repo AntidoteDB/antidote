@@ -34,6 +34,10 @@ confirm() ->
     Node = hd(Nodes),
     rt:wait_for_service(Node, antidote),
 
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(Node,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
+
     rt:log_to_nodes(Nodes, "Starting write operation 1"),
 
     WriteResult = rpc:call(Node,

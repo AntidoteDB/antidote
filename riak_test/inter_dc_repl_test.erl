@@ -22,9 +22,6 @@ confirm() ->
     rt:wait_until_registered(Node1, inter_dc_manager),
     rt:wait_until_registered(Node2, inter_dc_manager),
     
-    %% Sleeping to setup ets tables, maybe a better way to do this?
-    timer:sleep(30000),
-
     {ok, DC1} = rpc:call(Node1, inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, start_receiver,[8092]),
 
@@ -32,6 +29,11 @@ confirm() ->
 
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(Node1,fun wait_init:check_ready/1),
+    rt:wait_until(Node2,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     ok = rpc:call(Node1, inter_dc_manager, add_dc,[DC2]),
     ok = rpc:call(Node2, inter_dc_manager, add_dc,[DC1]),

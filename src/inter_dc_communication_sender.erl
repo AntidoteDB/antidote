@@ -42,7 +42,6 @@
 
 -record(state, {port, host, socket,message, caller, reason}). % the current socket
 
--define(TIMEOUT,40000).
 -define(CONNECT_TIMEOUT,20000).
 
 %% ===================================================================
@@ -55,8 +54,8 @@
 propagate_sync(Message, DCs) ->
     FailedDCs = lists:foldl(
                fun({DcId, {DcAddress, Port}}, Acc) ->
-                       case inter_dc_communication_sender:start_link(
-                              Port, DcAddress, Message, self()) of
+                       case inter_dc_communication_sender_fsm_sup:start_fsm(
+                              [Port, DcAddress, Message, self()]) of
                            {ok, _} ->
                                receive
                                    {done, normal} ->
@@ -66,25 +65,12 @@ propagate_sync(Message, DCs) ->
                                          "Send failed Reason:~p Message: ~p",
                                          [Other, Message]),
                                        Acc ++ [{DcId, {DcAddress,Port}}]
-
-				       %% This seems to be done strangely
-				       %% The sender should be started by a supervisor right?
-				       %% Then you wouldnt wait for this because it would always
-				       %% tell you if it was successful or not
-				       %% and if the sender crashed the supervisor would restart it
-                                       %%TODO: Retry if needed
-				       %% after ?TIMEOUT ->
-				       %%         lager:error(
-				       %%           "Send failed timeout Message ~p"
-				       %%           ,[Message]),
-				       %%         Acc ++ [{DcId, {DcAddress,Port}}]
-				       %%         %%TODO: Retry if needed
 			       end;
                            _ ->
                                Acc ++ [{DcId, {DcAddress,Port}}]
                        end
                end, [],
-               DCs),
+		  DCs),
     case length(FailedDCs) of
         0 ->
             ok;

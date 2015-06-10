@@ -36,6 +36,7 @@
 	 handle_cast/2,
          code_change/3,
          handle_event/3,
+	 check_servers_ready/0,
          handle_info/2,
          handle_sync_event/4,
          terminate/2]).
@@ -81,6 +82,31 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
             {error, Reason}
     end.
 
+
+check_servers_ready() ->
+    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
+    PartitionList = chashbin:to_list(CHBin),
+    check_server_ready(PartitionList).
+
+check_server_ready([]) ->
+    true;
+check_server_ready([{Partition,Node}|Rest]) ->
+    case check_partition_ready(Node,Partition,?READ_CONCURRENCY) of
+	false ->
+	    false;
+	true ->
+	    check_server_ready(Rest)
+    end.
+
+check_partition_ready(_Node,_Partition,0) ->
+    true;
+check_partition_ready(Node,Partition,Num) ->
+    case global:whereis_name(generate_server_name(Node,Partition,Num)) of
+	undfined ->
+	    false;
+	_ ->
+	    check_partition_ready(Node,Partition,Num-1)
+    end.
 
 
 

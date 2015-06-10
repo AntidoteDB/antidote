@@ -32,6 +32,11 @@ confirm() ->
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
 
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
+
+
     %% Identify preference list for a given key.
     Preflist = rpc:call(N, log_utilities, get_preflist_from_key, [key1]),
     lager:info("Preference list: ~p", [Preflist]),

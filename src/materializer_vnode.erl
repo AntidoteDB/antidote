@@ -35,6 +35,7 @@
 
 %% API
 -export([start_vnode/1,
+	 check_tables_ready/0,
          read/6,
 	 get_cache_name/2,
 	 store_ss/3,
@@ -93,6 +94,36 @@ init([Partition]) ->
     OpsCache = ets:new(get_cache_name(Partition,ops_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
     SnapshotCache = ets:new(get_cache_name(Partition,snapshot_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
     {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+
+
+check_tables_ready() ->
+    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
+    PartitionList = chashbin:to_list(CHBin),
+    check_table_ready(PartitionList).
+
+
+check_table_ready([]) ->
+    true;
+check_table_ready([{Partition,_Node}|Rest]) ->
+    Result = case ets:info(get_cache_name(Partition,ops_cache)) of
+		 undefined ->
+		     false;
+		 _ ->
+		     case ets:info(get_cache_name(Partition,snapshot_cache)) of
+			 undefined ->
+			     false;
+			 _ ->
+			     true
+		     end
+	     end,
+    case Result of
+	true ->
+	    check_table_ready(Rest);
+	false ->
+	    false
+    end.
+
+
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
