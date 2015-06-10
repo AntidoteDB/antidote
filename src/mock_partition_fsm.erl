@@ -67,7 +67,7 @@ start_link() ->
 init([]) ->
     {ok, execute_op, #state{}}.
 
-%% Functions that always behave the same no matte the input.
+%% Functions that always return the same value no matte the input.
 get_my_dc_id() ->
     mock_dc.
 
@@ -87,7 +87,7 @@ abort(_UpdatedPartitions, _Transactions) ->
 commit(_UpdatedPartitions, _Transaction, _CommitTime) ->
     ok.
 
-%% Functions that will return different value depending on key.
+%% Functions that will return different value depending on Key.
 read_data_item(_IndexNode, _Transaction, Key, _Type) ->
     case Key of 
         read_fail ->
@@ -111,8 +111,10 @@ prepare(UpdatedPartitions, _Transaction) ->
     Self = self(),
     lists:foreach(fun(Fsm) -> gen_fsm:send_event(Fsm, {prepare, Self}) end, UpdatedPartitions).
 
-%% We spawn a new mock_partition_fsm for each update/read request, therefore
-%% a mock fsm can only have one key.
+%% We spawn a new mock_partition_fsm for each update request, therefore
+%% a mock fsm will only receive a single update so only need to store a 
+%% single updated key. In contrast, clocksi_vnode may receive multiple
+%% update request for a single transaction.
 execute_op({update_data_item, Key}, _From, State) ->
     Result = case Key of 
                 fail_update ->
