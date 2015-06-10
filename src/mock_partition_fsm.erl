@@ -75,7 +75,7 @@ get_clock_of_dc(_DcId, _SnapshotTime) ->
     {ok, 0}.
 
 get_preflist_from_key(_Key) ->
-    {ok, Pid} = mock_fsm_tester:start_link(),
+    {ok, Pid} = mock_partition_fsm:start_link(),
     [Pid].
 
 get_stable_snapshot() ->
