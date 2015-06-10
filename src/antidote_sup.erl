@@ -110,6 +110,7 @@ init(_Args) ->
                         permanent, 5000, worker, [inter_dc_manager]},
 
     ZMQContextManager = ?CHILD(zmq_context, worker),
+    ZMQPublisher = ?CHILD(pubsub_sender, worker),
 
     {ok,
      {{one_for_one, 5, 10},
@@ -124,4 +125,5 @@ init(_Args) ->
        VectorClockMaster,
        InterDcSenderSup,
        MaterializerMaster,
-       ZMQContextManager]}}.
+       ZMQContextManager,
+       ZMQPublisher]}}.
