@@ -29,11 +29,28 @@
 
 -include("antidote.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-define(DC_UTIL, mock_partition_fsm).
+-define(VECTORCLOCK, mock_partition_fsm).
+-define(LOG_UTIL, mock_partition_fsm).
+-define(CLOCKSI_VNODE, mock_partition_fsm).
+-define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
+-else.
+-define(DC_UTIL, dc_utilities).
+-define(VECTORCLOCK, vectorclock).
+-define(LOG_UTIL, log_utilities).
+-define(CLOCKSI_VNODE, clocksi_vnode).
+-define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
+-endif.
+
+
 %% API
 -export([start_link/2, start_link/1]).
 
 %% Callbacks
 -export([init/1,
+         stop/1,
          code_change/4,
          handle_event/3,
          handle_info/3,
@@ -47,8 +64,7 @@
          receive_prepared/2,
          committing/3,
          receive_committed/2,
-         abort/2,
-         reply_to_client/2]).
+         abort/2]).
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
@@ -84,6 +100,8 @@ start_link(From) ->
 finish_op(From, Key,Result) ->
     gen_fsm:send_event(From, {Key, Result}).
 
+stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid,stop).
+
 %%%===================================================================
 %%% States
 %%%===================================================================
@@ -96,8 +114,8 @@ init([From, ClientClock]) ->
         _ ->
             get_snapshot_time(ClientClock)
     end,
-    DcId = dc_utilities:get_my_dc_id(),
-    {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
+    DcId = ?DC_UTIL:get_my_dc_id(),
+    {ok, LocalClock} = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
                                vec_snapshot_time=SnapshotTime,
@@ -116,9 +134,9 @@ execute_op({OpType, Args}, Sender,
             {next_state, prepare, SD0#state{from=Sender}, 0};
         read ->
             {Key, Type} = Args,
-            Preflist = log_utilities:get_preflist_from_key(Key),
+            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
-            case clocksi_vnode:read_data_item(IndexNode, Transaction,
+            case ?CLOCKSI_VNODE:read_data_item(IndexNode, Transaction,
                                               Key, Type) of
                 {error, Reason} ->
                     {reply, {error, Reason}, abort, SD0, 0};
@@ -128,11 +146,11 @@ execute_op({OpType, Args}, Sender,
             end;
         update ->
             {Key, Type, Param} = Args,
-            Preflist = log_utilities:get_preflist_from_key(Key),
+            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
-            case clocksi_downstream:generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param) of
                 {ok, DownstreamRecord} ->
-                    case clocksi_vnode:update_data_item(IndexNode, Transaction, Key, Type, DownstreamRecord) of
+                    case ?CLOCKSI_VNODE:update_data_item(IndexNode, Transaction, Key, Type, DownstreamRecord) of
                         ok ->
                             case lists:member(IndexNode, UpdatedPartitions) of
                                 false ->
@@ -159,7 +177,7 @@ prepare(timeout, SD0=#state{transaction=Transaction, updated_partitions=UpdatedP
             gen_fsm:reply(From, {ok, SnapshotTime}),
             {next_state, committing, SD0#state{state=committing, commit_time=SnapshotTime}};
         _->
-            clocksi_vnode:prepare(UpdatedPartitions, Transaction),
+            ?CLOCKSI_VNODE:prepare(UpdatedPartitions, Transaction),
             NumToAck = length(UpdatedPartitions),
             {next_state, receive_prepared, SD0#state{num_to_ack=NumToAck, state=prepared}}
     end.
@@ -192,9 +210,9 @@ committing(commit, Sender, SD0=#state{transaction=Transaction,
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
-            {next_state, reply_to_client, SD0#state{state=committed, from=Sender}, 0};
+            reply_to_client(SD0#state{state=committed, from=Sender});
         _ ->
-            clocksi_vnode:commit(UpdatedPartitions, Transaction, CommitTime),
+            ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
             {next_state, receive_committed, SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
     end.
 
@@ -206,7 +224,7 @@ committing(commit, Sender, SD0=#state{transaction=Transaction,
 receive_committed(committed, S0=#state{num_to_ack=NumToAck}) ->
     case NumToAck of
         1 ->
-            {next_state, reply_to_client, S0#state{state=committed}, 0};
+            reply_to_client(S0#state{state=committed});
         _ ->
             {next_state, receive_committed, S0#state{num_to_ack=NumToAck-1}}
     end.
@@ -215,24 +233,29 @@ receive_committed(committed, S0=#state{num_to_ack=NumToAck}) ->
 %%      does not pass the certification check, the transaction aborts.
 abort(timeout, SD0=#state{transaction=Transaction,
                           updated_partitions=UpdatedPartitions}) ->
-    clocksi_vnode:abort(UpdatedPartitions, Transaction),
-    {next_state, reply_to_client, SD0#state{state=aborted},0};
+    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
+    reply_to_client(SD0#state{state=aborted});
 
 abort(abort, SD0=#state{transaction=Transaction,
                         updated_partitions=UpdatedPartitions}) ->
-    clocksi_vnode:abort(UpdatedPartitions, Transaction),
-    {next_state, reply_to_client, SD0#state{state=aborted},0}.
+    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
+    reply_to_client(SD0#state{state=aborted});
+
+abort({prepared, _}, SD0=#state{transaction=Transaction,
+                        updated_partitions=UpdatedPartitions}) ->
+    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
+    reply_to_client(SD0#state{state=aborted}).
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(timeout, SD=#state{from=From, transaction=Transaction, state=TxState, commit_time=CommitTime}) ->
+reply_to_client(SD=#state{from=From, transaction=Transaction, state=TxState, commit_time=CommitTime}) ->
     case undefined =/= From of
         true ->
             TxId = Transaction#transaction.txn_id,
             Reply = case TxState of
                 committed ->
-                    DcId = dc_utilities:get_my_dc_id(),
-                    CausalClock = vectorclock:set_clock_of_dc(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                    DcId = ?DC_UTIL:get_my_dc_id(),
+                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                     {ok, {TxId, CausalClock}};
                 aborted ->
                     {aborted, TxId};
@@ -252,6 +275,9 @@ handle_info(_Info, _StateName, StateData) ->
 
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.
+
+handle_sync_event(stop,_From,_StateName, StateData) ->
+    {stop,normal,ok, StateData};
 
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -277,9 +303,9 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, snapshot_time()} | {error, reason()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
-    case vectorclock:get_stable_snapshot() of
+    case ?VECTORCLOCK:get_stable_snapshot() of
         {ok, VecSnapshotTime} ->
-            DcId = dc_utilities:get_my_dc_id(),
+            DcId = ?DC_UTIL:get_my_dc_id(),
             SnapshotTime = dict:update(DcId,
                                        fun (_Old) -> Now end,
                                        Now, VecSnapshotTime),
@@ -305,3 +331,88 @@ wait_for_clock(Clock) ->
        {error, Reason} ->
           {error, Reason}
   end.
+
+
+-ifdef(TEST).
+
+main_test_() ->
+    {foreach,
+     fun setup/0,
+     fun cleanup/1,
+     [
+      fun empty_prepare_test/1,
+      fun timeout_test/1,
+      fun update_single_abort_test/1,
+      fun update_single_success_test/1,
+      fun update_multi_abort_test1/1,
+      fun update_multi_abort_test2/1,
+      fun update_multi_success_test/1,
+
+      fun read_single_fail_test/1,
+      fun downstream_fail_test/1
+     ]}.
+
+% Setup and Cleanup
+setup()      -> {ok,Pid} = clocksi_interactive_tx_coord_fsm:start_link(self(), ignore), Pid. 
+cleanup(Pid) -> case process_info(Pid) of undefined -> io:format("Already cleaned");
+                                           _ -> clocksi_interactive_tx_coord_fsm:stop(Pid) end.
+
+empty_prepare_test(Pid) ->
+    fun() ->
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
+timeout_test(Pid) ->
+    fun() ->
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {timeout, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
+update_single_abort_test(Pid) ->
+    fun() ->
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
+update_single_success_test(Pid) ->
+    fun() ->
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
+update_multi_abort_test1(Pid) ->
+    fun() ->
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
+update_multi_abort_test2(Pid) ->
+    fun() ->
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
+update_multi_success_test(Pid) ->
+    fun() ->
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
+read_single_fail_test(Pid) ->
+    fun() ->
+            ?assertEqual({error, mock_read_fail}, 
+                    gen_fsm:sync_send_event(Pid, {read, {read_fail, nothing}}, infinity))
+    end.
+
+downstream_fail_test(Pid) ->
+    fun() ->
+            ?assertEqual({error, mock_downstream_fail}, 
+                    gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
+    end.
+
+-endif.
