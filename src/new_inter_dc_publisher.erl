@@ -17,37 +17,52 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(pubsub_sender).
+-module(new_inter_dc_publisher).
 -behaviour(gen_server).
+-include("antidote.hrl").
 
--export([start_link/1, broadcast/1, start_link/0]).
+-export([start_link/1, start_link/0, broadcast/1, get_address/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE).
--record(state, {socket}).
+-record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
 
 start_link() ->
-  Ctx = zmq_context:get(),
-  {ok, Socket} = erlzmq:socket(Ctx, pub),
-  {ok, Port} = application:get_env(antidote, pubsub_port),
-  ConnectionString = lists:flatten(io_lib:format("tcp://~s:~p", ["*", Port])),
-  lager:info("Publisher starting on port ~p", [Port]),
-  ok = erlzmq:bind(Socket, ConnectionString),
-  start_link(Socket).
+  {ok, Port} = application:get_env(antidote, pubsub_port), %% default port number provided in app.config
+  start_link(Port).
 
-start_link(Socket) -> gen_server:start_link({local, ?SERVER}, ?MODULE, [Socket], []).
+start_link(Port) ->
+  gen_server:start_link({local, ?MODULE}, ?MODULE, [Port], []).
 
-init([Socket]) -> {ok, #state{socket = Socket}}.
+init([Port]) ->
+  Socket = create_socket(Port),
+  lager:info("Publisher started on port ~p", [Port]),
+  {ok, #state{socket = Socket, port = Port}}.
 
 handle_call({publish, Message}, _From, State) ->
   Status = erlzmq:send(State#state.socket, Message),
-  {reply, Status, State}.
+  {reply, Status, State};
+
+handle_call(get_port, _From, State) ->
+  {reply, State#state.port, State}.
 
 terminate(_Reason, State) -> erlzmq:close(State#state.socket).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-broadcast(Message) -> gen_server:call(?SERVER, {publish, term_to_binary(Message)}).
+broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
 
+-spec get_address() -> dc_address().
+get_address() ->
+  %% TODO check if we do not return a link-local address
+  {ok, List} = inet:getif(),
+  {Ip, _, _} = hd(List),
+  Port = gen_server:call(?MODULE, get_port),
+  {Ip, Port}.
 
+create_socket(Port) ->
+  Ctx = zmq_context:get(),
+  {ok, Socket} = erlzmq:socket(Ctx, pub),
+  ConnectionString = lists:flatten(io_lib:format("tcp://~s:~p", ["*", Port])),
+  ok = erlzmq:bind(Socket, ConnectionString),
+  Socket.

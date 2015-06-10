@@ -28,7 +28,7 @@
 -export([init/1]).
 
 %% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+-define(CHILD(I, Type, Args), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
 
 %% ===================================================================
 %% API functions
@@ -109,21 +109,30 @@ init(_Args) ->
                         {inter_dc_manager, start_link, []},
                         permanent, 5000, worker, [inter_dc_manager]},
 
-    ZMQContextManager = ?CHILD(zmq_context, worker),
-    ZMQPublisher = ?CHILD(pubsub_sender, worker),
+  ZMQContextManager = ?CHILD(zmq_context, worker),
+  ZMQPublisher = ?CHILD(pubsub_sender, worker),
+  ZMQContextManager = ?CHILD(zmq_context, worker, []),
+  InterDcPublisher = ?CHILD(new_inter_dc_publisher, worker, []),
+  InterDcSubscriber = ?CHILD(new_inter_dc_subscriber, worker, []),
 
-    {ok,
-     {{one_for_one, 5, 10},
-      [LoggingMaster,
-       ClockSIMaster,
-       ClockSIsTxCoordSup,
-       ClockSIiTxCoordSup,
-       ClockSIReadSup,
-       InterDcRepMaster,
-       InterDcRecvrMaster,
-       InterDcManager,
-       VectorClockMaster,
-       InterDcSenderSup,
-       MaterializerMaster,
-       ZMQContextManager,
-       ZMQPublisher]}}.
+  {ok,
+    {{one_for_one, 5, 10},
+      [
+        LoggingMaster,
+        ClockSIMaster,
+        ClockSIsTxCoordSup,
+        ClockSIiTxCoordSup,
+        ClockSIReadSup,
+        InterDcRepMaster,
+        InterDcRecvrMaster,
+        InterDcManager,
+        VectorClockMaster,
+        MaterializerMaster,
+        ZMQContextManager,
+        InterDcPublisher,
+        InterDcSubscriber,
+        InterDcSenderSup,
+        ZMQPublisher
+      ]
+    }
+  }.
