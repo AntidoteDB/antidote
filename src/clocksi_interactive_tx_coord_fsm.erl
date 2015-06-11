@@ -258,9 +258,7 @@ reply_to_client(SD=#state{from=From, transaction=Transaction, state=TxState, com
                     CausalClock = ?VECTORCLOCK:set_clock_of_dc(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                     {ok, {TxId, CausalClock}};
                 aborted ->
-                    {aborted, TxId};
-                Reason ->
-                    {TxId, Reason}
+                    {aborted, TxId}
             end,
             gen_fsm:reply(From, Reply);
         false ->
@@ -350,7 +348,11 @@ main_test_() ->
       fun update_multi_success_test/1,
 
       fun read_single_fail_test/1,
-      fun downstream_fail_test/1
+      fun read_success_test/1,
+
+      fun downstream_fail_test/1,
+      fun get_snapshot_time_test/0,
+      fun wait_for_clock_test/0
      ]}.
 
 % Setup and Cleanup
@@ -410,10 +412,34 @@ read_single_fail_test(Pid) ->
                     gen_fsm:sync_send_event(Pid, {read, {read_fail, nothing}}, infinity))
     end.
 
+read_success_test(Pid) ->
+    fun() ->
+            ?assertEqual({ok, 2}, 
+                    gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity)),
+            ?assertEqual({ok, [a]}, 
+                    gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
+            ?assertEqual({ok, mock_value}, 
+                    gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+    end.
+
 downstream_fail_test(Pid) ->
     fun() ->
             ?assertEqual({error, mock_downstream_fail}, 
                     gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
+
+
+get_snapshot_time_test() ->
+    {ok, SnapshotTime} = get_snapshot_time(),
+    ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime)).
+
+wait_for_clock_test() ->
+    {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc,10}])),
+    ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime)),
+    VecClock = clocksi_vnode:now_microsec(now()),
+    {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
+    ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime2)).
+
 
 -endif.

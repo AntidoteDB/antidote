@@ -48,6 +48,7 @@
         generate_downstream_op/5,
         update_data_item/5,
         prepare/2,
+        value/1,
         abort/2,
         commit/3,
         get_stable_snapshot/0
@@ -67,9 +68,12 @@ start_link() ->
 init([]) ->
     {ok, execute_op, #state{}}.
 
-%% Functions that always return the same value no matte the input.
+%% Functions that always return the same value no matter the input.
 get_my_dc_id() ->
     mock_dc.
+
+value(_) ->
+    mock_value.
 
 get_clock_of_dc(_DcId, _SnapshotTime) ->
     {ok, 0}.
@@ -92,6 +96,15 @@ read_data_item(_IndexNode, _Transaction, Key, _Type) ->
     case Key of 
         read_fail ->
             {error, mock_read_fail};
+        counter ->
+            Counter = riak_dt_gcounter:new(),
+            {ok, Counter1} = riak_dt_gcounter:update(increment, haha, Counter),
+            {ok, Counter2} = riak_dt_gcounter:update(increment, nono, Counter1),
+            {ok, Counter2};
+        set ->
+            Set = riak_dt_gset:new(),
+            {ok, Set1} = riak_dt_gset:update({add, a}, haha, Set),
+            {ok, Set1}; 
         _ ->
             {ok, mock_value}
     end.
