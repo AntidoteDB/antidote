@@ -67,28 +67,8 @@ get_clock(Partition) ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
 get_stable_snapshot() ->
-    %% Ask a random vnode for current stable snapshot time
-    %% Node = node(),
-    %% Preflist = riak_core_apl:active_owners(vectorclock),
-    %% Prefnode = [{Partition, Node1} ||
-    %%                {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
-    %% %% Take a random vnode
-    %% Index = random:uniform(length(Prefnode)),
-    %% Indexnode = lists:nth(Index, Prefnode),
-    %% try
-    %%     riak_core_vnode_master:sync_command(
-    %%       Indexnode, get_stable_snapshot, vectorclock_vnode_master)
-    %% catch
-    %%     _:Reason ->
-    %%         lager:error("Exception caught: ~p", [Reason]),
-    %%         {error, Reason}
-    %% end.
-
-    %% This is just a way to get a random partition, should probably do this differently
     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
     %% to riak core meta-data) otherwise will have to change this
-    %%Preflist = log_utilities:get_preflist_from_key(random:uniform(100)),
-    %%IndexNode = hd(Preflist),
     {ok,vectorclock_vnode:get_stable_snapshot()}.
     
 

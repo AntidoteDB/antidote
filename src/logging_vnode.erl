@@ -218,16 +218,6 @@ handle_command({append, LogId, Payload}, _Sender,
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
                 {ok, OpId} ->
-                    %% case dict:find(LogId, SendersAwaitingAck0) of
-                    %%     error ->
-                    %%         Me = self(),
-                    %%        %Me ! {sync, Log, LogId},
-                    %%         ok;
-                    %%     _ ->
-                    %%         ok
-                    %% end,
-                    %SendersAwaitingAck = dict:append(LogId, {Sender, OpId}, SendersAwaitingAck0),
-                    %{noreply, State#state{senders_awaiting_ack=SendersAwaitingAck, clock=NewClock}};
                     {reply, {ok, OpId}, State#state{clock=NewClock}};
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
@@ -249,14 +239,6 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
 							  {ok, Log} ->
 							      case insert_operation(Log, LogId, OpId, Payload) of
 								  {ok, OpId} ->
-								      %% case dict:find(LogId, SendersAwaitingAck0) of
-								      %%     error ->
-								      %% 	Me = self(),
-								      %% 	Me ! {sync, Log, LogId},
-								      %% 	{AccErr, AccSucc ++ [OpId], NewNewClock};
-								      %%     _ ->
-								      %% 	{AccErr, AccSucc ++ [OpId], NewNewClock}
-								      %% end;
 								      {AccErr, AccSucc ++ [OpId], NewNewClock};
 								  {error, Reason} ->
 								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
@@ -269,8 +251,6 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
 	[] ->
 	    [SuccId|_T] = SuccList,
 	    {NewC, _Node} = lists:last(SuccList),
-	    %% SendersAwaitingAck = dict:append(LogId, {Sender, SuccId}, SendersAwaitingAck0),
-	    %% {noreply, State#state{senders_awaiting_ack=SendersAwaitingAck, clock=NewC}};
 	    {reply, {ok, SuccId}, State#state{clock=NewC}};
 	[Error|_T] ->
 	    %%Error

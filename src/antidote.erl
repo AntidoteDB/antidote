@@ -56,12 +56,6 @@ append(Key, Type, {OpParam, Actor}) ->
 -spec read(Key::key(), Type::type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
     clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type).
-    %% case clocksi_read(Key, Type) of
-    %%     {ok,{_, [Val], _}} ->
-    %%         {ok, Val};
-    %%     {error, Reason} ->
-    %%         {error, Reason}
-    %% end.
 
 %% Clock SI API
 

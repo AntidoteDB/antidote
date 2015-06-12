@@ -125,28 +125,3 @@ last({List,_Size}) ->
 filter(Fun,{List,_Size}) ->
     Result = lists:filter(Fun,List),
     {Result,length(List)}.
-
-
-%% ordered_filter(Fun,{[First|Rest],Size}) ->
-%%     ordered_filter_internal(Fun,List,[],Size,0,Fun(First)).
-
-%% ordered_filter_internal(_Fun,[],Prev,_Size,PrevSize,Check) ->
-%%     case Check of
-%% 	true ->
-%% 	    {Prev,PrevSize};
-%% 	false ->
-%% 	    {[],0}
-%%     end;
-	
-%% ordered_filter_internal(Fun,[First|Rest],Prev,Size,PrevSize,Check) ->
-%%     case Fun(First) of
-%% 	Check ->
-%% 	    ordered_filter_internal(Fun,Rest,Prev++First,Size-1,PrevSize+1,Check);
-%% 	_ ->
-%% 	    case Check of
-%% 		true ->
-%% 		    {Prev,PrevSize};
-%% 		false ->
-%% 		    {[First|Rest],Size}
-%% 	    end
-%%     end.
