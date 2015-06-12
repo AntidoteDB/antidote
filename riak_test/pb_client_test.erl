@@ -30,6 +30,9 @@
 -define(PORT, 10017).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Nodes] = rt:build_clusters([1]),
 
     lager:info("Waiting for ring to converge."),

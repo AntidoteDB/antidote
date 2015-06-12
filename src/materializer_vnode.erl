@@ -83,7 +83,7 @@ update(Key, DownstreamOp) ->
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
 
--spec store_ss(key(), snapshot_time(), commit_time()) -> ok | {error, reason()}.
+-spec store_ss(key(), snapshot(), snapshot_time()) -> ok.
 store_ss(Key, Snapshot, CommitTime) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -104,7 +104,19 @@ check_tables_ready() ->
 
 check_table_ready([]) ->
     true;
-check_table_ready([{Partition,_Node}|Rest]) ->
+check_table_ready([{Partition,Node}|Rest]) ->
+    Result = riak_core_vnode_master:sync_command({Partition,Node},
+						 {check_ready},
+						 materializer_vnode_master,
+						 infinity),
+    case Result of
+	true ->
+	    check_table_ready(Rest);
+	false ->
+	    false
+    end.
+
+handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
     Result = case ets:info(get_cache_name(Partition,ops_cache)) of
 		 undefined ->
 		     false;
@@ -116,14 +128,7 @@ check_table_ready([{Partition,_Node}|Rest]) ->
 			     true
 		     end
 	     end,
-    case Result of
-	true ->
-	    check_table_ready(Rest);
-	false ->
-	    false
-    end.
-
-
+    {reply, Result, State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
@@ -192,7 +197,7 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_store_ss(key(), snapshot_time(), commit_time(), cache_id(), cache_id()) -> true.
+-spec internal_store_ss(key(), snapshot(), snapshot_time(), cache_id(), cache_id()) -> true.
 internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
@@ -233,10 +238,10 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 			    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
 			    %% for the given snapshot_time
 			    %% But is the snapshot not safe?
-			    case (CommitTime==ignore) of 
-				true->
+			    case CommitTime of 
+				ignore ->
 				    {ok, Snapshot};
-				false->
+				_ ->
 				    case NewSS and IsFirst of
 					%% Only store the snapshot if it would be at the end of the list and has new operations added to the
 					%% previous snapshot
@@ -270,7 +275,7 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
--spec snapshot_insert_gc(key(), orddict:orddict(),
+-spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
                          cache_id(),cache_id() ) -> true.
 snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
     %% Should check op size here also, when run from op gc
@@ -288,9 +293,9 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
 		      end,
             PrunedOps=prune_ops(OpsDict, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-            ets:insert(OpsCache, {Key, PrunedOps});
+            true = ets:insert(OpsCache, {Key, PrunedOps});
         false ->
-            ets:insert(SnapshotCache, {Key, SnapshotDict})
+            true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.

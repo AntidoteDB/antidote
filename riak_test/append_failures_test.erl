@@ -26,6 +26,9 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Nodes] = rt:build_clusters([6]),
     N = hd(Nodes),
 

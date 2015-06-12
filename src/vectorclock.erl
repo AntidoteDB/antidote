@@ -65,7 +65,7 @@ get_clock(Partition) ->
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
--spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()} | {error, term()}.
+-spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
 get_stable_snapshot() ->
     %% Ask a random vnode for current stable snapshot time
     %% Node = node(),

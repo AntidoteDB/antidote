@@ -6,8 +6,6 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
-%% This should be the same as in antidote.hrl
--define(OLD_SS_MICROSEC,3000 * 2).
 
 confirm() ->
     % Must be a power of 2, minimum 8 and maximum 1024.
@@ -60,7 +58,6 @@ simple_replication_test(Cluster1, Cluster2) ->
                             [key1, riak_dt_gcounter, {increment, ucl3}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result = rpc:call(Node1, antidote, read,
                       [key1, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, Result),
@@ -143,7 +140,6 @@ causality_test(Cluster1, Cluster2) ->
                              [{update, Key, riak_dt_orset, {{remove, first}, act3}}]]),
     ?assertMatch({ok, _}, RemoveResult),
     %% Read result
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result = rpc:call(Node2, antidote, read,
                       [Key, riak_dt_orset]),
     ?assertMatch({ok, [second]}, Result),
@@ -197,7 +193,6 @@ atomic_write_txn(Node, Key1, Key2, Key3) ->
     ?assertMatch({ok, _}, Result).
 
 atomic_read_txn(Node, Key1, Key2, Key3) ->
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Type = riak_dt_gcounter,
     {ok,TxId} = rpc:call(Node, antidote, clocksi_istart_tx, []),
     {ok, R1} = rpc:call(Node, antidote, clocksi_iread,

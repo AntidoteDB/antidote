@@ -26,6 +26,9 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     NTestItems    = 10,
     NTestNodes    = 3,
 
@@ -75,9 +78,11 @@ test_handoff(RootNode, NewNode, NTestItems) ->
     rt:join(NewNode, RootNode),
     ?assertEqual(ok, rt:wait_until_nodes_ready([RootNode, NewNode])),
     rt:wait_until_no_pending_changes([RootNode, NewNode]),
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(RootNode,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
-    %% Sleeping to setup ets tables, maybe a better way to do this?
-    timer:sleep(30000),
+
 
     %% See if we get the same data back from the joined node that we
     %% added to the root node.  Note: systest_read() returns

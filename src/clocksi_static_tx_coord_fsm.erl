@@ -85,7 +85,7 @@ init([From, ClientClock, Operations]) ->
     after
         10000 ->
             lager:error("Tx was not started!"),
-            gen_fsm:reply(From, {error, timeout}),
+            _Res = gen_fsm:reply(From, {error, timeout}),
             {stop, normal, #state{}}
     end.
 

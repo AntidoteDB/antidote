@@ -6,9 +6,6 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
-%% This should be the same as in antidote.hrl
--define(OLD_SS_MICROSEC,3000 * 2).
-
 
 confirm() ->
     % Must be a power of 2, minimum 8 and maximum 1024.
@@ -65,7 +62,6 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
                             [key1, riak_dt_gcounter, {increment, ucl3}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     ReadResult = rpc:call(Node1, antidote, read,
                           [key1, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, ReadResult),
@@ -214,7 +210,6 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
                             [ftkey1, riak_dt_gcounter, {increment, ucl12}]),
     ?assertMatch({ok, _}, WriteResult2),
     %% Induce some delay
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     rpc:call(Node3, antidote, read,
              [ftkey1, riak_dt_gcounter]),
 

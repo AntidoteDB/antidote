@@ -34,8 +34,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_fsm(Args) ->
-    {A1,A2,A3} = now(),
-    random:seed(A1, A2, A3),
+    _Res = random:seed(now()),
     Random = random:uniform(?NUM_SUP),
     Module = generate_module_name(Random),
     supervisor:start_child(Module, Args).

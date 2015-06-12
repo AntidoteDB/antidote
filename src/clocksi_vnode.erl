@@ -93,7 +93,7 @@ prepare(ListofNodes, TxId) ->
 						       {prepare, TxId,WriteSet},
 						       {fsm, undefined, self()},
 						       ?CLOCKSI_MASTER)
-		end, 0, ListofNodes).
+		end, ok, ListofNodes).
 
 
 %% @doc Sends prepare+commit to a single partition
@@ -112,7 +112,7 @@ commit(ListofNodes, TxId, CommitTime) ->
 						       {commit, TxId, CommitTime, WriteSet},
 						       {fsm, undefined, self()},
 						       ?CLOCKSI_MASTER)
-		end, 0, ListofNodes).
+		end, ok, ListofNodes).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
@@ -121,7 +121,7 @@ abort(ListofNodes, TxId) ->
 						       {abort, TxId, WriteSet},
 						       {fsm, undefined, self()},
 						       ?CLOCKSI_MASTER)
-		end, 0, ListofNodes).
+		end, ok, ListofNodes).
 
 
 get_cache_name(Partition,Base) ->
@@ -150,13 +150,11 @@ check_tables_ready() ->
 
 check_table_ready([]) ->
     true;
-check_table_ready([{Partition,_Node}|Rest]) ->
-    Result = case ets:info(get_cache_name(Partition,prepared)) of
-		 undefined ->
-		     false;
-		 _ ->
-		     true
-	     end,
+check_table_ready([{Partition,Node}|Rest]) ->
+    Result = riak_core_vnode_master:sync_command({Partition,Node},
+						 {check_tables_ready},
+						 ?CLOCKSI_MASTER,
+						 infinity),
     case Result of
 	true ->
 	    check_table_ready(Rest);
@@ -175,6 +173,19 @@ open_table(Partition) ->
 	    open_table(Partition)
     end.
 
+handle_command({check_tables_ready},_Sender,SD0=#state{partition=Partition}) ->
+    Result = case ets:info(get_cache_name(Partition,prepared)) of
+		 undefined ->
+		     false;
+		 _ ->
+		     true
+	     end,
+    {reply, Result, SD0};
+    
+handle_command({check_servers_ready},_Sender,SD0=#state{partition=Partition}) ->
+    Node = node(),
+    Result = clocksi_readitem_fsm:check_partition_ready(Node,Partition,?READ_CONCURRENCY),
+    {reply, Result, SD0};
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
                State = #state{partition=_Partition,
@@ -253,9 +264,9 @@ handle_command({abort, Transaction, Updates}, _Sender,
             Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
             case Result of
                 {ok, _} ->
-                    clean_and_notify(TxId, Key, State);
+                    clean_and_notify(TxId, Updates, State);
                 {error, timeout} ->
-                    clean_and_notify(TxId, Key, State)
+                    clean_and_notify(TxId, Updates, State)
             end,
             {reply, ack_abort, State};
         _ ->
@@ -324,7 +335,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
                 [{Key, Type, {Op, Actor}} | Rest] -> 
 		    PrepList = set_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,PrepareTime,[]),
 		    NewPrepare = now_microsec(erlang:now()),
-		    reset_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,NewPrepare,PrepList),
+		    ok = reset_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,NewPrepare,PrepList),
 		    LogRecord = #log_record{tx_id=TxId,
 					    op_type=prepare,
 					    op_payload=NewPrepare},
@@ -335,9 +346,9 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 		    {Result, NewPrepare};
 		_ ->
 		    {error, no_updates}
-	    end;
-	false ->
-	    {error, write_conflict}
+	    end
+	    %% false ->
+	    %%     {error, write_conflict}
     end.
 
 
@@ -357,7 +368,7 @@ reset_prepared(_PreparedTx,[],_TxId,_Time,[]) ->
     ok;
 reset_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,[ActiveTxs|Rest2]) ->
     true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}),
-    set_prepared(PreparedTx,Rest,TxId,Time,Rest2).
+    reset_prepared(PreparedTx,Rest,TxId,Time,Rest2).
 
 
 commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
@@ -375,7 +386,7 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
                 {ok, _} ->
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
-                            clean_and_notify(TxId,Updates,State),
+                            ok = clean_and_notify(TxId,Updates,State),
                             {ok, committed};
                         error ->
                             {error, materializer_failure}
@@ -450,7 +461,7 @@ certification_check(_TxId, _H, _CommittedTx, _ActiveTxPerKey) ->
 %%             check_keylog(TxId, T, CommittedTx)
 %%     end.
 
--spec update_materializer(DownstreamOps :: [{term(),key(),type(),op()}],
+-spec update_materializer(DownstreamOps :: [{key(),type(),op()}],
                           Transaction::tx(),TxCommitTime:: {term(), term()}) ->
                                  ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->

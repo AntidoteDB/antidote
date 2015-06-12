@@ -114,7 +114,7 @@ materialize_intern(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, [Op|Rest
 %% SnapshotCommitTime time is the snapshot that already exists, so if this op
 %% is already in the snapshot, should not include it
 -spec is_op_in_snapshot(txid(), clocksi_payload(), commit_time(), snapshot_time(), snapshot_time(),
-			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time}.
+			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
 is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????

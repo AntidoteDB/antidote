@@ -26,10 +26,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
-%% This should be the same as in antidote.hrl
--define(OLD_SS_MICROSEC,3000 * 2).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Nodes] = rt:build_clusters([3]),
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
@@ -89,7 +90,6 @@ clocksi_test1(Nodes) ->
     ?assertMatch([0,1], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{read, key1, Type},
@@ -99,14 +99,12 @@ clocksi_test1(Nodes) ->
     ?assertEqual([1,1], ReadSet3),
 
     %% Multiple updates to a key in a transaction works
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{update, key1, Type, {increment, a}},
                       {update, key1, Type, {increment, a}}]]),
     ?assertMatch({ok,_}, Result5),
 
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     Result6=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{read, key1, Type}]]),
@@ -321,7 +319,6 @@ clocksi_tx_noclock_test(Nodes) ->
     ?assertMatch({ok, _}, CommitTime),
     End=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
     ?assertMatch({ok, _}, End),
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     ReadResult1 = rpc:call(FirstNode, antidote, clocksi_read,
                            [Key, riak_dt_pncounter]),
     {ok, {_, ReadSet1, _}}= ReadResult1,
@@ -331,7 +328,6 @@ clocksi_tx_noclock_test(Nodes) ->
     WriteResult1 = rpc:call(FirstNode, antidote, clocksi_bulk_update,
                             [[{update, Key, Type, {increment, a}}]]),
     ?assertMatch({ok, _}, WriteResult1),
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     ReadResult2= rpc:call(FirstNode, antidote, clocksi_read,
                           [Key, riak_dt_pncounter]),
     {ok, {_, ReadSet2, _}}=ReadResult2,
@@ -475,7 +471,6 @@ clocksi_test_read_wait(Nodes) ->
     {ok, CommitTime}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
     lager:info("Tx1 sent prepare, got commitTime=..., id : ~p", [CommitTime]),
     %% start a different tx and try to read key read_wait_test.
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     {ok,TxId1}=rpc:call(LastNode, antidote, clocksi_istart_tx,
                         []),
     lager:info("Tx2 Started, id : ~p", [TxId1]),
@@ -528,12 +523,10 @@ clocksi_multiple_read_update_test(Nodes) ->
 %% @doc Test updating prior to a read.
 read_update_test(Node, Key) ->
     Type = riak_dt_pncounter,
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     {ok,Result1} = rpc:call(Node, antidote, read,
                        [Key, Type]),
     {ok,_} = rpc:call(Node, antidote, clocksi_bulk_update,
                       [[{update, Key, Type, {increment,a}}]]),
-    timer:sleep(?OLD_SS_MICROSEC div 1000),
     {ok,Result2} = rpc:call(Node, antidote, read,
                        [Key, Type]),
     ?assertEqual(Result1+1,Result2),
@@ -567,7 +560,6 @@ clocksi_concurrency_test(Nodes) ->
     {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId1]),
      receive
          ok ->
-	     timer:sleep(?OLD_SS_MICROSEC div 1000),
              Result= rpc:call(Node,
                               antidote, read, [Key, riak_dt_gcounter]),
              ?assertEqual({ok, 2}, Result),

@@ -92,11 +92,10 @@ init([From, ClientClock]) ->
     From ! {ok, TransactionId},
     {ok, execute_op, SD}.
 
--spec create_transaction_record(snapshot_time()) -> {txid(),tx()}.
+-spec create_transaction_record(snapshot_time() | ignore) -> {tx(),txid()}.
 create_transaction_record(ClientClock) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
-    {A1,A2,A3} = now(),
-    random:seed(A1, A2, A3),
+    _Res = random:seed(now()),
     {ok, SnapshotTime} = case ClientClock of
 			     ignore ->
 				 get_snapshot_time();
@@ -203,11 +202,11 @@ prepare(timeout, SD0=#state{
             {next_state, committing,
             SD0#state{state=committing, commit_time=Snapshot_time}, 0};
         1-> 
-            clocksi_vnode:single_commit(Updated_partitions, Transaction),
+            ok = clocksi_vnode:single_commit(Updated_partitions, Transaction),
             {next_state, single_committing,
             SD0#state{state=committing, num_to_ack=1}};
         _->
-            clocksi_vnode:prepare(Updated_partitions, Transaction),
+            ok = clocksi_vnode:prepare(Updated_partitions, Transaction),
             Num_to_ack=length(Updated_partitions),
             {next_state, receive_prepared,
             SD0#state{num_to_ack=Num_to_ack, state=prepared}}
@@ -220,11 +219,11 @@ prepare_2pc(timeout, SD0=#state{
     case length(Updated_partitions) of
         0->
             Snapshot_time=Transaction#transaction.snapshot_time,
-            gen_fsm:reply(From, {ok, Snapshot_time}),
+            _Res = gen_fsm:reply(From, {ok, Snapshot_time}),
             {next_state, committing_2pc,
             SD0#state{state=committing, commit_time=Snapshot_time}};
         _->
-            clocksi_vnode:prepare(Updated_partitions, Transaction),
+            ok = clocksi_vnode:prepare(Updated_partitions, Transaction),
             Num_to_ack=length(Updated_partitions),
             {next_state, receive_prepared,
             SD0#state{num_to_ack=Num_to_ack, state=prepared}}
@@ -241,7 +240,7 @@ receive_prepared({prepared, ReceivedPrepareTime},
     case NumToAck of 1 ->
             case CommitProtocol of
             two_phase ->
-                gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                _Res = gen_fsm:reply(From, {ok, MaxPrepareTime}),
                 {next_state, committing_2pc,
                 S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}};
             _ ->
@@ -276,7 +275,7 @@ committing_2pc(commit, Sender, SD0=#state{transaction = Transaction,
             {next_state, reply_to_client,
              SD0#state{state=committed, from=Sender},0};
         _ ->
-            clocksi_vnode:commit(Updated_partitions, Transaction, Commit_time),
+            ok = clocksi_vnode:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
              SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
     end.
@@ -294,7 +293,7 @@ committing(timeout, SD0=#state{transaction = Transaction,
             {next_state, reply_to_client,
              SD0#state{state=committed},0};
         _ ->
-            clocksi_vnode:commit(Updated_partitions, Transaction, Commit_time),
+            ok = clocksi_vnode:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
              SD0#state{num_to_ack=NumToAck, state=committing}}
     end.
@@ -318,12 +317,12 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
 %% does not pass the certification check, the transaction aborts.
 abort(timeout, SD0=#state{transaction = Transaction,
                           updated_partitions=UpdatedPartitions}) ->
-    clocksi_vnode:abort(UpdatedPartitions, Transaction),
+    ok = clocksi_vnode:abort(UpdatedPartitions, Transaction),
     {next_state, reply_to_client, SD0#state{state=aborted},0};
 
 abort(abort, SD0=#state{transaction = Transaction,
                         updated_partitions=UpdatedPartitions}) ->
-    clocksi_vnode:abort(UpdatedPartitions, Transaction),
+    ok = clocksi_vnode:abort(UpdatedPartitions, Transaction),
     {next_state, reply_to_client, SD0#state{state=aborted},0}.
 
 %% @doc when the transaction has committed or aborted,
@@ -331,20 +330,21 @@ abort(abort, SD0=#state{transaction = Transaction,
 reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
                                    state=TxState, commit_time=CommitTime}) ->
     if undefined =/= From ->
-        TxId = Transaction#transaction.txn_id,
-        Reply = case TxState of
-            committed ->
-                DcId = dc_utilities:get_my_dc_id(),
-                CausalClock = vectorclock:set_clock_of_dc(
-                  DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
-                {ok, {TxId, CausalClock}};
-            aborted->
-                {aborted, TxId};
-            Reason->
-                {TxId, Reason}
-        end,
-        gen_fsm:reply(From,Reply);
-      true -> ok
+	    TxId = Transaction#transaction.txn_id,
+	    Reply = case TxState of
+			committed ->
+			    DcId = dc_utilities:get_my_dc_id(),
+			    CausalClock = vectorclock:set_clock_of_dc(
+					    DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+			    {ok, {TxId, CausalClock}};
+			aborted->
+			    {aborted, TxId};
+			Reason->
+			    {TxId, Reason}
+		    end,
+	    Res = gen_fsm:reply(From,Reply),
+	    lager:info("Result: ~w~n",[Res]);
+       true -> ok
     end,
     {stop, normal, SD}.
 
@@ -373,43 +373,33 @@ terminate(_Reason, _SN, _SD) ->
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
 -spec get_snapshot_time(snapshot_time())
-                       -> {ok, snapshot_time()} | {error, reason()}.
+                       -> {ok, snapshot_time()}.
 get_snapshot_time(ClientClock) ->
     wait_for_clock(ClientClock).
 
--spec get_snapshot_time() -> {ok, snapshot_time()} | {error, reason()}.
+-spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(erlang:now()) - ?OLD_SS_MICROSEC,
-    case vectorclock:get_stable_snapshot() of
-        {ok, VecSnapshotTime} ->
-            DcId = dc_utilities:get_my_dc_id(),
-            SnapshotTime = dict:update(DcId,
-                                       fun (_Old) -> Now end,
-                                       Now, VecSnapshotTime),
+    {ok, VecSnapshotTime} = vectorclock:get_stable_snapshot(),
+    DcId = dc_utilities:get_my_dc_id(),
+    SnapshotTime = dict:update(DcId,
+			       fun (_Old) -> Now end,
+			       Now, VecSnapshotTime),
+    
+    {ok, SnapshotTime}.
 
-            {ok, SnapshotTime};
-        {error, Reason} ->
-            {error, Reason}
-    end.
 
 -spec wait_for_clock(snapshot_time()) ->
-                           {ok, snapshot_time()} | {error, reason()}.
+                           {ok, snapshot_time()}.
 wait_for_clock(Clock) ->
-   case get_snapshot_time() of
-       {ok, VecSnapshotTime} ->
-	   %% dict:fold(fun(Dc,Time,_Acc) ->
-	   %% 		     lager:info("Dc ~w, time ~w~n", [Dc,Time])
-	   %% 	     end, 0, VecSnapshotTime),
-           case vectorclock:ge(VecSnapshotTime, Clock) of
-               true ->
-                   %% No need to wait
-                   {ok, VecSnapshotTime};
-               false ->
-                   %% wait for snapshot time to catch up with Client Clock
-                   timer:sleep(10),
-                   wait_for_clock(Clock)
-           end;
-       {error, Reason} ->
-          {error, Reason}
-  end.
+    {ok, VecSnapshotTime} = get_snapshot_time(),
+    case vectorclock:ge(VecSnapshotTime, Clock) of
+	true ->
+	    %% No need to wait
+	    {ok, VecSnapshotTime};
+	false ->
+	    %% wait for snapshot time to catch up with Client Clock
+	    timer:sleep(10),
+	    wait_for_clock(Clock)
+    end.
 

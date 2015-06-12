@@ -55,7 +55,7 @@ get_preflist_from_key(Key) ->
 %%      Input:  A hashed key
 %%      Return: The primaries preflist
 %%
--spec get_primaries_preflist(integer()) -> preflist().
+-spec get_primaries_preflist(non_neg_integer()) -> preflist().
 get_primaries_preflist(Key)->
     %{ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     %Itr = chashbin:iterator(Key, CHBin),
