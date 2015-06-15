@@ -29,7 +29,7 @@
   queue :: queue() %% queue of unread messages
 }).
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link() -> gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 
 init([]) -> {ok, #state{connections = dict:new(), queue = queue:new()}}.
 
@@ -75,10 +75,10 @@ handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 -spec add_dc(DcAddress :: dc_address()) -> ok.
-add_dc(DcAddress) -> gen_server:call(?MODULE, {add, DcAddress}).
+add_dc(DcAddress) -> gen_server:call({global, ?MODULE}, {add, DcAddress}).
 
 -spec get_dcs() -> [dc_address()].
-get_dcs() -> gen_server:call(?MODULE, get_dcs).
+get_dcs() -> gen_server:call({global, ?MODULE}, get_dcs).
 
 -spec listen() -> {value, term()} | none.
-listen() -> gen_server:call(?MODULE, listen).
+listen() -> gen_server:call({global, ?MODULE}, listen).

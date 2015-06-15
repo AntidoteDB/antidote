@@ -24,13 +24,15 @@
 %% Public API
 %% ===================================================================
 
--spec start_receiver(port()) -> {ok, dc_address()}.
--export([start_receiver/1, stop_receiver/0, get_dcs/0, add_dc/1, add_list_dcs/1]).
+-spec start_broker(port()) -> {ok, dc_address()}.
+-export([start_broker/1, stop_broker/0, get_dcs/0, add_dc/1, add_list_dcs/1]).
 
-start_receiver(_Port) ->
+start_broker(Port) ->
+  %% One node will now act as interDC node.
+  {ok, _PubPid, _SubPid} = antidote_sup:start_pub(Port),
   {ok, new_inter_dc_publisher:get_address()}.
 
-stop_receiver() -> ok.
+stop_broker() -> ok.
 
 %% Returns all DCs known to this DC.
 -spec get_dcs() ->{ok, [dc_address()]}.

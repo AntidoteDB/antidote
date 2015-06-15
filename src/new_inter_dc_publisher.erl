@@ -31,7 +31,7 @@ start_link() ->
   start_link(Port).
 
 start_link(Port) ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [Port], []).
+  gen_server:start_link({global, ?MODULE}, ?MODULE, [Port], []).
 
 init([Port]) ->
   Socket = create_socket(Port),
@@ -50,14 +50,14 @@ handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
+broadcast(Message) -> gen_server:call({global, ?MODULE}, {publish, term_to_binary(Message)}).
 
 -spec get_address() -> dc_address().
 get_address() ->
   %% TODO check if we do not return a link-local address
   {ok, List} = inet:getif(),
   {Ip, _, _} = hd(List),
-  Port = gen_server:call(?MODULE, get_port),
+  Port = gen_server:call({global, ?MODULE}, get_port),
   {Ip, Port}.
 
 create_socket(Port) ->
