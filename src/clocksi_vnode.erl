@@ -125,13 +125,13 @@ abort(ListofNodes, TxId) ->
 init([Partition]) ->
     PreparedTx = ets:new(list_to_atom(atom_to_list(prepared_tx) ++
                                           integer_to_list(Partition)),
-                         [set, {write_concurrency, true}]),
+                         [set]),
     CommittedTx = ets:new(list_to_atom(atom_to_list(committed_tx) ++
                                            integer_to_list(Partition)),
-                          [set, {write_concurrency, true}]),
+                          [set]),
     ActiveTxsPerKey = ets:new(list_to_atom(atom_to_list(active_txs_per_key)
                                            ++ integer_to_list(Partition)),
-                              [bag, {write_concurrency, true}]),
+                              [bag]),
     WriteSet = ets:new(list_to_atom(atom_to_list(write_set) ++
                                         integer_to_list(Partition)),
                        [duplicate_bag, {write_concurrency, true}]),
@@ -192,6 +192,7 @@ handle_command({prepare, Transaction}, _Sender,
             Updates = ets:lookup(WriteSet, TxId),
             case Updates of 
                 [{_, {Key, _Type, {_Op, _Actor}}} | _Rest] -> 
+		    ok = set_prepared(PreparedTx,Updates,TxId,PrepareTime),
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
                     Result = logging_vnode:append(Node,LogId,LogRecord),
@@ -207,6 +208,7 @@ handle_command({prepare, Transaction}, _Sender,
         false ->
             {reply, abort, State}
     end;
+
 
 %% TODO: sending empty writeset to clocksi_downstream_generatro
 %% Just a workaround, need to delete downstream_generator_vnode
@@ -231,7 +233,7 @@ handle_command({commit, Transaction, TxCommitTime}, _Sender,
                     true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
-                            clean_and_notify(TxId, Key, State),
+                            clean_and_notify(TxId, Updates, State),
                             {reply, committed, State};
                         error ->
                             {reply, {error, materializer_failure}, State}
@@ -254,9 +256,9 @@ handle_command({abort, Transaction}, _Sender,
             Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
             case Result of
                 {ok, _} ->
-                    clean_and_notify(TxId, Key, State);
+                    clean_and_notify(TxId, Updates, State);
                 {error, timeout} ->
-                    clean_and_notify(TxId, Key, State)
+                    clean_and_notify(TxId, Updates, State)
             end,
             {reply, ack_abort, State};
         _ ->
@@ -264,9 +266,14 @@ handle_command({abort, Transaction}, _Sender,
     end;
 
 %% @doc Return active transactions in prepare state with their preparetime
-handle_command({get_active_txns}, _Sender,
+handle_command({get_active_txns, Key}, _Sender,
                #state{prepared_tx=Prepared, partition=_Partition} = State) ->
-    ActiveTxs = ets:lookup(Prepared, active),
+    ActiveTxs = case ets:lookup(Prepared, Key) of
+		    [] ->
+			[];
+		    [{Key, List}] ->
+			List
+		end,
     {reply, {ok, ActiveTxs}, State};
 
 handle_command(_Message, _Sender, State) ->
@@ -318,11 +325,33 @@ terminate(_Reason, _State) ->
 %%      a. ActiteTxsPerKey,
 %%      b. PreparedTx
 %%
-clean_and_notify(TxId, _Key, #state{active_txs_per_key=_ActiveTxsPerKey,
+clean_and_notify(TxId, Updates, #state{active_txs_per_key=_ActiveTxsPerKey,
                                     prepared_tx=PreparedTx,
                                     write_set=WriteSet}) ->
-    true = ets:match_delete(PreparedTx, {active, {TxId, '_'}}),
+    ok = clean_prepared(PreparedTx,Updates,TxId),
     true = ets:delete(WriteSet, TxId).
+
+clean_prepared(_PreparedTx,[],_TxId) ->
+    ok;
+clean_prepared(PreparedTx,[{_, {Key, _Type, {_Op, _Actor}}} | Rest],TxId) ->
+    [{Key,ActiveTxs}] = ets:lookup(PreparedTx, Key),
+    NewActive = lists:keydelete(TxId,1,ActiveTxs),
+    true = ets:insert(PreparedTx, {Key, NewActive}),
+    clean_prepared(PreparedTx,Rest,TxId).
+
+
+set_prepared(_PreparedTx,[],_TxId,_Time) ->
+    ok;
+set_prepared(PreparedTx,[{_,{Key, _Type, {_Op, _Actor}}} | Rest],TxId,Time) ->
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+		    [] ->
+			[];
+		    [{Key, List}] ->
+			List
+		end,
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}),
+    set_prepared(PreparedTx,Rest,TxId,Time).
+
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
