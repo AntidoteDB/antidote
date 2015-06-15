@@ -412,7 +412,7 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
 %%
 clean_and_notify(TxId, Updates, #state{active_txs_per_key=_ActiveTxsPerKey,
 			      prepared_tx=PreparedTx}) ->
-    clean_prepared(PreparedTx,Updates,TxId).
+    ok = clean_prepared(PreparedTx,Updates,TxId).
 
 clean_prepared(_PreparedTx,[],_TxId) ->
     ok;
