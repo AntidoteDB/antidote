@@ -22,7 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/2, stop_rep/0, start_pub/1]).
+-export([start_link/0, start_rep/2, stop_rep/0, start_broker/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -45,10 +45,11 @@ start_rep(Pid, Port) ->
                     {inter_dc_communication_sup, start_link, [Pid, Port]},
                     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
-start_pub(Port) ->
-  {ok, PubPid} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_publisher, worker, [Port])),
-  {ok, SubPid} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_subscriber, worker, [])),
-  {ok, PubPid, SubPid}.
+start_broker(Port) ->
+  {ok, _PubPid} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_pub, worker, [Port])),
+  {ok, _SubPid} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_sub, worker, [])),
+  {ok, _PshPId} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_txn_publisher, worker, [])),
+  ok.
 
 stop_rep() ->
     ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
@@ -114,9 +115,7 @@ init(_Args) ->
                         {inter_dc_manager, start_link, []},
                         permanent, 5000, worker, [inter_dc_manager]},
 
-  ZMQContextManager = ?CHILD(zmq_context, worker),
-  ZMQPublisher = ?CHILD(pubsub_sender, worker),
-  ZMQContextManager = ?CHILD(zmq_context, worker, []),
+    ZMQContextManager = ?CHILD(zmq_context, worker, []),
 
   {ok,
     {{one_for_one, 5, 10},
@@ -131,9 +130,7 @@ init(_Args) ->
         InterDcManager,
         VectorClockMaster,
         MaterializerMaster,
-        ZMQContextManager,
         InterDcSenderSup,
-        ZMQPublisher,
         ZMQContextManager
       ]
     }

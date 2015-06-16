@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(new_inter_dc_publisher).
+-module(new_inter_dc_pub).
 -behaviour(gen_server).
 -include("antidote.hrl").
 
@@ -50,6 +50,8 @@ handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
+%% TODO: buffer messages before opening the socket?
+%% TODO: take care of the SLOW JOINER problem
 broadcast(Message) -> gen_server:call({global, ?MODULE}, {publish, term_to_binary(Message)}).
 
 -spec get_address() -> dc_address().

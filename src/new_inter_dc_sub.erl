@@ -17,21 +17,20 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(new_inter_dc_subscriber).
+-module(new_inter_dc_sub).
 -behaviour(gen_server).
 -include("antidote.hrl").
 
--export([start_link/0, add_dc/1, listen/0, get_dcs/0]).
+-export([start_link/0, add_dc/1, get_dcs/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {
-  connections :: dict(), %% erlzmq_socket() => dc_address()
-  queue :: queue() %% queue of unread messages
+  connections :: dict() %% erlzmq_socket() => dc_address()
 }).
 
 start_link() -> gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 
-init([]) -> {ok, #state{connections = dict:new(), queue = queue:new()}}.
+init([]) -> {ok, #state{connections = dict:new()}}.
 
 handle_call({add, DcAddress}, _From, State) ->
   {Ip, Port} = DcAddress,
@@ -46,20 +45,15 @@ handle_call({add, DcAddress}, _From, State) ->
 
 handle_call(get_dcs, _From, State) ->
   F = fun(_Socket, DcAddress) -> DcAddress end,
-  {reply, dict:map(F, State#state.connections), State};
-
-handle_call(listen, _From, State) ->
-  case queue:out(State#state.queue) of
-    {{value, Msg}, Q} -> {reply, {ok, Msg}, State#state{queue = Q}};
-    {empty, _} -> {reply, none, State}
-  end.
+  {reply, dict:map(F, State#state.connections), State}.
 
 %% Called when a new message is received from any of the publishers.
 handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   Msg = binary_to_term(BinaryMsg),
   DcAddress = dict:find(Socket, State#state.connections),
   lager:info("Received FROM=~p MSG=~p", [DcAddress, Msg]),
-  {noreply, State#state{queue = queue:in(Msg, State#state.queue)}}.
+  handle_inbound_message(Msg),
+  {noreply, State}.
 
 %% Gracefully close all sockets
 terminate(_Reason, State) ->
@@ -80,5 +74,8 @@ add_dc(DcAddress) -> gen_server:call({global, ?MODULE}, {add, DcAddress}).
 -spec get_dcs() -> [dc_address()].
 get_dcs() -> gen_server:call({global, ?MODULE}, get_dcs).
 
--spec listen() -> {value, term()} | none.
-listen() -> gen_server:call({global, ?MODULE}, listen).
+%%%%%%%%%%%%%%%
+
+handle_inbound_message(_Msg) ->
+  %%ok =  inter_dc_recvr_vnode:store_updates(Updates).
+  ok.
