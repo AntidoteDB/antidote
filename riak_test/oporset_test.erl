@@ -19,19 +19,20 @@
 %% -------------------------------------------------------------------
 -module(oporset_test).
 
--export([confirm/0, concurrency_test/1]).
+-export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
     empty_set_test(Nodes),
     add_test(Nodes),
     remove_test(Nodes),
-    %%concurrency_test(Nodes),
-    rt:clean_cluster(Nodes),
     pass.
 
 
@@ -120,31 +121,3 @@ remove_test(Nodes) ->
     Result7=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
     ?assertMatch({ok, []}, Result7).
-    
-
-concurrency_test(Nodes) ->
-    FirstNode = hd(Nodes),
-    SecondNode = lists:nth(2, Nodes),
-    lager:info("Concurrency test started"),
-    Type = crdt_orset,
-    Key = key_concurrency,
-    
-    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [[{update, Key, Type, {{add, a}, ucl}}]]),
-    ?assertMatch({ok, _}, Result1),
-
-    Result2=rpc:call(SecondNode, antidote, clocksi_execute_tx,
-                    [[{update, Key, Type, {{add, a}, no_user}}]]),
-    ?assertMatch({ok, _}, Result2),
-
-    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [[{update, Key, Type, {{remove, a}, ucl}}]]),
-    ?assertMatch({ok, _}, Result3),
-
-    Result4=rpc:call(SecondNode, antidote, read,
-                    [Key, Type]),
-    ?assertMatch({ok, [a]}, Result4).
-        
-
-
-
