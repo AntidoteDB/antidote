@@ -35,6 +35,9 @@ currentdevrel: stagedevrel compile-riak-test
 riak-test: currentdevrel
 	$(foreach dep,$(wildcard riak_test/*.erl), ../riak_test/riak_test -v -c antidote -t $(dep);)
 
+stage-riak-test: all
+	$(foreach dep,$(wildcard riak_test/*.erl), ../riak_test/riak_test -v -c antidote -t $(dep);)
+
 ##
 ## Developer targets
 ##
