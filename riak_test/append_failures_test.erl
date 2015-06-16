@@ -26,7 +26,10 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    [Nodes] = rt:build_clusters([6]),
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
+    [Nodes] = rt:build_clusters([3]),
     N = hd(Nodes),
 
     lager:info("Waiting for ring to converge."),
