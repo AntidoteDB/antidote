@@ -342,8 +342,7 @@ reply_to_client(timeout, SD=#state{from=From, transaction=Transaction,
 			Reason->
 			    {TxId, Reason}
 		    end,
-	    Res = gen_fsm:reply(From,Reply),
-	    lager:info("Result: ~w~n",[Res]);
+	    _Res = gen_fsm:reply(From,Reply);
        true -> ok
     end,
     {stop, normal, SD}.
