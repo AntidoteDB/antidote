@@ -28,6 +28,9 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
     clocksi_test1(Nodes),
@@ -42,7 +45,6 @@ confirm() ->
     clocksi_multiple_test_certification_check(Nodes),
     clocksi_multiple_read_update_test(Nodes),
     clocksi_concurrency_test(Nodes),
-    rt:clean_cluster(Nodes),
     pass.
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
