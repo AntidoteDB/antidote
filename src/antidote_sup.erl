@@ -22,7 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/2]).
+-export([start_link/0, start_rep/2, stop_rep/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -42,6 +42,15 @@ start_rep(Pid, Port) ->
                     {inter_dc_communication_sup, start_link, [Pid, Port]},
                     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
+stop_rep() ->
+    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
+    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_recvr),
+    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
+    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
+    ok = supervisor:terminate_child(?MODULE, inter_dc_communication_sup),
+    _ = supervisor:delete_child(?MODULE, inter_dc_communication_sup),
+    ok.
+    
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================

@@ -71,5 +71,7 @@ handle_sync_event(_Event, _From, _StateName, StateData) ->
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _SD) ->
+terminate(_Reason, _SN, _SD=#state{listener=ListenSocket}) ->
+    gen_tcp:close(ListenSocket),
+    lager:info("Closing socket"),
     ok.
