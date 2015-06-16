@@ -62,32 +62,18 @@ init([Partition]) ->
                 dcid=DcId,
                 reader = Reader}}.
 
-handle_command(trigger, _Sender, State=#state{partition=Partition,
-                                              reader=Reader}) ->
-    {NewReaderState, Transactions} =
-        clocksi_transaction_reader:get_next_transactions(Reader),
+handle_command(trigger, _Sender, State=#state{reader=Reader}) ->
+    {NewReaderState, Transactions} = clocksi_transaction_reader:get_next_transactions(Reader),
     {ok, DCs} = inter_dc_manager:get_dcs(),
+    %%lists:foreach(fun(Tx) ->
+    %%                {TxId, _CT, _ST, _Deps, Operations, _TotalOps} = Tx,
+    %%                lists:foreach(fun(Op) ->
+    %%                                lager:info("Tx ~p, operation: ~p", [TxId, Op])
+    %%                              end, Operations)
+    %%              end, Transactions),
     case Transactions of
         [] ->
-            %% Send heartbeat
-            Heartbeat = [#operation
-                         {payload =
-                              #log_record{op_type=noop, op_payload = Partition}
-                         }],
-            DcId = dc_utilities:get_my_dc_id(),
-            {ok, Clock} = vectorclock:get_clock(Partition),
-            Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
-            TxId = 0,
-            %% Receiving DC treats hearbeat like a transaction
-            %% So wrap heartbeat in a transaction structure
-            Transaction = {TxId, {DcId, Time}, Clock, Heartbeat},
-            case inter_dc_communication_sender:propagate_sync(
-                   {replicate, [Transaction]}, DCs) of
-                ok ->
-                    NewReader = NewReaderState;
-                _ ->
-                    NewReader = NewReaderState
-            end;
+            NewReader = NewReaderState;
         [_H|_T] ->
             case inter_dc_communication_sender:propagate_sync(
                    {replicate, Transactions}, DCs) of

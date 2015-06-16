@@ -52,12 +52,8 @@ start_vnode(I) ->
 
 scatter_transactions(Transactions) ->
     lists:foreach(fun(Tx) ->
-                    {_TxId, _CommitTime, _ST, _Deps, Ops} = Tx,
-                    Operation = hd(Ops),
-                    Logrecord = Operation#operation.payload,
-                    Payload = Logrecord#log_record.op_payload,
-                    {Key,_Type,_Op} = Payload,
-                    Preflist = log_utilities:get_preflist_from_key(Key),
+                    {TxId, _CommitTime, _ST, _Deps, _Ops, _TotalOps} = Tx,
+                    Preflist = log_utilities:get_preflist_from_key(TxId),
                     IndexNode = hd(Preflist),
                     riak_core_vnode_master:command(IndexNode, {process_propagation, Tx}, inter_dc_recvr_vnode_master)
                   end, Transactions).
@@ -105,19 +101,33 @@ init([Partition]) ->
             case dets:lookup(StateStore, recvr_state) of
                 %%If file already exists read previous state from it.
                 [{recvr_state, State}] ->
-                    {ok, State};
+                    {ok, State#recvr_state{rep_txs=dict:new()}};
                 [] ->
                     {ok, State } = inter_dc_repl_update:init_state(Partition),
-                    {ok, State#recvr_state{statestore = StateStore}};
+                    {ok, State#recvr_state{statestore = StateStore, rep_txs=dict:new()}};
                 Error -> Error
             end;
         {error, Reason} ->
             {error, Reason}
     end.
 
-handle_command({process_propagation, Transaction}, _Sender, State) ->
-    {ok, _Pid} = eiger_replicatedtx_coord_fsm:start_link(Transaction),
-    {noreply, State};
+handle_command({process_propagation, Transaction}, _Sender, State=#recvr_state{rep_txs=RepTxs0}) ->
+    {TxId,_Commitime,_ST, _Deps, Ops, TotalOps} = Transaction,
+    case dict:find(TxId, RepTxs0) of
+        {ok, {FSM, Rest0}} ->
+            gen_fsm:send_event(FSM, {notify, Ops}),
+            Rest = Rest0 - (length(Ops) - 2), 
+            case Rest of
+                0 ->
+                    RepTxs = dict:erase(TxId, RepTxs0);
+                _ ->
+                    RepTxs = dict:store(TxId, {FSM, Rest}, RepTxs0)
+            end;
+        error ->
+            {ok, FSM} = eiger_replicatedtx_coord_fsm:start_link(Transaction),
+            RepTxs = dict:store(TxId, {FSM, TotalOps}, RepTxs0)
+    end,
+    {noreply, State#recvr_state{rep_txs=RepTxs}};
 
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.

@@ -31,6 +31,7 @@
 
 %% States
 -export([check_dependencies/2,
+         compose_tx/2,
          gather_deps/2,
          scatter_updates/2,
          gather_prepare/2,
@@ -40,12 +41,17 @@
 -record(state, {
           tx_id,
           commit_time,
+          prepare_op,
+          commit_op,
           snapshot_vector,
           deps,
           transaction,
           nacks,
           scattered_deps,
           scattered_updates,
+          scattered_keys,
+          total_ops,
+          to_complete,
           updates}).
 
 %%%===================================================================
@@ -61,19 +67,35 @@ start_link(Transaction) ->
 
 %% @doc Initialize the state.
 init([Tx]) ->
-    {TxId, CommitTime, ST, Deps, Ops} = Tx,
+    {TxId, CommitTime, ST, Deps, Ops, TotalOps} = Tx,
+    Updates = lists:sublist(Ops, length(Ops) - 2),
     SD = #state{
+            commit_op=lists:last(Ops),
+            prepare_op=hd(lists:sublist(Ops, length(Ops) - 1, 1)),
             tx_id=TxId,
             commit_time=CommitTime,
             snapshot_vector=ST,
             deps=Deps,
             transaction=Tx,
-            updates=Ops
+            updates=Updates,
+            total_ops=TotalOps,
+            to_complete=TotalOps - length(Updates)
            },
-    {ok, check_dependencies, SD, 0}.
+    {ok, compose_tx, SD}.
+
+compose_tx({notify, NewUpdates0}, SD0=#state{updates=Updates0, to_complete=ToComplete0}) ->
+    NewUpdates = lists:sublist(NewUpdates0, length(NewUpdates0) - 2),
+    Updates = Updates0 ++ NewUpdates,
+    ToComplete = ToComplete0 - length(NewUpdates),
+    case ToComplete of
+        0 ->
+            {next_state, check_dependencies, SD0#state{to_complete=ToComplete, updates=Updates}, 0};
+        _ ->
+            {next_state, compose_tx, SD0#state{to_complete=ToComplete, updates=Updates}}
+    end.
 
 check_dependencies(timeout, SD0=#state{deps=Deps}) ->
-    ScatteredDeps = lists:fold(fun(Dep, Dict0) ->
+    ScatteredDeps = lists:foldl(fun(Dep, Dict0) ->
                                 {Key, _CommitTime} = Dep,
                                 Preflist = log_utilities:get_preflist_from_key(Key),
                                 IndexNode = hd(Preflist),
@@ -84,32 +106,41 @@ check_dependencies(timeout, SD0=#state{deps=Deps}) ->
                     eiger_vnode:check_deps(IndexNode, ListDeps)
                   end, dict:to_list(ScatteredDeps)),
     NAcks = length(dict:to_list(ScatteredDeps)),
-    {next_state, gather_deps, SD0#state{scattered_deps=ScatteredDeps, nacks=NAcks}}.
+    case NAcks of
+        0 ->
+            {next_state, scatter_updates, SD0#state{scattered_deps=ScatteredDeps, nacks=NAcks}, 0};
+        _ ->
+            {next_state, gather_deps, SD0#state{scattered_deps=ScatteredDeps, nacks=NAcks}}
+    end.
 
 gather_deps(deps_checked, SD0=#state{nacks=NAcks0}) ->
     NAcks = NAcks0 - 1,
     case NAcks of
         0 ->
-            {next_state, scatter_updates, SD0#state{nacks=NAcks}};
+            {next_state, scatter_updates, SD0#state{nacks=NAcks}, 0};
         _ ->
             {next_state, gather_deps, SD0#state{nacks=NAcks}}
     end.
     
-scatter_updates(timeout, SD0=#state{updates=Updates, transaction=Transaction}) ->
-    ScatteredUpdates = lists:foldl(fun(Update, Dict0) ->
-                                    Record = Update#operation.payload,
-                                    {Key, _Type, _Param} = Record#log_record.op_payload,
-                                    Preflist = log_utilities:get_preflist_from_key(Key),
-                                    IndexNode = hd(Preflist),
-                                    dict:append(IndexNode, Update, Dict0)
-                                   end, dict:new(), Updates),
+scatter_updates(timeout, SD0=#state{updates=Updates, tx_id=TxId}) ->
+    {ScatteredUpdates, ScatteredKeys} = lists:foldl(fun(Update, {SU0, SK0}) ->
+                                                        Record = Update#operation.payload,
+                                                        {Key, _Type, _Param} = Record#log_record.op_payload,
+                                                        Preflist = log_utilities:get_preflist_from_key(Key),
+                                                        IndexNode = hd(Preflist),
+                                                        {dict:append(IndexNode, Update, SU0), dict:append(IndexNode, Key, SK0)}
+                                                    end, {dict:new(), dict:new()}, Updates),
     lists:foreach(fun(Slice) ->
-                    {IndexNode, ListUpdates} = Slice,
-                    Keys = [Key || {Key, _Type, _Param} <- ListUpdates],
-                    eiger_vnode:prepare(IndexNode, Transaction, no_clock, Keys)
-                  end, dict:to_list(ScatteredUpdates)),
-    NAcks = length(dict:to_list(ScatteredUpdates)),
-    {next_state, gather_prepare, SD0#state{scattered_updates=ScatteredUpdates, nacks=NAcks}}.
+                    {IndexNode, ListKeys} = Slice,
+                    eiger_vnode:prepare_replicated(IndexNode, TxId, ListKeys)
+                  end, dict:to_list(ScatteredKeys)),
+    NAcks = length(dict:to_list(ScatteredKeys)),
+    case NAcks of
+        0 ->
+            {next_state, send_commit, SD0#state{scattered_updates=ScatteredUpdates, scattered_keys=ScatteredKeys, nacks=NAcks}, 0};
+        _ ->
+            {next_state, gather_prepare, SD0#state{scattered_updates=ScatteredUpdates, scattered_keys=ScatteredKeys, nacks=NAcks}}
+    end.
 
 gather_prepare({prepared, _Clock}, SD0=#state{nacks=NAcks0}) ->
     NAcks = NAcks0 - 1,
@@ -120,10 +151,11 @@ gather_prepare({prepared, _Clock}, SD0=#state{nacks=NAcks0}) ->
             {next_state, gather_prepare, SD0#state{nacks=NAcks}}
     end.
 
-send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, transaction=Transaction, commit_time=CommitTime}) ->
+send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, transaction=Transaction, prepare_op=PrepareOp, commit_op=CommitOp}) ->
     lists:foreach(fun(Slice) ->
-                    {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit_replicated(IndexNode, Transaction, ListUpdates, CommitTime)
+                    {IndexNode, ListUpdates0} = Slice,
+                    ListUpdates = ListUpdates0 ++ [PrepareOp] ++ [CommitOp],
+                    eiger_vnode:commit_replicated(IndexNode, Transaction, ListUpdates)
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 

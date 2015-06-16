@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(eiger_materializer_vnode).
+-module(simple_eiger_materializer_vnode).
 
 -behaviour(riak_core_vnode).
 

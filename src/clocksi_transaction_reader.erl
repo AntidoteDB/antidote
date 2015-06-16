@@ -94,7 +94,7 @@ get_next_transactions(State=#state{partition = Partition,
     %% "Before" contains all transactions committed before stable_time
     {Before, After} = lists:splitwith(
                         fun(Logrecord) ->
-                                {{_Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,
+                                {{_Dcid, CommitTime}, _, _Deps, _TotalOps} = Logrecord#log_record.op_payload,
                                 CommitTime < Stable_time
                         end,
                         Txns),
@@ -119,11 +119,12 @@ get_next_transactions(State=#state{partition = Partition,
 -spec get_update_ops_from_transaction(Transaction::transaction()) ->
                                              [#clocksi_payload{}].
 get_update_ops_from_transaction(Transaction) ->
-    {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = Transaction,
+    {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops, _Deps, _TotalOps} = Transaction,
     Downstreamrecord =
         fun(_Operation=#operation{payload=Logrecord}) ->
                 case Logrecord#log_record.op_type of
                     update ->
+                        lager:info("Preparing mat record: ~p", [Logrecord]),
                         {Key, Type, Op} = Logrecord#log_record.op_payload,
                         _NewRecord = #clocksi_payload{
                                         key = Key,
@@ -160,9 +161,9 @@ get_prev_stable_time(Reader) ->
 construct_transaction(Ops) ->
     Commitoperation = lists:last(Ops),
     Commitrecord = Commitoperation#operation.payload,
-    {CommitTime, VecSnapshotTime, Deps} = Commitrecord#log_record.op_payload,
+    {CommitTime, VecSnapshotTime, Deps, TotalOps} = Commitrecord#log_record.op_payload,
     TxId = Commitrecord#log_record.tx_id,
-    {TxId, CommitTime, VecSnapshotTime, Deps, Ops}.
+    {TxId, CommitTime, VecSnapshotTime, Deps, Ops, TotalOps}.
 
 read_next_ops(Node, LogId, Last_read_opid) ->
     case Last_read_opid of
@@ -227,7 +228,7 @@ add_to_pending_operations(Pending, Commitrecords, Ops, DcId) ->
                       TxId = Logrecord#log_record.tx_id,
                       case Logrecord#log_record.op_type of
                           commit ->
-                              {{Dc,_CT},_ST} = Logrecord#log_record.op_payload,
+                              {{Dc,_CT},_ST, _Deps, _TotalOps} = Logrecord#log_record.op_payload,
                               case Dc of
                                   DcId ->
                                       NewCommit = ListCommits ++ [Logrecord],

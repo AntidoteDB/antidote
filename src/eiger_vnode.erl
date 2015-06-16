@@ -29,7 +29,8 @@
          read_key/4,
          read_key_time/5,
          prepare/4,
-         commit/4,
+         prepare_replicated/3,
+         commit/5,
          commit_replicated/3,
          coordinate_tx/3,
          check_deps/2,
@@ -89,15 +90,20 @@ prepare(Node, Transaction, Clock, Keys) ->
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
-commit(Node, Transaction, Updates, Clock) ->
+prepare_replicated(Node, TxId, Keys) ->
     riak_core_vnode_master:command(Node,
-                                   {commit, Transaction, Updates, Clock},
+                                   {prepare_replicated, TxId, Keys},
+                                   {fsm, undefined, self()},
+                                   ?EIGER_MASTER).
+commit(Node, Transaction, Updates, Clock, TotalOps) ->
+    riak_core_vnode_master:command(Node,
+                                   {commit, Transaction, Updates, Clock, TotalOps},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
 commit_replicated(Node, Transaction, Updates) ->
     riak_core_vnode_master:command(Node,
-                                   {commit, Transaction, Updates},
+                                   {commit_replicated, Transaction, Updates},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
@@ -123,7 +129,7 @@ update_clock(Node, Clock) ->
 init([Partition]) ->
     {ok, #state{partition=Partition}}.
 
-handle_command({check_deps, Deps}, _Sender, State0) ->
+handle_command({check_deps, _Deps}, _Sender, State0) ->
     {reply, deps_checked, State0};
 
 %% @doc starts a read_fsm to handle a read operation.
@@ -178,33 +184,56 @@ handle_command({prepare, Transaction, CoordClock, Keys}, _Sender, #state{clock=C
                                         end, {Pending0, MinPendings0}, Keys),
     {reply, {prepared, Clock}, State#state{clock=Clock, pending=Pending, min_pendings=MinPendings}};
 
+handle_command({prepare_replicated, TxId, Keys}, _Sender, #state{clock=Clock, pending=Pending0, min_pendings=MinPendings0}=State) ->
+    {Pending, MinPendings} = lists:foldl(fun(Key, {P0, MP0}) ->
+                                            P = dict:append(Key, {Clock, TxId}, P0),
+                                            MP = case dict:find(Key, MP0) of
+                                                    {ok, _Min} ->
+                                                        MP0;
+                                                    _ ->
+                                                        dict:store(Key, Clock, MP0)
+                                                 end,
+                                            {P, MP}    
+                                        end, {Pending0, MinPendings0}, Keys),
+    {reply, {prepared, Clock}, State#state{clock=Clock, pending=Pending, min_pendings=MinPendings}};
+
 handle_command({commit_replicated, Transaction, Operations}, _Sender, State0=#state{partition=Partition}) ->
     FirstOp = hd(Operations),
     FirstRecord = FirstOp#operation.payload,
     {Key,_Type,_Op} = FirstRecord#log_record.op_payload,
     LogId = log_utilities:get_logid_from_key(Key),
     Node = {Partition,node()},
-    lists:foreach(
-              fun(Op) ->
-                      Logrecord = Op#operation.payload,
-                      case Logrecord#log_record.op_type of
-                          update ->
-                              logging_vnode:append(Node, LogId, Logrecord);
-                          _ -> %% prepare or commit
-                              logging_vnode:append(Node, LogId, Logrecord)
-                      end
-              end, Operations),
-    DownOps = clocksi_transaction_reader:get_update_ops_from_transaction(Transaction),
+    {TxId, {DcId, CommitTime}, VecSnapshotTime, _Ops, _Deps, _TotalOps} = Transaction,
+    DownOps = lists:foldl(fun(Op, Acc0) ->
+                            Logrecord = Op#operation.payload,
+                            case Logrecord#log_record.op_type of
+                                update ->
+                                    logging_vnode:append(Node, LogId, Logrecord),
+                                    {Key1, Type1, Op1} = Logrecord#log_record.op_payload,
+                                    NewRecord = #clocksi_payload{
+                                        key = Key1,
+                                        type = Type1,
+                                        op_param = Op1,
+                                        snapshot_time = VecSnapshotTime,
+                                        commit_time = {DcId, CommitTime},
+                                        txid =  Logrecord#log_record.tx_id
+                                    },
+                                    Acc0 ++ [NewRecord];
+                                _ -> %% prepare or commit
+                                    logging_vnode:append(Node, LogId, Logrecord),
+                                    Acc0
+                            end
+                          end, [], Operations),
     State1 = lists:foldl(fun(DownOp, S0) ->
-                            Key = DownOp#clocksi_payload.key,
-                            ok = eiger_materializer_vnode:update(Key, DownOp),
-                            post_commit_update(Key, TxId, S0)
+                            Key1 = DownOp#clocksi_payload.key,
+                            ok = eiger_materializer_vnode:update(Key1, DownOp),
+                            post_commit_update(Key1, TxId, CommitTime, S0)
                          end, State0, DownOps),
     {reply, committed, State1};
 
-handle_command({commit, Transaction, Updates, CommitClock}, _Sender, State0=#state{clock=Clock0}) ->
+handle_command({commit, Transaction, Updates, CommitClock, TotalOps}, _Sender, State0=#state{clock=Clock0}) ->
     Clock = max(Clock0, CommitClock),
-    case update_keys(Updates, deps, Transaction, CommitClock, State0) of
+    case update_keys(Updates, [], Transaction, CommitClock, TotalOps, [], State0) of
         {ok, State} ->
             {reply, {committed, CommitClock}, State#state{clock=Clock}};
         {error, Reason} ->
@@ -254,53 +283,57 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-update_keys([], _Deps, _Transaction, _CommitTime, State) ->
-    {ok, State};
+update_keys([], Deps, Transaction, CommitTime, TotalOps, DownstreamOps, State0) ->
+    FirstDSOp = hd(DownstreamOps),
+    Key = FirstDSOp#clocksi_payload.key,
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    TxId = Transaction#transaction.txn_id,
+    PreparedLogRecord = #log_record{tx_id=TxId,
+                                    op_type=prepare,
+                                    op_payload=CommitTime},
+    logging_vnode:append(Node,LogId,PreparedLogRecord),
+    DcId = dc_utilities:get_my_dc_id(),
+    CommitLogRecord=#log_record{tx_id=TxId,
+                                op_type=commit,
+                                op_payload={{DcId, CommitTime}, Transaction#transaction.vec_snapshot_time, Deps, TotalOps}},
+    case logging_vnode:append(Node,LogId,CommitLogRecord) of
+        {ok, _} ->
+            State = lists:foldl(fun(Op, S0) ->
+                                    Key = Op#clocksi_payload.key,
+                                    %% This can only return ok, it is therefore pointless to check the return value.
+                                    eiger_materializer_vnode:update(Key, Op),
+                                    post_commit_update(Key, TxId, CommitTime, S0)
+                                end, State0, DownstreamOps),
+            {ok, State};
+        {error, timeout} ->
+            error
+    end;
 
-update_keys([Update|Rest], Deps, Transaction, CommitTime, State0) ->
+update_keys([Update|Rest], Deps, Transaction, CommitTime, TotalOps, DownstreamOps, State0) ->
     {Key, Type, _} = Update,
     DSOp = eiger_downstream:generate_downstream_op(Update),
     TxId = Transaction#transaction.txn_id,
     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, DSOp}},
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
+    DcId = dc_utilities:get_my_dc_id(),
     Result = logging_vnode:append(Node,LogId,LogRecord),
     case Result of
         {ok, _} ->
-            PreparedLogRecord = #log_record{tx_id=TxId,
-                                            op_type=prepare,
-                                            op_payload=CommitTime},
-            logging_vnode:append(Node,LogId,PreparedLogRecord),
-            DcId = dc_utilities:get_my_dc_id(),
-            CommitLogRecord=#log_record{tx_id=TxId,
-                                  op_type=commit,
-                                  op_payload={{DcId, CommitTime},
-                                              Transaction#transaction.vec_snapshot_time, Deps}},
-            case logging_vnode:append(Node,LogId,CommitLogRecord) of
-                {ok, _} ->
-                    CommittedDownstreamOp =
-                                 #clocksi_payload{
+            CommittedDownstreamOp = #clocksi_payload{
                                     key = Key,
                                     type = Type,
                                     op_param = DSOp,
                                     snapshot_time = Transaction#transaction.vec_snapshot_time,
                                     commit_time = {DcId, CommitTime},
                                     txid = Transaction#transaction.txn_id},
-                    case eiger_materializer_vnode:update(Key, CommittedDownstreamOp) of
-                        ok ->
-                            State = post_commit_update(Key, State0),
-                            update_keys(Rest, Deps, Transaction, CommitTime, State);
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
-                {error, timeout} ->
-                    {error, timeout}
-            end;
+            update_keys(Rest, Deps, Transaction, CommitTime, TotalOps, DownstreamOps ++ [CommittedDownstreamOp], State0);
         {error, _Reason} ->
             error
     end.
     
-post_commit_update(Key, TxId, _S0=#state{pending=Pending0, min_pendings=MinPendings0, buffered_reads=BufferedReads0, clock=Clock}) ->
+post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending0, min_pendings=MinPendings0, buffered_reads=BufferedReads0, clock=Clock}) ->
     List0 = dict:fetch(Key, Pending0),
     {List, PrepareTime} = delete_pending_entry(List0, TxId, []),
     case List of
@@ -369,11 +402,10 @@ handle_pending_reads([Element|Rest], CommitTime, Key, Clock) ->
     end.
 
 do_read(Key, Type, TxId, Time, State=#state{clock=Clock}) -> 
-    DcId = dc_utilities:get_my_dc_id(),
-    VecSnapshotTime = vectorclock:from_list([{DcId, Time}]),
-    case eiger_materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
+    case eiger_materializer_vnode:read(Key, Type, Time, TxId) of
     %case eiger_materializer_vnode:read(Key, Time) of
-        {ok, {Value, EVT}} ->
+        {ok, Snapshot, {_CoordId, EVT}} ->
+            Value = Type:value(Snapshot),
             case Time of
                 latest -> 
                     Reply = {Key, Value, EVT, Clock};

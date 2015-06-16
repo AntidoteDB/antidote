@@ -29,8 +29,8 @@ receive_message(timeout, State=#state{socket=Socket}) ->
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
             case binary_to_term(Message) of
-                {replicate, Updates} ->
-                    ok =  inter_dc_recvr_vnode:store_updates(Updates) ,
+                {replicate, Transactions} ->
+                    ok =  inter_dc_recvr_vnode:scatter_transactions(Transactions) ,
                     ok = gen_tcp:send(Socket, term_to_binary({acknowledge, inter_dc_manager:get_my_dc()}));
                 Unknown ->
                     lager:error("Weird message received ~p", [Unknown])

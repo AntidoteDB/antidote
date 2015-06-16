@@ -112,10 +112,10 @@ gather_prepare({prepared, Clock}, SD0=#state{vnode=Vnode, servers=Servers, ack=A
 wait_for_commit(commit, Sender, SD0) ->
     {next_state, send_commit, SD0#state{from=Sender}, 0}.
 
-send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, transaction=Transaction, commit_time=CommitTime}) ->
+send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, transaction=Transaction, commit_time=CommitTime, updates=Updates}) ->
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, CommitTime)
+                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, CommitTime, length(Updates))
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 
