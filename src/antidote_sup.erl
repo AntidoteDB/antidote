@@ -22,7 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/2, stop_rep/0, start_broker/1]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -36,29 +36,6 @@
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-%% @doc: start_rep(Port) - starts a server managed by Pid which listens for 
-%% incomming tcp connection on port Port. Server receives updates to replicate 
-%% from other DCs 
-start_rep(Pid, Port) ->
-    supervisor:start_child(?MODULE, {inter_dc_communication_sup,
-                    {inter_dc_communication_sup, start_link, [Pid, Port]},
-                    permanent, 5000, supervisor, [inter_dc_communication_sup]}).
-
-start_broker(Port) ->
-  {ok, _PubPid} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_pub, worker, [Port])),
-  {ok, _SubPid} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_sub, worker, [])),
-  {ok, _PshPId} = supervisor:start_child(?MODULE, ?CHILD(new_inter_dc_txn_publisher, worker, [])),
-  ok.
-
-stop_rep() ->
-    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
-    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_recvr),
-    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
-    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
-    ok = supervisor:terminate_child(?MODULE, inter_dc_communication_sup),
-    _ = supervisor:delete_child(?MODULE, inter_dc_communication_sup),
-    ok.
     
 %% ===================================================================
 %% Supervisor callbacks
@@ -68,19 +45,10 @@ init(_Args) ->
     LoggingMaster = {logging_vnode_master,
                      {riak_core_vnode_master, start_link, [logging_vnode]},
                      permanent, 5000, worker, [riak_core_vnode_master]},
+
     ClockSIMaster = { clocksi_vnode_master,
                       {riak_core_vnode_master, start_link, [clocksi_vnode]},
                       permanent, 5000, worker, [riak_core_vnode_master]},
-
-    InterDcRepMaster = {inter_dc_repl_vnode_master,
-                        {riak_core_vnode_master, start_link,
-                         [inter_dc_repl_vnode]},
-                        permanent, 5000, worker, [riak_core_vnode_master]},
-
-    InterDcRecvrMaster = { inter_dc_recvr_vnode_master,
-                           {riak_core_vnode_master, start_link,
-                            [inter_dc_recvr_vnode]},
-                           permanent, 5000, worker, [riak_core_vnode_master]},
 
     ClockSIsTxCoordSup =  { clocksi_static_tx_coord_sup,
                            {clocksi_static_tx_coord_sup, start_link, []},
@@ -111,11 +79,11 @@ init(_Args) ->
     		      permanent, 5000, supervisor,
     		      [inter_dc_communication_sender_fsm_sup]},
 
-    InterDcManager = {inter_dc_manager,
-                        {inter_dc_manager, start_link, []},
-                        permanent, 5000, worker, [inter_dc_manager]},
-
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
+    InterDcPub = ?CHILD(new_inter_dc_pub, worker, []),
+    InterDcSub = ?CHILD(new_inter_dc_sub, worker, []),
+    InterDcPusherMaster = {new_inter_dc_pusher_vnode_master, {riak_core_vnode_master, start_link, [new_inter_dc_pusher_vnode]}, permanent, 5000, worker, [riak_core_vnode_master]},
+
 
   {ok,
     {{one_for_one, 5, 10},
@@ -125,13 +93,13 @@ init(_Args) ->
         ClockSIsTxCoordSup,
         ClockSIiTxCoordSup,
         ClockSIReadSup,
-        InterDcRepMaster,
-        InterDcRecvrMaster,
-        InterDcManager,
         VectorClockMaster,
         MaterializerMaster,
         InterDcSenderSup,
-        ZMQContextManager
+        ZMQContextManager,
+        InterDcPub,
+        InterDcSub,
+        InterDcPusherMaster
       ]
     }
   }.

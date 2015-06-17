@@ -43,9 +43,12 @@ init([Partition]) ->
 handle_command(trigger, _Sender, State=#state{reader=Reader}) ->
   timer:sleep(?REPL_PERIOD),
   {NewReaderState, Transactions} = clocksi_transaction_reader:get_next_transactions(Reader),
-  lists:foreach(fun new_inter_dc_txn_publisher:publish/1, Transactions),
+  lists:foreach(fun broadcast_transaction/1, Transactions),
   riak_core_vnode:send_command(self(), trigger),
   {noreply, State#state{reader = NewReaderState}}.
+
+broadcast_transaction(Transaction) ->
+  new_inter_dc_pub:broadcast({replicate, Transaction}).
 
 
 handle_handoff_command(_Message, _Sender, State) -> {noreply, State}.

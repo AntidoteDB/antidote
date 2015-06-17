@@ -21,14 +21,14 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 
--export([start_link/0, add_dc/1, get_dcs/0]).
+-export([start_link/0, add_publisher/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {
   connections :: dict() %% erlzmq_socket() => dc_address()
 }).
 
-start_link() -> gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
+start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) -> {ok, #state{connections = dict:new()}}.
 
@@ -41,16 +41,12 @@ handle_call({add, DcAddress}, _From, State) ->
   {ok, Socket} = erlzmq:socket(Ctx, [sub, {active, true}]),
   ok = erlzmq:connect(Socket, Address),
   ok = erlzmq:setsockopt(Socket, subscribe, <<>>),
-  {reply, ok, State#state{connections = dict:append(Socket, DcAddress, State#state.connections)}};
-
-handle_call(get_dcs, _From, State) ->
-  F = fun(_Socket, DcAddress) -> DcAddress end,
-  {reply, dict:map(F, State#state.connections), State}.
+  {reply, ok, State#state{connections = dict:append(Socket, DcAddress, State#state.connections)}}.
 
 %% Called when a new message is received from any of the publishers.
 handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   Msg = binary_to_term(BinaryMsg),
-  DcAddress = dict:find(Socket, State#state.connections),
+  {ok, DcAddress} = dict:find(Socket, State#state.connections),
   lager:info("Received FROM=~p MSG=~p", [DcAddress, Msg]),
   handle_inbound_message(Msg),
   {noreply, State}.
@@ -68,14 +64,13 @@ terminate(_Reason, State) ->
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
--spec add_dc(DcAddress :: dc_address()) -> ok.
-add_dc(DcAddress) -> gen_server:call({global, ?MODULE}, {add, DcAddress}).
-
--spec get_dcs() -> [dc_address()].
-get_dcs() -> gen_server:call({global, ?MODULE}, get_dcs).
+-spec add_publisher(DcAddress :: dc_address()) -> ok.
+add_publisher(DcAddress) -> gen_server:call(?MODULE, {add, DcAddress}).
 
 %%%%%%%%%%%%%%%
 
-handle_inbound_message(_Msg) ->
-  %%ok =  inter_dc_recvr_vnode:store_updates(Updates).
-  ok.
+handle_inbound_message(Msg) ->
+  case Msg of
+    {replicate, Update} -> inter_dc_recvr_vnode:store_updates([Update]);
+    _ -> {error, {unknown_message, Msg}}
+  end.

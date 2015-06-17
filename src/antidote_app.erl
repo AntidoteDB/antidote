@@ -49,11 +49,6 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(materializer, self()),
 
-            ok = riak_core:register([{vnode_module, inter_dc_repl_vnode}]),
-            ok = riak_core_node_watcher:service_up(interdcreplication, self()),
-            ok = riak_core:register([{vnode_module, inter_dc_recvr_vnode}]),
-            ok = riak_core_node_watcher:service_up(inter_dc_recvr, self()),
-
             ok = riak_core:register([{vnode_module, new_inter_dc_pusher_vnode}]),
             ok = riak_core_node_watcher:service_up(new_inter_dc_pusher, self()),
 

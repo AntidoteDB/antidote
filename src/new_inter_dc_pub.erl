@@ -21,17 +21,18 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 
--export([start_link/1, start_link/0, broadcast/1, get_address/0]).
+-export([start_link/0, broadcast/1, get_address/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
 
 start_link() ->
+  %% TODO randomize port if configuration does not specify it
   {ok, Port} = application:get_env(antidote, pubsub_port), %% default port number provided in app.config
   start_link(Port).
 
 start_link(Port) ->
-  gen_server:start_link({global, ?MODULE}, ?MODULE, [Port], []).
+  gen_server:start_link({local, ?MODULE}, ?MODULE, [Port], []).
 
 init([Port]) ->
   Socket = create_socket(Port),
@@ -50,16 +51,14 @@ handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-%% TODO: buffer messages before opening the socket?
-%% TODO: take care of the SLOW JOINER problem
-broadcast(Message) -> gen_server:call({global, ?MODULE}, {publish, term_to_binary(Message)}).
+broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
 
 -spec get_address() -> dc_address().
 get_address() ->
   %% TODO check if we do not return a link-local address
   {ok, List} = inet:getif(),
   {Ip, _, _} = hd(List),
-  Port = gen_server:call({global, ?MODULE}, get_port),
+  Port = gen_server:call(?MODULE, get_port),
   {Ip, Port}.
 
 create_socket(Port) ->

@@ -24,27 +24,18 @@
 %% Public API
 %% ===================================================================
 
--spec start_broker(port()) -> {ok, dc_address()}.
--export([start_broker/1, stop_broker/0, get_dcs/0, add_dc/1, add_list_dcs/1]).
+-export([add_dc/1, add_list_dcs/1, get_publishers/0]).
 
-start_broker(Port) ->
-  %% One node will now act as interDC node.
-  ok = antidote_sup:start_broker(Port),
-  {ok, new_inter_dc_pub:get_address()}.
-
-stop_broker() -> ok.
-
-%% Returns all DCs known to this DC.
--spec get_dcs() ->{ok, [dc_address()]}.
-get_dcs() -> {ok, new_inter_dc_sub:get_dcs()}.
+get_publishers() ->
+  Nodes = dc_utilities:get_my_dc_nodes(),
+  F = fun(Node) -> rpc:call(Node, new_inter_dc_pub, get_address, []) end,
+  lists:map(F, Nodes).
 
 %% Add info about a new DC. This info could be
 %% used by other modules to communicate to other DC
 -spec add_dc(dc_address()) -> ok.
-add_dc(NewDC) -> new_inter_dc_sub:add_dc(NewDC).
+add_dc(NewDC) -> new_inter_dc_sub:add_publisher(NewDC).
 
 %% Add a list of DCs to this DC
 -spec add_list_dcs([dc_address()]) -> ok.
-add_list_dcs(DCs) -> lists:map(fun new_inter_dc_sub:add_dc/1, DCs), ok.
-
-
+add_list_dcs(DCs) -> lists:map(fun new_inter_dc_sub:add_publisher/1, DCs), ok.
