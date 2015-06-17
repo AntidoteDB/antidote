@@ -24,18 +24,21 @@
 %% Public API
 %% ===================================================================
 
--export([add_dc/1, add_list_dcs/1, get_publishers/0]).
+-export([subscribe/1, get_publishers/0]).
 
+%% TODO catch rpc errors
+
+%% Returns the list of publisher addresses for this DC, one address per node.
+%% Each address is a ZeroMQ publisher socket.
+-spec get_publishers() -> [pub_address()].
 get_publishers() ->
   Nodes = dc_utilities:get_my_dc_nodes(),
   F = fun(Node) -> rpc:call(Node, new_inter_dc_pub, get_address, []) end,
   lists:map(F, Nodes).
 
-%% Add info about a new DC. This info could be
-%% used by other modules to communicate to other DC
--spec add_dc(dc_address()) -> ok.
-add_dc(NewDC) -> new_inter_dc_sub:add_publisher(NewDC).
-
-%% Add a list of DCs to this DC
--spec add_list_dcs([dc_address()]) -> ok.
-add_list_dcs(DCs) -> lists:map(fun new_inter_dc_sub:add_publisher/1, DCs), ok.
+%% Orders each node inside the cluster to subscribe to the specified list of publishers.
+-spec subscribe([pub_address()]) -> ok.
+subscribe(Publishers) ->
+  Nodes = dc_utilities:get_my_dc_nodes(),
+  F = fun(Node) -> rpc:call(Node, new_inter_dc_sub, add_publishers, [Publishers]) end,
+  lists:foreach(F, Nodes).

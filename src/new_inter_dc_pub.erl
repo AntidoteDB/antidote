@@ -53,7 +53,7 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
 
--spec get_address() -> dc_address().
+-spec get_address() -> pub_address().
 get_address() ->
   %% TODO check if we do not return a link-local address
   {ok, List} = inet:getif(),
