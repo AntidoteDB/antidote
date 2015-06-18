@@ -69,7 +69,9 @@ Again `Ctrl-g` and `q` to quit the shell and stop the node.
     make devrel
 
 Will generate 6 nodes of `antidote` on your local machine, in
-`./dev`. When that is done, we should start them all up.
+`./dev`.
+
+When that is done, we should start them all up:
 
     for d in dev/dev*; do $d/bin/antidote start; done
 
