@@ -143,12 +143,12 @@ cluster using distributed erlang.
 
 Let's start a node:
 
-     erl -name 'client@127.0.0.1' -setcookie antidote
+    erl -name 'client@127.0.0.1' -setcookie antidote
 
 First check that we can connect to the cluster:
 
     (cli@127.0.0.1)1> net_adm:ping('dev3@127.0.0.1').
-     pong
+    pong
 
 Then we can rpc onto any of the nodes and call `ping`:
 
