@@ -54,13 +54,7 @@ list), then you should be able to start a node of `antidote`.
     15:55:05:antidote $ rel/antidote/bin/antidote console
     (elided)
     Eshell V5.10.3  (abort with ^G)
-    (antidote@127.0.0.1)1> antidote:ping().
-    {pong,1118962191081472546749696200048404186924073353216}
-    (antidote@127.0.0.1)3>
-
-What you should see is a `pong` response, followed by a big number. The
-number is the partition that responded to the `ping` request. Try it a
-few more times, different partitions will respond.
+    (antidote@127.0.0.1)1>
 
 Again `Ctrl-g` and `q` to quit the shell and stop the node.
 
