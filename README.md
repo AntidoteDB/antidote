@@ -49,7 +49,7 @@ Using Antidote
 
 #### Single Node Cluster ###
 
-  make rel
+    make rel
 
 Rebar will now pull all the dependencies it needs from github, and build
 the application, and make an erlang "release" of a single node.  If all
@@ -198,16 +198,16 @@ In the particular call we have just used as an example,
 
 Start a node (if you haven't done it yet):
 
-	erl -name 'client@127.0.0.1' -setcookie antidote
+    erl -name 'client@127.0.0.1' -setcookie antidote
 
 Perform a read operation (example):
 
-	(client@127.0.0.1)1> rpc:call('dev1@127.0.0.1', antidote, read, [myKey, riak_dt_gcounter]).
+    (client@127.0.0.1)1> rpc:call('dev1@127.0.0.1', antidote, read, [myKey, riak_dt_gcounter]).
     1
 
 The above rpc calls the function read from the module antidote:
 
-	read(Key, Type)
+    read(Key, Type)
 
 where
 
