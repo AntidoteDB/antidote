@@ -43,13 +43,13 @@ Using Antidote
 
 ### Getting Antidote ###
 
-    `git clone git@github.com:SyncFree/antidote.git`
+    git clone git@github.com:SyncFree/antidote.git
 
 ### Building Antidote ###
 
 #### Single Node Cluster ###
 
-    `make rel`
+    make rel
 
 Rebar will now pull all the dependencies it needs from github, and build
 the application, and make an erlang "release" of a single node.  If all
