@@ -1,6 +1,7 @@
 Antidote
 ============
-Welcome to the Antidote repository, the reference platform of the SyncFree european project (https://syncfree.lip6.fr/).
+
+Welcome to the Antidote repository, the reference platform of the [SyncFree European Project](https://syncfree.lip6.fr/)
 
 About Antidote
 -----------------
