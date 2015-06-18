@@ -143,7 +143,7 @@ cluster using distributed erlang.
 
 Let's start a node:
 
-    erl -name 'client@127.0.0.1' -setcookie antidote
+     erl -name 'client@127.0.0.1' -setcookie antidote
 
 First check that we can connect to the cluster:
 
