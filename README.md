@@ -226,7 +226,7 @@ Running Tests
 
 ### Setup testing framework ###
 
-1. Clone [riak_test](https://github.com/basho/riak_test).
+1. Clone [Riak Test](https://github.com/basho/riak_test) from GitHub
 2. `cd riak_test && make`
 
 ### Building antidote for testing ###
