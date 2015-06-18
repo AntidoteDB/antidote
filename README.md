@@ -161,7 +161,7 @@ And you can shut down your cluster like
     for d in dev/dev*; do $d/bin/antidote stop; done
 
 When you start it up again, it will still be a cluster.
-    
+
 ### Reading from and writing to a CRDT object stored in antidote:
 
 #### Writing
@@ -179,22 +179,20 @@ The above rpc calls the function append from the module antidote:
 
 	append(Key, {OpParam, Actor})
 
-where 
+where
 
 * `Key` = the key to write to.
 * `OpParam` = the parameters of the update operation.
 * `Actor` = the actor of the update (as needed by riak_dt, basho's state-based CRDT implementation)
 
-In the particular call we have just used as an example, 
+In the particular call we have just used as an example,
 
 * `myKey` = the key to write to.
 * `{increment,4}` = the parameters of the update:
 	* `increment` = an operation type, as defined in the riak_dt definition of the data type that is being written (in this case a gcounter), and
-	* `4` = the operation's actor id. 
-	
+	* `4` = the operation's actor id.
 
 	IMPORTANT: the update operation will execute no operation on the CRDT, will just store the operation in antidote. The execution of operations to a key occur when the CRDT is read.
-
 
 #### Reading
 
@@ -206,24 +204,22 @@ Perform a read operation (example):
 
 	(client@127.0.0.1)1> rpc:call('dev1@127.0.0.1', antidote, read, [myKey, riak_dt_gcounter]).
     1
-    
+
 The above rpc calls the function read from the module antidote:
 
 	read(Key, Type)
 
-where 
+where
 
 * `Key` = the key to read from.
 * `Type` = the type of CRDT.
 
-In the particular call we have just used as an example, 
+In the particular call we have just used as an example,
 
 * `myKey` = the key to read from.
 * `riak_dt_gcounter` = the CRDT type, a gcounter
 
 The read operation will materialise (i.e., apply the operations that have been stored since the last materialisation, if any) the CRDT and return the result as an {ok, Result} tuple.
-
-		
 
 Running Tests
 -------------
