@@ -234,7 +234,7 @@ Running Tests
 1. Go to antidote directory
 2. `make stagedevrel`
 3. `./riak_test/bin/antidote-setup.sh` (only for the first time)
-4. `./riak\_test/bin/antidote-current.sh`
+4. `./riak_test/bin/antidote-current.sh`
 
 ### Run all tests ###
 
