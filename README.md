@@ -38,7 +38,7 @@ Using Antidote
 
 ### Prerequisites ###
 
-1. An unix-based OS.
+1. An UNIX-like OS.
 2. [Erlang R16B02](read https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang)
 
 ### Getting Antidote ###
@@ -49,7 +49,7 @@ Using Antidote
 
 #### Single Node Cluster ###
 
-`make rel`
+1. `make rel`
 
 Rebar will now pull all the dependencies it needs from github, and build
 the application, and make an erlang "release" of a single node.  If all
@@ -67,7 +67,7 @@ What you should see is a `pong` response, followed by a big number. The
 number is the partition that responded to the `ping` request. Try it a
 few more times, different partitions will respond.
 
-Again Ctrl-g` and `q` to quit the shell and stop the node.
+Again `Ctrl-g` and `q` to quit the shell and stop the node.
 
 #### Multi-Node Cluster
 
