@@ -20,45 +20,41 @@ Information about Antidote's layered design can be found in the following [Googl
 
 ### Current state ###
 
-NOTE: not all features are available in the master branch
+Not all features are available in the master branch.
 
-* Partitioned (built on top of Antidote),
-* Replicated within a datacenter.
+* Partitioned
+* Replicated within a datacenter
 * State-based CRDT support, as it uses the [Riak DT library](https://github.com/basho/riak_dt)
-* Provides Snapshot Isolation. it implements Clock-SI (available in the clock-SI_v2 branch), which is currently non-stable.
-* Replication Across DCs with causal ordering (available in the causality branch).
+* Provides snapshot isolation
+* Replication across DCs with causal ordering
 
 ### Future features ###
-* Operation-based CRDT support.
-* Support for "red-blue" transactions.
+
+* Operation-based CRDT support
+* Support for "red-blue" transactions
 
 Using Antidote
------------------
+--------------
 
 ### Prerequisites ###
 
 1. An unix-based OS.
-2. Erlang R16B02 (read https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang).
-
-	NOTE: use this Erlang version in order not to have problems.
+2. [Erlang R16B02](read https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang)
 
 ### Getting Antidote ###
 
-1. From your shell, run: `git clone http://github.com/SyncFree/antidote`
+1. `git clone http://github.com/SyncFree/antidote`
 
 ### Building Antidote ###
 
 #### Single Node Cluster ###
 
-Go to the Antidote directory (the one that you've just cloned using git) and:
+`make rel`
 
-	make rel
-	
-Rebar will now pull all the dependencies it needs from github, and
-build the application, and make an erlang "release" of a single node.
-If all went well (if it didn't, send an email to the SyncFree
-tech mailing list), then you should be able to start
-a node of `Antidote`.
+Rebar will now pull all the dependencies it needs from github, and build
+the application, and make an erlang "release" of a single node.  If all
+went well (if it didn't, send an email to the SyncFree tech mailing
+list), then you should be able to start a node of `antidote`.
 
     15:55:05:antidote $ rel/antidote/bin/antidote console
     (elided)
@@ -67,12 +63,11 @@ a node of `Antidote`.
     {pong,1118962191081472546749696200048404186924073353216}
     (antidote@127.0.0.1)3>
 
-What you should see is a `pong` response, followed by a big
-number. The number is the partition that responded to the `ping`
-request. Try it a few more times, different partitions will respond.
+What you should see is a `pong` response, followed by a big number. The
+number is the partition that responded to the `ping` request. Try it a
+few more times, different partitions will respond.
 
 Again Ctrl-g` and `q` to quit the shell and stop the node.
-
 
 #### Multi-Node Cluster
 
