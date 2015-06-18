@@ -147,7 +147,7 @@ Let's start a node:
 
 First check that we can connect to the cluster:
 
-     (cli@127.0.0.1)1> net_adm:ping('dev3@127.0.0.1').
+    (cli@127.0.0.1)1> net_adm:ping('dev3@127.0.0.1').
      pong
 
 Then we can rpc onto any of the nodes and call `ping`:
