@@ -20,10 +20,11 @@ Information about Antidote's layered design can be found in the following [Googl
 
 ### Current state ###
 
-	NOTE: not all features are available in the master branch.
+NOTE: not all features are available in the master branch
+
 * Partitioned (built on top of Antidote),
 * Replicated within a datacenter.
-* State-based CRDT support, as it uses the riak_dt library.
+* State-based CRDT support, as it uses the [Riak DT library](https://github.com/basho/riak_dt)
 * Provides Snapshot Isolation. it implements Clock-SI (available in the clock-SI_v2 branch), which is currently non-stable.
 * Replication Across DCs with causal ordering (available in the causality branch).
 
