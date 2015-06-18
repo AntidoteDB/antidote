@@ -66,10 +66,10 @@ Again `Ctrl-g` and `q` to quit the shell and stop the node.
 
 #### Multi-Node Cluster
 
-    make devrel
+To generate 6 nodes of `antidote` on your local machine, in
+`./dev`:
 
-Will generate 6 nodes of `antidote` on your local machine, in
-`./dev`.
+    make devrel
 
 When that is done, we should start them all up:
 
@@ -84,15 +84,15 @@ And check that they're working:
     pong
 
 
-At this point you have 4 single node applications running. We need to
+At this point you have 6 single node clusters running. We need to
 join them together in a cluster:
 
     for d in dev/dev{2,3,4,5,6}; do $d/bin/antidote-admin cluster join 'dev1@127.0.0.1'; done
-    Success: staged join request for 'antidote@127.0.0.1' to 'dev2@127.0.0.1'
-    Success: staged join request for 'antidote@127.0.0.1' to 'dev3@127.0.0.1'
-    Success: staged join request for 'antidote@127.0.0.1' to 'dev4@127.0.0.1'
-    Success: staged join request for 'antidote@127.0.0.1' to 'dev5@127.0.0.1'
-    Success: staged join request for 'antidote@127.0.0.1' to 'dev6@127.0.0.1'
+    Success: staged join request for 'dev1@127.0.0.1' to 'dev2@127.0.0.1'
+    Success: staged join request for 'dev1@127.0.0.1' to 'dev3@127.0.0.1'
+    Success: staged join request for 'dev1@127.0.0.1' to 'dev4@127.0.0.1'
+    Success: staged join request for 'dev1@127.0.0.1' to 'dev5@127.0.0.1'
+    Success: staged join request for 'dev1@127.0.0.1' to 'dev6@127.0.0.1'
 
 Sends the requests to node1, which we can now tell to build the cluster:
 
@@ -100,7 +100,7 @@ Sends the requests to node1, which we can now tell to build the cluster:
      ...
      dev/dev1/bin/antidote-admin cluster commit
 
-Have a look at the `member-status` to see that the cluster is balancing.
+Have a look at the `member-status` to see that the cluster is balancing:
 
     dev/dev1/bin/antidote-admin member-status
     ================================= Membership ==================================
@@ -117,7 +117,7 @@ Have a look at the `member-status` to see that the cluster is balancing.
 
 
 Wait a while, and look again, and you should see a fully balanced
-cluster.
+cluster:
 
     dev/dev1/bin/antidote-admin member-status
     ================================= Membership ==================================
@@ -131,7 +131,6 @@ cluster.
     valid      16.6%      --    'dev6@127.0.0.1'
     -------------------------------------------------------------------------------
     Valid:6 / Leaving:0 / Exiting:0 / Joining:0 / Down:0
-
 
 ##### Remote calls
 
