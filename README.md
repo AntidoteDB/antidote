@@ -139,24 +139,16 @@ cluster using distributed erlang.
 
 Let's start a node:
 
-    erl -name 'client@127.0.0.1' -setcookie antidote
+    dev/dev1/bin/antidote console
 
 First check that we can connect to the cluster:
 
-    (cli@127.0.0.1)1> net_adm:ping('dev3@127.0.0.1').
+    (dev1@127.0.0.1)1> net_adm:ping('dev3@127.0.0.1').
     pong
 
-Then we can rpc onto any of the nodes and call `ping`:
-
-    (cli@127.0.0.1)2> rpc:call('dev1@127.0.0.1', antidote, ping, []).
-    {pong,662242929415565384811044689824565743281594433536}
-    (cli@127.0.0.1)3>
-
-And you can shut down your cluster like
+And you can shut down your cluster:
 
     for d in dev/dev*; do $d/bin/antidote stop; done
-
-When you start it up again, it will still be a cluster.
 
 ### Reading from and writing to a CRDT object stored in antidote:
 
@@ -164,48 +156,44 @@ When you start it up again, it will still be a cluster.
 
 Start a node (if you haven't done it yet):
 
-	erl -name 'client@127.0.0.1' -setcookie antidote
+    dev/dev1/bin/antidote console
 
 Perform a write operation (example):
 
-    (client@127.0.0.1)1> rpc:call('dev1@127.0.0.1', antidote, append, [myKey, {increment, 4}]).
+    (dev1@127.0.0.1)1> antidote:append(myKey, {increment, 4}).
     {ok,{1,'dev1@127.0.0.1'}}
 
 The above rpc calls the function append from the module antidote:
 
-	append(Key, {OpParam, Actor})
+    append(Key, {OpParam, Actor})
 
 where
 
-* `Key` = the key to write to.
-* `OpParam` = the parameters of the update operation.
-* `Actor` = the actor of the update (as needed by riak_dt, basho's state-based CRDT implementation)
+* `Key` = the key to write to
+* `OpParam` = the parameters of the update operation
+* `Actor` = the actor of the update
 
-In the particular call we have just used as an example,
+In the particular call we have just used as an example:
 
 * `myKey` = the key to write to.
-* `{increment,4}` = the parameters of the update:
-	* `increment` = an operation type, as defined in the riak_dt definition of the data type that is being written (in this case a gcounter), and
-	* `4` = the operation's actor id.
-
-	IMPORTANT: the update operation will execute no operation on the CRDT, will just store the operation in antidote. The execution of operations to a key occur when the CRDT is read.
+* `{increment,4}` = the parameters of the update
 
 #### Reading
 
 Start a node (if you haven't done it yet):
 
-    erl -name 'client@127.0.0.1' -setcookie antidote
+    dev/dev1/bin/antidote console
 
 Perform a read operation (example):
 
-    (client@127.0.0.1)1> rpc:call('dev1@127.0.0.1', antidote, read, [myKey, riak_dt_gcounter]).
+    (dev1@127.0.0.1)1> antidote:read(myKey, riak_dt_gcounter).
     1
 
-The above rpc calls the function read from the module antidote:
+The above calls the function read from the module antidote:
 
     read(Key, Type)
 
-where
+where:
 
 * `Key` = the key to read from.
 * `Type` = the type of CRDT.
