@@ -6,18 +6,20 @@ Welcome to the Antidote repository, the reference platform of the [SyncFree Euro
 About Antidote
 -----------------
 ### Purpose ###
-Antidote is an in-development distributed CRDT key-value store written in Erlang and riak_core based (https://github.com/basho/riak_core)
-that is intended to provide the following features:
+Antidote is an in-development distributed CRDT key-value store written in Erlang with [Riak Core](https://github.com/basho/riak_core) that is intended to provide the following features:
+
 * Partitioning,
 * Intra-DC replication,
 * Inter-DC replication,
 * Support for atomic write transactions,
-* A flexible layered architecture so features can be smoothly added or removed. 
- 
+* A flexible layered architecture so features can be smoothly added or removed.
+
 ### Architecture ###
-Information about Antidote's layered design can be found in the following google doc: https://docs.google.com/document/d/1SNnmAtx5FrcNgEMdNQkKlfzYc1tqziaV2lQ6g9IQyzs/edit#heading=h.ze32da2pga2f
+
+Information about Antidote's layered design can be found in the following [Google Doc](https://docs.google.com/document/d/1SNnmAtx5FrcNgEMdNQkKlfzYc1tqziaV2lQ6g9IQyzs/edit#heading=h.ze32da2pga2f)
 
 ### Current state ###
+
 	NOTE: not all features are available in the master branch.
 * Partitioned (built on top of Antidote),
 * Replicated within a datacenter.
@@ -28,20 +30,25 @@ Information about Antidote's layered design can be found in the following google
 ### Future features ###
 * Operation-based CRDT support.
 * Support for "red-blue" transactions.
-	
+
 Using Antidote
 -----------------
+
 ### Prerequisites ###
+
 1. An unix-based OS.
 2. Erlang R16B02 (read https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang).
-	
+
 	NOTE: use this Erlang version in order not to have problems.
-	
+
 ### Getting Antidote ###
+
 1. From your shell, run: `git clone http://github.com/SyncFree/antidote`
 
 ### Building Antidote ###
-#### Single Node Cluster 
+
+#### Single Node Cluster ###
+
 Go to the Antidote directory (the one that you've just cloned using git) and:
 
 	make rel
