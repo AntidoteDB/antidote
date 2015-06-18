@@ -28,11 +28,6 @@ Not all features are available in the master branch.
 * Provides snapshot isolation
 * Replication across DCs with causal ordering
 
-### Future features ###
-
-* Operation-based CRDT support
-* Support for "red-blue" transactions
-
 Using Antidote
 --------------
 
