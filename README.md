@@ -8,11 +8,11 @@ About Antidote
 ### Purpose ###
 Antidote is an in-development distributed CRDT key-value store written in Erlang with [Riak Core](https://github.com/basho/riak_core) that is intended to provide the following features:
 
-* Partitioning,
-* Intra-DC replication,
-* Inter-DC replication,
-* Support for atomic write transactions,
-* A flexible layered architecture so features can be smoothly added or removed.
+* Partitioning
+* Intra-DC replication
+* Inter-DC replication
+* Support for atomic write transactions
+* Flexible layered architecture so features can be smoothly added or removed
 
 ### Architecture ###
 
