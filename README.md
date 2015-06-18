@@ -221,32 +221,26 @@ The read operation will materialise (i.e., apply the operations that have been s
 
 		
 
-Running Tests 
+Running Tests
 -------------
 
-### Setup riak_test ###
+### Setup testing framework ###
 
-1. Clone [https://github.com/SyncFree/riak\_test](https://github.com/SyncFree/riak_test) .Lets call it RIAK_TEST
-2. Switch to the features/csm/floppystore branch:
-	* git checkout features/csm/floppystore
-2. cd RIAK_TEST and run commands
-	* make
+1. Clone [riak_test](https://github.com/basho/riak_test).
+2. `cd riak_test && make`
 
 ### Building antidote for testing ###
 
 1. Go to antidote directory
-2. make stagedevrel
-3. ./riak\_test/bin/antidote-setup.sh (Only for the first time) 
-    
-	./riak\_test/bin/antidote-current.sh
+2. `make stagedevrel`
+3. `./riak_test/bin/antidote-setup.sh` (only for the first time)
+4. `./riak\_test/bin/antidote-current.sh`
 
-### Running test ###
+### Run all tests ###
 
-1. Go to RIAK_TEST directory
-2. ./riak\_test -v -c antidote -t "TEST\_TO\_RUN"
+1. `make riak-test` (assumes `riak_test` is located `../riak\_test`)
 
-	TEST\_TO\_RUN is any test module in antidote/riak_test/
+### Running tests ###
 
-	eg:- ./riak_test -v -c antidote -t clocksi_test
-
-
+1. `cd riak_test`
+2. `./riak_test -v -c antidote -t $TEST_TO_RUN`
