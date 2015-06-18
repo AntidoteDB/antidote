@@ -33,8 +33,8 @@ Using Antidote
 
 ### Prerequisites ###
 
-1. An UNIX-like OS
-2. [Erlang R16B02](https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang)
+* An UNIX-like OS
+* [Erlang R16B02](https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang)
 
 ### Getting Antidote ###
 
