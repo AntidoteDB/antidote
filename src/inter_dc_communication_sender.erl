@@ -65,7 +65,7 @@ propagate_sync(Message, DCs) ->
                                        lager:error(
                                          "Send failed Reason:~p Message: ~p",
                                          [Other, Message]),
-                                       Acc ++ [{DcAddress,Port}]
+                                       Acc ++ [{DcId, {DcAddress,Port}}]
                                        %%TODO: Retry if needed
                                after ?TIMEOUT ->
                                        lager:error(

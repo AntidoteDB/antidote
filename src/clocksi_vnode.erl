@@ -288,7 +288,7 @@ handle_command({get_active_txns}, _Sender,
 						[] ->
 						    Acc;
 						_ ->
-						    [List|Acc]
+						    List ++ Acc
 					    end
 				    end,
     				    [],[{Key1,List1}|Rest1])
@@ -356,7 +356,6 @@ clean_prepared(_PreparedTx,[],_TxId) ->
 clean_prepared(PreparedTx,[{_, {Key, _Type, {_Op, _Actor}}} | Rest],TxId) ->
     [{Key,ActiveTxs}] = ets:lookup(PreparedTx, Key),
     NewActive = lists:keydelete(TxId,1,ActiveTxs),
-    lager:info("active before: ~w, active after ~w, txid ~w~n~n", [ActiveTxs,NewActive,TxId]),
     true = ets:insert(PreparedTx, {Key, NewActive}),
     clean_prepared(PreparedTx,Rest,TxId).
 
