@@ -354,9 +354,19 @@ clean_and_notify(TxId, Updates, #state{active_txs_per_key=_ActiveTxsPerKey,
 clean_prepared(_PreparedTx,[],_TxId) ->
     ok;
 clean_prepared(PreparedTx,[{_, {Key, _Type, {_Op, _Actor}}} | Rest],TxId) ->
-    [{Key,ActiveTxs}] = ets:lookup(PreparedTx, Key),
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+		    [] ->
+			[];
+		    [{Key,List}] ->
+			List
+		end,
     NewActive = lists:keydelete(TxId,1,ActiveTxs),
-    true = ets:insert(PreparedTx, {Key, NewActive}),
+    true = case NewActive of
+	       [] ->
+		   ets:delete(PreparedTx, Key);
+	       _ ->
+		   ets:insert(PreparedTx, {Key, NewActive})
+	   end,
     clean_prepared(PreparedTx,Rest,TxId).
 
 
