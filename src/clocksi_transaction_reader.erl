@@ -198,7 +198,7 @@ get_stable_time(Node, Prev_stable_time) ->
     case riak_core_vnode_master:sync_command(
            Node, {get_active_txns}, ?CLOCKSI_MASTER) of
         {ok, Active_txns} ->
-            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
+            lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
                                 case Min_time > Snapshot_time of
                                     true ->
                                         Snapshot_time;

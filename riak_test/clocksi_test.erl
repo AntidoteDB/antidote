@@ -22,7 +22,7 @@
 -export([confirm/0, clocksi_test1/1, clocksi_test2/1,
          clocksi_test_read_wait/1, clocksi_test4/1, clocksi_test_read_time/1,
          clocksi_test_certification_check/1,
-         clocksi_multiple_test_certification_check/1, spawn_read/3]).
+         clocksi_multiple_test_certification_check/1, spawn_read/3, clocksi_test_prepare/1, spawn_com/2]).
 
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
@@ -32,6 +32,7 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     clocksi_test1(Nodes),
     clocksi_test2 (Nodes),
+    clocksi_test_prepare(Nodes),
     clocksi_tx_noclock_test(Nodes),
     clocksi_single_key_update_read_test(Nodes),
     clocksi_multiple_key_update_read_test(Nodes),
@@ -140,6 +141,77 @@ clocksi_test2(Nodes) ->
     ?assertEqual(ReadVal, 1),
     lager:info("Test2 passed"),
     pass.
+
+%% @doc This test makes sure to block pending reads when a prepare is in progress
+%% that could violate atomicity if not blocked
+clocksi_test_prepare(Nodes) ->
+    FirstNode = hd(Nodes),
+    lager:info("Test prepare started"),
+    Type = riak_dt_pncounter,
+
+    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa],1),
+    IndexNode = hd(Preflist),
+
+    Key2 = find_key_same_node(FirstNode,IndexNode,1),
+
+    {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
+                         [TxId, aaa, riak_dt_pncounter]),
+    ?assertEqual({ok, 0}, ReadResult0),
+    WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                         [TxId, aaa, Type, {increment, a1}]),
+    ?assertEqual(ok, WriteResult),
+    ReadResult=rpc:call(FirstNode, antidote, clocksi_iread,
+                        [TxId, aaa, riak_dt_pncounter]),
+    ?assertEqual({ok, 1}, ReadResult),
+    CommitTime=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
+    ?assertMatch({ok, _}, CommitTime),
+
+    timer:sleep(3000),
+
+    {ok,TxIdRead}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),    
+
+    timer:sleep(3000),
+
+    {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
+                         [TxId1, Key2, Type, {increment, a2}]),
+    ?assertEqual(ok, WriteResult1),
+    ReadResult1=rpc:call(FirstNode, antidote, clocksi_iread,
+                        [TxId1, Key2, riak_dt_pncounter]),
+    ?assertEqual({ok, 1}, ReadResult1),
+    CommitTime1=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
+    ?assertMatch({ok, _}, CommitTime1),
+       
+    spawn(?MODULE, spawn_com, [FirstNode, TxId]),
+
+    ReadResultR=rpc:call(FirstNode, antidote, clocksi_iread,
+			 [TxIdRead, aaa, riak_dt_pncounter]),
+    ?assertEqual({ok, 1}, ReadResultR),
+
+    End1=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
+    
+    lager:info("Test prepare passed"),
+
+    pass.
+
+
+find_key_same_node(FirstNode,IndexNode,Num) ->
+    NewKey = list_to_atom(atom_to_list(aaa) ++ integer_to_list(Num)),
+    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
+    case hd(Preflist) == IndexNode of
+	true ->
+	    NewKey;
+	false ->
+	    find_key_same_node(FirstNode,IndexNode,Num+1)
+    end.
+
+spawn_com(FirstNode, TxId) ->
+    timer:sleep(3000),
+    End1 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
+    ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1).
+    
 
 %% @doc Test to execute transaction with out explicit clock time
 clocksi_tx_noclock_test(Nodes) ->
