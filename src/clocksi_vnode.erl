@@ -211,7 +211,7 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
                               committed_tx=CommittedTx,
                               active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx
-                              }) ->
+			     }) ->
     PrepareTime = now_microsec(erlang:now()),
     {Result,NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
@@ -234,6 +234,7 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
         {error, write_conflict} ->
             {reply, abort, State}
     end;
+
 
 %% TODO: sending empty writeset to clocksi_downstream_generatro
 %% Just a workaround, need to delete downstream_generator_vnode
@@ -272,6 +273,18 @@ handle_command({abort, Transaction, Updates}, _Sender,
         _ ->
             {reply, {error, no_tx_record}, State}
     end;
+
+%% @doc Return active transactions in prepare state with their preparetime for a given key
+handle_command({get_active_txns, Key}, _Sender,
+               #state{prepared_tx=Prepared, partition=_Partition} = State) ->
+    ActiveTxs = case ets:lookup(Prepared, Key) of
+		    [] ->
+			[];
+		    [{Key, List}] ->
+			List
+		end,
+    {reply, {ok, ActiveTxs}, State};
+
 
 %% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
 handle_command({get_active_txns}, _Sender,
@@ -411,9 +424,6 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
             {error, no_updates}
     end.
 
-
-
-
 %% @doc clean_and_notify:
 %%      This function is used for cleanning the state a transaction
 %%      stores in the vnode while it is being procesed. Once a
@@ -424,18 +434,26 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
 %%      b. PreparedTx
 %%
 clean_and_notify(TxId, Updates, #state{active_txs_per_key=_ActiveTxsPerKey,
-			      prepared_tx=PreparedTx}) ->
+				       prepared_tx=PreparedTx}) ->
     ok = clean_prepared(PreparedTx,Updates,TxId).
 
 clean_prepared(_PreparedTx,[],_TxId) ->
     ok;
 clean_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId) ->
-    [{Key,ActiveTxs}] = ets:lookup(PreparedTx, Key),
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+		    [] ->
+			[];
+		    [{Key,List}] ->
+			List
+		end,
     NewActive = lists:keydelete(TxId,1,ActiveTxs),
-    true = ets:insert(PreparedTx, {Key, NewActive}),
+    true = case NewActive of
+	       [] ->
+		   ets:delete(PreparedTx, Key);
+	       _ ->
+		   ets:insert(PreparedTx, {Key, NewActive})
+	   end,
     clean_prepared(PreparedTx,Rest,TxId).
-
-
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_microsec({MegaSecs, Secs, MicroSecs}) ->

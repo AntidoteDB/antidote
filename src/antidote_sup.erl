@@ -97,12 +97,10 @@ init(_Args) ->
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
-
     InterDcSenderSup = {inter_dc_communication_sender_fsm_sup,
     		      {inter_dc_communication_sender_fsm_sup, start_link, []},
     		      permanent, 5000, supervisor,
     		      [inter_dc_communication_sender_fsm_sup]},
-
 
     InterDcManager = {inter_dc_manager,
                         {inter_dc_manager, start_link, []},

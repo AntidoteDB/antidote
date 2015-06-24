@@ -263,7 +263,6 @@ spawn_com(FirstNode, TxId) ->
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1).
     
 
-
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %%      that updates only one partition. This type of txs use a only-one phase 
 %%      commit.
@@ -302,6 +301,7 @@ clocksi_test5(Nodes) ->
     ?assertEqual(ReadVal, 5),
     lager:info("Test5 passed"),
     pass.
+
 
 %% @doc Test to execute transaction with out explicit clock time
 clocksi_tx_noclock_test(Nodes) ->

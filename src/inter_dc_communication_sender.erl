@@ -117,10 +117,12 @@ wait_for_ack(acknowledge, State)->
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
     lager:error("Timeout in wait for ACK",[]),
+    %% Retry after timeout is handled in the propagate_sync loop above
+    %% So the fsm returns a normal stop so that it isn't restarted by the supervisor
     {next_state,stop_error,State#state{reason=timeout},0}.
 
 stop(timeout, State=#state{socket=Socket}) ->
-    _ = gen_tcp:close(Socket),
+    _ = gen_tcp:close(Socket), 
     {stop, normal, State}.
 
 stop_error(timeout, State=#state{socket=Socket}) ->
