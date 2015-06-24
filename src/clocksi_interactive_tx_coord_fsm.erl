@@ -79,7 +79,8 @@
 	  prepare_time :: non_neg_integer(),
 	  commit_time :: non_neg_integer(),
 	  commit_protocol :: term(),
-	  state :: active | prepared | committing | committed | undefined | aborted}).
+	  state :: active | prepared | committing | committed | undefined | aborted
+	 | committed_read_only}).
 
 %%%===================================================================
 %%% API

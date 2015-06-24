@@ -71,7 +71,8 @@ init([Partition]) ->
                        partition = Partition,
                        num_p=0}}.
 
-
+%% @doc get the stable time directly from the locally stored meta-data
+%%      instead of sending a reqest to a possibly external serialized server
 get_stable_snapshot() ->
     riak_core_metadata:get(?META_PREFIX_SS,1,[{default,dict:new()}]).
 
@@ -111,8 +112,13 @@ handle_command(calculate_stable_snapshot, _Sender,
                 dict:new()
         end,
     try
-	%% Not sure this is the best way to do it because everyone will be putting to the same key
-	%% which might cause conlifcts, but they are resloved anyway on read
+	%% Instead of just storing the time in the state data, also store it in riak core
+	%% meta-data.  The reason for this is so that when starting a new transaction, the
+	%% corrdinator can read direclty from the nodes locally stored meta-data, instead of sending
+	%% a request to a serialized vnode.
+	%%
+	%% Not sure this is the best way to store data in riak core meta_data because everyone will be putting to the same key
+	%% which might cause conlifcts, but they are resolved anyway on read.
 	riak_core_metadata:put(?META_PREFIX_SS, 1, Stable_snapshot)
     catch
 	_:Reason ->

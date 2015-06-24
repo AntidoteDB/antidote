@@ -120,22 +120,22 @@ execute_batch_ops(timeout, SD=#state{from = From,
 						end
                 end,
     ReadSet = lists:foldl(ExecuteOp, [], Operations),
-    case ReadSet of 
-	{error, Reason} ->
-	    From ! {error, Reason};
-	_ ->
-	    case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-		{ok, _PrepareTime} ->
-		    case gen_fsm:sync_send_event(TxCoordPid, commit, infinity) of
-			{ok, {TxId, CommitTime}} ->
-			    From ! {ok, {TxId, ReadSet, CommitTime}};
-			_msg ->
-			    From ! {error, commit_fail}
-		    end;
-		_ ->
-		    From ! {error, commit_fail}
-	    end
-    end,
+    _Res = case ReadSet of 
+	       {error, Reason} ->
+		   From ! {error, Reason};
+	       _ ->
+		   case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
+		       {ok, _PrepareTime} ->
+			   case gen_fsm:sync_send_event(TxCoordPid, commit, infinity) of
+			       {ok, {TxId, CommitTime}} ->
+				   From ! {ok, {TxId, ReadSet, CommitTime}};
+			       _msg ->
+				   From ! {error, commit_fail}
+			   end;
+		       _ ->
+			   From ! {error, commit_fail}
+		   end
+	   end,
     {stop, normal, SD}.
 
 
