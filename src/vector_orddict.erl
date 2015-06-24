@@ -43,6 +43,8 @@
 	 filter/2]).
 
 
+%% @doc The vector orddict is an ordered dictionary used to store materialized snapshots whose order
+%%      is described by vectorclocks.
 -spec new() -> {[],0}.
 new() ->
     {[],0}.

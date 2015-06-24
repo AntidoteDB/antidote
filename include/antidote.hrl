@@ -12,10 +12,28 @@
 -define(COMM_TIMEOUT, infinity).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
+%% Allow read concurrency on shared ets tables
+%% These are the tables that store materialized objects
+%% and information about live transactions, so the assumption
+%% is there will be several more reads than writes
 -define(TABLE_CONCURRENCY, {read_concurrency,true}).
+%% The read concurrency is the maximum number of concurrent
+%% readers per vnode.  This is so shared memory can be used
+%% in the case of keys that are read frequently.  There is
+%% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
+%% This can be used for testing, so that transactions start with
+%% old snapshots to avoid clock-skew.
+%% This can break the tests is not set to 0
 -define(OLD_SS_MICROSEC,0).
+%% The number of supervisors that are responsible for
+%% supervising transaction coorinator fsms
 -define(NUM_SUP, 20).
+%% Threads will sleep for this length when they have to wait
+%% for something that is not ready after which they
+%% wake up and retry. I.e. a read waiting for
+%% a transaction currently in the prepare state that is blocking
+%% that read.
 -define(SPIN_WAIT, 10).
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 

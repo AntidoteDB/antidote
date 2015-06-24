@@ -66,7 +66,9 @@
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-%% @doc Read state of key at given snapshot time
+%% @doc Read state of key at given snapshot time, this does not touch the vnode process
+%%      directly, instead it just reads from the operations and snapshot tables that
+%%      are in shared memory, allowing concurrent reads.
 -spec read(key(), type(), snapshot_time(), txid(),cache_id(), cache_id()) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache) ->
     internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache).
@@ -75,7 +77,8 @@ read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache) ->
 get_cache_name(Partition,Base) ->
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
-%%@doc write operation to cache for future read
+%%@doc write operation to cache for future read, updates are stored
+%%     one at a time into the ets tables
 -spec update(key(), clocksi_payload()) -> ok | {error, reason()}.
 update(Key, DownstreamOp) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -83,6 +86,8 @@ update(Key, DownstreamOp) ->
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
 
+%%@doc write snapshot to cache for future read, snapshots are stored
+%%     one at a time into the ets table
 -spec store_ss(key(), snapshot(), snapshot_time()) -> ok.
 store_ss(Key, Snapshot, CommitTime) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -95,7 +100,10 @@ init([Partition]) ->
     SnapshotCache = ets:new(get_cache_name(Partition,snapshot_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
     {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
-
+%% @doc The tables holding the updates and snapshots are shared with concurrent
+%%      readers, allowing them to be non-blocking and concurrent.
+%%      This function checks whether or not all tables have been intialized or not yet.
+%%      Returns true if the have, false otherwise.
 check_tables_ready() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),

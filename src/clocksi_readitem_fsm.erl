@@ -60,6 +60,13 @@
 %%% API
 %%%===================================================================
 
+%% @doc This starts a gen_server responsible for servicing reads to key
+%%      handled by this Partition.  To allow for read concurrency there
+%%      can be multiple copies of these servers per parition, the Id is
+%%      used to distinguish between them.  Since these servers will be
+%%      reading from ets tables shared by the clock_si and materializer
+%%      vnodes, they should be started on the same physical nodes as
+%%      the vnodes with the same partition.
 start_link(Partition,Id) ->
     Addr = node(),
     gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
@@ -83,7 +90,9 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
             {error, Reason}
     end.
 
-
+%% @doc This checks all partitions in the system to see if all read
+%%      servers have been started up.
+%%      Returns true if they have been, false otherwise.
 check_servers_ready() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),
@@ -170,7 +179,6 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
     case check_clock(Key,Transaction,PreparedCache) of
 	not_ready ->
 	    spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-	    %%perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	ready ->
 	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache)
     end.
@@ -179,9 +187,14 @@ spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,
     {message_queue_len,Length} = process_info(self(), message_queue_len),
     case Length of
 	0 ->
+	    %% If it is not safe to read this requested key yet (because of concurrent updates
+	    %% and if there are no other read requests waiting for this server then just perform
+	    %% a short sleep and try again.
 	    timer:sleep(?SPIN_WAIT),
 	    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	_ ->
+	    %% The current read request is not safe to do yet, and there are other processes waiting to use this read server,
+	    %% so put the current request on the back of the queue
 	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction})
     end.
 
@@ -202,7 +215,9 @@ check_clock(Key,Transaction,PreparedCache) ->
 	    check_prepared(Key,Transaction,PreparedCache)
     end.
 
-
+%% @doc check_prepared: Check if there are any transactions
+%%      being prepared on the tranaction being read, and
+%%      if they could violate the correctness of the read
 check_prepared(Key,Transaction,PreparedCache) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,

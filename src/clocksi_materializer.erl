@@ -34,22 +34,21 @@ new(Type) ->
     materializer:create_snapshot(Type).
 
 
-%% @doc Applies the operation of a list to a CRDT. Only the
-%%      operations with smaller timestamp than the specified
+%% @doc Applies the operation of a list to a previously created CRDT snapshot. Only the
+%%      operations that are not already in the previous snapshot and
+%%      with smaller timestamp than the specified
 %%      are considered. Newer operations are discarded.
-%%      Two materialized objects are returned, one that will be cached
-%%      and one that will be returned to the read.
 %%      Input:
 %%      Type: The type of CRDT to create
 %%      Snapshot: Current state of the CRDT
 %%      SnapshotCommitTime: The time used to describe the state of the CRDT given in Snapshot
-%%      MinFromSnapshotTime: The threshold time given by the reading transaction
+%%      MinSnapshotTime: The threshold time given by the reading transaction
 %%      Ops: The list of operations to apply in causal order
 %%      TxId: The Id of the transaction requesting the snapshot
-%%      Output: The CRDT after appliying the operations and its commit
-%%      time taken from the last operation that was applied to the snapshot.
-%%      SnapshotSave is the snapshot that will be cached and is described by time
-%%      CommitTime
+%%      Output: A tuple. The first element is ok, the seond is the CRDT after appliying the operations,
+%%      the third element is the smallest vectorclock that describes this snapshot,
+%%      the fourth element is a boolean, it it is true it means that the returned snapshot contains
+%%      more operations than the one given as input, false otherwise.
 -spec materialize(type(), snapshot(),
 		  snapshot_time() | ignore,
 		  snapshot_time(),

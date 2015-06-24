@@ -129,6 +129,10 @@ create_transaction_record(ClientClock) ->
                                txn_id=TransactionId},
     {Transaction,TransactionId}.
 
+%% @doc This is a standalone function for directly contacting the read
+%%      server located at the vnode of the key being read.  This read
+%%      is supposed to be light weight because it is done outside of a
+%%      transaction fsm and directly in the calling thread.
 -spec perform_singleitem_read(key(),type()) -> {ok,val()} | {error,reason()}.
 perform_singleitem_read(Key,Type) ->
     {Transaction,_TransactionId} = create_transaction_record(ignore),

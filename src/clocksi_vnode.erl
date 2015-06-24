@@ -74,6 +74,8 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Sends a read request to the Node that is responsible for the Key
+%%      this does not actually touch the vnode, instead reads directly
+%%      from the ets table to allow for concurrency
 read_data_item(Node, TxId, Key, Type, Updates) ->
     case clocksi_readitem_fsm:read_data_item(Node,Key,Type,TxId) of
         {ok, Snapshot} ->
@@ -141,7 +143,10 @@ init([Partition]) ->
                 active_txs_per_key=ActiveTxsPerKey}}.
 
 
-
+%% @doc The table holding the prepared transactions is shared with concurrent
+%%      readers, so they can safely check if a key they are reading is being updated.
+%%      This function checks whether or not all tables have been intialized or not yet.
+%%      Returns true if the have, false otherwise.
 check_tables_ready() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),
@@ -206,6 +211,9 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
             {reply, abort, State}
     end;
 
+%% @doc This is the only partition being updated by a transaction,
+%%      thus this function performs both the prepare and commit for the
+%%      coordinator that sent the request.
 handle_command({single_commit, Transaction, WriteSet}, _Sender,
                State = #state{partition=_Partition,
                               committed_tx=CommittedTx,
