@@ -273,10 +273,23 @@ handle_command({abort, Transaction, Updates}, _Sender,
             {reply, {error, no_tx_record}, State}
     end;
 
-%% @doc Return active transactions in prepare state with their preparetime
+%% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
 handle_command({get_active_txns}, _Sender,
-               #state{prepared_tx=Prepared} = State) ->
-    ActiveTxs = ets:lookup(Prepared, active),
+               #state{prepared_tx=Prepared, partition=_Partition} = State) ->
+    ActiveTxs = case ets:tab2list(Prepared) of
+    		    [] ->
+    			[];
+    		    [{Key1, List1}|Rest1] ->
+    			lists:foldl(fun({_Key,List},Acc) ->
+					    case List of
+						[] ->
+						    Acc;
+						_ ->
+						    List ++ Acc
+					    end
+				    end,
+    				    [],[{Key1,List1}|Rest1])
+    		end,
     {reply, {ok, ActiveTxs}, State};
 
 handle_command({start_read_servers}, _Sender,

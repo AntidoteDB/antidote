@@ -132,8 +132,15 @@ clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
 %%      Client do not need to send to message to complete the 2PC
 %%      protocol. The Tx coordinator will pick the best strategie
 %%      automatically.
+%%      To keep with the current api this is still done in 2 steps,
+%%      but should be changed when the new transaction api is decided
 clocksi_full_icommit({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}).
+    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}) of
+	{ok,_PrepareTime} ->
+	    gen_fsm:sync_send_event(CoordFsmPid, commit);
+	Msg ->
+	    Msg
+    end.
     
 clocksi_iprepare({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}).
