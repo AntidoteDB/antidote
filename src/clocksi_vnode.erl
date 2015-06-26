@@ -197,7 +197,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
                               committed_tx=CommittedTx,
                               active_txs_per_key=ActiveTxPerKey,
                               prepared_tx=PreparedTx
-                              }) ->
+			     }) ->
     PrepareTime = now_microsec(erlang:now()),
     {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
@@ -224,7 +224,7 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
     {Result,NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
-            ResultCommit = commit(Transaction, NewPrepare, WriteSet, PreparedTx, State),
+            ResultCommit = commit(Transaction, NewPrepare, WriteSet, CommittedTx, State),
             case ResultCommit of
                 {ok, committed} ->
                     {reply, {committed, NewPrepare}, State};
@@ -367,6 +367,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
         true ->
             case TxWriteSet of 
                 [{Key, Type, {Op, Actor}} | Rest] -> 
+		    true = ets:insert(ActiveTxPerKey, {Key, Type, TxId}),
 		    PrepList = set_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,PrepareTime,[]),
 		    NewPrepare = now_microsec(erlang:now()),
 		    ok = reset_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,NewPrepare,PrepList),
@@ -379,10 +380,10 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
                     Result = logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]),
 		    {Result, NewPrepare};
 		_ ->
-		    {error, no_updates}
-	    end
-	    %% false ->
-	    %%     {error, write_conflict}
+		    {{error, no_updates},0}
+	    end;
+	false ->
+	    {{error, write_conflict},0}
     end.
 
 
@@ -401,11 +402,11 @@ set_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,Acc) ->
 reset_prepared(_PreparedTx,[],_TxId,_Time,[]) ->
     ok;
 reset_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,[ActiveTxs|Rest2]) ->
-    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}),
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}), 
     reset_prepared(PreparedTx,Rest,TxId,Time,Rest2).
 
 
-commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
+commit(Transaction, TxCommitTime, Updates, CommittedTx, State)->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
     LogRecord=#log_record{tx_id=TxId,
@@ -414,6 +415,7 @@ commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
                                       Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] -> 
+	    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append(Node,LogId,LogRecord) of
@@ -467,10 +469,37 @@ clean_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
+
 %% @doc Performs a certification check when a transaction wants to move
 %%      to the prepared state.
-certification_check(_TxId, _H, _CommittedTx, _ActiveTxPerKey) ->
-    true.
+certification_check(_, [], _, _) ->
+    true;
+certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
+    {Key, _Type, _} = H,
+    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
+    case check_keylog(TxId, TxsPerKey, CommittedTx) of
+        true ->
+            false;
+        false ->
+            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
+    end.
+
+check_keylog(_, [], _) ->
+    false;
+check_keylog(TxId, [H|T], CommittedTx)->
+    {_Key, _Type, ThisTxId}=H,
+    case ThisTxId > TxId of
+        true ->
+            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
+            case CommitInfo of
+                [{_, _CommitTime}] ->
+                    true;
+                [] ->
+                    check_keylog(TxId, T, CommittedTx)
+            end;
+        false ->
+            check_keylog(TxId, T, CommittedTx)
+    end.
 
 -spec update_materializer(DownstreamOps :: [{key(),type(),op()}],
                           Transaction::tx(),TxCommitTime:: {term(), term()}) ->
