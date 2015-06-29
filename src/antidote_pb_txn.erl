@@ -26,7 +26,7 @@
 
 -behaviour(riak_api_pb_service).
 
--include_lib("antidote_pb/include/antidote_pb.hrl").
+-include_lib("riak_pb/include/antidote_pb.hrl").
 
 -export([init/0,
          decode/2,
