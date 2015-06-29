@@ -29,6 +29,7 @@
 
 %% Helper macro for declaring children of supervisor
 -define(CHILD(I, Type, Args), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
+-define(VNODE(I, M), {I, {riak_core_vnode_master, start_link, [M]}, permanent, 5000, worker, [riak_core_vnode_master]}).
 
 %% ===================================================================
 %% API functions
@@ -82,7 +83,7 @@ init(_Args) ->
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
     InterDcPub = ?CHILD(new_inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(new_inter_dc_sub, worker, []),
-    InterDcPusherMaster = {new_inter_dc_pusher_vnode_master, {riak_core_vnode_master, start_link, [new_inter_dc_pusher_vnode]}, permanent, 5000, worker, [riak_core_vnode_master]},
+    LogSenderMaster = ?VNODE(log_sender_master, log_sender),
 
 
   {ok,
@@ -97,9 +98,9 @@ init(_Args) ->
         MaterializerMaster,
         InterDcSenderSup,
         ZMQContextManager,
+        LogSenderMaster,
         InterDcPub,
-        InterDcSub,
-        InterDcPusherMaster
+        InterDcSub
       ]
     }
   }.

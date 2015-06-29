@@ -228,8 +228,10 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case insert_operation(Log, LogId, OpId, Payload) of
+            Operation = #operation{op_number = OpId, payload = Payload},
+            case insert_operation(Log, LogId, Operation) of
                 {ok, OpId} ->
+                    log_sender:send({Partition, node()}, Operation),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of
@@ -258,7 +260,7 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
 						      {NewNewClock, _Node} = OpId,
 						      case get_log_from_map(Map, Partition, LogId) of
 							  {ok, Log} ->
-							      case insert_operation(Log, LogId, OpId, Payload) of
+							      case insert_operation(Log, LogId, #operation{op_number = OpId, payload = Payload}) of
 								  {ok, OpId} ->
 								      {AccErr, AccSucc ++ [OpId], NewNewClock};
 								  {error, Reason} ->
@@ -298,11 +300,11 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
-    {LogId, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
+    {LogId, Operation} = binary_to_term(Data),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             %% Optimistic handling; crash otherwise.
-            {ok, _OpId} = insert_operation(Log, LogId, OpId, Payload),
+            {ok, _OpId} = insert_operation(Log, LogId, Operation),
             ok = disk_log:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
@@ -459,13 +461,12 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), op_id(), payload()) ->
-                              {ok, op_id()} | {error, reason()}.
-insert_operation(Log, LogId, OpId, Payload) ->
-    Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
+-spec insert_operation(log(), log_id(), operation()) -> {ok, op_id()} | {error, reason()}.
+insert_operation(Log, LogId, Operation) ->
+    Result = disk_log:log(Log, {LogId, Operation}),
     case Result of
         ok ->
-            {ok, OpId};
+            {ok, Operation#operation.op_number};
         {error, Reason} ->
             {error, Reason}
     end.

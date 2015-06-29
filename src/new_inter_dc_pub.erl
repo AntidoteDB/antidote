@@ -21,7 +21,7 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 
--export([start_link/0, broadcast/1, get_address/0]).
+-export([start_link/0, broadcast/1, get_address/0, broadcast_transaction/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
@@ -51,7 +51,14 @@ handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
+create_socket(Port) ->
+  Ctx = zmq_context:get(),
+  {ok, Socket} = erlzmq:socket(Ctx, pub),
+  ConnectionString = lists:flatten(io_lib:format("tcp://~s:~p", ["*", Port])),
+  ok = erlzmq:bind(Socket, ConnectionString),
+  Socket.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec get_address() -> pub_address().
 get_address() ->
@@ -61,9 +68,6 @@ get_address() ->
   Port = gen_server:call(?MODULE, get_port),
   {Ip, Port}.
 
-create_socket(Port) ->
-  Ctx = zmq_context:get(),
-  {ok, Socket} = erlzmq:socket(Ctx, pub),
-  ConnectionString = lists:flatten(io_lib:format("tcp://~s:~p", ["*", Port])),
-  ok = erlzmq:bind(Socket, ConnectionString),
-  Socket.
+broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
+broadcast_transaction(Partition, TransactionLogs) -> broadcast({Partition, TransactionLogs}).
+
