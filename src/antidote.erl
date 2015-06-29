@@ -41,15 +41,10 @@
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, term()} | {error, reason()}.
+-spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 append(Key, Type, {OpParam, Actor}) ->
-    Operations = [{update, Key, Type, {OpParam, Actor}}],
-    case clocksi_execute_tx(Operations) of
-        {ok, Result} ->
-            {ok, Result};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    Operations = [{update, {Key, Type, {OpParam, Actor}}}],
+    clocksi_execute_tx(Operations).
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
@@ -69,7 +64,7 @@ read(Key, Type) ->
 %%      error message in case of a failure.
 %%
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
-                         Operations::[any()]) -> term().
+                         [client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations) ->
     {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
     receive
@@ -77,7 +72,7 @@ clocksi_execute_tx(Clock, Operations) ->
             EndOfTx
     end.
 
--spec clocksi_execute_tx(Operations::[any()]) -> term().
+-spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_execute_tx(Operations) ->
     {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
     receive
@@ -90,7 +85,7 @@ clocksi_execute_tx(Operations) ->
 %%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
--spec clocksi_istart_tx(Clock:: snapshot_time()) -> term().
+-spec clocksi_istart_tx(Clock:: snapshot_time()) -> txid().
 clocksi_istart_tx(Clock) ->
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
     receive
@@ -98,6 +93,7 @@ clocksi_istart_tx(Clock) ->
             TxId
     end.
 
+-spec clocksi_istart_tx() -> txid().
 clocksi_istart_tx() ->
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
     receive
@@ -106,25 +102,28 @@ clocksi_istart_tx() ->
     end.
 
 -spec clocksi_bulk_update(ClientClock:: snapshot_time(),
-                          Operations::[any()]) -> term().
+                          [client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_bulk_update(ClientClock, Operations) ->
     clocksi_execute_tx(ClientClock, Operations).
 
--spec clocksi_bulk_update(Operations :: [any()]) -> term().
+-spec clocksi_bulk_update([client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_bulk_update(Operations) ->
     clocksi_execute_tx(Operations).
 
 -spec clocksi_read(ClientClock :: snapshot_time(),
-                   Key :: key(), Type:: type()) -> term().
+                   Key :: key(), Type:: type()) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_read(ClientClock, Key, Type) ->
-    clocksi_execute_tx(ClientClock, [{read, Key, Type}]).
+    clocksi_execute_tx(ClientClock, [{read, {Key, Type}}]).
 
+-spec clocksi_read(key(), type()) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_read(Key, Type) ->
-    clocksi_execute_tx([{read, Key, Type}]).
+    clocksi_execute_tx([{read, {Key, Type}}]).
 
+-spec clocksi_iread(txid(),key(),type()) -> {ok, snapshot()} | {error, term()}.
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
 
+-spec clocksi_iupdate(txid(),key(),type(),op()) -> ok | {error, term()}.
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
 
@@ -134,6 +133,7 @@ clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
 %%      automatically.
 %%      To keep with the current api this is still done in 2 steps,
 %%      but should be changed when the new transaction api is decided
+-spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), vectorclock()}}.
 clocksi_full_icommit({_, _, CoordFsmPid})->
     case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}) of
 	{ok,_PrepareTime} ->
@@ -141,9 +141,11 @@ clocksi_full_icommit({_, _, CoordFsmPid})->
 	Msg ->
 	    Msg
     end.
-    
+
+-spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
 clocksi_iprepare({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}).
 
+-spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), vectorclock()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit).

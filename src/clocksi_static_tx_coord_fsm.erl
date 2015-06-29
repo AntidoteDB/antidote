@@ -34,8 +34,12 @@
          start_link/2]).
 
 %% Callbacks
--export([init/1, code_change/4, handle_event/3, handle_info/3,
-         handle_sync_event/4, terminate/3]).
+-export([init/1,
+	 code_change/4,
+	 handle_event/3,
+	 handle_info/3,
+         handle_sync_event/4,
+	 terminate/3]).
 
 %% States
 -export([execute_batch_ops/2]).
@@ -102,14 +106,14 @@ execute_batch_ops(timeout, SD=#state{from = From,
 							{error, Reason};
 						_ ->
 							case Operation of
-								{update, Key, Type, OpParams} ->
+								{update, {Key, Type, OpParams}} ->
 									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
 									ok ->
 										Acc;
 									{error, Reason} ->
 										{error, Reason}
 									end;
-								{read, Key, Type} ->
+								{read, {Key, Type}} ->
 									case gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity) of
 									{ok, Value} ->
 										Acc++[Value];

@@ -74,6 +74,7 @@
                       txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
+-type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
 -type key() :: term().
 -type op()  :: {term(), term()}.
 -type crdt() :: term().

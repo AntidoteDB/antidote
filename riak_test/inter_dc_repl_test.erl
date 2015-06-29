@@ -137,7 +137,7 @@ causality_test(Cluster1, Cluster2) ->
     RemoveResult = rpc:call(Node2,
                             antidote, clocksi_bulk_update,
                             [CommitTime,
-                             [{update, Key, riak_dt_orset, {{remove, first}, act3}}]]),
+                             [{update, {Key, riak_dt_orset, {{remove, first}, act3}}}]]),
     ?assertMatch({ok, _}, RemoveResult),
     %% Read result
     Result = rpc:call(Node2, antidote, read,
@@ -186,9 +186,9 @@ atomic_write_txn(Node, Key1, Key2, Key3) ->
     Type = riak_dt_gcounter,
     Result= rpc:call(Node, antidote, clocksi_bulk_update,
                      [
-                      [{update, Key1, Type, {increment, a}},
-                       {update, Key2, Type, {increment, a}},
-                       {update, Key3, Type, {increment, a}}
+                      [{update, {Key1, Type, {increment, a}}},
+                       {update, {Key2, Type, {increment, a}}},
+                       {update, {Key3, Type, {increment, a}}}
                       ]]),
     ?assertMatch({ok, _}, Result).
 

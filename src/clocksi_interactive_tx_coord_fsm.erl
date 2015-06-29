@@ -149,8 +149,6 @@ perform_singleitem_read(Key,Type) ->
 	    {ok, ReadResult}
     end.
 
-
-
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
@@ -366,7 +364,6 @@ abort({prepared, _}, SD0=#state{transaction=Transaction,
                         updated_partitions=UpdatedPartitions}) ->
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
     reply_to_client(SD0#state{state=aborted}).
-
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
