@@ -73,7 +73,7 @@ insert_internal(Vector,Val,[],Size,PrevList) ->
     {lists:reverse([{Vector,Val}|PrevList]),Size};
 
 insert_internal(Vector,Val,[{FirstClock,FirstVal}|Rest],Size,PrevList) ->
-    case vectorclock:is_greater_than(Vector,FirstClock) of
+    case vectorclock:gt(Vector,FirstClock) of
 	true ->
 	    {lists:reverse(PrevList,[{Vector,Val}|[{FirstClock,FirstVal}|Rest]]),Size};
 	    %%PrevList;
@@ -91,7 +91,7 @@ insert_bigger_internal(Vector,Val,[],0) ->
     {[{Vector,Val}],1};
 
 insert_bigger_internal(Vector,Val,[{FirstClock,FirstVal}|Rest],Size) ->
-    case vectorclock:is_greater_than(Vector,FirstClock) of
+    case vectorclock:gt(Vector,FirstClock) of
 	true ->
 	    {[{Vector,Val}|[{FirstClock,FirstVal}|Rest]],Size+1};
 	false ->
@@ -127,3 +127,43 @@ last({List,_Size}) ->
 filter(Fun,{List,_Size}) ->
     Result = lists:filter(Fun,List),
     {Result,length(List)}.
+
+
+-ifdef(TEST).
+
+vector_orddict_get_smaller_test() ->
+    %% Fill up the vector
+    Vdict0 = vector_orddict:new(),
+    CT1 = vectorclock:from_list([{dc1,4},{dc2,4}]),
+    Vdict1 = vector_orddict:insert(CT1, 1,Vdict0),
+    CT2 = vectorclock:from_list([{dc1,8},{dc2,8}]),
+    Vdict2 = vector_orddict:insert(CT2, 2, Vdict1),
+    CT3 = vectorclock:from_list([{dc1,1},{dc2,10}]),
+    Vdict3 = vector_orddict:insert(CT3, 3, Vdict2),
+    
+    %% Check you get the correct smaller snapshot
+    ?assertEqual({undefined,false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,0},{dc2,0}]),Vdict3)),
+    ?assertEqual({undefined,false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,1},{dc2,6}]),Vdict3)),
+    ?assertEqual({{CT1,1},false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,5},{dc2,5}]),Vdict3)),
+    ?assertEqual({{CT2,2},true}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,9},{dc2,9}]),Vdict3)),
+    ?assertEqual({{CT3,3},false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,3},{dc2,11}]),Vdict3)).
+    
+
+
+vector_orddict_insert_bigger_test() ->
+    Vdict0 = vector_orddict:new(),
+    %% Insert to empty dict
+    CT1 = vectorclock:from_list([{dc1,4},{dc2,4}]),
+    Vdict1 = vector_orddict:insert_bigger(CT1, 1,Vdict0),
+    ?assertEqual(1,vector_orddict:size(Vdict1)),
+    %% Should not insert because smaller
+    CT2 = vectorclock:from_list([{dc1,3},{dc2,8}]),
+    Vdict2 = vector_orddict:insert_bigger(CT2, 2, Vdict1),
+    ?assertEqual(1,vector_orddict:size(Vdict2)),
+    %% Should insert because bigger
+    CT3 = vectorclock:from_list([{dc1,6},{dc2,10}]),
+    Vdict3 = vector_orddict:insert_bigger(CT3, 3, Vdict2),
+    ?assertEqual(2,vector_orddict:size(Vdict3)).
+
+
+-endif.
