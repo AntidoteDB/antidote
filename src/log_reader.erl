@@ -20,9 +20,47 @@
 
 %% Log reader reads all transactions in the log that happened between the defined
 -module(log_reader).
+-behaviour(gen_server).
 -include("antidote.hrl").
 
--export([get_entries/3]).
+-export([start_link/0, get_entries/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
+
+start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [42000], []).
+
+init([Port]) ->
+  Socket = create_socket(Port),
+  lager:info("Log reader started on port ~p", [Port]),
+  {ok, #state{socket = Socket, port = Port}}.
+
+handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
+  Msg = binary_to_term(BinaryMsg),
+  lager:info("Received MSG=~p", [Msg]),
+  Response = case Msg of
+    {read_log, Partition, From, To} -> get_entries(Partition, From, To);
+    _ -> {error, bad_request}
+  end,
+  erlzmq:send(Socket, term_to_binary(Response)),
+  {noreply, State}.
+
+handle_call(_Request, _From, State) -> lager:info("call"), {noreply, State}.
+terminate(_Reason, State) -> lager:info("term"), erlzmq:close(State#state.socket).
+handle_cast(_Request, State) -> lager:info("cast"), {noreply, State}.
+code_change(_OldVsn, State, _Extra) -> lager:info("code"), {ok, State}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create_socket(Port) ->
+  Ctx = zmq_context:get(),
+  {ok, Socket} = erlzmq:socket(Ctx, [rep, {active, true}]),
+  ConnectionString = lists:flatten(io_lib:format("tcp://~s:~p", ["*", Port])),
+  ok = erlzmq:bind(Socket, ConnectionString),
+  Socket.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
 
 get_entries(Partition, From, To) ->
   Logs = log_read_range(node(), Partition, From, To),
@@ -43,5 +81,4 @@ filter_operations(Ops, Min, Max) ->
     (Num >= Min) and (Max >= Num)
   end,
   lists:filter(F, Ops).
-
 
