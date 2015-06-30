@@ -19,9 +19,17 @@
 %% -------------------------------------------------------------------
 -module(clocksi_test).
 
--export([confirm/0, clocksi_test1/1, clocksi_test2/1, clocksi_test3/1, clocksi_test5/1,
-         clocksi_test_read_wait/1, clocksi_test4/1, clocksi_test_read_time/1,
-         spawn_read/3, clocksi_test_prepare/1, spawn_com/2]).
+-export([confirm/0,
+	 clocksi_test1/1,
+	 clocksi_test2/1,
+	 clocksi_test3/1,
+	 clocksi_test5/1,
+         clocksi_test_read_wait/1,
+	 clocksi_test4/1,
+	 clocksi_test_read_time/1,
+         spawn_read/3,
+	 clocksi_test_prepare/1,
+	 spawn_com/2]).
 
 -include_lib("eunit/include/eunit.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
@@ -51,7 +59,7 @@ confirm() ->
     clocksi_test4 (Nodes),
     clocksi_test_read_time(Nodes),
     clocksi_test_read_wait(Nodes),
-    clocksi_test_certification_check(Nodes),		
+    clocksi_test_certification_check(Nodes),
     clocksi_multiple_test_certification_check(Nodes),
     clocksi_multiple_read_update_test(Nodes),
     clocksi_concurrency_test(Nodes),
@@ -193,7 +201,6 @@ clocksi_test3(Nodes) ->
     lager:info("Test3 passed"),
     pass.
 
-
 %% @doc This test makes sure to block pending reads when a prepare is in progress
 %% that could violate atomicity if not blocked
 clocksi_test_prepare(Nodes) ->
@@ -245,9 +252,7 @@ clocksi_test_prepare(Nodes) ->
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
     
     lager:info("Test prepare passed"),
-
     pass.
-
 
 find_key_same_node(FirstNode,IndexNode,Num) ->
     NewKey = list_to_atom(atom_to_list(aaa) ++ integer_to_list(Num)),

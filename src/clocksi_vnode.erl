@@ -61,7 +61,7 @@
 %%          write_set: a list of the write sets that the transactions
 %%              generate.
 %%----------------------------------------------------------------------
--record(state, {partition :: non_neg_integer(),
+-record(state, {partition :: partition_id(),
                 prepared_tx :: cache_id(),
                 committed_tx :: cache_id(),
                 active_txs_per_key :: cache_id()}).

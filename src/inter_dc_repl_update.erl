@@ -127,9 +127,9 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                           noop ->
                               lager:debug("Heartbeat Received");
                           update ->
-                              logging_vnode:append(Node, LogId, Logrecord);
+                              {ok, _} = logging_vnode:append(Node, LogId, Logrecord);
                           _ -> %% prepare or commit
-                              logging_vnode:append(Node, LogId, Logrecord),
+                              {ok, _} = logging_vnode:append(Node, LogId, Logrecord),
                               lager:debug("Prepare/Commit record")
                               %%TODO Write this to log
                       end

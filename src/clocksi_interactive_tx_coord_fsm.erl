@@ -46,16 +46,30 @@
 
 
 %% API
--export([start_link/2, start_link/1]).
+-export([start_link/2,
+	 start_link/1]).
 
 %% Callbacks
--export([init/1, code_change/4, handle_event/3, handle_info/3,
-         handle_sync_event/4, terminate/3, stop/1]).
+-export([init/1,
+	 code_change/4,
+	 handle_event/3,
+	 handle_info/3,
+         handle_sync_event/4,
+	 terminate/3,
+	 stop/1]).
 
 %% States
--export([execute_op/3, finish_op/3, prepare/2, prepare_2pc/2,
-         receive_prepared/2, single_committing/2, committing_2pc/3,
-	 committing_single/3, committing/3, receive_committed/2, abort/2,
+-export([execute_op/3,
+	 finish_op/3,
+	 prepare/2,
+	 prepare_2pc/2,
+         receive_prepared/2,
+	 single_committing/2,
+	 committing_2pc/3,
+	 committing_single/3,
+	 committing/3,
+	 receive_committed/2,
+	 abort/2,
 	 perform_singleitem_read/2,
          reply_to_client/1]).
 
@@ -140,8 +154,6 @@ perform_singleitem_read(Key,Type) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
-	error ->
-	    {error, unknown};
 	{error, Reason} ->
 	    {error, Reason};
 	{ok, Snapshot} ->
@@ -152,11 +164,11 @@ perform_singleitem_read(Key,Type) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-execute_op({Op_type, Args}, Sender,
+execute_op({OpType, Args}, Sender,
            SD0=#state{transaction=Transaction,
                       updated_partitions=Updated_partitions
 		      }) ->
-    case Op_type of
+    case OpType of
         prepare ->
             case Args of
 		two_phase ->

@@ -82,7 +82,7 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
     
-    ClockSiReadSup = {clocksi_readitem_sup,
+    ClockSIReadSup = {clocksi_readitem_sup,
     		      {clocksi_readitem_sup, start_link, []},
     		      permanent, 5000, supervisor,
     		      [clocksi_readitem_sup]},
@@ -112,7 +112,7 @@ init(_Args) ->
        ClockSIMaster,
        ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
-       ClockSiReadSup,
+       ClockSIReadSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
        InterDcManager,

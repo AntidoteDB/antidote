@@ -34,7 +34,7 @@
 -export([init/1,
 	 handle_call/3,
 	 handle_cast/2,
-         code_change/3,
+	 code_change/3,
          handle_event/3,
 	 check_servers_ready/0,
          handle_info/2,
@@ -48,8 +48,7 @@
 	 stop_read_servers/1]).
 
 %% Spawn
-
--record(state, {partition :: non_neg_integer(),
+-record(state, {partition :: partition_id(),
 		id :: non_neg_integer(),
 		ops_cache :: cache_id(),
 		snapshot_cache :: cache_id(),
@@ -67,19 +66,22 @@
 %%      reading from ets tables shared by the clock_si and materializer
 %%      vnodes, they should be started on the same physical nodes as
 %%      the vnodes with the same partition.
+-spec start_link(partition_id(),non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Partition,Id) ->
     Addr = node(),
     gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
 
+-spec start_read_servers(partition_id()) -> ok.
 start_read_servers(Partition) ->
     Addr = node(),
     start_read_servers_internal(Addr, Partition, ?READ_CONCURRENCY).
 
+-spec stop_read_servers(partition_id()) -> ok.
 stop_read_servers(Partition) ->
     Addr = node(),
     stop_read_servers_internal(Addr, Partition, ?READ_CONCURRENCY).
 
-
+-spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition,Node},Key,Type,Transaction) ->
     try
 	gen_server:call({global,generate_random_server_name(Node,Partition)},
@@ -93,11 +95,13 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
 %% @doc This checks all partitions in the system to see if all read
 %%      servers have been started up.
 %%      Returns true if they have been, false otherwise.
+-spec check_servers_ready() -> boolean().
 check_servers_ready() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),
     check_server_ready(PartitionList).
 
+-spec check_server_ready([index_node()]) -> boolean().
 check_server_ready([]) ->
     true;
 check_server_ready([{Partition,Node}|Rest]) ->
@@ -112,6 +116,7 @@ check_server_ready([{Partition,Node}|Rest]) ->
 	    check_server_ready(Rest)
     end.
 
+-spec check_partition_ready(node(), partition_id(), non_neg_integer()) -> boolean().
 check_partition_ready(_Node,_Partition,0) ->
     true;
 check_partition_ready(Node,Partition,Num) ->

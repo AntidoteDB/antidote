@@ -35,6 +35,7 @@
          asyn_append/3,
          append/3,
 	 append_group/3,
+	 asyn_append_group/3,
          asyn_read_from/3,
          read_from/3]).
 
@@ -55,8 +56,11 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(state, {partition, logs_map, clock, senders_awaiting_ack,
-               last_read}).
+-record(state, {partition :: partition_id(),
+		logs_map :: dict(),
+		clock :: non_neg_integer(),
+		senders_awaiting_ack :: dict(),
+		last_read :: term()}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -67,7 +71,7 @@ start_vnode(I) ->
 %%      `Preflist' From is the operation id form which the caller wants to
 %%      retrieve the operations.  The operations are retrieved in inserted
 %%      order and the From operation is also included.
--spec asyn_read_from(preflist(), key(), op_id()) -> term().
+-spec asyn_read_from(preflist(), key(), op_id()) -> ok.
 asyn_read_from(Preflist, Log, From) ->
     riak_core_vnode_master:command(Preflist,
                                    {read_from, Log, From},
@@ -75,21 +79,14 @@ asyn_read_from(Preflist, Log, From) ->
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous read_from operation
--spec read_from({partition(), node()}, log_id(), op_id()) -> term().
+-spec read_from({partition(), node()}, log_id(), op_id()) -> {ok, [term()]} | {error, term()}.
 read_from(Node, LogId, From) ->
-    case riak_core_vnode_master:sync_command(Node,
+    riak_core_vnode_master:sync_command(Node,
                                         {read_from, LogId, From},
-                                        ?LOGGING_MASTER) of
-        {ok, []} ->
-            {ok, []};
-        {ok, [H|T]} ->
-            {ok, [H|T]};
-        {error, Reason} ->
-            {error, Reason}
-    end.                            
+					?LOGGING_MASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
--spec asyn_read(preflist(), key()) -> term().
+-spec asyn_read(preflist(), key()) -> ok.
 asyn_read(Preflist, Log) ->
     riak_core_vnode_master:command(Preflist,
                                    {read, Log},
@@ -97,13 +94,14 @@ asyn_read(Preflist, Log) ->
                                    ?LOGGING_MASTER).
 
 %% @doc Sends a `read' synchronous command to the Logs in `Node'
--spec read({partition(), node()}, key()) -> term().
+-spec read({partition(), node()}, key()) -> {error, term()} | {ok, [term()]}.
 read(Node, Log) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read, Log},
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
+-spec asyn_append(preflist(), key(), term()) -> ok.
 asyn_append(Preflist, Log, Payload) ->
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, Payload},
@@ -111,17 +109,28 @@ asyn_append(Preflist, Log, Payload) ->
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation
+-spec append(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, Payload},
                                         ?LOGGING_MASTER,
                                         infinity).
 
-append_group(IndexNode, LogId, Payload) ->
+%% @doc synchronous append list of operations
+-spec append_group(index_node(), key(), [term()]) -> {ok, op_id()} | {error, term()}.
+append_group(IndexNode, LogId, PayloadList) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append_group, LogId, Payload},
+                                        {append_group, LogId, PayloadList},
                                         ?LOGGING_MASTER,
                                         infinity).
+
+%% @doc asynchronous append list of operations
+-spec asyn_append_group(index_node(), key(), [term()]) -> ok.
+asyn_append_group(IndexNode, LogId, PayloadList) ->
+    riak_core_vnode_master:command(IndexNode,
+				   {append_group, LogId, PayloadList},
+				   ?LOGGING_MASTER,
+				   infinity).
 
 
 %% @doc Opens the persistent copy of the Log.
@@ -210,8 +219,7 @@ handle_command({read_from, LogId, _From}, _Sender,
 handle_command({append, LogId, Payload}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
-                      partition=Partition,
-                      senders_awaiting_ack=_SendersAwaitingAck0}=State) ->
+                      partition=Partition}=State) ->
     OpId = generate_op_id(Clock),
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
@@ -230,8 +238,7 @@ handle_command({append, LogId, Payload}, _Sender,
 handle_command({append_group, LogId, PayloadList}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
-                      partition=Partition,
-                      senders_awaiting_ack=_SendersAwaitingAck0}=State) ->
+                      partition=Partition}=State) ->
     {ErrorList, SuccList, _NNC} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock}) ->
 						      OpId = generate_op_id(NewClock),
 						      {NewNewClock, _Node} = OpId,
