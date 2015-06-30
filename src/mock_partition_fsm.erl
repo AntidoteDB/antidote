@@ -36,24 +36,26 @@
          execute_op/3,
          execute_op/2,
          code_change/4,
+	 append/3,
          handle_event/3,
          handle_info/3,
          handle_sync_event/4,
          terminate/3]).
 
--export([get_my_dc_id/0, 
-        get_clock_of_dc/2, 
-        get_preflist_from_key/1,
-        read_data_item/5,
-        generate_downstream_op/6,
-        update_data_item/5,
-        prepare/2,
-        value/1,
-	set_clock_of_dc/3,
-        abort/2,
-        commit/3,
-	single_commit/2,
-        get_stable_snapshot/0
+-export([get_my_dc_id/0,
+	 get_clock_of_dc/2, 
+	 get_preflist_from_key/1,
+	 read_data_item/5,
+	 generate_downstream_op/6,
+	 get_logid_from_key/1,
+	 update_data_item/5,
+	 prepare/2,
+	 value/1,
+	 set_clock_of_dc/3,
+	 abort/2,
+	 commit/3,
+	 single_commit/2,
+	 get_stable_snapshot/0
         ]).
 
 -record(state, {
@@ -90,6 +92,9 @@ get_preflist_from_key(_Key) ->
 get_stable_snapshot() ->
     {ok, dict:new()}.
 
+get_logid_from_key(_Key) ->
+    self().
+
 abort(_UpdatedPartitions, _Transactions) ->
     ok.
 
@@ -125,6 +130,9 @@ generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->
         _ ->
             {ok, mock_downsteam}
     end.
+
+append(_Node,_LogId,_LogRecord) ->
+    {ok, {0,node}}.
 
 update_data_item(FsmRef, _Transaction, Key, _Type, _DownstreamRecord) ->
     gen_fsm:sync_send_event(FsmRef, {update_data_item, Key}).

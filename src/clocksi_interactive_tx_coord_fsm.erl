@@ -36,12 +36,14 @@
 -define(LOG_UTIL, mock_partition_fsm).
 -define(CLOCKSI_VNODE, mock_partition_fsm).
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
+-define(LOGGING_VNODE, mock_partition_fsm).
 -else.
 -define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
 -define(CLOCKSI_VNODE, clocksi_vnode).
 -define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
+-define(LOGGING_VNODE, logging_vnode).
 -endif.
 
 
@@ -205,17 +207,25 @@ execute_op({OpType, Args}, Sender,
 		       end,
 	    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
 		{ok, DownstreamRecord} ->
-		    case WriteSet of
-			[] ->
-			    New_updated_partitions=
-				[{IndexNode,[{Key,Type,DownstreamRecord}]}|Updated_partitions],
-			    {reply, ok, execute_op,
-			     SD0#state{updated_partitions= New_updated_partitions}};
+		    NewUpdatedPartitions = case WriteSet of
+					       [] ->
+						   [{IndexNode,[{Key,Type,DownstreamRecord}]}|Updated_partitions];
+					       _ ->
+						   lists:keyreplace(IndexNode,1,Updated_partitions,
+								    {IndexNode,[{Key,Type,DownstreamRecord}|WriteSet]})
+					   end,
+		    _Res = gen_fsm:reply(Sender, ok),
+		    TxId = Transaction#transaction.txn_id,
+		    LogRecord = #log_record{tx_id=TxId, op_type=update,
+					    op_payload={Key, Type, DownstreamRecord}},
+		    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+		    [Node] = Preflist,
+		    case ?LOGGING_VNODE:append(Node,LogId,LogRecord) of
+			{ok, _} ->
+			    {next_state, execute_op,
+			     SD0#state{updated_partitions= NewUpdatedPartitions}};
 			_ ->
-			    New_updated_partitions =
-				lists:keyreplace(IndexNode,1,Updated_partitions,{IndexNode,[{Key,Type,DownstreamRecord}|WriteSet]}),
-			    {reply, ok, execute_op, SD0#state
-			     {updated_partitions= New_updated_partitions}}
+			    {next_state, abort, SD0}
 		    end;
 		{error, Reason} ->
 		    {reply, {error, Reason}, abort, SD0, 0}
@@ -374,6 +384,11 @@ abort(abort, SD0=#state{transaction = Transaction,
 
 abort({prepared, _}, SD0=#state{transaction=Transaction,
                         updated_partitions=UpdatedPartitions}) ->
+    ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
+    reply_to_client(SD0#state{state=aborted});
+
+abort(_, SD0=#state{transaction = Transaction,
+                          updated_partitions=UpdatedPartitions}) ->
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
     reply_to_client(SD0#state{state=aborted}).
 

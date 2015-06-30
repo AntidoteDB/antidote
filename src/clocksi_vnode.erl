@@ -376,8 +376,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 					    op_payload=NewPrepare},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
-		    NewUpdates = write_set_to_logrecord(TxId,TxWriteSet),
-                    Result = logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]),
+                    Result = logging_vnode:append(Node,LogId,LogRecord),
 		    {Result, NewPrepare};
 		_ ->
 		    {{error, no_updates},0}
@@ -525,13 +524,6 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
         _ ->
             error
     end.
-
-write_set_to_logrecord(TxId, WriteSet) ->
-    lists:foldl(fun({Key,Type,Op}, Acc) ->
-			Acc ++ [#log_record{tx_id=TxId, op_type=update,
-					    op_payload={Key, Type, Op}}]
-		end,[],WriteSet).
-
 
 %% Internal functions
 filter_updates_per_key(Updates, Key) ->
