@@ -28,7 +28,11 @@
 
 -record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [42000], []).
+start_link() ->
+  {ok, Port} = application:get_env(antidote, logreader_port),
+  start_link(Port).
+
+start_link(Port) -> gen_server:start_link({local, ?MODULE}, ?MODULE, [Port], []).
 
 init([Port]) ->
   Socket = create_socket(Port),
