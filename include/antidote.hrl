@@ -101,7 +101,6 @@
 -type dcid() :: term().
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tid().
--type pub_address() :: {inet:ip_address(),inet:port_number()}.
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
@@ -131,5 +130,10 @@
 	  is_static :: boolean(),
 	  full_commit :: boolean()}).
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0, pub_address/0, cache_id/0]).
+-type socket_address() :: {inet : ip_address(), inet : port_number()}.
+-type partition_dcid() :: {dcid : dcid(), partition : partition()}.
+-type interdc_txn_ops() :: [operation()].
+-type interdc_txn() :: {pdcid : partition_dcid(), ops : interdc_txn_ops()}.
+-type zmq_socket() :: any().
 
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0, socket_address/0, interdc_txn/0, zmq_socket/0, cache_id/0]).

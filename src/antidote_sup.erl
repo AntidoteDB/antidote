@@ -83,6 +83,7 @@ init(_Args) ->
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
     InterDcPub = ?CHILD(new_inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(new_inter_dc_sub, worker, []),
+    InterDcSubVnode = ?VNODE(new_inter_dc_sub_vnode_master, new_inter_dc_sub_vnode),
     LogReaderMaster = ?CHILD(log_reader, worker, []),
     LogSenderMaster = ?VNODE(log_sender_master, log_sender),
 
@@ -102,7 +103,8 @@ init(_Args) ->
         LogSenderMaster,
         LogReaderMaster,
         InterDcPub,
-        InterDcSub
+        InterDcSub,
+        InterDcSubVnode
       ]
     }
   }.

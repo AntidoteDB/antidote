@@ -17,50 +17,46 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(log_sender).
+
+%% This vnode is responsible for receiving transactions from remote DCs and
+%% passing them on to appropriate buffer FSMs
+
+-module(new_inter_dc_sub_vnode).
 -behaviour(riak_core_vnode).
-
-%% Each logging_vnode informs this vnode about every new appended operation.
-%% This vnode assembles operations into transactions, and sends the transactions to appropriate destinations.
-
-%% Transactions committed locally are send to interDC publisher.
-
 -include("antidote.hrl").
--include_lib("riak_core/include/riak_core_vnode.hrl").
--export([start_vnode/1, send/2]).
+
+-export([deliver_message/1]).
 -export([init/1, handle_command/3, handle_coverage/4, handle_exit/3, handoff_starting/2, handoff_cancelled/1, handoff_finished/2, handle_handoff_command/3, handle_handoff_data/2, encode_handoff_item/2, is_empty/1, terminate/2, delete/1]).
 
 -record(state, {
-  partition :: partition_id(),
-  buffer %% log_tx_assembler:state
+  partition :: non_neg_integer(),
+  buffer_fsms :: dict() %% partition_dcid -> relsub_fsm
 }).
 
-%% API
-start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
-init([Partition]) -> {ok, #state{partition = Partition, buffer = log_txn_assembler:new_state()}}.
-send(Node, Operation) -> riak_core_vnode_master:sync_command(Node, {log_event, Operation}, log_sender_master).
+deliver_message(Txn) ->
+  {{_, Partition}, _} = Txn,
+  riak_core_vnode_master:sync_command([Partition], {store_txn, Txn}, new_inter_dc_sub_vnode_master).
 
-handle_command({log_event, Operation}, _Sender, State) ->
-  {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
-  case Result of
-    {ok, Txn} -> handle_transaction(State#state.partition, dc_utilities:get_my_dc_id(), Txn);
-    none -> none
-  end,
-  {reply, ok, State#state{buffer = NewBufState}}.
+init([Partition]) -> {ok, #state{partition = Partition}}.
+
+handle_command({store_txn, Txn}, _Sender, State) ->
+  {PDCID, _} = Txn,
+  BufferFsm = dict:find(PDCID, State#state.buffer_fsms),
+  {reply, new_inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn), State};
+
+handle_command({add_dc, PDCID, Address}, _Sender, State) ->
+  BufferFsm = new_inter_dc_sub_buf_fsm:start_link(PDCID, Address),
+  NewState = State#state{buffer_fsms = dict:store(PDCID, BufferFsm, State#state.buffer_fsms)},
+  {reply, ok, NewState}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
 handoff_starting(_TargetNode, State) -> {true, State}.
 handoff_cancelled(State) -> {ok, State}.
 handoff_finished(_TargetNode, State) -> {ok, State}.
-handle_handoff_command( _Message , _Sender, State) -> {noreply, State}.
+handle_handoff_command(_Message, _Sender, State) -> {noreply, State}.
 handle_handoff_data(_Data, State) -> {reply, ok, State}.
-encode_handoff_item(Key, Operation) -> term_to_binary({Key, Operation}).
+encode_handoff_item(_ObjectName, _ObjectValue) -> <<>>.
 is_empty(State) -> {true, State}.
-terminate(_Reason, _State) -> ok.
+terminate(_Reason, _ModState) -> ok.
 delete(State) -> {ok, State}.
-
-%%%%%%%%%%%%%%%%%%%%%%%%
-
-handle_transaction(Partition, DCID, Txn) ->
-  new_inter_dc_pub:broadcast_transaction({DCID, Partition}, Txn).

@@ -24,21 +24,28 @@
 %% Public API
 %% ===================================================================
 
--export([subscribe/1, get_publishers/0]).
+-export([subscribe/1, get_publishers/0, subscribe_to_dc/3]).
 
 %% TODO catch rpc errors
 
 %% Returns the list of publisher addresses for this DC, one address per node.
 %% Each address is a ZeroMQ publisher socket.
--spec get_publishers() -> [pub_address()].
+-spec get_publishers() -> [socket_address()].
 get_publishers() ->
   Nodes = dc_utilities:get_my_dc_nodes(),
   F = fun(Node) -> rpc:call(Node, new_inter_dc_pub, get_address, []) end,
   lists:map(F, Nodes).
 
 %% Orders each node inside the cluster to subscribe to the specified list of publishers.
--spec subscribe([pub_address()]) -> ok.
+-spec subscribe([socket_address()]) -> ok.
 subscribe(Publishers) ->
   Nodes = dc_utilities:get_my_dc_nodes(),
   F = fun(Node) -> rpc:call(Node, new_inter_dc_sub, add_publishers, [Publishers]) end,
   lists:foreach(F, Nodes).
+
+%% We subscribe to all publishers for the given DC, but ask any random log reader, if necessary.
+subscribe_to_dc(DCID, Publishers, LogReaders) ->
+  Nodes = dc_utilities:get_my_dc_nodes(),
+  F = fun(Node) -> rpc:call(Node, new_inter_dc_sub, add_dc, [DCID, Publishers, LogReaders]) end,
+  lists:foreach(F, Nodes).
+

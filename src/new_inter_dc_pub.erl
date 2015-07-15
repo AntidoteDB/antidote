@@ -35,32 +35,21 @@ start_link(Port) ->
   gen_server:start_link({local, ?MODULE}, ?MODULE, [Port], []).
 
 init([Port]) ->
-  Socket = create_socket(Port),
+  Socket = zmq_utils:create_bind_socket(pub, Port),
   lager:info("Publisher started on port ~p", [Port]),
   {ok, #state{socket = Socket, port = Port}}.
 
-handle_call({publish, Message}, _From, State) ->
-  Status = erlzmq:send(State#state.socket, Message),
-  {reply, Status, State};
-
-handle_call(get_port, _From, State) ->
-  {reply, State#state.port, State}.
+handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State};
+handle_call(get_port, _From, State) -> {reply, State#state.port, State}.
 
 terminate(_Reason, State) -> erlzmq:close(State#state.socket).
 handle_cast(_Request, State) -> {noreply, State}.
 handle_info(_Info, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-create_socket(Port) ->
-  Ctx = zmq_context:get(),
-  {ok, Socket} = erlzmq:socket(Ctx, pub),
-  ConnectionString = lists:flatten(io_lib:format("tcp://~s:~p", ["*", Port])),
-  ok = erlzmq:bind(Socket, ConnectionString),
-  Socket.
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec get_address() -> pub_address().
+-spec get_address() -> socket_address().
 get_address() ->
   %% TODO check if we do not return a link-local address
   {ok, List} = inet:getif(),
@@ -69,5 +58,5 @@ get_address() ->
   {Ip, Port}.
 
 broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
-broadcast_transaction(Partition, TransactionLogs) -> broadcast({Partition, TransactionLogs}).
+broadcast_transaction(PDCID, TransactionLogs) -> broadcast({PDCID, TransactionLogs}).
 
