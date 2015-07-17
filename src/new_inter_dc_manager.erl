@@ -24,28 +24,29 @@
 %% Public API
 %% ===================================================================
 
--export([subscribe/1, get_publishers/0, subscribe_to_dc/3]).
+-export([get_descriptor/0, observe_dc/1]).
 
 %% TODO catch rpc errors
 
-%% Returns the list of publisher addresses for this DC, one address per node.
-%% Each address is a ZeroMQ publisher socket.
--spec get_publishers() -> [socket_address()].
-get_publishers() ->
+-spec get_descriptor() -> interdc_descriptor().
+get_descriptor() ->
   Nodes = dc_utilities:get_my_dc_nodes(),
-  F = fun(Node) -> rpc:call(Node, new_inter_dc_pub, get_address, []) end,
-  lists:map(F, Nodes).
+  Publishers = lists:map(fun(Node) -> rpc:call(Node, new_inter_dc_pub, get_address, []) end, Nodes),
+  LogReaders = lists:map(fun(Node) -> rpc:call(Node, log_reader, get_address, []) end, Nodes),
+  {dc_utilities:get_my_dc_id(), Publishers, LogReaders}.
 
-%% Orders each node inside the cluster to subscribe to the specified list of publishers.
--spec subscribe([socket_address()]) -> ok.
-subscribe(Publishers) ->
+
+-spec observe_dc(interdc_descriptor()) -> ok.
+observe_dc(Descriptor) ->
+  {DCID, Publishers, LogReaders} = Descriptor,
+
+  %% Broadcast the DC info to all vnodes
+  ok = new_inter_dc_sub_vnode:register_dc(DCID, LogReaders),
+
+  %% Announce the new publisher addresses to all subscribers in this DC.
+  %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
+  %% But we want to balance the work, so all nodes take part in subscribing.
   Nodes = dc_utilities:get_my_dc_nodes(),
-  F = fun(Node) -> rpc:call(Node, new_inter_dc_sub, add_publishers, [Publishers]) end,
-  lists:foreach(F, Nodes).
+  lists:foreach(fun(Node) -> ok = rpc:call(Node, new_inter_dc_sub, add_dc, [Publishers]) end, Nodes),
 
-%% We subscribe to all publishers for the given DC, but ask any random log reader, if necessary.
-subscribe_to_dc(DCID, Publishers, LogReaders) ->
-  Nodes = dc_utilities:get_my_dc_nodes(),
-  F = fun(Node) -> rpc:call(Node, new_inter_dc_sub, add_dc, [DCID, Publishers, LogReaders]) end,
-  lists:foreach(F, Nodes).
-
+  ok.

@@ -38,7 +38,9 @@
 %% API
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 init([Partition]) -> {ok, #state{partition = Partition, buffer = log_txn_assembler:new_state()}}.
-send(Node, Operation) -> riak_core_vnode_master:sync_command(Node, {log_event, Operation}, log_sender_master).
+send(Node, Operation) ->
+  lager:info("Sending op ~p to node ~p", [Operation, Node]),
+  riak_core_vnode_master:sync_command(Node, {log_event, Operation}, log_sender_master).
 
 handle_command({log_event, Operation}, _Sender, State) ->
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),

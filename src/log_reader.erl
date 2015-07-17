@@ -23,21 +23,18 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 
--export([start_link/0, get_entries/3]).
+-export([start_link/0, get_entries/3, get_address/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
+-record(state, {socket}). %% socket :: erlzmq_socket()
 
-start_link() ->
-  {ok, Port} = application:get_env(antidote, logreader_port),
-  start_link(Port).
+start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-start_link(Port) -> gen_server:start_link({local, ?MODULE}, ?MODULE, [Port], []).
-
-init([Port]) ->
-  Socket = create_socket(Port),
+init([]) ->
+  {_, Port} = get_address(),
+  Socket = zmq_utils:create_bind_socket(rep, true, Port),
   lager:info("Log reader started on port ~p", [Port]),
-  {ok, #state{socket = Socket, port = Port}}.
+  {ok, #state{socket = Socket}}.
 
 handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   Msg = binary_to_term(BinaryMsg),
@@ -49,20 +46,10 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   erlzmq:send(Socket, term_to_binary(Response)),
   {noreply, State}.
 
-handle_call(_Request, _From, State) -> lager:info("call"), {noreply, State}.
-terminate(_Reason, State) -> lager:info("term"), erlzmq:close(State#state.socket).
-handle_cast(_Request, State) -> lager:info("cast"), {noreply, State}.
-code_change(_OldVsn, State, _Extra) -> lager:info("code"), {ok, State}.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-create_socket(Port) ->
-  Ctx = zmq_context:get(),
-  {ok, Socket} = erlzmq:socket(Ctx, [rep, {active, true}]),
-  ConnectionString = lists:flatten(io_lib:format("tcp://~s:~p", ["*", Port])),
-  ok = erlzmq:bind(Socket, ConnectionString),
-  Socket.
-
+handle_call(_Request, _From, State) -> {noreply, State}.
+terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+handle_cast(_Request, State) -> {noreply, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -71,6 +58,13 @@ get_entries(Partition, From, To) ->
   Asm = log_txn_assembler:new_state(),
   {Txns, _} = log_txn_assembler:process_all(Logs, Asm),
   Txns.
+
+-spec get_address() -> socket_address().
+get_address() ->
+  {ok, List} = inet:getif(),
+  {Ip, _, _} = hd(List),
+  {ok, Port} = application:get_env(antidote, logreader_port),
+  {Ip, Port}.
 
 %% TODO: reimplement this method efficiently once the log provides true, efficient sequential access
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed

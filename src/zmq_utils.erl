@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(zmq_utils).
 
--export([create_socket/2, create_connect_socket/3, create_bind_socket/2, sub_filter/2, close_socket/1]).
+-export([create_socket/2, create_connect_socket/3, create_bind_socket/3, sub_filter/2, close_socket/1]).
 
 create_socket(Type, Active) ->
   Ctx = zmq_context:get(),
@@ -34,8 +34,8 @@ create_connect_socket(Type, Active, Address) ->
   ok = erlzmq:connect(Socket, connection_string(Address)),
   Socket.
 
-create_bind_socket(Type, Port) ->
-  Socket = create_socket(Type, false),
+create_bind_socket(Type, Active, Port) ->
+  Socket = create_socket(Type, Active),
   ok = erlzmq:bind(Socket, connection_string({"*", Port})),
   Socket.
 

@@ -131,9 +131,11 @@
 	  full_commit :: boolean()}).
 
 -type socket_address() :: {inet : ip_address(), inet : port_number()}.
+-type socket_address_list() :: [socket_address()].
 -type partition_dcid() :: {dcid : dcid(), partition : partition()}.
 -type interdc_txn_ops() :: [operation()].
 -type interdc_txn() :: {pdcid : partition_dcid(), ops : interdc_txn_ops()}.
+-type interdc_descriptor() :: {dcid : dcid(), publishers : socket_address_list(), logreaders : socket_address_list()}.
 -type zmq_socket() :: any().
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0, socket_address/0, interdc_txn/0, zmq_socket/0, cache_id/0]).
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0, socket_address/0, interdc_txn/0, zmq_socket/0, interdc_descriptor/0, cache_id/0]).

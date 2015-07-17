@@ -23,11 +23,12 @@ init([PDCID, Address]) -> {ok, up_to_date, #state{
   pdcid = PDCID,
   last_observed_opid = 0, %% TODO: fetch the last observed opid from log
   buffer = [],
-  socket = zmq_utils:create_connect_socket(req, true, Address)
+  socket = zmq_utils:create_connect_socket(req, true, Address) %% TODO: Maybe connect only when necessary?
 }}.
 
 %% API: pass the transaction so the FSM will handle it, possibly buffering.
-handle_txn(FsmRef, Txn) -> gen_fsm:send_event(FsmRef, {msg_from_publisher, Txn}).
+handle_txn(FsmRef, Txn) ->
+  gen_fsm:send_event(FsmRef, {msg_from_publisher, Txn}).
 
 %% In the up_to_date state, the buffer is empty. Subsequent transactions are delivered directly to the log.
 %% If the OpId gap is detected, the transactions are buffered and a request to log_reader is sent.
@@ -74,6 +75,6 @@ txn_get_min_op_id({_PDCID, Ops}) ->
   OpId.
 
 txn_get_max_op_id({_PDCID, Ops}) ->
-  Op = tl(Ops),
+  Op = lists:last(Ops),
   {OpId, _} = Op#operation.op_number,
   OpId.

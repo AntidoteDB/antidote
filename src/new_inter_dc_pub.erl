@@ -26,16 +26,11 @@
 
 -record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
 
-start_link() ->
-  %% TODO randomize port if configuration does not specify it
-  {ok, Port} = application:get_env(antidote, pubsub_port), %% default port number provided in app.config
-  start_link(Port).
+start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-start_link(Port) ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [Port], []).
-
-init([Port]) ->
-  Socket = zmq_utils:create_bind_socket(pub, Port),
+init([]) ->
+  {_, Port} = get_address(),
+  Socket = zmq_utils:create_bind_socket(pub, false, Port),
   lager:info("Publisher started on port ~p", [Port]),
   {ok, #state{socket = Socket, port = Port}}.
 
@@ -54,7 +49,7 @@ get_address() ->
   %% TODO check if we do not return a link-local address
   {ok, List} = inet:getif(),
   {Ip, _, _} = hd(List),
-  Port = gen_server:call(?MODULE, get_port),
+  {ok, Port} = application:get_env(antidote, pubsub_port),
   {Ip, Port}.
 
 broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
