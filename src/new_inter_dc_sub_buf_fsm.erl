@@ -34,31 +34,35 @@ handle_txn(FsmRef, Txn) ->
 %% If the OpId gap is detected, the transactions are buffered and a request to log_reader is sent.
 -spec up_to_date({msg_from_publisher, interdc_txn()}, #state{}) -> any().
 up_to_date({msg_from_publisher, Txn}, State) ->
-  case State#state.last_observed_opid + 1 == txn_get_min_op_id(Txn) of
+  MinOpId = txn_get_min_op_id(Txn),
+  case State#state.last_observed_opid + 1 == MinOpId of
     true ->
       %% No message was lost, deliver transaction normally.
       deliver(Txn),
       {next_state, up_to_date, State#state{last_observed_opid = txn_get_max_op_id(Txn)}};
     false ->
       %% Gap in subsequent opid's. Buffer the transaction and ask the remote log reader (via socket) for the missed txns.
-      ok = erlzmq:send(State#state.socket, term_to_binary({})),
+      {_, Partition} = State#state.pdcid,
+      Request = {read_log, Partition, State#state.last_observed_opid, MinOpId},
+      ok = erlzmq:send(State#state.socket, term_to_binary(Request)),
       {next_state, buffering, State#state{buffer = [Txn] ++ State#state.buffer}}
   end.
 
 %% In the buffering state, all new transactions are stored until the log_reader response arrives.
-buffering({msg_from_publisher, Txn}, State) -> {next_state, buffering, State#state{buffer = [Txn] ++ State#state.buffer}};
+buffering({msg_from_publisher, Txn}, State) ->
+  {next_state, buffering, State#state{buffer = [Txn] ++ State#state.buffer}};
 
 %% When the log_reader response arrives, all transactions are delivered in order.
 buffering({log_reader_rsp, Txns} ,State) ->
   %% TODO: maybe recheck log ids again, something may have been lost during the buffering
   ToDeliver = Txns ++ lists:reverse(State#state.buffer),
   lists:foreach(fun deliver/1, ToDeliver),
-  LastTxn = tl(ToDeliver),
+  LastTxn = lists:last(ToDeliver),
   {next_state, up_to_date, State#state{buffer = [], last_observed_opid = txn_get_max_op_id(LastTxn)}}.
 
 %% The socket is marked as active, therefore messages are delivered to the fsm through the handle_info method.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, StateName, State) ->
-  ok = gen_fsm:send_event({msg_from_publisher, binary_to_term(BinaryMsg)}, self()),
+  ok = gen_fsm:send_event(self(), {log_reader_rsp, binary_to_term(BinaryMsg)}),
   {next_state, StateName, State}.
 
 %% Delivered transaction is stored in the log.

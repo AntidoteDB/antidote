@@ -24,7 +24,7 @@
 %% Public API
 %% ===================================================================
 
--export([get_descriptor/0, observe_dc/1]).
+-export([get_descriptor/0, observe_dc/1, observe/1]).
 
 %% TODO catch rpc errors
 
@@ -47,6 +47,6 @@ observe_dc(Descriptor) ->
   %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
   %% But we want to balance the work, so all nodes take part in subscribing.
   Nodes = dc_utilities:get_my_dc_nodes(),
-  lists:foreach(fun(Node) -> ok = rpc:call(Node, new_inter_dc_sub, add_dc, [Publishers]) end, Nodes),
+  lists:foreach(fun(Node) -> ok = rpc:call(Node, new_inter_dc_sub, add_dc, [Publishers]) end, Nodes).
 
-  ok.
+observe(DcNodeAddress) -> observe_dc(rpc:call(DcNodeAddress, new_inter_dc_manager, get_descriptor, [])).

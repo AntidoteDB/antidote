@@ -25,20 +25,20 @@
 -export([process/2, process_all/2, new_state/0]).
 
 -record(state, {
-  txn_buffer :: dict()
+  op_buffer :: dict()
 }).
 
-new_state() -> #state{txn_buffer = dict:new()}.
+new_state() -> #state{op_buffer = dict:new()}.
 
 -spec process(operation(), any()) -> {{ok, [operation()]}, any()} | {none, any()}.
 process(Operation, State) ->
   Payload = Operation#operation.payload,
   TxId = Payload#log_record.tx_id,
-  NewTxnBuf = find_or_default(TxId, [], State#state.txn_buffer) ++ [Operation],
+  NewTxnBuf = find_or_default(TxId, [], State#state.op_buffer) ++ [Operation],
   case Payload#log_record.op_type of
-    commit -> {{ok, NewTxnBuf}, State#state{txn_buffer = dict:erase(TxId, State#state.txn_buffer)}};
-    abort -> {none, State#state{txn_buffer = dict:erase(TxId, State#state.txn_buffer)}};
-    _ -> {none, State#state{txn_buffer = dict:store(TxId, NewTxnBuf, State#state.txn_buffer)}}
+    commit -> {{ok, NewTxnBuf}, State#state{op_buffer = dict:erase(TxId, State#state.op_buffer)}};
+    abort -> {none, State#state{op_buffer = dict:erase(TxId, State#state.op_buffer)}};
+    _ -> {none, State#state{op_buffer = dict:store(TxId, NewTxnBuf, State#state.op_buffer)}}
   end.
 
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
