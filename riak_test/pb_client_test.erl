@@ -30,6 +30,10 @@
 -define(PORT, 10017).
 
 confirm() ->
+    NumVNodes = rt_config:get(num_vnodes, 8),
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, NumVNodes}]}
+    ]),
     [Nodes] = rt:build_clusters([1]),
 
     lager:info("Waiting for ring to converge."),
