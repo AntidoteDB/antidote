@@ -84,6 +84,7 @@ init(_Args) ->
     InterDcPub = ?CHILD(new_inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(new_inter_dc_sub, worker, []),
     InterDcSubVnode = ?VNODE(new_inter_dc_sub_vnode_master, new_inter_dc_sub_vnode),
+    InterDcDepVnode = ?VNODE(new_inter_dc_dep_vnode_master, new_inter_dc_dep_vnode),
     LogReaderMaster = ?CHILD(log_reader, worker, []),
     LogSenderMaster = ?VNODE(log_sender_master, log_sender),
 
@@ -104,7 +105,8 @@ init(_Args) ->
         LogReaderMaster,
         InterDcPub,
         InterDcSub,
-        InterDcSubVnode
+        InterDcSubVnode,
+        InterDcDepVnode
       ]
     }
   }.

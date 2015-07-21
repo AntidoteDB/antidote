@@ -23,8 +23,6 @@
 %% Each logging_vnode informs this vnode about every new appended operation.
 %% This vnode assembles operations into transactions, and sends the transactions to appropriate destinations.
 
-%% Transactions committed locally are send to interDC publisher.
-
 -include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 -export([start_vnode/1, send/2]).

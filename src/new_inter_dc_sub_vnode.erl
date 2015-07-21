@@ -34,23 +34,10 @@
 }).
 
 register_dc(DCID, LogReaderAddresses) ->
-  VNodes = riak_core_vnode_manager:all_vnodes(new_inter_dc_sub_vnode),
-  case length(VNodes) of
-    64 ->
-      Partitions = lists:map(fun({_, P, _}) -> P end, VNodes),
-      register_dc(Partitions, DCID, LogReaderAddresses);
-    _ ->
-      lager:info("Waiting for the VNodes to start..."),
-      timer:sleep(500),
-      register_dc(DCID, LogReaderAddresses)
+  Request = {add_dc, DCID, hd(LogReaderAddresses)},
+  dc_utilities:bcast_vnode(new_inter_dc_sub_vnode_master, new_inter_dc_sub_vnode, Request).
 
-  end.
-
-register_dc(Partitions, DCID, LogReaderAddresses) ->
-  Address = hd(LogReaderAddresses),
-  lists:foreach(fun(Partition) -> call_command(Partition, {add_dc, DCID, Address}) end, Partitions).
-
-deliver_message({{_, Partition}, _} = Txn) -> call_command(Partition, {store_txn, Txn}).
+deliver_message({{_, Partition}, _} = Txn) -> call(Partition, {store_txn, Txn}).
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -79,6 +66,4 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-call_command(Partition, Request) ->
-  Node = {Partition, node()}, %% TODO: figure this out
-  riak_core_vnode_master:sync_command(Node, Request, new_inter_dc_sub_vnode_master).
+call(Partition, Request) -> dc_utilities:call_vnode(Partition, new_inter_dc_sub_vnode_master, Request).

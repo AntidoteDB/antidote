@@ -55,6 +55,9 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, new_inter_dc_sub_vnode}]),
             ok = riak_core_node_watcher:service_up(inter_dc_sub, self()),
 
+            ok = riak_core:register([{vnode_module, new_inter_dc_dep_vnode}]),
+            ok = riak_core_node_watcher:service_up(inter_dc_dep, self()),
+
             ok = riak_core_ring_events:add_guarded_handler(antidote_ring_event_handler, []),
             ok = riak_core_node_watcher_events:add_guarded_handler(antidote_node_event_handler, []),
             ok = riak_api_pb_service:register(?SERVICES),

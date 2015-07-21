@@ -65,8 +65,7 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, StateName, State) ->
   ok = gen_fsm:send_event(self(), {log_reader_rsp, binary_to_term(BinaryMsg)}),
   {next_state, StateName, State}.
 
-%% Delivered transaction is stored in the log.
-deliver(Txn) -> lager:info("Delivered TXN ~p", [Txn]).
+deliver(Txn) -> new_inter_dc_dep_vnode:handle_transaction(Txn).
 
 handle_event(_Event, _StateName, StateData) -> {stop, badmsg, StateData}.
 handle_sync_event(_Event, _From, _StateName, StateData) -> {stop, badmsg, StateData}.
