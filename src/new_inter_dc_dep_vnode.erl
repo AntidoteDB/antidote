@@ -49,15 +49,18 @@ process_queue(State=#state{queue=Queue}) ->
       end
   end.
 
-try_store(Txn) ->
-  {_PDCID, Ops} = Txn,
-  CommitOp = lists:last(Ops),
-  CommitPld = CommitOp#operation.payload,
-  commit = CommitPld#log_record.op_type,
-  TxId = CommitPld#log_record.tx_id,
-  LogPld = CommitPld#log_record.op_payload,
-  {{_DcId, _TxCommitTime}, SnapshotTime} = LogPld,
-  lager:info("Handling transaction tx_id=~p with deps=~p", [TxId, dict:to_list(SnapshotTime)]),
+try_store(Txn = {{DCID, Partition}, _}) ->
+  %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant
+  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, get_txn_snapshot_time(Txn)),
+  CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(Partition)),
+
+  case vectorclock:ge(CurrentClock, Dependencies) of
+    true -> store(Txn);
+    false -> false
+  end.
+
+store(Txn = {_, Ops}) ->
+  lager:info("Storing transaction ~p", [Txn]),
   true.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
@@ -75,5 +78,19 @@ delete(State) -> {ok, State}.
 %%%%%%%%%%%%%%%%%%%%%%%%
 
 handle_transaction(Txn = {{_, P}, _}) -> dc_utilities:call_vnode(P, new_inter_dc_dep_vnode_master, {txn, Txn}).
+
+get_txn_snapshot_time({_, Ops}) ->
+  CommitPld = (lists:last(Ops))#operation.payload,
+  commit = CommitPld#log_record.op_type, %% sanity check
+  {_, SnapshotTime} = CommitPld#log_record.op_payload,
+  SnapshotTime.
+
+get_partition_clock(Partition) ->
+  {ok, LocalClock} = vectorclock:get_clock(Partition),
+  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), now_millisec(), LocalClock).
+
+now_millisec() ->
+  {MegaSecs, Secs, MicroSecs} = erlang:now(),
+  (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 
