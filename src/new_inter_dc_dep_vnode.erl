@@ -24,16 +24,32 @@
 -behaviour(riak_core_vnode).
 -include("antidote.hrl").
 
--record(state, {partition}).
+-record(state, {
+  partition :: partition_id(),
+  queue :: queue()
+}).
 
 -export([handle_transaction/1]).
 -export([init/1, handle_command/3, handle_coverage/4, handle_exit/3, handoff_starting/2, handoff_cancelled/1, handoff_finished/2, handle_handoff_command/3, handle_handoff_data/2, encode_handoff_item/2, is_empty/1, terminate/2, delete/1, start_vnode/1]).
 
 
-init([Partition]) -> {ok, #state{partition = Partition}}.
+init([Partition]) -> {ok, #state{partition = Partition, queue = queue:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({txn, Txn}, _Sender, State) ->
+handle_command({txn, Txn}, _Sender, State=#state{queue=Queue}) ->
+  {reply, ok, process_queue(State#state{queue = queue:in(Txn, Queue)})}.
+
+process_queue(State=#state{queue=Queue}) ->
+  case queue:peek(Queue) of
+    empty -> State;
+    {value, Txn} ->
+      case try_store(Txn) of
+        false -> State;
+        true -> process_queue(State#state{queue = queue:drop(Queue)})
+      end
+  end.
+
+try_store(Txn) ->
   {_PDCID, Ops} = Txn,
   CommitOp = lists:last(Ops),
   CommitPld = CommitOp#operation.payload,
@@ -41,9 +57,8 @@ handle_command({txn, Txn}, _Sender, State) ->
   TxId = CommitPld#log_record.tx_id,
   LogPld = CommitPld#log_record.op_payload,
   {{_DcId, _TxCommitTime}, SnapshotTime} = LogPld,
-  {ok, CurrentSnapshot} = vectorclock:get_clock(State#state.partition),
-  lager:info("Handling transaction tx_id=~p with deps=~p local=~p", [TxId, dict:to_list(SnapshotTime), dict:to_list(CurrentSnapshot)]),
-  {reply, ok, State}.
+  lager:info("Handling transaction tx_id=~p with deps=~p", [TxId, dict:to_list(SnapshotTime)]),
+  true.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
@@ -59,8 +74,6 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-handle_transaction(Txn) ->
-  {{_DCID, Partition}, _Ops} = Txn,
-  dc_utilities:call_vnode(Partition, new_inter_dc_dep_vnode_master, {txn, Txn}).
+handle_transaction(Txn = {{_, P}, _}) -> dc_utilities:call_vnode(P, new_inter_dc_dep_vnode_master, {txn, Txn}).
 
 
