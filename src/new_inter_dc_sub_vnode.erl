@@ -66,4 +66,4 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-call(Partition, Request) -> dc_utilities:call_vnode(Partition, new_inter_dc_sub_vnode_master, Request).
+call(Partition, Request) -> dc_utilities:call_vnode_sync(Partition, new_inter_dc_sub_vnode_master, Request).

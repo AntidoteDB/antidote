@@ -31,9 +31,9 @@
                }).
 
 -export([init/2,
-         get_next_transactions/1,
-         get_update_ops_from_transaction/1,
-         get_prev_stable_time/1]).
+  get_next_transactions/1,
+  get_update_ops_from_transaction/1,
+  get_prev_stable_time/1, construct_transaction/1]).
 
 -export_type([transaction/0]).
 

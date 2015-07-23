@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(dc_utilities).
 
--export([get_my_dc_id/0, get_my_dc_nodes/0, call_vnode/3, bcast_vnode/3]).
+-export([get_my_dc_id/0, get_my_dc_nodes/0, call_vnode_sync/3, bcast_vnode/3, partition_to_indexnode/1, get_num_partitions/0, call_vnode/3]).
 
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -29,16 +29,29 @@ get_my_dc_nodes() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:all_members(Ring).
 
-%% TODO: implement safely
-call_vnode(Partition, VMaster, Request) -> riak_core_vnode_master:sync_command({Partition, node()}, Request, VMaster).
+partition_to_indexnode(Partition) ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    Node = riak_core_ring:index_owner(Ring, Partition),
+    {Partition, Node}.
+
+get_num_partitions() ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    riak_core_ring:num_partitions(Ring).
+
+call_vnode_sync(Partition, VMaster, Request) ->
+    riak_core_vnode_master:sync_command(partition_to_indexnode(Partition), Request, VMaster).
+
+call_vnode(Partition, VMaster, Request) ->
+    riak_core_vnode_master:command(partition_to_indexnode(Partition), Request, VMaster).
 
 %% TODO: this is a quick 'n dirty solution - must be properly implemented
 bcast_vnode(VMaster, VMod, Request) ->
     VNodes = riak_core_vnode_manager:all_index_pid(VMod),
+    Num = get_num_partitions(),
     case length(VNodes) of
-        64 ->
+        Num ->
             Partitions = lists:map(fun({P, _}) -> P end, VNodes),
-            F = fun(P) -> call_vnode(P, VMaster, Request) end,
+            F = fun(P) -> call_vnode_sync(P, VMaster, Request) end,
             lists:foreach(F, Partitions);
         _ ->
             lager:info("Waiting for the VNodes to start..."),
