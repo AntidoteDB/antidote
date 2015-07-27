@@ -50,9 +50,16 @@ process_queue(State=#state{queue=Queue}) ->
       end
   end.
 
-try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, operations = Ops}) ->
+%% HEARTBEAT MESSAGE
+try_store(#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = []}) ->
+  ok = vectorclock:update_clock(Partition, DCID, Timestamp),
+  dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
+  true;
+
+%% NORMAL TRANSACTION
+try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant
-  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, get_txn_snapshot_time(Txn)),
+  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(Partition)),
 
   case vectorclock:ge(CurrentClock, Dependencies) of
@@ -67,16 +74,8 @@ try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, operations = Ops}
       DownOps = clocksi_transaction_reader:get_update_ops_from_transaction(Transaction),
 
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, DownOps),
-
-      {_, {_, Ts}, _, _} = Transaction,
-      ok = vectorclock:update_clock(Partition, DCID, Ts),
+      ok = vectorclock:update_clock(Partition, DCID, Timestamp),
       dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
-      %%lists:foreach(fun(P) -> vectorclock:update_clock(P, DCID, Ts) end, dc_utilities:get_partitions()),
-      %%dc_utilities:bcast_vnode(vectorclock_vnode_master, calculate_stable_snapshot),
-
-      {ok, NewClock} = vectorclock:get_clock(Partition),
-      {ok, Stable} = vectorclock:get_stable_snapshot(),
-      lager:info("Done! NC=~p ST=~p", [dict:to_list(NewClock), dict:to_list(Stable)]),
       true
   end.
 
@@ -97,18 +96,10 @@ delete(State) -> {ok, State}.
 
 handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, new_inter_dc_dep_vnode_master, {txn, Txn}).
 
-get_txn_snapshot_time(#interdc_txn{operations = Ops}) ->
-  CommitPld = (lists:last(Ops))#operation.payload,
-  commit = CommitPld#log_record.op_type, %% sanity check
-  {_, SnapshotTime} = CommitPld#log_record.op_payload,
-  SnapshotTime.
-
 get_partition_clock(Partition) ->
   {ok, LocalClock} = vectorclock:get_clock(Partition),
-  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), now_millisec(), LocalClock).
+  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), new_inter_dc_utils:now_millisec(), LocalClock).
 
-now_millisec() ->
-  {MegaSecs, Secs, MicroSecs} = erlang:now(),
-  (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+
 
 

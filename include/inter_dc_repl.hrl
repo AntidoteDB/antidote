@@ -15,12 +15,8 @@
 -record(interdc_txn, {
  dcid :: dcid(),
  partition :: partition_id(),
- operations :: [operation()]
-}).
-
--record(interdc_ping, {
- dcid :: dcid(),
- partition :: partition_id(),
- last_log_id :: non_neg_integer(),
- snapshot :: non_neg_integer()
+ logid_range :: {non_neg_integer(), non_neg_integer()},
+ snapshot :: snapshot_time(),
+ timestamp :: non_neg_integer(),
+ operations :: [operation()] %% if the OP list is empty, the message is a HEARTBEAT
 }).
