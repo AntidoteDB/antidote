@@ -13,7 +13,14 @@
 -type pdcid() :: {dcid(), partition_id()}.
 
 -record(interdc_txn, {
- partition :: partition_id(),
  dcid :: dcid(),
+ partition :: partition_id(),
  operations :: [operation()]
+}).
+
+-record(interdc_ping, {
+ dcid :: dcid(),
+ partition :: partition_id(),
+ last_log_id :: non_neg_integer(),
+ snapshot :: non_neg_integer()
 }).

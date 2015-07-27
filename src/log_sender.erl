@@ -24,8 +24,9 @@
 %% This vnode assembles operations into transactions, and sends the transactions to appropriate destinations.
 
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
--export([start_vnode/1, send/2]).
+-export([start_vnode/1, send/2, send_ping/2]).
 -export([init/1, handle_command/3, handle_coverage/4, handle_exit/3, handoff_starting/2, handoff_cancelled/1, handoff_finished/2, handle_handoff_command/3, handle_handoff_data/2, encode_handoff_item/2, is_empty/1, terminate/2, delete/1]).
 
 -record(state, {
@@ -41,7 +42,7 @@ send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, log_sender
 handle_command({log_event, Operation}, _Sender, State) ->
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
   case Result of
-    {ok, Txn} -> handle_transaction(State#state.partition, dc_utilities:get_my_dc_id(), Txn);
+    {ok, Ops} -> send_txn(dc_utilities:get_my_dc_id(), State#state.partition, Ops);
     none -> none
   end,
   {reply, ok, State#state{buffer = NewBufState}}.
@@ -60,5 +61,8 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-handle_transaction(Partition, DCID, Txn) ->
-  new_inter_dc_pub:broadcast_transaction(DCID, Partition, Txn).
+send_txn(DCID, Partition, Operations) ->
+  new_inter_dc_pub:broadcast(#interdc_txn{dcid = DCID, partition = Partition, operations = Operations}).
+
+send_ping(DCID, Partition) ->
+  new_inter_dc_pub:broadcast(#interdc_ping{dcid = DCID, partition = Partition}).

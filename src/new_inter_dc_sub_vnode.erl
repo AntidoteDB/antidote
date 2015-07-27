@@ -41,17 +41,22 @@ register_dc(DCID, LogReaderAddresses) ->
 
 deliver_message(Msg) ->
   case Msg of
-    #interdc_txn{partition = Partition} -> call(Partition, {store_txn, Msg});
-    {ping, _} -> lager:info("Received PING ~p", [Msg]), ok
+    #interdc_txn{partition = Partition} -> call(Partition, {txn, Msg});
+    #interdc_ping{partition = Partition} -> call(Partition, {ping, Msg})
   end.
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({store_txn, Txn}, _Sender, State) ->
+handle_command({txn, Txn}, _Sender, State) ->
   PDCID = {Txn#interdc_txn.dcid, Txn#interdc_txn.partition},
   {ok, BufferFsm} = dict:find(PDCID, State#state.buffer_fsms),
   {reply, new_inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn), State};
+
+handle_command({ping, Ping}, _Sender, State) ->
+  PDCID = {Ping#interdc_ping.dcid, Ping#interdc_ping.partition},
+  {ok, BufferFsm} = dict:find(PDCID, State#state.buffer_fsms),
+  {reply, new_inter_dc_sub_buf_fsm:handle_ping(BufferFsm, Ping), State};
 
 handle_command({add_dc, DCID, Address}, _Sender, State) ->
   PDCID = {DCID, State#state.partition},

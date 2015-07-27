@@ -7,7 +7,7 @@
 %% The objective of this FSM is to track operation log IDs, and to detect if any message was lost.
 %% If so, this FSM buffers incoming transactions and sends the query to remote DC's log_reader, fetching missed txns.
 
--export([up_to_date/2, buffering/2, handle_txn/2]).
+-export([up_to_date/2, buffering/2, handle_txn/2, handle_ping/2]).
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4, start_link/2]).
 
 -record(state, {
@@ -19,6 +19,7 @@
 
 %% API: pass the transaction so the FSM will handle it, possibly buffering.
 handle_txn(FsmRef, Txn) -> gen_fsm:send_event(FsmRef, {txn, Txn}).
+handle_ping(FsmRef, Ping) -> gen_fsm:send_event(FsmRef, {ping, Ping}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -28,7 +29,10 @@ start_link(PDCID, LogReaderAddress) -> gen_fsm:start_link(?MODULE, [PDCID, LogRe
 %% TODO: fetch the last observed opid from log
 init([PDCID, Address]) -> {ok, up_to_date, #state{pdcid=PDCID, last_observed_opid=0, queue=queue:new(), socket=zmq_utils:create_connect_socket(req, true, Address)}}.
 
-up_to_date({txn, Txn}, State) -> process_queue(State#state{queue = queue:in(Txn, State#state.queue)}).
+up_to_date({txn, Txn}, State) -> process_queue(State#state{queue = queue:in(Txn, State#state.queue)});
+
+up_to_date({ping, _Ping}, _State) -> lager:info("qweqweqwe").
+
 buffering({txn, Txn}, State) -> {next_state, buffering, State#state{queue = queue:in(Txn, State#state.queue)}};
 
 buffering({log_reader_rsp, Txns} ,State = #state{queue = Queue}) ->
