@@ -20,8 +20,9 @@
 -module(new_inter_dc_pub).
 -behaviour(gen_server).
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
--export([start_link/0, broadcast/1, get_address/0, broadcast_transaction/2]).
+-export([start_link/0, broadcast/1, get_address/0, broadcast_transaction/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
@@ -53,5 +54,5 @@ get_address() ->
   {Ip, Port}.
 
 broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
-broadcast_transaction(PDCID, TransactionLogs) -> broadcast({PDCID, TransactionLogs}).
+broadcast_transaction(DCID, Partition, Operations) -> broadcast(#interdc_txn{partition = Partition, dcid = DCID, operations = Operations}).
 

@@ -23,6 +23,7 @@
 -module(new_inter_dc_dep_vnode).
 -behaviour(riak_core_vnode).
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
 -record(state, {
   partition :: partition_id(),
@@ -49,7 +50,7 @@ process_queue(State=#state{queue=Queue}) ->
       end
   end.
 
-try_store(Txn = {{DCID, Partition}, Ops}) ->
+try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, operations = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, get_txn_snapshot_time(Txn)),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(Partition)),
@@ -65,14 +66,13 @@ try_store(Txn = {{DCID, Partition}, Ops}) ->
       Transaction = clocksi_transaction_reader:construct_transaction(Ops),
       DownOps = clocksi_transaction_reader:get_update_ops_from_transaction(Transaction),
 
-      ok = lists:foreach(fun(Op) ->
-        materializer_vnode:update(Op#clocksi_payload.key, Op) ,
-        lager:info("Materialized OP=~p", [Op])
-      end, DownOps),
+      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, DownOps),
 
       {_, {_, Ts}, _, _} = Transaction,
       ok = vectorclock:update_clock(Partition, DCID, Ts),
       dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
+      %%lists:foreach(fun(P) -> vectorclock:update_clock(P, DCID, Ts) end, dc_utilities:get_partitions()),
+      %%dc_utilities:bcast_vnode(vectorclock_vnode_master, calculate_stable_snapshot),
 
       {ok, NewClock} = vectorclock:get_clock(Partition),
       {ok, Stable} = vectorclock:get_stable_snapshot(),
@@ -95,9 +95,9 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-handle_transaction(Txn = {{_, P}, _}) -> dc_utilities:call_vnode_sync(P, new_inter_dc_dep_vnode_master, {txn, Txn}).
+handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, new_inter_dc_dep_vnode_master, {txn, Txn}).
 
-get_txn_snapshot_time({_, Ops}) ->
+get_txn_snapshot_time(#interdc_txn{operations = Ops}) ->
   CommitPld = (lists:last(Ops))#operation.payload,
   commit = CommitPld#log_record.op_type, %% sanity check
   {_, SnapshotTime} = CommitPld#log_record.op_payload,

@@ -24,6 +24,7 @@
 -module(new_inter_dc_sub_vnode).
 -behaviour(riak_core_vnode).
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
 -export([deliver_message/1, start_vnode/1, register_dc/2]).
 -export([init/1, handle_command/3, handle_coverage/4, handle_exit/3, handoff_starting/2, handoff_cancelled/1, handoff_finished/2, handle_handoff_command/3, handle_handoff_data/2, encode_handoff_item/2, is_empty/1, terminate/2, delete/1]).
@@ -35,14 +36,20 @@
 
 register_dc(DCID, LogReaderAddresses) ->
   Request = {add_dc, DCID, hd(LogReaderAddresses)},
-  dc_utilities:bcast_vnode(new_inter_dc_sub_vnode_master, new_inter_dc_sub_vnode, Request).
+  dc_utilities:bcast_vnode_sync(new_inter_dc_sub_vnode_master, Request),
+  ok.
 
-deliver_message({{_, Partition}, _} = Txn) -> call(Partition, {store_txn, Txn}).
+deliver_message(Msg) ->
+  case Msg of
+    #interdc_txn{partition = Partition} -> call(Partition, {store_txn, Msg});
+    {ping, _} -> lager:info("Received PING ~p", [Msg]), ok
+  end.
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({store_txn, {PDCID, _} = Txn}, _Sender, State) ->
+handle_command({store_txn, Txn}, _Sender, State) ->
+  PDCID = {Txn#interdc_txn.dcid, Txn#interdc_txn.partition},
   {ok, BufferFsm} = dict:find(PDCID, State#state.buffer_fsms),
   {reply, new_inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn), State};
 

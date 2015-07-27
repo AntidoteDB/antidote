@@ -20,6 +20,7 @@
 -module(new_inter_dc_sub).
 -behaviour(gen_server).
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, start_link/0, add_dc/1]).
 -record(state, {connections :: [zmq_socket()]}).
@@ -39,8 +40,8 @@ handle_call({add_dc, Publishers}, _From, State) ->
   {reply, ok, State#state{connections = Sockets ++ State#state.connections}}.
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
-  Txn = binary_to_term(BinaryMsg),
-  ok = new_inter_dc_sub_vnode:deliver_message(Txn),
+  Msg = binary_to_term(BinaryMsg),
+  ok = new_inter_dc_sub_vnode:deliver_message(Msg),
   {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.

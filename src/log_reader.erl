@@ -22,6 +22,7 @@
 -module(log_reader).
 -behaviour(gen_server).
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
 -export([start_link/0, get_entries/3, get_address/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).

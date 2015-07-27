@@ -61,4 +61,4 @@ delete(State) -> {ok, State}.
 %%%%%%%%%%%%%%%%%%%%%%%%
 
 handle_transaction(Partition, DCID, Txn) ->
-  new_inter_dc_pub:broadcast_transaction({DCID, Partition}, Txn).
+  new_inter_dc_pub:broadcast_transaction(DCID, Partition, Txn).

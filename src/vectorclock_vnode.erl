@@ -141,7 +141,7 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
             case LClock < Timestamp of
                 true ->
                     NewLClock = dict:store(DcId, Timestamp, LastClock),
-                    NewPClock = dict:store(DcId, Timestamp-1, VClock),
+                    NewPClock = dict:store(DcId, Timestamp - 1, VClock),
                     %% Broadcast new pvv to other partition
                     try
                         riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),

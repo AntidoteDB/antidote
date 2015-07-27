@@ -153,6 +153,7 @@ handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender,
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
+    lager:info("Materializer update: KEY=~p OP=~p", [Key, DownstreamOp]),
     true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),
     {reply, ok, State};
 

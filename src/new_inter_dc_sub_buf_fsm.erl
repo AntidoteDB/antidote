@@ -1,6 +1,7 @@
 -module(new_inter_dc_sub_buf_fsm).
 -behaviour(gen_fsm).
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
 %% Subscriber buffer FSM - handles transactions received via the interDC protocol.
 %% The objective of this FSM is to track operation log IDs, and to detect if any message was lost.
@@ -10,7 +11,7 @@
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4, start_link/2]).
 
 -record(state, {
-  pdcid :: partition_dcid(),
+  pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer(),
   queue :: queue(),
   socket :: zmq_socket()
@@ -21,7 +22,7 @@ handle_txn(FsmRef, Txn) -> gen_fsm:send_event(FsmRef, {txn, Txn}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec start_link(partition_dcid(), socket_address()) -> any().
+-spec start_link(pdcid(), socket_address()) -> any().
 start_link(PDCID, LogReaderAddress) -> gen_fsm:start_link(?MODULE, [PDCID, LogReaderAddress], []).
 
 %% TODO: fetch the last observed opid from log
@@ -69,5 +70,5 @@ handle_event(_Event, _StateName, StateData) -> {stop, badmsg, StateData}.
 handle_sync_event(_Event, _From, _StateName, StateData) -> {stop, badmsg, StateData}.
 terminate(_Reason, _StateName, State) -> erlzmq:close(State#state.socket).
 code_change(_OldVsn, _StateName, _StateData, _Extra) -> erlang:error(not_implemented).
-txn_min_op_id({_PDCID, Ops}) -> {Min, _} = (hd(Ops))#operation.op_number, Min.
-txn_max_op_id({_PDCID, Ops}) -> {Max, _} = (lists:last(Ops))#operation.op_number, Max.
+txn_min_op_id(#interdc_txn{operations = Ops}) -> {Min, _} = (hd(Ops))#operation.op_number, Min.
+txn_max_op_id(#interdc_txn{operations = Ops}) -> {Max, _} = (lists:last(Ops))#operation.op_number, Max.
