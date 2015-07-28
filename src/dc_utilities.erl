@@ -19,7 +19,17 @@
 %% -------------------------------------------------------------------
 -module(dc_utilities).
 
--export([get_my_dc_id/0, get_my_dc_nodes/0, call_vnode_sync/3, bcast_vnode_sync/2, partition_to_indexnode/1, get_num_partitions/0, call_vnode/3, debug_get_vectorclocks/0, get_all_partitions/0, bcast_vnode/2, get_my_partitions/0]).
+-export([
+    get_my_dc_id/0,
+    get_my_dc_nodes/0,
+    call_vnode_sync/3,
+    bcast_vnode_sync/2,
+    partition_to_indexnode/1,
+    get_num_partitions/0,
+    call_vnode/3,
+    get_all_partitions/0,
+    bcast_vnode/2,
+    get_my_partitions/0]).
 
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -42,13 +52,11 @@ get_num_partitions() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:num_partitions(Ring).
 
-get_all_partitions() -> %% TODO: this is a hack, implement this properly!
-    VNodes = riak_core_vnode_manager:all_index_pid(logging_vnode),
-    Num = get_num_partitions(),
-    case length(VNodes) of
-        Num -> lists:map(fun({P, _}) -> P end, VNodes);
-        _ -> timer:sleep(100), get_all_partitions()
-    end.
+get_all_partitions() ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    CHash = riak_core_ring:chash(Ring),
+    Nodes = chash:nodes(CHash),
+    [I || {I, _} <- Nodes].
 
 call_vnode_sync(Partition, VMaster, Request) ->
     riak_core_vnode_master:sync_command(partition_to_indexnode(Partition), Request, VMaster).
@@ -61,13 +69,3 @@ bcast_vnode_sync(VMaster, Request) ->
 
 bcast_vnode(VMaster, Request) ->
     lists:map(fun(P) -> {P, call_vnode(P, VMaster, Request)} end, get_all_partitions()).
-
-debug_get_vectorclocks() ->
-    F = fun(P) ->
-        {ok, C} = vectorclock:get_clock(P),
-        R = {P, dict:to_list(C)},
-        lager:info("~p", [R]),
-        R
-    end,
-    lists:map(F, get_all_partitions()).
-

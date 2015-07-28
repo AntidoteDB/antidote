@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% Log reader reads all transactions in the log that happened between the defined
--module(log_reader).
+-module(inter_dc_log_reader).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").

@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(new_inter_dc_pub).
+-module(inter_dc_pub).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -54,5 +54,5 @@ get_address() ->
   {Ip, Port}.
 
 broadcast(Txn) ->
-  gen_server:call(?MODULE, {publish, new_inter_dc_utils:txn_to_bin(Txn)}).
+  gen_server:call(?MODULE, {publish, inter_dc_utils:txn_to_bin(Txn)}).
 

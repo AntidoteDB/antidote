@@ -20,7 +20,7 @@
 
 %% This vnode stores received transactions in the log, making sure that its causal dependencies are preserved.
 
--module(new_inter_dc_dep_vnode).
+-module(inter_dc_dep_vnode).
 -behaviour(riak_core_vnode).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -94,11 +94,11 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, new_inter_dc_dep_vnode_master, {txn, Txn}).
+handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
 
 get_partition_clock(Partition) ->
   {ok, LocalClock} = vectorclock:get_clock(Partition),
-  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), new_inter_dc_utils:now_millisec(), LocalClock).
+  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), inter_dc_utils:now_millisec(), LocalClock).
 
 
 

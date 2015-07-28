@@ -1,4 +1,4 @@
--module(new_inter_dc_sub_buf_fsm).
+-module(inter_dc_sub_buf_fsm).
 -behaviour(gen_fsm).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -74,7 +74,7 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, StateName, State) ->
   ok = gen_fsm:send_event(self(), {log_reader_rsp, binary_to_term(BinaryMsg)}),
   {next_state, StateName, State}.
 
-deliver(Txn) -> new_inter_dc_dep_vnode:handle_transaction(Txn).
+deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 handle_event(_Event, _StateName, StateData) -> {stop, badmsg, StateData}.
 handle_sync_event(_Event, _From, _StateName, StateData) -> {stop, badmsg, StateData}.
 terminate(_Reason, _StateName, State) -> erlzmq:close(State#state.socket).

@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(new_inter_dc_sub).
+-module(inter_dc_sub).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -34,7 +34,7 @@ handle_call({add_dc, Publishers}, _From, State) ->
   F = fun(Address) ->
     Socket = zmq_utils:create_connect_socket(sub, true, Address),
     lists:foreach(fun(P) ->
-      ok = zmq_utils:sub_filter(Socket, new_inter_dc_utils:partition_to_bin(P))
+      ok = zmq_utils:sub_filter(Socket, inter_dc_utils:partition_to_bin(P))
     end, dc_utilities:get_my_partitions()),
     Socket
   end,
@@ -42,8 +42,8 @@ handle_call({add_dc, Publishers}, _From, State) ->
   {reply, ok, State#state{connections = Sockets ++ State#state.connections}}.
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
-  Msg = new_inter_dc_utils:bin_to_txn(BinaryMsg),
-  ok = new_inter_dc_sub_vnode:deliver_message(Msg),
+  Msg = inter_dc_utils:bin_to_txn(BinaryMsg),
+  ok = inter_dc_sub_vnode:deliver_message(Msg),
   {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.

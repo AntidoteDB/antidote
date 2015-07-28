@@ -21,7 +21,7 @@
 %% This vnode is responsible for receiving transactions from remote DCs and
 %% passing them on to appropriate buffer FSMs
 
--module(new_inter_dc_sub_vnode).
+-module(inter_dc_sub_vnode).
 -behaviour(riak_core_vnode).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
@@ -36,7 +36,7 @@
 
 register_dc(DCID, LogReaderAddresses) ->
   Request = {add_dc, DCID, hd(LogReaderAddresses)},
-  dc_utilities:bcast_vnode_sync(new_inter_dc_sub_vnode_master, Request),
+  dc_utilities:bcast_vnode_sync(inter_dc_sub_vnode_master, Request),
   ok.
 
 deliver_message(Msg) -> call(Msg#interdc_txn.partition, {txn, Msg}).
@@ -47,11 +47,11 @@ start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 handle_command({txn, Txn}, _Sender, State) ->
   PDCID = {Txn#interdc_txn.dcid, Txn#interdc_txn.partition},
   {ok, BufferFsm} = dict:find(PDCID, State#state.buffer_fsms),
-  {reply, new_inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn), State};
+  {reply, inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn), State};
 
 handle_command({add_dc, DCID, Address}, _Sender, State) ->
   PDCID = {DCID, State#state.partition},
-  {ok, BufferFsm} = new_inter_dc_sub_buf_fsm:start_link(PDCID, Address),
+  {ok, BufferFsm} = inter_dc_sub_buf_fsm:start_link(PDCID, Address),
   NewState = State#state{buffer_fsms = dict:store(PDCID, BufferFsm, State#state.buffer_fsms)},
   {reply, ok, NewState}.
 
@@ -69,4 +69,4 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-call(Partition, Request) -> dc_utilities:call_vnode_sync(Partition, new_inter_dc_sub_vnode_master, Request).
+call(Partition, Request) -> dc_utilities:call_vnode_sync(Partition, inter_dc_sub_vnode_master, Request).

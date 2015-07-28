@@ -231,7 +231,7 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
             Operation = #operation{op_number = OpId, payload = Payload},
             case insert_operation(Log, LogId, Operation) of
                 {ok, OpId} ->
-                    log_sender:send(Partition, Operation),
+                    inter_dc_log_sender:send(Partition, Operation),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of

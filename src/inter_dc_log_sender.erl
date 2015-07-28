@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(log_sender).
+-module(inter_dc_log_sender).
 -behaviour(riak_core_vnode).
 
 %% Each logging_vnode informs this vnode about every new appended operation.
@@ -39,7 +39,7 @@
 
 %% API
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
-send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, log_sender_master, {log_event, Operation}).
+send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_master, {log_event, Operation}).
 
 init([Partition]) ->
   {ok, #state{
@@ -56,10 +56,10 @@ handle_command({log_event, Operation}, _Sender, State) ->
     {ok, Ops} -> {reply, ok, broadcast(NewState, #interdc_txn{
       dcid = dc_utilities:get_my_dc_id(),
       partition = State#state.partition,
-      logid_range = new_inter_dc_utils:logid_range(Ops),
+      logid_range = inter_dc_utils:logid_range(Ops),
       operations = Ops,
-      snapshot = new_inter_dc_utils:snapshot(Ops),
-      timestamp = new_inter_dc_utils:commit_time(Ops)
+      snapshot = inter_dc_utils:snapshot(Ops),
+      timestamp = inter_dc_utils:commit_time(Ops)
     })};
     none -> {reply, ok, NewState}
   end.
@@ -71,7 +71,7 @@ handle_info(timeout, State) ->
     logid_range = {State#state.last_log_id, State#state.last_log_id},
     operations = [],
     snapshot = dict:new(),
-    timestamp = new_inter_dc_utils:now_millisec() %% TODO: think if this can cause any problems
+    timestamp = inter_dc_utils:now_millisec() %% TODO: think if this can cause any problems
   })}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
@@ -92,6 +92,6 @@ timer() -> erlang:send_after(10000, self(), timeout).
 
 broadcast(State, Msg) ->
   erlang:cancel_timer(State#state.ping_timer),
-  new_inter_dc_pub:broadcast(Msg),
+  inter_dc_pub:broadcast(Msg),
   {_, Id} = Msg#interdc_txn.logid_range,
   State#state{ping_timer = timer(), last_log_id = Id}.

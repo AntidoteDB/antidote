@@ -49,13 +49,13 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(materializer, self()),
 
-            ok = riak_core:register([{vnode_module, log_sender}]),
+            ok = riak_core:register([{vnode_module, inter_dc_log_sender}]),
             ok = riak_core_node_watcher:service_up(logsender, self()),
 
-            ok = riak_core:register([{vnode_module, new_inter_dc_sub_vnode}]),
+            ok = riak_core:register([{vnode_module, inter_dc_sub_vnode}]),
             ok = riak_core_node_watcher:service_up(inter_dc_sub, self()),
 
-            ok = riak_core:register([{vnode_module, new_inter_dc_dep_vnode}]),
+            ok = riak_core:register([{vnode_module, inter_dc_dep_vnode}]),
             ok = riak_core_node_watcher:service_up(inter_dc_dep, self()),
 
             ok = riak_core_ring_events:add_guarded_handler(antidote_ring_event_handler, []),

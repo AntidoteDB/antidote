@@ -1,4 +1,4 @@
--module(new_inter_dc_utils).
+-module(inter_dc_utils).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
