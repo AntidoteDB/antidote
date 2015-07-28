@@ -53,5 +53,6 @@ get_address() ->
   {ok, Port} = application:get_env(antidote, pubsub_port),
   {Ip, Port}.
 
-broadcast(Message) -> gen_server:call(?MODULE, {publish, term_to_binary(Message)}).
+broadcast(Txn) ->
+  gen_server:call(?MODULE, {publish, new_inter_dc_utils:txn_to_bin(Txn)}).
 

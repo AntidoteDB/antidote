@@ -33,14 +33,16 @@ add_dc(Publishers) -> gen_server:call(?MODULE, {add_dc, Publishers}).
 handle_call({add_dc, Publishers}, _From, State) ->
   F = fun(Address) ->
     Socket = zmq_utils:create_connect_socket(sub, true, Address),
-    ok = zmq_utils:sub_filter(Socket, <<>>), %% TODO: actually subscribe only to partitions this node is responsible for
+    lists:foreach(fun(P) ->
+      ok = zmq_utils:sub_filter(Socket, new_inter_dc_utils:partition_to_bin(P))
+    end, dc_utilities:get_my_partitions()),
     Socket
   end,
   Sockets = lists:map(F, Publishers),
   {reply, ok, State#state{connections = Sockets ++ State#state.connections}}.
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
-  Msg = binary_to_term(BinaryMsg),
+  Msg = new_inter_dc_utils:bin_to_txn(BinaryMsg),
   ok = new_inter_dc_sub_vnode:deliver_message(Msg),
   {noreply, State}.
 
