@@ -4,20 +4,19 @@
 
 -define(PARTITION_BYTE_LENGTH, 20).
 
--export([snapshot/1, now_millisec/0, logid_range/1, commit_time/1, bin_to_txn/1, txn_to_bin/1, partition_to_bin/1, ops_to_interdc_txn/2]).
+-export([
+  now_millisec/0,
+  logid_range/1,
+  bin_to_txn/1,
+  txn_to_bin/1,
+  partition_to_bin/1,
+  ops_to_interdc_txn/2,
+  get_ops_by_type/2]).
 
 commit_payload(Ops) ->
   CommitPld = (lists:last(Ops))#operation.payload,
   commit = CommitPld#log_record.op_type, %% sanity check
   CommitPld.
-
-snapshot(Ops) ->
-  {_, SnapshotTime} = (commit_payload(Ops))#log_record.op_payload,
-  SnapshotTime.
-
-commit_time(Ops) ->
-  {{_, CommitTime}, _} = (commit_payload(Ops))#log_record.op_payload,
-  CommitTime.
 
 logid_range(Ops) ->
   {Min, _} = (hd(Ops))#operation.op_number,
@@ -28,22 +27,26 @@ now_millisec() ->
   {MegaSecs, Secs, MicroSecs} = erlang:now(),
   (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
+ops_to_interdc_txn(Ops, Partition) ->
+  {{DCID, CommitTime}, SnapshotTime} = (commit_payload(Ops))#log_record.op_payload,
+  #interdc_txn{
+    dcid = DCID,
+    partition = Partition,
+    logid_range = logid_range(Ops),
+    operations = Ops,
+    snapshot = SnapshotTime,
+    timestamp = CommitTime
+  }.
+
+get_ops_by_type(Txn, Type) ->
+  F = fun(Op) -> Type == Op#operation.payload#log_record.op_type end,
+  lists:filter(F, Txn#interdc_txn.operations).
+
 pad(Width, Binary) ->
   case Width - byte_size(Binary) of
     N when N =< 0 -> Binary;
     N -> <<0:(N*8), Binary/binary>>
   end.
-
-ops_to_interdc_txn(Ops, Partition) ->
-  #interdc_txn{
-    dcid = dc_utilities:get_my_dc_id(),
-    partition = Partition,
-    logid_range = logid_range(Ops),
-    operations = Ops,
-    snapshot = snapshot(Ops),
-    timestamp = commit_time(Ops)
-  }.
-
 
 partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigned(Partition)).
 

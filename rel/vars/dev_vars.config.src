@@ -12,6 +12,7 @@
 {pb_port,           @PBPORT@}.
 {pubsub_port,       @PUBSUBPORT@}.
 {logreader_port,    @LOGREADERPORT@}.
+{updatestream_port, @UPDATESTREAMPORT@}.
 
 %%
 %% etc/vm.args

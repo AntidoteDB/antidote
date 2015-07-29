@@ -46,16 +46,22 @@ init([Partition]) ->
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
     last_log_id = 0,
-    ping_timer = timer()
+    ping_timer = new_timer()
   }}.
 
 handle_command({log_event, Operation}, _Sender, State) ->
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
-  NewState = State#state{buffer = NewBufState},
-  case Result of
-    {ok, Ops} -> {reply, ok, broadcast(NewState, inter_dc_utils:ops_to_interdc_txn(Ops, NewState#state.partition))};
-    none -> {reply, ok, NewState}
-  end.
+  State1 = State#state{buffer = NewBufState},
+  State2 = case Result of
+    {ok, Ops} ->
+      Txn = inter_dc_utils:ops_to_interdc_txn(Ops, State1#state.partition),
+      case Txn#interdc_txn.dcid == dc_utilities:get_my_dc_id() of
+        true -> broadcast(State1, Txn);
+        false -> State1
+      end;
+    none -> State1
+  end,
+  {reply, ok, State2}.
 
 handle_info(timeout, State) ->
   {ok, broadcast(State, #interdc_txn{
@@ -81,10 +87,11 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-timer() -> erlang:send_after(10000, self(), timeout).
+new_timer() -> erlang:send_after(10000, self(), timeout).
 
-broadcast(State, Msg) ->
+broadcast(State, Txn) ->
   erlang:cancel_timer(State#state.ping_timer),
-  inter_dc_pub:broadcast(Msg),
-  {_, Id} = Msg#interdc_txn.logid_range,
-  State#state{ping_timer = timer(), last_log_id = Id}.
+  inter_dc_pub:broadcast(Txn),
+  update_stream_pub:broadcast(Txn),
+  {_, Id} = Txn#interdc_txn.logid_range,
+  State#state{ping_timer = new_timer(), last_log_id = Id}.

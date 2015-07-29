@@ -76,6 +76,7 @@ try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Times
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, DownOps),
       ok = vectorclock:update_clock(Partition, DCID, Timestamp),
       dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
+      update_stream_pub:broadcast(Txn),
       true
   end.
 
