@@ -53,14 +53,7 @@ handle_command({log_event, Operation}, _Sender, State) ->
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
   NewState = State#state{buffer = NewBufState},
   case Result of
-    {ok, Ops} -> {reply, ok, broadcast(NewState, #interdc_txn{
-      dcid = dc_utilities:get_my_dc_id(),
-      partition = State#state.partition,
-      logid_range = inter_dc_utils:logid_range(Ops),
-      operations = Ops,
-      snapshot = inter_dc_utils:snapshot(Ops),
-      timestamp = inter_dc_utils:commit_time(Ops)
-    })};
+    {ok, Ops} -> {reply, ok, broadcast(NewState, inter_dc_utils:ops_to_interdc_txn(Ops, NewState#state.partition))};
     none -> {reply, ok, NewState}
   end.
 

@@ -58,7 +58,7 @@ get_entries(Partition, From, To) ->
   Logs = log_read_range(node(), Partition, From, To),
   Asm = log_txn_assembler:new_state(),
   {Txns, _} = log_txn_assembler:process_all(Logs, Asm),
-  [#interdc_txn{dcid = dc_utilities:get_my_dc_id(), partition = Partition, operations = T} || T <- Txns].
+  [inter_dc_utils:ops_to_interdc_txn(Ops, Partition) || Ops <- Txns].
 
 -spec get_address() -> socket_address().
 get_address() ->

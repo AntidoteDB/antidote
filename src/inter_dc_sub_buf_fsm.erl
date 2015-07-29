@@ -14,6 +14,7 @@
   pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer(),
   queue :: queue(),
+  address :: socket_address(),
   socket :: zmq_socket()
 }).
 
@@ -29,7 +30,8 @@ init([PDCID, Address]) -> {ok, up_to_date, #state{
   pdcid = PDCID,
   last_observed_opid = 0, %% TODO: fetch the last observed opid from log
   queue = queue:new(),
-  socket = zmq_utils:create_connect_socket(req, true, Address)
+  address = Address,
+  socket = none
 }}.
 
 up_to_date({txn, Txn}, State) -> process_queue(State#state{queue = queue:in(Txn, State#state.queue)}).
@@ -54,7 +56,7 @@ buffering({log_reader_rsp, Txns} ,State = #state{queue = Queue}) ->
 
 process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
-    empty -> {next_state, up_to_date, State};
+    empty -> {next_state, up_to_date, close_socket(State)};
     {value, Txn} ->
       {Min, Max} = Txn#interdc_txn.logid_range,
       case Last + 1 >= Min of
@@ -64,10 +66,24 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
         false ->
           {_, Partition} = State#state.pdcid,
           Request = {read_log, Partition, State#state.last_observed_opid, Min},
-          ok = erlzmq:send(State#state.socket, term_to_binary(Request)),
-          {next_state, buffering, State}
+          {next_state, buffering, ask_log_reader(State, Request)}
       end
   end.
+
+ask_log_reader(State, Request) ->
+  Socket = case State#state.socket of
+    none -> zmq_utils:create_connect_socket(req, true, State#state.address);
+    S -> S
+  end,
+  ok = erlzmq:send(Socket, term_to_binary(Request)),
+  State#state{socket = Socket}.
+
+close_socket(State) ->
+  case State#state.socket of
+    none -> ok;
+    Socket -> erlzmq:close(Socket)
+  end,
+  State#state{socket = none}.
 
 %% The socket is marked as active, therefore messages are delivered to the fsm through the handle_info method.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, StateName, State) ->
@@ -77,5 +93,5 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, StateName, State) ->
 deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 handle_event(_Event, _StateName, StateData) -> {stop, badmsg, StateData}.
 handle_sync_event(_Event, _From, _StateName, StateData) -> {stop, badmsg, StateData}.
-terminate(_Reason, _StateName, State) -> erlzmq:close(State#state.socket).
+terminate(_Reason, _StateName, State) -> close_socket(State), ok.
 code_change(_OldVsn, _StateName, _StateData, _Extra) -> erlang:error(not_implemented).
