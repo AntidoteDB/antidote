@@ -21,73 +21,59 @@
 
 -include("antidote.hrl").
 
--export([append/3,
-         read/2,
-         clocksi_execute_tx/2,
-         clocksi_execute_tx/1,
-         clocksi_read/3,
-         clocksi_read/2,
-         clocksi_bulk_update/2,
-         clocksi_bulk_update/1,
-         clocksi_istart_tx/1,
-         clocksi_istart_tx/0,
-         clocksi_iread/3,
-         clocksi_iupdate/4,
-         clocksi_iprepare/1,
-         clocksi_icommit/1]).
+-export([
+         start_transaction/2,
+         %start_transaction/1,
+         read_objects/2,
+         update_objects/2,
+         abort_transaction/1,
+         commit_transaction/1
+        ]).
+
+-type bucket() :: term().
+-type txn_properties() :: term(). %% TODO: Define
+-type op_param() :: term(). %% TODO: Define
+-type bound_object() :: {key(), type(), bucket()}.
 
 %% Public API
 
-%% @doc The append/2 function adds an operation to the log of the CRDT
-%%      object stored at some key.
--spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, term()} | {error, reason()}.
-append(Key, Type, {OpParam, Actor}) ->
-    Operations = [{update, Key, Type, {OpParam, Actor}}],
-    case clocksi_execute_tx(Operations) of
-        {ok, Result} ->
-            {ok, Result};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+-spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
+                       -> {ok, txid()}.
+start_transaction(Clock, _Properties) ->    
+    clocksi_istart_tx(Clock).    
+    
+-spec abort_transaction(TxId::txid()) -> ok.
+abort_transaction(_TxId) ->
+    %% TODO
+    ok.
 
-%% @doc The read/2 function returns the current value for the CRDT
-%%      object stored at some key.
--spec read(Key::key(), Type::type()) -> {ok, val()} | {error, reason()}.
-read(Key, Type) ->
-    case clocksi_read(Key, Type) of
-        {ok,{_, [Val], _}} ->
-            {ok, Val};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+-spec commit_transaction(TxId::txid()) -> 
+                                {ok, snapshot_time()} | {error, reason()}.
+commit_transaction(TxId) ->
+    clocksi_iprepare(TxId),
+    {ok, {_TxId, CommitTime}} = clocksi_icommit(TxId),
+    {ok, CommitTime}.
+    
+-spec read_objects(Objects::[bound_object()], TxId::txid()) 
+                  -> {ok, [term()]} | {error, reason()}.
+read_objects(Objects, TxId) ->
+    %%TODO: Transaction co-ordinator handles multiple reads
+    Results = lists:map(fun({Key, Type, _Bucket}) ->
+                      {ok, Res} = clocksi_iread(TxId, Key, Type),
+                      Res end, Objects),
+    {ok, Results}.
+
+-spec update_objects([{bound_object(), op(), op_param()}], txid())
+                    -> ok | {error, reason()}.
+update_objects(Updates, TxId) ->
+    %%TODO: How to generate Actor
+    Actor = TxId,
+    lists:map(fun({{Key, Type, _Bucket}, Op, OpParam}) ->
+                      ok = clocksi_iupdate(TxId, Key, Type, {{Op, OpParam}, Actor}),
+                      ok end, Updates),
+    ok.
 
 %% Clock SI API
-
-%% @doc Starts a new ClockSI transaction.
-%%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
-%%      Operations: the list of the operations the transaction involves.
-%%      Returns:
-%%      an ok message along with the result of the read operations involved in the
-%%      the transaction, in case the tx ends successfully.
-%%      error message in case of a failure.
-%%
--spec clocksi_execute_tx(Clock :: snapshot_time(),
-                         Operations::[any()]) -> term().
-clocksi_execute_tx(Clock, Operations) ->
-    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
-    receive
-        EndOfTx ->
-            EndOfTx
-    end.
-
--spec clocksi_execute_tx(Operations::[any()]) -> term().
-clocksi_execute_tx(Operations) ->
-    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
-    receive
-        EndOfTx ->
-            EndOfTx
-    end.
 
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:
@@ -98,33 +84,11 @@ clocksi_execute_tx(Operations) ->
 clocksi_istart_tx(Clock) ->
     {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
     receive
-        TxId ->
-            TxId
+        {ok, TxId} ->
+            {ok, TxId};
+        Other ->
+            {error, Other} 
     end.
-
-clocksi_istart_tx() ->
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
-    receive
-        TxId ->
-            TxId
-    end.
-
--spec clocksi_bulk_update(ClientClock:: snapshot_time(),
-                          Operations::[any()]) -> term().
-clocksi_bulk_update(ClientClock, Operations) ->
-    clocksi_execute_tx(ClientClock, Operations).
-
--spec clocksi_bulk_update(Operations :: [any()]) -> term().
-clocksi_bulk_update(Operations) ->
-    clocksi_execute_tx(Operations).
-
--spec clocksi_read(ClientClock :: snapshot_time(),
-                   Key :: key(), Type:: type()) -> term().
-clocksi_read(ClientClock, Key, Type) ->
-    clocksi_execute_tx(ClientClock, [{read, Key, Type}]).
-
-clocksi_read(Key, Type) ->
-    clocksi_execute_tx([{read, Key, Type}]).
 
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
