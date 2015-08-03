@@ -33,21 +33,18 @@
 get_descriptor() ->
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address, []) end, Nodes),
-  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader, get_address, []) end, Nodes),
+  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address, []) end, Nodes),
   {dc_utilities:get_my_dc_id(), Publishers, LogReaders}.
 
 
 -spec observe_dc(interdc_descriptor()) -> ok.
 observe_dc(Descriptor) ->
   {DCID, Publishers, LogReaders} = Descriptor,
-
-  %% Broadcast the DC info to all vnodes
-  ok = inter_dc_sub_vnode:register_dc(DCID, LogReaders),
-
   %% Announce the new publisher addresses to all subscribers in this DC.
   %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
   %% But we want to balance the work, so all nodes take part in subscribing.
   Nodes = dc_utilities:get_my_dc_nodes(),
+  lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders]) end, Nodes),
   lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, add_dc, [Publishers]) end, Nodes).
 
 observe(DcNodeAddress) -> observe_dc(rpc:call(DcNodeAddress, inter_dc_manager, get_descriptor, [])).

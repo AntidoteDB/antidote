@@ -26,40 +26,29 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--export([deliver_message/1, start_vnode/1, register_dc/2]).
+-export([deliver_txn/1, start_vnode/1, deliver_log_reader_resp/2]).
 -export([init/1, handle_command/3, handle_coverage/4, handle_exit/3, handoff_starting/2, handoff_cancelled/1, handoff_finished/2, handle_handoff_command/3, handle_handoff_data/2, encode_handoff_item/2, is_empty/1, terminate/2, delete/1]).
 
 -record(state, {
   partition :: non_neg_integer(),
-  buffer_fsms :: dict() %% partition_dcid -> relsub_fsm
+  buffer_fsms :: dict() %% dcid -> relsub_fsm
 }).
 
-register_dc(DCID, LogReaderAddresses) ->
-  Request = {add_dc, DCID, hd(LogReaderAddresses)},
-  dc_utilities:bcast_vnode_sync(inter_dc_sub_vnode_master, Request),
-  ok.
-
-deliver_message(Msg) -> call(Msg#interdc_txn.partition, {txn, Msg}).
+deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
+deliver_log_reader_resp({DCID, Partition}, Txns) -> call(Partition, {log_reader_resp, DCID, Txns}).
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({txn, Txn}, _Sender, State) ->
-  PDCID = {Txn#interdc_txn.dcid, Txn#interdc_txn.partition},
-  Response = case dict:find(PDCID, State#state.buffer_fsms) of
-    {ok, BufferFsm} -> inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn);
-    error ->
-      lager:error("Failed to fetch buffer FSM for PDCID=~p", [PDCID]),
-      ok
-  end,
-  {reply, Response, State};
+handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
+  Buf0 = get_buf(DCID, State),
+  Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
+  {reply, ok, set_buf(DCID, Buf1, State)};
 
-handle_command({add_dc, DCID, Address}, _Sender, State) ->
-  PDCID = {DCID, State#state.partition},
-  {ok, BufferFsm} = inter_dc_sub_buf_fsm:start_link(PDCID, Address),
-  lager:info("Saved new buffer FSM for PDCID=~p", [PDCID]),
-  NewState = State#state{buffer_fsms = dict:store(PDCID, BufferFsm, State#state.buffer_fsms)},
-  {reply, ok, NewState}.
+handle_command({log_reader_resp, DCID, Txns}, _Sender, State) ->
+  Buf0 = get_buf(DCID, State),
+  Buf1 = inter_dc_sub_buf:process({log_reader_resp, Txns}, Buf0),
+  {reply, ok, set_buf(DCID, Buf1, State)}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
@@ -76,3 +65,12 @@ delete(State) -> {ok, State}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 call(Partition, Request) -> dc_utilities:call_vnode_sync(Partition, inter_dc_sub_vnode_master, Request).
+
+get_buf(DCID, State) ->
+  case dict:find(DCID, State#state.buffer_fsms) of
+    {ok, Buf} -> Buf;
+    error ->
+      inter_dc_sub_buf:new_state({DCID, State#state.partition})
+  end.
+
+set_buf(DCID, Buf, State) -> State#state{buffer_fsms = dict:store(DCID, Buf, State#state.buffer_fsms)}.
