@@ -40,7 +40,7 @@ init([]) ->
 handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   Msg = binary_to_term(BinaryMsg),
   Response = case Msg of
-    {read_log, Partition, From, To} -> get_entries(Partition, From, To);
+    {read_log, Partition, From, To} -> {{dc_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)};
     _ -> {error, bad_request}
   end,
   lager:info("Received MSG=~p", [Msg]),
