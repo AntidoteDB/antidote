@@ -473,32 +473,8 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 %%      to the prepared state.
 certification_check(_, [], _, _) ->
     true;
-certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    {Key, _Type, _} = H,
-    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
-    case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true ->
-            false;
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
-    end.
-
-check_keylog(_, [], _) ->
-    false;
-check_keylog(TxId, [H|T], CommittedTx)->
-    {_Key, _Type, ThisTxId}=H,
-    case ThisTxId > TxId of
-        true ->
-            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            case CommitInfo of
-                [{_, _CommitTime}] ->
-                    true;
-                [] ->
-                    check_keylog(TxId, T, CommittedTx)
-            end;
-        false ->
-            check_keylog(TxId, T, CommittedTx)
-    end.
+certification_check(_TxId, [_H|_T], _CommittedTx, _ActiveTxPerKey) ->
+    true.
 
 -spec update_materializer(DownstreamOps :: [{key(),type(),op()}],
                           Transaction::tx(),TxCommitTime:: {term(), term()}) ->
