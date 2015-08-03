@@ -39,11 +39,12 @@ init([]) ->
 
 handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   Msg = binary_to_term(BinaryMsg),
-  lager:info("Received MSG=~p", [Msg]),
   Response = case Msg of
     {read_log, Partition, From, To} -> get_entries(Partition, From, To);
     _ -> {error, bad_request}
   end,
+  lager:info("Received MSG=~p", [Msg]),
+  lager:info("Answering with ~p", [Response]),
   erlzmq:send(Socket, term_to_binary(Response)),
   {noreply, State}.
 

@@ -26,12 +26,12 @@
 -endif.
 
 -export([get_clock/1, update_clock/3, get_clock_by_key/1,
-         is_greater_than/2,
-         get_clock_of_dc/2,
-         set_clock_of_dc/3,
-         get_stable_snapshot/0,
-         from_list/1,
-         eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
+  is_greater_than/2,
+  get_clock_of_dc/2,
+  set_clock_of_dc/3,
+  get_stable_snapshot/0,
+  from_list/1,
+  eq/2, lt/2, gt/2, le/2, ge/2, strict_ge/2, strict_le/2, dcids/1]).
 
 -export_type([vectorclock/0]).
 
@@ -123,6 +123,8 @@ set_clock_of_dc(DcId, Time, VectorClock) ->
 
 from_list(List) ->
     dict:from_list(List).
+
+dcids(VectorClock) -> lists:map(fun({K,_}) -> K end, dict:to_list(VectorClock)).
 
 eq(V1, V2) ->
     dict:fold( fun(Dcid, Time2, Result) ->

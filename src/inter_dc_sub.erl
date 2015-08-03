@@ -43,7 +43,7 @@ handle_call({add_dc, Publishers}, _From, State) ->
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   Msg = inter_dc_utils:bin_to_txn(BinaryMsg),
-  ok = inter_dc_sub_vnode:deliver_message(Msg),
+  ok = inter_dc_sub_vnode:deliver_message(Msg), %%
   {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.

@@ -25,7 +25,6 @@
     call_vnode_sync/3,
     bcast_vnode_sync/2,
     partition_to_indexnode/1,
-    get_num_partitions/0,
     call_vnode/3,
     get_all_partitions/0,
     bcast_vnode/2,
@@ -47,10 +46,6 @@ partition_to_indexnode(Partition) ->
 get_my_partitions() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:my_indices(Ring).
-
-get_num_partitions() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    riak_core_ring:num_partitions(Ring).
 
 get_all_partitions() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),

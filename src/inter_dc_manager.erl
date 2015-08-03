@@ -33,7 +33,7 @@
 get_descriptor() ->
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address, []) end, Nodes),
-  LogReaders = lists:map(fun(Node) -> rpc:call(Node, log_reader, get_address, []) end, Nodes),
+  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader, get_address, []) end, Nodes),
   {dc_utilities:get_my_dc_id(), Publishers, LogReaders}.
 
 

@@ -52,13 +52,15 @@ buffering({log_reader_rsp, Txns} ,State = #state{queue = Queue}) ->
       {_, Max} = (lists:last(Txns))#interdc_txn.logid_range,
       Max
   end,
-  process_queue(State#state{last_observed_opid = NewLast}).
+  NewState = State#state{last_observed_opid = NewLast},
+  process_queue(NewState).
 
 process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
     empty -> {next_state, up_to_date, close_socket(State)};
     {value, Txn} ->
       {Min, Max} = Txn#interdc_txn.logid_range,
+      %% assert Max >= Min
       case Last + 1 >= Min of
         true ->
           deliver(Txn),
@@ -87,7 +89,8 @@ close_socket(State) ->
 
 %% The socket is marked as active, therefore messages are delivered to the fsm through the handle_info method.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, StateName, State) ->
-  ok = gen_fsm:send_event(self(), {log_reader_rsp, binary_to_term(BinaryMsg)}),
+  Msg = binary_to_term(BinaryMsg),
+  ok = gen_fsm:send_event(self(), {log_reader_rsp, Msg}),
   {next_state, StateName, State}.
 
 deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).

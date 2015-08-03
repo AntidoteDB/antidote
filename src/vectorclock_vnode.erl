@@ -103,11 +103,10 @@ handle_command(calculate_stable_snapshot, _Sender,
         %% donot calculate stable snapshot
         case NumPartitions == NumMetadata of
             true ->
-                riak_core_metadata:fold(
-                  fun({_Key, V}, A) ->
-                          find_min(V,{Clock,A})
-                  end,
-                  Clock, ?META_PREFIX);
+                %% Some metadata values can be lists of size > 1, so we flatten the list now
+                AllVClocks = riak_core_metadata:fold(fun({_Key, V}, A) -> V ++ A end, [Clock], ?META_PREFIX),
+                %% Then we calculate the min vclock for specified DCID keys
+                find_min_of(AllVClocks, vectorclock:dcids(Clock));
             false ->
                 dict:new()
         end,
@@ -208,12 +207,3 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, _State) ->
     ok.
-
-find_min([VClock], {PVV, StableClock}) ->
-    dict:fold(fun(Dc, _, Snapshot) ->
-                      {ok, Clock1} = vectorclock:get_clock_of_dc(Dc, VClock),
-                      {ok, Clock2} = vectorclock:get_clock_of_dc(Dc, Snapshot),
-                      dict:store(Dc, min(Clock1, Clock2), Snapshot)
-               end,
-               StableClock,
-               PVV).

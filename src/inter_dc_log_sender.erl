@@ -27,7 +27,7 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
--export([start_vnode/1, send/2, handle_info/2]).
+-export([start_vnode/1, send/2, ping/1]).
 -export([init/1, handle_command/3, handle_coverage/4, handle_exit/3, handoff_starting/2, handoff_cancelled/1, handoff_finished/2, handle_handoff_command/3, handle_handoff_data/2, encode_handoff_item/2, is_empty/1, terminate/2, delete/1]).
 
 -record(state, {
@@ -40,14 +40,25 @@
 %% API
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_master, {log_event, Operation}).
+ping(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_master, ping).
 
 init([Partition]) ->
-  {ok, #state{
+  {ok, set_timer(#state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
     last_log_id = 0,
-    ping_timer = new_timer()
-  }}.
+    ping_timer = none
+  })}.
+
+handle_command(ping, _Sender, State) ->
+  {reply, ok, broadcast(State, #interdc_txn{
+    dcid = dc_utilities:get_my_dc_id(),
+    partition = State#state.partition,
+    logid_range = {State#state.last_log_id, State#state.last_log_id},
+    operations = [],
+    snapshot = dict:new(),
+    timestamp = inter_dc_utils:now_millisec() %% TODO: think if this can cause any problems
+  })};
 
 handle_command({log_event, Operation}, _Sender, State) ->
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
@@ -63,15 +74,6 @@ handle_command({log_event, Operation}, _Sender, State) ->
   end,
   {reply, ok, State2}.
 
-handle_info(timeout, State) ->
-  {ok, broadcast(State, #interdc_txn{
-    dcid = dc_utilities:get_my_dc_id(),
-    partition = State#state.partition,
-    logid_range = {State#state.last_log_id, State#state.last_log_id},
-    operations = [],
-    snapshot = dict:new(),
-    timestamp = inter_dc_utils:now_millisec() %% TODO: think if this can cause any problems
-  })}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
@@ -87,11 +89,19 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-new_timer() -> erlang:send_after(10000, self(), timeout).
+set_timer(State) ->
+  ClearedState = clr_timer(State),
+  {ok, Timer} = timer:apply_after(10000, inter_dc_log_sender, ping, [State#state.partition]),
+  ClearedState#state{ping_timer = Timer}.
+
+clr_timer(State = #state{ping_timer = none}) -> State;
+clr_timer(State = #state{ping_timer = Timer}) ->
+  {ok, cancel} = timer:cancel(Timer),
+  State#state{ping_timer = none}.
 
 broadcast(State, Txn) ->
-  erlang:cancel_timer(State#state.ping_timer),
+  State1 = clr_timer(State),
   inter_dc_pub:broadcast(Txn),
   update_stream_pub:broadcast(Txn),
   {_, Id} = Txn#interdc_txn.logid_range,
-  State#state{ping_timer = new_timer(), last_log_id = Id}.
+  set_timer(State1#state{last_log_id = Id}).

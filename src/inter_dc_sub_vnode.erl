@@ -46,12 +46,18 @@ start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 handle_command({txn, Txn}, _Sender, State) ->
   PDCID = {Txn#interdc_txn.dcid, Txn#interdc_txn.partition},
-  {ok, BufferFsm} = dict:find(PDCID, State#state.buffer_fsms),
-  {reply, inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn), State};
+  Response = case dict:find(PDCID, State#state.buffer_fsms) of
+    {ok, BufferFsm} -> inter_dc_sub_buf_fsm:handle_txn(BufferFsm, Txn);
+    error ->
+      lager:error("Failed to fetch buffer FSM for PDCID=~p", [PDCID]),
+      ok
+  end,
+  {reply, Response, State};
 
 handle_command({add_dc, DCID, Address}, _Sender, State) ->
   PDCID = {DCID, State#state.partition},
   {ok, BufferFsm} = inter_dc_sub_buf_fsm:start_link(PDCID, Address),
+  lager:info("Saved new buffer FSM for PDCID=~p", [PDCID]),
   NewState = State#state{buffer_fsms = dict:store(PDCID, BufferFsm, State#state.buffer_fsms)},
   {reply, ok, NewState}.
 
