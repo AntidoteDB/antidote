@@ -31,10 +31,14 @@
          set_clock_of_dc/3,
          get_stable_snapshot/0,
          from_list/1,
+	 new/0,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
 
+
+new() ->
+    dict:new().
 
 -spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_clock_by_key(Key) ->
@@ -69,7 +73,8 @@ get_clock(Partition) ->
 get_stable_snapshot() ->
     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
     %% to riak core meta-data) otherwise will have to change this
-    {ok,vectorclock_vnode:get_stable_snapshot()}.
+    %%{ok,vectorclock_vnode:get_stable_snapshot()}.
+    {ok, meta_data_sender:get_stable_time()}.
     
 
 -spec update_clock(Partition :: non_neg_integer(),

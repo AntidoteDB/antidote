@@ -145,5 +145,6 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, _State = #recvr_state{partition=Partition}) ->
+    meta_data_sender:remove_partition(Partition),
     ok.

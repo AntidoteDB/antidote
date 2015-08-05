@@ -35,7 +35,8 @@ init_state(Partition) ->
     {ok, #recvr_state{lastRecvd = orddict:new(), %% stores last OpId received
                       lastCommitted = orddict:new(),
                       recQ = orddict:new(),
-                      partition=Partition}
+                      partition=Partition,
+		      partition_vclock = vectorclock:new()}
     }.
 
 %% @doc enqueue_update: Put transaction into queue for processing later
@@ -63,7 +64,7 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
-                                             partition = Partition}) ->
+					     partition_vclock = LC}) ->
     case queue:is_empty(DcQ) of
         false ->
             Transaction = queue:get(DcQ),
@@ -73,7 +74,8 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             LocalDc = dc_utilities:get_my_dc_id(),
             {Dc, Ts} = CommitTime,
             %% Check for dependency of operations and write to log
-            {ok, LC} = vectorclock:get_clock(Partition),
+            %% {ok, LC} = vectorclock:get_clock(Partition),
+
             Localclock = vectorclock:set_clock_of_dc(
                            Dc, 0,
                            vectorclock:set_clock_of_dc(
@@ -145,10 +147,10 @@ check_and_update(SnapshotTime, Localclock, Transaction,
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
-            ok = vectorclock:update_clock(Partition, Dc, Ts),
-            riak_core_vnode_master:command(
-              {Partition,node()}, calculate_stable_snapshot,
-              vectorclock_vnode_master),
+            %% ok = vectorclock:update_clock(Partition, Dc, Ts),
+            %% riak_core_vnode_master:command(
+            %%   {Partition,node()}, calculate_stable_snapshot,
+            %%   vectorclock_vnode_master),
             riak_core_vnode_master:command({Partition, node()}, {process_queue},
                                            inter_dc_recvr_vnode_master),
             NewState;
@@ -158,11 +160,21 @@ check_and_update(SnapshotTime, Localclock, Transaction,
     end.
 
 finish_update_dc(Dc, DcQ, Cts,
-                 State=#recvr_state{lastCommitted = LastCTS, recQ = RecQ}) ->
+                 State=#recvr_state{lastCommitted = LastCTS,
+				    partition_vclock = LC,
+				    partition = Partition,
+				    recQ = RecQ}) ->
+    %% Is it really needed to use -1 for the time
+    %% I am doing this because that is what is in
+    %% vectorclock_vnode update_clock
+    NewLC = vectorclock:set_clock_of_dc(Dc, Cts - 1, LC),
+    ok = meta_data_sender:put_meta_dict(Partition, NewLC),
     DcQNew = queue:drop(DcQ),
     RecQNew = set(Dc, DcQNew, RecQ),
     LastCommNew = set(Dc, Cts, LastCTS),
-    {ok, State#recvr_state{lastCommitted = LastCommNew, recQ = RecQNew}}.
+    {ok, State#recvr_state{lastCommitted = LastCommNew,
+			   recQ = RecQNew,
+			   partition_vclock = NewLC}}.
 
 %% Checks depV against the committed timestamps
 check_dep(DepV, Localclock) ->

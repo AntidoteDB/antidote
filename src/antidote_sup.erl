@@ -107,6 +107,11 @@ init(_Args) ->
 			  {meta_data_manager_sup, start_link, []},
 			  permanent, 5000, supervisor,
 			  [meta_data_manager_sup]},
+
+    MetaDataSenderSup = {meta_data_sender_sup,
+			  {meta_data_sender_sup, start_link, []},
+			  permanent, 5000, supervisor,
+			  [meta_data_sender_sup]},
     
     InterDcManager = {inter_dc_manager,
 		      {inter_dc_manager, start_link, []},
@@ -123,6 +128,7 @@ init(_Args) ->
        InterDcRecvrMaster,
        InterDcManager,
        MetaDataManagerSup,
+       MetaDataSenderSup,
        VectorClockMaster,
        InterDcSenderSup,
        MaterializerMaster]}}.

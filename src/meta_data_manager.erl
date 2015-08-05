@@ -20,70 +20,38 @@
 
 -module(meta_data_manager).
 -behaviour(gen_server).
--define(META_TABLE_NAME, a_meta_data_table).
--define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
 
 -include("antidote.hrl").
 
 -export([start_link/0,
-	 put_meta_dict/2,
-	 put_meta_data/3,
-	 get_stable_time/0,
-         remove_partition/1]).
-
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-        terminate/2, code_change/3]).
+	 generate_server_name/1,
+	 remove_node/1,
+	 update_time/3]).
+-export([init/1,
+	 handle_cast/2,
+	 handle_call/3,
+	 handle_info/2,
+	 terminate/2,
+	 code_change/3]).
 
 -record(state, {
-	  table,
-	  table2,
-	  time_dict,
-	  last_time
-	 }).
+	  table}).
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-
--spec put_meta_dict(partition_id(), dict()) -> ok.
-put_meta_dict(Partition, Dict) ->
-    true = ets:insert(?META_TABLE_NAME, {Partition, Dict}),
-    ok.
-
--spec put_meta_data(partition_id(), term(), term()) -> ok.
-put_meta_data(Partition, Key, Value) ->
-    Dict = case ets:lookup(?META_TABLE_NAME, Partition) of
-	       [] ->
-		   dict:new();
-	       [Other] ->
-		   Other
-	   end,
-    NewDict = dict:store(Key, Value, Dict),
-    put_meta_dict(Partition, NewDict).
-
--spec remove_partition(partition_id()) -> ok.
-remove_partition(Partition) ->
-    true = ets:delete(?META_TABLE_NAME, Partition),
-    ok.
-
-%% Add info about a new DC. This info could be
-%% used by other modules to communicate to other DC
--spec get_stable_time() -> vectorclock().
-get_stable_time() ->
-    case ets:lookup(?META_TABLE_STABLE_NAME, stable_time) of
-	[] ->
-	    dict:new();
-	[Other] ->
-	    Other
-    end.
+    gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
 
 %% Add a list of DCs to this DC
-%% -spec add_list_dcs([dc_address()]) -> ok.
-%% add_list_dcs(DCs) ->
-%%     gen_server:call(?MODULE, {add_list_dcs, DCs}, infinity).
+-spec update_time(atom(),atom(),dict()) -> ok.
+update_time(DestinationNodeId,NodeId,Time) ->
+    gen_server:cast({global,generate_server_name(DestinationNodeId)}, {update_time, NodeId, Time}).
+
+-spec remove_node(atom()) -> ok.
+remove_node(NodeId) ->
+    gen_server:cast({global,generate_server_name(node())}, {remove_node,NodeId}).
 
 
 %% ===================================================================
@@ -91,23 +59,21 @@ get_stable_time() ->
 %% ===================================================================
 
 init([]) ->
-    Table = ets:new(?META_TABLE_NAME, [set, named_table, public, ?META_TABLE_CONCURRENCY]),
-    Table2 = ets:new(?META_TABLE_STABLE_NAME, [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
-    TimeDict = dict:new(),
-    {ok, #state{table=Table, table2=Table2, time_dict=TimeDict, last_time = 0}}.
+    Table = ets:new(?REMOTE_META_TABLE_NAME, [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
+    {ok, #state{table=Table}}.
 
-handle_call({update_time, NodeId, Time}, _From, State = #state{time_dict=TimeDict, last_time=LastTime}) ->
-    NewTimeDict = dict:store(NodeId, Time, TimeDict),
-    Min = get_min_time(NewTimeDict),
-    % This needs to be a dict per DC!
-    NewTime = case Min > LastTime of
-		  true ->
-		      true = ets:insert(?META_TABLE_STABLE_NAME, {stable_time, Min}),
-		      Min;
-		  false ->
-		      LastTime
-	      end,
-    {ok, State#state{time_dict=NewTimeDict, last_time=NewTime}}.
+handle_cast({update_time, NodeId, Time}, State) ->
+    true = ets:insert(?REMOTE_META_TABLE_NAME, {NodeId, Time}),
+    {noreply, State};
+
+handle_cast({remove_node,NodeId}, State) ->
+    lager:info("removing node ~p from meta data table", [NodeId]),
+    true = ets:delete(?REMOTE_META_TABLE_NAME, NodeId),
+    {noreply, State};
+
+%% handle_call({update_stable}, _From, State = #state{time_dict=TimeDict, last_time=LastTime}) ->
+%%     NewTime = update_stable(TimeDict,LastTime),
+%%     {ok, State#state{last_time=NewTime}}.
 
 %% handle_call({start_receiver, Port}, _From, State) ->
 %%     {ok, _} = antidote_sup:start_rep(self(), Port),
@@ -135,6 +101,9 @@ handle_call({update_time, NodeId, Time}, _From, State = #state{time_dict=TimeDic
 handle_cast(_Info, State) ->
     {noreply, State}.
 
+handle_call(_Info, _From, State) ->
+    {ok, State}.
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -146,18 +115,8 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-
-get_min_time(Dict) ->
-    dict:fold(fun(_Key, Value, Prev) ->
-		      case Prev > Value of
-			  true ->
-			      Value;
-			  false ->
-			      Prev
-		      end
-	      end, 0, Dict).
-
+generate_server_name(Node) ->
+    list_to_atom("meta_manager" ++ atom_to_list(Node)).
 
 
 %% my_dc(DcPort) ->
