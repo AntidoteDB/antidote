@@ -52,7 +52,6 @@
 %% Returns ok if all DCs have acknowledged with in the time TIMEOUT
 -spec propagate_sync(term(), [dc_address()]) -> ok.
 propagate_sync(Message, DCs) ->
-    lager:info("Dcs: ~p", [DCs]),
     FailedDCs = lists:foldl(
                fun({DcId, {DcAddress, Port}}, Acc) ->
                        case inter_dc_communication_sender_fsm_sup:start_fsm(

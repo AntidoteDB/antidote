@@ -87,12 +87,7 @@ init(_Args) ->
     		      {clocksi_readitem_sup, start_link, []},
     		      permanent, 5000, supervisor,
     		      [clocksi_readitem_sup]},
-    
-    VectorClockMaster = {vectorclock_vnode_master,
-                         {riak_core_vnode_master,  start_link,
-                          [vectorclock_vnode]},
-                         permanent, 5000, worker, [riak_core_vnode_master]},
-    
+        
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
                            [materializer_vnode]},
@@ -129,6 +124,5 @@ init(_Args) ->
        InterDcManager,
        MetaDataManagerSup,
        MetaDataSenderSup,
-       VectorClockMaster,
        InterDcSenderSup,
        MaterializerMaster]}}.
