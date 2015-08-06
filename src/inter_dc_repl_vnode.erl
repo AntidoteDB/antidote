@@ -89,6 +89,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 			      {replicate, [Transaction]}, DCs),
 			    NewReaderState;
 			[_H|_T] ->
+			    lager:info("Sending transactions ~p to ~p", [length(Transactions), DCs]),
 			    ok = inter_dc_communication_sender:propagate_sync(
 				   {replicate, Transactions}, DCs),
 			    NewReaderState
