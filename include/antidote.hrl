@@ -45,9 +45,9 @@
 -define(SPIN_WAIT, 10).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
--define(META_DATA_SLEEP, 500).
+-define(META_DATA_SLEEP, 5000).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 500).
+-define(REPL_PERIOD, 5000).
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
