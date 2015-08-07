@@ -60,7 +60,8 @@
 		logs_map :: dict(),
 		clock :: non_neg_integer(),
 		senders_awaiting_ack :: dict(),
-		last_read :: term()}).
+		last_read :: term(),
+		memlist :: list()}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -155,24 +156,25 @@ init([Partition]) ->
 %% @doc Read command: Returns the operations logged for Key
 %%          Input: The id of the log to be read
 %%      Output: {ok, {vnode_id, Operations}} | {error, Reason}
-handle_command({read, LogId}, _Sender,
-               #state{partition=Partition, logs_map=Map}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-           {Continuation, Ops} = 
-                case disk_log:chunk(Log, start) of
-                    {C, O} -> {C,O};
-                    {C, O, _} -> {C,O};
-                    eof -> {eof, []}
-                end,
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State#state{last_read=start}};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+handle_command({read, _LogId}, _Sender,
+               #state{partition=_Partition, logs_map=_Map, memlist=List}=State) ->
+    {reply, {ok, lists:reverse(List)}, State=#state{memlist=[]}};
+    %% case get_log_from_map(Map, Partition, LogId) of
+    %%     {ok, Log} ->
+    %%        {Continuation, Ops} = 
+    %%             case disk_log:chunk(Log, start) of
+    %%                 {C, O} -> {C,O};
+    %%                 {C, O, _} -> {C,O};
+    %%                 eof -> {eof, []}
+    %%             end,
+    %%         case Continuation of
+    %%             error -> {reply, {error, Ops}, State};
+    %%             eof -> {reply, {ok, Ops}, State#state{last_read=start}};
+    %%             _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
+    %%         end;
+    %%     {error, Reason} ->
+    %%         {reply, {error, Reason}, State}
+    %% end;
 
 %% @doc Threshold read command: Returns the operations logged for Key
 %%      from a specified op_id-based threshold.
@@ -181,26 +183,27 @@ handle_command({read, LogId}, _Sender,
 %%              LogId: Identifies the log to be read
 %%      Output: {vnode_id, Operations} | {error, Reason}
 %%
-handle_command({read_from, LogId, _From}, _Sender,
-               #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            ok = disk_log:sync(Log),
-            {Continuation, Ops} = 
-                case disk_log:chunk(Log, Lastread) of
-                    {error, Reason} -> {error, Reason};
-                    {C, O} -> {C,O};
-                    {C, O, _} -> {C,O};
-                    eof -> {eof, []}
-                end,
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+handle_command({read_from, _LogId, _From}, _Sender,
+               #state{partition=_Partition, logs_map=_Map, last_read=_Lastread, memlist=List}=State) ->
+    {reply, {ok, lists:reverse(List)}, State=#state{memlist=[]}};
+    %% case get_log_from_map(Map, Partition, LogId) of
+    %%     {ok, Log} ->
+    %%         ok = disk_log:sync(Log),
+    %%         {Continuation, Ops} = 
+    %%             case disk_log:chunk(Log, Lastread) of
+    %%                 {error, Reason} -> {error, Reason};
+    %%                 {C, O} -> {C,O};
+    %%                 {C, O, _} -> {C,O};
+    %%                 eof -> {eof, []}
+    %%             end,
+    %%         case Continuation of
+    %%             error -> {reply, {error, Ops}, State};
+    %%             eof -> {reply, {ok, Ops}, State};
+    %%             _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
+    %%         end;
+    %%     {error, Reason} ->
+    %%         {reply, {error, Reason}, State}
+    %% end;
 
 %% @doc Append command: Appends a new op to the Log of Key
 %%      Input:  LogId: Indetifies which log the operation has to be
@@ -212,14 +215,15 @@ handle_command({read_from, LogId, _From}, _Sender,
 handle_command({append, LogId, Payload}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
-                      partition=Partition}=State) ->
+                      partition=Partition,
+		      memlist=List}=State) ->
     OpId = generate_op_id(Clock),
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case insert_operation(Log, LogId, OpId, Payload) of
-                {ok, OpId} ->
-                    {reply, {ok, OpId}, State#state{clock=NewClock}};
+            case insert_operation(Log, LogId, OpId, Payload,List) of
+                {ok, OpId, NewList} ->
+                    {reply, {ok, OpId}, State#state{clock=NewClock,memlist=NewList}};
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
             end;
@@ -231,27 +235,28 @@ handle_command({append, LogId, Payload}, _Sender,
 handle_command({append_group, LogId, PayloadList}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
-                      partition=Partition}=State) ->
-    {ErrorList, SuccList, _NNC} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock}) ->
+                      partition=Partition,
+		      memlist=List}=State) ->
+    {ErrorList, SuccList, _NNC, NewList} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock,NewListAcc}) ->
 						      OpId = generate_op_id(NewClock),
 						      {NewNewClock, _Node} = OpId,
 						      case get_log_from_map(Map, Partition, LogId) of
 							  {ok, Log} ->
-							      case insert_operation(Log, LogId, OpId, Payload) of
-								  {ok, OpId} ->
-								      {AccErr, AccSucc ++ [OpId], NewNewClock};
+							      case insert_operation(Log, LogId, OpId, Payload,NewListAcc) of
+								  {ok, OpId, NewListTmp} ->
+								      {AccErr, AccSucc ++ [OpId], NewNewClock, NewListTmp};
 								  {error, Reason} ->
-								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
+								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock,NewListAcc}
 							      end;
 							  {error, Reason} ->
-							      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
+							      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock,NewListAcc}
 						      end
-					      end, {[],[],Clock}, PayloadList),
+					      end, {[],[],Clock,List}, PayloadList),
     case ErrorList of
 	[] ->
 	    [SuccId|_T] = SuccList,
 	    {NewC, _Node} = lists:last(SuccList),
-	    {reply, {ok, SuccId}, State#state{clock=NewC}};
+	    {reply, {ok, SuccId}, State#state{clock=NewC,memlist=NewList}};
 	[Error|_T] ->
 	    %%Error
 	    {reply, Error, State}
@@ -281,7 +286,7 @@ handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             %% Optimistic handling; crash otherwise.
-            {ok, _OpId} = insert_operation(Log, LogId, OpId, Payload),
+            {ok, _OpId, _} = insert_operation(Log, LogId, OpId, Payload, []),
             ok = disk_log:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
@@ -438,15 +443,15 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), op_id(), payload()) ->
-                              {ok, op_id()} | {error, reason()}.
-insert_operation(_Log, _LogId, OpId, _Payload) ->
+%% -spec insert_operation(log(), log_id(), op_id(), payload()) ->
+%%                               {ok, op_id()} | {error, reason()}.
+insert_operation(_Log, _LogId, OpId, Payload, List) ->
     %% Remove logging fore performance testing
     %% Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
     Result = ok,
     case Result of
         ok ->
-            {ok, OpId};
+            {ok, OpId, [#operation{op_number=OpId, payload=Payload}|List]};
         {error, Reason} ->
             {error, Reason}
     end.
