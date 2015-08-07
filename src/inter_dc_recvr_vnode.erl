@@ -84,6 +84,7 @@ store_update(Node, Transaction) ->
 
 %% riak_core_vnode call backs
 init([Partition]) ->
+    {ok, State } = inter_dc_repl_update:init_state(Partition),
     {ok, State#recvr_state{statestore = undefined}}.
 
     %% StateFile = string:concat(integer_to_list(Partition), "replstate"),
