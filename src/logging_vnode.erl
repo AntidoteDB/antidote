@@ -440,8 +440,10 @@ fold_log(Log, Continuation, F, Acc) ->
 %%
 -spec insert_operation(log(), log_id(), op_id(), payload()) ->
                               {ok, op_id()} | {error, reason()}.
-insert_operation(Log, LogId, OpId, Payload) ->
-    Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
+insert_operation(_Log, _LogId, OpId, _Payload) ->
+    %% Remove logging fore performance testing
+    %% Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
+    Result = ok,
     case Result of
         ok ->
             {ok, OpId};
