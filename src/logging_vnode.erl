@@ -148,9 +148,10 @@ init([Partition]) ->
         Map ->
             {ok, #state{partition=Partition,
                         logs_map=Map,
-                        clock=0,
+                        clock=0,	
                         senders_awaiting_ack=dict:new(),
-                        last_read=start}}
+			memlist=[],		
+                        last_read=start}}	
     end.
 
 %% @doc Read command: Returns the operations logged for Key
