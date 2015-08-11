@@ -254,7 +254,7 @@ check_prepared(Key,Transaction,PreparedCache) ->
 
 check_prepared_list(_Key,_SnapshotTime,[]) ->
     ready;
-check_prepared_list(Key,SnapshotTime,[{TxId,Time}|Rest]) ->
+check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
     case Time =< SnapshotTime of
 	true ->
 	    {not_ready, ?SPIN_WAIT};
