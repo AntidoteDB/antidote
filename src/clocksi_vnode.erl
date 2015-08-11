@@ -26,6 +26,8 @@
 -export([start_vnode/1,
 	 read_data_item/5,
 	 get_cache_name/2,
+	 get_active_txns_key/2,
+	 get_active_txns/1,
          prepare/2,
          commit/3,
          single_commit/2,
@@ -64,7 +66,8 @@
 -record(state, {partition :: partition_id(),
                 prepared_tx :: cache_id(),
                 committed_tx :: cache_id(),
-                active_txs_per_key :: cache_id()}).
+                active_txs_per_key :: cache_id(),
+		read_servers :: non_neg_integer()}).
 
 %%%===================================================================
 %%% API
@@ -87,6 +90,37 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
 	    Other
     end.
 
+
+%% @doc Return active transactions in prepare state with their preparetime for a given key
+%% should be run from same physical node
+get_active_txns_key(Key, Partition) ->
+    ActiveTxs = case ets:lookup(get_cache_name(Partition,prepared), Key) of
+		    [] ->
+			[];
+		    [{Key, List}] ->
+			List
+		end,
+    {ok, ActiveTxs}.
+
+
+%% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
+%% should be run from same physical node
+get_active_txns(Partition) ->
+    ActiveTxs = case ets:tab2list(get_cache_name(Partition,prepared)) of
+    		    [] ->
+    			[];
+    		    [{Key1, List1}|Rest1] ->
+    			lists:foldl(fun({_Key,List},Acc) ->
+					    case List of
+						[] ->
+						    Acc;
+						_ ->
+						    List ++ Acc
+					    end
+				    end,
+    				    [],[{Key1,List1}|Rest1])
+    		end,
+    {ok, ActiveTxs}.
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
@@ -136,11 +170,12 @@ init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx,[set]),
     ActiveTxsPerKey = ets:new(active_txs_per_key,[bag]),
-    clocksi_readitem_fsm:start_read_servers(Partition),
+    Num = clocksi_readitem_fsm:start_read_servers(Partition,?READ_CONCURRENCY),
     {ok, #state{partition=Partition,
                 prepared_tx=PreparedTx,
                 committed_tx=CommittedTx,
-                active_txs_per_key=ActiveTxsPerKey}}.
+                active_txs_per_key=ActiveTxsPerKey,
+		read_servers=Num}}.
 
 
 %% @doc The table holding the prepared transactions is shared with concurrent
@@ -175,8 +210,17 @@ open_table(Partition) ->
     catch
 	_:_Reason ->
 	    %% Someone hasn't finished cleaning up yet
+	    %% Sleep some to let them finish
+	    timer:sleep(?SPIN_WAIT),
 	    open_table(Partition)
     end.
+
+loop_until_started(_Partition,0) ->
+    0;
+loop_until_started(Partition,Num) ->
+    Ret = clocksi_readitem_fsm:start_read_servers(Partition,Num),
+    loop_until_started(Partition,Ret).
+
 
 handle_command({check_tables_ready},_Sender,SD0=#state{partition=Partition}) ->
     Result = case ets:info(get_cache_name(Partition,prepared)) of
@@ -187,7 +231,8 @@ handle_command({check_tables_ready},_Sender,SD0=#state{partition=Partition}) ->
 	     end,
     {reply, Result, SD0};
     
-handle_command({check_servers_ready},_Sender,SD0=#state{partition=Partition}) ->
+handle_command({check_servers_ready},_Sender,SD0=#state{partition=Partition,read_servers=Serv}) ->
+    loop_until_started(Partition,Serv),
     Node = node(),
     Result = clocksi_readitem_fsm:check_partition_ready(Node,Partition,?READ_CONCURRENCY),
     {reply, Result, SD0};
@@ -282,42 +327,11 @@ handle_command({abort, Transaction, Updates}, _Sender,
             {reply, {error, no_tx_record}, State}
     end;
 
-%% @doc Return active transactions in prepare state with their preparetime for a given key
-handle_command({get_active_txns, Key}, _Sender,
-               #state{prepared_tx=Prepared, partition=_Partition} = State) ->
-    ActiveTxs = case ets:lookup(Prepared, Key) of
-		    [] ->
-			[];
-		    [{Key, List}] ->
-			List
-		end,
-    {reply, {ok, ActiveTxs}, State};
-
-
-%% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
-handle_command({get_active_txns}, _Sender,
-               #state{prepared_tx=Prepared, partition=_Partition} = State) ->
-    ActiveTxs = case ets:tab2list(Prepared) of
-    		    [] ->
-    			[];
-    		    [{Key1, List1}|Rest1] ->
-    			lists:foldl(fun({_Key,List},Acc) ->
-					    case List of
-						[] ->
-						    Acc;
-						_ ->
-						    List ++ Acc
-					    end
-				    end,
-    				    [],[{Key1,List1}|Rest1])
-    		end,
-    {reply, {ok, ActiveTxs}, State};
-
 handle_command({start_read_servers}, _Sender,
                #state{partition=Partition} = State) ->
-    clocksi_readitem_fsm:stop_read_servers(Partition),
-    clocksi_readitem_fsm:start_read_servers(Partition),
-    {reply, ok, State};
+    clocksi_readitem_fsm:stop_read_servers(Partition,?READ_CONCURRENCY),
+    Num = clocksi_readitem_fsm:start_read_servers(Partition,?READ_CONCURRENCY),
+    {reply, ok, State#state{read_servers=Num}};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -354,7 +368,7 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, #state{partition=Partition} = _State) ->
     ets:delete(get_cache_name(Partition,prepared)),
-    clocksi_readitem_fsm:stop_read_servers(Partition),    
+    clocksi_readitem_fsm:stop_read_servers(Partition,?READ_CONCURRENCY),    
     ok.
 
 %%%===================================================================
@@ -368,9 +382,9 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
             case TxWriteSet of 
                 [{Key, Type, {Op, Actor}} | Rest] -> 
 		    true = ets:insert(ActiveTxPerKey, {Key, Type, TxId}),
-		    PrepList = set_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,PrepareTime,[]),
+		    PrepDict = set_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,PrepareTime,dict:new()),
 		    NewPrepare = now_microsec(erlang:now()),
-		    ok = reset_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,NewPrepare,PrepList),
+		    ok = reset_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,NewPrepare,PrepDict),
 		    LogRecord = #log_record{tx_id=TxId,
 					    op_type=prepare,
 					    op_payload=NewPrepare},
@@ -387,7 +401,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 
 
 set_prepared(_PreparedTx,[],_TxId,_Time,Acc) ->
-    lists:reverse(Acc);
+    Acc;
 set_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,Acc) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
 		    [] ->
@@ -395,14 +409,20 @@ set_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,Acc) ->
 		    [{Key, List}] ->
 			List
 		end,
-    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}),
-    set_prepared(PreparedTx,Rest,TxId,Time,[ActiveTxs|Acc]).
+    case lists:keymember(TxId, 1, ActiveTxs) of
+	true ->
+	    set_prepared(PreparedTx,Rest,TxId,Time,Acc);
+	false ->	
+	    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}),
+	    set_prepared(PreparedTx,Rest,TxId,Time,dict:append_list(Key,ActiveTxs,Acc))
+    end.
 
-reset_prepared(_PreparedTx,[],_TxId,_Time,[]) ->
+reset_prepared(_PreparedTx,[],_TxId,_Time,_ActiveTxs) ->
     ok;
-reset_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,[ActiveTxs|Rest2]) ->
-    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|ActiveTxs]}), 
-    reset_prepared(PreparedTx,Rest,TxId,Time,Rest2).
+reset_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,ActiveTxs) ->
+    %% Could do this more efficiently in case of multiple updates to the same key
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time}|dict:fetch(Key,ActiveTxs)]}), 
+    reset_prepared(PreparedTx,Rest,TxId,Time,ActiveTxs).
 
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State)->
