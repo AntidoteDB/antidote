@@ -215,20 +215,36 @@ get_meta_data(MergeFunc) ->
 	false ->
 	    false;
 	true ->
-	    RemoteDict = dict:from_list(ets:tab2list(?REMOTE_META_TABLE_NAME)),
 	    %% Be sure that you are only checking active nodes
-	    NodeDict = get_node_dict(),
-	    NewDict =
-		dict:fold(fun(NodeId, _Tab, Acc) ->
-				  case dict:is_key(NodeId, NodeDict) of
-				      true ->
-					  Acc;
-				      false ->
-					  ok = meta_data_manager:remove_node(NodeId),
-					  dict:erase(NodeId, Acc)
-				  end
-			  end, RemoteDict, RemoteDict),
-	    LocalMerged = MergeFunc(dict:from_list(ets:tab2list(?META_TABLE_NAME))),
+	    %% This isnt the most efficent way to do this because are checking the list
+	    %% of nodes and partitions every time to see if any have been removed/added
+	    RemoteDict = dict:from_list(ets:tab2list(?REMOTE_META_TABLE_NAME)),
+	    {NodeList,PartitionList} = get_node_and_partition_list(),
+	    NewDict = 
+		lists:foldl(fun(NodeId,Acc) ->
+				    case dict:find(NodeId, RemoteDict) of
+					{ok, Val} ->
+					    dict:store(NodeId,Val,Acc);
+					error ->
+					    dict:store(NodeId,undefined,Acc)
+				    end
+			    end, dict:new(), NodeList),
+	    %% Should remove nodes (and partitions) that no longer exist in this ring/phys node
+	    %% ok = meta_data_manager:remove_node(NodeId),
+
+	    %% Be sure that you are only checking local partitions
+	    LocalDict = dict:from_list(ets:tab2list(?META_TABLE_NAME)),
+	    NewLocalDict = 
+		lists:foldl(fun(PartitionId,Acc) ->
+				    case dict:find(PartitionId, LocalDict) of
+					{ok, Val} ->
+					    dict:store(PartitionId,Val,Acc);
+					error ->
+					    dict:store(PartitionId,undefined,Acc)
+				    end
+			    end, dict:new(), PartitionList),
+	    
+	    LocalMerged = MergeFunc(NewLocalDict),
 	    dict:store(local_merged, LocalMerged, NewDict)
     end.
 
@@ -255,10 +271,10 @@ get_node_list() ->
     MyNode = node(),
     lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
 
--spec get_node_dict() -> dict().
-get_node_dict() ->
-    NodeList = get_node_list(),
-    lists:foldl(fun(Node,Acc) ->
-			dict:store(Node,0,Acc)
-		end, dict:new(),NodeList).
-
+-spec get_node_and_partition_list() -> {list(),list()}.
+get_node_and_partition_list() ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    MyNode = node(),
+    NodeList = lists:delete(MyNode, riak_core_ring:ready_members(Ring)),
+    PartitionList = riak_core_ring:my_indices(Ring),
+    {NodeList,PartitionList}.
