@@ -34,6 +34,7 @@
          read/2,
          asyn_append/3,
          append/3,
+	 append_commit/3,
 	 append_group/3,
 	 asyn_append_group/3,
          asyn_read_from/3,
@@ -105,16 +106,26 @@ read(Node, Log) ->
 asyn_append(Preflist, Log, Payload) ->
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, Payload},
-                                   {fsm, undefined, self()},
+                                   {fsm, undefined, self(), ?SYNC_LOG},
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation
 -spec append(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload},
+                                        {append, LogId, Payload, false},
                                         ?LOGGING_MASTER,
                                         infinity).
+
+%% @doc synchronous append operation
+%% If enabled in antidote.hrl will ensure item is written to disk
+-spec append_commit(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
+append_commit(IndexNode, LogId, Payload) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {append, LogId, Payload, ?SYNC_LOG},
+                                        ?LOGGING_MASTER,
+                                        infinity).
+
 
 %% @doc synchronous append list of operations
 -spec append_group(index_node(), key(), [term()]) -> {ok, op_id()} | {error, term()}.
@@ -209,7 +220,7 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload}, _Sender,
+handle_command({append, LogId, Payload, Sync}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
                       partition=Partition}=State) ->
@@ -219,7 +230,17 @@ handle_command({append, LogId, Payload}, _Sender,
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
                 {ok, OpId} ->
-                    {reply, {ok, OpId}, State#state{clock=NewClock}};
+		    case Sync of
+			true ->
+			    case disk_log:sync(Log) of
+				ok ->
+				    {reply, {ok, OpId}, State#state{clock=NewClock}};
+				{error, Reason} ->
+				    {reply, {error, Reason}, State}
+			    end;
+			false ->
+			    {reply, {ok, OpId}, State#state{clock=NewClock}}
+		    end;
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
             end;

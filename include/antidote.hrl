@@ -35,6 +35,9 @@
 %% a transaction currently in the prepare state that is blocking
 %% that read.
 -define(SPIN_WAIT, 10).
+%% At commit, if this is set to true, the logging vnode
+%% will ensure that the transaction record is written to disk
+-define(SYNC_LOG, true).
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
