@@ -106,11 +106,25 @@ get_active_txns_key(Key, Partition) ->
 %% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
 %% should be run from same physical node
 get_active_txns(Partition) ->
-    ActiveTxs = case ets:tab2list(get_cache_name(Partition,prepared)) of
-    		    [] ->
-    			[];
-    		    [{Key1, List1}|Rest1] ->
-    			lists:foldl(fun({_Key,List},Acc) ->
+    TableName = get_cache_name(Partition,prepared),
+    case ets:info(TableName) of 
+	undefined ->
+	    lager:error("Table ~p should be started", [TableName]),
+	    riak_core_vnode_master:sync_command({Partition,node()},
+						{get_active_txns},
+						clocksi_vnode_master,
+						infinity);
+	_ ->
+	    get_active_txns_internal(Partition)
+    end.
+	    
+get_active_txns_internal(Partition) ->
+    TableName = get_cache_name(Partition,prepared),
+    ActiveTxs = case ets:tab2list(TableName) of
+		    [] ->
+			[];
+		    [{Key1, List1}|Rest1] ->
+			lists:foldl(fun({_Key,List},Acc) ->
 					    case List of
 						[] ->
 						    Acc;
@@ -118,8 +132,8 @@ get_active_txns(Partition) ->
 						    List ++ Acc
 					    end
 				    end,
-    				    [],[{Key1,List1}|Rest1])
-    		end,
+				    [],[{Key1,List1}|Rest1])
+		end,
     {ok, ActiveTxs}.
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
@@ -333,6 +347,10 @@ handle_command({start_read_servers}, _Sender,
     Num = clocksi_readitem_fsm:start_read_servers(Partition,?READ_CONCURRENCY),
     {reply, ok, State#state{read_servers=Num}};
 
+handle_command({get_active_txns}, _Sender,
+	       #state{partition=Partition} = State) ->
+    {reply, get_active_txns_internal(Partition), State};
+
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
@@ -493,32 +511,8 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 %%      to the prepared state.
 certification_check(_, [], _, _) ->
     true;
-certification_check(TxId, [H|T], CommittedTx, ActiveTxPerKey) ->
-    {Key, _Type, _} = H,
-    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
-    case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true ->
-            false;
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
-    end.
-
-check_keylog(_, [], _) ->
-    false;
-check_keylog(TxId, [H|T], CommittedTx)->
-    {_Key, _Type, ThisTxId}=H,
-    case ThisTxId > TxId of
-        true ->
-            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            case CommitInfo of
-                [{_, _CommitTime}] ->
-                    true;
-                [] ->
-                    check_keylog(TxId, T, CommittedTx)
-            end;
-        false ->
-            check_keylog(TxId, T, CommittedTx)
-    end.
+certification_check(_TxId, [_H|_T], _CommittedTx, _ActiveTxPerKey) ->
+    true.
 
 -spec update_materializer(DownstreamOps :: [{key(),type(),op()}],
                           Transaction::tx(),TxCommitTime:: {term(), term()}) ->
