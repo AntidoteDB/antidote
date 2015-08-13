@@ -121,7 +121,6 @@ get_meta_dict(Partition) ->
 
 -spec remove_partition(partition_id()) -> ok | false.
 remove_partition(Partition) ->
-    lager:info("removing partition ~p from meta data table", [Partition]),
     case ets:info(?META_TABLE_NAME) of
 	undefined ->
 	    false;
