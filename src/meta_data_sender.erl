@@ -47,7 +47,8 @@
 	  table2,
 	  last_result,
 	  update_function,
-	  merge_function}).
+	  merge_function,
+	  should_check_nodes}).
 
 %% ===================================================================
 %% Public API
@@ -72,7 +73,7 @@ put_meta_dict(Partition, Dict, Func) ->
 			 undefined ->
 			     Dict;
 			 _ ->
-			     Func(Dict, get_meta_data(Partition))
+			     Func(Dict, get_meta_dict(Partition))
 		     end,
 	    true = ets:insert(?META_TABLE_NAME, {Partition, Result}),
 	    ok
@@ -156,10 +157,19 @@ init([UpdateFunction,MergeFunction,InitialLocal,InitialMerged]) ->
     Table = ets:new(?META_TABLE_STABLE_NAME, [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
     Table2 = ets:new(?META_TABLE_NAME, [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
-    {ok, send_meta_data, #state{table = Table, table2 = Table2, last_result = InitialLocal, update_function = UpdateFunction, merge_function = MergeFunction}, ?META_DATA_SLEEP}.
+    {ok, send_meta_data, #state{table = Table,
+				table2 = Table2,
+				last_result = InitialLocal,
+				update_function = UpdateFunction,
+				merge_function = MergeFunction,
+				should_check_nodes=true},
+     ?META_DATA_SLEEP}.
 
-send_meta_data(timeout, State = #state{last_result = LastResult, update_function = UpdateFunction, merge_function = MergeFunction}) ->
-    Dict = get_meta_data(MergeFunction),
+send_meta_data(timeout, State = #state{last_result = LastResult,
+				       update_function = UpdateFunction,
+				       merge_function = MergeFunction,
+				       should_check_nodes = CheckNodes}) ->
+    {WillChange,Dict} = get_meta_data(MergeFunction, CheckNodes),
     NodeList = get_node_list(),
     LocalMerged = dict:fetch(local_merged,Dict),
     MyNode = node(),
@@ -175,7 +185,7 @@ send_meta_data(timeout, State = #state{last_result = LastResult, update_function
 		false ->
 		    LastResult
 	    end,
-    {next_state, send_meta_data, State#state{last_result = Store}, ?META_DATA_SLEEP}.
+    {next_state, send_meta_data, State#state{last_result = Store,should_check_nodes=WillChange}, ?META_DATA_SLEEP}.
 
 handle_info(_Info, _StateName, StateData) ->
     {stop, badmsg, StateData}.
@@ -198,8 +208,8 @@ terminate(_Reason, _SN, _SD) ->
 
 
 
--spec get_meta_data(fun((dict()) -> dict())) -> dict() | false.			 
-get_meta_data(MergeFunc) ->
+-spec get_meta_data(fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.			 
+get_meta_data(MergeFunc, CheckNodes) ->
     TablesReady = case ets:info(?REMOTE_META_TABLE_NAME) of
 		      undefined ->
 			  false;
@@ -215,37 +225,58 @@ get_meta_data(MergeFunc) ->
 	false ->
 	    false;
 	true ->
+	    {NodeList,PartitionList,WillChange} = get_node_and_partition_list(),
+	    RemoteDict = dict:from_list(ets:tab2list(?REMOTE_META_TABLE_NAME)),
+	    LocalDict = dict:from_list(ets:tab2list(?META_TABLE_NAME)),
+
 	    %% Be sure that you are only checking active nodes
 	    %% This isnt the most efficent way to do this because are checking the list
 	    %% of nodes and partitions every time to see if any have been removed/added
-	    RemoteDict = dict:from_list(ets:tab2list(?REMOTE_META_TABLE_NAME)),
-	    {NodeList,PartitionList} = get_node_and_partition_list(),
-	    NewDict = 
-		lists:foldl(fun(NodeId,Acc) ->
-				    case dict:find(NodeId, RemoteDict) of
-					{ok, Val} ->
-					    dict:store(NodeId,Val,Acc);
-					error ->
-					    dict:store(NodeId,undefined,Acc)
-				    end
-			    end, dict:new(), NodeList),
-	    %% Should remove nodes (and partitions) that no longer exist in this ring/phys node
-	    %% ok = meta_data_manager:remove_node(NodeId),
-
-	    %% Be sure that you are only checking local partitions
-	    LocalDict = dict:from_list(ets:tab2list(?META_TABLE_NAME)),
-	    NewLocalDict = 
-		lists:foldl(fun(PartitionId,Acc) ->
-				    case dict:find(PartitionId, LocalDict) of
-					{ok, Val} ->
-					    dict:store(PartitionId,Val,Acc);
-					error ->
-					    dict:store(PartitionId,undefined,Acc)
-				    end
-			    end, dict:new(), PartitionList),
+	    %% This is only done if the ring is expected to change, but should be done
+	    %% differently (check comment in get_node_and_partition_list())
+	    {NewRemote,NewLocal} = 
+		case CheckNodes of
+		    true ->
+			{NewDict,NodeErase} = 
+			    lists:foldl(fun(NodeId,{Acc,Acc2}) ->
+						AccNew = case dict:find(NodeId, RemoteDict) of
+							     {ok, Val} ->
+								 dict:store(NodeId,Val,Acc);
+							     error ->
+								 dict:store(NodeId,undefined,Acc)
+							 end,
+						Acc2New = dict:erase(NodeId,Acc2),
+						{AccNew,Acc2New}
+					end, {dict:new(),RemoteDict}, NodeList),
+			%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
+			dict:fold(fun(NodeId,_Val,_Acc) ->
+					  ok = meta_data_manager:remove_node(NodeId)
+				  end,ok,NodeErase),
+			
+			%% Be sure that you are only checking local partitions
+			{NewLocalDict,PartitionErase} = 
+			    lists:foldl(fun(PartitionId,{Acc,Acc2}) ->
+						AccNew = case dict:find(PartitionId, LocalDict) of
+							     {ok, Val} ->
+								 dict:store(PartitionId,Val,Acc);
+							     error ->
+								 dict:store(PartitionId,undefined,Acc)
+							 end,
+						Acc2New = dict:erase(PartitionId,Acc2),
+						{AccNew,Acc2New}
+					end, {dict:new(),LocalDict}, PartitionList),
+			%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
+			dict:fold(fun(PartitionId,_Val,_Acc) ->
+					  ok = remove_partition(PartitionId)
+				  end,ok,PartitionErase),
+			
+			{NewDict,NewLocalDict};
+		    false ->
+			{RemoteDict,LocalDict}
+		end,
 	    
-	    LocalMerged = MergeFunc(NewLocalDict),
-	    dict:store(local_merged, LocalMerged, NewDict)
+	    LocalMerged = MergeFunc(NewLocal),
+	    {WillChange,dict:store(local_merged, LocalMerged, NewRemote)}
     end.
 
 -spec update_stable(dict(), dict(), fun((term(),term()) -> boolean())) -> {boolean(),dict()}.
@@ -271,10 +302,13 @@ get_node_list() ->
     MyNode = node(),
     lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
 
--spec get_node_and_partition_list() -> {list(),list()}.
+-spec get_node_and_partition_list() -> {list(),list(),boolean()}.
 get_node_and_partition_list() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     MyNode = node(),
     NodeList = lists:delete(MyNode, riak_core_ring:ready_members(Ring)),
     PartitionList = riak_core_ring:my_indices(Ring),
-    {NodeList,PartitionList}.
+    %% Deciding if the nodes might change by checking the is_resizing function is not
+    %% safe becuase can cause inconsistencies during concurrency, so this should
+    %% be done differently
+    {NodeList,PartitionList,riak_core_ring:is_resizing(Ring)}.
