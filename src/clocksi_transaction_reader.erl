@@ -79,7 +79,7 @@ get_next_transactions(State=#state{partition = Partition,
     Node = {Partition, node()},
     %% No transactions will commit in future with commit time < stable_time
     %% So it is safe to read all transactions committed before stable_time
-    Stable_time = get_stable_time(Node, PrevStableTime),
+    Stable_time = get_stable_time(Partition, PrevStableTime),
     {ok, NewOps} = read_next_ops(Node, LogId, Last_read_opid),
     case NewOps of
         [] -> Newlast_read_opid = Last_read_opid;
@@ -194,10 +194,10 @@ get_sorted_commit_records(Commitrecords) ->
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
-get_stable_time(Node, Prev_stable_time) ->
-    case riak_core_vnode_master:sync_command(
-           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
+get_stable_time(Partition, Prev_stable_time) ->
+    case clocksi_vnode:get_active_txns(Partition) of
         {ok, Active_txns} ->
+	    lager:info("the length of active txns is ~p", [length(Active_txns)]),
             lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
                                 case Min_time > Snapshot_time of
                                     true ->

@@ -44,8 +44,8 @@
 %% States
 -export([read_data_item/4,
 	 check_partition_ready/3,
-	 start_read_servers/1,
-	 stop_read_servers/1]).
+	 start_read_servers/2,
+	 stop_read_servers/2]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
@@ -71,15 +71,15 @@ start_link(Partition,Id) ->
     Addr = node(),
     gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
 
--spec start_read_servers(partition_id()) -> ok.
-start_read_servers(Partition) ->
+-spec start_read_servers(partition_id(),non_neg_integer()) -> non_neg_integer().
+start_read_servers(Partition, Count) ->
     Addr = node(),
-    start_read_servers_internal(Addr, Partition, ?READ_CONCURRENCY).
+    start_read_servers_internal(Addr, Partition, Count).
 
--spec stop_read_servers(partition_id()) -> ok.
-stop_read_servers(Partition) ->
+-spec stop_read_servers(partition_id(),non_neg_integer()) -> ok.
+stop_read_servers(Partition, Count) ->
     Addr = node(),
-    stop_read_servers_internal(Addr, Partition, ?READ_CONCURRENCY).
+    stop_read_servers_internal(Addr, Partition, Count).
 
 -spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition,Node},Key,Type,Transaction) ->
@@ -134,10 +134,25 @@ check_partition_ready(Node,Partition,Num) ->
 %%%===================================================================
 
 start_read_servers_internal(_Node,_Partition,0) ->
-    ok;
+    0;
 start_read_servers_internal(Node, Partition, Num) ->
-    {ok,_Id} = clocksi_readitem_sup:start_fsm(Partition,Num),
-    start_read_servers_internal(Node, Partition, Num-1).
+    Result = try
+		 {ok,_Id} = clocksi_readitem_sup:start_fsm(Partition,Num),
+		 ok
+	     catch
+		 _:_Reason ->
+		     %% Someone hasn't finished cleaning up yet
+		     %% Sleep some time to let them clean up
+		     timer:sleep(?SPIN_WAIT),
+		     error
+	     end,
+    case Result of
+	ok ->
+	    start_read_servers_internal(Node, Partition, Num-1);
+	error ->
+	    Num
+    end.
+
 
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
@@ -169,7 +184,7 @@ init([Partition, Id]) ->
 
 handle_call({perform_read, Key, Type, Transaction},Coordinator,
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
-    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
@@ -177,31 +192,33 @@ handle_call({go_down},_Sender,SD0) ->
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
-    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
     {noreply,SD0}.
 
-perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self) ->
+perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,_Self) ->
     case check_clock(Key,Transaction,PreparedCache) of
-	not_ready ->
-	    spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+	{not_ready,Time} ->
+	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
+	    ok;
 	ready ->
 	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache)
     end.
 
-spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self) ->
-    {message_queue_len,Length} = process_info(self(), message_queue_len),
-    case Length of
-	0 ->
-	    %% If it is not safe to read this requested key yet (because of concurrent updates
-	    %% and if there are no other read requests waiting for this server then just perform
-	    %% a short sleep and try again.
-	    timer:sleep(?SPIN_WAIT),
-	    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-	_ ->
-	    %% The current read request is not safe to do yet, and there are other processes waiting to use this read server,
-	    %% so put the current request on the back of the queue
-	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction})
-    end.
+%% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self) ->
+%%     {message_queue_len,Length} = process_info(self(), message_queue_len),
+%%     case Length of
+%% 	0 ->
+%% 	    %% If it is not safe to read this requested key yet (because of concurrent updates
+%% 	    %% and if there are no other read requests waiting for this server then just perform
+%% 	    %% a short sleep and try again.
+%% 	    timer:sleep(?SPIN_WAIT),
+%% 	    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+%% 	_ ->
+%% 	    %% The current read request is not safe to do yet, and there are other processes waiting to use this read server,
+%% 	    %% so put the current request on the back of the queue
+%% 	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction})
+%%     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behind, it sleeps the fms until the clock
@@ -215,7 +232,7 @@ check_clock(Key,Transaction,PreparedCache) ->
         true ->
 	    %% dont sleep in case there is another read waiting
             %% timer:sleep((T_TS - Time) div 1000 +1 );
-	    not_ready;
+	    {not_ready, (T_TS - Time) div 1000 +1};
         false ->
 	    check_prepared(Key,Transaction,PreparedCache)
     end.
@@ -240,7 +257,7 @@ check_prepared_list(_Key,_SnapshotTime,[]) ->
 check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
     case Time =< SnapshotTime of
 	true ->
-	    not_ready;
+	    {not_ready, ?SPIN_WAIT};
 	false ->
 	    check_prepared_list(Key,SnapshotTime,Rest)
     end.
@@ -256,7 +273,14 @@ return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache) ->
         {error, Reason} ->
             Reply={error, Reason}
     end,
-    gen_server:reply(Coordinator, Reply).
+    _Ignore=gen_server:reply(Coordinator, Reply),
+    ok.
+
+
+handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
+    {noreply,SD0};
 
 handle_info(_Info, StateData) ->
     {noreply,StateData}.
