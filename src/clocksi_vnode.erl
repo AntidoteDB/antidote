@@ -106,11 +106,25 @@ get_active_txns_key(Key, Partition) ->
 %% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
 %% should be run from same physical node
 get_active_txns(Partition) ->
-    ActiveTxs = case ets:tab2list(get_cache_name(Partition,prepared)) of
-    		    [] ->
-    			[];
-    		    [{Key1, List1}|Rest1] ->
-    			lists:foldl(fun({_Key,List},Acc) ->
+    TableName = get_cache_name(Partition,prepared),
+    case ets:info(TableName) of 
+	undefined ->
+	    lager:error("Table ~p should be started", [TableName]),
+	    riak_core_vnode_master:sync_command({Partition,node()},
+						{get_active_txns},
+						clocksi_vnode_master,
+						infinity);
+	_ ->
+	    get_active_txns_internal(Partition)
+    end.
+	    
+get_active_txns_internal(Partition) ->
+    TableName = get_cache_name(Partition,prepared),
+    ActiveTxs = case ets:tab2list(TableName) of
+		    [] ->
+			[];
+		    [{Key1, List1}|Rest1] ->
+			lists:foldl(fun({_Key,List},Acc) ->
 					    case List of
 						[] ->
 						    Acc;
@@ -118,8 +132,8 @@ get_active_txns(Partition) ->
 						    List ++ Acc
 					    end
 				    end,
-    				    [],[{Key1,List1}|Rest1])
-    		end,
+				    [],[{Key1,List1}|Rest1])
+		end,
     {ok, ActiveTxs}.
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
@@ -332,6 +346,10 @@ handle_command({start_read_servers}, _Sender,
     clocksi_readitem_fsm:stop_read_servers(Partition,?READ_CONCURRENCY),
     Num = clocksi_readitem_fsm:start_read_servers(Partition,?READ_CONCURRENCY),
     {reply, ok, State#state{read_servers=Num}};
+
+handle_command({get_active_txns}, _Sender,
+	       #state{partition=Partition} = State) ->
+    {reply, get_active_txns_internal(Partition), State};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
