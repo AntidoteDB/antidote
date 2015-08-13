@@ -67,7 +67,6 @@ handle_cast({update_meta_data, NodeId, Dict}, State) ->
     {noreply, State};
 
 handle_cast({remove_node,NodeId}, State) ->
-    lager:info("removing node ~p from meta data table", [NodeId]),
     true = ets:delete(?REMOTE_META_TABLE_NAME, NodeId),
     {noreply, State};
 
