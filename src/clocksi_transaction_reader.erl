@@ -197,7 +197,6 @@ get_sorted_commit_records(Commitrecords) ->
 get_stable_time(Partition, Prev_stable_time) ->
     case clocksi_vnode:get_active_txns(Partition) of
         {ok, Active_txns} ->
-	    lager:info("the length of active txns is ~p", [length(Active_txns)]),
             lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
                                 case Min_time > Snapshot_time of
                                     true ->

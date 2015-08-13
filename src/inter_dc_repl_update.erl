@@ -131,7 +131,10 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                           update ->
                               {ok, _} = logging_vnode:append(Node, LogId, Logrecord);
                           _ -> %% prepare or commit
-                              {ok, _} = logging_vnode:append(Node, LogId, Logrecord),
+			      %% If enabled in antidote.hrl this will be ensure the log is written to disk
+			      %% For efficiency this could only be done when the entire list of new trans are processed,
+			      %% but then you would have to wait to update the clock as well
+                              {ok, _} = logging_vnode:append_commit(Node, LogId, Logrecord),
                               lager:debug("Prepare/Commit record")
                               %%TODO Write this to log
                       end

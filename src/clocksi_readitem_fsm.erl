@@ -205,21 +205,6 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
 	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache)
     end.
 
-%% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self) ->
-%%     {message_queue_len,Length} = process_info(self(), message_queue_len),
-%%     case Length of
-%% 	0 ->
-%% 	    %% If it is not safe to read this requested key yet (because of concurrent updates
-%% 	    %% and if there are no other read requests waiting for this server then just perform
-%% 	    %% a short sleep and try again.
-%% 	    timer:sleep(?SPIN_WAIT),
-%% 	    perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-%% 	_ ->
-%% 	    %% The current read request is not safe to do yet, and there are other processes waiting to use this read server,
-%% 	    %% so put the current request on the back of the queue
-%% 	    gen_server:cast({global,Self},{perform_read_cast,Coordinator,Key,Type,Transaction})
-%%     end.
-
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
