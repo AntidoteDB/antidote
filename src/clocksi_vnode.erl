@@ -437,7 +437,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State)->
 	    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            case logging_vnode:append(Node,LogId,LogRecord) of
+            case logging_vnode:append_commit(Node,LogId,LogRecord) of
                 {ok, _} ->
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->

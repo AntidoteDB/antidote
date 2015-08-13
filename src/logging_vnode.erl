@@ -34,6 +34,7 @@
          read/2,
          asyn_append/3,
          append/3,
+	 append_commit/3,
 	 append_group/3,
 	 asyn_append_group/3,
          asyn_read_from/3,
@@ -106,16 +107,26 @@ read(Node, Log) ->
 asyn_append(Preflist, Log, Payload) ->
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, Payload},
-                                   {fsm, undefined, self()},
+                                   {fsm, undefined, self(), ?SYNC_LOG},
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation
 -spec append(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload},
+                                        {append, LogId, Payload, false},
                                         ?LOGGING_MASTER,
                                         infinity).
+
+%% @doc synchronous append operation
+%% If enabled in antidote.hrl will ensure item is written to disk
+-spec append_commit(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
+append_commit(IndexNode, LogId, Payload) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {append, LogId, Payload, ?SYNC_LOG},
+                                        ?LOGGING_MASTER,
+                                        infinity).
+
 
 %% @doc synchronous append list of operations
 -spec append_group(index_node(), key(), [term()]) -> {ok, op_id()} | {error, term()}.
@@ -159,7 +170,8 @@ init([Partition]) ->
 %%      Output: {ok, {vnode_id, Operations}} | {error, Reason}
 handle_command({read, _LogId}, _Sender,
                #state{partition=_Partition, logs_map=_Map, memlist=List}=State) ->
-    {reply, {ok, lists:reverse(List)}, State=#state{memlist=[]}};
+    %% {reply, {ok, lists:reverse(List)}, State#state{memlist=[]}};
+    {reply, {ok, lists:reverse(List)}, State};
     %% case get_log_from_map(Map, Partition, LogId) of
     %%     {ok, Log} ->
     %%        {Continuation, Ops} = 
@@ -186,7 +198,7 @@ handle_command({read, _LogId}, _Sender,
 %%
 handle_command({read_from, _LogId, _From}, _Sender,
                #state{partition=_Partition, logs_map=_Map, last_read=_Lastread, memlist=List}=State) ->
-    {reply, {ok, lists:reverse(List)}, State=#state{memlist=[]}};
+    {reply, {ok, lists:reverse(List)}, State#state{memlist=[]}};
     %% case get_log_from_map(Map, Partition, LogId) of
     %%     {ok, Log} ->
     %%         ok = disk_log:sync(Log),
@@ -213,7 +225,7 @@ handle_command({read_from, _LogId, _From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload}, _Sender,
+handle_command({append, LogId, Payload, _Sync}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
                       partition=Partition,
@@ -446,13 +458,13 @@ fold_log(Log, Continuation, F, Acc) ->
 %%
 %% -spec insert_operation(log(), log_id(), op_id(), payload()) ->
 %%                               {ok, op_id()} | {error, reason()}.
-insert_operation(_Log, _LogId, OpId, Payload, List) ->
+insert_operation(_Log, LogId, OpId, Payload, List) ->
     %% Remove logging fore performance testing
     %% Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
     Result = ok,
     case Result of
         ok ->
-            {ok, OpId, [#operation{op_number=OpId, payload=Payload}|List]};
+            {ok, OpId, [{LogId,#operation{op_number=OpId, payload=Payload}}|List]};
         {error, Reason} ->
             {error, Reason}
     end.

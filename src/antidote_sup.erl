@@ -104,7 +104,7 @@ init(_Args) ->
 			  [meta_data_manager_sup]},
 
     MetaDataSenderSup = {meta_data_sender_sup,
-			  {meta_data_sender_sup, start_link, []},
+			  {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
 			  permanent, 5000, supervisor,
 			  [meta_data_sender_sup]},
     

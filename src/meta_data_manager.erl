@@ -26,7 +26,7 @@
 -export([start_link/0,
 	 generate_server_name/1,
 	 remove_node/1,
-	 update_time/3]).
+	 send_meta_data/3]).
 -export([init/1,
 	 handle_cast/2,
 	 handle_call/3,
@@ -45,9 +45,9 @@ start_link() ->
     gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
 
 %% Add a list of DCs to this DC
--spec update_time(atom(),atom(),dict()) -> ok.
-update_time(DestinationNodeId,NodeId,Time) ->
-    gen_server:cast({global,generate_server_name(DestinationNodeId)}, {update_time, NodeId, Time}).
+-spec send_meta_data(atom(),atom(),dict()) -> ok.
+send_meta_data(DestinationNodeId,NodeId,Dict) ->
+    gen_server:cast({global,generate_server_name(DestinationNodeId)}, {update_meta_data, NodeId, Dict}).
 
 -spec remove_node(atom()) -> ok.
 remove_node(NodeId) ->
@@ -62,8 +62,8 @@ init([]) ->
     Table = ets:new(?REMOTE_META_TABLE_NAME, [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
     {ok, #state{table=Table}}.
 
-handle_cast({update_time, NodeId, Time}, State) ->
-    true = ets:insert(?REMOTE_META_TABLE_NAME, {NodeId, Time}),
+handle_cast({update_meta_data, NodeId, Dict}, State) ->
+    true = ets:insert(?REMOTE_META_TABLE_NAME, {NodeId, Dict}),
     {noreply, State};
 
 handle_cast({remove_node,NodeId}, State) ->

@@ -46,7 +46,7 @@ new() ->
 get_stable_snapshot() ->
     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
     %% to riak core meta-data) otherwise will have to change this
-    {ok, meta_data_sender:get_stable_time()}.
+    {ok, meta_data_sender:get_merged_data()}.
 
 
 %% @doc Return true if Clock1 > Clock2
