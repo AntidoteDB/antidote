@@ -32,7 +32,7 @@ start_link(Name) ->
 
 %% @doc Starts the coordinator of a ClockSI static transaction.
 init([]) ->
-    Worker = {undefined,
+    Worker = {clocksi_static_tx_coord_fsm,
               {clocksi_static_tx_coord_fsm, start_link, []},
                temporary, 5000, worker, [clocksi_static_tx_coord_fsm]},
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

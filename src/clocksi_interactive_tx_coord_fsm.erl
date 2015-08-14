@@ -63,8 +63,8 @@
 %% States
 -export([execute_op/3,
 	 finish_op/3,
-	 prepare/2,
-	 prepare_2pc/2,
+	 prepare/1,
+	 prepare_2pc/1,
          receive_prepared/2,
 	 single_committing/2,
 	 committing_2pc/3,
@@ -174,9 +174,9 @@ execute_op({OpType, Args}, Sender,
         prepare ->
             case Args of
 		two_phase ->
-		    {next_state, prepare_2pc, SD0#state{from=Sender, commit_protocol=Args}, 0};
+		    prepare_2pc(SD0#state{from=Sender, commit_protocol=Args});
 		_ ->
-		    {next_state, prepare, SD0#state{from=Sender, commit_protocol=Args}, 0}
+		    prepare(SD0#state{from=Sender, commit_protocol=Args})
             end;
         read ->
             {Key, Type}=Args,
@@ -190,7 +190,9 @@ execute_op({OpType, Args}, Sender,
 		       end,
             case ?CLOCKSI_VNODE:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
                 {error, Reason} ->
-                    {reply, {error, Reason}, abort, SD0, 0};
+                    %% {reply, {error, Reason}, abort, SD0, 0};
+		    _Res = gen_fsm:reply(Sender, {error, Reason}),
+		    abort(SD0);
                 {ok, Snapshot} ->
                     ReadResult = Type:value(Snapshot),
                     {reply, {ok, ReadResult}, execute_op, SD0}
@@ -224,20 +226,24 @@ execute_op({OpType, Args}, Sender,
 			{ok, _} ->
 			    {next_state, execute_op,
 			     SD0#state{updated_partitions= NewUpdatedPartitions}};
-			_ ->
-			    {next_state, abort, SD0}
+			Error ->
+			    %% {next_state, abort, SD0}
+			    _Res = gen_fsm:reply(Sender, {error, Error}),
+			    abort(SD0)
 		    end;
 		{error, Reason} ->
-		    {reply, {error, Reason}, abort, SD0, 0}
+		    %% {reply, {error, Reason}, abort, SD0, 0}
+		    _Res = gen_fsm:reply(Sender, {error, Reason}),
+		    abort(SD0)
 	    end
     end.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
-prepare(timeout, SD0=#state{
-                        transaction = Transaction,
-                        updated_partitions=Updated_partitions, from=From}) ->
+prepare(SD0=#state{
+	       transaction = Transaction,
+	       updated_partitions=Updated_partitions, from=From}) ->
     case length(Updated_partitions) of
         0->
             Snapshot_time=Transaction#transaction.snapshot_time,
@@ -255,9 +261,9 @@ prepare(timeout, SD0=#state{
     end.
 %% @doc state called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
-prepare_2pc(timeout, SD0=#state{
-                        transaction = Transaction,
-                        updated_partitions=Updated_partitions, from=From}) ->
+prepare_2pc(SD0=#state{
+		   transaction = Transaction,
+		   updated_partitions=Updated_partitions, from=From}) ->
     case length(Updated_partitions) of
         0->
             Snapshot_time=Transaction#transaction.snapshot_time,
@@ -296,10 +302,11 @@ receive_prepared({prepared, ReceivedPrepareTime},
     end;
 
 receive_prepared(abort, S0) ->
-    {next_state, abort, S0, 0};
+    abort(S0);
 
 receive_prepared(timeout, S0) ->
-    {next_state, abort, S0, 0}.
+    %%{next_state, abort, S0, 0}.
+    abort(S0).
 
 single_committing({committed, CommitTime}, S0=#state{from=From}) ->
     _Res = gen_fsm:reply(From, {ok, CommitTime}),
@@ -307,10 +314,12 @@ single_committing({committed, CommitTime}, S0=#state{from=From}) ->
      S0#state{commit_time=CommitTime, state=committing}};
 
 single_committing(abort, S0=#state{from=_From}) ->
-    {next_state, abort, S0, 0};
+    %% {next_state, abort, S0, 0};
+    abort(S0);
 
 single_committing(timeout, S0=#state{from=_From}) ->
-    {next_state, abort, S0, 0}.
+    %% {next_state, abort, S0, 0}.
+    abort(S0).
 
 
 %% @doc There was only a single partition with an update in this transaction
@@ -371,14 +380,13 @@ receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
 
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the transaction aborts.
-abort(timeout, SD0=#state{transaction = Transaction,
-                          updated_partitions=UpdatedPartitions}) ->
+abort(SD0=#state{transaction = Transaction,
+		 updated_partitions=UpdatedPartitions}) ->
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#state{state=aborted});
+    reply_to_client(SD0#state{state=aborted}).
 
 abort(abort, SD0=#state{transaction = Transaction,
                         updated_partitions=UpdatedPartitions}) ->
-
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
     reply_to_client(SD0#state{state=aborted});
 
