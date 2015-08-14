@@ -105,3 +105,31 @@
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0,
              dc_address/0]).
+
+%%---------------------------------------------------------------------
+%% @doc Data Type: state
+%% where:
+%%    from: the pid of the calling process.
+%%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
+%%    updated_partitions: the partitions where update operations take place.
+%%    num_to_ack: when sending prepare_commit,
+%%                number of partitions that have acked.
+%%    prepare_time: transaction prepare time.
+%%    commit_time: transaction commit time.
+%%    state: state of the transaction: {active|prepared|committing|committed}
+%%----------------------------------------------------------------------
+
+-record(tx_coord_state, {
+	  from :: {pid(), term()},
+	  transaction :: tx(),
+	  updated_partitions :: list(),
+	  num_to_ack :: non_neg_integer(),
+	  prepare_time :: non_neg_integer(),
+	  commit_time :: non_neg_integer(),
+	  commit_protocol :: term(),
+	  state :: active | prepared | committing | committed | undefined | aborted
+		 | committed_read_only,
+	  operations :: list(),
+	  read_set :: list(),
+	  is_static :: boolean(),
+	  full_commit :: boolean()}).

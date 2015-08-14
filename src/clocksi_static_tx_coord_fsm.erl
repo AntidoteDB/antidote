@@ -36,26 +36,21 @@
 %% Callbacks
 -export([init/1,
 	 code_change/4,
+	 receive_prepared/2,
+	 single_committing/2,
+	 committing_single/3,
+	 committing/3,
+	 committing_2pc/3,
+	 receive_committed/2,
+	 abort/2,
 	 handle_event/3,
 	 handle_info/3,
          handle_sync_event/4,
 	 terminate/3]).
 
 %% States
--export([execute_batch_ops/2]).
+-export([execute_batch_ops/3]).
 
-%%---------------------------------------------------------------------
-%% @doc Data Type: state
-%% where:
-%%    from: the pid of the calling process.
-%%    state: state of the transaction: {active|prepared|committing|committed}
-%%----------------------------------------------------------------------
--record(state, {
-          from :: pid(),
-          tx_id :: txid(),
-          tx_coord_pid :: pid(),
-          operations :: list(),
-          state:: atom()}).
 
 %%%===================================================================
 %%% API
@@ -74,74 +69,147 @@ start_link(From, Operations) ->
 
 %% @doc Initialize the state.
 init([From, ClientClock, Operations]) ->
-    _ = random:seed(erlang:now()),
-    {ok, _Pid} = case ClientClock of
-                     ignore ->
-                         clocksi_interactive_tx_coord_sup:start_fsm([self()]);
-                     _ ->
-                         clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientClock])
-                 end,
-    receive
-        {ok, TxId} ->
-            {_, _, TxCoordPid} = TxId,
-            {ok, execute_batch_ops, #state{tx_id=TxId, tx_coord_pid = TxCoordPid,
-                                           from = From, operations = Operations}, 0}
-    after
-        10000 ->
-            lager:error("Tx was not started!"),
-            _Res = gen_fsm:reply(From, {error, timeout}),
-            {stop, normal, #state{}}
-    end.
+    {Transaction,_TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock),
+    SD = #tx_coord_state{
+            transaction = Transaction,
+            updated_partitions=[],
+            prepare_time=0,
+	    operations=Operations,
+	    from=From,
+	    full_commit=true,
+	    is_static=true,
+	    read_set=[]
+           },
+    {ok, execute_batch_ops, SD}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-execute_batch_ops(timeout, SD=#state{from = From,
-                                     tx_id = TxId,
-                                     tx_coord_pid = TxCoordPid,
-                                     operations = Operations}) ->
+execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
+					     transaction = Transaction}) ->
     ExecuteOp = fun (Operation, Acc) ->
-    					case Acc of 
-						{error, Reason} ->
-							{error, Reason};
-						_ ->
-							case Operation of
-								{update, {Key, Type, OpParams}} ->
-									case gen_fsm:sync_send_event(TxCoordPid, {update, {Key, Type, OpParams}}, infinity) of
-									ok ->
-										Acc;
-									{error, Reason} ->
-										{error, Reason}
-									end;
-								{read, {Key, Type}} ->
-									case gen_fsm:sync_send_event(TxCoordPid, {read, {Key, Type}}, infinity) of
-									{ok, Value} ->
-										Acc++[Value];
-									{error, Reason} ->
-										{error, Reason}
-									end
-							end
-						end
-                end,
-    ReadSet = lists:foldl(ExecuteOp, [], Operations),
-    _Res = case ReadSet of 
+			case Acc of 
+			    {error, Reason} ->
+				{error, Reason};
+			    _ ->
+				case Operation of
+				    {update, {Key, Type, OpParams}} ->
+					case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
+					    {error,Reason} ->
+						{error, Reason};
+					    NewUpdatedPartitions ->
+						Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
+					end;
+				    {read, {Key, Type}} ->
+					case clocksi_interactive_tx_coord_fsm:perform_read({Key,Type},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
+					    {error,Reason} ->
+						{error, Reason};
+					    ReadResult ->
+						lager:info("Read results ~p", [ReadResult]),
+						Acc#tx_coord_state{read_set=[ReadResult|Acc#tx_coord_state.read_set]}
+					end
+				end
+			end
+		end,    
+    NewState = lists:foldl(ExecuteOp, SD, Operations),
+    _Res = case NewState of 
 	       {error, Reason} ->
-		   From ! {error, Reason};
+		   %From ! {error, Reason},
+		   gen_fsm:reply(Sender,{error,Reason}),
+		   {stop, normal, SD};
 	       _ ->
-		   case gen_fsm:sync_send_event(TxCoordPid, {prepare, empty}, infinity) of
-		       {ok, _PrepareTime} ->
-			   case gen_fsm:sync_send_event(TxCoordPid, commit, infinity) of
-			       {ok, {TxId, CommitTime}} ->
-				   From ! {ok, {TxId, ReadSet, CommitTime}};
-			       _msg ->
-				   From ! {error, commit_fail}
-			   end;
-		       _ ->
-			   From ! {error, commit_fail}
-		   end
-	   end,
-    {stop, normal, SD}.
+		   clocksi_interactive_tx_coord_fsm:prepare(NewState#tx_coord_state{from=Sender})
+	   end.
 
+
+receive_prepared({prepared, ReceivedPrepareTime},S0) ->
+    clocksi_interactive_tx_coord_fsm:process_prepared(ReceivedPrepareTime, S0).
+
+
+single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit}) ->
+    case FullCommit of
+	false ->
+	    gen_fsm:reply(From, {ok, CommitTime}),
+	    {next_state, committing_single,
+	     S0#tx_coord_state{commit_time=CommitTime, state=committing}};
+	true ->
+	    clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{prepare_time=CommitTime, commit_time=CommitTime, state=committed})
+    end;
+
+single_committing(abort, S0=#tx_coord_state{from=_From}) ->
+    %% {next_state, abort, S0, 0};
+    clocksi_interactive_tx_coord_fsm:abort(S0);
+
+single_committing(timeout, S0=#tx_coord_state{from=_From}) ->
+    %% {next_state, abort, S0, 0}.
+    clocksi_interactive_tx_coord_fsm:abort(S0).
+
+
+committing_single(commit, Sender, SD0=#tx_coord_state{transaction = _Transaction,
+					     commit_time=Commit_time}) ->
+    clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{prepare_time=Commit_time, from=Sender, commit_time=Commit_time, state=committed}).
+
+%% @doc after receiving all prepare_times, send the commit message to all
+%%      updated partitions, and go to the "receive_committed" state.
+%%      This state expects other process to sen the commit message to 
+%%      start the commit phase.
+committing_2pc(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
+                              updated_partitions=Updated_partitions,
+                              commit_time=Commit_time}) ->
+    NumToAck=length(Updated_partitions),
+    case NumToAck of
+        0 ->
+            clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
+        _ ->
+            ok = clocksi_interactive_tx_coord_fsm:commit(Updated_partitions, Transaction, Commit_time),
+            {next_state, receive_committed,
+             SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
+    end.
+
+%% @doc after receiving all prepare_times, send the commit message to all
+%%      updated partitions, and go to the "receive_committed" state.
+%%      This state is used when no commit message from the client is
+%%      expected 
+committing(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
+                              updated_partitions=Updated_partitions,
+                              commit_time=Commit_time}) ->
+    NumToAck=length(Updated_partitions),
+    case NumToAck of
+        0 ->
+            clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
+        _ ->
+            ok = clocksi_interactive_tx_coord_fsm:commit(Updated_partitions, Transaction, Commit_time),
+            {next_state, receive_committed,
+             SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
+    end.
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+%%	committed the tx and finishes operation.
+%%      Should we retry sending the committed message if we don't receive a
+%%      reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+receive_committed(committed, S0=#tx_coord_state{num_to_ack= NumToAck}) ->
+    case NumToAck of
+        1 ->
+            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed});
+        _ ->
+           {next_state, receive_committed, S0#tx_coord_state{num_to_ack= NumToAck-1}}
+    end.
+
+abort(abort, SD0=#tx_coord_state{transaction = Transaction,
+                        updated_partitions=UpdatedPartitions}) ->
+    ok = clocksi_interactive_tx_coord_fsm:abort(UpdatedPartitions, Transaction),
+    clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted});
+
+abort({prepared, _}, SD0=#tx_coord_state{transaction=Transaction,
+                        updated_partitions=UpdatedPartitions}) ->
+    ok = clocksi_interactive_tx_coord_fsm:abort(UpdatedPartitions, Transaction),
+    clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted});
+
+abort(_, SD0=#tx_coord_state{transaction = Transaction,
+                          updated_partitions=UpdatedPartitions}) ->
+    ok = clocksi_interactive_tx_coord_fsm:abort(UpdatedPartitions, Transaction),
+    clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted}).
 
 
 %% =============================================================================

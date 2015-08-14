@@ -61,10 +61,14 @@
 	 stop/1]).
 
 %% States
--export([execute_op/3,
+-export([create_transaction_record/1,
+	 perform_update/4,
+	 perform_read/4,
+	 execute_op/3,
 	 finish_op/3,
 	 prepare/1,
 	 prepare_2pc/1,
+	 process_prepared/2,
          receive_prepared/2,
 	 single_committing/2,
 	 committing_2pc/3,
@@ -74,29 +78,6 @@
 	 abort/2,
 	 perform_singleitem_read/2,
          reply_to_client/1]).
-
-%%---------------------------------------------------------------------
-%% @doc Data Type: state
-%% where:
-%%    from: the pid of the calling process.
-%%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
-%%    updated_partitions: the partitions where update operations take place.
-%%    num_to_ack: when sending prepare_commit,
-%%                number of partitions that have acked.
-%%    prepare_time: transaction prepare time.
-%%    commit_time: transaction commit time.
-%%    state: state of the transaction: {active|prepared|committing|committed}
-%%----------------------------------------------------------------------
--record(state, {
-	  from :: {pid(), term()},
-	  transaction :: tx(),
-	  updated_partitions :: list(),
-	  num_to_ack :: non_neg_integer(),
-	  prepare_time :: non_neg_integer(),
-	  commit_time :: non_neg_integer(),
-	  commit_protocol :: term(),
-	  state :: active | prepared | committing | committed | undefined | aborted
-	 | committed_read_only}).
 
 %%%===================================================================
 %%% API
@@ -120,10 +101,12 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid,stop).
 %% @doc Initialize the state.
 init([From, ClientClock]) ->
     {Transaction,TransactionId} = create_transaction_record(ClientClock),
-    SD = #state{
+    SD = #tx_coord_state{
             transaction = Transaction,
             updated_partitions=[],
-            prepare_time=0
+            prepare_time=0,
+	    full_commit=false,
+	    is_static=false
            },
     From ! {ok, TransactionId},
     {ok, execute_op, SD}.
@@ -163,257 +146,326 @@ perform_singleitem_read(Key,Type) ->
 	    {ok, ReadResult}
     end.
 
+
+perform_read(Args,Updated_partitions,Transaction,Sender) ->
+    {Key, Type}=Args,
+    Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
+		   false ->
+		       [];
+		   {IndexNode, WS} ->
+		       WS
+	       end,
+    case ?CLOCKSI_VNODE:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+	{error, Reason} ->
+	    case Sender of
+		undefined ->
+		    ok;
+		_ ->
+		    _Res = gen_fsm:reply(Sender, {error, Reason})
+	    end,
+	    {error, Reason};
+	{ok, Snapshot} ->
+	    Type:value(Snapshot)
+    end.
+
+
+perform_update(Args,Updated_partitions,Transaction,Sender) ->
+    {Key, Type, Param}=Args,
+    Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
+		   false ->
+		       [];
+		   {IndexNode, WS} ->
+		       WS
+	       end,
+    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
+	{ok, DownstreamRecord} ->
+	    NewUpdatedPartitions = case WriteSet of
+				       [] ->
+					   [{IndexNode,[{Key,Type,DownstreamRecord}]}|Updated_partitions];
+				       _ ->
+					   lists:keyreplace(IndexNode,1,Updated_partitions,
+							    {IndexNode,[{Key,Type,DownstreamRecord}|WriteSet]})
+				   end,
+	    case Sender of
+		undefined ->
+		    ok;
+		_ ->
+		    gen_fsm:reply(Sender, ok)
+	    end,
+	    TxId = Transaction#transaction.txn_id,
+	    LogRecord = #log_record{tx_id=TxId, op_type=update,
+				    op_payload={Key, Type, DownstreamRecord}},
+	    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+	    [Node] = Preflist,
+	    case ?LOGGING_VNODE:append(Node,LogId,LogRecord) of
+		{ok, _} ->
+		    NewUpdatedPartitions;
+		Error ->
+		    _Res = gen_fsm:reply(Sender, {error, Error}),
+		    {error, Error}
+	    end;
+	{error, Reason} ->
+	    _Res = gen_fsm:reply(Sender, {error, Reason}),
+	    {error, Reason}
+    end.
+
+
+
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({OpType, Args}, Sender,
-           SD0=#state{transaction=Transaction,
+           SD0=#tx_coord_state{transaction=Transaction,
                       updated_partitions=Updated_partitions
 		      }) ->
     case OpType of
         prepare ->
             case Args of
 		two_phase ->
-		    prepare_2pc(SD0#state{from=Sender, commit_protocol=Args});
+		    prepare_2pc(SD0#tx_coord_state{from=Sender, commit_protocol=Args});
 		_ ->
-		    prepare(SD0#state{from=Sender, commit_protocol=Args})
+		    prepare(SD0#tx_coord_state{from=Sender, commit_protocol=Args})
             end;
         read ->
-            {Key, Type}=Args,
-            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-            IndexNode = hd(Preflist),
-	    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
-			   false ->
-			       [];
-			   {IndexNode, WS} ->
-			       WS
-		       end,
-            case ?CLOCKSI_VNODE:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-                {error, Reason} ->
+            case perform_read(Args,Updated_partitions,Transaction,Sender) of
+                {error, _Reason} ->
                     %% {reply, {error, Reason}, abort, SD0, 0};
-		    _Res = gen_fsm:reply(Sender, {error, Reason}),
 		    abort(SD0);
-                {ok, Snapshot} ->
-                    ReadResult = Type:value(Snapshot),
+                ReadResult ->
                     {reply, {ok, ReadResult}, execute_op, SD0}
 	    end;
         update ->
-            {Key, Type, Param}=Args,
-	    Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-	    IndexNode = hd(Preflist),
-	    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
-			   false ->
-			       [];
-			   {IndexNode, WS} ->
-			       WS
-		       end,
-	    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
-		{ok, DownstreamRecord} ->
-		    NewUpdatedPartitions = case WriteSet of
-					       [] ->
-						   [{IndexNode,[{Key,Type,DownstreamRecord}]}|Updated_partitions];
-					       _ ->
-						   lists:keyreplace(IndexNode,1,Updated_partitions,
-								    {IndexNode,[{Key,Type,DownstreamRecord}|WriteSet]})
-					   end,
-		    _Res = gen_fsm:reply(Sender, ok),
-		    TxId = Transaction#transaction.txn_id,
-		    LogRecord = #log_record{tx_id=TxId, op_type=update,
-					    op_payload={Key, Type, DownstreamRecord}},
-		    LogId = ?LOG_UTIL:get_logid_from_key(Key),
-		    [Node] = Preflist,
-		    case ?LOGGING_VNODE:append(Node,LogId,LogRecord) of
-			{ok, _} ->
-			    {next_state, execute_op,
-			     SD0#state{updated_partitions= NewUpdatedPartitions}};
-			Error ->
-			    %% {next_state, abort, SD0}
-			    _Res = gen_fsm:reply(Sender, {error, Error}),
-			    abort(SD0)
-		    end;
-		{error, Reason} ->
-		    %% {reply, {error, Reason}, abort, SD0, 0}
-		    _Res = gen_fsm:reply(Sender, {error, Reason}),
-		    abort(SD0)
+	    case perform_update(Args,Updated_partitions,Transaction,Sender) of
+		{error, _Reason} ->
+		    abort(SD0);
+		NewUpdatedPartitions ->
+		    {next_state, execute_op,
+		     SD0#tx_coord_state{updated_partitions= NewUpdatedPartitions}}
 	    end
     end.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
-prepare(SD0=#state{
+prepare(SD0=#tx_coord_state{
 	       transaction = Transaction,
-	       updated_partitions=Updated_partitions, from=From}) ->
+	       updated_partitions=Updated_partitions, full_commit=FullCommit, from=From}) ->
     case length(Updated_partitions) of
         0->
             Snapshot_time=Transaction#transaction.snapshot_time,
-            _Res = gen_fsm:reply(From, {ok, Snapshot_time}),
-            {next_state, committing, SD0#state{state=committing, commit_time=Snapshot_time}};
+	    case FullCommit of
+		false ->
+		    gen_fsm:reply(From, {ok, Snapshot_time}),
+		    {next_state, committing, SD0#tx_coord_state{state=committing, commit_time=Snapshot_time}};
+		true ->
+		    reply_to_client(SD0#tx_coord_state{state=committed_read_only})
+	    end;
         1-> 
             ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
             {next_state, single_committing,
-	     SD0#state{state=committing, num_to_ack=1}};
+	     SD0#tx_coord_state{state=committing, num_to_ack=1}};
         _->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack=length(Updated_partitions),
             {next_state, receive_prepared,
-            SD0#state{num_to_ack=Num_to_ack, state=prepared}}
+            SD0#tx_coord_state{num_to_ack=Num_to_ack, state=prepared}}
     end.
+
 %% @doc state called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
-prepare_2pc(SD0=#state{
+prepare_2pc(SD0=#tx_coord_state{
 		   transaction = Transaction,
-		   updated_partitions=Updated_partitions, from=From}) ->
+		   updated_partitions=Updated_partitions, full_commit=FullCommit, from=From}) ->
     case length(Updated_partitions) of
         0->
             Snapshot_time=Transaction#transaction.snapshot_time,
-            _Res = gen_fsm:reply(From, {ok, Snapshot_time}),
-            {next_state, committing_2pc,
-            SD0#state{state=committing, commit_time=Snapshot_time}};
+            %% _Res = gen_fsm:reply(From, {ok, Snapshot_time}),
+	    case FullCommit of
+		false ->
+		    gen_fsm:reply(From, {ok, Snapshot_time}),
+		    {next_state, committing_2pc,
+		     SD0#tx_coord_state{state=committing, commit_time=Snapshot_time}};
+		true ->
+		    reply_to_client(SD0#tx_coord_state{state=committed_read_only})
+	    end;
         _->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack=length(Updated_partitions),
             {next_state, receive_prepared,
-            SD0#state{num_to_ack=Num_to_ack, state=prepared}}
+            SD0#tx_coord_state{num_to_ack=Num_to_ack, state=prepared}}
     end.
 
-%% @doc in this state, the fsm waits for prepare_time from each updated
-%%      partitions in order to compute the final tx timestamp (the maximum
-%%      of the received prepare_time).
-receive_prepared({prepared, ReceivedPrepareTime},
-                 S0=#state{num_to_ack=NumToAck,
-                           commit_protocol=CommitProtocol,
-                           from=From, prepare_time=PrepareTime}) ->
+process_prepared(ReceivedPrepareTime, S0=#tx_coord_state{num_to_ack=NumToAck,
+							 commit_protocol=CommitProtocol, full_commit=FullCommit,
+							 from=From, prepare_time=PrepareTime,
+							 transaction=Transaction,
+							 updated_partitions=Updated_partitions}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     case NumToAck of 1 ->
             case CommitProtocol of
 		two_phase ->
-		    _Res = gen_fsm:reply(From, {ok, MaxPrepareTime}),
-		    {next_state, committing_2pc,
-		     S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}};
+		    case FullCommit of
+			true ->
+			    ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
+			    {next_state, receive_committed,
+			     S0#tx_coord_state{num_to_ack=NumToAck, commit_time=MaxPrepareTime, state=committing}};
+			false ->
+			    gen_fsm:reply(From, {ok, MaxPrepareTime}),
+			    {next_state, committing_2pc,
+			     S0#tx_coord_state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}}
+		    end;
 		_ ->
-		    _Res = gen_fsm:reply(From, {ok, MaxPrepareTime}),
-		    {next_state, committing,
-		     S0#state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}}
+		    case FullCommit of
+			true ->
+			    ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
+			    {next_state, receive_committed,
+			     S0#tx_coord_state{num_to_ack=NumToAck, commit_time=MaxPrepareTime, state=committing}};
+			false ->
+			    gen_fsm:reply(From, {ok, MaxPrepareTime}),
+			    {next_state, committing,
+			     S0#tx_coord_state{prepare_time=MaxPrepareTime, commit_time=MaxPrepareTime, state=committing}}
+		    end
             end;
         _ ->
             {next_state, receive_prepared,
-             S0#state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
-    end;
+             S0#tx_coord_state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
+    end.
+
+
+%% @doc in this state, the fsm waits for prepare_time from each updated
+%%      partitions in order to compute the final tx timestamp (the maximum
+%%      of the received prepare_time).
+receive_prepared({prepared, ReceivedPrepareTime},S0) ->
+    process_prepared(ReceivedPrepareTime, S0);  
 
 receive_prepared(abort, S0) ->
     abort(S0);
 
 receive_prepared(timeout, S0) ->
-    %%{next_state, abort, S0, 0}.
     abort(S0).
 
-single_committing({committed, CommitTime}, S0=#state{from=From}) ->
-    _Res = gen_fsm:reply(From, {ok, CommitTime}),
-    {next_state, committing_single,
-     S0#state{commit_time=CommitTime, state=committing}};
+single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit}) ->
+    case FullCommit of
+	false ->
+	    gen_fsm:reply(From, {ok, CommitTime}),
+	    {next_state, committing_single,
+	     S0#tx_coord_state{commit_time=CommitTime, state=committing}};
+	true ->
+	    reply_to_client(S0#tx_coord_state{prepare_time=CommitTime, commit_time=CommitTime, state=committed})
+    end;
 
-single_committing(abort, S0=#state{from=_From}) ->
-    %% {next_state, abort, S0, 0};
+single_committing(abort, S0=#tx_coord_state{from=_From}) ->
     abort(S0);
 
-single_committing(timeout, S0=#state{from=_From}) ->
-    %% {next_state, abort, S0, 0}.
+single_committing(timeout, S0=#tx_coord_state{from=_From}) ->
     abort(S0).
 
 
 %% @doc There was only a single partition with an update in this transaction
 %%      so the transaction has already been committed
 %%      so just wait for the commit message from the client
-committing_single(commit, Sender, SD0=#state{transaction = _Transaction,
+committing_single(commit, Sender, SD0=#tx_coord_state{transaction = _Transaction,
 					     commit_time=Commit_time}) ->
-    reply_to_client(SD0#state{prepare_time=Commit_time, from=Sender, commit_time=Commit_time, state=committed}).
+    reply_to_client(SD0#tx_coord_state{prepare_time=Commit_time, from=Sender, commit_time=Commit_time, state=committed}).
 
 %% @doc after receiving all prepare_times, send the commit message to all
 %%      updated partitions, and go to the "receive_committed" state.
 %%      This state expects other process to sen the commit message to 
 %%      start the commit phase.
-committing_2pc(commit, Sender, SD0=#state{transaction = Transaction,
+committing_2pc(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
                               updated_partitions=Updated_partitions,
                               commit_time=Commit_time}) ->
     NumToAck=length(Updated_partitions),
     case NumToAck of
         0 ->
-            reply_to_client(SD0#state{state=committed_read_only, from=Sender});
+            reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
         _ ->
             ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
-             SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
+             SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
     end.
 
 %% @doc after receiving all prepare_times, send the commit message to all
 %%      updated partitions, and go to the "receive_committed" state.
 %%      This state is used when no commit message from the client is
 %%      expected 
-committing(commit, Sender, SD0=#state{transaction = Transaction,
+committing(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
                               updated_partitions=Updated_partitions,
                               commit_time=Commit_time}) ->
     NumToAck=length(Updated_partitions),
     case NumToAck of
         0 ->
-            reply_to_client(SD0#state{state=committed_read_only, from=Sender});
+            reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
         _ ->
             ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
-             SD0#state{num_to_ack=NumToAck, from=Sender, state=committing}}
+             SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
     end.
-
-%% @doc the fsm waits for acks indicating that each partition has successfully
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
 %%	committed the tx and finishes operation.
 %%      Should we retry sending the committed message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?
-receive_committed(committed, S0=#state{num_to_ack= NumToAck}) ->
+receive_committed(committed, S0=#tx_coord_state{num_to_ack= NumToAck}) ->
     case NumToAck of
         1 ->
-            reply_to_client(S0#state{state=committed});
+            reply_to_client(S0#tx_coord_state{state=committed});
         _ ->
-           {next_state, receive_committed, S0#state{num_to_ack= NumToAck-1}}
+           {next_state, receive_committed, S0#tx_coord_state{num_to_ack= NumToAck-1}}
     end.
 
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the transaction aborts.
-abort(SD0=#state{transaction = Transaction,
+abort(SD0=#tx_coord_state{transaction = Transaction,
 		 updated_partitions=UpdatedPartitions}) ->
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#state{state=aborted}).
+    reply_to_client(SD0#tx_coord_state{state=aborted}).
 
-abort(abort, SD0=#state{transaction = Transaction,
+abort(abort, SD0=#tx_coord_state{transaction = Transaction,
                         updated_partitions=UpdatedPartitions}) ->
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#state{state=aborted});
+    reply_to_client(SD0#tx_coord_state{state=aborted});
 
-abort({prepared, _}, SD0=#state{transaction=Transaction,
+abort({prepared, _}, SD0=#tx_coord_state{transaction=Transaction,
                         updated_partitions=UpdatedPartitions}) ->
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#state{state=aborted});
+    reply_to_client(SD0#tx_coord_state{state=aborted});
 
-abort(_, SD0=#state{transaction = Transaction,
+abort(_, SD0=#tx_coord_state{transaction = Transaction,
                           updated_partitions=UpdatedPartitions}) ->
     ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#state{state=aborted}).
+    reply_to_client(SD0#tx_coord_state{state=aborted}).
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD=#state{from=From, transaction=Transaction,
-                                   state=TxState, commit_time=CommitTime}) ->
+reply_to_client(SD=#tx_coord_state{from=From, transaction=Transaction, read_set=ReadSet,
+			  state=TxState, commit_time=CommitTime,
+			  is_static=IsStatic}) ->
     if undefined =/= From ->
 	    TxId = Transaction#transaction.txn_id,
 	    Reply = case TxState of
 			committed_read_only ->
-			    {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
+			    case IsStatic of
+				false ->
+				    {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
+				true ->
+				    {ok, {TxId, ReadSet, Transaction#transaction.vec_snapshot_time}}
+			    end;
 			committed ->
 			    DcId = ?DC_UTIL:get_my_dc_id(),
 			    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
 					    DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
-			    {ok, {TxId, CausalClock}};
+			    case IsStatic of
+				false ->
+				    {ok, {TxId, CausalClock}};
+				true ->
+				    {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
+			    end;
 			aborted->
 			    {aborted, TxId};
 			Reason->
