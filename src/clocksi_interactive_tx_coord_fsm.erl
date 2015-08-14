@@ -205,11 +205,21 @@ perform_update(Args,Updated_partitions,Transaction,Sender) ->
 		{ok, _} ->
 		    NewUpdatedPartitions;
 		Error ->
-		    _Res = gen_fsm:reply(Sender, {error, Error}),
-		    {error, Error}
+		    case Sender of
+			undefined ->
+			    ok;
+			_ ->
+			    _Res = gen_fsm:reply(Sender, {error, Error}),
+			    {error, Error}
+		    end
 	    end;
 	{error, Reason} ->
-	    _Res = gen_fsm:reply(Sender, {error, Reason}),
+	    case Sender of
+		undefined ->
+		    ok;
+		_ ->
+		    _Res = gen_fsm:reply(Sender, {error, Reason})
+	    end,
 	    {error, Reason}
     end.
 
@@ -233,7 +243,6 @@ execute_op({OpType, Args}, Sender,
         read ->
             case perform_read(Args,Updated_partitions,Transaction,Sender) of
                 {error, _Reason} ->
-                    %% {reply, {error, Reason}, abort, SD0, 0};
 		    abort(SD0);
                 ReadResult ->
                     {reply, {ok, ReadResult}, execute_op, SD0}
@@ -283,7 +292,6 @@ prepare_2pc(SD0=#tx_coord_state{
     case length(Updated_partitions) of
         0->
             Snapshot_time=Transaction#transaction.snapshot_time,
-            %% _Res = gen_fsm:reply(From, {ok, Snapshot_time}),
 	    case FullCommit of
 		false ->
 		    gen_fsm:reply(From, {ok, Snapshot_time}),

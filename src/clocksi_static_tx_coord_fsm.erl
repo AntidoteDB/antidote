@@ -105,7 +105,6 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 					    {error,Reason} ->
 						{error, Reason};
 					    ReadResult ->
-						lager:info("Read results ~p", [ReadResult]),
 						Acc#tx_coord_state{read_set=[ReadResult|Acc#tx_coord_state.read_set]}
 					end
 				end
