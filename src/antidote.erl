@@ -66,19 +66,13 @@ read(Key, Type) ->
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations) ->
-    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
-    receive
-        EndOfTx ->
-            EndOfTx
-    end.
+    {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
+    gen_fsm:sync_send_event(CoordFsmPid, execute).
 
 -spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 clocksi_execute_tx(Operations) ->
-    {ok, _} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
-    receive
-        EndOfTx ->
-            EndOfTx
-    end.
+    {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
+    gen_fsm:sync_send_event(CoordFsmPid, execute).
 
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:

@@ -506,7 +506,6 @@ clean_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
-
 %% @doc Performs a certification check when a transaction wants to move
 %%      to the prepared state.
 certification_check(_, [], _, _) ->
