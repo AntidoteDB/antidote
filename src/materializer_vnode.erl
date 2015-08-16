@@ -36,7 +36,7 @@
 %% API
 -export([start_vnode/1,
 	 check_tables_ready/0,
-         read/6,
+         read/7,
 	 get_cache_name/2,
 	 store_ss/3,
          update/2,
@@ -69,9 +69,17 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
 %%      are in shared memory, allowing concurrent reads.
--spec read(key(), type(), snapshot_time(), txid(),cache_id(), cache_id()) -> {ok, snapshot()} | {error, reason()}.
-read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache) ->
-    internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache).
+-spec read(key(), type(), snapshot_time(), txid(),cache_id(), cache_id(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
+read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition) ->
+    case ets:info(OpsCache) of
+	undefined ->
+	    riak_core_vnode_master:sync_command({Partition,node()},
+						{read,Key,Type,SnapshotTime,TxId},
+						materializer_vnode_master,
+						infinity);
+	_ ->
+	    internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache)	    
+    end.
 
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
 get_cache_name(Partition,Base) ->
@@ -137,6 +145,11 @@ handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
 		     end
 	     end,
     {reply, Result, State};
+
+
+handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender,
+               State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache,partition=Partition})->
+    {reply, read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition), State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
