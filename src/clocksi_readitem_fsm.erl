@@ -88,8 +88,9 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
 			{perform_read,Key,Type,Transaction},infinity)
     catch
         _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
+            lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+	    check_server_ready([{Partition,Node}]),
+            read_data_item({Partition,Node},Key,Type,Transaction)
     end.
 
 %% @doc This checks all partitions in the system to see if all read
@@ -136,23 +137,8 @@ check_partition_ready(Node,Partition,Num) ->
 start_read_servers_internal(_Node,_Partition,0) ->
     0;
 start_read_servers_internal(Node, Partition, Num) ->
-    Result = try
-		 {ok,_Id} = clocksi_readitem_sup:start_fsm(Partition,Num),
-		 ok
-	     catch
-		 _:_Reason ->
-		     %% Someone hasn't finished cleaning up yet
-		     %% Sleep some time to let them clean up
-		     timer:sleep(?SPIN_WAIT),
-		     error
-	     end,
-    case Result of
-	ok ->
-	    start_read_servers_internal(Node, Partition, Num-1);
-	error ->
-	    Num
-    end.
-
+    {ok,_Id} = clocksi_readitem_sup:start_fsm(Partition,Num),
+    start_read_servers_internal(Node, Partition, Num-1).
 
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
@@ -183,58 +169,50 @@ init([Partition, Id]) ->
 		prepared_cache=PreparedCache,self=Self}}.
 
 handle_call({perform_read, Key, Type, Transaction},Coordinator,
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
     {noreply,SD0}.
 
-perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,_Self) ->
-    case check_clock(Key,Transaction,PreparedCache) of
+perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition) ->
+    case check_clock(Key,Transaction,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
-	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache)
+	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
-check_clock(Key,Transaction,PreparedCache) ->
+check_clock(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = clocksi_vnode:now_microsec(erlang:now()),
     case T_TS > Time of
         true ->
-	    %% dont sleep in case there is another read waiting
-            %% timer:sleep((T_TS - Time) div 1000 +1 );
 	    {not_ready, (T_TS - Time) div 1000 +1};
         false ->
-	    check_prepared(Key,Transaction,PreparedCache)
+	    check_prepared(Key,Transaction,PreparedCache,Partition)
     end.
 
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
-check_prepared(Key,Transaction,PreparedCache) ->
+check_prepared(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
-    ActiveTxs = 
-	case ets:lookup(PreparedCache, Key) of
-	    [] ->
-		[];
-	    [{Key,AList}] ->
-		AList
-	end,
+    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
     check_prepared_list(Key,SnapshotTime,ActiveTxs).
 
 check_prepared_list(_Key,_SnapshotTime,[]) ->
@@ -249,10 +227,10 @@ check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
-return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache) ->
+return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
         {ok, Snapshot} ->
             Reply={ok, Snapshot};
         {error, Reason} ->
@@ -263,8 +241,8 @@ return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache) ->
 
 
 handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,self=Self}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self),
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
     {noreply,SD0};
 
 handle_info(_Info, StateData) ->
