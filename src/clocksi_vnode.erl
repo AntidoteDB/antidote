@@ -26,8 +26,8 @@
 -export([start_vnode/1,
 	 read_data_item/5,
 	 get_cache_name/2,
-	 get_active_txns_key/2,
-	 get_active_txns/1,
+	 get_active_txns_key/3,
+	 get_active_txns/2,
          prepare/2,
          commit/3,
          single_commit/2,
@@ -93,8 +93,19 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
-get_active_txns_key(Key, Partition) ->
-    ActiveTxs = case ets:lookup(get_cache_name(Partition,prepared), Key) of
+get_active_txns_key(Key,Partition,TableName) ->
+    case ets:info(TableName) of 
+	undefined ->
+	    riak_core_vnode_master:sync_command({Partition,node()},
+						{get_active_txns, Key},
+						clocksi_vnode_master,
+						infinity);
+	_ ->
+	    get_active_txns_key_internal(Key,TableName)
+    end.
+
+get_active_txns_key_internal(Key, TableName) ->
+    ActiveTxs = case ets:lookup(TableName, Key) of
 		    [] ->
 			[];
 		    [{Key, List}] ->
@@ -105,21 +116,18 @@ get_active_txns_key(Key, Partition) ->
 
 %% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
 %% should be run from same physical node
-get_active_txns(Partition) ->
-    TableName = get_cache_name(Partition,prepared),
+get_active_txns(Partition,TableName) ->
     case ets:info(TableName) of 
 	undefined ->
-	    lager:error("Table ~p should be started", [TableName]),
 	    riak_core_vnode_master:sync_command({Partition,node()},
 						{get_active_txns},
 						clocksi_vnode_master,
 						infinity);
 	_ ->
-	    get_active_txns_internal(Partition)
+	    get_active_txns_internal(TableName)
     end.
 	    
-get_active_txns_internal(Partition) ->
-    TableName = get_cache_name(Partition,prepared),
+get_active_txns_internal(TableName) ->
     ActiveTxs = case ets:tab2list(TableName) of
 		    [] ->
 			[];
@@ -175,7 +183,7 @@ abort(ListofNodes, TxId) ->
 
 
 get_cache_name(Partition,Base) ->
-    list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
+    list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 
 %% @doc Initializes all data structures that vnode needs to track information
@@ -218,16 +226,8 @@ check_table_ready([{Partition,Node}|Rest]) ->
 
 
 open_table(Partition) ->
-    try
-	ets:new(get_cache_name(Partition,prepared),
-		[set,protected,named_table,?TABLE_CONCURRENCY])
-    catch
-	_:_Reason ->
-	    %% Someone hasn't finished cleaning up yet
-	    %% Sleep some to let them finish
-	    timer:sleep(?SPIN_WAIT),
-	    open_table(Partition)
-    end.
+    ets:new(get_cache_name(Partition,prepared),
+	    [set,protected,named_table,?TABLE_CONCURRENCY]).
 
 loop_until_started(_Partition,0) ->
     0;
@@ -341,15 +341,20 @@ handle_command({abort, Transaction, Updates}, _Sender,
             {reply, {error, no_tx_record}, State}
     end;
 
-handle_command({start_read_servers}, _Sender,
-               #state{partition=Partition} = State) ->
-    clocksi_readitem_fsm:stop_read_servers(Partition,?READ_CONCURRENCY),
-    Num = clocksi_readitem_fsm:start_read_servers(Partition,?READ_CONCURRENCY),
-    {reply, ok, State#state{read_servers=Num}};
+%% handle_command({start_read_servers}, _Sender,
+%%                #state{partition=Partition} = State) ->
+%%     clocksi_readitem_fsm:stop_read_servers(Partition,?READ_CONCURRENCY),
+%%     Num = clocksi_readitem_fsm:start_read_servers(Partition,?READ_CONCURRENCY),
+%%     {reply, ok, State#state{read_servers=Num}};
 
 handle_command({get_active_txns}, _Sender,
 	       #state{partition=Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
+
+handle_command({get_active_txns, Key}, _Sender,
+	       #state{partition=Partition} = State) ->
+    {reply, get_active_txns_key_internal(Partition, Key), State};
+
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -385,7 +390,12 @@ handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{partition=Partition} = _State) ->
-    ets:delete(get_cache_name(Partition,prepared)),
+    try
+	ets:delete(get_cache_name(Partition,prepared))
+    catch
+	_:Reason ->
+	    lager:error("Error closing table ~p", [Reason])
+    end,
     clocksi_readitem_fsm:stop_read_servers(Partition,?READ_CONCURRENCY),    
     ok.
 
