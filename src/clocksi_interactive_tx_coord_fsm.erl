@@ -462,7 +462,7 @@ reply_to_client(SD=#tx_coord_state{from=From, transaction=Transaction, read_set=
 				false ->
 				    {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
 				true ->
-				    {ok, {TxId, ReadSet, Transaction#transaction.vec_snapshot_time}}
+				    {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.vec_snapshot_time}}
 			    end;
 			committed ->
 			    DcId = ?DC_UTIL:get_my_dc_id(),
