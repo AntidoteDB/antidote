@@ -47,7 +47,6 @@ handle_call({del_dc, DCID}, _From, State) ->
 
 handle_call({query, PDCID, From, To}, _From, State) ->
   {DCID, Partition} = PDCID,
-  lager:info("Sending QUERY DCID=~p From=~p To=~p", [DCID, From, To]),
   {ok, Socket} = dict:find(DCID, State#state.sockets),
   Request = {read_log, Partition, From, To},
   ok = erlzmq:send(Socket, term_to_binary(Request)),
@@ -55,7 +54,6 @@ handle_call({query, PDCID, From, To}, _From, State) ->
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   {PDCID, Txns} = binary_to_term(BinaryMsg),
-  lager:info("Received RESPONSE, txn_num=~p", [length(Txns)]),
   inter_dc_sub_vnode:deliver_log_reader_resp(PDCID, Txns),
   {noreply, State}.
 

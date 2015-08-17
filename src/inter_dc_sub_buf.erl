@@ -68,7 +68,6 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
           deliver(Txn),
           process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
         false ->
-          lager:info("Asking for missed TXNS [Min/Max=~p]", [{State#state.last_observed_opid + 1, Min}]),
           inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, Min),
           State#state{state_name = buffering}
       end

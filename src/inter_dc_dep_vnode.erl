@@ -81,14 +81,13 @@ process_queue(State=#state{queue=Queue}) ->
 %% Store the heartbeat message.
 %% This is not a true transaction, so its dependencies are always satisfied.
 -spec try_store(#interdc_txn{}) -> boolean().
-try_store(#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = []}) ->
+try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = []}) ->
   ok = vectorclock:update_clock(Partition, DCID, Timestamp),
   dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
   true;
 
 %% Store the normal transaction
 try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
-
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant.
   %% Therefore, we remove it prior to further checks.
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
@@ -102,9 +101,6 @@ try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Times
 
     %% If so, store the transaction
     true ->
-
-      lager:info("Storing IN THE LOG: ~p", [Txn]),
-
       %% Put the operations in the log
       ok = lists:foreach(fun(#operation{payload=Payload}) ->
         logging_vnode:append(dc_utilities:partition_to_indexnode(Partition), [Partition], Payload)
@@ -129,7 +125,6 @@ try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Times
   end.
 
 handle_command({txn, Txn}, _Sender, State=#state{queue=Queue}) ->
-  lager:info("Received [Min/Max=~p]", [Txn#interdc_txn.logid_range]),
   NewState = process_queue(State#state{queue = queue:in(Txn, Queue)}),
   {reply, ok, NewState}.
 
