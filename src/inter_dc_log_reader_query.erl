@@ -18,7 +18,10 @@
 %%
 %% -------------------------------------------------------------------
 
-%% Log reader reads all transactions in the log that happened between the defined
+%% Log reader client - stores the zeroMQ socket connections to all other DCs,
+%% performs queries and returns responses to appropriate vnodes.
+
+
 -module(inter_dc_log_reader_query).
 -behaviour(gen_server).
 -include("antidote.hrl").
@@ -28,7 +31,7 @@
   sockets :: dict() % DCID -> socket
 }).
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, query/3, add_dc/2, start_link/0]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, query/3, add_dc/2, start_link/0, del_dc/1]).
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new()}}.
@@ -37,8 +40,14 @@ handle_call({add_dc, DCID, LogReaders}, _From, State) ->
   Socket = zmq_utils:create_connect_socket(req, true, hd(LogReaders)),
   {reply, ok, State#state{sockets = dict:store(DCID, Socket, State#state.sockets)}};
 
+handle_call({del_dc, DCID}, _From, State) ->
+  %% TODO: track all unfinished queries, resend if socket was removed
+  ok = zmq_utils:close_socket(dict:fetch(DCID, State#state.sockets)),
+  {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+
 handle_call({query, PDCID, From, To}, _From, State) ->
   {DCID, Partition} = PDCID,
+  lager:info("Sending QUERY DCID=~p From=~p To=~p", [DCID, From, To]),
   {ok, Socket} = dict:find(DCID, State#state.sockets),
   Request = {read_log, Partition, From, To},
   ok = erlzmq:send(Socket, term_to_binary(Request)),
@@ -46,6 +55,7 @@ handle_call({query, PDCID, From, To}, _From, State) ->
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   {PDCID, Txns} = binary_to_term(BinaryMsg),
+  lager:info("Received RESPONSE, txn_num=~p", [length(Txns)]),
   inter_dc_sub_vnode:deliver_log_reader_resp(PDCID, Txns),
   {noreply, State}.
 
@@ -57,3 +67,4 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
 add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}).
+del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).

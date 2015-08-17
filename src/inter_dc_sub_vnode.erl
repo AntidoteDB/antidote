@@ -34,7 +34,7 @@
   buffer_fsms :: dict() %% dcid -> relsub_fsm
 }).
 
-deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
+deliver_txn(Txn) -> call_sync(Txn#interdc_txn.partition, {txn, Txn}).
 deliver_log_reader_resp({DCID, Partition}, Txns) -> call(Partition, {log_reader_resp, DCID, Txns}).
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
@@ -64,7 +64,8 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-call(Partition, Request) -> dc_utilities:call_vnode_sync(Partition, inter_dc_sub_vnode_master, Request).
+call_sync(Partition, Request) -> dc_utilities:call_vnode_sync(Partition, inter_dc_sub_vnode_master, Request).
+call(Partition, Request) -> dc_utilities:call_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of

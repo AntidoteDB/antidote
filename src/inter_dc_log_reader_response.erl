@@ -44,7 +44,6 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
     _ -> {error, bad_request}
   end,
   lager:info("Received MSG=~p", [Msg]),
-  lager:info("Answering with ~p", [Response]),
   erlzmq:send(Socket, term_to_binary(Response)),
   {noreply, State}.
 
@@ -58,8 +57,9 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 get_entries(Partition, From, To) ->
   Logs = log_read_range(node(), Partition, From, To),
   Asm = log_txn_assembler:new_state(),
-  {Txns, _} = log_txn_assembler:process_all(Logs, Asm),
-  [inter_dc_utils:ops_to_interdc_txn(Ops, Partition) || Ops <- Txns].
+  {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
+  Txns = [inter_dc_utils:ops_to_interdc_txn(TxnOps, Partition) || TxnOps <- OpLists],
+  lists:filter(fun inter_dc_utils:txn_is_local/1, Txns).
 
 -spec get_address() -> socket_address().
 get_address() ->

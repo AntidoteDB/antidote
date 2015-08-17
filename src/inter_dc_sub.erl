@@ -22,15 +22,18 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, start_link/0, add_dc/1]).
--record(state, {connections :: [zmq_socket()]}).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, start_link/0, add_dc/2, del_dc/1]).
+-record(state, {
+  sockets :: dict() % DCID -> socket
+}).
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{connections = []}}.
+init([]) -> {ok, #state{sockets = dict:new()}}.
 
-add_dc(Publishers) -> gen_server:call(?MODULE, {add_dc, Publishers}).
+add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}).
+del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
 
-handle_call({add_dc, Publishers}, _From, State) ->
+handle_call({add_dc, DCID, Publishers}, _From, State) ->
   F = fun(Address) ->
     Socket = zmq_utils:create_connect_socket(sub, true, Address),
     lists:foreach(fun(P) ->
@@ -39,7 +42,12 @@ handle_call({add_dc, Publishers}, _From, State) ->
     Socket
   end,
   Sockets = lists:map(F, Publishers),
-  {reply, ok, State#state{connections = Sockets ++ State#state.connections}}.
+  {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
+
+handle_call({del_dc, DCID}, _From, State) ->
+  Sockets = dict:fetch(DCID, State#state.sockets),
+  lists:foreach(fun zmq_utils:close_socket/1, Sockets),
+  {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}}.
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   Msg = inter_dc_utils:bin_to_txn(BinaryMsg),
@@ -48,4 +56,6 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
-terminate(_Reason, State) -> lists:foreach(fun zmq_utils:close_socket/1, State#state.connections).
+terminate(_Reason, State) ->
+  F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,
+  lists:foreach(F, dict:to_list(State#state.sockets)).

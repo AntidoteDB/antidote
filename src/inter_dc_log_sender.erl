@@ -66,7 +66,8 @@ handle_command({log_event, Operation}, _Sender, State) ->
   State2 = case Result of
     {ok, Ops} ->
       Txn = inter_dc_utils:ops_to_interdc_txn(Ops, State1#state.partition),
-      case Txn#interdc_txn.dcid == dc_utilities:get_my_dc_id() of
+      %% sanity check - we only publish locally committed transactions
+      case inter_dc_utils:txn_is_local(Txn) of
         true -> broadcast(State1, Txn);
         false -> State1
       end;
@@ -91,7 +92,7 @@ delete(State) -> {ok, State}.
 
 set_timer(State) ->
   ClearedState = clr_timer(State),
-  {ok, Timer} = timer:apply_after(10000, inter_dc_log_sender, ping, [State#state.partition]),
+  {ok, Timer} = timer:apply_after(1000, inter_dc_log_sender, ping, [State#state.partition]),
   ClearedState#state{ping_timer = Timer}.
 
 clr_timer(State = #state{ping_timer = none}) -> State;
