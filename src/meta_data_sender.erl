@@ -54,6 +54,15 @@
 %% Public API
 %% ===================================================================
 
+
+%% This fsm is responsible for sending meta-data that has been collected on this
+%% phyical node and sending it to all other physical nodes in the riak ring.
+%% There will be one instance of this fsm running on each physical machine.
+%% During execution of the system, v-nodes may be continually writing to the
+%% 
+%% At a period given in antidote.hrl it will trigger itself to send the meta-data.
+%% 
+
 %% -spec start_link(fun(() -> [fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()]) -> {ok,pid()} | ignore | {error,term()}.
 start_link(UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
