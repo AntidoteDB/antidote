@@ -461,12 +461,11 @@ fold_log(Log, Continuation, F, Acc) ->
 insert_operation(_Log, LogId, OpId, Payload, List) ->
     %% Remove logging fore performance testing
     %% Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
-    Result = ok,
-    case Result of
-        ok ->
+    case ?IS_MULTIDC of
+        true ->
             {ok, OpId, [{LogId,#operation{op_number=OpId, payload=Payload}}|List]};
-        {error, Reason} ->
-            {error, Reason}
+        false ->
+	    {ok, OpId, [{LogId,#operation{op_number=OpId, payload=Payload}}]}
     end.
 
 %% @doc preflist_member: Returns true if the Partition identifier is

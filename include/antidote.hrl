@@ -54,6 +54,10 @@
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, true).
+%% Set this to true if using multiple DCs
+%% if not then the log is just dumped, otherwise it
+%% is kept until it is sent to the other DCs
+-define(IS_MULTIDC, false).
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
