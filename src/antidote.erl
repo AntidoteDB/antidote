@@ -43,8 +43,7 @@
 %%      object stored at some key.
 -spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
 append(Key, Type, {OpParam, Actor}) ->
-    Operations = [{update, {Key, Type, {OpParam, Actor}}}],
-    clocksi_execute_tx(Operations).
+    clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,Type,{OpParam,Actor}).    
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
