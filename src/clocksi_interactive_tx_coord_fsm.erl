@@ -77,6 +77,7 @@
 	 receive_committed/2,
 	 abort/2,
 	 perform_singleitem_read/2,
+	 perform_singleitem_update/3,
          reply_to_client/1]).
 
 %%%===================================================================
@@ -144,6 +145,42 @@ perform_singleitem_read(Key,Type) ->
 	{ok, Snapshot} ->
 	    ReadResult = Type:value(Snapshot),
 	    {ok, ReadResult}
+    end.
+
+
+%% @doc This is a standalone function for directly contacting the update
+%%      server vnode.  This is lighter than creating a transaction
+%%      because the update/prepare/commit are all done at one time
+-spec perform_singleitem_update(key(),type(), {op(),term()}) -> ok | {error,reason()}.
+perform_singleitem_update(Key, Type, Params) ->
+    {Transaction,_TransactionId} = create_transaction_record(ignore),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
+	{ok, DownstreamRecord} ->
+	    Updated_partitions = [{IndexNode,[{Key,Type,DownstreamRecord}]}],
+	    TxId = Transaction#transaction.txn_id,
+	    LogRecord = #log_record{tx_id=TxId, op_type=update,
+				    op_payload={Key, Type, DownstreamRecord}},
+	    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+	    [Node] = Preflist,
+	    case ?LOGGING_VNODE:append(Node,LogId,LogRecord) of
+		{ok, _} ->
+		    case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
+			{committed, CommitTime} ->
+			    TxId = Transaction#transaction.txn_id,
+			    DcId = ?DC_UTIL:get_my_dc_id(),
+			    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+					    DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+			    {ok, {TxId, [], CausalClock}};
+			{error, Reason} ->
+			    {error, Reason}
+		    end;
+		Error ->
+		    {error, Error}
+	    end;
+	{error, Reason} ->	    
+	    {error,Reason}
     end.
 
 

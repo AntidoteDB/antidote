@@ -31,6 +31,7 @@
          prepare/2,
          commit/3,
          single_commit/2,
+         single_commit_sync/2,
          abort/2,
          now_microsec/1,
          init/1,
@@ -162,6 +163,13 @@ single_commit([{Node,WriteSet}], TxId) ->
                                    {single_commit, TxId,WriteSet},
                                    {fsm, undefined, self()},
                                    ?CLOCKSI_MASTER).
+
+
+single_commit_sync([{Node,WriteSet}], TxId) ->
+    riak_core_vnode_master:sync_command(Node,
+					{single_commit, TxId,WriteSet},
+					?CLOCKSI_MASTER).
+
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 commit(ListofNodes, TxId, CommitTime) ->
