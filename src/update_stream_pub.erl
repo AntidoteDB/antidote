@@ -36,8 +36,9 @@ init([Port]) ->
   lager:info("Update stream publisher started on port ~p", [Port]),
   {ok, #state{socket = Socket, port = Port}}.
 
+-spec broadcast(#interdc_txn{}) -> ok.
 broadcast(Txn) ->
-  lists:foreach(fun broadcast_op/1, inter_dc_utils:get_ops_by_type(Txn, update)).
+  lists:foreach(fun broadcast_op/1, inter_dc_txn:ops_by_type(Txn, update)).
 
 broadcast_op(Op) ->
   %% Each message is prefixed with the SHA1 hash of the key.

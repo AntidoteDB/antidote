@@ -25,44 +25,13 @@
 
 -export([
   now_millisec/0,
-  logid_range/1,
   bin_to_txn/1,
   txn_to_bin/1,
-  partition_to_bin/1,
-  ops_to_interdc_txn/2,
-  get_ops_by_type/2,
-  txn_is_local/1]).
-
-commit_payload(Ops) ->
-  CommitPld = (lists:last(Ops))#operation.payload,
-  commit = CommitPld#log_record.op_type, %% sanity check
-  CommitPld.
-
-logid_range(Ops) ->
-  {Min, _} = (hd(Ops))#operation.op_number,
-  {Max, _} = (lists:last(Ops))#operation.op_number,
-  {Min, Max}.
+  partition_to_bin/1]).
 
 now_millisec() ->
   {MegaSecs, Secs, MicroSecs} = erlang:now(),
   (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
-
-ops_to_interdc_txn(Ops, Partition) ->
-  {{DCID, CommitTime}, SnapshotTime} = (commit_payload(Ops))#log_record.op_payload,
-  #interdc_txn{
-    dcid = DCID,
-    partition = Partition,
-    logid_range = logid_range(Ops),
-    operations = Ops,
-    snapshot = SnapshotTime,
-    timestamp = CommitTime
-  }.
-
-txn_is_local(#interdc_txn{dcid = DCID}) -> DCID == dc_utilities:get_my_dc_id().
-
-get_ops_by_type(Txn, Type) ->
-  F = fun(Op) -> Type == Op#operation.payload#log_record.op_type end,
-  lists:filter(F, Txn#interdc_txn.operations).
 
 pad(Width, Binary) ->
   case Width - byte_size(Binary) of

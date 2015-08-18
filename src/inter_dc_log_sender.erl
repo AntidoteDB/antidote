@@ -51,23 +51,18 @@ init([Partition]) ->
   })}.
 
 handle_command(ping, _Sender, State) ->
-  {reply, ok, broadcast(State, #interdc_txn{
-    dcid = dc_utilities:get_my_dc_id(),
-    partition = State#state.partition,
-    logid_range = {State#state.last_log_id, State#state.last_log_id},
-    operations = [],
-    snapshot = dict:new(),
-    timestamp = inter_dc_utils:now_millisec() %% TODO: think if this can cause any problems
-  })};
+  %% TODO: think if the timestamp could cause any problems
+  PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, inter_dc_utils:now_millisec()),
+  {reply, ok, broadcast(State, PingTxn)};
 
 handle_command({log_event, Operation}, _Sender, State) ->
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
   State1 = State#state{buffer = NewBufState},
   State2 = case Result of
     {ok, Ops} ->
-      Txn = inter_dc_utils:ops_to_interdc_txn(Ops, State1#state.partition),
+      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition),
       %% sanity check - we only publish locally committed transactions
-      case inter_dc_utils:txn_is_local(Txn) of
+      case inter_dc_txn:is_local(Txn) of
         true -> broadcast(State1, Txn);
         false -> State1
       end;

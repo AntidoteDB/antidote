@@ -107,7 +107,8 @@ try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Times
       end, Ops),
 
       %% Update the materializer (send only the update operations)
-      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, down_ops(Ops)),
+      ClockSiOps = updates_to_clocksi_payloads(Txn),
+      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
 
       %% Update the clock for this partition
       ok = vectorclock:update_clock(Partition, DCID, Timestamp),
@@ -142,36 +143,18 @@ get_partition_clock(Partition) ->
   {ok, LocalClock} = vectorclock:get_clock(Partition),
   vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), inter_dc_utils:now_millisec(), LocalClock).
 
-down_ops(Ops) ->
-  Commitoperation = lists:last(Ops),
-  Commitrecord = Commitoperation#operation.payload,
-  {{DcId, CommitTime}, VecSnapshotTime} = Commitrecord#log_record.op_payload,
-  Downstreamrecord =
-    fun(#operation{payload=Logrecord}) ->
-      case Logrecord#log_record.op_type of
-        update ->
-          {Key, Type, Op} = Logrecord#log_record.op_payload,
-          _NewRecord = #clocksi_payload{
-            key = Key,
-            type = Type,
-            op_param = Op,
-            snapshot_time = VecSnapshotTime,
-            commit_time = {DcId, CommitTime},
-            txid =  Logrecord#log_record.tx_id
-          };
-        _ ->
-          nothing
-      end
-    end,
-
-  lists:foldl( fun(Op, ListsOps) ->
-    case Downstreamrecord(Op) of
-      nothing ->
-        ListsOps;
-      Record ->
-        ListsOps ++ [Record]
-    end
-  end, [], Ops).
+updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, snapshot = SnapshotTime}) ->
+  lists:map(fun(#operation{payload = Logrecord}) ->
+    {Key, Type, Op} = Logrecord#log_record.op_payload,
+    #clocksi_payload{
+      key = Key,
+      type = Type,
+      op_param = Op,
+      snapshot_time = SnapshotTime,
+      commit_time = {DCID, CommitTime},
+      txid =  Logrecord#log_record.tx_id
+    }
+  end, inter_dc_txn:ops_by_type(Txn, update)).
 
 
 
