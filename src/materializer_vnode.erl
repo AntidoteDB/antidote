@@ -249,8 +249,8 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
     case ets:lookup(OpsCache, Key) of
        [] ->
             {ok, LatestSnapshot};
-	[{_, Ops}] ->
-	    case length(Ops) of
+	[{_, {Length,Ops}}] ->
+	    case Length of
 		0 ->
 		    {ok, LatestSnapshot};
 		_Len ->
@@ -300,28 +300,28 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
                          cache_id(),cache_id() ) -> true.
 snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
     %% Should check op size here also, when run from op gc
-    case (vector_orddict:size(SnapshotDict))==?SNAPSHOT_THRESHOLD of
+    case (vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD of
         true ->
 	    %% snapshots are no longer totally ordered
 	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp=vector_orddict:last(PrunedSnapshots),
             {CommitTime, _S} = FirstOp,
-	    OpsDict = case ets:lookup(OpsCache, Key) of
+	    {Length,OpsDict} = case ets:lookup(OpsCache, Key) of
 			  []->
-			      [];
-			  [{_, Dict}]->
-			      Dict
+			      {0,[]};
+			  [{_, {Len,Dict}}]->
+			      {Len,Dict}
 		      end,
-            PrunedOps=prune_ops(OpsDict, CommitTime),
+            {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-            true = ets:insert(OpsCache, {Key, PrunedOps});
+            true = ets:insert(OpsCache, {Key, {NewLength,PrunedOps}});
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops(list(), snapshot_time())-> list().
-prune_ops(OpsDict, Threshold)->
+-spec prune_ops({non_neg_integer(),list()}, snapshot_time())-> {non_neg_integer,list()}.
+prune_ops({_Len,OpsDict}, Threshold)->
 %% should write custom function for this in the vector_orddict
 %% or have to just traverse the entire list?
 %% since the list is ordered, can just stop when all values of
@@ -329,10 +329,11 @@ prune_ops(OpsDict, Threshold)->
 %% So can add a stop function to ordered_filter
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
-    lists:filter(fun(Op) ->
-			   OpCommitTime=Op#clocksi_payload.commit_time,
-                           (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
-		   end, OpsDict).
+    Res = lists:filter(fun(Op) ->
+			       OpCommitTime=Op#clocksi_payload.commit_time,
+			       (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
+		       end, OpsDict),
+    {length(Res),Res}.
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
@@ -340,29 +341,29 @@ prune_ops(OpsDict, Threshold)->
 %% the GC mechanism.
 -spec op_insert_gc(key(), clocksi_payload(), cache_id(), cache_id()) -> true.
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
-    OpsDict = case ets:lookup(OpsCache, Key) of
-                  []->
-                      [];
-                  [{_, Dict}]->
-                      Dict
-              end,
-    case (length(OpsDict))>=?OPS_THRESHOLD of
+    {Length,OpsDict} = case ets:lookup(OpsCache, Key) of
+			   []->
+			       {0,[]};
+			   [{_, {Len,Dict}}]->
+			       {Len,Dict}
+		       end,
+    case (Length)>=?OPS_THRESHOLD of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
 	    %% Have to get the new ops dict because the interal_read can change it
-	    OpsDict1 = case ets:lookup(OpsCache, Key) of
-	    		  []->
-	    		      [];
-	    		  [{_, ADict}]->
-	    		      ADict
-	    	       end,
+	    {Length1,OpsDict1} = case ets:lookup(OpsCache, Key) of
+				     []->
+					 [];
+				     [{_, {Len1,Dict1}}]->
+					 {Len1,Dict1}
+				 end,
             OpsDict2=[DownstreamOp|OpsDict1],
-            ets:insert(OpsCache, {Key, OpsDict2});
+            ets:insert(OpsCache, {Key, {Length1 + 1, OpsDict2}});
         false ->
             OpsDict1=[DownstreamOp|OpsDict],
-            ets:insert(OpsCache, {Key, OpsDict1})
+            ets:insert(OpsCache, {Key, {Length + 1,OpsDict1}})
     end.
 
 
