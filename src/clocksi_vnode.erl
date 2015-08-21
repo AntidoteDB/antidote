@@ -417,7 +417,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
         true ->
             case TxWriteSet of 
                 [{Key, Type, {Op, Actor}} | Rest] -> 
-		    true = ets:insert(ActiveTxPerKey, {Key, Type, TxId}),
+		    %% true = ets:insert(ActiveTxPerKey, {Key, Type, TxId}),
 		    PrepDict = set_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,PrepareTime,dict:new()),
 		    NewPrepare = now_microsec(erlang:now()),
 		    ok = reset_prepared(PreparedTx,[{Key, Type, {Op, Actor}} | Rest],TxId,NewPrepare,PrepDict),
@@ -461,7 +461,7 @@ reset_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId,Time,ActiveT
     reset_prepared(PreparedTx,Rest,TxId,Time,ActiveTxs).
 
 
-commit(Transaction, TxCommitTime, Updates, CommittedTx, State)->
+commit(Transaction, TxCommitTime, Updates, _CommittedTx, State)->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
     LogRecord=#log_record{tx_id=TxId,
@@ -470,7 +470,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State)->
                                       Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] -> 
-	    true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+	    %% true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node,LogId,LogRecord) of
