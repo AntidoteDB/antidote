@@ -42,7 +42,7 @@
 %% wake up and retry. I.e. a read waiting for
 %% a transaction currently in the prepare state that is blocking
 %% that read.
--define(SPIN_WAIT, 10).
+-define(SPIN_WAIT, 1).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
 -define(META_DATA_SLEEP, 500).
