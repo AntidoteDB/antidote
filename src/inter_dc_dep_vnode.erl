@@ -53,7 +53,7 @@
 %% VNode state
 -record(state, {
   partition :: partition_id(),
-  queue :: queue() %% TODO: multiple queues for each DCID
+  queue :: queue()
 }).
 
 %%%% API --------------------------------------------------------------------+

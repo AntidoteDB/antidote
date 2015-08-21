@@ -22,7 +22,11 @@
 -include("inter_dc_repl.hrl").
 
 %% API
--export([from_ops/2, ping/3, is_local/1, ops_by_type/2]).
+-export([
+  from_ops/2,
+  ping/3,
+  is_local/1,
+  ops_by_type/2]).
 
 %% Functions
 
@@ -54,8 +58,10 @@ ping(Partition, LogNum, Timestamp) -> #interdc_txn{
   timestamp = Timestamp
 }.
 
+-spec is_local(#interdc_txn{}) -> boolean().
 is_local(#interdc_txn{dcid = DCID}) -> DCID == dc_utilities:get_my_dc_id().
 
+-spec ops_by_type(#interdc_txn{}, any()) -> [#operation{}].
 ops_by_type(#interdc_txn{operations = Ops}, Type) ->
   F = fun(Op) -> Type == Op#operation.payload#log_record.op_type end,
   lists:filter(F, Ops).

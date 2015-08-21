@@ -25,11 +25,17 @@
 %% Public API
 %% ===================================================================
 
--export([get_descriptor/0, observe_dc/1, observe/1, observe_dcs/1, forget_dc/1, forget_dcs/1]).
+-export([
+  get_descriptor/0,
+  observe_dc/1,
+  observe/1,
+  observe_dcs/1,
+  forget_dc/1,
+  forget_dcs/1]).
 
 %% TODO catch rpc errors
 
--spec get_descriptor() -> interdc_descriptor().
+-spec get_descriptor() -> {ok, interdc_descriptor()}.
 get_descriptor() ->
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address, []) end, Nodes),

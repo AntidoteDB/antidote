@@ -21,7 +21,9 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--export([new_state/1, process/2]).
+-export([
+  new_state/1,
+  process/2]).
 
 -record(state, {
   state_name :: normal | buffering,
@@ -30,6 +32,7 @@
   queue :: queue()
 }).
 
+%% TODO: Fetch last observed ID from log. This way, in case of a node crash, the queue can be fetched again.
 new_state(PDCID) -> #state{
   state_name = normal,
   pdcid = PDCID,

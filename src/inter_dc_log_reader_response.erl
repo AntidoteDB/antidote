@@ -24,8 +24,17 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--export([start_link/0, get_entries/3, get_address/0]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([
+  start_link/0,
+  get_entries/3,
+  get_address/0]).
+-export([
+  init/1,
+  handle_call/3,
+  handle_cast/2,
+  handle_info/2,
+  terminate/2,
+  code_change/3]).
 
 -record(state, {socket}). %% socket :: erlzmq_socket()
 
@@ -43,7 +52,7 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
     {read_log, Partition, From, To} -> {{dc_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)};
     _ -> {error, bad_request}
   end,
-  erlzmq:send(Socket, term_to_binary(Response)),
+  ok = erlzmq:send(Socket, term_to_binary(Response)),
   {noreply, State}.
 
 handle_call(_Request, _From, State) -> {noreply, State}.
@@ -67,7 +76,7 @@ get_address() ->
   {ok, Port} = application:get_env(antidote, logreader_port),
   {Ip, Port}.
 
-%% TODO: reimplement this method efficiently once the log provides true, efficient sequential access
+%% TODO: reimplement this method efficiently once the log provides true, efficient sequential access (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
 log_read_range(Node, Partition, From, To) ->
   {ok, RawOpList} = logging_vnode:read({Partition, Node}, [Partition]),

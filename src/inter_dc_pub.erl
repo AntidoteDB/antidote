@@ -22,10 +22,19 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--export([start_link/0, broadcast/1, get_address/0]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([
+  start_link/0,
+  broadcast/1,
+  get_address/0]).
+-export([
+  init/1,
+  handle_call/3,
+  handle_cast/2,
+  handle_info/2,
+  terminate/2,
+  code_change/3]).
 
--record(state, {socket, port :: inet:port_number()}). %% socket :: erlzmq_socket()
+-record(state, {socket}). %% socket :: erlzmq_socket()
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -33,10 +42,9 @@ init([]) ->
   {_, Port} = get_address(),
   Socket = zmq_utils:create_bind_socket(pub, false, Port),
   lager:info("Publisher started on port ~p", [Port]),
-  {ok, #state{socket = Socket, port = Port}}.
+  {ok, #state{socket = Socket}}.
 
-handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State};
-handle_call(get_port, _From, State) -> {reply, State#state.port, State}.
+handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.
 
 terminate(_Reason, State) -> erlzmq:close(State#state.socket).
 handle_cast(_Request, State) -> {noreply, State}.

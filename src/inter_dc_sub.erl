@@ -22,7 +22,16 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, start_link/0, add_dc/2, del_dc/1]).
+-export([
+  init/1,
+  handle_call/3,
+  handle_cast/2,
+  handle_info/2,
+  terminate/2,
+  code_change/3,
+  start_link/0,
+  add_dc/2,
+  del_dc/1]).
 -record(state, {
   sockets :: dict() % DCID -> socket
 }).
@@ -30,6 +39,7 @@
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new()}}.
 
+%% TODO: persist added DCs in case of a node failure, reconnect on restart.
 add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}).
 del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
 

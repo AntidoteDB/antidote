@@ -27,8 +27,24 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
--export([start_vnode/1, send/2, ping/1]).
--export([init/1, handle_command/3, handle_coverage/4, handle_exit/3, handoff_starting/2, handoff_cancelled/1, handoff_finished/2, handle_handoff_command/3, handle_handoff_data/2, encode_handoff_item/2, is_empty/1, terminate/2, delete/1]).
+-export([
+  start_vnode/1,
+  send/2,
+  ping/1]).
+-export([
+  init/1,
+  handle_command/3,
+  handle_coverage/4,
+  handle_exit/3,
+  handoff_starting/2,
+  handoff_cancelled/1,
+  handoff_finished/2,
+  handle_handoff_command/3,
+  handle_handoff_data/2,
+  encode_handoff_item/2,
+  is_empty/1,
+  terminate/2,
+  delete/1]).
 
 -record(state, {
   partition :: partition_id(),
