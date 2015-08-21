@@ -271,8 +271,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 						ignore ->
 						    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache);
 						_ ->
-						    %% materializer_vnode:store_ss(Key,Snapshot,CommitTime)
-						    ok
+						    materializer_vnode:store_ss(Key,Snapshot,CommitTime)
 					    end;
 					_ ->
 					    ok

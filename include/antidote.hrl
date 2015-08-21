@@ -33,7 +33,7 @@
 %% This can be used for testing, so that transactions start with
 %% old snapshots to avoid clock-skew.
 %% This can break the tests is not set to 0
--define(OLD_SS_MICROSEC,20).
+-define(OLD_SS_MICROSEC,0).
 %% The number of supervisors that are responsible for
 %% supervising transaction coorinator fsms
 -define(NUM_SUP, 100).
