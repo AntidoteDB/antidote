@@ -29,6 +29,23 @@
 
 -include("antidote.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-define(DC_UTIL, mock_partition_fsm).
+-define(VECTORCLOCK, mock_partition_fsm).
+-define(LOG_UTIL, mock_partition_fsm).
+-define(CLOCKSI_VNODE, mock_partition_fsm).
+-define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
+-define(LOGGING_VNODE, mock_partition_fsm).
+-else.
+-define(DC_UTIL, dc_utilities).
+-define(VECTORCLOCK, vectorclock).
+-define(LOG_UTIL, log_utilities).
+-define(CLOCKSI_VNODE, clocksi_vnode).
+-define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
+-define(LOGGING_VNODE, logging_vnode).
+-endif.
+
 %% API
 -export([start_link/3,
          start_link/2]).
@@ -160,7 +177,7 @@ committing_2pc(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
         0 ->
             clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
         _ ->
-            ok = clocksi_interactive_tx_coord_fsm:commit(Updated_partitions, Transaction, Commit_time),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
              SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
     end.
@@ -177,7 +194,7 @@ committing(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
         0 ->
             clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
         _ ->
-            ok = clocksi_interactive_tx_coord_fsm:commit(Updated_partitions, Transaction, Commit_time),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
              SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
     end.
@@ -197,17 +214,17 @@ receive_committed(committed, S0=#tx_coord_state{num_to_ack= NumToAck}) ->
 
 abort(abort, SD0=#tx_coord_state{transaction = Transaction,
                         updated_partitions=UpdatedPartitions}) ->
-    ok = clocksi_interactive_tx_coord_fsm:abort(UpdatedPartitions, Transaction),
+    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
     clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted});
 
 abort({prepared, _}, SD0=#tx_coord_state{transaction=Transaction,
                         updated_partitions=UpdatedPartitions}) ->
-    ok = clocksi_interactive_tx_coord_fsm:abort(UpdatedPartitions, Transaction),
+    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
     clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted});
 
 abort(_, SD0=#tx_coord_state{transaction = Transaction,
-                          updated_partitions=UpdatedPartitions}) ->
-    ok = clocksi_interactive_tx_coord_fsm:abort(UpdatedPartitions, Transaction),
+			     updated_partitions=UpdatedPartitions}) ->
+    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
     clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted}).
 
 

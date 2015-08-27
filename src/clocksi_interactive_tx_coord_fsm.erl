@@ -75,6 +75,7 @@
 	 committing_single/3,
 	 committing/3,
 	 receive_committed/2,
+	 abort/1,
 	 abort/2,
 	 perform_singleitem_read/2,
 	 perform_singleitem_update/3,
@@ -151,7 +152,7 @@ perform_singleitem_read(Key,Type) ->
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(key(),type(), {op(),term()}) -> ok | {error,reason()}.
+-spec perform_singleitem_update(key(),type(), {op(),term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
     {Transaction,_TransactionId} = create_transaction_record(ignore),
     Preflist = log_utilities:get_preflist_from_key(Key),

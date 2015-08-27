@@ -320,7 +320,7 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops({non_neg_integer(),list()}, snapshot_time())-> {non_neg_integer,list()}.
+-spec prune_ops({non_neg_integer(),list()}, snapshot_time())-> {non_neg_integer(),list()}.
 prune_ops({_Len,OpsDict}, Threshold)->
 %% should write custom function for this in the vector_orddict
 %% or have to just traverse the entire list?
