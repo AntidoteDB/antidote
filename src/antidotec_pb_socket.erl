@@ -61,7 +61,8 @@
          atomic_store_crdts/2,
          atomic_store_crdts/3,
          snapshot_get_crdts/2,
-         snapshot_get_crdts/3
+         snapshot_get_crdts/3,
+         call_infinity/2
         ]).
 
 %% @private
@@ -114,17 +115,11 @@ handle_call(stop, _From, State) ->
 %% @todo handle timeout
 handle_info({_Proto, Sock, Data}, State=#state{active = (Active = #request{})}) ->
     <<MsgCode:8, MsgData/binary>> = Data,
-    Resp = riak_pb_codec:decode(MsgCode, MsgData),
-    %%message handling
-    Result = case decode_response(Resp) of
-                 error -> error;
-                 {error,Reason} -> {error, Reason};
-                 ok -> ok;
-                 Val -> {ok, Val}
-             end,
+    Response = riak_pb_codec:decode(MsgCode, MsgData),
+    lager:info("Response ~p", [Response]),
     cancel_req_timer(Active#request.tref),
-    _ = send_caller(Result, Active),
-    NewState = State#state{ active = undefined },
+    _ = send_caller(Response, Active),
+    NewState = State#state{active = undefined},
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, NewState};
 
@@ -203,6 +198,7 @@ create_req_timer(Msecs, Ref) ->
 %% @private
 send_request(Request0, State) when State#state.active =:= undefined  ->
     {Request, Pkt} = encode_request_message(Request0),
+    lager:info("Sending message"),
     case gen_tcp:send(State#state.sock, Pkt) of
         ok ->
             maybe_reply({noreply,State#state{active = Request}});
@@ -350,33 +346,3 @@ encode_snapshot_read_op(Op=#fpbgetcounterreq{}) ->
     #fpbsnapshotreadtxnop{counter=Op};
 encode_snapshot_read_op(Op=#fpbgetsetreq{}) ->
     #fpbsnapshotreadtxnop{set=Op}.
-
-%% Decode response of pb request
-decode_response(#fpboperationresp{success = true}) -> ok;
-decode_response(#fpboperationresp{success = false}) -> {error, failed};
-decode_response(#fpbgetcounterresp{value = Val}) ->
-    Val;
-decode_response(#fpbgetsetresp{value = Val}) ->
-    erlang:binary_to_term(Val);
-decode_response(#fpbatomicupdatetxnresp{success = Success, clock = CommitTime}) ->
-    case Success of
-        true ->
-            CommitTime;
-        false ->
-            error
-    end;
-decode_response(#fpbsnapshotreadtxnresp{success = Success, clock=Clock, results=Result}) ->
-    case Success of
-        true ->
-            Res = lists:map(fun(X) -> decode_response(X) end, Result),
-            {Clock, Res};
-        _ ->
-            {error, request_failed}
-    end;
-decode_response(#fpbsnapshotreadtxnrespvalue{counter=Counter, set=undefined}) ->
-    decode_response(Counter);
-decode_response(#fpbsnapshotreadtxnrespvalue{counter=undefined, set=Set}) ->
-    decode_response(Set);
-decode_response(Resp) ->
-    lager:error("Unexpected Message ~p",[Resp]),
-    error.
