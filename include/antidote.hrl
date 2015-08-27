@@ -57,7 +57,7 @@
 %% Set this to true if using multiple DCs
 %% if not then the log is just dumped, otherwise it
 %% is kept until it is sent to the other DCs
--define(IS_MULTIDC, false).
+-define(IS_MULTIDC, true).
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
