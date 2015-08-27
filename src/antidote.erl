@@ -41,13 +41,13 @@
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(Key::key(), Type::type(), {term(),term()}) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
+-spec append(key(), type(), {op(),term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(Key, Type, {OpParam, Actor}) ->
     clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,Type,{OpParam,Actor}).    
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
--spec read(Key::key(), Type::type()) -> {ok, val()} | {error, reason()}.
+-spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
     clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type).
 
@@ -63,12 +63,12 @@ read(Key, Type) ->
 %%      error message in case of a failure.
 %%
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
-                         [client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
+                         [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations) ->
     {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
     gen_fsm:sync_send_event(CoordFsmPid, execute).
 
--spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
+-spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Operations) ->
     {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
     gen_fsm:sync_send_event(CoordFsmPid, execute).
@@ -95,20 +95,20 @@ clocksi_istart_tx() ->
     end.
 
 -spec clocksi_bulk_update(ClientClock:: snapshot_time(),
-                          [client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
+                          [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_bulk_update(ClientClock, Operations) ->
     clocksi_execute_tx(ClientClock, Operations).
 
--spec clocksi_bulk_update([client_op()]) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
+-spec clocksi_bulk_update([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_bulk_update(Operations) ->
     clocksi_execute_tx(Operations).
 
 -spec clocksi_read(ClientClock :: snapshot_time(),
-                   Key :: key(), Type:: type()) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
+                   Key :: key(), Type:: type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_read(ClientClock, Key, Type) ->
     clocksi_execute_tx(ClientClock, [{read, {Key, Type}}]).
 
--spec clocksi_read(key(), type()) -> {ok, {txid(), [snapshot()], commit_time()}} | {error, term()}.
+-spec clocksi_read(key(), type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_read(Key, Type) ->
     clocksi_execute_tx([{read, {Key, Type}}]).
 
@@ -126,7 +126,7 @@ clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
 %%      automatically.
 %%      To keep with the current api this is still done in 2 steps,
 %%      but should be changed when the new transaction api is decided
--spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), vectorclock()}}.
+-spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_full_icommit({_, _, CoordFsmPid})->
     case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}) of
 	{ok,_PrepareTime} ->
@@ -139,6 +139,6 @@ clocksi_full_icommit({_, _, CoordFsmPid})->
 clocksi_iprepare({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}).
 
--spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), vectorclock()}}.
+-spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit).
