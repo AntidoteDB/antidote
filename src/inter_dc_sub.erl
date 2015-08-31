@@ -47,7 +47,7 @@ handle_call({add_dc, DCID, Publishers}, _From, State) ->
   F = fun(Address) ->
     Socket = zmq_utils:create_connect_socket(sub, true, Address),
     lists:foreach(fun(P) ->
-      ok = zmq_utils:sub_filter(Socket, inter_dc_utils:partition_to_bin(P))
+      ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
     end, dc_utilities:get_my_partitions()),
     Socket
   end,
@@ -60,7 +60,7 @@ handle_call({del_dc, DCID}, _From, State) ->
   {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}}.
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
-  Msg = inter_dc_utils:bin_to_txn(BinaryMsg),
+  Msg = inter_dc_txn:from_bin(BinaryMsg),
   ok = inter_dc_sub_vnode:deliver_txn(Msg),
   {noreply, State}.
 

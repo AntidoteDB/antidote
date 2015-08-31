@@ -62,5 +62,5 @@ get_address() ->
   {Ip, Port}.
 
 broadcast(Txn) ->
-  gen_server:call(?MODULE, {publish, inter_dc_utils:txn_to_bin(Txn)}).
+  gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}).
 
