@@ -17,7 +17,7 @@
 %% @end
 -module(crdt_rga).
 
--export([new/0, update/2]).
+-export([new/0, update/2, purge_tombstones/1]).
 
 %% -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -65,6 +65,15 @@ recursive_remove({Value, TimeStamp}, [{Value, TimeStamp} | T], L) ->
     L ++ [{deleted, TimeStamp}] ++ T;
 recursive_remove(Vertex, [H | T], L) ->
     recursive_remove(Vertex, T, L ++ [H]).
+
+purge_tombstones(Rga) ->
+    lists:foldl(fun({Value, TimeStamp}, L) ->
+        case Value == deleted of
+            true    -> L;
+            _       -> L ++ [{Value, TimeStamp}]
+        end
+    end, [], Rga).
+
 
 -ifdef(TEST).
 new_test() ->
