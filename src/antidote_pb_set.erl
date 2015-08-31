@@ -60,7 +60,7 @@ encode(Message) ->
 process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
     NumError1 = lists:foldl(fun(X, Error) ->
                             Elem = erlang:binary_to_term(X),
-                            case antidote:append(Key, riak_dt_orset, {{add, Elem}, node()}) of
+                            case antidote:append(Key, crdt_orset, {{add, Elem}, node()}) of
                                 {ok, _} ->
                                     Error;
                                 {error, _} ->
@@ -70,7 +70,7 @@ process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
 
     NumError2 = lists:foldl(fun(X, Error) ->
                             Elem = erlang:binary_to_term(X),
-                            case antidote:append(Key, riak_dt_orset, {{remove, Elem}, node()}) of
+                            case antidote:append(Key, crdt_orset, {{remove, Elem}, node()}) of
                                 {ok, _} ->
                                     Error;
                                 {error, _} ->
@@ -86,7 +86,7 @@ process(#fpbsetupdatereq{key=Key, adds=AddsBin, rems=RemsBin}, State) ->
 
 %% @doc process/2 callback. Handles an incoming request message.
 process(#fpbgetsetreq{key=Key}, State) ->
-    case antidote:read(Key, riak_dt_orset) of
+    case antidote:read(Key, crdt_orset) of
         {ok, Result} ->
             {reply, #fpbgetsetresp{value = erlang:term_to_binary(Result)}, State};
         {error, _Reason} ->
