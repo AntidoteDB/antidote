@@ -121,6 +121,16 @@ remove_last_element_test() ->
     {ok, V3, L3} = update({addRight, V2, 3}, L2),
     L4 = update({remove, V3}, L3),
     ?assertMatch([{1, _}, {2, _}, {deleted, _}], L4).
+
+pruge_tombstones_test() ->
+    L = new(),
+    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V2, L2} = update({addRight, V1, 2}, L1),
+    {ok, _, L3} = update({addRight, V2, 3}, L2),
+    L4 = update({remove, V2}, L3),
+    L5 = purge_tombstones(L4),
+    ?assertMatch([{1, _}, {3, _}], L5).
+
 -endif.
 
 
