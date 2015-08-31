@@ -19,6 +19,10 @@
 
 -export([new/0, update/2]).
 
+%% -ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+%% -endif.
+
 -type vertex() :: {any(), any()}.
 
 -type rga_op() :: {addRight, vertex(), atom()} | {remove, vertex()}.
@@ -61,3 +65,11 @@ recursive_remove({Value, TimeStamp}, [{Value, TimeStamp} | T], L) ->
     L ++ [{deleted, TimeStamp}] ++ T;
 recursive_remove(Vertex, [H | T], L) ->
     recursive_remove(Vertex, T, L ++ [H]).
+
+-ifdef(TEST).
+new_test() ->
+    ?assertEqual([], new()).
+-endif.
+
+
+
