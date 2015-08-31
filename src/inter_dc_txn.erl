@@ -50,7 +50,7 @@ from_ops(Ops, Partition) ->
     timestamp = CommitTime
   }.
 
--spec ping(partition_id(), log_id(), non_neg_integer()) -> #interdc_txn{}.
+%-spec ping(partition_id(), log_id(), non_neg_integer()) -> #interdc_txn{}.
 ping(Partition, LogNum, Timestamp) -> #interdc_txn{
   dcid = dc_utilities:get_my_dc_id(),
   partition = Partition,
