@@ -16,3 +16,48 @@
 %%
 %% @end
 -module(crdt_rga).
+
+-export([new/0, update/2]).
+
+-type vertex() :: {any(), any()}.
+
+-type rga_op() :: {addRight, vertex(), atom()} | {remove, vertex()}.
+
+-type rga_result() :: {ok, vertex(), rga()} | rga() .
+
+-type rga() :: list().
+
+-spec new() -> rga().
+new() ->
+    [].
+
+-spec update(rga_op(), rga()) -> rga_result().
+update({addRight, Vertex, Value}, Rga) ->
+    recursive_insert(Vertex, Value, Rga, []);
+update({remove, Vertex}, Rga) ->
+    recursive_remove(Vertex, Rga, []).
+
+recursive_insert(_, Value, [], []) ->
+    Inserted = {Value, os:timestamp()},
+    {ok, Inserted, [Inserted]};
+recursive_insert(Vertex, Value, [Vertex | T], L) ->
+    add_element({Value, os:timestamp()}, T, L ++ [Vertex]);
+recursive_insert(Vertex, Value, [H | T], L) ->
+    recursive_insert(Vertex, Value, T, L ++ [H]).
+
+add_element({Value, TimeStamp}, [{Value1, TimeStamp1} | T], L) ->
+    case TimeStamp >= TimeStamp1 of
+        true ->
+            {ok, {Value, TimeStamp}, L ++ [{Value, TimeStamp}] ++ [{Value1, TimeStamp1} | T]};
+        _ ->
+            add_element({Value, TimeStamp}, T, L ++ [{Value1, TimeStamp1}])
+    end;
+add_element(Insert, [], L) ->
+    {ok, Insert, L ++ [Insert]}.
+
+recursive_remove(_, [], L) ->
+    L;
+recursive_remove({Value, TimeStamp}, [{Value, TimeStamp} | T], L) ->
+    L ++ [{deleted, TimeStamp}] ++ T;
+recursive_remove(Vertex, [H | T], L) ->
+    recursive_remove(Vertex, T, L ++ [H]).
