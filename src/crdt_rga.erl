@@ -35,12 +35,16 @@
 new() ->
     [].
 
+%% @doc This method takes in an rga operation and an rga to perform the operation.
+%% It returns either the added Vertex and the new rga in case of an insert, and the new rga in the case of a remove.
 -spec update(rga_op(), rga()) -> rga_result().
 update({addRight, Vertex, Value}, Rga) ->
     recursive_insert(Vertex, Value, Rga, []);
 update({remove, Vertex}, Rga) ->
     recursive_remove(Vertex, Rga, []).
 
+%% Private
+%% @doc recursively looks for the Vertex where the new element should be put to the right of.
 recursive_insert(_, Value, [], []) ->
     Inserted = {Value, os:timestamp()},
     {ok, Inserted, [Inserted]};
@@ -49,6 +53,8 @@ recursive_insert(Vertex, Value, [Vertex | T], L) ->
 recursive_insert(Vertex, Value, [H | T], L) ->
     recursive_insert(Vertex, Value, T, L ++ [H]).
 
+%% Private
+%% @doc the place for the insertion has been found, so now the TimeStamps are compared to see where to insert.
 add_element({Value, TimeStamp}, [{Value1, TimeStamp1} | T], L) ->
     case TimeStamp >= TimeStamp1 of
         true ->
@@ -59,6 +65,8 @@ add_element({Value, TimeStamp}, [{Value1, TimeStamp1} | T], L) ->
 add_element(Insert, [], L) ->
     {ok, Insert, L ++ [Insert]}.
 
+%% Private
+%% @doc recursively looks for the Vertex to be removed. Once it is found, it is marked as "deleted", erasing its value.
 recursive_remove(_, [], L) ->
     L;
 recursive_remove({Value, TimeStamp}, [{Value, TimeStamp} | T], L) ->
@@ -66,6 +74,7 @@ recursive_remove({Value, TimeStamp}, [{Value, TimeStamp} | T], L) ->
 recursive_remove(Vertex, [H | T], L) ->
     recursive_remove(Vertex, T, L ++ [H]).
 
+%% @doc given an rga, this mehtod looks for all tombstones and removes them, returning the tombstone free rga.
 purge_tombstones(Rga) ->
     lists:foldl(fun({Value, TimeStamp}, L) ->
         case Value == deleted of
