@@ -69,6 +69,25 @@ recursive_remove(Vertex, [H | T], L) ->
 -ifdef(TEST).
 new_test() ->
     ?assertEqual([], new()).
+
+insert_returns_same_element_test() ->
+    L = new(),
+    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    ?assertEqual([V1], L1).
+
+consecutive_inserts_test() ->
+    L = new(),
+    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V2, L2} = update({addRight, V1, 2}, L1),
+    {ok, _, L3} = update({addRight, V2, 3}, L2),
+    ?assertMatch([{1, _}, {2, _}, {3, _}], L3).
+
+insert_in_the_middle_test() ->
+    L = new(),
+    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, _, L2} = update({addRight, V1, 2}, L1),
+    {ok, _, L3} = update({addRight, V1, 3}, L2),
+    ?assertMatch([{1, _}, {3, _}, {2, _}], L3).
 -endif.
 
 
