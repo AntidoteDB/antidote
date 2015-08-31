@@ -88,6 +88,30 @@ insert_in_the_middle_test() ->
     {ok, _, L2} = update({addRight, V1, 2}, L1),
     {ok, _, L3} = update({addRight, V1, 3}, L2),
     ?assertMatch([{1, _}, {3, _}, {2, _}], L3).
+
+remove_first_element_test() ->
+    L = new(),
+    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V2, L2} = update({addRight, V1, 2}, L1),
+    {ok, _, L3} = update({addRight, V2, 3}, L2),
+    L4 = update({remove, V1}, L3),
+    ?assertMatch([{deleted, _}, {2, _}, {3, _}], L4).
+
+remove_middle_element_test() ->
+    L = new(),
+    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V2, L2} = update({addRight, V1, 2}, L1),
+    {ok, _, L3} = update({addRight, V2, 3}, L2),
+    L4 = update({remove, V2}, L3),
+    ?assertMatch([{1, _}, {deleted, _}, {3, _}], L4).
+
+remove_last_element_test() ->
+    L = new(),
+    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V2, L2} = update({addRight, V1, 2}, L1),
+    {ok, V3, L3} = update({addRight, V2, 3}, L2),
+    L4 = update({remove, V3}, L3),
+    ?assertMatch([{1, _}, {2, _}, {deleted, _}], L4).
 -endif.
 
 
