@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(clocksi_readitem_fsm).
 
--behavior(gen_fsm).
+-behavior(gen_server).
 
 -include("antidote.hrl").
 
@@ -28,110 +28,225 @@
 -endif.
 
 %% API
--export([start_link/6]).
+-export([start_link/2]).
 
 %% Callbacks
 -export([init/1,
-         code_change/4,
+	 handle_call/3,
+	 handle_cast/2,
+	 code_change/3,
          handle_event/3,
-         handle_info/3,
+	 check_servers_ready/0,
+         handle_info/2,
          handle_sync_event/4,
-         terminate/3]).
+         terminate/2]).
 
 %% States
--export([check_clock/2,
-         waiting1/2,
-         return/2]).
+-export([read_data_item/4,
+	 check_partition_ready/3,
+	 start_read_servers/2,
+	 stop_read_servers/2]).
 
 %% Spawn
-
--record(state, {type,
-                key,
-                transaction,
-                tx_coordinator,
-                vnode,
-                updates,
-                pending_txs}).
+-record(state, {partition :: partition_id(),
+		id :: non_neg_integer(),
+		ops_cache :: cache_id(),
+		snapshot_cache :: cache_id(),
+		prepared_cache :: cache_id(),
+		self :: atom()}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, Coordinator, Tx, Key, Type, Updates) ->
-    gen_fsm:start_link(?MODULE, [Vnode, Coordinator,
-                                 Tx, Key, Type, Updates], []).
+%% @doc This starts a gen_server responsible for servicing reads to key
+%%      handled by this Partition.  To allow for read concurrency there
+%%      can be multiple copies of these servers per parition, the Id is
+%%      used to distinguish between them.  Since these servers will be
+%%      reading from ets tables shared by the clock_si and materializer
+%%      vnodes, they should be started on the same physical nodes as
+%%      the vnodes with the same partition.
+-spec start_link(partition_id(),non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Partition,Id) ->
+    Addr = node(),
+    gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
+
+-spec start_read_servers(partition_id(),non_neg_integer()) -> non_neg_integer().
+start_read_servers(Partition, Count) ->
+    Addr = node(),
+    start_read_servers_internal(Addr, Partition, Count).
+
+-spec stop_read_servers(partition_id(),non_neg_integer()) -> ok.
+stop_read_servers(Partition, Count) ->
+    Addr = node(),
+    stop_read_servers_internal(Addr, Partition, Count).
+
+-spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
+read_data_item({Partition,Node},Key,Type,Transaction) ->
+    try
+	gen_server:call({global,generate_random_server_name(Node,Partition)},
+			{perform_read,Key,Type,Transaction},infinity)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+	    check_server_ready([{Partition,Node}]),
+            read_data_item({Partition,Node},Key,Type,Transaction)
+    end.
+
+%% @doc This checks all partitions in the system to see if all read
+%%      servers have been started up.
+%%      Returns true if they have been, false otherwise.
+-spec check_servers_ready() -> boolean().
+check_servers_ready() ->
+    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
+    PartitionList = chashbin:to_list(CHBin),
+    check_server_ready(PartitionList).
+
+-spec check_server_ready([index_node()]) -> boolean().
+check_server_ready([]) ->
+    true;
+check_server_ready([{Partition,Node}|Rest]) ->
+    Result = riak_core_vnode_master:sync_command({Partition,Node},
+						 {check_servers_ready},
+						 ?CLOCKSI_MASTER,
+						 infinity),
+    case Result of
+	false ->
+	    false;
+	true ->
+	    check_server_ready(Rest)
+    end.
+
+-spec check_partition_ready(node(), partition_id(), non_neg_integer()) -> boolean().
+check_partition_ready(_Node,_Partition,0) ->
+    true;
+check_partition_ready(Node,Partition,Num) ->
+    case global:whereis_name(generate_server_name(Node,Partition,Num)) of
+	undefined ->
+	    false;
+	_Res ->
+	    check_partition_ready(Node,Partition,Num-1)
+    end.
+
 
 
 %%%===================================================================
-%%% States
+%%% Internal
 %%%===================================================================
 
-init([Vnode, Coordinator, Transaction, Key, Type, Updates]) ->
-    SD = #state{vnode=Vnode,
-                type=Type,
-                key=Key,
-                tx_coordinator=Coordinator,
-                transaction=Transaction,
-                updates=Updates,
-                pending_txs=[]},
-    {ok, check_clock, SD, 0}.
+start_read_servers_internal(_Node,_Partition,0) ->
+    0;
+start_read_servers_internal(Node, Partition, Num) ->
+    {ok,_Id} = clocksi_readitem_sup:start_fsm(Partition,Num),
+    start_read_servers_internal(Node, Partition, Num-1).
+
+stop_read_servers_internal(_Node,_Partition,0) ->
+    ok;
+stop_read_servers_internal(Node,Partition, Num) ->
+    try
+	gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
+    catch
+	_:_Reason->
+	    ok
+    end,
+    stop_read_servers_internal(Node, Partition, Num-1).
+
+
+generate_server_name(Node, Partition, Id) ->
+    list_to_atom(integer_to_list(Id) ++ integer_to_list(Partition) ++ atom_to_list(Node)).
+
+generate_random_server_name(Node, Partition) ->
+    generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
+
+init([Partition, Id]) ->
+    Addr = node(),
+    OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
+    SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
+    PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
+    Self = generate_server_name(Addr,Partition,Id),
+    {ok, #state{partition=Partition, id=Id, ops_cache=OpsCache,
+		snapshot_cache=SnapshotCache,
+		prepared_cache=PreparedCache,self=Self}}.
+
+handle_call({perform_read, Key, Type, Transaction},Coordinator,
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+    {noreply,SD0};
+
+handle_call({go_down},_Sender,SD0) ->
+    {stop,shutdown,ok,SD0}.
+
+handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+    {noreply,SD0}.
+
+perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition) ->
+    case check_clock(Key,Transaction,PreparedCache,Partition) of
+	{not_ready,Time} ->
+	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
+	    ok;
+	ready ->
+	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
+    end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
-check_clock(timeout, SD0=#state{transaction=Transaction}) ->
+check_clock(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
     Time = clocksi_vnode:now_microsec(erlang:now()),
     case T_TS > Time of
         true ->
-	    SleepMiliSec = (T_TS - Time) div 1000 + 1,
-            timer:sleep(SleepMiliSec),
-            {next_state, waiting1, SD0, 0};
+	    {not_ready, (T_TS - Time) div 1000 +1};
         false ->
-            {next_state, waiting1, SD0, 0}
+	    check_prepared(Key,Transaction,PreparedCache,Partition)
     end.
 
-waiting1(timeout, SDO=#state{key=Key, transaction=Transaction}) ->
-    LocalClock = get_stable_time(Key),
+%% @doc check_prepared: Check if there are any transactions
+%%      being prepared on the tranaction being read, and
+%%      if they could violate the correctness of the read
+check_prepared(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
-    case LocalClock > SnapshotTime of
-        false ->
-            {next_state, waiting1, SDO, 1};
-        true ->
-            {next_state, return, SDO, 0}
-    end;
+    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
+    check_prepared_list(Key,SnapshotTime,ActiveTxs).
 
-waiting1(_SomeMessage, SDO) ->
-    {next_state, waiting1, SDO,0}.
+check_prepared_list(_Key,_SnapshotTime,[]) ->
+    ready;
+check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
+    case Time =< SnapshotTime of
+	true ->
+	    {not_ready, ?SPIN_WAIT};
+	false ->
+	    check_prepared_list(Key,SnapshotTime,Rest)
+    end.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
-return(timeout, SD0=#state{key=Key,
-                           tx_coordinator=Coordinator,
-                           transaction=Transaction,
-                           type=Type,
-                           updates=Updates}) ->
+return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
         {ok, Snapshot} ->
-            Updates2=filter_updates_per_key(Updates, Key),
-            Snapshot2=clocksi_materializer:materialize_eager
-                        (Type, Snapshot, Updates2),
-            Reply={ok, Snapshot2};
+            Reply={ok, Snapshot};
         {error, Reason} ->
             Reply={error, Reason}
     end,
-    riak_core_vnode:reply(Coordinator, Reply),
-    {stop, normal, SD0};
-return(_SomeMessage, SDO) ->
-    {next_state, return, SDO,0}.
+    _Ignore=gen_server:reply(Coordinator, Reply),
+    ok.
 
-handle_info(_Info, StateName, StateData) ->
-    {next_state,StateName,StateData,1}.
+
+handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},
+	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+    {noreply,SD0};
+
+handle_info(_Info, StateData) ->
+    {noreply,StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
     {stop,badmsg,StateData}.
@@ -139,55 +254,8 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
-code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-terminate(_Reason, _SN, _SD) ->
+terminate(_Reason, _SD) ->
     ok.
 
-%% Internal functions
-filter_updates_per_key(Updates, Key) ->
-    FilterMapFun = fun ({_, {KeyPrime, _Type, Op}}) ->
-        case KeyPrime == Key of
-            true  -> {true, Op};
-            false -> false
-        end
-    end,
-    lists:filtermap(FilterMapFun, Updates).
-
-get_stable_time(Key) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    Node = hd(Preflist),
-    case riak_core_vnode_master:sync_command(
-           Node, {get_active_txns, Key}, ?CLOCKSI_MASTER) of
-        {ok, Active_txns} ->
-            lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
-                                case Min_time > Snapshot_time of
-                                    true ->
-                                        Snapshot_time;
-                                    false ->
-                                        Min_time
-                                end
-                        end,
-                        clocksi_vnode:now_microsec(erlang:now()),
-                        Active_txns);
-        _ -> 0
-    end.
-
--ifdef(TEST).
-
-%% @doc Testing filter_updates_per_key.
-filter_updates_per_key_test()->
-    Op1 = {update, {{increment,1}, actor1}},
-    Op2 = {update, {{increment,2}, actor1}},
-    Op3 = {update, {{increment,3}, actor1}},
-    Op4 = {update, {{increment,4}, actor1}},
-
-    ClockSIOp1 = {xxx, {a, crdt_pncounter, Op1}},
-    ClockSIOp2 = {xxx, {b, crdt_pncounter, Op2}},
-    ClockSIOp3 = {xxx, {c, crdt_pncounter, Op3}},
-    ClockSIOp4 = {xxx, {a, crdt_pncounter, Op4}},
-
-    ?assertEqual([Op1, Op4], 
-        filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
-
--endif.

@@ -60,10 +60,10 @@ propagate_sync(Message, DCs) ->
                                receive
                                    {done, normal} ->
                                        Acc;
-                                   {done, Other} ->
-                                       lager:error(
-                                         "Send failed Reason:~p Message: ~p",
-                                         [Other, Message]),
+                                   {done, _Other} ->
+                                       %% lager:error(
+                                       %%   "Send failed Reason:~p Message: ~p",
+                                       %%   [Other, Message]),
                                        Acc ++ [{DcId, {DcAddress,Port}}]
 			       end;
                            _ ->

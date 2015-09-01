@@ -81,7 +81,12 @@ init(_Args) ->
                             {clocksi_interactive_tx_coord_sup, start_link, []},
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
-
+    
+    ClockSIReadSup = {clocksi_readitem_sup,
+    		      {clocksi_readitem_sup, start_link, []},
+    		      permanent, 5000, supervisor,
+    		      [clocksi_readitem_sup]},
+    
     VectorClockMaster = {vectorclock_vnode_master,
                          {riak_core_vnode_master,  start_link,
                           [vectorclock_vnode]},
@@ -107,6 +112,7 @@ init(_Args) ->
        ClockSIMaster,
        ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
+       ClockSIReadSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
        InterDcManager,

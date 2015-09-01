@@ -35,11 +35,19 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     N = 6,
     [Nodes] = rt:build_clusters([N]),
 
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
+
 
     NumWrites = 120,
     ListIds = [random:uniform(N) || _ <- lists:seq(1, NumWrites)],
