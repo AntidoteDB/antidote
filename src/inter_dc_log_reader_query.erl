@@ -57,10 +57,13 @@ handle_call({del_dc, DCID}, _From, State) ->
 
 handle_call({query, PDCID, From, To}, _From, State) ->
   {DCID, Partition} = PDCID,
-  {ok, Socket} = dict:find(DCID, State#state.sockets),
-  Request = {read_log, Partition, From, To},
-  ok = erlzmq:send(Socket, term_to_binary(Request)),
-  {reply, ok, State}.
+  case dict:find(DCID, State#state.sockets) of
+    {ok, Socket} ->
+      Request = {read_log, Partition, From, To},
+      ok = erlzmq:send(Socket, term_to_binary(Request)),
+      {reply, ok, State};
+    _ -> {reply, unknown_dc, State}
+  end.
 
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   {PDCID, Txns} = binary_to_term(BinaryMsg),

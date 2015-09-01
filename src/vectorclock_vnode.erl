@@ -76,6 +76,18 @@ init([Partition]) ->
 get_stable_snapshot() ->
     riak_core_metadata:get(?META_PREFIX_SS,1,[{default,dict:new()}]).
 
+get_clock_of_dc(VClock, Dc) ->
+  {ok, Clock} = vectorclock:get_clock_of_dc(Dc, VClock),
+  Clock.
+
+min_dc_entry(VClocks, Dc) -> min_dc_entry(VClocks, Dc, get_clock_of_dc(hd(VClocks), Dc)).
+min_dc_entry([], _, Min) -> Min;
+min_dc_entry([VClock|Tail], Dc, Min) -> min_dc_entry(Tail, Dc, min(Min, get_clock_of_dc(VClock, Dc))).
+
+find_min_of(VClocks, DcKeys) ->
+  F = fun(Dc) -> {Dc, min_dc_entry(VClocks, Dc)} end,
+  vectorclock:from_list(lists:map(F, DcKeys)).
+
 %% @doc
 handle_command(get_clock, _Sender,
                #currentclock{partition_vectorclock=Clock} = State) ->
