@@ -82,7 +82,7 @@ process_queue(State=#state{queue=Queue}) ->
 %% This is not a true transaction, so its dependencies are always satisfied.
 -spec try_store(#interdc_txn{}) -> boolean().
 try_store(#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = []}) ->
-  ok = vectorclock:update_clock(Partition, DCID, Timestamp),
+  vectorclock:update_clock(Partition, DCID, Timestamp),
   dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
   true;
 

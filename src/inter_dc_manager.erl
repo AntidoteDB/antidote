@@ -46,6 +46,7 @@ get_descriptor() ->
 -spec observe_dc(interdc_descriptor()) -> ok.
 observe_dc(Descriptor) ->
   {DCID, Publishers, LogReaders} = Descriptor,
+  lager:info("Observing DC ~p", [DCID]),
   %% Announce the new publisher addresses to all subscribers in this DC.
   %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
   %% But we want to balance the work, so all nodes take part in subscribing.
@@ -58,6 +59,7 @@ observe_dcs(Descriptors) -> lists:foreach(fun observe_dc/1, Descriptors).
 
 -spec forget_dc(interdc_descriptor()) -> ok.
 forget_dc({DCID, _, _}) ->
+  lager:info("Forgetting DC ~p", [DCID]),
   Nodes = dc_utilities:get_my_dc_nodes(),
   lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, del_dc, [DCID]) end, Nodes),
   lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes).

@@ -19,15 +19,18 @@
 %% -------------------------------------------------------------------
 -module(zmq_utils).
 
--export([create_socket/2, create_connect_socket/3, create_bind_socket/3, sub_filter/2, close_socket/1]).
+-export([create_connect_socket/3, create_bind_socket/3, sub_filter/2, close_socket/1]).
 
 create_socket(Type, Active) ->
   Ctx = zmq_context:get(),
-  {ok, Socket} = case Active of
+  Result = case Active of
     true -> erlzmq:socket(Ctx, [Type, {active, true}]);
     false -> erlzmq:socket(Ctx, Type)
   end,
-  Socket.
+  case Result of
+    {ok, Socket} -> Socket;
+    _ -> throw(failed_to_create_zmq_socket)
+  end.
 
 create_connect_socket(Type, Active, Address) ->
   Socket = create_socket(Type, Active),

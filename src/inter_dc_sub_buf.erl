@@ -41,7 +41,9 @@ new_state(PDCID) -> #state{
 }.
 
 process({txn, Txn}, State = #state{state_name = normal}) -> process_queue(push(Txn, State));
-process({txn, Txn}, State = #state{state_name = buffering}) -> push(Txn, State);
+process({txn, Txn}, State = #state{state_name = buffering}) ->
+  lager:info("Buffering txn in ~p", [State#state.pdcid]),
+  push(Txn, State);
 
 process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buffering}) ->
   ok = lists:foreach(fun deliver/1, Txns),
