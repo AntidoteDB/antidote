@@ -534,8 +534,8 @@ certification_check(_TxId, [_H|_T], _CommittedTx, _ActiveTxPerKey) ->
 -spec update_materializer(DownstreamOps :: [{key(),type(),op()}],
                           Transaction::tx(),TxCommitTime:: {term(), term()}) ->
                                  ok | error.
-update_materializer(_DownstreamOps, _Transaction, _TxCommitTime) ->
-    _DcId = dc_utilities:get_my_dc_id(),
+update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
+    DcId = dc_utilities:get_my_dc_id(),
     UpdateFunction = fun ({Key, Type, Op}, AccIn) ->
                              CommittedDownstreamOp =
                                  #clocksi_payload{
