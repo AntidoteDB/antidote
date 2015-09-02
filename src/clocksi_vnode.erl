@@ -536,26 +536,25 @@ certification_check(_TxId, [_H|_T], _CommittedTx, _ActiveTxPerKey) ->
                                  ok | error.
 update_materializer(_DownstreamOps, _Transaction, _TxCommitTime) ->
     _DcId = dc_utilities:get_my_dc_id(),
-    ok.
-    %% UpdateFunction = fun ({Key, Type, Op}, AccIn) ->
-    %%                          CommittedDownstreamOp =
-    %%                              #clocksi_payload{
-    %%                                 key = Key,
-    %%                                 type = Type,
-    %%                                 op_param = Op,
-    %%                                 snapshot_time = Transaction#transaction.vec_snapshot_time,
-    %%                                 commit_time = {DcId, TxCommitTime},
-    %%                                 txid = Transaction#transaction.txn_id},
-    %%                          AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)]
-    %%                  end,
-    %% Results = lists:foldl(UpdateFunction, [], DownstreamOps),
-    %% Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
-    %% case length(Failures) of
-    %%     0 ->
-    %%         ok;
-    %%     _ ->
-    %%         error
-    %% end.
+    UpdateFunction = fun ({Key, Type, Op}, AccIn) ->
+                             CommittedDownstreamOp =
+                                 #clocksi_payload{
+                                    key = Key,
+                                    type = Type,
+                                    op_param = Op,
+                                    snapshot_time = Transaction#transaction.vec_snapshot_time,
+                                    commit_time = {DcId, TxCommitTime},
+                                    txid = Transaction#transaction.txn_id},
+                             AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)]
+                     end,
+    Results = lists:foldl(UpdateFunction, [], DownstreamOps),
+    Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
+    case length(Failures) of
+        0 ->
+            ok;
+        _ ->
+            error
+    end.
 
 %% Internal functions
 filter_updates_per_key(Updates, Key) ->
