@@ -4,6 +4,7 @@
          %%Track timestamps from other DC which have been committed by this DC
          recQ :: orddict:orddict(), %% Holds recieving updates from each DC separately in causal order.
          statestore,
+	 partition_vclock :: dict(),
          partition}).
 
 -type socket_address() :: {inet:ip_address(), inet:port_number()}.
