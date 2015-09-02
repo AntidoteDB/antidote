@@ -114,6 +114,5 @@ clr_timer(State = #state{ping_timer = Timer}) ->
 broadcast(State, Txn) ->
   State1 = clr_timer(State),
   inter_dc_pub:broadcast(Txn),
-  update_stream_pub:broadcast(Txn),
   {_, Id} = Txn#interdc_txn.logid_range,
   set_timer(State1#state{last_log_id = Id}).

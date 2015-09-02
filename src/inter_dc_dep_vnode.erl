@@ -116,8 +116,6 @@ try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Times
       %% Recalculate the stable snapshot
       dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
 
-      %% Push the transaction to local update_stream_pub
-      update_stream_pub:broadcast(Txn),
       true
   end.
 

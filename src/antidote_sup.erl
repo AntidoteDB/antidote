@@ -83,8 +83,6 @@ init(_Args) ->
     InterDcLogReaderQMaster = ?CHILD(inter_dc_log_reader_query, worker, []),
     InterDcLogReaderRMaster = ?CHILD(inter_dc_log_reader_response, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_master, inter_dc_log_sender),
-    UpdateStreamPub = ?CHILD(update_stream_pub, worker, []),
-
 
   {ok,
     {{one_for_one, 5, 10},
@@ -103,8 +101,7 @@ init(_Args) ->
         InterDcPub,
         InterDcSub,
         InterDcSubVnode,
-        InterDcDepVnode,
-        UpdateStreamPub
+        InterDcDepVnode
       ]
     }
   }.
