@@ -66,39 +66,40 @@ update({remove, Vertex}, Rga) ->
 recursive_insert(_, NewVertex, [], []) ->
     {ok, [NewVertex]};
 recursive_insert(RightVertex, NewVertex, [RightVertex | T], L) ->
-    add_element(NewVertex, T, L ++ [RightVertex]);
+    add_element(NewVertex, T, [RightVertex | L]);
 recursive_insert(RightVertex, NewVertex, [H | T], L) ->
-    recursive_insert(RightVertex, NewVertex, T, L ++ [H]).
+    recursive_insert(RightVertex, NewVertex, T, [H | L]).
 
 %% Private
 %% @doc the place for the insertion has been found, so now the UIDs are compared to see where to insert.
 add_element({Status, Value, UID}, [{Status1, Value1, UID1} | T], L) ->
     case UID >= UID1 of
         true ->
-            {ok, L ++ [{Status, Value, UID}] ++ [{Status1, Value1, UID1} | T]};
+            {ok, lists:reverse(L) ++ [{Status, Value, UID}] ++ [{Status1, Value1, UID1} | T]};
         _ ->
-            add_element({Status, Value, UID}, T, L ++ [{Status1, Value1, UID1}])
+            add_element({Status, Value, UID}, T, [{Status1, Value1, UID1} | L])
     end;
 add_element(Insert, [], L) ->
-    {ok, L ++ [Insert]}.
+    {ok, lists:reverse([Insert | L])}.
 
 %% Private
 %% @doc recursively looks for the Vertex to be removed. Once it is found, it is marked as "deleted", erasing its value.
 recursive_remove(_, [], L) ->
     {ok, L};
 recursive_remove({_, Value, UID}, [{_, Value, UID} | T], L) ->
-    {ok, L ++ [{deleted, Value, UID}] ++ T};
+    {ok, lists:reverse(L) ++ [{deleted, Value, UID}] ++ T};
 recursive_remove(Vertex, [H | T], L) ->
-    recursive_remove(Vertex, T, L ++ [H]).
+    recursive_remove(Vertex, T, [H | L]).
 
 %% @doc given an rga, this mehtod looks for all tombstones and removes them, returning the tombstone free rga.
 purge_tombstones(Rga) ->
-    lists:foldl(fun({Status, Value, UID}, L) ->
+    L = lists:foldl(fun({Status, Value, UID}, L) ->
         case Status == deleted of
             true -> L;
-            _ -> L ++ [{Status, Value, UID}]
+            _ -> [{Status, Value, UID} | L]
         end
-    end, [], Rga).
+    end, [], Rga),
+    lists:reverse(L).
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
