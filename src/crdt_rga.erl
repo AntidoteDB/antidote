@@ -19,6 +19,8 @@
 
 -export([new/0, update/2, purge_tombstones/1, generate_downstream/3]).
 
+-export_type([rga/0, rga_op/0, rga_downstream_op/0]).
+
 %% -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 %% -endif.
