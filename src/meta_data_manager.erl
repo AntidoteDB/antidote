@@ -35,12 +35,19 @@
 	 code_change/3]).
 
 -record(state, {
-	  table}).
+	  table :: ets:tid()}).
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
+%% This is just a helper fsm for meta_data_sender.
+%% See the meta_data_sender file for information on how to use the meta-data
+%% This is a seperate fsm from meta_data_sender, which will be triggered
+%% by meta_data_sender to broadcast the data.
+%% It also keeps track of the names of physical nodes in the cluster.
+
+-spec start_link() -> {ok,pid()} | ignore | {error,term()}.
 start_link() ->
     gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
 
@@ -70,38 +77,11 @@ handle_cast({remove_node,NodeId}, State) ->
     true = ets:delete(?REMOTE_META_TABLE_NAME, NodeId),
     {noreply, State};
 
-%% handle_call({update_stable}, _From, State = #state{time_dict=TimeDict, last_time=LastTime}) ->
-%%     NewTime = update_stable(TimeDict,LastTime),
-%%     {ok, State#state{last_time=NewTime}}.
-
-%% handle_call({start_receiver, Port}, _From, State) ->
-%%     {ok, _} = antidote_sup:start_rep(self(), Port),
-%%     receive
-%%         ready -> {reply, {ok, my_dc(Port)}, State#state{port=Port}}
-%%     end;
-
-%% handle_call({stop_receiver}, _From, State) ->
-%%     case antidote_sup:stop_rep() of
-%%         ok -> 
-%%             {reply, ok, State#state{port=0}}
-%%     end;
-
-%% handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->
-%%     {reply, {ok, DCs}, State};
-
-%% handle_call({add_dc, OtherDC}, _From, #state{dcs=DCs} = State) ->
-%%     NewDCs = add_dc(OtherDC, DCs),
-%%     {reply, ok, State#state{dcs=NewDCs}};
-
-%% handle_call({add_list_dcs, OtherDCs}, _From, #state{dcs=DCs} = State) ->
-%%     NewDCs = add_dcs(OtherDCs, DCs),
-%%     {reply, ok, State#state{dcs=NewDCs}}.
-
 handle_cast(_Info, State) ->
     {noreply, State}.
 
 handle_call(_Info, _From, State) ->
-    {ok, State}.
+    {reply, error, State}.
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -117,16 +97,3 @@ code_change(_OldVsn, State, _Extra) ->
 generate_server_name(Node) ->
     list_to_atom("meta_manager" ++ atom_to_list(Node)).
 
-
-%% my_dc(DcPort) ->
-%%     {ok, List} = inet:getif(),
-%%     {Ip, _, _} = hd(List),
-%%     DcIp = inet_parse:ntoa(Ip),
-%%     DcId = dc_utilities:get_my_dc_id(),
-%%     {DcId, {DcIp, DcPort}}.
-
-%% add_dc({DcId, DcAddress}, DCs) -> 
-%%     orddict:store(DcId, DcAddress, DCs).
-
-%% add_dcs(OtherDCs, DCs) ->
-%%     lists:foldl(fun add_dc/2, DCs, OtherDCs).
