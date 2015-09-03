@@ -63,6 +63,7 @@ update({remove, Vertex}, Rga) ->
 
 %% Private
 %% @doc recursively looks for the Vertex where the new element should be put to the right of.
+-spec recursive_insert(vertex(), vertex(), rga(), list()) -> rga_result().
 recursive_insert(_, NewVertex, [], []) ->
     {ok, [NewVertex]};
 recursive_insert(RightVertex, NewVertex, [RightVertex | T], L) ->
@@ -72,6 +73,7 @@ recursive_insert(RightVertex, NewVertex, [H | T], L) ->
 
 %% Private
 %% @doc the place for the insertion has been found, so now the UIDs are compared to see where to insert.
+-spec add_element(vertex(), rga(), list()) -> rga_result().
 add_element({Status, Value, UID}, [{Status1, Value1, UID1} | T], L) ->
     case UID >= UID1 of
         true ->
@@ -84,6 +86,7 @@ add_element(Insert, [], L) ->
 
 %% Private
 %% @doc recursively looks for the Vertex to be removed. Once it is found, it is marked as "deleted", erasing its value.
+-spec recursive_remove(vertex(), rga(), list()) -> rga_result().
 recursive_remove(_, [], L) ->
     {ok, L};
 recursive_remove({_, Value, UID}, [{_, Value, UID} | T], L) ->
@@ -92,6 +95,7 @@ recursive_remove(Vertex, [H | T], L) ->
     recursive_remove(Vertex, T, [H | L]).
 
 %% @doc given an rga, this mehtod looks for all tombstones and removes them, returning the tombstone free rga.
+-spec purge_tombstones(rga()) -> rga_result().
 purge_tombstones(Rga) ->
     L = lists:foldl(fun({Status, Value, UID}, L) ->
         case Status == deleted of
@@ -99,7 +103,7 @@ purge_tombstones(Rga) ->
             _ -> [{Status, Value, UID} | L]
         end
     end, [], Rga),
-    lists:reverse(L).
+    {ok, lists:reverse(L)}.
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
@@ -210,7 +214,7 @@ pruge_tombstones_test() ->
     {ok, L3} = update(DownstreamOp3, L2),
     {ok, DownstreamOp4} = generate_downstream({remove, 2}, 1, L3),
     {ok, L4} = update(DownstreamOp4, L3),
-    L5 = purge_tombstones(L4),
+    {ok, L5} = purge_tombstones(L4),
     ?assertMatch([{ok, 1, _}, {ok, 3, _}], L5).
 
 -endif.
