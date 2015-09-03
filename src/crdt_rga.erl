@@ -23,11 +23,11 @@
 -include_lib("eunit/include/eunit.hrl").
 %% -endif.
 
--type vertex() :: {any(), any()}.
+-type vertex() :: {atom(), any(), number()}.
 
 -type rga_op() :: {addRight, vertex(), atom()} | {remove, vertex()}.
 
--type rga_result() :: {ok, vertex(), rga()} | rga() .
+-type rga_result() :: {ok, vertex(), rga()} | rga().
 
 -type rga() :: list().
 
@@ -46,21 +46,21 @@ update({remove, Vertex}, Rga) ->
 %% Private
 %% @doc recursively looks for the Vertex where the new element should be put to the right of.
 recursive_insert(_, Value, [], []) ->
-    Inserted = {Value, os:timestamp()},
+    Inserted = {ok, Value, os:timestamp()},
     {ok, Inserted, [Inserted]};
 recursive_insert(Vertex, Value, [Vertex | T], L) ->
-    add_element({Value, os:timestamp()}, T, L ++ [Vertex]);
+    add_element({ok, Value, os:timestamp()}, T, L ++ [Vertex]);
 recursive_insert(Vertex, Value, [H | T], L) ->
     recursive_insert(Vertex, Value, T, L ++ [H]).
 
 %% Private
 %% @doc the place for the insertion has been found, so now the TimeStamps are compared to see where to insert.
-add_element({Value, TimeStamp}, [{Value1, TimeStamp1} | T], L) ->
+add_element({Status, Value, TimeStamp}, [{Status1, Value1, TimeStamp1} | T], L) ->
     case TimeStamp >= TimeStamp1 of
         true ->
-            {ok, {Value, TimeStamp}, L ++ [{Value, TimeStamp}] ++ [{Value1, TimeStamp1} | T]};
+            {ok, {Status, Value, TimeStamp}, L ++ [{Status, Value, TimeStamp}] ++ [{Status1, Value1, TimeStamp1} | T]};
         _ ->
-            add_element({Value, TimeStamp}, T, L ++ [{Value1, TimeStamp1}])
+            add_element({Status, Value, TimeStamp}, T, L ++ [{Status1, Value1, TimeStamp1}])
     end;
 add_element(Insert, [], L) ->
     {ok, Insert, L ++ [Insert]}.
@@ -69,17 +69,17 @@ add_element(Insert, [], L) ->
 %% @doc recursively looks for the Vertex to be removed. Once it is found, it is marked as "deleted", erasing its value.
 recursive_remove(_, [], L) ->
     L;
-recursive_remove({Value, TimeStamp}, [{Value, TimeStamp} | T], L) ->
-    L ++ [{deleted, TimeStamp}] ++ T;
+recursive_remove({_, Value, TimeStamp}, [{_, Value, TimeStamp} | T], L) ->
+    L ++ [{deleted, Value, TimeStamp}] ++ T;
 recursive_remove(Vertex, [H | T], L) ->
     recursive_remove(Vertex, T, L ++ [H]).
 
 %% @doc given an rga, this mehtod looks for all tombstones and removes them, returning the tombstone free rga.
 purge_tombstones(Rga) ->
-    lists:foldl(fun({Value, TimeStamp}, L) ->
-        case Value == deleted of
+    lists:foldl(fun({Status, Value, TimeStamp}, L) ->
+        case Status == deleted of
             true    -> L;
-            _       -> L ++ [{Value, TimeStamp}]
+            _       -> L ++ [{Status, Value, TimeStamp}]
         end
     end, [], Rga).
 
@@ -90,22 +90,22 @@ new_test() ->
 
 insert_returns_same_element_test() ->
     L = new(),
-    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V1, L1} = update({addRight, {ok, 0, 0}, 1}, L),
     ?assertEqual([V1], L1).
 
 consecutive_inserts_test() ->
     L = new(),
-    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V1, L1} = update({addRight, {ok, 0, 0}, 1}, L),
     {ok, V2, L2} = update({addRight, V1, 2}, L1),
     {ok, _, L3} = update({addRight, V2, 3}, L2),
-    ?assertMatch([{1, _}, {2, _}, {3, _}], L3).
+    ?assertMatch([{ok, 1, _}, {ok, 2, _}, {ok, 3, _}], L3).
 
 insert_in_the_middle_test() ->
     L = new(),
-    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V1, L1} = update({addRight, {ok, 0, 0}, 1}, L),
     {ok, _, L2} = update({addRight, V1, 2}, L1),
     {ok, _, L3} = update({addRight, V1, 3}, L2),
-    ?assertMatch([{1, _}, {3, _}, {2, _}], L3).
+    ?assertMatch([{ok, 1, _}, {ok, 3, _}, {ok, 2, _}], L3).
 
 remove_first_element_test() ->
     L = new(),
@@ -113,32 +113,32 @@ remove_first_element_test() ->
     {ok, V2, L2} = update({addRight, V1, 2}, L1),
     {ok, _, L3} = update({addRight, V2, 3}, L2),
     L4 = update({remove, V1}, L3),
-    ?assertMatch([{deleted, _}, {2, _}, {3, _}], L4).
+    ?assertMatch([{deleted, 1, _}, {ok, 2, _}, {ok, 3, _}], L4).
 
 remove_middle_element_test() ->
     L = new(),
-    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V1, L1} = update({addRight, {ok, 0, 0}, 1}, L),
     {ok, V2, L2} = update({addRight, V1, 2}, L1),
     {ok, _, L3} = update({addRight, V2, 3}, L2),
     L4 = update({remove, V2}, L3),
-    ?assertMatch([{1, _}, {deleted, _}, {3, _}], L4).
+    ?assertMatch([{ok, 1, _}, {deleted, 2, _}, {ok, 3, _}], L4).
 
 remove_last_element_test() ->
     L = new(),
-    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V1, L1} = update({addRight, {ok, 0, 0}, 1}, L),
     {ok, V2, L2} = update({addRight, V1, 2}, L1),
     {ok, V3, L3} = update({addRight, V2, 3}, L2),
     L4 = update({remove, V3}, L3),
-    ?assertMatch([{1, _}, {2, _}, {deleted, _}], L4).
+    ?assertMatch([{ok, 1, _}, {ok, 2, _}, {deleted, 3, _}], L4).
 
 pruge_tombstones_test() ->
     L = new(),
-    {ok, V1, L1} = update({addRight, {0, 0}, 1}, L),
+    {ok, V1, L1} = update({addRight, {ok, 0, 0}, 1}, L),
     {ok, V2, L2} = update({addRight, V1, 2}, L1),
     {ok, _, L3} = update({addRight, V2, 3}, L2),
     L4 = update({remove, V2}, L3),
     L5 = purge_tombstones(L4),
-    ?assertMatch([{1, _}, {3, _}], L5).
+    ?assertMatch([{ok, 1, _}, {ok, 3, _}], L5).
 
 -endif.
 
