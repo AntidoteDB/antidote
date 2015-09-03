@@ -215,7 +215,10 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
                 [] ->
                     {ok, ORDict};
                 _ ->
-                    {error, {precondition, {not_present, Elem}}}
+		    %% Should flag an error for this?
+		    %% concurrent removes possible right?
+                    %% {error, {precondition, {not_present, Elem}}}
+		    {ok, ORDict}
             end
     end.
 
