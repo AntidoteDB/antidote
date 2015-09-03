@@ -105,19 +105,19 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     true ->
       %% Put the operations in the log
       ok = lists:foreach(fun(#operation{payload=Payload}) ->
+        lager:info("Storing operation: ~p", [Payload]),
         logging_vnode:append(dc_utilities:partition_to_indexnode(Partition), [Partition], Payload)
       end, Ops),
 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
-      lists:foreach(fun(Qwe) ->
-        lager:info("Saving ~p", [Qwe])
-      end, ClockSiOps),
-
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
 
-      {update_the_clock(State, DCID, Timestamp), true}
+      S2 = update_the_clock(State, DCID, Timestamp),
+      {ok, SS} = vectorclock:get_stable_snapshot(),
+      lager:info("After SS=~p", [dict:to_list(SS)]),
+      {S2, true}
   end.
 
 handle_command({txn, Txn}, _Sender, State=#state{queue=Queue}) ->
@@ -140,7 +140,7 @@ delete(State) -> {ok, State}.
 
 update_the_clock(State, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
-  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
+  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp - 1, State#state.vectorclock),
   ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),
   State#state{vectorclock = NewClock}.
 
