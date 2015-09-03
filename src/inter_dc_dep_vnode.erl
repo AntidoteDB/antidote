@@ -126,7 +126,7 @@ handoff_cancelled(State) -> {ok, State}.
 handoff_finished(_TargetNode, State) -> {ok, State}.
 handle_handoff_command(_Message, _Sender, State) -> {noreply, State}.
 handle_handoff_data(_Data, State) -> {reply, ok, State}.
-encode_handoff_item(_ObjectName, _ObjectValue) -> <<>>.
+encode_handoff_item(Key,Operation) -> term_to_binary({Key, Operation}).
 is_empty(State) -> {true, State}.
 terminate(_Reason, _ModState) -> ok.
 delete(State) -> {ok, State}.
