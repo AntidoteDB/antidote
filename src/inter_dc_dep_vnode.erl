@@ -53,13 +53,16 @@
 %% VNode state
 -record(state, {
   partition :: partition_id(),
-  queue :: queue()
+  queue :: queue(),
+  vectorclock :: vectorclock()
 }).
 
 %%%% API --------------------------------------------------------------------+
 
 -spec init([partition_id()]) -> {ok, #state{}}.
-init([Partition]) -> {ok, #state{partition = Partition, queue = queue:new()}}.
+init([Partition]) ->
+  {ok, StableSnapshot} = vectorclock:get_stable_snapshot(),
+  {ok, #state{partition = Partition, queue = queue:new(), vectorclock = StableSnapshot}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
@@ -72,32 +75,31 @@ process_queue(State=#state{queue=Queue}) ->
   case queue:peek(Queue) of
     empty -> State;
     {value, Txn} ->
-      case try_store(Txn) of
-        false -> State;
-        true -> process_queue(State#state{queue = queue:drop(Queue)})
+      {NewState, Success} = try_store(State, Txn),
+      case Success of
+        false -> NewState;
+        true -> process_queue(NewState#state{queue = queue:drop(Queue)})
       end
   end.
 
 %% Store the heartbeat message.
 %% This is not a true transaction, so its dependencies are always satisfied.
--spec try_store(#interdc_txn{}) -> boolean().
-try_store(#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = []}) ->
-  vectorclock:update_clock(Partition, DCID, Timestamp),
-  dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
-  true;
+-spec try_store(#state{}, #interdc_txn{}) -> {#state{}, boolean}.
+try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, operations = []}) ->
+  {update_the_clock(State, DCID, Timestamp), true};
 
 %% Store the normal transaction
-try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
+try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant.
   %% Therefore, we remove it prior to further checks.
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
-  CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(Partition)),
+  CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
 
   %% Check if the current clock is greather than or equal to the dependency vector
   case vectorclock:ge(CurrentClock, Dependencies) of
 
     %% If not, the transaction will not be stored right now.
-    false -> false;
+    false -> {State, false};
 
     %% If so, store the transaction
     true ->
@@ -108,15 +110,14 @@ try_store(Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Times
 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
+
+      lists:foreach(fun(Qwe) ->
+        lager:info("Saving ~p", [Qwe])
+      end, ClockSiOps),
+
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
 
-      %% Update the clock for this partition
-      ok = vectorclock:update_clock(Partition, DCID, Timestamp),
-
-      %% Recalculate the stable snapshot
-      dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot),
-
-      true
+      {update_the_clock(State, DCID, Timestamp), true}
   end.
 
 handle_command({txn, Txn}, _Sender, State=#state{queue=Queue}) ->
@@ -137,9 +138,15 @@ delete(State) -> {ok, State}.
 
 %%%% Utilities --------------------------------------------------------------+
 
-get_partition_clock(Partition) ->
-  {ok, LocalClock} = vectorclock:get_clock(Partition),
-  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), inter_dc_utils:now_millisec(), LocalClock).
+update_the_clock(State, DCID, Timestamp) ->
+  %% Should we decrement the timestamp value by 1?
+  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
+  ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),
+  State#state{vectorclock = NewClock}.
+
+get_partition_clock(State) ->
+  %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
+  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), inter_dc_utils:now_millisec(), State#state.vectorclock).
 
 updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, snapshot = SnapshotTime}) ->
   lists:map(fun(#operation{payload = Logrecord}) ->
