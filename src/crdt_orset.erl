@@ -214,6 +214,11 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
             case RemoveTokens of 
                 [] ->
                     {ok, ORDict};
+		dont_match_this ->
+		    %% I just put this here to not break dialyzer
+		    %% while we decide if deleting a non-exesiting
+		    %% element should return an error or not
+		    {error, {precondition, {not_present, Elem}}};
                 _ ->
 		    %% Should flag an error for this?
 		    %% concurrent removes possible right?
