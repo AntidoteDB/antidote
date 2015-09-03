@@ -61,6 +61,24 @@
 %% During execution of the system, v-nodes may be continually writing to the
 %% 
 %% At a period given in antidote.hrl it will trigger itself to send the meta-data.
+%% This will cause the meta-data to be broadcast to all other physical nodes in
+%% the cluster.  Before sending the meta-data it calls the merge function on the
+%% meta-data stored by each vnode located at this partition.
+%%
+%% Each partition can store meta-data by calling one of the put functions. The
+%% meta-data will be stored as a dict for each vnode ID.
+%%
+%% The merge function should take as input a Dict, where each entry is a PartitionId
+%% with the vaue being the dict input through the put functions. The output should
+%% be a dict, with the same structure as the dict added by the put functions.
+%% The idea behind this is that first the vnodes data for each phyiscal node is merged
+%% then is broadcast, then the phyisical nodes meta-data is merged.  This way
+%% network traffic is lowered.
+%%
+%% Once the data is fully merged it does not immediately replace the old merged
+%% data.  Instead the UpdateFunction is called on each entry of the new and old
+%% versions. It should return true if the new value should be kept, false otherwise.
+%% The completely merged data can then be read using the get_merged_data function.
 %% 
 
 %% -spec start_link(fun(() -> [fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()]) -> {ok,pid()} | ignore | {error,term()}.
