@@ -28,6 +28,7 @@
 	 get_cache_name/2,
 	 get_active_txns_key/3,
 	 get_active_txns/2,
+	 get_active_txns_call/1,
          prepare/2,
          commit/3,
          single_commit/2,
@@ -91,6 +92,11 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
 	    Other
     end.
 
+get_active_txns_call(Partition) ->
+    riak_core_vnode_master:sync_command({Partition,node()},
+					{get_active_txns},
+					clocksi_vnode_master,
+					infinity).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
