@@ -105,7 +105,6 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     true ->
       %% Put the operations in the log
       ok = lists:foreach(fun(#operation{payload=Payload}) ->
-        lager:info("Storing operation: ~p", [Payload]),
         logging_vnode:append(dc_utilities:partition_to_indexnode(Partition), [Partition], Payload)
       end, Ops),
 
@@ -113,11 +112,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
-
-      S2 = update_the_clock(State, DCID, Timestamp),
-      {ok, SS} = vectorclock:get_stable_snapshot(),
-      lager:info("After SS=~p", [dict:to_list(SS)]),
-      {S2, true}
+      {update_the_clock(State, DCID, Timestamp), true}
   end.
 
 handle_command({txn, Txn}, _Sender, State=#state{queue=Queue}) ->
