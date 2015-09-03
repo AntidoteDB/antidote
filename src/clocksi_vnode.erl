@@ -430,9 +430,9 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 		    {Result, NewPrepare};
 		_ ->
 		    {{error, no_updates},0}
-	    end;
-	false ->
-	    {{error, write_conflict},0}
+	    end
+	    %% false ->
+	    %%     {{error, write_conflict},0}
     end.
 
 

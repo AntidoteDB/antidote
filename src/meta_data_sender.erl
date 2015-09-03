@@ -43,17 +43,16 @@
 
 
 -record(state, {
-	  table,
-	  table2,
-	  last_result,
-	  update_function,
-	  merge_function,
-	  should_check_nodes}).
+	  table :: ets:tid(),
+	  table2 :: ets:tid(),
+	  last_result :: dict(),
+	  update_function :: fun((term(),term())->boolean()),
+	  merge_function :: fun((dict())->dict()),
+	  should_check_nodes :: boolean()}).
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
-
 
 %% This fsm is responsible for sending meta-data that has been collected on this
 %% phyical node and sending it to all other physical nodes in the riak ring.
@@ -80,17 +79,23 @@
 %% versions. It should return true if the new value should be kept, false otherwise.
 %% The completely merged data can then be read using the get_merged_data function.
 %% 
+%% InitialLocal and InitialMerged are used to prepopulate the meta-data for the vnode
+%% and for the merged data.
+%%
+%% Note that there is 1 of these fsms per physical node. Meta-data is only
+%% stored in memory.  Do not use this if you want to persist data safely, it
+%% was designed with light heart-beat type meta-data in mind.
 
-%% -spec start_link(fun(() -> [fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()]) -> {ok,pid()} | ignore | {error,term()}.
+
+-spec start_link(fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()) -> {ok,pid()} | ignore | {error,term()}.
 start_link(UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
-    %%gen_fsm:start_link({local, ?MODULE}, ?MODULE, ExportFun(), []).
 
 -spec put_meta_dict(partition_id(), dict()) -> ok.
 put_meta_dict(Partition,Dict) ->
     put_meta_dict(Partition, Dict, undefined).
 
-%% -spec put_meta_dict(partition_id(), dict(), fun((dict(),dict())->dict() | undefined) -> ok.
+-spec put_meta_dict(partition_id(), dict(), fun((dict(),dict())->dict()) | undefined) -> ok.
 put_meta_dict(Partition, Dict, Func) ->
     case ets:info(?META_TABLE_NAME) of
 	undefined ->
@@ -232,8 +237,6 @@ terminate(_Reason, _SN, _SD) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-
-
 -spec get_meta_data(fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.			 
 get_meta_data(MergeFunc, CheckNodes) ->
     TablesReady = case ets:info(?REMOTE_META_TABLE_NAME) of
@@ -322,13 +325,13 @@ update_stable(LastResult,NewDict,UpdateFunc) ->
 		      end
 	      end, {false,LastResult}, NewDict).
 
--spec get_node_list() -> [term()].
+-spec get_node_list() -> [node()].
 get_node_list() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     MyNode = node(),
     lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
 
--spec get_node_and_partition_list() -> {list(),list(),boolean()}.
+-spec get_node_and_partition_list() -> {[node()],[partition_id()],boolean()}.
 get_node_and_partition_list() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     MyNode = node(),
