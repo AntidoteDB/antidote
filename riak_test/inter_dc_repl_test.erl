@@ -17,6 +17,18 @@ confirm() ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
 
+    rt:wait_until_registered(Node1, inter_dc_pub),
+    rt:wait_until_registered(Node2, inter_dc_pub),
+
+    rt:wait_until_registered(Node1, inter_dc_log_reader_response),
+    rt:wait_until_registered(Node2, inter_dc_log_reader_response),
+
+    rt:wait_until_registered(Node1, inter_dc_log_reader_query),
+    rt:wait_until_registered(Node2, inter_dc_log_reader_query),
+
+    rt:wait_until_registered(Node1, inter_dc_sub),
+    rt:wait_until_registered(Node2, inter_dc_sub),
+
     {ok, DC1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
 
@@ -25,6 +37,10 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
 
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(Node1,fun wait_init:check_ready/1),
+    rt:wait_until(Node2,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     ok = rpc:call(Node1, inter_dc_manager, observe_dc, [DC2]),
     ok = rpc:call(Node2, inter_dc_manager, observe_dc, [DC1]),

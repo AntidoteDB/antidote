@@ -93,6 +93,14 @@ rsp_rcvd(PDCID, State) -> State#state{unanswered_queries = dict:erase(PDCID, Sta
 
 %% API
 
-query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
-add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}).
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
+query(PDCID, From, To) -> call({query, PDCID, From, To}).
+add_dc(DCID, LogReaders) -> call({add_dc, DCID, LogReaders}).
+del_dc(DCID) -> call({del_dc, DCID}).
+
+call(Request) ->
+    try
+	gen_server:call(?MODULE, Request)
+    catch
+	_:Reason ->
+	    {error, Reason}
+    end.
