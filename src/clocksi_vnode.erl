@@ -363,11 +363,11 @@ handle_command({abort, Transaction, Updates}, _Sender,
 
 handle_command({get_active_txns}, _Sender,
 	       #state{partition=Partition} = State) ->
-    {reply, get_active_txns_internal(Partition), State};
+    {reply, get_active_txns_internal(get_cache_name(Partition,prepared)), State};
 
 handle_command({get_active_txns, Key}, _Sender,
 	       #state{partition=Partition} = State) ->
-    {reply, get_active_txns_key_internal(Partition, Key), State};
+    {reply, get_active_txns_key_internal(get_cache_name(Partition,prepared), Key), State};
 
 
 handle_command(_Message, _Sender, State) ->
