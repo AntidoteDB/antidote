@@ -68,7 +68,7 @@ init([Partition]) ->
 
 handle_command(ping, _Sender, State) ->
   %% TODO: think if the timestamp could cause any problems
-  PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, inter_dc_utils:now_millisec()),
+  PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
   {reply, ok, broadcast(State, PingTxn)};
 
 handle_command({log_event, Operation}, _Sender, State) ->
@@ -116,3 +116,22 @@ broadcast(State, Txn) ->
   inter_dc_pub:broadcast(Txn),
   {_, Id} = Txn#interdc_txn.logid_range,
   set_timer(State1#state{last_log_id = Id}).
+
+%% @doc Return smallest snapshot time of active transactions.
+%%      No new updates with smaller timestamp will occur in future.
+get_stable_time(Partition) ->
+    Now = inter_dc_utils:now_millisec(),
+    case clocksi_vnode:get_active_txns_call(Partition) of
+        {ok, Active_txns} ->
+            lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
+                                case Min_time > Snapshot_time of
+                                    true ->
+                                        Snapshot_time;
+                                    false ->
+                                        Min_time
+                                end
+                        end,
+			Now,
+                        Active_txns);
+        _ -> Now
+    end.
