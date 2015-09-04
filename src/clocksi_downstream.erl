@@ -48,6 +48,9 @@ generate_downstream_op(Transaction, Node, Key, Type, Update) ->
                             crdt_pncounter ->
                                 {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
                                 {update, OpParam};
+                            crdt_rga ->
+                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+                                {update, OpParam};
                             _ ->
                                 {ok, NewState} = Type:update(Op, Actor, Snapshot),
                                 {merge, NewState}
