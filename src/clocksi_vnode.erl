@@ -28,6 +28,7 @@
 	 get_cache_name/2,
 	 get_active_txns_key/3,
 	 get_active_txns/2,
+	 get_active_txns_call/1,
          prepare/2,
          commit/3,
          single_commit/2,
@@ -91,6 +92,11 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
 	    Other
     end.
 
+get_active_txns_call(Partition) ->
+    riak_core_vnode_master:sync_command({Partition,node()},
+					{get_active_txns},
+					clocksi_vnode_master,
+					infinity).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -358,11 +364,11 @@ handle_command({abort, Transaction, Updates}, _Sender,
 
 handle_command({get_active_txns}, _Sender,
 	       #state{partition=Partition} = State) ->
-    {reply, get_active_txns_internal(Partition), State};
+    {reply, get_active_txns_internal(get_cache_name(Partition,prepared)), State};
 
 handle_command({get_active_txns, Key}, _Sender,
 	       #state{partition=Partition} = State) ->
-    {reply, get_active_txns_key_internal(Partition, Key), State};
+    {reply, get_active_txns_key_internal(get_cache_name(Partition,prepared), Key), State};
 
 
 handle_command(_Message, _Sender, State) ->
@@ -431,9 +437,9 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 		    {Result, NewPrepare};
 		_ ->
 		    {{error, no_updates},0}
-	    end;
-	false ->
-	    {{error, write_conflict},0}
+	    end
+	    %% false ->
+	    %%     {{error, write_conflict},0}
     end.
 
 
