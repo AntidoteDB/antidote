@@ -16,3 +16,9 @@ doc/
 log/
 tags
 rel/vars/*.config
+
+#IntelliJ IDEA ignores
+.idea/
+*.iml
+*.ipr
+*.iws
