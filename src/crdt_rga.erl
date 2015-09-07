@@ -17,13 +17,13 @@
 %% @end
 -module(crdt_rga).
 
--export([new/0, update/2, purge_tombstones/1, generate_downstream/3]).
+-export([new/0, update/2, purge_tombstones/1, generate_downstream/3, value/1]).
 
 -export_type([rga/0, rga_op/0, rga_downstream_op/0]).
 
-%% -ifdef(TEST).
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-%% -endif.
+-endif.
 
 -type vertex() :: {atom(), any(), number()}.
 
@@ -52,6 +52,11 @@ generate_downstream({addRight, Elem, Position}, _Actor, Rga) ->
     end;
 generate_downstream({remove, Position}, _Actor, Rga) ->
     {ok, {remove, lists:nth(Position, Rga)}}.
+
+%% @doc given an RGA, returns the same RGA, as it represents its own value.
+-spec value(rga()) -> rga().
+value(Rga) ->
+    Rga.
 
 %% @doc This method takes in an rga operation and an rga to perform the operation.
 %% It returns either the added Vertex and the new rga in case of an insert, and the new rga in the case of a remove.
