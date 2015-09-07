@@ -8,9 +8,14 @@
 confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
-    simple_test(),
+    empty_test(Nodes),
     rt:clean_cluster(Nodes),
     pass.
 
-simple_test() ->
-    ?assert(true).
+empty_test(Nodes) ->
+    FirstNode = hd(Nodes),
+    lager:info("empty_test started"),
+    Type = crdt_rga,
+    Key = key_empty,
+    Result0 = rpc:call(FirstNode, antidote, read, [Key, Type]),
+    ?assertMatch({ok, []}, Result0).
