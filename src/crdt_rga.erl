@@ -6,7 +6,7 @@
 %% first call `generate_downstream/3', to get the downstream version of the
 %% operation, and then call `update/2'.
 %%
-%% It provides two operations: insert, which adds an element to the RGA, and delete,
+%% It provides two operations: addRight, which adds an element to the RGA, and remove,
 %% which removes an element from the RGA.
 %%
 %% This implementation is based on the paper cited below.
@@ -59,7 +59,7 @@ value(Rga) ->
     Rga.
 
 %% @doc This method takes in an rga operation and an rga to perform the operation.
-%% It returns either the added Vertex and the new rga in case of an insert, and the new rga in the case of a remove.
+%% It returns either the added Vertex and the new rga in case of an addRight, and the new rga in the case of a remove.
 -spec update(rga_downstream_op(), rga()) -> rga_result().
 update({addRight, RightVertex, NewVertex}, Rga) ->
     recursive_insert(RightVertex, NewVertex, Rga, []);
@@ -92,7 +92,8 @@ add_element(Insert, [], L) ->
     {ok, lists:reverse([Insert | L])}.
 
 %% Private
-%% @doc recursively looks for the Vertex to be removed. Once it is found, it is marked as "deleted", erasing its value.
+%% @doc recursively looks for the Vertex to be removed. Once it's found, it's marked as "deleted".
+%% The Vertex is not removed from the list, to allow adding elements to its right.
 -spec recursive_remove(vertex(), rga(), list()) -> rga_result().
 recursive_remove(_, [], L) ->
     {ok, L};
@@ -148,7 +149,7 @@ add_right_in_non_empty_rga_test() ->
     {ok, L2} = update(DownstreamOp1, L1),
     ?assertMatch([{ok, 1, _}, {ok, 2, _}], L2).
 
-%% In the tests that follow, the values of generate_downstream are placed by hand so
+%% In the tests that follow, the values of generate_downstream are placed by hand ,so
 %% the intended scenarios can be correctly tested, not depending on the unique() function.
 
 insert_in_the_middle_test() ->
@@ -211,7 +212,7 @@ insert_right_of_a_remove_test() ->
     {ok, L5} = update(DownstreamOp5, L4),
     ?assertMatch([{ok, 1, _}, {deleted, 2, _}, {ok, 4, _}, {ok, 3, _}], L5).
 
-pruge_tombstones_test() ->
+purge_tombstones_test() ->
     L = new(),
     DownstreamOp1 = {addRight, {ok, 0, 0}, {ok, 1, 1}},
     DownstreamOp2 = {addRight, {ok, 1, 1}, {ok, 3, 2}},
@@ -225,7 +226,7 @@ pruge_tombstones_test() ->
     ?assertMatch([{ok, 1, _}, {ok, 3, _}], L5).
 
 %% This test creates two RGAs and performs updates, checking they reach
-%% the same final state after the two updates are aplied in both replicas.
+%% the same final state after the four updates are aplied in both replicas.
 concurrent_updates_in_two_replicas_test() ->
     R1_0 = new(),
     R2_0 = new(),
