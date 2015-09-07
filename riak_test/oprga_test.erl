@@ -11,6 +11,7 @@ confirm() ->
     empty_test(Nodes),
     add_test(Nodes),
     remove_test(Nodes),
+    insert_after_remove_test(Nodes),
     rt:clean_cluster(Nodes),
     pass.
 
@@ -69,3 +70,23 @@ remove_test(Nodes) ->
     Result5 = rpc:call(FirstNode, antidote, read, [Key, Type]),
     ?assertMatch({ok, [{deleted, a, _}, {deleted, b, _}, {deleted, c, _}]}, Result5),
     lager:info("Remove test OK").
+
+insert_after_remove_test(Nodes) ->
+    FirstNode = hd(Nodes),
+    lager:info("Remove-Insert test started"),
+    Type = crdt_rga,
+    Key = key_remove_insert,
+    Result0 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+        [[{update, Key, Type, {{addRight, a, 1}, ucl}},
+            {update, Key, Type, {{addRight, b, 1}, ucl}},
+            {update, Key, Type, {{addRight, c, 2}, ucl}}]]),
+    ?assertMatch({ok, _}, Result0),
+    Result1 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+        [[{update, Key, Type, {{remove, 3}, ucl}}]]),
+    ?assertMatch({ok, _}, Result1),
+    Result2 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+        [[{update, Key, Type, {{addRight, d, 3}, ucl}}]]),
+    ?assertMatch({ok, _}, Result2),
+    Result3 = rpc:call(FirstNode, antidote, read, [Key, Type]),
+    ?assertMatch({ok, [{ok, a, _}, {ok, b, _}, {deleted, c, _}, {ok, d, _}]}, Result3),
+    lager:info("Remove-Insert test OK").
