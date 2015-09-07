@@ -71,6 +71,8 @@ update({remove, Vertex}, Rga) ->
 -spec recursive_insert(vertex(), vertex(), rga(), list()) -> rga_result().
 recursive_insert(_, NewVertex, [], []) ->
     {ok, [NewVertex]};
+recursive_insert({ok, 0, 0}, NewVertex, L, []) ->
+    add_element(NewVertex, L, []);
 recursive_insert(RightVertex, NewVertex, [RightVertex | T], L) ->
     add_element(NewVertex, T, [RightVertex | L]);
 recursive_insert(RightVertex, NewVertex, [H | T], L) ->
@@ -221,6 +223,26 @@ pruge_tombstones_test() ->
     {ok, L4} = update(DownstreamOp4, L3),
     {ok, L5} = purge_tombstones(L4),
     ?assertMatch([{ok, 1, _}, {ok, 3, _}], L5).
+
+%% This test creates two RGAs and performs updates, checking they reach
+%% the same final state after the two updates are aplied in both replicas.
+concurrent_updates_in_two_replicas_test() ->
+    R1_0 = new(),
+    R2_0 = new(),
+    {ok, DownstreamOp1} = generate_downstream({addRight, 1, 1}, 1, R1_0),
+    {ok, DownstreamOp2} = generate_downstream({addRight, 2, 1}, 1, R2_0),
+    {ok, R1_1} = update(DownstreamOp1, R1_0),
+    {ok, R2_1} = update(DownstreamOp2, R2_0),
+    {ok, R1_2} = update(DownstreamOp2, R1_1),
+    {ok, R2_2} = update(DownstreamOp1, R2_1),
+    ?assertEqual(R1_2, R2_2),
+    {ok, DownstreamOp3} = generate_downstream({addRight, 3, 2}, 1, R1_2),
+    {ok, DownstreamOp4} = generate_downstream({addRight, 4, 2}, 1, R2_2),
+    {ok, R1_3} = update(DownstreamOp3, R1_2),
+    {ok, R2_3} = update(DownstreamOp4, R2_2),
+    {ok, R1_4} = update(DownstreamOp4, R1_3),
+    {ok, R2_4} = update(DownstreamOp3, R2_3),
+    ?assertEqual(R1_4, R2_4).
 
 -endif.
 
