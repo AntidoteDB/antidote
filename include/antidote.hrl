@@ -53,7 +53,7 @@
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
--define(SYNC_LOG, true).
+-define(SYNC_LOG, false).
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
