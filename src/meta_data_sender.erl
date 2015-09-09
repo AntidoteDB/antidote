@@ -23,12 +23,25 @@
 
 -include("antidote.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-define(GET_NODE_LIST(), get_node_list_t()).
+-define(GET_NODE_AND_PARTITION_LIST(), get_node_and_partition_list_t()).
+-else.
+-define(GET_NODE_LIST(), get_node_list()).
+-define(GET_NODE_AND_PARTITION_LIST(), get_node_and_partition_list()).
+-endif.
+
+
+
 -export([start_link/4,
 	 put_meta_dict/2,
 	 put_meta_dict/3,
 	 put_meta_data/3,
 	 put_meta_data/4,
 	 get_meta_dict/1,
+	 get_node_list/0,
+	 get_node_and_partition_list/0,
 	 get_merged_data/0,
          remove_partition/1,
 	 send_meta_data/2]).
@@ -201,7 +214,7 @@ send_meta_data(timeout, State = #state{last_result = LastResult,
 				       merge_function = MergeFunction,
 				       should_check_nodes = CheckNodes}) ->
     {WillChange,Dict} = get_meta_data(MergeFunction, CheckNodes),
-    NodeList = get_node_list(),
+    NodeList = ?GET_NODE_LIST(),
     LocalMerged = dict:fetch(local_merged,Dict),
     MyNode = node(),
     ok = lists:foreach(fun(Node) ->
@@ -237,7 +250,7 @@ terminate(_Reason, _SN, _SD) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
--spec get_meta_data(fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.			 
+-spec get_meta_data(fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.
 get_meta_data(MergeFunc, CheckNodes) ->
     TablesReady = case ets:info(?REMOTE_META_TABLE_NAME) of
 		      undefined ->
@@ -254,7 +267,7 @@ get_meta_data(MergeFunc, CheckNodes) ->
 	false ->
 	    false;
 	true ->
-	    {NodeList,PartitionList,WillChange} = get_node_and_partition_list(),
+	    {NodeList,PartitionList,WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
 	    RemoteDict = dict:from_list(ets:tab2list(?REMOTE_META_TABLE_NAME)),
 	    LocalDict = dict:from_list(ets:tab2list(?META_TABLE_NAME)),
 
@@ -341,3 +354,96 @@ get_node_and_partition_list() ->
     %% safe becuase can cause inconsistencies during concurrency, so this should
     %% be done differently
     {NodeList,PartitionList,riak_core_ring:is_resizing(Ring)}.
+
+-ifdef(TEST).
+
+%% This test checks to make sure that merging is done correctly for multiple partitions
+%% It uses the functions in stable_time_functions.erl
+merge_test() ->
+    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    _Table = ets:new(?META_TABLE_STABLE_NAME, [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
+    _Table2 = ets:new(?META_TABLE_NAME, [set, named_table, public, ?META_TABLE_CONCURRENCY]),
+    _Table3 = ets:new(node_table, [set, named_table]),
+    _Table4 = ets:new(?REMOTE_META_TABLE_NAME, [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
+    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+    true = ets:insert(node_table, {nodes, [n1]}),
+    true = ets:insert(node_table, {testnum, test1}),
+    true = ets:insert(node_table, {partitions, [p1,p2]}),
+    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,5}])),
+    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,10}])),
+    {false,Dict1} = get_meta_data(MergeFunc,false),
+    LocalMerged1 = dict:fetch(local_merged,Dict1),
+    ?assertEqual(LocalMerged1,dict:from_list([{dc1,5},{dc2,5}])),
+
+    true = ets:insert(node_table, {nodes, [n1,n2]}),
+    true = ets:insert(node_table, {partitions, [p1,p2,p3]}),
+    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,5}])),
+    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,10}])),
+    put_meta_dict(p3,dict:from_list([{dc1,20},{dc2,20}])),
+    {false,Dict2} = get_meta_data(MergeFunc,false),
+    LocalMerged2 = dict:fetch(local_merged,Dict2),
+    ?assertEqual(LocalMerged2,dict:from_list([{dc1,5},{dc2,5}])),
+    ok.
+
+%% Basic empty test
+empty_test() ->
+    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+    true = ets:insert(node_table, {nodes, [n1]}),
+    true = ets:insert(node_table, {testnum, test1}),
+    true = ets:insert(node_table, {partitions, [p1,p2,p3]}),
+    
+    put_meta_dict(p1,dict:from_list([])),
+    put_meta_dict(p2,dict:from_list([])),
+    put_meta_dict(p3,dict:from_list([])),
+
+    {false,Dict1} = get_meta_data(MergeFunc,false),
+    LocalMerged1 = dict:fetch(local_merged,Dict1),
+    ?assertEqual(LocalMerged1,dict:from_list([])).
+    
+
+%% This test checks to make sure that merging is done correctly for multiple partitions
+%% when you have a node that is removed from the cluster
+%% It uses the functions in stable_time_functions.erl
+merge_node_change_test() ->
+    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+    true = ets:insert(node_table, {nodes, [n1]}),
+    true = ets:insert(node_table, {testnum, test2}),
+    true = ets:insert(node_table, {partitions, [p1,p2]}),
+    
+    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,5}])),
+    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,10}])),
+    {true,Dict1} = get_meta_data(MergeFunc,false),
+    LocalMerged1 = dict:fetch(local_merged,Dict1),
+    ?assertEqual(LocalMerged1,dict:from_list([{dc1,5},{dc2,5}])),
+    
+    true = ets:insert(node_table, {nodes, [n1,n2]}),
+    true = ets:insert(node_table, {partitions, [p1,p3]}),
+    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,10}])),
+    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,5}])),
+    put_meta_dict(p3,dict:from_list([{dc1,20},{dc2,20}])),
+    {true,Dict2} = get_meta_data(MergeFunc,true),
+    LocalMerged2 = dict:fetch(local_merged,Dict2),
+    ?assertEqual(LocalMerged2,dict:from_list([{dc1,10},{dc2,10}])),
+    ok.
+
+get_node_list_t() ->
+    [{nodes, Nodes}] = ets:lookup(node_table, nodes),
+    Nodes.
+
+get_node_and_partition_list_t() ->
+    [{testnum,TestNum}] = ets:lookup(node_table, testnum),
+    case TestNum of
+	test1 ->
+	    [{nodes, Nodes}] = ets:lookup(node_table, nodes),
+	    [{partitions, Partitions}] = ets:lookup(node_table, partitions),
+	    {Nodes,Partitions,false};
+	test2 ->
+	    [{nodes, Nodes}] = ets:lookup(node_table, nodes),
+	    [{partitions, Partitions}] = ets:lookup(node_table, partitions),
+	    {Nodes,Partitions,true}
+    end.
+
+
+-endif.
