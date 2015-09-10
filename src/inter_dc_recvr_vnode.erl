@@ -107,14 +107,14 @@ init([Partition]) ->
 handle_command({store_update, Transaction}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
                        Transaction, State),
-    %% Dets shouldnt be used
-    %% ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
+    %% This should be changed to disk_log??
+    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {reply, ok, NewState};
 
 handle_command({process_queue}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:process_queue(State),
-    %% Dets shouldn't be used
-    %% ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
+    %% This should be changed to disk_log??
+    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {noreply, NewState}.
 
 handle_handoff_command(_Message, _Sender, State) ->

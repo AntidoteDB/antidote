@@ -78,7 +78,6 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 					      #log_record{op_type=noop, op_payload = Partition}
 					 }],
 			    DcId = dc_utilities:get_my_dc_id(),
-			    %% {ok, Clock} = vectorclock:get_clock(Partition),
 			    Clock = meta_data_sender:get_meta_dict(Partition),
 			    Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
 			    TxId = 0,
@@ -89,7 +88,6 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 			      {replicate, [Transaction]}, DCs),
 			    NewReaderState;
 			[_H|_T] ->
-			    %% lager:info("Sending transactions ~p to ~p", [length(Transactions), DCs]),
 			    ok = inter_dc_communication_sender:propagate_sync(
 				   {replicate, Transactions}, DCs),
 			    NewReaderState
