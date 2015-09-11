@@ -26,7 +26,8 @@
 -export([start_link/0,
 	 generate_server_name/1,
 	 remove_node/1,
-	 send_meta_data/3]).
+	 send_meta_data/3,
+	 add_new_meta_data/1]).
 -export([init/1,
 	 handle_cast/2,
 	 handle_call/3,
@@ -60,6 +61,9 @@ send_meta_data(DestinationNodeId,NodeId,Dict) ->
 remove_node(NodeId) ->
     gen_server:cast({global,generate_server_name(node())}, {remove_node,NodeId}).
 
+-spec add_new_meta_data(atom()) -> ok.
+add_new_meta_data(NodeId) ->
+    gen_server:cast({global,generate_server_name(node())}, {update_meta_data_new,NodeId}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -71,6 +75,10 @@ init([]) ->
 
 handle_cast({update_meta_data, NodeId, Dict}, State) ->
     true = ets:insert(?REMOTE_META_TABLE_NAME, {NodeId, Dict}),
+    {noreply, State};
+
+handle_cast({update_meta_data_new, NodeId}, State) ->
+    true = ets:insert_new(?REMOTE_META_TABLE_NAME, {NodeId, undefined}),
     {noreply, State};
 
 handle_cast({remove_node,NodeId}, State) ->

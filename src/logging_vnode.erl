@@ -230,8 +230,10 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case insert_operation(Log, LogId, #operation{op_number = OpId, payload = Payload}) of
+	    Operation = #operation{op_number = OpId, payload = Payload},
+            case insert_operation(Log, LogId, Operation) of
                 {ok, OpId} ->
+		    inter_dc_log_sender:send(Partition, Operation),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of
@@ -259,8 +261,10 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
 						      {NewNewClock, _Node} = OpId,
 						      case get_log_from_map(Map, Partition, LogId) of
 							  {ok, Log} ->
-							      case insert_operation(Log, LogId, #operation{op_number = OpId, payload = Payload}) of
+							      Operation = #operation{op_number = OpId, payload = Payload},
+							      case insert_operation(Log, LogId, Operation) of
 								  {ok, OpId} ->
+								      inter_dc_log_sender:send(Partition, Operation),
 								      {AccErr, AccSucc ++ [OpId], NewNewClock};
 								  {error, Reason} ->
 								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
