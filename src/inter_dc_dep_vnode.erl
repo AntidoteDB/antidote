@@ -53,7 +53,7 @@
 %% VNode state
 -record(state, {
   partition :: partition_id(),
-  queue :: queue(),
+  queues :: dict(), %% DCID -> queue()
   vectorclock :: vectorclock()
 }).
 
@@ -62,7 +62,7 @@
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   {ok, StableSnapshot} = vectorclock:get_stable_snapshot(),
-  {ok, #state{partition = Partition, queue = queue:new(), vectorclock = StableSnapshot}}.
+  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
@@ -70,23 +70,36 @@ handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_s
 
 %%%% VNode methods ----------------------------------------------------------+
 
--spec process_queue(#state{}) -> #state{}.
-process_queue(State=#state{queue=Queue}) ->
+%% Check the content of each queue, try to apply as many elements as possible.
+%% If any element was successfully pushed from any queue, repeat the process.
+-spec process_all_queues(#state{}) -> #state{}.
+process_all_queues(State = #state{queues = Queues}) ->
+  DCIDs = dict:fetch_keys(Queues),
+  {NewState, NumUpdated} = lists:foldl(fun process_queue/2, {State, 0}, DCIDs),
+  case NumUpdated of
+    0 -> NewState;
+    _ -> process_all_queues(NewState)
+  end.
+
+%% Tries to process as many elements in the queue as possible.
+%% Returns the new state and the number of processed elements
+process_queue(DCID, {State, Acc}) ->
+  Queue = dict:fetch(DCID, State#state.queues),
   case queue:peek(Queue) of
-    empty -> State;
+    empty -> {State, Acc};
     {value, Txn} ->
       {NewState, Success} = try_store(State, Txn),
       case Success of
-        false -> NewState;
-        true -> process_queue(NewState#state{queue = queue:drop(Queue)})
-      end
+        false -> {NewState, Acc};
+        true -> process_queue(DCID, {pop_txn(NewState, DCID), Acc + 1}) %% remove the just-applied txn and retry
+    end
   end.
 
 %% Store the heartbeat message.
 %% This is not a true transaction, so its dependencies are always satisfied.
 -spec try_store(#state{}, #interdc_txn{}) -> {#state{}, boolean}.
 try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, operations = []}) ->
-  {update_the_clock(State, DCID, Timestamp), true};
+  {update_clock(State, DCID, Timestamp), true};
 
 %% Store the normal transaction
 try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
@@ -112,11 +125,11 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
-      {update_the_clock(State, DCID, Timestamp), true}
+      {update_clock(State, DCID, Timestamp), true}
   end.
 
-handle_command({txn, Txn}, _Sender, State=#state{queue=Queue}) ->
-  NewState = process_queue(State#state{queue = queue:in(Txn, Queue)}),
+handle_command({txn, Txn}, _Sender, State) ->
+  NewState = process_all_queues(push_txn(State, Txn)),
   {reply, ok, NewState}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
@@ -133,7 +146,22 @@ delete(State) -> {ok, State}.
 
 %%%% Utilities --------------------------------------------------------------+
 
-update_the_clock(State, DCID, Timestamp) ->
+-spec push_txn(#state{}, #interdc_txn{}) -> #state{}.
+push_txn(State = #state{queues = Queues}, Txn = #interdc_txn{dcid = DCID}) ->
+  DCID = Txn#interdc_txn.dcid,
+  Queue = case dict:find(DCID, Queues) of
+    {ok, Q} -> Q;
+    error -> queue:new()
+  end,
+  NewQueue = queue:in(Txn, Queue),
+  State#state{queues = dict:store(DCID, NewQueue, Queues)}.
+
+pop_txn(State = #state{queues = Queues}, DCID) ->
+  Queue = dict:fetch(DCID, Queues),
+  NewQueue = queue:drop(Queue),
+  State#state{queues = dict:store(DCID, NewQueue, Queues)}.
+
+update_clock(State, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
   NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp - 1, State#state.vectorclock),
   ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),
