@@ -99,7 +99,7 @@ init(_Args) ->
 			[inter_dc_communication_sender_fsm_sup]},
     
     MetaDataManagerSup = {meta_data_manager_sup,
-			  {meta_data_manager_sup, start_link, []},
+			  {meta_data_manager_sup, start_link, [stable]},
 			  permanent, 5000, supervisor,
 			  [meta_data_manager_sup]},
 

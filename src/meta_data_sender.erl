@@ -34,16 +34,17 @@
 
 
 
--export([start_link/4,
-	 put_meta_dict/2,
+-export([start_link/5,
 	 put_meta_dict/3,
-	 put_meta_data/3,
+	 put_meta_dict/4,
 	 put_meta_data/4,
-	 get_meta_dict/1,
+	 put_meta_data/5,
+	 get_meta_dict/2,
 	 get_node_list/0,
 	 get_node_and_partition_list/0,
-	 get_merged_data/0,
-         remove_partition/1,
+	 get_merged_data/1,
+         remove_partition/2,
+	 get_name/2,
 	 send_meta_data/2]).
 
 %% Callbacks
@@ -59,6 +60,7 @@
 	  table :: ets:tid(),
 	  table2 :: ets:tid(),
 	  last_result :: dict(),
+	  name :: atom(),
 	  update_function :: fun((term(),term())->boolean()),
 	  merge_function :: fun((dict())->dict()),
 	  should_check_nodes :: boolean()}).
@@ -100,17 +102,18 @@
 %% was designed with light heart-beat type meta-data in mind.
 
 
--spec start_link(fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()) -> {ok,pid()} | ignore | {error,term()}.
-start_link(UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
-    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
+-spec start_link(atom(),fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()) -> {ok,pid()} | ignore | {error,term()}.
+start_link(Name,UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
+    gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
+		       ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
 
--spec put_meta_dict(partition_id(), dict()) -> ok.
-put_meta_dict(Partition,Dict) ->
-    put_meta_dict(Partition, Dict, undefined).
+-spec put_meta_dict(atom(),partition_id(), dict()) -> ok.
+put_meta_dict(Name,Partition,Dict) ->
+    put_meta_dict(Name, Partition, Dict, undefined).
 
--spec put_meta_dict(partition_id(), dict(), fun((dict(),dict())->dict()) | undefined) -> ok.
-put_meta_dict(Partition, Dict, Func) ->
-    case ets:info(?META_TABLE_NAME) of
+-spec put_meta_dict(atom(),partition_id(), dict(), fun((dict(),dict())->dict()) | undefined) -> ok.
+put_meta_dict(Name,Partition, Dict, Func) ->
+    case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
 	    ok;
 	_ ->
@@ -118,24 +121,25 @@ put_meta_dict(Partition, Dict, Func) ->
 			 undefined ->
 			     Dict;
 			 _ ->
-			     Func(Dict, get_meta_dict(Partition))
+			     Func(Dict, get_meta_dict(Name,Partition))
 		     end,
-	    true = ets:insert(?META_TABLE_NAME, {Partition, Result}),
+	    %% lager:info("put partition ~p, dict ~p", [Partition,dict:to_list(Dict)]),
+	    true = ets:insert(get_name(Name,?META_TABLE_NAME), {Partition, Result}),
 	    ok
     end.
 
 
--spec put_meta_data(partition_id(), term(), term()) -> ok.
-put_meta_data(Partition, Key, Value) ->
-    put_meta_data(Partition, Key, Value, fun(_Prev,Val) -> Val end).
+-spec put_meta_data(atom(),partition_id(), term(), term()) -> ok.
+put_meta_data(Name,Partition, Key, Value) ->
+    put_meta_data(Name,Partition, Key, Value, fun(_Prev,Val) -> Val end).
 
--spec put_meta_data(partition_id(), term(), term(), fun((term(),term()) -> term())) -> ok.
-put_meta_data(Partition, Key, Value, Func) ->
-    case ets:info(?META_TABLE_NAME) of
+-spec put_meta_data(atom(),partition_id(), term(), term(), fun((term(),term()) -> term())) -> ok.
+put_meta_data(Name, Partition, Key, Value, Func) ->
+    case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
 	    ok;
 	_ ->
-	    Dict = case ets:lookup(?META_TABLE_NAME, Partition) of
+	    Dict = case ets:lookup(get_name(Name,?META_TABLE_NAME), Partition) of
 		       [] ->
 			   dict:new();
 		       [{Partition,Other}] ->
@@ -150,13 +154,13 @@ put_meta_data(Partition, Key, Value, Func) ->
 	    put_meta_dict(Partition, NewDict, undefined)
     end.
 
--spec get_meta_dict(partition_id()) -> dict().
-get_meta_dict(Partition) ->
-    case ets:info(?META_TABLE_NAME) of
+-spec get_meta_dict(atom(),partition_id()) -> dict().
+get_meta_dict(Name,Partition) ->
+    case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
 	    dict:new();
 	_ ->
-	    case ets:lookup(?META_TABLE_NAME, Partition) of
+	    case ets:lookup(get_name(Name,?META_TABLE_NAME), Partition) of
 		[] ->
 		    dict:new();
 		[{Partition,Other}] ->
@@ -164,25 +168,25 @@ get_meta_dict(Partition) ->
 	    end
     end.
 
--spec remove_partition(partition_id()) -> ok | false.
-remove_partition(Partition) ->
-    case ets:info(?META_TABLE_NAME) of
+-spec remove_partition(atom(),partition_id()) -> ok | false.
+remove_partition(Name,Partition) ->
+    case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
 	    false;
 	_ ->
-	    true = ets:delete(?META_TABLE_NAME, Partition),
+	    true = ets:delete(get_name(Name,?META_TABLE_NAME), Partition),
 	    ok
     end.
 
 %% Add info about a new DC. This info could be
 %% used by other modules to communicate to other DC
--spec get_merged_data() -> dict().
-get_merged_data() ->
-    case ets:info(?META_TABLE_STABLE_NAME) of
+-spec get_merged_data(atom()) -> dict().
+get_merged_data(Name) ->
+    case ets:info(get_name(Name, ?META_TABLE_STABLE_NAME)) of
 	undefined ->
 	    dict:new();
 	_ ->
-	    case ets:lookup(?META_TABLE_STABLE_NAME, merged_data) of
+	    case ets:lookup(get_name(Name,?META_TABLE_STABLE_NAME), merged_data) of
 		[] ->
 		    dict:new();
 		[{merged_data,Other}] ->
@@ -191,40 +195,40 @@ get_merged_data() ->
     end.
 
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-
-init([UpdateFunction,MergeFunction,InitialLocal,InitialMerged]) ->
-    Table = ets:new(?META_TABLE_STABLE_NAME, [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
-    Table2 = ets:new(?META_TABLE_NAME, [set, named_table, public, ?META_TABLE_CONCURRENCY]),
-    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+init([Name,UpdateFunction,MergeFunction,InitialLocal,InitialMerged]) ->
+    Table = ets:new(get_name(Name,?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
+    Table2 = ets:new(get_name(Name,?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
+    true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
     {ok, send_meta_data, #state{table = Table,
 				table2 = Table2,
 				last_result = InitialLocal,
 				update_function = UpdateFunction,
 				merge_function = MergeFunction,
+				name = Name,
 				should_check_nodes=true},
      ?META_DATA_SLEEP}.
 
 send_meta_data(timeout, State = #state{last_result = LastResult,
 				       update_function = UpdateFunction,
 				       merge_function = MergeFunction,
+				       name = Name,
 				       should_check_nodes = CheckNodes}) ->
-    {WillChange,Dict} = get_meta_data(MergeFunction, CheckNodes),
+    {WillChange,Dict} = get_meta_data(Name, MergeFunction, CheckNodes),
     NodeList = ?GET_NODE_LIST(),
     LocalMerged = dict:fetch(local_merged,Dict),
     MyNode = node(),
     ok = lists:foreach(fun(Node) ->
-			       ok = meta_data_manager:send_meta_data(Node,MyNode,LocalMerged)
+			       ok = meta_data_manager:send_meta_data(Name,Node,MyNode,LocalMerged)
 		       end, NodeList),
     MergedDict = MergeFunction(Dict),
     {NewBool, NewResult} = update_stable(LastResult,MergedDict,UpdateFunction),
     Store = case NewBool of
 		true ->
-		    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, NewResult}),
+		    true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, NewResult}),
 		    NewResult;
 		false ->
 		    LastResult
@@ -250,13 +254,13 @@ terminate(_Reason, _SN, _SD) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
--spec get_meta_data(fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.
-get_meta_data(MergeFunc, CheckNodes) ->
-    TablesReady = case ets:info(?REMOTE_META_TABLE_NAME) of
+-spec get_meta_data(atom(),fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.
+get_meta_data(Name, MergeFunc, CheckNodes) ->
+    TablesReady = case ets:info(get_name(Name,?REMOTE_META_TABLE_NAME)) of
 		      undefined ->
 			  false;
 		      _ ->
-			  case ets:info(?META_TABLE_NAME) of
+			  case ets:info(get_name(Name,?META_TABLE_NAME)) of
 			      undefined ->
 				  false;
 			      _ ->
@@ -268,8 +272,9 @@ get_meta_data(MergeFunc, CheckNodes) ->
 	    false;
 	true ->
 	    {NodeList,PartitionList,WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
-	    RemoteDict = dict:from_list(ets:tab2list(?REMOTE_META_TABLE_NAME)),
-	    LocalDict = dict:from_list(ets:tab2list(?META_TABLE_NAME)),
+	    RemoteDict = dict:from_list(ets:tab2list(get_name(Name,?REMOTE_META_TABLE_NAME))),
+	    LocalDict = dict:from_list(ets:tab2list(get_name(Name,?META_TABLE_NAME))),
+	    %% lager:info("node ~p partition ~p will change ~p remote ~p, local ~p", [NodeList,PartitionList,WillChange,dict:to_list(RemoteDict),dict:to_list(LocalDict)]),
 	    %% Be sure that you are only checking active nodes
 	    %% This isnt the most efficent way to do this because are checking the list
 	    %% of nodes and partitions every time to see if any have been removed/added
@@ -285,7 +290,7 @@ get_meta_data(MergeFunc, CheckNodes) ->
 								 dict:store(NodeId,Val,Acc);
 							     error ->
 								 %% Put a record in the ets table because there is none for this node
-								 ets:insert_new(?REMOTE_META_TABLE_NAME,{NodeId,undefined}),
+								 meta_data_manager:add_new_meta_data(Name,NodeId),
 								 dict:store(NodeId,undefined,Acc)
 							 end,
 						Acc2New = dict:erase(NodeId,Acc2),
@@ -293,7 +298,7 @@ get_meta_data(MergeFunc, CheckNodes) ->
 					end, {dict:new(),RemoteDict}, NodeList),
 			%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
 			dict:fold(fun(NodeId,_Val,_Acc) ->
-					  ok = meta_data_manager:remove_node(NodeId)
+					  ok = meta_data_manager:remove_node(Name, NodeId)
 				  end,ok,NodeErase),
 			
 			%% Be sure that you are only checking local partitions
@@ -304,7 +309,7 @@ get_meta_data(MergeFunc, CheckNodes) ->
 								 dict:store(PartitionId,Val,Acc);
 							     error ->
 								 %% Put a record in the ets table because there is none for this partition
-								 ets:insert_new(?META_TABLE_NAME,{PartitionId,undefined}),
+								 ets:insert_new(get_name(Name,?META_TABLE_NAME) ,{PartitionId,undefined}),
 								 dict:store(PartitionId,undefined,Acc)
 							 end,
 						Acc2New = dict:erase(PartitionId,Acc2),
@@ -312,7 +317,7 @@ get_meta_data(MergeFunc, CheckNodes) ->
 					end, {dict:new(),LocalDict}, PartitionList),
 			%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
 			dict:fold(fun(PartitionId,_Val,_Acc) ->
-					  ok = remove_partition(PartitionId)
+					  ok = remove_partition(Name,PartitionId)
 				  end,ok,PartitionErase),
 			
 			{NewDict,NewLocalDict};
@@ -320,6 +325,7 @@ get_meta_data(MergeFunc, CheckNodes) ->
 			{RemoteDict,LocalDict}
 		end,
 	    LocalMerged = MergeFunc(NewLocal),
+	    %% lager:info("newlocal ~p newremote ~p localmerged ~p", [dict:to_list(NewLocal),dict:to_list(NewRemote),dict:to_list(LocalMerged)]),
 	    {WillChange,dict:store(local_merged, LocalMerged, NewRemote)}
     end.
 
@@ -355,67 +361,72 @@ get_node_and_partition_list() ->
     %% Deciding if the nodes might change by checking the is_resizing function is not
     %% safe becuase can cause inconsistencies during concurrency, so this should
     %% be done differently
-    {NodeList,PartitionList,riak_core_ring:is_resizing(Ring)}.
+    %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
+    Resize = true,
+    {NodeList,PartitionList,Resize}.
+
+get_name(Name,TableName) ->
+    list_to_atom(atom_to_list(Name) ++ atom_to_list(TableName)).
 
 -ifdef(TEST).
 
 %% This test checks to make sure that merging is done correctly for multiple partitions
 %% It uses the functions in stable_time_functions.erl
 merge_test() ->
-    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    _Table = ets:new(?META_TABLE_STABLE_NAME, [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
-    _Table2 = ets:new(?META_TABLE_NAME, [set, named_table, public, ?META_TABLE_CONCURRENCY]),
+    [Name,_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    _Table = ets:new(get_name(Name,?META_TABLE_STABLE_NAME), [set, named_table, ?META_TABLE_STABLE_CONCURRENCY]),
+    _Table2 = ets:new(get_name(Name,?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     _Table3 = ets:new(node_table, [set, named_table]),
-    _Table4 = ets:new(?REMOTE_META_TABLE_NAME, [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
-    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+    _Table4 = ets:new(get_name(Name,?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
+    true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
     true = ets:insert(node_table, {nodes, [n1]}),
     true = ets:insert(node_table, {testnum, test1}),
     true = ets:insert(node_table, {partitions, [p1,p2]}),
-    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,5}])),
-    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,10}])),
-    {false,Dict1} = get_meta_data(MergeFunc,false),
+    put_meta_dict(Name,p1,dict:from_list([{dc1,10},{dc2,5}])),
+    put_meta_dict(Name,p2,dict:from_list([{dc1,5},{dc2,10}])),
+    {false,Dict1} = get_meta_data(Name,MergeFunc,false),
     LocalMerged1 = dict:fetch(local_merged,Dict1),
     ?assertEqual(LocalMerged1,dict:from_list([{dc1,5},{dc2,5}])),
 
     true = ets:insert(node_table, {nodes, [n1,n2]}),
     true = ets:insert(node_table, {partitions, [p1,p2,p3]}),
-    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,5}])),
-    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,10}])),
-    put_meta_dict(p3,dict:from_list([{dc1,20},{dc2,20}])),
-    {false,Dict2} = get_meta_data(MergeFunc,false),
+    put_meta_dict(Name,p1,dict:from_list([{dc1,10},{dc2,5}])),
+    put_meta_dict(Name,p2,dict:from_list([{dc1,5},{dc2,10}])),
+    put_meta_dict(Name,p3,dict:from_list([{dc1,20},{dc2,20}])),
+    {false,Dict2} = get_meta_data(Name,MergeFunc,false),
     LocalMerged2 = dict:fetch(local_merged,Dict2),
     ?assertEqual(LocalMerged2,dict:from_list([{dc1,5},{dc2,5}])),
     ok.
 
 %% Basic empty test
 empty_test() ->
-    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+    [Name,_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
     true = ets:insert(node_table, {nodes, [n1]}),
     true = ets:insert(node_table, {testnum, test1}),
     true = ets:insert(node_table, {partitions, [p1,p2,p3]}),
     
-    put_meta_dict(p1,dict:from_list([])),
-    put_meta_dict(p2,dict:from_list([])),
-    put_meta_dict(p3,dict:from_list([])),
+    put_meta_dict(Name,p1,dict:from_list([])),
+    put_meta_dict(Name,p2,dict:from_list([])),
+    put_meta_dict(Name,p3,dict:from_list([])),
 
-    {false,Dict1} = get_meta_data(MergeFunc,false),
+    {false,Dict1} = get_meta_data(Name,MergeFunc,false),
     LocalMerged1 = dict:fetch(local_merged,Dict1),
     ?assertEqual(LocalMerged1,dict:from_list([])).
 
 %% Be sure that when you are missing a partition in your meta_data that you get a 0 value
 missing_test() ->
-    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+    [Name,_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
     true = ets:insert(node_table, {nodes, [n1]}),
     true = ets:insert(node_table, {testnum, test1}),
     true = ets:insert(node_table, {partitions, [p1,p2,p3]}),
-    true = ets:delete(?META_TABLE_NAME, p2),
+    true = ets:delete(get_name(Name,?META_TABLE_NAME), p2),
     
-    put_meta_dict(p1,dict:from_list([{dc1,10}])),
-    put_meta_dict(p3,dict:from_list([{dc1,10}])),
+    put_meta_dict(Name,p1,dict:from_list([{dc1,10}])),
+    put_meta_dict(Name,p3,dict:from_list([{dc1,10}])),
 
-    {false,Dict1} = get_meta_data(MergeFunc,true),
+    {false,Dict1} = get_meta_data(Name,MergeFunc,true),
     LocalMerged1 = dict:fetch(local_merged,Dict1),
     io:format("val ~w~n", [dict:to_list(LocalMerged1)]),
     ?assertEqual(LocalMerged1,dict:from_list([{dc1,0}])).    
@@ -424,47 +435,47 @@ missing_test() ->
 %% when you have a node that is removed from the cluster
 %% It uses the functions in stable_time_functions.erl
 merge_node_change_test() ->
-    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
-    true = ets:delete(?META_TABLE_NAME, p3),
+    [Name,_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
+    true = ets:delete(get_name(Name,?META_TABLE_NAME), p3),
     true = ets:insert(node_table, {nodes, [n1]}),
     true = ets:insert(node_table, {testnum, test2}),
     true = ets:insert(node_table, {partitions, [p1,p2]}),
     
-    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,5}])),
-    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,10}])),
-    {true,Dict1} = get_meta_data(MergeFunc,false),
+    put_meta_dict(Name,p1,dict:from_list([{dc1,10},{dc2,5}])),
+    put_meta_dict(Name,p2,dict:from_list([{dc1,5},{dc2,10}])),
+    {true,Dict1} = get_meta_data(Name,MergeFunc,false),
     LocalMerged1 = dict:fetch(local_merged,Dict1),
     io:format("~w", [dict:to_list(LocalMerged1)]),
     ?assertEqual(LocalMerged1,dict:from_list([{dc1,5},{dc2,5}])),
     
     true = ets:insert(node_table, {nodes, [n1,n2]}),
     true = ets:insert(node_table, {partitions, [p1,p3]}),
-    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,10}])),
-    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,5}])),
-    put_meta_dict(p3,dict:from_list([{dc1,20},{dc2,20}])),
-    {true,Dict2} = get_meta_data(MergeFunc,true),
+    put_meta_dict(Name,p1,dict:from_list([{dc1,10},{dc2,10}])),
+    put_meta_dict(Name,p2,dict:from_list([{dc1,5},{dc2,5}])),
+    put_meta_dict(Name,p3,dict:from_list([{dc1,20},{dc2,20}])),
+    {true,Dict2} = get_meta_data(Name,MergeFunc,true),
     LocalMerged2 = dict:fetch(local_merged,Dict2),
     ?assertEqual(LocalMerged2,dict:from_list([{dc1,10},{dc2,10}])),
     ok.
 
 merge_node_delete_test() ->
-    [_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
-    true = ets:insert(?META_TABLE_STABLE_NAME, {merged_data, InitialMerged}),
+    [Name,_UpdateFunc,MergeFunc,_InitialLocal,InitialMerged] = stable_time_functions:export_funcs_and_vals(),
+    true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
     true = ets:insert(node_table, {nodes, [n1]}),
     true = ets:insert(node_table, {testnum, test2}),
     true = ets:insert(node_table, {partitions, [p1,p2]}),
     
-    put_meta_dict(p3,dict:from_list([{dc1,0},{dc2,0}])),
-    put_meta_dict(p1,dict:from_list([{dc1,10},{dc2,5}])),
-    put_meta_dict(p2,dict:from_list([{dc1,5},{dc2,10}])),
+    put_meta_dict(Name,p3,dict:from_list([{dc1,0},{dc2,0}])),
+    put_meta_dict(Name,p1,dict:from_list([{dc1,10},{dc2,5}])),
+    put_meta_dict(Name,p2,dict:from_list([{dc1,5},{dc2,10}])),
 
-    {true,Dict1} = get_meta_data(MergeFunc,false),
+    {true,Dict1} = get_meta_data(Name,MergeFunc,false),
     LocalMerged1 = dict:fetch(local_merged,Dict1),
     io:format("~w", [dict:to_list(LocalMerged1)]),
     ?assertEqual(LocalMerged1,dict:from_list([{dc1,0},{dc2,0}])),
 
-    {true,Dict2} = get_meta_data(MergeFunc,true),
+    {true,Dict2} = get_meta_data(Name,MergeFunc,true),
     LocalMerged2 = dict:fetch(local_merged,Dict2),
     io:format("~w", [dict:to_list(LocalMerged2)]),
     ?assertEqual(LocalMerged2,dict:from_list([{dc1,5},{dc2,5}])).

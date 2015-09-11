@@ -79,7 +79,11 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 					 }],
 			    DcId = dc_utilities:get_my_dc_id(),
 			    %% {ok, Clock} = vectorclock:get_clock(Partition),
-			    Clock = meta_data_sender:get_meta_dict(Partition),
+			    %% Clock = vectorclock:get_partition_snapshot(Partition),
+			    %% This isnt safe because could be transactions in prepare phase, but is fixed in
+			    %% pubsub branch
+			    Clock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(),
+								clocksi_vnode:now_microsec(erlang:now()) - 20,vectorclock:new()),
 			    Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
 			    TxId = 0,
 			    %% Receiving DC treats hearbeat like a transaction
