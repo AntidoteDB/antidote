@@ -12,7 +12,11 @@ confirm() ->
     rt:update_app_config(all,[
         {riak_core, [{ring_creation_size, 8}]}
     ]),
-    [Cluster1, Cluster2] = rt:build_clusters([1,1]),
+    %% Use two node clusters to be sure the stable time is
+    %% calculated across nodes
+    [Cluster1, Cluster2] = rt:build_clusters([2,2]),
+    rt:wait_until_ring_converged(Cluster1),
+    rt:wait_until_ring_converged(Cluster2),
 
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
@@ -24,9 +28,6 @@ confirm() ->
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, start_receiver,[8092]),
 
     lager:info("DCs: ~p and ~p", [DC1, DC2]),
-
-    rt:wait_until_ring_converged(Cluster1),
-    rt:wait_until_ring_converged(Cluster2),
 
     lager:info("Waiting until vnodes are started up"),
     rt:wait_until(Node1,fun wait_init:check_ready/1),
