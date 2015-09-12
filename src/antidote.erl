@@ -120,7 +120,7 @@ clocksi_read(Key, Type) ->
 
 -spec clocksi_iread(txid(),key(),type()) -> {ok, snapshot()} | {error, term()}.
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
-    case materializer:check_operations([{read, Key, Type}]) of
+    case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
             gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}});
         {error, Reason} ->
