@@ -30,29 +30,32 @@
     Type :: type(), Update :: op(), list()) ->
     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
+    {Op, Actor} = Update,
     try
-        {Op, Actor} = Update,
         case clocksi_vnode:read_data_item(Node,
             Transaction,
             Key,
             Type,
             WriteSet) of
             {ok, Snapshot} ->
-                case (string:str(Type, "riak_dt")) of
-                    0 -> %% Dealing with an op_based CRDT
-                        {ok, OpParam} =
-                            Type:generate_downstream(Op, Actor, Snapshot),
-                        {ok, {update, OpParam}};
-                    1 -> %% Dealing with a state_based CRDT
-                        {ok, NewState} = Type:update(Op, Actor, Snapshot),
-                        {ok, {merge, NewState}};
-                    _ ->
-                        {error, {"Unknown datatype.", Type}}
+                TypeString = lists:flatten(io_lib:format("~p", [Type])),
+                DownstreamOp = case string:str(TypeString, "riak_dt") of
+                                   0 ->
+                                       {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
+                                       {update, OpParam};
+                                   1 ->
+                                       {ok, NewState} = Type:update(Op, Actor, Snapshot),
+                                       {merge, NewState}
+                               end,
+                case DownstreamOp of
+                    {error, Reason} ->
+                        {error, Reason};
+                    _ -> {ok, DownstreamOp}
                 end;
-            {error, Reason} ->
-                {error, Reason}
+            {error, no_snapshot} ->
+                {error, no_snapshot}
         end
-    catch %% This catch aims at throwing an error when a key is not of Type.
-        error : Error ->
-            {error, Error}
+    catch
+        error : Error1 ->
+            {error, Error1}
     end.
