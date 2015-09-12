@@ -75,7 +75,9 @@ check_operations(ok, [Op | Rest]) ->
                 check_operations(ok, Rest);
             {read, {_, Type}} ->
                 Type:value(Type:new()),
-                check_operations(ok, Rest)
+                check_operations(ok, Rest);
+            _ ->
+                {error, {"Unknown operation format", Op}}
         end
     catch
         error : Reason ->
