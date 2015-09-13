@@ -31,31 +31,29 @@
     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
     {Op, Actor} = Update,
-    try
-        case clocksi_vnode:read_data_item(Node,
-            Transaction,
-            Key,
-            Type,
-            WriteSet) of
-            {ok, Snapshot} ->
-                TypeString = lists:flatten(io_lib:format("~p", [Type])),
-                DownstreamOp = case string:str(TypeString, "riak_dt") of
-                                   0 ->
-                                       {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
-                                       {update, OpParam};
-                                   1 ->
-                                       {ok, NewState} = Type:update(Op, Actor, Snapshot),
-                                       {merge, NewState}
-                               end,
-                case DownstreamOp of
-                    {error, Reason} ->
-                        {error, Reason};
-                    _ -> {ok, DownstreamOp}
-                end;
-            {error, no_snapshot} ->
-                {error, no_snapshot}
-        end
-    catch
-        error : Error1 ->
-            {error, Error1}
+    case clocksi_vnode:read_data_item(Node,
+        Transaction,
+        Key,
+        Type,
+        WriteSet) of
+        {ok, Snapshot} ->
+            TypeString = lists:flatten(io_lib:format("~p", [Type])),
+            case string:str(TypeString, "riak_dt") of
+                0 ->
+                    case Type:generate_downstream(Op, Actor, Snapshot) of
+                        {ok, OpParam} ->
+                            {ok, {update, OpParam}};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
+                1 ->
+                    case Type:update(Op, Actor, Snapshot) of
+                        {ok, NewState} ->
+                            {ok, {merge, NewState}};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
