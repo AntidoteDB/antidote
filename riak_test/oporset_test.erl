@@ -128,34 +128,34 @@ remove_test(Nodes) ->
     Result7=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
     ?assertMatch({ok, []}, Result7).
-<<<<<<< HEAD
-=======
+%<<<<<<< HEAD
+%=======
     
 
-concurrency_test(Nodes) ->
-    FirstNode = hd(Nodes),
-    SecondNode = lists:nth(2, Nodes),
-    lager:info("Concurrency test started"),
-    Type = crdt_orset,
-    Key = key_concurrency,
+%concurrency_test(Nodes) ->
+%    FirstNode = hd(Nodes),
+%    SecondNode = lists:nth(2, Nodes),
+%    lager:info("Concurrency test started"),
+%    Type = crdt_orset,
+%    Key = key_concurrency,
     
-    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [[{update, {Key, Type, {{add, a}, ucl}}}]]),
-    ?assertMatch({ok, _}, Result1),
+%    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%                    [[{update, {Key, Type, {{add, a}, ucl}}}]]),
+%    ?assertMatch({ok, _}, Result1),
 
-    Result2=rpc:call(SecondNode, antidote, clocksi_execute_tx,
-                    [[{update, {Key, Type, {{add, a}, no_user}}}]]),
-    ?assertMatch({ok, _}, Result2),
+%    Result2=rpc:call(SecondNode, antidote, clocksi_execute_tx,
+%                    [[{update, {Key, Type, {{add, a}, no_user}}}]]),
+%    ?assertMatch({ok, _}, Result2),
 
-    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [[{update, {Key, Type, {{remove, a}, ucl}}}]]),
-    ?assertMatch({ok, _}, Result3),
+%    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%                    [[{update, {Key, Type, {{remove, a}, ucl}}}]]),
+%    ?assertMatch({ok, _}, Result3),
 
-    Result4=rpc:call(SecondNode, antidote, read,
-                    [Key, Type]),
-    ?assertMatch({ok, [a]}, Result4).
+%    Result4=rpc:call(SecondNode, antidote, read,
+%                    [Key, Type]),
+%    ?assertMatch({ok, [a]}, Result4).
         
 
 
 
->>>>>>> master
+%>>>>>>> master
