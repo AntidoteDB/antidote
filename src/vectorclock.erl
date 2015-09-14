@@ -30,8 +30,9 @@
   get_clock_of_dc/2,
   set_clock_of_dc/3,
   get_stable_snapshot/0,
+  get_partition_snapshot/1,
   from_list/1,
-	new/0,
+  new/0,
   eq/2,
   lt/2,
   gt/2,
@@ -50,12 +51,27 @@ new() ->
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
--spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
+-spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
-    %% to riak core meta-data) otherwise will have to change this
-    {ok, meta_data_sender:get_merged_data()}.
+    case meta_data_sender:get_merged_data(stable) of
+	undefined ->
+	    %% The snapshot isn't realy yet, need to wait for startup
+	    timer:sleep(10),
+	    get_stable_snapshot();
+	SS ->
+	    {ok, SS}
+    end.
 
+-spec get_partition_snapshot(partition_id()) -> snapshot_time().
+get_partition_snapshot(Partition) ->
+    case meta_data_sender:get_meta_dict(stable,Partition) of
+	undefined ->
+	    %% The partition isnt ready yet, wait for startup
+	    timer:sleep(10),
+	    get_partition_snapshot(Partition);
+	SS ->
+	    SS
+    end.
 
 %% @doc Return true if Clock1 > Clock2
 -spec is_greater_than(Clock1 :: vectorclock(), Clock2 :: vectorclock())

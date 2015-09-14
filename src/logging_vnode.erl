@@ -307,7 +307,7 @@ handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             %% Optimistic handling; crash otherwise.
-            {ok, _OpId, _} = insert_operation(Log, LogId, Operation),
+            {ok, _OpId} = insert_operation(Log, LogId, Operation),
             ok = disk_log:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
@@ -464,7 +464,7 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), {op_id(), payload()}) ->
+-spec insert_operation(log(), log_id(),  operation()) ->
                               {ok, op_id()} | {error, reason()}.
 insert_operation(Log, LogId, #operation{op_number = OpId, payload = Payload}) ->
     Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),

@@ -12,9 +12,7 @@ confirm() ->
     rt:update_app_config(all,[
         {riak_core, [{ring_creation_size, 8}]}
     ]),
-    %% Use two node clusters to be sure the stable time is
-    %% calculated across nodes
-    [Cluster1, Cluster2] = rt:build_clusters([2,2]),
+    [Cluster1, Cluster2] = rt:build_clusters([1,1]),
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
 

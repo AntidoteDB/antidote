@@ -29,7 +29,7 @@
 %% These functions are input to create a meta_data_sender
 %% The functions merge by taking the minimum of all entries per node per DC
 export_funcs_and_vals() ->
-    [fun update_func_min/2, fun get_min_time/1, dict:new(), dict:new()].
+    [stable, fun update_func_min/2, fun get_min_time/1, dict:new(), dict:new()].
 
 update_func_min(Last,Time) ->
     case Last of

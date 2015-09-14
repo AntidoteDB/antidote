@@ -53,16 +53,12 @@
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
--define(SYNC_LOG, true).
-%% Set this to true if using multiple DCs
-%% if not then the log is just dumped, otherwise it
-%% is kept until it is sent to the other DCs
--define(IS_MULTIDC, false).
+-define(SYNC_LOG, false).
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
--record(operation, {op_number, payload :: payload()}).
+-record(operation, {op_number :: op_id(), payload :: payload()}).
 -type operation() :: #operation{}.
 -type vectorclock() :: dict().
 
