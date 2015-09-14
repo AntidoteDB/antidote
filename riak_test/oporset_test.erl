@@ -51,12 +51,6 @@ empty_set_test(Nodes) ->
     Result0=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
     ?assertMatch({ok, []}, Result0),
-    %%Result1=rpc:call(FirstNode, antidote, append,
-    %%                [Key, Type, {{remove, a}, ucl}]),
-    %%?assertMatch({ok, _}, Result1),
-    %%Result2=rpc:call(FirstNode, antidote, read,
-    %%                [Key, Type]),
-    %%?assertMatch({error,{precondition,{not_present,a}}}, Result2),
     Result3=rpc:call(FirstNode, antidote, append,
                     [Key, Type, {{add, a}, ucl}]),
     ?assertMatch({ok, _}, Result3),
@@ -98,11 +92,6 @@ remove_test(Nodes) ->
     lager:info("Remove started"),
     Type = crdt_orset,
     Key = key_remove,
-    %%Remove a non-existent key will trigger error
-    %Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-    %                [{update, {Key, Type, {{remove, a}, ucl}}}]),
-    %lager:info("Result0: ~w", [Result0]),
-    %?assertMatch({error, _}, Result0),
     
     Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [[{update, {Key, Type, {{add, a}, ucl}}}, {update, {Key, Type, {{add, b}, ucl}}}]]),
@@ -128,34 +117,3 @@ remove_test(Nodes) ->
     Result7=rpc:call(FirstNode, antidote, read,
                     [Key, Type]),
     ?assertMatch({ok, []}, Result7).
-%<<<<<<< HEAD
-%=======
-    
-
-%concurrency_test(Nodes) ->
-%    FirstNode = hd(Nodes),
-%    SecondNode = lists:nth(2, Nodes),
-%    lager:info("Concurrency test started"),
-%    Type = crdt_orset,
-%    Key = key_concurrency,
-    
-%    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-%                    [[{update, {Key, Type, {{add, a}, ucl}}}]]),
-%    ?assertMatch({ok, _}, Result1),
-
-%    Result2=rpc:call(SecondNode, antidote, clocksi_execute_tx,
-%                    [[{update, {Key, Type, {{add, a}, no_user}}}]]),
-%    ?assertMatch({ok, _}, Result2),
-
-%    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-%                    [[{update, {Key, Type, {{remove, a}, ucl}}}]]),
-%    ?assertMatch({ok, _}, Result3),
-
-%    Result4=rpc:call(SecondNode, antidote, read,
-%                    [Key, Type]),
-%    ?assertMatch({ok, [a]}, Result4).
-        
-
-
-
-%>>>>>>> master
