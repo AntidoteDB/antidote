@@ -34,6 +34,9 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
+-define(ADDRESS, "localhost").
+-define(PORT, 10017).
+
 confirm() ->
     N = 1,
     [Nodes] = rt:build_clusters([N]),
@@ -42,6 +45,8 @@ confirm() ->
     rt:wait_until_ring_converged(Nodes),
     simple_transaction_test(hd(Nodes)),
     read_write_test(hd(Nodes)),
+    pb_test_read(hd(Nodes)),
+    pb_test_read_write(hd(Nodes)),
     pass.
 
 %% starts and transaction and read a key
@@ -58,3 +63,26 @@ read_write_test(Node) ->
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
     rpc:call(Node, antidote, finish_transaction, [TxId]).
+
+
+pb_test_read(_Node) ->
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {<<"key">>, riak_dt_pncounter, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, [_Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+pb_test_read_write(_Node) ->
+    Key = <<"key_read_write">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object, {increment, 1}}], TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    %% Read committed updated
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    ?assertEqual(1,Val),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
