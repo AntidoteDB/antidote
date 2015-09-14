@@ -12,6 +12,32 @@
 -define(COMM_TIMEOUT, infinity).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
+%% Allow read concurrency on shared ets tables
+%% These are the tables that store materialized objects
+%% and information about live transactions, so the assumption
+%% is there will be several more reads than writes
+-define(TABLE_CONCURRENCY, {read_concurrency,true}).
+%% The read concurrency is the maximum number of concurrent
+%% readers per vnode.  This is so shared memory can be used
+%% in the case of keys that are read frequently.  There is
+%% still only 1 writer per vnode
+-define(READ_CONCURRENCY, 20).
+%% This can be used for testing, so that transactions start with
+%% old snapshots to avoid clock-skew.
+%% This can break the tests is not set to 0
+-define(OLD_SS_MICROSEC,0).
+%% The number of supervisors that are responsible for
+%% supervising transaction coorinator fsms
+-define(NUM_SUP, 100).
+%% Threads will sleep for this length when they have to wait
+%% for something that is not ready after which they
+%% wake up and retry. I.e. a read waiting for
+%% a transaction currently in the prepare state that is blocking
+%% that read.
+-define(SPIN_WAIT, 10).
+%% At commit, if this is set to true, the logging vnode
+%% will ensure that the transaction record is written to disk
+-define(SYNC_LOG, true).
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
@@ -51,6 +77,7 @@
                       txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
+-type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
 -type key() :: term().
 -type op()  :: {term(), term()}.
 -type crdt() :: term().
@@ -74,6 +101,35 @@
 -type dcid() :: term().
 -type tx() :: #transaction{}.
 -type dc_address():: {inet:ip_address(),inet:port_number()}.
+-type cache_id() :: ets:tid().
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0,
              dc_address/0]).
+
+%%---------------------------------------------------------------------
+%% @doc Data Type: state
+%% where:
+%%    from: the pid of the calling process.
+%%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
+%%    updated_partitions: the partitions where update operations take place.
+%%    num_to_ack: when sending prepare_commit,
+%%                number of partitions that have acked.
+%%    prepare_time: transaction prepare time.
+%%    commit_time: transaction commit time.
+%%    state: state of the transaction: {active|prepared|committing|committed}
+%%----------------------------------------------------------------------
+
+-record(tx_coord_state, {
+	  from :: {pid(), term()},
+	  transaction :: tx(),
+	  updated_partitions :: list(),
+	  num_to_ack :: non_neg_integer(),
+	  prepare_time :: non_neg_integer(),
+	  commit_time :: non_neg_integer(),
+	  commit_protocol :: term(),
+	  state :: active | prepared | committing | committed | undefined | aborted
+		 | committed_read_only,
+	  operations :: list(),
+	  read_set :: list(),
+	  is_static :: boolean(),
+	  full_commit :: boolean()}).

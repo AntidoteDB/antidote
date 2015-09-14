@@ -38,28 +38,33 @@
 %%
 -spec get_logid_from_key(key()) -> log_id().
 get_logid_from_key(Key) ->
-    HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    PreflistAnn = get_primaries_preflist(HashedKey),
+    %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+    PreflistAnn = get_preflist_from_key(Key),
     remove_node_from_preflist(PreflistAnn).
 
 %% @doc get_preflist_from_key returns a preference list where a given
 %%      key's logfile will be located.
 -spec get_preflist_from_key(key()) -> preflist().
 get_preflist_from_key(Key) ->
-    HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    get_primaries_preflist(HashedKey).
+    ConvertedKey = convert_key(Key),
+    %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+    get_primaries_preflist(ConvertedKey).
 
 %% @doc get_primaries_preflist returns the preflist with the primary
 %%      vnodes. No matter they are up or down.
 %%      Input:  A hashed key
 %%      Return: The primaries preflist
 %%
--spec get_primaries_preflist(integer()) -> preflist().
-get_primaries_preflist(HashedKey)->
+-spec get_primaries_preflist(non_neg_integer()) -> preflist().
+get_primaries_preflist(Key)->
+    %{ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
+    %Itr = chashbin:iterator(Key, CHBin),
+    %{Primaries, _} = chashbin:itr_pop(?N, Itr),
+    %Primaries.
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    Itr = chashbin:iterator(HashedKey, CHBin),
-    {Primaries, _} = chashbin:itr_pop(?N, Itr),
-    Primaries.
+    PartitionList = chashbin:to_list(CHBin),
+    Pos = Key rem length(PartitionList) + 1,
+    [lists:nth(Pos, PartitionList)].
 
 get_my_node(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -75,7 +80,33 @@ remove_node_from_preflist(Preflist) ->
     F = fun({P,_}) -> P end,
     lists:map(F, Preflist).
 
+%% @doc Convert key. If the key is integer(or integer in form of binary),
+%% directly use it to get the partition. If it is not integer, convert it
+%% to integer using hash.
+-spec convert_key(key()) -> non_neg_integer().
+convert_key(Key) ->
+    case is_binary(Key) of
+        true ->
+            KeyInt = (catch list_to_integer(binary_to_list(Key))),
+            case is_integer(KeyInt) of 
+                true -> abs(KeyInt);
+                false ->
+                    HashedKey = riak_core_util:chash_key({?BUCKET, Key}),
+                    abs(crypto:bytes_to_integer(HashedKey))
+            end;
+        false ->
+            case is_integer(Key) of 
+                true ->
+                    abs(Key);
+                false ->
+                    HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
+                    abs(crypto:bytes_to_integer(HashedKey))
+            end
+    end.
+
 -ifdef(TEST).
+
+
 
 %% @doc Testing remove_node_from_preflist
 remove_node_from_preflist_test()->
@@ -84,5 +115,13 @@ remove_node_from_preflist_test()->
                 {partition3, node}],
     ?assertEqual([partition1, partition2, partition3],
                  remove_node_from_preflist(Preflist)).
+
+%% @doc Testing convert key
+convert_key_test()->
+    ?assertEqual(1, convert_key(1)),
+    ?assertEqual(1, convert_key(-1)),
+    ?assertEqual(0, convert_key(0)),
+    ?assertEqual(45, convert_key(<<"45">>)),
+    ?assertEqual(45, convert_key(<<"-45">>)).
 
 -endif.

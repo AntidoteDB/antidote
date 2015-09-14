@@ -34,6 +34,9 @@
          read/2,
          asyn_append/3,
          append/3,
+	 append_commit/3,
+	 append_group/3,
+	 asyn_append_group/3,
          asyn_read_from/3,
          read_from/3]).
 
@@ -54,7 +57,11 @@
 
 -ignore_xref([start_vnode/1]).
 
--record(state, {partition, logs_map, clock, senders_awaiting_ack}).
+-record(state, {partition :: partition_id(),
+		logs_map :: dict(),
+		clock :: non_neg_integer(),
+		senders_awaiting_ack :: dict(),
+		last_read :: term()}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -65,7 +72,7 @@ start_vnode(I) ->
 %%      `Preflist' From is the operation id form which the caller wants to
 %%      retrieve the operations.  The operations are retrieved in inserted
 %%      order and the From operation is also included.
--spec asyn_read_from(preflist(), key(), op_id()) -> term().
+-spec asyn_read_from(preflist(), key(), op_id()) -> ok.
 asyn_read_from(Preflist, Log, From) ->
     riak_core_vnode_master:command(Preflist,
                                    {read_from, Log, From},
@@ -73,14 +80,14 @@ asyn_read_from(Preflist, Log, From) ->
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous read_from operation
--spec read_from({partition(), node()}, log_id(), op_id()) -> term().
+-spec read_from({partition(), node()}, log_id(), op_id()) -> {ok, [term()]} | {error, term()}.
 read_from(Node, LogId, From) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read_from, LogId, From},
-                                        ?LOGGING_MASTER).
+					?LOGGING_MASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
--spec asyn_read(preflist(), key()) -> term().
+-spec asyn_read(preflist(), key()) -> ok.
 asyn_read(Preflist, Log) ->
     riak_core_vnode_master:command(Preflist,
                                    {read, Log},
@@ -88,25 +95,54 @@ asyn_read(Preflist, Log) ->
                                    ?LOGGING_MASTER).
 
 %% @doc Sends a `read' synchronous command to the Logs in `Node'
--spec read({partition(), node()}, key()) -> term().
+-spec read({partition(), node()}, key()) -> {error, term()} | {ok, [term()]}.
 read(Node, Log) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read, Log},
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
+-spec asyn_append(preflist(), key(), term()) -> ok.
 asyn_append(Preflist, Log, Payload) ->
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, Payload},
-                                   {fsm, undefined, self()},
+                                   {fsm, undefined, self(), ?SYNC_LOG},
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation
+-spec append(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload},
+                                        {append, LogId, Payload, false},
                                         ?LOGGING_MASTER,
                                         infinity).
+
+%% @doc synchronous append operation
+%% If enabled in antidote.hrl will ensure item is written to disk
+-spec append_commit(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
+append_commit(IndexNode, LogId, Payload) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {append, LogId, Payload, ?SYNC_LOG},
+                                        ?LOGGING_MASTER,
+                                        infinity).
+
+
+%% @doc synchronous append list of operations
+-spec append_group(index_node(), key(), [term()]) -> {ok, op_id()} | {error, term()}.
+append_group(IndexNode, LogId, PayloadList) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {append_group, LogId, PayloadList},
+                                        ?LOGGING_MASTER,
+                                        infinity).
+
+%% @doc asynchronous append list of operations
+-spec asyn_append_group(index_node(), key(), [term()]) -> ok.
+asyn_append_group(IndexNode, LogId, PayloadList) ->
+    riak_core_vnode_master:command(IndexNode,
+				   {append_group, LogId, PayloadList},
+				   ?LOGGING_MASTER,
+				   infinity).
+
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -123,7 +159,8 @@ init([Partition]) ->
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         clock=0,
-                        senders_awaiting_ack=dict:new()}}
+                        senders_awaiting_ack=dict:new(),
+                        last_read=start}}
     end.
 
 %% @doc Read command: Returns the operations logged for Key
@@ -133,13 +170,16 @@ handle_command({read, LogId}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case get_log(Log, LogId) of
-                [] ->
-                    {reply, {ok, []}, State};
-                [H|T] ->
-                    {reply, {ok, [H|T]}, State};
-                {error, Reason}->
-                    {reply, {error, Reason}, State}
+           {Continuation, Ops} = 
+                case disk_log:chunk(Log, start) of
+                    {C, O} -> {C,O};
+                    {C, O, _} -> {C,O};
+                    eof -> {eof, []}
+                end,
+            case Continuation of
+                error -> {reply, {error, Ops}, State};
+                eof -> {reply, {ok, Ops}, State#state{last_read=start}};
+                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -152,18 +192,22 @@ handle_command({read, LogId}, _Sender,
 %%              LogId: Identifies the log to be read
 %%      Output: {vnode_id, Operations} | {error, Reason}
 %%
-handle_command({read_from, LogId, From}, _Sender,
-               #state{partition=Partition, logs_map=Map}=State) ->
+handle_command({read_from, LogId, _From}, _Sender,
+               #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case get_log(Log, LogId) of
-                [] ->
-                    {reply, {ok, []}, State};
-                [H|T] ->
-                    Operations = threshold_prune([H|T], From),
-                    {reply, {ok, Operations}, State};
-                {error, Reason}->
-                    {reply, {error, Reason}, State}
+            ok = disk_log:sync(Log),
+            {Continuation, Ops} = 
+                case disk_log:chunk(Log, Lastread) of
+                    {error, Reason} -> {error, Reason};
+                    {C, O} -> {C,O};
+                    {C, O, _} -> {C,O};
+                    eof -> {eof, []}
+                end,
+            case Continuation of
+                error -> {reply, {error, Ops}, State};
+                eof -> {reply, {ok, Ops}, State};
+                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -176,33 +220,64 @@ handle_command({read_from, LogId, From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload}, Sender,
+handle_command({append, LogId, Payload, Sync}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
-                      partition=Partition,
-                      senders_awaiting_ack=SendersAwaitingAck0}=State) ->
+                      partition=Partition}=State) ->
     OpId = generate_op_id(Clock),
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             case insert_operation(Log, LogId, OpId, Payload) of
                 {ok, OpId} ->
-                    case dict:find(LogId, SendersAwaitingAck0) of
-                        error ->
-                            Me = self(),
-                            Me ! {sync, Log, LogId},
-                            ok;
-                        _ ->
-                            ok
-                    end,
-                    SendersAwaitingAck = dict:append(LogId, {Sender, OpId}, SendersAwaitingAck0),
-                    {noreply, State#state{senders_awaiting_ack=SendersAwaitingAck, clock=NewClock}};
+		    case Sync of
+			true ->
+			    case disk_log:sync(Log) of
+				ok ->
+				    {reply, {ok, OpId}, State#state{clock=NewClock}};
+				{error, Reason} ->
+				    {reply, {error, Reason}, State}
+			    end;
+			false ->
+			    {reply, {ok, OpId}, State#state{clock=NewClock}}
+		    end;
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
+
+
+handle_command({append_group, LogId, PayloadList}, _Sender,
+               #state{logs_map=Map,
+                      clock=Clock,
+                      partition=Partition}=State) ->
+    {ErrorList, SuccList, _NNC} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock}) ->
+						      OpId = generate_op_id(NewClock),
+						      {NewNewClock, _Node} = OpId,
+						      case get_log_from_map(Map, Partition, LogId) of
+							  {ok, Log} ->
+							      case insert_operation(Log, LogId, OpId, Payload) of
+								  {ok, OpId} ->
+								      {AccErr, AccSucc ++ [OpId], NewNewClock};
+								  {error, Reason} ->
+								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
+							      end;
+							  {error, Reason} ->
+							      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
+						      end
+					      end, {[],[],Clock}, PayloadList),
+    case ErrorList of
+	[] ->
+	    [SuccId|_T] = SuccList,
+	    {NewC, _Node} = lists:last(SuccList),
+	    {reply, {ok, SuccId}, State#state{clock=NewC}};
+	[Error|_T] ->
+	    %%Error
+	    {reply, Error, State}
+    end;
+
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -228,7 +303,7 @@ handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
         {ok, Log} ->
             %% Optimistic handling; crash otherwise.
             {ok, _OpId} = insert_operation(Log, LogId, OpId, Payload),
-            ok = dets:sync(Log),
+            ok = disk_log:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -291,37 +366,15 @@ no_elements([], _Map) ->
     true;
 no_elements([LogId|Rest], Map) ->
     case dict:find(LogId, Map) of
-        {ok, Log} ->
-            case dets:first(Log) of
-                '$end_of_table' ->
+        {ok, Log} -> 
+            case disk_log:chunk(Log, start) of
+                eof ->
                     no_elements(Rest, Map);
                 _ ->
                     false
             end;
         error ->
             {error, no_log_for_preflist}
-    end.
-
-%% @doc threshold_prune: returns the operations that are not older than
-%%      the specified op_id
-%%      Assump: The operations are retrieved in the order of insertion
-%%              If the order of insertion was Op1 -> Op2 -> Op4 -> Op3,
-%%              the expected list of operations would be:
-%%              [Op1, Op2, Op4, Op3]
-%%      Input:  Operations: Operations to filter
-%%              From: Oldest op_id to return
-%%              Filtered: List of filtered operations
-%%      Return: The filtered list of operations
-%%
--spec threshold_prune([op()], op_id()) -> [op()].
-threshold_prune([], _From) ->
-    [];
-threshold_prune([{_LogId, Operation}|T], From) ->
-    case Operation#operation.op_number =:= From of
-        true ->
-            T;
-        false ->
-            threshold_prune(T, From)
     end.
 
 %% @doc open_logs: open one log per partition in which the vnode is primary
@@ -345,8 +398,12 @@ open_logs(LogFile, [Next|Rest], Map)->
     LogId = LogFile ++ "--" ++ PreflistString,
     LogPath = filename:join(
                 app_helper:get_env(riak_core, platform_data_dir), LogId),
-    case dets:open_file(LogId, [{file, LogPath}, {type, bag}]) of
+    case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
+            Map2 = dict:store(PartitionList, Log, Map),
+            open_logs(LogFile, Rest, Map2);
+        {repaired, Log, _, _} ->
+            lager:info("Repaired log ~p", [Log]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2);
         {error, Reason} ->
@@ -379,8 +436,18 @@ get_log_from_map(Map, _Partition, LogId) ->
 join_logs([], _F, Acc) ->
     Acc;
 join_logs([{_Preflist, Log}|T], F, Acc) ->
-    JointAcc = dets:foldl(F, Acc, Log),
+    JointAcc = fold_log(Log, start, F, Acc),
     join_logs(T, F, JointAcc).
+
+fold_log(Log, Continuation, F, Acc) ->
+    case  disk_log:chunk(Log,Continuation) of 
+        eof ->
+            Acc;
+        {Next,Ops} ->
+            NewAcc = lists:foldl(F, Acc, Ops),
+            fold_log(Log, Next, F, NewAcc)
+    end.
+
 
 %% @doc insert_operation: Inserts an operation into the log only if the
 %%      OpId is not already in the log
@@ -395,22 +462,13 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
 -spec insert_operation(log(), log_id(), op_id(), payload()) ->
                               {ok, op_id()} | {error, reason()}.
 insert_operation(Log, LogId, OpId, Payload) ->
-    Result = dets:insert(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
+    Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
     case Result of
         ok ->
             {ok, OpId};
         {error, Reason} ->
             {error, Reason}
     end.
-
-%% @doc get_log: Looks up for the operations logged in a particular log
-%%    Input:  Log: Table identifier of the log
-%%            LogId: Identifier of the log
-%%    Return: List of all the logged operations
-%%
--spec get_log(log(), log_id()) -> [op()] | {error, atom()}.
-get_log(Log, LogId) ->
-    dets:lookup(Log, LogId).
 
 %% @doc preflist_member: Returns true if the Partition identifier is
 %%              part of the Preflist
@@ -426,29 +484,6 @@ generate_op_id(Current) ->
     {Current + 1, node()}.
 
 -ifdef(TEST).
-
-%% @doc Testing threshold_prune works as expected
-thresholdprune_test() ->
-    Operations = [{log1, #operation{op_number=op1}},
-                  {log1, #operation{op_number=op2}},
-                  {log1, #operation{op_number=op3}},
-                  {log1, #operation{op_number=op4}},
-                  {log1, #operation{op_number=op5}}],
-    Filtered = threshold_prune(Operations, op2),
-    ?assertEqual([{log1, #operation{op_number=op3}},
-                  {log1, #operation{op_number=op4}},
-                  {log1, #operation{op_number=op5}}], Filtered).
-
-%% @doc Testing threshold_prune works even when there is no matching
-%%      op_id.
-thresholdprune_notmatching_test() ->
-    Operations = [{log1, #operation{op_number=op1}},
-                  {log1, #operation{op_number=op2}},
-                  {log1, #operation{op_number=op3}},
-                  {log1, #operation{op_number=op4}},
-                  {log1, #operation{op_number=op5}}],
-    Filtered = threshold_prune(Operations, op6),
-    ?assertEqual([], Filtered).
 
 %% @doc Testing get_log_from_map works in both situations, when the key
 %%      is in the map and when the key is not in the map
