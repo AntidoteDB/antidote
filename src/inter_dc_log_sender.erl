@@ -119,19 +119,20 @@ broadcast(State, Txn) ->
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
-get_stable_time(Partition) ->
+get_stable_time(_Partition) ->
     Now = inter_dc_utils:now_millisec(),
-    case clocksi_vnode:get_active_txns_call(Partition) of
-        {ok, Active_txns} ->
-            lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
-                                case Min_time > Snapshot_time of
-                                    true ->
-                                        Snapshot_time;
-                                    false ->
-                                        Min_time
-                                end
-                        end,
-			Now,
-                        Active_txns);
-        _ -> Now
-    end.
+    Now.
+%% case clocksi_vnode:get_active_txns_call(Partition) of
+    %%     {ok, Active_txns} ->
+    %%         lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
+    %%                             case Min_time > Snapshot_time of
+    %%                                 true ->
+    %%                                     Snapshot_time;
+    %%                                 false ->
+    %%                                     Min_time
+    %%                             end
+    %%                     end,
+    %% 			Now,
+    %%                     Active_txns);
+    %%     _ -> Now
+    %% end.
