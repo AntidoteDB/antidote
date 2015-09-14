@@ -45,12 +45,24 @@ init() ->
 
 %% @doc decode/2 callback. Decodes an incoming message.
 decode(Code, Bin) ->
+    lager:info("Code ~p , Bin ~p",[Code, Bin]),
     Msg = riak_pb_codec:decode(Code, Bin),
+    lager:info("Message recvd ~p ~n",[Msg]),
     case Msg of
         #fpbatomicupdatetxnreq{} ->
             {ok, Msg, {"antidote.atomicupdate", <<>>}};
         #fpbsnapshotreadtxnreq{} ->
-            {ok, Msg, {"antidote.snapshotread",<<>>}}
+            {ok, Msg, {"antidote.snapshotread",<<>>}};
+        #apbstarttransaction{} ->
+            {ok, Msg, {"antidote.startxn",<<>>}};
+        #apbaborttransaction{} -> 
+            {ok, Msg, {"antidote.aborttxn",<<>>}};
+        #apbcommittransaction{} ->
+            {ok, Msg, {"antidote.committxn",<<>>}};
+        #apbreadobjects{} ->
+            {ok, Msg, {"antidote.readobjects",<<>>}};
+        #apbupdateobjects{} ->
+            {ok, Msg, {"antidote.updateobjects",<<>>}}
     end.
 
 %% @doc encode/1 callback. Encodes an outgoing response message.
@@ -97,8 +109,72 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
         Other ->
             lager:info("Clocksi execute received ~p",[Other]),
             {reply, #fpbsnapshotreadtxnresp{success=false}, State}
-    end.
+    end;
 
+process(#apbstarttransaction{timestamp=BClock, properties = BProperties}, State) ->
+    lager:info("Starting transaction"),
+    Clock = binary_to_term(BClock),
+    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Response = antidote:start_transaction(Clock, Properties),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(start_transaction_response, {error, Reason}), State};
+        {ok, TxId} ->
+            {reply, antidote_pb_codec:encode(start_transaction_response, {ok, TxId}),
+             State}
+    end;
+
+process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
+    TxId = binary_to_term(Td),
+    Response = antidote:abort_transaction(TxId),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(operation_response, {error, Reason}), State};
+        ok ->
+            {reply, antidote_pb_codec:encode(operation_response, ok),
+             State}
+    end;
+
+process(#apbcommittransaction{transaction_descriptor=Td}, State) ->
+    TxId = binary_to_term(Td),
+    Response = antidote:commit_transaction(TxId),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(commit_response, {error, Reason}), State};
+        {ok, CommitTime} ->
+            {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
+             State}
+    end;
+
+process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td}, State) ->
+    Objects = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(bound_object, O) end,
+                        BoundObjects),
+
+    TxId = binary_to_term(Td),
+    Response = antidote:read_objects(Objects, TxId),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(read_objects_response, {error, Reason}), State};
+        {ok, Results} ->
+            {reply, antidote_pb_codec:encode(read_objects_response, {ok, lists:zip(Objects,Results)}),
+             State}
+    end;
+
+process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td}, State) ->
+    Updates = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(update_object, O) end,
+                        BUpdates),
+
+    TxId = binary_to_term(Td),
+    Response = antidote:update_objects(Updates, TxId),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(operation_response, {error, Reason}), State};
+        ok ->
+            {reply, antidote_pb_codec:encode(operation_response, ok),
+             State}
+    end.
 
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.
@@ -160,3 +236,18 @@ encode_snapshot_read_resp({{read, Key, riak_dt_pncounter}, Result}) ->
     #fpbsnapshotreadtxnrespvalue{key=Key,counter=#fpbgetcounterresp{value =Result}};
 encode_snapshot_read_resp({{read,Key,riak_dt_orset}, Result}) ->
     #fpbsnapshotreadtxnrespvalue{key=Key,set=#fpbgetsetresp{value = term_to_binary(Result)}}.
+
+
+-ifdef(TEST).
+
+start_transaction_test() ->
+    Clock = term_to_binary(ignore),
+    Properties = {},
+    EncRecord = antidote_pb_codec:encode(start_transaction, {Clock, Properties}),
+    [MsgCode, MsgData] = riak_pb_codec:encode(EncRecord),
+    Msg = riak_pb_codec:decode(MsgCode, list_to_binary(MsgData)),
+    ?assertMatch(true, is_record(Msg,apbstarttransaction)),
+    ?assertMatch(ignore, binary_to_term(Msg#apbstarttransaction.timestamp)),
+    ?assertMatch(Properties, antidote_pb_codec:decode(txn_properties, Msg#apbstarttransaction.properties)).
+
+-endif.
