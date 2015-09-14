@@ -28,12 +28,12 @@
 -module(walletapp).
 
 -export([credit/2,
-         debit/2,
-         init/2,
-         getbalance/1,
-         buyvoucher/2,
-         usevoucher/2,
-         readvouchers/1]).
+    debit/2,
+    init/2,
+    getbalance/1,
+    buyvoucher/2,
+    usevoucher/2,
+    readvouchers/1]).
 
 -type reason() :: atom().
 
@@ -45,11 +45,11 @@ init(Nodename, Cookie) ->
         {ok, _} ->
             erlang:set_cookie(node(), Cookie);
         {error, Reason} ->
-           {error, Reason}
+            {error, Reason}
     end.
 
 %% @doc Increases the available credit for a customer.
--spec credit(Key::term(), Amount::non_neg_integer()) -> ok | {error, reason()}.
+-spec credit(Key :: term(), Amount :: non_neg_integer()) -> ok | {error, reason()}.
 credit(Key, Amount) ->
     case rpc:call(?SERVER, antidote, append, [Key, {{increment, Amount}, actor1}]) of
         {ok, _} ->
@@ -59,9 +59,9 @@ credit(Key, Amount) ->
     end.
 
 %% @doc Decreases the available credit for a customer.
--spec debit(Key::term(), Amount::non_neg_integer()) -> ok | {error, reason()}.
+-spec debit(Key :: term(), Amount :: non_neg_integer()) -> ok | {error, reason()}.
 debit(Key, Amount) ->
-    case rpc:call(?SERVER, antidote,  append, [Key,{{decrement,Amount}, actor1}]) of
+    case rpc:call(?SERVER, antidote, append, [Key, {{decrement, Amount}, actor1}]) of
         {ok, _} ->
             ok;
         {error, Reason} ->
@@ -69,7 +69,7 @@ debit(Key, Amount) ->
     end.
 
 %% @doc Returns the current balance for a customer.
--spec getbalance(Key::term()) -> {error, error_in_read} | {ok, number()}.
+-spec getbalance(Key :: term()) -> {error, error_in_read} | {ok, number()}.
 getbalance(Key) ->
     case rpc:call(?SERVER, antidote, read, [Key, riak_dt_pncounter]) of
         error ->
@@ -79,17 +79,17 @@ getbalance(Key) ->
     end.
 
 %% @doc Increases the number of available vouchers for a customer.
--spec buyvoucher(Key::term(),Voucher::term()) -> ok | {error, reason()}.
+-spec buyvoucher(Key :: term(), Voucher :: term()) -> ok | {error, reason()}.
 buyvoucher(Key, Voucher) ->
-    rpc:call(?SERVER,antidote,  append, [Key, {{add, Voucher}, actor1}]).
+    rpc:call(?SERVER, antidote, append, [Key, {{add, Voucher}, actor1}]).
 
 %% @doc Decreases the number of available vouchers for a customer.
--spec usevoucher(Key::term(),Voucher::term()) -> ok | {error, reason()}.
+-spec usevoucher(Key :: term(), Voucher :: term()) -> ok | {error, reason()}.
 usevoucher(Key, Voucher) ->
     rpc:call(?SERVER, antidote, append, [Key, {{remove, Voucher}, actor1}]).
 
 %% @doc Returns the number of currently available vouchers for a customer.
--spec readvouchers(Key::term()) -> {ok, list()} | {error, reason()}.
+-spec readvouchers(Key :: term()) -> {ok, list()} | {error, reason()}.
 readvouchers(Key) ->
     case rpc:call(?SERVER, antidote, read, [Key, riak_dt_orset]) of
         {error, Reason} ->

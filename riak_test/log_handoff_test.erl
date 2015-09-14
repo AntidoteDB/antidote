@@ -26,11 +26,11 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    rt:update_app_config(all,[
+    rt:update_app_config(all, [
         {riak_core, [{ring_creation_size, 8}]}
     ]),
-    NTestItems    = 10,
-    NTestNodes    = 3,
+    NTestItems = 10,
+    NTestNodes = 3,
 
     lager:info("Testing handoff (items ~p)", [NTestItems]),
 
@@ -40,12 +40,12 @@ confirm() ->
 
     lager:info("Spinning up test nodes"),
     Versions = [current || _ <- lists:seq(1, NTestNodes)],
-    [RootNode | TestNodes] = rt:deploy_nodes(Versions,[logging]),
+    [RootNode | TestNodes] = rt:deploy_nodes(Versions, [logging]),
     rt:wait_for_service(RootNode, logging),
 
 
     lager:info("Waiting until vnodes are started up"),
-    rt:wait_until(RootNode,fun wait_init:check_ready/1),
+    rt:wait_until(RootNode, fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
 
     lager:info("Populating root node."),
@@ -54,8 +54,8 @@ confirm() ->
     %% Test handoff on each node:
     lager:info("Testing handoff for cluster."),
     lists:foreach(fun(TestNode) ->
-                test_handoff(RootNode, TestNode, NTestItems)
-        end, TestNodes),
+        test_handoff(RootNode, TestNode, NTestItems)
+    end, TestNodes),
 
     %% Prepare for the next call to our test (we aren't polite about it,
     %% it's faster that way):
@@ -79,9 +79,8 @@ test_handoff(RootNode, NewNode, NTestItems) ->
     ?assertEqual(ok, rt:wait_until_nodes_ready([RootNode, NewNode])),
     rt:wait_until_no_pending_changes([RootNode, NewNode]),
     lager:info("Waiting until vnodes are started up"),
-    rt:wait_until(RootNode,fun wait_init:check_ready/1),
+    rt:wait_until(RootNode, fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
-
 
 
     %% See if we get the same data back from the joined node that we
@@ -95,29 +94,29 @@ test_handoff(RootNode, NewNode, NTestItems) ->
 
     pass.
 
-multiple_writes(Node, Start, End, Actor)->
+multiple_writes(Node, Start, End, Actor) ->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, append, [N, riak_dt_gcounter, {{increment, N}, Actor}]) of
-                {ok, _} ->
-                    Acc;
-                Other ->
-                    [{N, Other} | Acc]
-            end
+        case rpc:call(Node, antidote, append, [N, riak_dt_gcounter, {{increment, N}, Actor}]) of
+            {ok, _} ->
+                Acc;
+            Other ->
+                [{N, Other} | Acc]
+        end
     end,
     lists:foldl(F, [], lists:seq(Start, End)).
 
 multiple_reads(Node, Start, End) ->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, read, [N, riak_dt_gcounter]) of
-                {error, _} ->
-                    [{N, error} | Acc];
-                {ok, Value} ->
-                    case Value =:= N of
-                        true ->
-                            Acc;
-                        false ->
-                            [{N, {wrong_val, Value}} | Acc]
-                    end
-            end
+        case rpc:call(Node, antidote, read, [N, riak_dt_gcounter]) of
+            {error, _} ->
+                [{N, error} | Acc];
+            {ok, Value} ->
+                case Value =:= N of
+                    true ->
+                        Acc;
+                    false ->
+                        [{N, {wrong_val, Value}} | Acc]
+                end
+        end
     end,
     lists:foldl(F, [], lists:seq(Start, End)).

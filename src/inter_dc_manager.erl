@@ -24,19 +24,19 @@
 -include("antidote.hrl").
 
 -export([start_link/0,
-         start_receiver/1,
-         get_dcs/0,
-         add_dc/1,
-         add_list_dcs/1,
-         stop_receiver/0]).
+    start_receiver/1,
+    get_dcs/0,
+    add_dc/1,
+    add_list_dcs/1,
+    stop_receiver/0]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-        terminate/2, code_change/3]).
+    terminate/2, code_change/3]).
 
 -record(state, {
-        dcs,
-        port
-    }).
+    dcs,
+    port
+}).
 
 %% ===================================================================
 %% Public API
@@ -53,9 +53,9 @@ start_receiver(Port) ->
 
 stop_receiver() ->
     gen_server:call(?MODULE, {stop_receiver}, infinity).
-    
+
 %% Returns all DCs known to this DC.
--spec get_dcs() ->{ok, [dc_address()]}.
+-spec get_dcs() -> {ok, [dc_address()]}.
 get_dcs() ->
     gen_server:call(?MODULE, get_dcs, infinity).
 
@@ -76,30 +76,30 @@ add_list_dcs(DCs) ->
 %% ===================================================================
 
 init([]) ->
-    {ok, #state{dcs=[]}}.
+    {ok, #state{dcs = []}}.
 
 handle_call({start_receiver, Port}, _From, State) ->
     {ok, _} = antidote_sup:start_rep(self(), Port),
     receive
-        ready -> {reply, {ok, my_dc(Port)}, State#state{port=Port}}
+        ready -> {reply, {ok, my_dc(Port)}, State#state{port = Port}}
     end;
 
 handle_call({stop_receiver}, _From, State) ->
     case antidote_sup:stop_rep() of
-        ok -> 
-            {reply, ok, State#state{port=0}}
+        ok ->
+            {reply, ok, State#state{port = 0}}
     end;
 
-handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->
+handle_call(get_dcs, _From, #state{dcs = DCs} = State) ->
     {reply, {ok, DCs}, State};
 
-handle_call({add_dc, OtherDC}, _From, #state{dcs=DCs} = State) ->
+handle_call({add_dc, OtherDC}, _From, #state{dcs = DCs} = State) ->
     NewDCs = add_dc(OtherDC, DCs),
-    {reply, ok, State#state{dcs=NewDCs}};
+    {reply, ok, State#state{dcs = NewDCs}};
 
-handle_call({add_list_dcs, OtherDCs}, _From, #state{dcs=DCs} = State) ->
+handle_call({add_list_dcs, OtherDCs}, _From, #state{dcs = DCs} = State) ->
     NewDCs = add_dcs(OtherDCs, DCs),
-    {reply, ok, State#state{dcs=NewDCs}}.
+    {reply, ok, State#state{dcs = NewDCs}}.
 
 handle_cast(_Info, State) ->
     {noreply, State}.
@@ -122,7 +122,7 @@ my_dc(DcPort) ->
     DcId = dc_utilities:get_my_dc_id(),
     {DcId, {DcIp, DcPort}}.
 
-add_dc({DcId, DcAddress}, DCs) -> 
+add_dc({DcId, DcAddress}, DCs) ->
     orddict:store(DcId, DcAddress, DCs).
 
 add_dcs(OtherDCs, DCs) ->

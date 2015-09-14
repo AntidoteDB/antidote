@@ -27,22 +27,22 @@
 -include("antidote.hrl").
 
 -export([start_vnode/1,
-         %%API begin
-         store_updates/1,
-         %%API end
-         init/1,
-         terminate/2,
-         handle_command/3,
-         is_empty/1,
-         delete/1,
-         handle_handoff_command/3,
-         handoff_starting/2,
-         handoff_cancelled/1,
-         handoff_finished/2,
-         handle_handoff_data/2,
-         encode_handoff_item/2,
-         handle_coverage/4,
-         handle_exit/3]).
+    %%API begin
+    store_updates/1,
+    %%API end
+    init/1,
+    terminate/2,
+    handle_command/3,
+    is_empty/1,
+    delete/1,
+    handle_handoff_command/3,
+    handoff_starting/2,
+    handoff_cancelled/1,
+    handoff_finished/2,
+    handle_handoff_data/2,
+    encode_handoff_item/2,
+    handle_coverage/4,
+    handle_exit/3]).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -51,11 +51,11 @@ start_vnode(I) ->
 
 %% @doc store_updates: sends the updates from remote DC to corresponding
 %%  partition's vnode. Input is a list of transactions from remote DC.
--spec store_updates(Transactions::[clocksi_transaction_reader:transaction()])
-                   -> ok.
+-spec store_updates(Transactions :: [clocksi_transaction_reader:transaction()])
+        -> ok.
 store_updates(Transactions) ->
     Transaction = hd(Transactions),
-    {_Txid,_Commitime,_ST,Ops} = Transaction,
+    {_Txid, _Commitime, _ST, Ops} = Transaction,
     Operation = hd(Ops),
     Logrecord = Operation#operation.payload,
     Payload = Logrecord#log_record.op_payload,
@@ -66,35 +66,35 @@ store_updates(Transactions) ->
             Node = log_utilities:get_my_node(Key),
             Preflist = [{Key, Node}];
         _ ->
-            {Key,_Type,_Op} = Payload,
+            {Key, _Type, _Op} = Payload,
             Preflist = log_utilities:get_preflist_from_key(Key)
     end,
     Indexnode = hd(Preflist),
     lists:foreach(fun(Txn) ->
-                          store_update(Indexnode, Txn)
-                  end, Transactions),
+        store_update(Indexnode, Txn)
+    end, Transactions),
     riak_core_vnode_master:command(Indexnode, {process_queue},
-                                   inter_dc_recvr_vnode_master),
+        inter_dc_recvr_vnode_master),
     ok.
 
 store_update(Node, Transaction) ->
     riak_core_vnode_master:sync_command(Node,
-                                        {store_update, Transaction},
-                                        inter_dc_recvr_vnode_master).
+        {store_update, Transaction},
+        inter_dc_recvr_vnode_master).
 
 %% riak_core_vnode call backs
 init([Partition]) ->
     StateFile = string:concat(integer_to_list(Partition), "replstate"),
     Path = filename:join(
-             app_helper:get_env(riak_core, platform_data_dir), StateFile),
+        app_helper:get_env(riak_core, platform_data_dir), StateFile),
     case dets:open_file(StateFile, [{file, Path}, {type, set}]) of
         {ok, StateStore} ->
             case dets:lookup(StateStore, recvr_state) of
-                %%If file already exists read previous state from it.
+            %%If file already exists read previous state from it.
                 [{recvr_state, State}] ->
                     {ok, State};
                 [] ->
-                    {ok, State } = inter_dc_repl_update:init_state(Partition),
+                    {ok, State} = inter_dc_repl_update:init_state(Partition),
                     {ok, State#recvr_state{statestore = StateStore}};
                 Error -> Error
             end;
@@ -106,7 +106,7 @@ init([Partition]) ->
 %% Updates are expected to recieve in causal order.
 handle_command({store_update, Transaction}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
-                       Transaction, State),
+        Transaction, State),
     %% This should be changed to disk_log??
     ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {reply, ok, NewState};

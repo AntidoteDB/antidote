@@ -26,7 +26,7 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    rt:update_app_config(all,[
+    rt:update_app_config(all, [
         {riak_core, [{ring_creation_size, 8}]}
     ]),
     [Nodes] = rt:build_clusters([6]),
@@ -36,7 +36,7 @@ confirm() ->
     rt:wait_until_ring_converged(Nodes),
 
     lager:info("Waiting until vnodes are started up"),
-    rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
+    rt:wait_until(hd(Nodes), fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
 
 
@@ -52,7 +52,7 @@ confirm() ->
 
     %% Perform successful write and read.
     WriteResult = rpc:call(First,
-                           antidote, append, [key1, riak_dt_gcounter, {increment, ucl}]),
+        antidote, append, [key1, riak_dt_gcounter, {increment, ucl}]),
     lager:info("WriteResult: ~p", [WriteResult]),
     ?assertMatch({ok, _}, WriteResult),
 

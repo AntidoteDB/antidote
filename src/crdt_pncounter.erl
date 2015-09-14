@@ -56,16 +56,16 @@
 
 -export_type([pncounter/0, pncounter_op/0, binary_pncounter/0]).
 
--opaque pncounter()  :: {Inc::non_neg_integer(), Dec::non_neg_integer()}.
+-opaque pncounter() :: {Inc :: non_neg_integer(), Dec :: non_neg_integer()}.
 -type binary_pncounter() :: binary().
 -type pncounter_op() :: {riak_dt_gcounter:gcounter_op(), binary()} | decrement_op().
 -type decrement_op() :: decrement | {decrement, pos_integer(), binary()}.
--type pncounter_q()  :: positive | negative.
+-type pncounter_q() :: positive | negative.
 
 %% @doc Create a new, empty `pncounter()'
 -spec new() -> pncounter().
 new() ->
-    {0,0}.
+    {0, 0}.
 
 %% @doc Create a `pncounter()' with an initial `Value' for `Actor'.
 -spec new(integer()) -> pncounter().
@@ -80,7 +80,7 @@ new(_Zero) ->
 -spec value(pncounter()) -> integer().
 value(PNCnt) ->
     {Inc, Dec} = PNCnt,
-    Inc-Dec.
+    Inc - Dec.
 
 %% @doc query the parts of a `pncounter()'
 %% valid queries are `positive' or `negative'.
@@ -105,9 +105,9 @@ generate_downstream(increment, Actor, _PNCnt) ->
     {ok, {{increment, 1}, unique(Actor)}};
 generate_downstream(decrement, Actor, _PNCnt) ->
     {ok, {{decrement, 1}, unique(Actor)}};
-generate_downstream({increment, By}, Actor, _PNCnt) -> 
+generate_downstream({increment, By}, Actor, _PNCnt) ->
     {ok, {{increment, By}, unique(Actor)}};
-generate_downstream({decrement, By}, Actor, _PNCnt) -> 
+generate_downstream({decrement, By}, Actor, _PNCnt) ->
     {ok, {{decrement, By}, unique(Actor)}}.
 
 
@@ -166,12 +166,12 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 -spec increment_by(pos_integer(), pncounter()) -> pncounter().
 increment_by(Increment, PNCnt) ->
     {Inc, Dec} = PNCnt,
-    {Inc+Increment, Dec}.
+    {Inc + Increment, Dec}.
 
 -spec decrement_by(pos_integer(), pncounter()) -> pncounter().
 decrement_by(Decrement, PNCnt) ->
     {Inc, Dec} = PNCnt,
-    {Inc, Dec+Decrement}.
+    {Inc, Dec + Decrement}.
 
 unique(_Actor) ->
     crypto:strong_rand_bytes(20).
@@ -181,13 +181,13 @@ unique(_Actor) ->
 -ifdef(TEST).
 
 new_test() ->
-    ?assertEqual({0,0}, new()).
+    ?assertEqual({0, 0}, new()).
 
 %% @doc test the correctness of `value()' function
 value_test() ->
-    PNCnt1 = {4,0}, 
-    PNCnt2 = {8,4},
-    PNCnt3 = {4,4},
+    PNCnt1 = {4, 0},
+    PNCnt2 = {8, 4},
+    PNCnt3 = {4, 4},
     ?assertEqual(4, value(PNCnt1)),
     ?assertEqual(4, value(PNCnt2)),
     ?assertEqual(0, value(PNCnt3)).
@@ -198,13 +198,13 @@ update_increment_test() ->
     {ok, PNCnt1} = update({{increment, 1}, 1}, PNCnt0),
     {ok, PNCnt2} = update({{increment, 2}, 1}, PNCnt1),
     {ok, PNCnt3} = update({{increment, 1}, 1}, PNCnt2),
-    ?assertEqual({4,0}, PNCnt3).
+    ?assertEqual({4, 0}, PNCnt3).
 
 %% @doc test the correctness of increment by some numbers.
 update_increment_by_test() ->
     PNCnt0 = new(),
     {ok, PNCnt1} = update({{increment, 7}, 1}, PNCnt0),
-    ?assertEqual({7,0}, PNCnt1).
+    ?assertEqual({7, 0}, PNCnt1).
 
 %% @doc test the correctness of decrement.
 update_decrement_test() ->
@@ -213,7 +213,7 @@ update_decrement_test() ->
     {ok, PNCnt2} = update({{increment, 2}, 1}, PNCnt1),
     {ok, PNCnt3} = update({{increment, 1}, 1}, PNCnt2),
     {ok, PNCnt4} = update({{decrement, 1}, 1}, PNCnt3),
-    ?assertEqual({4,1}, PNCnt4).
+    ?assertEqual({4, 1}, PNCnt4).
 
 update_decrement_by_test() ->
     PNCnt0 = new(),
@@ -222,14 +222,14 @@ update_decrement_by_test() ->
     ?assertEqual({7, 5}, PNCnt2).
 
 equal_test() ->
-    PNCnt1 = {4,2},
-    PNCnt2 = {2,0},
-    PNCnt3 = {2,0}, 
+    PNCnt1 = {4, 2},
+    PNCnt2 = {2, 0},
+    PNCnt3 = {2, 0},
     ?assertNot(equal(PNCnt1, PNCnt2)),
     ?assert(equal(PNCnt2, PNCnt3)).
 
 binary_test() ->
-    PNCnt1 = {4,2},
+    PNCnt1 = {4, 2},
     BinaryPNCnt1 = to_binary(PNCnt1),
     PNCnt2 = from_binary(BinaryPNCnt1),
     ?assert(equal(PNCnt1, PNCnt2)).

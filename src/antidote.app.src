@@ -1,16 +1,16 @@
 %% -*- erlang -*-
 {application, antidote,
- [
-  {description, "SyncFree reference platform"},
-  {vsn, "1"},
-  {registered, []},
-  {applications, [
-                  kernel,
-                  stdlib,
-                  riak_pb,
-                  riak_api,
-                  riak_core
-                 ]},
-  {mod, { antidote_app, []}},
-  {env, []}
- ]}.
+    [
+        {description, "SyncFree reference platform"},
+        {vsn, "1"},
+        {registered, []},
+        {applications, [
+            kernel,
+            stdlib,
+            riak_pb,
+            riak_api,
+            riak_core
+        ]},
+        {mod, {antidote_app, []}},
+        {env, []}
+    ]}.

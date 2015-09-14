@@ -46,7 +46,7 @@
 
 %% API
 -export([new/0, value/1, generate_downstream/3, update/2, equal/2,
-         to_binary/1, from_binary/1, value/2, precondition_context/1, stats/1, stat/2]).
+    to_binary/1, from_binary/1, value/2, precondition_context/1, stats/1, stat/2]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -58,8 +58,8 @@
 -type binary_orset() :: binary(). %% A binary that from_binary/1 will operate on.
 
 -type orset_op() :: {add, member()} | {remove, member()} |
-                    {add_all, [member()]} | {remove_all, [member()]} |
-                    {update, [orset_op()]}.
+{add_all, [member()]} | {remove_all, [member()]} |
+{update, [orset_op()]}.
 
 -type actor() :: riak_dt:actor().
 -type member() :: term().
@@ -92,7 +92,7 @@ value({tokens, Elem}, ORSet) ->
         {ok, Tokens} ->
             Tokens
     end;
-value(_,ORSet) ->
+value(_, ORSet) ->
     value(ORSet).
 
 %% @doc generate downstream operations. 
@@ -100,20 +100,21 @@ value(_,ORSet) ->
 %% If the operation is remove or remove_all, fetches all unique tokens for 
 %% these elements existing in the `orset()'.
 -spec generate_downstream(orset_op(), actor(), orset()) -> {ok, orset_op()}.
-generate_downstream({add,Elem}, Actor, _ORDict) ->
+generate_downstream({add, Elem}, Actor, _ORDict) ->
     Token = unique(Actor),
-    {ok, {add, {Elem,[Token]}}};
-generate_downstream({add_all,Elems}, Actor, _ORDict0) ->
+    {ok, {add, {Elem, [Token]}}};
+generate_downstream({add_all, Elems}, Actor, _ORDict0) ->
     DownstreamOp = lists:foldl(fun(Elem, Sum) ->
-                                Token = unique(Actor),
-                                Sum++[{Elem, [Token]}]
-                                end, [], Elems),
+        Token = unique(Actor),
+        Sum ++ [{Elem, [Token]}]
+    end, [], Elems),
     {ok, {add_all, DownstreamOp}};
 generate_downstream({remove, Elem}, _Actor, ORDict) ->
     ToRemove = value({tokens, Elem}, ORDict),
     {ok, {remove, {Elem, ToRemove}}};
-generate_downstream({remove_all,Elems}, _Actor, ORDict) ->
-    ToRemove = lists:foldl(fun(Elem, Sum) -> Sum++[{Elem, value({tokens, Elem}, ORDict)}] end, [], Elems),
+generate_downstream({remove_all, Elems}, _Actor, ORDict) ->
+    ToRemove = lists:foldl(fun(Elem, Sum) ->
+        Sum ++ [{Elem, value({tokens, Elem}, ORDict)}] end, [], Elems),
     {ok, {remove_all, ToRemove}}.
 
 
@@ -125,18 +126,18 @@ generate_downstream({remove_all,Elems}, _Actor, ORDict) ->
 %% For update, the second element of the tuple is a list of updates to apply, each of which can
 %% either be add, add_all or remove, remove_all. 
 -spec update(orset_op(), orset()) -> {ok, orset()} |
-                                              {error, {precondition ,{not_present, member()}}}.
-update({add, {Elem, [Token|_]}}, ORDict) ->
-    add_elem(Elem,Token,ORDict);
-update({add_all,Elems}, ORDict0) ->
-    OD = lists:foldl(fun(Elem,ORDict) ->
-                {ok, ORDict1} = update({add,Elem},ORDict),
-                ORDict1
-            end, ORDict0, Elems),
+{error, {precondition, {not_present, member()}}}.
+update({add, {Elem, [Token | _]}}, ORDict) ->
+    add_elem(Elem, Token, ORDict);
+update({add_all, Elems}, ORDict0) ->
+    OD = lists:foldl(fun(Elem, ORDict) ->
+        {ok, ORDict1} = update({add, Elem}, ORDict),
+        ORDict1
+    end, ORDict0, Elems),
     {ok, OD};
 update({remove, Elem}, ORDict) ->
     remove_elem(Elem, ORDict);
-update({remove_all,Elems}, ORDict0) ->
+update({remove_all, Elems}, ORDict0) ->
     remove_elems(Elems, ORDict0);
 update({update, Ops}, ORDict) ->
     apply_ops(Ops, ORDict).
@@ -156,15 +157,15 @@ equal(ORDictA, ORDictB) ->
 -spec precondition_context(orset()) -> orset().
 precondition_context(ORDict) ->
     orddict:fold(fun(Elem, Tokens, ORDict1) ->
-            case minimum_tokens(Tokens) of
-                []      -> ORDict1;
-                Tokens1 -> orddict:store(Elem, Tokens1, ORDict1)
-            end
-        end, orddict:new(), ORDict).
+        case minimum_tokens(Tokens) of
+            [] -> ORDict1;
+            Tokens1 -> orddict:store(Elem, Tokens1, ORDict1)
+        end
+    end, orddict:new(), ORDict).
 
 -spec stats(orset()) -> [{atom(), number()}].
 stats(ORSet) ->
-    [ {S, stat(S, ORSet)} || S <- [element_count] ].
+    [{S, stat(S, ORSet)} || S <- [element_count]].
 
 -spec stat(atom(), orset()) -> integer() | undefined.
 stat(element_count, ORSet) ->
@@ -186,32 +187,32 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 
 %% Private
 %% @doc add an element and its token to the `orset()'.
-add_elem(Elem,Token,ORDict) ->
-    case orddict:find(Elem,ORDict) of
+add_elem(Elem, Token, ORDict) ->
+    case orddict:find(Elem, ORDict) of
         {ok, Tokens} ->
             case lists:member(Token, Tokens) of
                 true ->
                     {ok, ORDict};
                 false ->
-                    {ok, orddict:store(Elem, Tokens++[Token], ORDict)}
+                    {ok, orddict:store(Elem, Tokens ++ [Token], ORDict)}
             end;
         error ->
             {ok, orddict:store(Elem, [Token], ORDict)}
     end.
 
 %% @doc remove all tokens of the element from the `orset()'.
-remove_elem({Elem,RemoveTokens},ORDict) ->
-    case orddict:find(Elem,ORDict) of
+remove_elem({Elem, RemoveTokens}, ORDict) ->
+    case orddict:find(Elem, ORDict) of
         {ok, Tokens} ->
             RestTokens = Tokens--RemoveTokens,
-            case RestTokens of 
+            case RestTokens of
                 [] ->
                     {ok, orddict:erase(Elem, ORDict)};
-                _ -> 
+                _ ->
                     {ok, orddict:store(Elem, Tokens--RemoveTokens, ORDict)}
             end;
         error ->
-            case RemoveTokens of 
+            case RemoveTokens of
                 [] ->
                     {ok, ORDict};
                 _ ->
@@ -221,10 +222,10 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
 
 remove_elems([], ORDict) ->
     {ok, ORDict};
-remove_elems([Elem|Rest], ORDict) ->
-    case remove_elem(Elem,ORDict) of
+remove_elems([Elem | Rest], ORDict) ->
+    case remove_elem(Elem, ORDict) of
         {ok, ORDict1} -> remove_elems(Rest, ORDict1);
-        Error         -> Error
+        Error -> Error
     end.
 
 apply_ops([], ORDict) ->
@@ -241,21 +242,21 @@ unique(_Actor) ->
 
 minimum_tokens(Tokens) ->
     orddict:filter(fun(_Token, Removed) ->
-            not Removed
-        end, Tokens).
+        not Removed
+    end, Tokens).
 
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
 new_test() ->
-    ?assertEqual(orddict:new(), new()). 
+    ?assertEqual(orddict:new(), new()).
 
 add_test() ->
     Set1 = new(),
     {ok, DownstreamOp1} = generate_downstream({add, <<"foo">>}, 1, Set1),
     ?assertMatch({add, {<<"foo">>, _}}, DownstreamOp1),
-    {ok, DownstreamOp2} = generate_downstream({add_all, [<<"li">>,<<"manu">>]}, 1, Set1),
+    {ok, DownstreamOp2} = generate_downstream({add_all, [<<"li">>, <<"manu">>]}, 1, Set1),
     ?assertMatch({add_all, [{<<"li">>, _}, {<<"manu">>, _}]}, DownstreamOp2),
     {ok, Set2} = update(DownstreamOp1, Set1),
     {_, Elem1} = DownstreamOp1,
@@ -270,16 +271,16 @@ value_test() ->
     ?assertEqual([], value(Set1)),
     {ok, Set2} = update(DownstreamOp1, Set1),
     ?assertEqual([<<"foo">>], value(Set2)),
-    {ok, DownstreamOp2} = generate_downstream({add_all, [<<"foo">>, <<"li">>,<<"manu">>]}, 1, Set2),
+    {ok, DownstreamOp2} = generate_downstream({add_all, [<<"foo">>, <<"li">>, <<"manu">>]}, 1, Set2),
     {ok, Set3} = update(DownstreamOp2, Set2),
     ?assertEqual([<<"foo">>, <<"li">>, <<"manu">>], value(Set3)),
 
-    {_, {_, Token1}}=DownstreamOp1,
-    {_, [{_, Token2}|_]}=DownstreamOp2,
+    {_, {_, Token1}} = DownstreamOp1,
+    {_, [{_, Token2} | _]} = DownstreamOp2,
     ?assertEqual(Token1, value({tokens, <<"foo">>}, Set2)),
-    ?assertEqual(Token1++Token2, value({tokens, <<"foo">>}, Set3)),
+    ?assertEqual(Token1 ++ Token2, value({tokens, <<"foo">>}, Set3)),
 
-    ?assertEqual(orddict:store(<<"foo">>, Token1++Token2, orddict:new()), value({fragment, <<"foo">>}, Set3)).
+    ?assertEqual(orddict:store(<<"foo">>, Token1 ++ Token2, orddict:new()), value({fragment, <<"foo">>}, Set3)).
 
 remove_test() ->
     Set1 = new(),
@@ -292,29 +293,29 @@ remove_test() ->
     ?assertEqual([], value(Set3)),
 
     %% Add many elements then remove part
-    {ok, Op3} = generate_downstream({add_all, [<<"foo">>, <<"li">>,<<"manu">>]}, 1, Set1),
+    {ok, Op3} = generate_downstream({add_all, [<<"foo">>, <<"li">>, <<"manu">>]}, 1, Set1),
     {ok, Set4} = update(Op3, Set1),
     ?assertEqual([<<"foo">>, <<"li">>, <<"manu">>], value(Set4)),
 
-    {ok, Op5} = generate_downstream({remove_all, [<<"foo">>, <<"li">>]},1 , Set4),
+    {ok, Op5} = generate_downstream({remove_all, [<<"foo">>, <<"li">>]}, 1, Set4),
     {ok, Set5} = update(Op5, Set4),
     ?assertEqual([<<"manu">>], value(Set5)),
-    
+
     %% Remove more than current have
-    {ok, Op6} = generate_downstream({add_all, [<<"foo">>, <<"li">>,<<"manu">>]}, 1, Set1),
+    {ok, Op6} = generate_downstream({add_all, [<<"foo">>, <<"li">>, <<"manu">>]}, 1, Set1),
     {ok, Set6} = update(Op6, Set1),
     {ok, Op7} = generate_downstream({remove_all, [<<"manu">>, <<"test">>]}, 1, Set6),
     Result = update(Op7, Set6),
     ?assertMatch({ok, _}, Result).
 
-    
+
 concurrent_add_test() ->
     Set1 = new(),
     %% Add an element then remove it
     {ok, Op1} = generate_downstream({add, <<"foo">>}, 1, Set1),
     {ok, Set2} = update(Op1, Set1),
     ?assertEqual([<<"foo">>], value(Set2)),
-    
+
     %% If remove is concurrent with the second add, will not remove the second added 
     {ok, Op2} = generate_downstream({remove, <<"foo">>}, 1, Set2),
 
@@ -329,7 +330,7 @@ concurrent_add_test() ->
     {ok, Op4} = generate_downstream({remove, <<"foo">>}, 1, Set3),
     {ok, Set5} = update(Op4, Set3),
     ?assertEqual([], value(Set5)).
-    
+
 binary_test() ->
     ORSet1 = new(),
     BinaryORSet1 = to_binary(ORSet1),

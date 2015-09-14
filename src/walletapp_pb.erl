@@ -23,11 +23,11 @@
 -module(walletapp_pb).
 
 -export([credit/3,
-         debit/3,
-         getbalance/2,
-         buyvoucher/3,
-         usevoucher/3,
-         readvouchers/2]).
+    debit/3,
+    getbalance/2,
+    buyvoucher/3,
+    usevoucher/3,
+    readvouchers/2]).
 
 -include("antidote.hrl").
 
@@ -43,13 +43,13 @@ credit(Key, Amount, Pid) ->
                     {error, Reason}
             end;
         {error, Reason} ->
-             {error, Reason}
+            {error, Reason}
     end.
 
 -spec debit(key(), non_neg_integer(), pid()) -> ok | {error, reason()}.
 debit(Key, Amount, Pid) ->
     case antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
-        {ok,Counter} ->
+        {ok, Counter} ->
             CounterUpdt = antidotec_counter:decrement(Amount, Counter),
             case antidotec_pb_socket:store_crdt(CounterUpdt, Pid) of
                 ok ->
@@ -64,7 +64,7 @@ debit(Key, Amount, Pid) ->
 -spec getbalance(key(), pid()) -> {error, error_in_read} | {ok, integer()}.
 getbalance(Key, Pid) ->
     case antidotec_pb_socket:get_crdt(Key, riak_dt_pncounter, Pid) of
-        {ok,Counter} ->
+        {ok, Counter} ->
             {ok, antidotec_counter:value(Counter)};
         {error, _Reason} ->
             {error, error_in_read}
@@ -74,13 +74,13 @@ getbalance(Key, Pid) ->
 buyvoucher(Key, Voucher, Pid) ->
     case antidotec_pb_socket:get_crdt(Key, riak_dt_orset, Pid) of
         {ok, Set} ->
-            SetUpdt = antidotec_set:add(Voucher,Set),
+            SetUpdt = antidotec_set:add(Voucher, Set),
             case antidotec_pb_socket:store_crdt(SetUpdt, Pid) of
                 ok ->
                     ok;
                 {error, Reason} ->
-                     {error, Reason}
-           end;
+                    {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
