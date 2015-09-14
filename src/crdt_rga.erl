@@ -31,13 +31,13 @@
 
 -type rga_op() :: {addRight, any(), number()} | {remove, number()}.
 
--type rga_result() :: {ok, rga}.
+-type rga_result() :: {ok, rga()}.
 
 -type rga() :: list().
 
 -type actor() :: riak_dt:actor().
 
--spec new() -> rga().
+-spec new() -> [].
 new() ->
     [].
 
