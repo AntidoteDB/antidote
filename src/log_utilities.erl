@@ -27,10 +27,10 @@
 
 
 -export([get_preflist_from_key/1,
-         get_logid_from_key/1,
-         remove_node_from_preflist/1,
-         get_my_node/1
-        ]).
+    get_logid_from_key/1,
+    remove_node_from_preflist/1,
+    get_my_node/1
+]).
 
 %% @doc get_logid_from_key computes the log identifier from a key
 %%      Input:  Key:    The key from which the log id is going to be computed
@@ -56,7 +56,7 @@ get_preflist_from_key(Key) ->
 %%      Return: The primaries preflist
 %%
 -spec get_primaries_preflist(non_neg_integer()) -> preflist().
-get_primaries_preflist(Key)->
+get_primaries_preflist(Key) ->
     %{ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     %Itr = chashbin:iterator(Key, CHBin),
     %{Primaries, _} = chashbin:itr_pop(?N, Itr),
@@ -77,7 +77,7 @@ get_my_node(Partition) ->
 %%
 -spec remove_node_from_preflist(preflist()) -> [partition_id()].
 remove_node_from_preflist(Preflist) ->
-    F = fun({P,_}) -> P end,
+    F = fun({P, _}) -> P end,
     lists:map(F, Preflist).
 
 %% @doc Convert key. If the key is integer(or integer in form of binary),
@@ -88,14 +88,14 @@ convert_key(Key) ->
     case is_binary(Key) of
         true ->
             KeyInt = (catch list_to_integer(binary_to_list(Key))),
-            case is_integer(KeyInt) of 
+            case is_integer(KeyInt) of
                 true -> abs(KeyInt);
                 false ->
                     HashedKey = riak_core_util:chash_key({?BUCKET, Key}),
                     abs(crypto:bytes_to_integer(HashedKey))
             end;
         false ->
-            case is_integer(Key) of 
+            case is_integer(Key) of
                 true ->
                     abs(Key);
                 false ->
@@ -107,17 +107,16 @@ convert_key(Key) ->
 -ifdef(TEST).
 
 
-
 %% @doc Testing remove_node_from_preflist
-remove_node_from_preflist_test()->
+remove_node_from_preflist_test() ->
     Preflist = [{partition1, node},
-                {partition2, node},
-                {partition3, node}],
+        {partition2, node},
+        {partition3, node}],
     ?assertEqual([partition1, partition2, partition3],
-                 remove_node_from_preflist(Preflist)).
+        remove_node_from_preflist(Preflist)).
 
 %% @doc Testing convert key
-convert_key_test()->
+convert_key_test() ->
     ?assertEqual(1, convert_key(1)),
     ?assertEqual(1, convert_key(-1)),
     ?assertEqual(0, convert_key(0)),

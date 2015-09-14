@@ -26,7 +26,7 @@
 -include("antidote.hrl").
 
 -export([start_fsm/1,
-         start_link/0]).
+    start_link/0]).
 
 -export([init/1]).
 
@@ -45,8 +45,8 @@ generate_module_name(N) ->
 generate_supervisor_spec(N) ->
     Module = generate_module_name(N),
     {Module,
-     {clocksi_interactive_tx_coord_worker_sup, start_link, [Module]},
-      permanent, 5000, supervisor, [clocksi_interactive_tx_coord_worker_sup]}.
+        {clocksi_interactive_tx_coord_worker_sup, start_link, [Module]},
+        permanent, 5000, supervisor, [clocksi_interactive_tx_coord_worker_sup]}.
 
 %% @doc Starts the coordinator of a ClockSI interactive transaction.
 init([]) ->

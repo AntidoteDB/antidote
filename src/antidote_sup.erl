@@ -39,8 +39,8 @@ start_link() ->
 %% from other DCs 
 start_rep(Pid, Port) ->
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
-                    {inter_dc_communication_sup, start_link, [Pid, Port]},
-                    permanent, 5000, supervisor, [inter_dc_communication_sup]}).
+        {inter_dc_communication_sup, start_link, [Pid, Port]},
+        permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
 stop_rep() ->
     ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
@@ -50,72 +50,72 @@ stop_rep() ->
     ok = supervisor:terminate_child(?MODULE, inter_dc_communication_sup),
     _ = supervisor:delete_child(?MODULE, inter_dc_communication_sup),
     ok.
-    
+
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
 init(_Args) ->
     LoggingMaster = {logging_vnode_master,
-                     {riak_core_vnode_master, start_link, [logging_vnode]},
-                     permanent, 5000, worker, [riak_core_vnode_master]},
-    ClockSIMaster = { clocksi_vnode_master,
-                      {riak_core_vnode_master, start_link, [clocksi_vnode]},
-                      permanent, 5000, worker, [riak_core_vnode_master]},
+        {riak_core_vnode_master, start_link, [logging_vnode]},
+        permanent, 5000, worker, [riak_core_vnode_master]},
+    ClockSIMaster = {clocksi_vnode_master,
+        {riak_core_vnode_master, start_link, [clocksi_vnode]},
+        permanent, 5000, worker, [riak_core_vnode_master]},
 
     InterDcRepMaster = {inter_dc_repl_vnode_master,
-                        {riak_core_vnode_master, start_link,
-                         [inter_dc_repl_vnode]},
-                        permanent, 5000, worker, [riak_core_vnode_master]},
+        {riak_core_vnode_master, start_link,
+            [inter_dc_repl_vnode]},
+        permanent, 5000, worker, [riak_core_vnode_master]},
 
-    InterDcRecvrMaster = { inter_dc_recvr_vnode_master,
-                           {riak_core_vnode_master, start_link,
-                            [inter_dc_recvr_vnode]},
-                           permanent, 5000, worker, [riak_core_vnode_master]},
+    InterDcRecvrMaster = {inter_dc_recvr_vnode_master,
+        {riak_core_vnode_master, start_link,
+            [inter_dc_recvr_vnode]},
+        permanent, 5000, worker, [riak_core_vnode_master]},
 
-    ClockSIsTxCoordSup =  { clocksi_static_tx_coord_sup,
-                           {clocksi_static_tx_coord_sup, start_link, []},
-                           permanent, 5000, supervisor, [clockSI_static_tx_coord_sup]},
+    ClockSIsTxCoordSup = {clocksi_static_tx_coord_sup,
+        {clocksi_static_tx_coord_sup, start_link, []},
+        permanent, 5000, supervisor, [clockSI_static_tx_coord_sup]},
 
-    ClockSIiTxCoordSup =  { clocksi_interactive_tx_coord_sup,
-                            {clocksi_interactive_tx_coord_sup, start_link, []},
-                            permanent, 5000, supervisor,
-                            [clockSI_interactive_tx_coord_sup]},
-    
+    ClockSIiTxCoordSup = {clocksi_interactive_tx_coord_sup,
+        {clocksi_interactive_tx_coord_sup, start_link, []},
+        permanent, 5000, supervisor,
+        [clockSI_interactive_tx_coord_sup]},
+
     ClockSIReadSup = {clocksi_readitem_sup,
-    		      {clocksi_readitem_sup, start_link, []},
-    		      permanent, 5000, supervisor,
-    		      [clocksi_readitem_sup]},
-    
+        {clocksi_readitem_sup, start_link, []},
+        permanent, 5000, supervisor,
+        [clocksi_readitem_sup]},
+
     VectorClockMaster = {vectorclock_vnode_master,
-                         {riak_core_vnode_master,  start_link,
-                          [vectorclock_vnode]},
-                         permanent, 5000, worker, [riak_core_vnode_master]},
+        {riak_core_vnode_master, start_link,
+            [vectorclock_vnode]},
+        permanent, 5000, worker, [riak_core_vnode_master]},
 
     MaterializerMaster = {materializer_vnode_master,
-                          {riak_core_vnode_master,  start_link,
-                           [materializer_vnode]},
-                          permanent, 5000, worker, [riak_core_vnode_master]},
+        {riak_core_vnode_master, start_link,
+            [materializer_vnode]},
+        permanent, 5000, worker, [riak_core_vnode_master]},
 
     InterDcSenderSup = {inter_dc_communication_sender_fsm_sup,
-    		      {inter_dc_communication_sender_fsm_sup, start_link, []},
-    		      permanent, 5000, supervisor,
-    		      [inter_dc_communication_sender_fsm_sup]},
+        {inter_dc_communication_sender_fsm_sup, start_link, []},
+        permanent, 5000, supervisor,
+        [inter_dc_communication_sender_fsm_sup]},
 
     InterDcManager = {inter_dc_manager,
-                        {inter_dc_manager, start_link, []},
-                        permanent, 5000, worker, [inter_dc_manager]},
+        {inter_dc_manager, start_link, []},
+        permanent, 5000, worker, [inter_dc_manager]},
 
     {ok,
-     {{one_for_one, 5, 10},
-      [LoggingMaster,
-       ClockSIMaster,
-       ClockSIsTxCoordSup,
-       ClockSIiTxCoordSup,
-       ClockSIReadSup,
-       InterDcRepMaster,
-       InterDcRecvrMaster,
-       InterDcManager,
-       VectorClockMaster,
-       InterDcSenderSup,
-       MaterializerMaster]}}.
+        {{one_for_one, 5, 10},
+            [LoggingMaster,
+                ClockSIMaster,
+                ClockSIsTxCoordSup,
+                ClockSIiTxCoordSup,
+                ClockSIReadSup,
+                InterDcRepMaster,
+                InterDcRecvrMaster,
+                InterDcManager,
+                VectorClockMaster,
+                InterDcSenderSup,
+                MaterializerMaster]}}.

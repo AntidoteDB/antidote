@@ -26,7 +26,7 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    rt:update_app_config(all,[
+    rt:update_app_config(all, [
         {riak_core, [{ring_creation_size, 8}]}
     ]),
     N = 3,
@@ -38,22 +38,22 @@ confirm() ->
 
     lager:info("Waiting until vnodes are started up"),
     lists:foreach(fun(Node) ->
-			  rt:wait_until(Node, fun wait_init:check_ready/1)
-		  end, Nodes),
+        rt:wait_until(Node, fun wait_init:check_ready/1)
+    end, Nodes),
     lager:info("Vnodes are started up"),
 
 
     F = fun(Elem) ->
-            Node = lists:nth(Elem, Nodes),
-            lager:info("Sending asign to Node ~w~n",[Node]),
-            AssignResult = rpc:call(Node, antidote, append, [abc, riak_dt_mvreg, {{assign, Elem}, actor1}]),
-            ?assertMatch({ok, _}, AssignResult)
+        Node = lists:nth(Elem, Nodes),
+        lager:info("Sending asign to Node ~w~n", [Node]),
+        AssignResult = rpc:call(Node, antidote, append, [abc, riak_dt_mvreg, {{assign, Elem}, actor1}]),
+        ?assertMatch({ok, _}, AssignResult)
     end,
 
     lists:map(F, ListIds),
     FirstNode = hd(Nodes),
     Result = hd(lists:reverse(ListIds)),
-    lager:info("Sending read to Node ~w~n",[FirstNode]),
+    lager:info("Sending read to Node ~w~n", [FirstNode]),
     {ok, ReadResult} = rpc:call(FirstNode, antidote, read, [abc, riak_dt_mvreg]),
     ?assertEqual([Result], ReadResult),
 

@@ -22,7 +22,7 @@
 -behavior(supervisor).
 
 -export([start_fsm/1,
-         start_link/0]).
+    start_link/0]).
 -export([init/1]).
 
 
@@ -36,6 +36,6 @@ start_fsm(Args) ->
 
 init([]) ->
     Worker = {inter_dc_communication_fsm,
-              {inter_dc_communication_fsm, start_link, []},
-              transient, 5000, worker, [inter_dc_communication_fsm]},
+        {inter_dc_communication_fsm, start_link, []},
+        transient, 5000, worker, [inter_dc_communication_fsm]},
     {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.

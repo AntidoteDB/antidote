@@ -26,7 +26,7 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    rt:update_app_config(all,[
+    rt:update_app_config(all, [
         {riak_core, [{ring_creation_size, 8}]}
     ]),
     [Nodes] = rt:build_clusters([1]),
@@ -38,35 +38,35 @@ confirm() ->
     rt:wait_for_service(Node, antidote),
 
     lager:info("Waiting until vnodes are started up"),
-    rt:wait_until(Node,fun wait_init:check_ready/1),
+    rt:wait_until(Node, fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
 
     rt:log_to_nodes(Nodes, "Starting write operation 1"),
 
     WriteResult = rpc:call(Node,
-                           antidote, append,
-                           [key1, riak_dt_gcounter, {increment, ucl}]),
+        antidote, append,
+        [key1, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult),
 
     rt:log_to_nodes(Nodes, "Starting write operation 2"),
 
     WriteResult2 = rpc:call(Node,
-                           antidote, append,
-                           [key2, riak_dt_gcounter, {increment, ucl}]),
+        antidote, append,
+        [key2, riak_dt_gcounter, {increment, ucl}]),
     ?assertMatch({ok, _}, WriteResult2),
 
     rt:log_to_nodes(Nodes, "Starting read operation 1"),
 
     ReadResult1 = rpc:call(Node,
-                           antidote, read,
-                           [key1, riak_dt_gcounter]),
+        antidote, read,
+        [key1, riak_dt_gcounter]),
     ?assertEqual({ok, 1}, ReadResult1),
 
     rt:log_to_nodes(Nodes, "Starting read operation 2"),
 
     ReadResult2 = rpc:call(Node,
-                           antidote, read,
-                           [key2, riak_dt_gcounter]),
+        antidote, read,
+        [key2, riak_dt_gcounter]),
     ?assertEqual({ok, 1}, ReadResult2),
 
     pass.

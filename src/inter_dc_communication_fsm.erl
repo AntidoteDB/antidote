@@ -29,16 +29,16 @@
 
 -export([start_link/1]).
 -export([init/1,
-         code_change/4,
-         handle_event/3,
-         handle_info/3,
-         handle_sync_event/4,
-         terminate/3]).
+    code_change/4,
+    handle_event/3,
+    handle_info/3,
+    handle_sync_event/4,
+    terminate/3]).
 -export([receive_message/2,
-         close_socket/2
-        ]).
+    close_socket/2
+]).
 
--define(TIMEOUT,10000).
+-define(TIMEOUT, 10000).
 
 %% ===================================================================
 %% Public API
@@ -53,42 +53,42 @@ start_link(Socket) ->
 %% ===================================================================
 
 init([Socket]) ->
-    {ok, receive_message, #state{socket=Socket},0}.
+    {ok, receive_message, #state{socket = Socket}, 0}.
 
 
-receive_message(timeout, State=#state{socket=Socket}) ->
+receive_message(timeout, State = #state{socket = Socket}) ->
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
             case binary_to_term(Message) of
                 {replicate, Updates} ->
-                    ok =  inter_dc_recvr_vnode:store_updates(Updates) ,
+                    ok = inter_dc_recvr_vnode:store_updates(Updates),
                     case gen_tcp:send(Socket, term_to_binary(acknowledge)) of
-			ok ->
-			    ok;
-			{error,Reason} ->
-			    lager:error("Could not send ack, reason ~p", [Reason])
-		    end;
+                        ok ->
+                            ok;
+                        {error, Reason} ->
+                            lager:error("Could not send ack, reason ~p", [Reason])
+                    end;
                 Unknown -> %% Add more messages to be handled
                     lager:error("Weird message received ~p", [Unknown])
             end;
         {error, Reason} ->
             lager:error("Problem with the socket, reason: ~p", [Reason])
     end,
-    {next_state, close_socket,State,0}.
+    {next_state, close_socket, State, 0}.
 
-close_socket(timeout, State=#state{socket=Socket}) ->
+close_socket(timeout, State = #state{socket = Socket}) ->
     gen_tcp:close(Socket),
     {stop, normal, State}.
 
 handle_info(Message, _StateName, StateData) ->
-    lager:error("Recevied info:  ~p",[Message]),
-    {stop,badmsg,StateData}.
+    lager:error("Recevied info:  ~p", [Message]),
+    {stop, badmsg, StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 handle_sync_event(_Event, _From, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 

@@ -35,7 +35,7 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    rt:update_app_config(all,[
+    rt:update_app_config(all, [
         {riak_core, [{ring_creation_size, 8}]}
     ]),
     N = 6,
@@ -45,7 +45,7 @@ confirm() ->
     rt:wait_until_ring_converged(Nodes),
 
     lager:info("Waiting until vnodes are started up"),
-    rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
+    rt:wait_until(hd(Nodes), fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
 
 
@@ -53,13 +53,13 @@ confirm() ->
     ListIds = [random:uniform(N) || _ <- lists:seq(1, NumWrites)],
 
     F = fun(Elem, Acc) ->
-            rt:log_to_nodes(Nodes, "Issuing write operation: ~p", [Acc]),
-            Node = lists:nth(Elem, Nodes),
-            lager:info("Sending append to Node ~w~n",[Node]),
-            WriteResult = rpc:call(Node,
-                                   antidote, append, [abc, riak_dt_gcounter, {increment, a}]),
-            ?assertMatch({ok, _}, WriteResult),
-            Acc + 1
+        rt:log_to_nodes(Nodes, "Issuing write operation: ~p", [Acc]),
+        Node = lists:nth(Elem, Nodes),
+        lager:info("Sending append to Node ~w~n", [Node]),
+        WriteResult = rpc:call(Node,
+            antidote, append, [abc, riak_dt_gcounter, {increment, a}]),
+        ?assertMatch({ok, _}, WriteResult),
+        Acc + 1
     end,
 
     Total = lists:foldl(F, 0, ListIds),
@@ -67,7 +67,7 @@ confirm() ->
     rt:log_to_nodes(Nodes, "Issuing read operation."),
     FirstNode = hd(Nodes),
     ReadResult = rpc:call(FirstNode,
-                          antidote, read, [abc, riak_dt_gcounter]),
+        antidote, read, [abc, riak_dt_gcounter]),
     lager:info("Read value: ~p", [ReadResult]),
     ?assertEqual({ok, Total}, ReadResult),
 

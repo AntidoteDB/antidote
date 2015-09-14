@@ -44,7 +44,7 @@
 -behaviour(riak_dt).
 
 -export([new/0, value/1, value/2, update/3, merge/2,
-         equal/2, to_binary/1, from_binary/1, stats/1, stat/2]).
+    equal/2, to_binary/1, from_binary/1, stats/1, stat/2]).
 -export([parent_clock/2, update/4]).
 
 -ifdef(TEST).
@@ -55,12 +55,12 @@
 
 %% TODO: make opaque
 -type actor() :: term().
--type ts()    :: non_neg_integer().
+-type ts() :: non_neg_integer().
 -type mvreg() :: [{term(), riak_dt_vclock:vclock()}].
 
 -type mvreg_op() :: {assign, term(), ts()}
-                  | {assign, term()}
-                  | {propagate, term(), ts()}.
+| {assign, term()}
+| {propagate, term(), ts()}.
 
 -type mv_q() :: timestamp.
 
@@ -123,7 +123,7 @@ update({assign, Value, TS}, Actor, MVReg) ->
 %% merged; non-compatible vector clocks will be kept in a list.
 %% Corresponding values of non-compatible vector clocks will also be
 %% kept.
-update({propagate, Value, TS}, _, MVReg ) ->
+update({propagate, Value, TS}, _, MVReg) ->
     {ok, merge(MVReg, init(Value, TS))}.
 
 update(Op, Actor, Reg, _Ctx) ->
@@ -135,8 +135,9 @@ update(Op, Actor, Reg, _Ctx) ->
 -spec inc_vv(mvreg(), actor()) -> riak_dt_vclock:vclock().
 inc_vv(MVReg, Actor) ->
     VCL = [VC || {_Val, VC} <- MVReg],
-    [H|T] = VCL,
-    MaxVC = lists:foldl(fun(VC, Acc) -> riak_dt_vclock:merge([VC, Acc]) end, H, T),
+    [H | T] = VCL,
+    MaxVC = lists:foldl(fun(VC, Acc) ->
+        riak_dt_vclock:merge([VC, Acc]) end, H, T),
     NewVC = riak_dt_vclock:increment(Actor, MaxVC),
     NewVC.
 
@@ -145,21 +146,21 @@ inc_vv(MVReg, Actor) ->
 -spec larger_than(ts(), actor(), mvreg()) -> boolean().
 larger_than(_TS, _Actor, []) ->
     true;
-larger_than(TS, Actor, [H|T]) ->
+larger_than(TS, Actor, [H | T]) ->
     {_Value, VC} = H,
     OldTS = riak_dt_vclock:get_counter(Actor, VC),
-    case  TS > OldTS of
-	true ->
-	    larger_than(TS, Actor, T);
-	false ->
-	    false
+    case TS > OldTS of
+        true ->
+            larger_than(TS, Actor, T);
+        false ->
+            false
     end.
 
 %% @doc If any timestamp in the first list descends the second vector clock.
 -spec if_descends([riak_dt_vclock:vclock()], riak_dt_vclock:vclock()) -> boolean().
 if_descends([], _VC) ->
     false;
-if_descends([H|T], VC) ->
+if_descends([H | T], VC) ->
     case riak_dt_vclock:descends(H, VC) of
         true ->
             true;
@@ -178,17 +179,18 @@ merge(MVReg1, MVReg2) ->
 %% any other. Remainder are value entries whose vector clock is neither descendent of 
 %% any other entry nor being ascendent of any other.
 merge([], MVReg2, Remainder) ->
-    MVReg2++Remainder;
+    MVReg2 ++ Remainder;
 merge(MVReg1, [], Remainder) ->
-    MVReg1++Remainder;
+    MVReg1 ++ Remainder;
 merge(MVReg1, MVReg2, Remainder) ->
     {_, HVC} = hd(MVReg2),
     case if_descends(value(timestamp, MVReg1), HVC) of
         true ->
             merge(MVReg1, tl(MVReg2), Remainder);
         false ->
-            NewMVReg1 = lists:filter(fun({_, ElemVC}) -> riak_dt_vclock:descends(HVC, ElemVC) == false end, MVReg1),
-            merge(NewMVReg1, tl(MVReg2), Remainder++[hd(MVReg2)])
+            NewMVReg1 = lists:filter(fun({_, ElemVC}) ->
+                riak_dt_vclock:descends(HVC, ElemVC) == false end, MVReg1),
+            merge(NewMVReg1, tl(MVReg2), Remainder ++ [hd(MVReg2)])
     end.
 
 %% @doc Are two `mvreg()'s structurally equal? This is not `value/1' equality.
@@ -203,13 +205,13 @@ equal(MVReg1, MVReg2) ->
 %% `equal/2' without adding extra parameter, thus `eq/2' is used.
 eq([], []) ->
     true;
-eq([H1|T1], [H2|T2]) ->
+eq([H1 | T1], [H2 | T2]) ->
     {V1, TS1} = H1,
     {V2, TS2} = H2,
     VEqual = V1 =:= V2,
     TSEqual = riak_dt_vclock:equal(TS1, TS2),
     case VEqual andalso TSEqual of
-	    true ->
+        true ->
             eq(T1, T2);
         false ->
             false
@@ -226,9 +228,9 @@ stats(MVReg) ->
 stat(value_size, MVReg) ->
     Values = value(MVReg),
     TS = value(timestamp, MVReg),
-    Size =  erlang:external_size(Values) + erlang:external_size(TS),
+    Size = erlang:external_size(Values) + erlang:external_size(TS),
     Size;
-stat(_, _) -> undefined. 
+stat(_, _) -> undefined.
 
 -include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(DT_MVREG_TAG, 85).
@@ -320,12 +322,12 @@ merge_test() ->
 
 % @doc Check if `if_dominate/2' works.
 if_descends_test() ->
-    VC1 = [[{actor1, 2}, {actor2, 3}, {actor3,2}], [{actor1,3}, {actor2,1}, {actor4,2}]],
+    VC1 = [[{actor1, 2}, {actor2, 3}, {actor3, 2}], [{actor1, 3}, {actor2, 1}, {actor4, 2}]],
     VC2 = [{actor1, 1}],
     ?assert(if_descends(VC1, VC2)),
-    VC3 = [{actor1, 2}, {actor3,1}],
+    VC3 = [{actor1, 2}, {actor3, 1}],
     ?assert(if_descends(VC1, VC3)),
-    VC4 = [{actor3, 1}, {actor4,1}],
+    VC4 = [{actor3, 1}, {actor4, 1}],
     ?assertNot(if_descends(VC1, VC4)).
 
 % @doc Check if `update/3' by assign without providing timestamp works.
