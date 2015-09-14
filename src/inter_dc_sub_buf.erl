@@ -47,17 +47,9 @@ process({txn, Txn}, State = #state{state_name = buffering}) ->
 
 process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buffering}) ->
   ok = lists:foreach(fun deliver/1, Txns),
-  NewLast = case Txns of
-    [] ->
-      case queue:peek(Queue) of
-        empty -> State#state.last_observed_opid;
-        {value, Txn} ->
-          {Min, _} = Txn#interdc_txn.logid_range,
-          Min - 1
-      end;
-    _ ->
-      {_, Max} = (lists:last(Txns))#interdc_txn.logid_range,
-      Max
+  NewLast = case queue:peek(Queue) of
+    empty -> State#state.last_observed_opid;
+    {value, Txn} -> Txn#interdc_txn.prev_log_opid
   end,
   NewState = State#state{last_observed_opid = NewLast},
   process_queue(NewState).
@@ -66,14 +58,14 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
-      {Min, Max} = Txn#interdc_txn.logid_range,
-      %% assert Max >= Min
-      case Last + 1 >= Min of
+      ExpectedPrev = Txn#interdc_txn.prev_log_opid,
+      case ExpectedPrev == Last of
         true ->
           deliver(Txn),
+          Max = inter_dc_txn:last_log_opid(Txn),
           process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
         false ->
-          case inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, Min) of
+          case inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, ExpectedPrev) of
             ok ->
               State#state{state_name = buffering};
             _ ->

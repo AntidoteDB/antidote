@@ -49,7 +49,7 @@
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
-  last_log_id :: non_neg_integer(),
+  last_log_id :: log_opid(),
   ping_timer :: any()
 }).
 
@@ -76,7 +76,7 @@ handle_command({log_event, Operation}, _Sender, State) ->
   State1 = State#state{buffer = NewBufState},
   State2 = case Result of
     {ok, Ops} ->
-      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition),
+      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
       %% sanity check - we only publish locally committed transactions
       case inter_dc_txn:is_local(Txn) of
         true -> broadcast(State1, Txn);
@@ -114,5 +114,5 @@ clr_timer(State = #state{ping_timer = Timer}) ->
 broadcast(State, Txn) ->
   State1 = clr_timer(State),
   inter_dc_pub:broadcast(Txn),
-  {_, Id} = Txn#interdc_txn.logid_range,
+  Id = inter_dc_txn:last_log_opid(Txn),
   set_timer(State1#state{last_log_id = Id}).

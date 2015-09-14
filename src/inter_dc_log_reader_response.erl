@@ -66,7 +66,9 @@ get_entries(Partition, From, To) ->
   Logs = log_read_range(node(), Partition, From, To),
   Asm = log_txn_assembler:new_state(),
   {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
-  Txns = [inter_dc_txn:from_ops(TxnOps, Partition) || TxnOps <- OpLists],
+  Txns = [inter_dc_txn:from_ops(TxnOps, Partition, none) || TxnOps <- OpLists],
+  %% This is done in order to ensure that we only send the transactions we committed.
+  %% We can remove this once the read_log_range is reimplemented.
   lists:filter(fun inter_dc_txn:is_local/1, Txns).
 
 -spec get_address() -> socket_address().
@@ -76,7 +78,7 @@ get_address() ->
   {ok, Port} = application:get_env(antidote, logreader_port),
   {Ip, Port}.
 
-%% TODO: reimplement this method efficiently once the log provides true, efficient sequential access (Santiago, here!)
+%% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
 log_read_range(Node, Partition, From, To) ->
   {ok, RawOpList} = logging_vnode:read({Partition, Node}, [Partition]),
