@@ -148,5 +148,5 @@ handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State = #recvr_state{partition=Partition}) ->
-    meta_data_sender:remove_partition(Partition),
+    meta_data_sender:remove_partition(stable,Partition),
     ok.

@@ -23,10 +23,11 @@
 
 -include("antidote.hrl").
 
--export([start_link/0,
+-export([start_link/1,
 	 generate_server_name/1,
-	 remove_node/1,
-	 send_meta_data/3]).
+	 remove_node/2,
+	 send_meta_data/4,
+	 add_new_meta_data/2]).
 -export([init/1,
 	 handle_cast/2,
 	 handle_call/3,
@@ -47,34 +48,41 @@
 %% by meta_data_sender to broadcast the data.
 %% It also keeps track of the names of physical nodes in the cluster.
 
--spec start_link() -> {ok,pid()} | ignore | {error,term()}.
-start_link() ->
-    gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
+-spec start_link(atom()) -> {ok,pid()} | ignore | {error,term()}.
+start_link(Name) ->
+    gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [Name], []).
 
 %% Add a list of DCs to this DC
--spec send_meta_data(atom(),atom(),dict()) -> ok.
-send_meta_data(DestinationNodeId,NodeId,Dict) ->
-    gen_server:cast({global,generate_server_name(DestinationNodeId)}, {update_meta_data, NodeId, Dict}).
+-spec send_meta_data(atom(),atom(),atom(),dict()) -> ok.
+send_meta_data(Name,DestinationNodeId,NodeId,Dict) ->
+    gen_server:cast({global,generate_server_name(DestinationNodeId)}, {update_meta_data, Name, NodeId, Dict}).
 
--spec remove_node(atom()) -> ok.
-remove_node(NodeId) ->
-    gen_server:cast({global,generate_server_name(node())}, {remove_node,NodeId}).
+-spec remove_node(atom(),atom()) -> ok.
+remove_node(Name,NodeId) ->
+    gen_server:cast({global,generate_server_name(node())}, {remove_node,Name,NodeId}).
 
+-spec add_new_meta_data(atom(),atom()) -> ok.
+add_new_meta_data(Name,NodeId) ->
+    gen_server:cast({global,generate_server_name(node())}, {update_meta_data_new,Name,NodeId}).
 
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================
 
-init([]) ->
-    Table = ets:new(?REMOTE_META_TABLE_NAME, [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
+init([Name]) ->
+    Table = ets:new(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), [set, named_table, protected, ?META_TABLE_CONCURRENCY]),
     {ok, #state{table=Table}}.
 
-handle_cast({update_meta_data, NodeId, Dict}, State) ->
-    true = ets:insert(?REMOTE_META_TABLE_NAME, {NodeId, Dict}),
+handle_cast({update_meta_data, Name, NodeId, Dict}, State) ->
+    true = ets:insert(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), {NodeId, Dict}),
     {noreply, State};
 
-handle_cast({remove_node,NodeId}, State) ->
-    true = ets:delete(?REMOTE_META_TABLE_NAME, NodeId),
+handle_cast({update_meta_data_new, Name, NodeId}, State) ->
+    true = ets:insert_new(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), {NodeId, undefined}),
+    {noreply, State};
+
+handle_cast({remove_node,Name,NodeId}, State) ->
+    true = ets:delete(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), NodeId),
     {noreply, State};
 
 handle_cast(_Info, State) ->
