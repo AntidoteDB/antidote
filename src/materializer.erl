@@ -60,29 +60,32 @@ materialize_eager(Type, Snapshot, [Op | Rest]) ->
     end.
 
 
+%% @doc Check that in a list of operations, all of them are correctly typed.
 -spec check_operations(list()) -> ok | {error, term()}.
-check_operations(Operations) ->
-    check_operations(ok, Operations).
-
--spec check_operations(ok, list()) -> ok | {error, term()}.
-check_operations(ok, []) ->
+check_operations([]) ->
     ok;
-check_operations(ok, [Op | Rest]) ->
-    try
-        case Op of
-            {update, {_, Type, {OpParams, Actor}}} ->
-                Type:update(OpParams, Actor, Type:new()),
-                check_operations(ok, Rest);
-            {read, {_, Type}} ->
-                Type:value(Type:new()),
-                check_operations(ok, Rest);
-            _ ->
-                {error, {"Unknown operation format", Op}}
-        end
-    catch
-        error : Reason ->
-            {error, Reason}
-    end.
+check_operations([Op | Rest]) ->
+    case Op of
+        {update, {_, Type, {OpParams, Actor}}} ->
+            try
+                Type:update(OpParams, Actor, Type:new())
+            catch
+                error : Reason ->
+                    {error, Reason}
+            end;
+        {read, {_, Type}} ->
+            try
+                Type:new()
+            catch
+                error : Reason ->
+                    {error, Reason}
+            end;
+        _ ->
+            {error, {"Unknown operation format", Op}}
+    end,
+    check_operations(Rest).
+
+
 -ifdef(TEST).
 
 %% @doc Testing update with pn_counter.
