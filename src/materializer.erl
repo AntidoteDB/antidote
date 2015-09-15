@@ -26,7 +26,7 @@
 
 -export([create_snapshot/1,
     update_snapshot/3,
-    materialize_eager/3, check_operations/1]).
+    materialize_eager/3, check_operations/1, check_operation/1]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
@@ -65,25 +65,40 @@ materialize_eager(Type, Snapshot, [Op | Rest]) ->
 check_operations([]) ->
     ok;
 check_operations([Op | Rest]) ->
-    case Op of
+    case check_operation(Op) of
+        ok ->
+            check_operations(Rest);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Check that an operation is correctly typed.
+-spec check_operation(term()) -> 'ok' | {'error',{'type_check' | [1..255,...],_}}.
+check_operation(Op) ->
+    try
+        case Op of
         {update, {_, Type, {OpParams, Actor}}} ->
-            try
-                Type:update(OpParams, Actor, Type:new())
-            catch
-                error : Reason ->
-                    {error, Reason}
-            end;
-        {read, {_, Type}} ->
-            try
-                Type:new()
-            catch
-                error : Reason ->
-                    {error, Reason}
-            end;
-        _ ->
-            {error, {"Unknown operation format", Op}}
-    end,
-    check_operations(Rest).
+                TypeString = lists:flatten(io_lib:format("~p", [Type])),
+                case string:str(TypeString, "riak_dt") of
+                    1 -> %% dealing with a state_based crdt
+                        Type:update(OpParams, Actor, Type:new()),
+                        ok;
+                    0 -> %% dealing with an op_based crdt
+                        Type:generate_downstream(OpParams, Actor, Type:new()),
+                        ok
+                end;
+            {read, {_, Type}} ->
+                Type:new(),
+                ok;
+            _ ->
+                {error, {"Unknown operation format", Op}}
+        end
+    catch
+        error : _ ->
+            {error, {type_check, Op}}
+    end.
+
+
 
 
 -ifdef(TEST).
@@ -149,5 +164,14 @@ check_operations_test() ->
         {update, {key1, riak_dt_gcounter, {{add, elem}, a}}},
         {update, {key2, riak_dt_gcounter, {increment, a}}},
         {read, {key1, riak_dt_gcounter}}],
-    ?assertMatch({error, _}, check_operations(Operations2)).
+    ?assertMatch({error, _}, check_operations(Operations2)),
+
+    Type1 = crdt_bcounter,
+    Key1 = bcounter2,
+    Operations3 = [{update, {Key1, Type1, {{increment, 7}, r1}}}, {update,
+        {Key1, Type1, {{increment, 5}, r2}}}, {read, {Key1, Type1}}],
+    ?assertEqual(ok, check_operations(Operations3)).
+
+
+
 -endif.

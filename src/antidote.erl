@@ -42,14 +42,27 @@
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
 -spec append(key(), type(), {op(),term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {OpParam, Actor}) ->
-    clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,Type,{OpParam,Actor}).    
+append(Key, Type, {OpParams, Actor}) ->
+    case materializer:check_operations([{update, {Key, Type, {OpParams, Actor}}}]) of
+        ok ->
+            clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,
+                Type,{OpParams,Actor});
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 -spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
-    clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type).
+    case materializer:check_operations([{read, {Key, Type}}]) of
+        ok ->
+            clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% Clock SI API
 
