@@ -17,25 +17,13 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc Supervise the fsm.
--module(inter_dc_communication_sender_fsm_sup).
--behavior(supervisor).
+-module(inter_dc_utils).
+-include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
--export([start_fsm/1,
-         start_link/0]).
--export([init/1]).
+-export([
+  now_millisec/0]).
 
-
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-
-start_fsm(Args) ->
-    supervisor:start_child(?MODULE, Args).
-
-
-init([]) ->
-    Worker = {inter_dc_communication_sender,
-              {inter_dc_communication_sender, start_link, []},
-              transient, 5000, worker, [inter_dc_communication_sender]},
-    {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.
+now_millisec() ->
+  {MegaSecs, Secs, MicroSecs} = erlang:now(),
+  (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

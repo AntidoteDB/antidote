@@ -25,65 +25,52 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([get_clock/1, update_clock/3, get_clock_by_key/1,
-         is_greater_than/2,
-         get_clock_of_dc/2,
-         set_clock_of_dc/3,
-         get_stable_snapshot/0,
-         from_list/1,
-         eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
+-export([
+  is_greater_than/2,
+  get_clock_of_dc/2,
+  set_clock_of_dc/3,
+  get_stable_snapshot/0,
+  get_partition_snapshot/1,
+  from_list/1,
+  new/0,
+  eq/2,
+  lt/2,
+  gt/2,
+  le/2,
+  ge/2,
+  strict_ge/2,
+  strict_le/2
+]).
 
 -export_type([vectorclock/0]).
 
 
--spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
-get_clock_by_key(Key) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    Indexnode = hd(Preflist),
-    try
-        riak_core_vnode_master:sync_command(
-          Indexnode, get_clock, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
-
--spec get_clock(Partition :: non_neg_integer())
-               -> {ok, vectorclock()} | {error, term()}.
-get_clock(Partition) ->
-    Indexnode = {Partition, node()},
-    try
-        riak_core_vnode_master:sync_command(
-           Indexnode, get_clock, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
+new() ->
+    dict:new().
 
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
--spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
+-spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
-    %% to riak core meta-data) otherwise will have to change this
-    {ok,vectorclock_vnode:get_stable_snapshot()}.
-    
+    case meta_data_sender:get_merged_data(stable) of
+	undefined ->
+	    %% The snapshot isn't realy yet, need to wait for startup
+	    timer:sleep(10),
+	    get_stable_snapshot();
+	SS ->
+	    {ok, SS}
+    end.
 
--spec update_clock(Partition :: non_neg_integer(),
-                   Dc_id :: term(), Timestamp :: non_neg_integer())
-                  -> ok | {error, term()}.
-update_clock(Partition, Dc_id, Timestamp) ->
-    Indexnode = {Partition, node()},
-    try
-        riak_core_vnode_master:sync_command(Indexnode,
-          {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master)
-    catch
-        _:R ->
-            lager:error("Exception caught: ~p", [R]),
-            {error, R}
+-spec get_partition_snapshot(partition_id()) -> snapshot_time().
+get_partition_snapshot(Partition) ->
+    case meta_data_sender:get_meta_dict(stable,Partition) of
+	undefined ->
+	    %% The partition isnt ready yet, wait for startup
+	    timer:sleep(10),
+	    get_partition_snapshot(Partition);
+	SS ->
+	    SS
     end.
 
 %% @doc Return true if Clock1 > Clock2
