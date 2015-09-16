@@ -39,25 +39,26 @@
 
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
                        -> {ok, txid()}.
-start_transaction(Clock, _Properties) ->    
-    clocksi_istart_tx(Clock).    
-    
+start_transaction(Clock, _Properties) ->
+    clocksi_istart_tx(Clock).
+
 -spec abort_transaction(TxId::txid()) -> ok.
 abort_transaction(_TxId) ->
     %% TODO
     ok.
 
--spec commit_transaction(TxId::txid()) -> 
+-spec commit_transaction(TxId::txid()) ->
                                 {ok, snapshot_time()} | {error, reason()}.
 commit_transaction(TxId) ->
     clocksi_iprepare(TxId),
     {ok, {_TxId, CommitTime}} = clocksi_icommit(TxId),
     {ok, CommitTime}.
-    
--spec read_objects(Objects::[bound_object()], TxId::txid()) 
+
+-spec read_objects(Objects::[bound_object()], TxId::txid())
                   -> {ok, [term()]} | {error, reason()}.
 read_objects(Objects, TxId) ->
     %%TODO: Transaction co-ordinator handles multiple reads
+    %% Executes each read as in a interactive transaction
     Results = lists:map(fun({Key, Type, _Bucket}) ->
                       {ok, Res} = clocksi_iread(TxId, Key, Type),
                       Res end, Objects),
@@ -66,8 +67,10 @@ read_objects(Objects, TxId) ->
 -spec update_objects([{bound_object(), op(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    %%TODO: How to generate Actor
+    %% TODO: How to generate Actor, 
+    %% Actor ID must be removed from crdt update interface
     Actor = TxId,
+    %% Execute each update as in an interactive transaction
     lists:map(fun({{Key, Type, _Bucket}, Op, OpParam}) ->
                       ok = clocksi_iupdate(TxId, Key, Type, {{Op, OpParam}, Actor}),
                       ok end, Updates),
@@ -87,7 +90,7 @@ clocksi_istart_tx(Clock) ->
         {ok, TxId} ->
             {ok, TxId};
         Other ->
-            {error, Other} 
+            {error, Other}
     end.
 
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->

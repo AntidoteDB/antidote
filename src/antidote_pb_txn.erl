@@ -55,7 +55,7 @@ decode(Code, Bin) ->
             {ok, Msg, {"antidote.snapshotread",<<>>}};
         #apbstarttransaction{} ->
             {ok, Msg, {"antidote.startxn",<<>>}};
-        #apbaborttransaction{} -> 
+        #apbaborttransaction{} ->
             {ok, Msg, {"antidote.aborttxn",<<>>}};
         #apbcommittransaction{} ->
             {ok, Msg, {"antidote.committxn",<<>>}};
@@ -187,7 +187,7 @@ process_stream(_,_,State) ->
                                [{update, key(), type(), op()}].
 decode_au_txn_ops(Ops) ->
     lists:foldl(fun(Op, Acc) ->
-                     Acc ++ decode_au_txn_op(Op)
+                        Acc ++ decode_au_txn_op(Op)
                 end, [], Ops).
 %% Counter
 decode_au_txn_op(#fpbatomicupdatetxnop{counterinc=#fpbincrementreq{key=Key, amount=Amount}}) ->
@@ -196,12 +196,12 @@ decode_au_txn_op(#fpbatomicupdatetxnop{counterdec=#fpbdecrementreq{key=Key, amou
     [{update, Key, riak_dt_pncounter, {{decrement, Amount}, node()}}];
 %% Set
 decode_au_txn_op(#fpbatomicupdatetxnop{setupdate=#fpbsetupdatereq{key=Key,adds=AddElems, rems=RemElems}}) ->
-     Adds = lists:map(fun(X) ->
-                              binary_to_term(X)
-                      end, AddElems),
-     Rems = lists:map(fun(X) ->
-                              binary_to_term(X)
-                      end, RemElems),
+    Adds = lists:map(fun(X) ->
+                             binary_to_term(X)
+                     end, AddElems),
+    Rems = lists:map(fun(X) ->
+                             binary_to_term(X)
+                     end, RemElems),
     Op = case length(Adds) of
              0 -> [];
              1 -> [{update, Key, riak_dt_orset, {{add,Adds}, node()}}];
@@ -240,14 +240,54 @@ encode_snapshot_read_resp({{read,Key,riak_dt_orset}, Result}) ->
 
 -ifdef(TEST).
 
+%% Tests protocol buffer functions. Uses riak_pb/antidote_pb_codec.erl
 start_transaction_test() ->
     Clock = term_to_binary(ignore),
     Properties = {},
-    EncRecord = antidote_pb_codec:encode(start_transaction, {Clock, Properties}),
+    EncRecord = antidote_pb_codec:encode(start_transaction,
+                                         {Clock, Properties}),
     [MsgCode, MsgData] = riak_pb_codec:encode(EncRecord),
     Msg = riak_pb_codec:decode(MsgCode, list_to_binary(MsgData)),
     ?assertMatch(true, is_record(Msg,apbstarttransaction)),
     ?assertMatch(ignore, binary_to_term(Msg#apbstarttransaction.timestamp)),
-    ?assertMatch(Properties, antidote_pb_codec:decode(txn_properties, Msg#apbstarttransaction.properties)).
+    ?assertMatch(Properties,
+                 antidote_pb_codec:decode(txn_properties,
+                                          Msg#apbstarttransaction.properties)).
+
+read_transaction_test() ->
+    Objects = [{<<"key1">>, riak_dt_pncounter, <<"bucket1">>},
+               {<<"key2">>, riak_dt_orset, <<"bucket2">>}],
+    TxId = term_to_binary({12}),
+         %% Dummy value, structure of TxId is opaque to client
+    EncRecord = antidote_pb_codec:encode(read_objects, {Objects, TxId}),
+    ?assertMatch(true, is_record(EncRecord, apbreadobjects)),
+    [MsgCode, MsgData] = riak_pb_codec:encode(EncRecord),
+    Msg = riak_pb_codec:decode(MsgCode, list_to_binary(MsgData)),
+    ?assertMatch(true, is_record(Msg, apbreadobjects)),
+    DecObjects = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(bound_object, O) end,
+                           Msg#apbreadobjects.boundobjects),
+    ?assertMatch(Objects, DecObjects),
+    %% Test encoding error
+    ErrEnc = antidote_pb_codec:encode(read_objects_response,
+                                      {error, someerror}),
+    [ErrMsgCode,ErrMsgData] = riak_pb_codec:encode(ErrEnc),
+    ErrMsg = riak_pb_codec:decode(ErrMsgCode,list_to_binary(ErrMsgData)),
+    ?assertMatch({error, unknown},
+                 antidote_pb_codec:decode_response(ErrMsg)),
+
+    %% Test encoding results
+    {ok, Counter} = riak_dt_pncounter:update(
+                      increment, actor, riak_dt_pncounter:new()),
+    {ok, Set} = riak_dt_orset:update({add, 2}, actor, riak_dt_orset:new()),
+    Results = [ riak_dt_pncounter:value(Counter),
+                riak_dt_orset:value(Set) ],
+    ResEnc = antidote_pb_codec:encode(read_objects_response,
+                                      {ok, lists:zip(Objects, Results)}
+                                     ),
+    [ResMsgCode, ResMsgData] = riak_pb_codec:encode(ResEnc),
+    ResMsg = riak_pb_codec:decode(ResMsgCode, list_to_binary(ResMsgData)),
+    ?assertMatch({read_objects, [1, [2]]},
+                 antidote_pb_codec:decode_response(ResMsg)).
 
 -endif.
