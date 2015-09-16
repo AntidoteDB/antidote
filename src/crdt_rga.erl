@@ -128,25 +128,25 @@ new_test() ->
 
 generate_downstream_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 4, 1}, 1, L),
+    {ok, DownstreamOp} = generate_downstream({addRight, 4, 0}, 1, L),
     ?assertMatch({addRight, {ok, 0, 0}, {ok, 4, _}}, DownstreamOp).
 
 generate_downstream_non_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 4, 1}, 1, L),
+    {ok, DownstreamOp} = generate_downstream({addRight, 4, 0}, 1, L),
     {ok, L1} = update(DownstreamOp, L),
     {ok, DownstreamOp1} = generate_downstream({addRight, 3, 1}, 1, L1),
     ?assertMatch({addRight, {ok, 4, _}, {ok, 3, _}}, DownstreamOp1).
 
 add_right_in_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 1, 1}, 1, L),
+    {ok, DownstreamOp} = generate_downstream({addRight, 1, 0}, 1, L),
     {ok, L1} = update(DownstreamOp, L),
     ?assertMatch([{ok, 1, _}], L1).
 
 add_right_in_non_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 1, 1}, 1, L),
+    {ok, DownstreamOp} = generate_downstream({addRight, 1, 0}, 1, L),
     {ok, L1} = update(DownstreamOp, L),
     {ok, DownstreamOp1} = generate_downstream({addRight, 2, 1}, 1, L1),
     {ok, L2} = update(DownstreamOp1, L1),
@@ -233,8 +233,8 @@ purge_tombstones_test() ->
 concurrent_updates_in_two_replicas_test() ->
     R1_0 = new(),
     R2_0 = new(),
-    {ok, DownstreamOp1} = generate_downstream({addRight, 1, 1}, 1, R1_0),
-    {ok, DownstreamOp2} = generate_downstream({addRight, 2, 1}, 1, R2_0),
+    {ok, DownstreamOp1} = generate_downstream({addRight, 1, 0}, 1, R1_0),
+    {ok, DownstreamOp2} = generate_downstream({addRight, 2, 0}, 1, R2_0),
     {ok, R1_1} = update(DownstreamOp1, R1_0),
     {ok, R2_1} = update(DownstreamOp2, R2_0),
     {ok, R1_2} = update(DownstreamOp2, R1_1),
