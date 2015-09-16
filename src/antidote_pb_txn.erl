@@ -45,9 +45,7 @@ init() ->
 
 %% @doc decode/2 callback. Decodes an incoming message.
 decode(Code, Bin) ->
-    lager:info("Code ~p , Bin ~p",[Code, Bin]),
     Msg = riak_pb_codec:decode(Code, Bin),
-    lager:info("Message recvd ~p ~n",[Msg]),
     case Msg of
         #fpbatomicupdatetxnreq{} ->
             {ok, Msg, {"antidote.atomicupdate", <<>>}};
@@ -107,13 +105,11 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
                                             clock= term_to_binary(CommitTime),
                                             results=Reply}, State};
         Other ->
-            lager:info("Clocksi execute received ~p",[Other]),
             {reply, #fpbsnapshotreadtxnresp{success=false}, State}
     end;
 
 process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
         State) ->
-    lager:info("Starting transaction"),
     Clock = binary_to_term(BClock),
     Properties = antidote_pb_codec:decode(txn_properties, BProperties),
     Response = antidote:start_transaction(Clock, Properties),
