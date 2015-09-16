@@ -303,4 +303,23 @@ read_transaction_test() ->
     ?assertMatch({read_objects, [1, [2]]},
                  antidote_pb_codec:decode_response(ResMsg)).
 
+update_types_test() ->
+    Updates = [ {{<<"1">>, riak_dt_pncounter, <<"2">>}, increment , 1},
+                {{<<"2">>, riak_dt_gcounter, <<"2">>}, increment , 1},
+                %{{<<"a">>, riak_dt_orset, <<"2">>}, add , "a"},
+                {{<<"b">>, crdt_pncounter, <<"2">>}, increment , 2}
+                %{{<<"c">>, crdt_orset, <<"2">>}, add, "b"}
+              ],
+    TxId = term_to_binary({12}),
+         %% Dummy value, structure of TxId is opaque to client
+    EncRecord = antidote_pb_codec:encode(update_objects, {Updates, TxId}),
+    ?assertMatch(true, is_record(EncRecord, apbupdateobjects)),
+    [MsgCode, MsgData] = riak_pb_codec:encode(EncRecord),
+    Msg = riak_pb_codec:decode(MsgCode, list_to_binary(MsgData)),
+    ?assertMatch(true, is_record(Msg, apbupdateobjects)),
+    DecUpdates = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(update_object, O) end,
+                        Msg#apbupdateobjects.updates),
+    ?assertMatch(Updates, DecUpdates).
+
 -endif.

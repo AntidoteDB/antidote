@@ -17,14 +17,9 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc log_test: Test that perform NumWrites increments to the key:abc.
-%%      Each increment is sent to a random node of the cluster.
-%%      Test norml behaviour of the logging layer
-%%      Perflorms a read to the first node of the cluster to check whether all the
-%%      increment operations where successfully applied.
-%%  Input:  N:  Number of nodes
-%%          Nodes: List of the nodes that belong to the built cluster.
-%%
+
+
+%% Tests for interface, specifically protocol buffer
 
 -module(interface_test).
 
@@ -65,6 +60,7 @@ read_write_test(Node) ->
     rpc:call(Node, antidote, finish_transaction, [TxId]).
 
 
+%% Single object read
 pb_test_read(_Node) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {<<"key">>, riak_dt_pncounter, <<"bucket">>},
@@ -73,12 +69,13 @@ pb_test_read(_Node) ->
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
+%% Single object read and write
 pb_test_read_write(_Node) ->
     Key = <<"key_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
-    ok = antidotec_pb:update_objects(Pid, [{Bound_object, {increment, 1}}], TxId),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object, increment, 1}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
     {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
