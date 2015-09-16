@@ -247,9 +247,9 @@ perform_update(Args,Updated_partitions,Transaction,Sender) ->
 			undefined ->
 			    ok;
 			_ ->
-			    _Res = gen_fsm:reply(Sender, {error, Error}),
-			    {error, Error}
-		    end
+			    _Res = gen_fsm:reply(Sender, {error, Error})
+		    end,
+		    {error, Error}
 	    end;
 	{error, Reason} ->
 	    case Sender of
