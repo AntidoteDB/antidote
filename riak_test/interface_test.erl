@@ -41,7 +41,8 @@ confirm() ->
     simple_transaction_test(hd(Nodes)),
     read_write_test(hd(Nodes)),
     pb_test_read(hd(Nodes)),
-    pb_test_read_write(hd(Nodes)),
+    pb_test_counter_read_write(hd(Nodes)),
+    pb_test_set_read_write(hd(Nodes)),
     pass.
 
 %% starts and transaction and read a key
@@ -70,7 +71,7 @@ pb_test_read(_Node) ->
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 %% Single object read and write
-pb_test_read_write(_Node) ->
+pb_test_counter_read_write(_Node) ->
     Key = <<"key_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
@@ -82,4 +83,18 @@ pb_test_read_write(_Node) ->
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
     ?assertEqual(1,Val),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+pb_test_set_read_write(_Node) ->
+    Key = <<"key_read_write_set">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object, add, "a"}], TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    %% Read committed updated
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    ?assertEqual(["a"],Val),
     _Disconnected = antidotec_pb_socket:stop(Pid).
