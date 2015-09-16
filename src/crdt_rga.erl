@@ -44,11 +44,14 @@ new() ->
 %% @doc generate downstream operations.
 %% If the operation is addRight, generates a unique token for the new element.
 %% If the operation is remove, fetches the vertex of the element to be removed.
--spec generate_downstream(rga_op(), actor(), rga()) -> {ok, rga_downstream_op()}.
+-spec generate_downstream(rga_op(), actor(), rga()) -> {ok, rga_downstream_op()} | {error, {invalid_position, number()}}.
 generate_downstream({addRight, Elem, Position}, _Actor, Rga) ->
-    case length(Rga) of
-        0 -> {ok, {addRight, {ok, 0, 0}, {ok, Elem, unique()}}};
-        _ -> {ok, {addRight, lists:nth(Position, Rga), {ok, Elem, unique()}}}
+    case (Position < 0) or (Position > length(Rga)) of
+        true -> {error, {invalid_position, Position}};
+        false -> case length(Rga) of
+                     0 -> {ok, {addRight, {ok, 0, 0}, {ok, Elem, unique()}}};
+                     _ -> {ok, {addRight, lists:nth(Position, Rga), {ok, Elem, unique()}}}
+                 end
     end;
 generate_downstream({remove, Position}, _Actor, Rga) ->
     {ok, {remove, lists:nth(Position, Rga)}}.
