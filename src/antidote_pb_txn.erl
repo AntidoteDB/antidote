@@ -111,16 +111,20 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
             {reply, #fpbsnapshotreadtxnresp{success=false}, State}
     end;
 
-process(#apbstarttransaction{timestamp=BClock, properties = BProperties}, State) ->
+process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
+        State) ->
     lager:info("Starting transaction"),
     Clock = binary_to_term(BClock),
     Properties = antidote_pb_codec:decode(txn_properties, BProperties),
     Response = antidote:start_transaction(Clock, Properties),
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(start_transaction_response, {error, Reason}), State};
+            {reply, antidote_pb_codec:encode(start_transaction_response,
+                                             {error, Reason}),
+             State};
         {ok, TxId} ->
-            {reply, antidote_pb_codec:encode(start_transaction_response, {ok, TxId}),
+            {reply, antidote_pb_codec:encode(start_transaction_response,
+                                             {ok, TxId}),
              State}
     end;
 
@@ -129,7 +133,9 @@ process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
     Response = antidote:abort_transaction(TxId),
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(operation_response, {error, Reason}), State};
+            {reply, antidote_pb_codec:encode(operation_response,
+                                             {error, Reason}),
+             State};
         ok ->
             {reply, antidote_pb_codec:encode(operation_response, ok),
              State}
@@ -140,13 +146,15 @@ process(#apbcommittransaction{transaction_descriptor=Td}, State) ->
     Response = antidote:commit_transaction(TxId),
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(commit_response, {error, Reason}), State};
+            {reply, antidote_pb_codec:encode(commit_response,
+                                             {error, Reason}), State};
         {ok, CommitTime} ->
             {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
              State}
     end;
 
-process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td}, State) ->
+process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td},
+        State) ->
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
@@ -155,13 +163,16 @@ process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td}, S
     Response = antidote:read_objects(Objects, TxId),
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(read_objects_response, {error, Reason}), State};
+            {reply, antidote_pb_codec:encode(read_objects_response,
+                                             {error, Reason}), State};
         {ok, Results} ->
-            {reply, antidote_pb_codec:encode(read_objects_response, {ok, lists:zip(Objects,Results)}),
+            {reply, antidote_pb_codec:encode(read_objects_response,
+                                             {ok, lists:zip(Objects,Results)}),
              State}
     end;
 
-process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td}, State) ->
+process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td},
+        State) ->
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
@@ -170,7 +181,9 @@ process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td}, State) -
     Response = antidote:update_objects(Updates, TxId),
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(operation_response, {error, Reason}), State};
+            {reply, antidote_pb_codec:encode(operation_response,
+                                             {error, Reason}),
+             State};
         ok ->
             {reply, antidote_pb_codec:encode(operation_response, ok),
              State}
