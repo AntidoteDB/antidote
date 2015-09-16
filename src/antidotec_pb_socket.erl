@@ -116,7 +116,6 @@ handle_call(stop, _From, State) ->
 handle_info({_Proto, Sock, Data}, State=#state{active = (Active = #request{})}) ->
     <<MsgCode:8, MsgData/binary>> = Data,
     Response = riak_pb_codec:decode(MsgCode, MsgData),
-    lager:info("Response ~p", [Response]),
     cancel_req_timer(Active#request.tref),
     _ = send_caller(Response, Active),
     NewState = State#state{active = undefined},
@@ -198,7 +197,6 @@ create_req_timer(Msecs, Ref) ->
 %% @private
 send_request(Request0, State) when State#state.active =:= undefined  ->
     {Request, Pkt} = encode_request_message(Request0),
-    lager:info("Sending message"),
     case gen_tcp:send(State#state.sock, Pkt) of
         ok ->
             maybe_reply({noreply,State#state{active = Request}});
@@ -212,7 +210,9 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
 
 %% Unencoded Request (the normal PB client path)
 encode_request_message(#request{msg=Msg}=Req) ->
-    {Req, riak_pb_codec:encode(Msg)}.
+    EncMsg = riak_pb_codec:encode(Msg),
+    {Req, EncMsg}.
+    %{Req, riak_pb_codec:encode(Msg)}.
 
 %% maybe_reply({reply, Reply, State = #state{active = Request}}) ->
 %%   NewRequest = send_caller(Reply, Request),
