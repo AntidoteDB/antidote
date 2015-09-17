@@ -35,6 +35,8 @@
 %% a transaction currently in the prepare state that is blocking
 %% that read.
 -define(SPIN_WAIT, 10).
+%% HEARTBEAT_PERIOD: Frequency of sending the heartbeat messages in interDC layer
+-define(HEARTBEAT_PERIOD, 1000).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, true).

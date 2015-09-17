@@ -29,11 +29,11 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 -export([
   start_vnode/1,
-  send/2,
-  ping/1]).
+  send/2]).
 -export([
   init/1,
   handle_command/3,
+  handle_info/2,
   handle_coverage/4,
   handle_exit/3,
   handoff_starting/2,
@@ -50,26 +50,20 @@
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
   last_log_id :: log_opid(),
-  ping_timer :: any()
+  timer :: any()
 }).
 
 %% API
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_master, {log_event, Operation}).
-ping(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_master, ping).
 
 init([Partition]) ->
   {ok, set_timer(#state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
     last_log_id = 0,
-    ping_timer = none
+    timer = none
   })}.
-
-handle_command(ping, _Sender, State) ->
-  %% TODO: think if the timestamp could cause any problems
-  PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, inter_dc_utils:now_millisec()),
-  {reply, ok, broadcast(State, PingTxn)};
 
 handle_command({log_event, Operation}, _Sender, State) ->
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
@@ -86,33 +80,52 @@ handle_command({log_event, Operation}, _Sender, State) ->
   end,
   {reply, ok, State2}.
 
+handle_info(ping, State) ->
+  PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
+  {ok, set_timer(broadcast(State, PingTxn))}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
-handoff_starting(_TargetNode, State) -> {true, State}.
-handoff_cancelled(State) -> {ok, State}.
-handoff_finished(_TargetNode, State) -> {ok, State}.
+handoff_starting(_TargetNode, State) -> {true, del_timer(State)}.
+handoff_cancelled(State) -> {ok, set_timer(State)}.
+handoff_finished(_TargetNode, State) -> {ok, set_timer(State)}.
 handle_handoff_command( _Message , _Sender, State) -> {noreply, State}.
 handle_handoff_data(_Data, State) -> {reply, ok, State}.
 encode_handoff_item(Key, Operation) -> term_to_binary({Key, Operation}).
 is_empty(State) -> {true, State}.
-terminate(_Reason, _State) -> ok.
-delete(State) -> {ok, State}.
+terminate(_Reason, State) -> del_timer(State), ok.
+delete(State) -> {ok, del_timer(State)}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
-set_timer(State) ->
-  ClearedState = clr_timer(State),
-  {ok, Timer} = timer:apply_after(1000, inter_dc_log_sender, ping, [State#state.partition]),
-  ClearedState#state{ping_timer = Timer}.
+del_timer(State = #state{timer = none}) -> State;
+del_timer(State = #state{timer = Timer}) -> erlang:cancel_timer(Timer), State#state{timer = none}.
 
-clr_timer(State = #state{ping_timer = none}) -> State;
-clr_timer(State = #state{ping_timer = Timer}) ->
-  {ok, cancel} = timer:cancel(Timer),
-  State#state{ping_timer = none}.
+set_timer(State) ->
+  State1 = del_timer(State),
+  State1#state{timer = erlang:send_after(?HEARTBEAT_PERIOD, self(), ping)}.
 
 broadcast(State, Txn) ->
-  State1 = clr_timer(State),
   inter_dc_pub:broadcast(Txn),
   Id = inter_dc_txn:last_log_opid(Txn),
-  set_timer(State1#state{last_log_id = Id}).
+  State#state{last_log_id = Id}.
+
+%% @doc Return smallest snapshot time of active transactions.
+%%      No new updates with smaller timestamp will occur in future.
+get_stable_time(_Partition) ->
+    Now = inter_dc_utils:now_millisec(),
+    Now.
+%% case clocksi_vnode:get_active_txns_call(Partition) of
+    %%     {ok, Active_txns} ->
+    %%         lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
+    %%                             case Min_time > Snapshot_time of
+    %%                                 true ->
+    %%                                     Snapshot_time;
+    %%                                 false ->
+    %%                                     Min_time
+    %%                             end
+    %%                     end,
+    %% 			Now,
+    %%                     Active_txns);
+    %%     _ -> Now
+    %% end.
