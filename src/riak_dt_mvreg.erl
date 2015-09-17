@@ -44,7 +44,7 @@
 -behaviour(riak_dt).
 
 -export([new/0, value/1, value/2, update/3, merge/2,
-         equal/2, to_binary/1, from_binary/1, stats/1, stat/2]).
+    equal/2, to_binary/1, from_binary/1, stats/1, stat/2, is_operation/1, gen_op/0]).
 -export([parent_clock/2, update/4]).
 
 -ifdef(TEST).
@@ -246,6 +246,21 @@ to_binary(MVReg) ->
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     binary_to_term(Bin).
 
+%% @doc The following operation verifies
+%%      that Operation is supported by this particular CRDT.
+-spec is_operation(term()) -> boolean().
+is_operation(Operation) ->
+    case Operation of
+        {assign, _} ->
+            true;
+        {assign, _, Number} ->
+            (is_integer(Number) and (Number >= 0));
+        {propagate, _, _} ->
+            true;
+        _ ->
+            false
+    end.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -443,4 +458,14 @@ stat_test() ->
     ?assertEqual(40, stat(value_size, MVReg1)),
     ?assertEqual(undefined, stat(actor_count, MVReg1)).
 
+is_operation_test() ->
+    ?assertEqual(true, is_operation({assign, value})),
+    ?assertEqual(true, is_operation({assign, something, 20})),
+    ?assertEqual(false, is_operation({assign, something, some_value})),
+    ?assertEqual(false, is_operation({add, atom})),
+    ?assertEqual(false, is_operation({anything, [1,2,3]})).
+
 -endif.
+
+gen_op() ->
+    erlang:error(not_implemented).

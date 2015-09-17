@@ -26,7 +26,7 @@
 
 -export([create_snapshot/1,
     update_snapshot/3,
-    materialize_eager/3, check_operations/1, check_operation/1]).
+    materialize_eager/3, check_operations/1, check_operation/1, is_crdt/1]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
@@ -81,8 +81,12 @@ check_operation(Op) ->
                 TypeString = lists:flatten(io_lib:format("~p", [Type])),
                 case string:str(TypeString, "riak_dt") of
                     1 -> %% dealing with a state_based crdt
-                        Type:update(OpParams, Actor, Type:new()),
-                        ok;
+                        case Type:is_operation(OpParams) of
+                            true ->
+                                ok;
+                            false ->
+                                {error, {type_check, Op}}
+                        end;
                     0 -> %% dealing with an op_based crdt
                         Type:generate_downstream(OpParams, Actor, Type:new()),
                         ok
@@ -98,6 +102,10 @@ check_operation(Op) ->
             {error, {type_check, Op}}
     end.
 
+%% @doc Check that in a list of operations, all of them are correctly typed.
+-spec is_crdt(term()) -> boolean().
+is_crdt(Term) ->
+    is_atom(Term) and lists:member(Term, ?CRDTS).
 
 
 
@@ -172,6 +180,7 @@ check_operations_test() ->
         {Key1, Type1, {{increment, 5}, r2}}}, {read, {Key1, Type1}}],
     ?assertEqual(ok, check_operations(Operations3)).
 
-
-
+is_crdt_test() ->
+    ?assertEqual(true, is_crdt(crdt_orset)),
+    ?assertEqual(false, is_crdt(whatever)).
 -endif.
