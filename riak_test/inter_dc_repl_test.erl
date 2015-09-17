@@ -13,28 +13,36 @@ confirm() ->
         {riak_core, [{ring_creation_size, 8}]}
     ]),
     [Cluster1, Cluster2] = rt:build_clusters([1,1]),
+    rt:wait_until_ring_converged(Cluster1),
+    rt:wait_until_ring_converged(Cluster2),
 
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
 
-    rt:wait_until_registered(Node1, inter_dc_manager),
-    rt:wait_until_registered(Node2, inter_dc_manager),
-    
-    {ok, DC1} = rpc:call(Node1, inter_dc_manager, start_receiver,[8091]),
-    {ok, DC2} = rpc:call(Node2, inter_dc_manager, start_receiver,[8092]),
+    rt:wait_until_registered(Node1, inter_dc_pub),
+    rt:wait_until_registered(Node2, inter_dc_pub),
+
+    rt:wait_until_registered(Node1, inter_dc_log_reader_response),
+    rt:wait_until_registered(Node2, inter_dc_log_reader_response),
+
+    rt:wait_until_registered(Node1, inter_dc_log_reader_query),
+    rt:wait_until_registered(Node2, inter_dc_log_reader_query),
+
+    rt:wait_until_registered(Node1, inter_dc_sub),
+    rt:wait_until_registered(Node2, inter_dc_sub),
+
+    {ok, DC1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
+    {ok, DC2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
 
     lager:info("DCs: ~p and ~p", [DC1, DC2]),
-
-    rt:wait_until_ring_converged(Cluster1),
-    rt:wait_until_ring_converged(Cluster2),
 
     lager:info("Waiting until vnodes are started up"),
     rt:wait_until(Node1,fun wait_init:check_ready/1),
     rt:wait_until(Node2,fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
 
-    ok = rpc:call(Node1, inter_dc_manager, add_dc,[DC2]),
-    ok = rpc:call(Node2, inter_dc_manager, add_dc,[DC1]),
+    ok = rpc:call(Node1, inter_dc_manager, observe_dc, [DC2]),
+    ok = rpc:call(Node2, inter_dc_manager, observe_dc, [DC1]),
 
     simple_replication_test(Cluster1, Cluster2),
     multiple_keys_test(Cluster1, Cluster2),

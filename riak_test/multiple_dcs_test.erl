@@ -21,9 +21,21 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
 
-    rt:wait_until_registered(HeadCluster1, inter_dc_manager),
-    rt:wait_until_registered(HeadCluster2, inter_dc_manager),
-    rt:wait_until_registered(HeadCluster3, inter_dc_manager),
+    rt:wait_until_registered(HeadCluster1, inter_dc_pub),
+    rt:wait_until_registered(HeadCluster2, inter_dc_pub),
+    rt:wait_until_registered(HeadCluster3, inter_dc_pub),
+
+    rt:wait_until_registered(HeadCluster1, inter_dc_log_reader_response),
+    rt:wait_until_registered(HeadCluster2, inter_dc_log_reader_response),
+    rt:wait_until_registered(HeadCluster3, inter_dc_log_reader_response),
+
+    rt:wait_until_registered(HeadCluster1, inter_dc_log_reader_query),
+    rt:wait_until_registered(HeadCluster2, inter_dc_log_reader_query),
+    rt:wait_until_registered(HeadCluster3, inter_dc_log_reader_query),
+
+    rt:wait_until_registered(HeadCluster1, inter_dc_sub),
+    rt:wait_until_registered(HeadCluster2, inter_dc_sub),
+    rt:wait_until_registered(HeadCluster3, inter_dc_sub),
 
     lager:info("Waiting until vnodes are started up"),
     rt:wait_until(HeadCluster1,fun wait_init:check_ready/1),
@@ -31,18 +43,19 @@ confirm() ->
     rt:wait_until(HeadCluster3,fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
 
-    {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, start_receiver,[8091]),
-    {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, start_receiver,[8092]),
-    {ok, DC3} = rpc:call(HeadCluster3, inter_dc_manager, start_receiver,[8093]),
+    {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, get_descriptor, []),
+    {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, get_descriptor, []),
+    {ok, DC3} = rpc:call(HeadCluster3, inter_dc_manager, get_descriptor, []),
+
     lager:info("Receivers start results ~p, ~p and ~p", [DC1, DC2, DC3]),
 
-    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2, DC3]]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1, DC3]]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1, DC2]]),
+    ok = rpc:call(HeadCluster1, inter_dc_manager, observe_dcs, [[DC2, DC3]]),
+    ok = rpc:call(HeadCluster2, inter_dc_manager, observe_dcs, [[DC1, DC3]]),
+    ok = rpc:call(HeadCluster3, inter_dc_manager, observe_dcs, [[DC1, DC2]]),
 
     simple_replication_test(Cluster1, Cluster2, Cluster3),
     parallel_writes_test(Cluster1, Cluster2, Cluster3),
-    failure_test({Cluster1, 8091}, {Cluster2,8092}, {Cluster3,8093}),
+    failure_test(Cluster1, Cluster2, Cluster3),
     pass.
 
 simple_replication_test(Cluster1, Cluster2, Cluster3) ->
@@ -193,7 +206,7 @@ multiple_writes(Node, Key, Actor, ReplyTo) ->
 %% Test: when a DC is disconnected for a while and connected back it should
 %%  be able to read the missing updates. This should not affect the causal 
 %%  dependency protocol
-failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
+failure_test(Cluster1, Cluster2, Cluster3) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     Node3 = hd(Cluster3),
@@ -203,7 +216,10 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
     ?assertMatch({ok, _}, WriteResult1),
 
     %% Simulate failure of NODE3 by stoping the receiver
-    ok = rpc:call(Node3, inter_dc_manager, stop_receiver, []),
+    {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
+    {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
+
+    ok = rpc:call(Node3, inter_dc_manager, forget_dcs, [[D1, D2]]),
 
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
@@ -223,8 +239,8 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
     ?assertEqual({ok, 3}, ReadResult),
     lager:info("Done append in Node1"),
 
-    %% NODE3 comes back 
-    {ok, _} = rpc:call(Node3, inter_dc_manager, start_receiver, [Port3]),
+    %% NODE3 comes back
+    ok = rpc:call(Node3, inter_dc_manager, observe_dcs, [[D1, D2]]),
 
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,

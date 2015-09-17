@@ -16,12 +16,20 @@
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption
 %% is there will be several more reads than writes
--define(TABLE_CONCURRENCY, {read_concurrency,true}).
+-define(TABLE_CONCURRENCY, {read_concurrency, true}, {write_concurrency, false}).
 %% The read concurrency is the maximum number of concurrent
 %% readers per vnode.  This is so shared memory can be used
 %% in the case of keys that are read frequently.  There is
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
+%% This defines the concurrency for the meta-data tables that
+%% are responsible for storing the satble time that a transaction
+%% can read.  It is set to false because the erlang docs say
+%% you should only set to true if you have long bursts of either
+%% reads or writes, but here they should be interleaved (maybe).  But should
+%% do some performance testing.
+-define(META_TABLE_CONCURRENCY, {read_concurrency, false}, {write_concurrency, false}).
+-define(META_TABLE_STABLE_CONCURRENCY, {read_concurrency, true}, {write_concurrency, false}).
 %% This can be used for testing, so that transactions start with
 %% old snapshots to avoid clock-skew.
 %% This can break the tests is not set to 0
@@ -34,14 +42,23 @@
 %% wake up and retry. I.e. a read waiting for
 %% a transaction currently in the prepare state that is blocking
 %% that read.
--define(SPIN_WAIT, 10).
+-define(SPIN_WAIT, 1).
+%% This is the time that nodes will sleep inbetween sending meta-data
+%% to other physical nodes within the DC
+-define(META_DATA_SLEEP, 100).
+%% HEARTBEAT_PERIOD: Frequency of sending the heartbeat messages in interDC layer
+-define(HEARTBEAT_PERIOD, 1000).
+-define(META_TABLE_NAME, a_meta_data_table).
+-define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
+-define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
--define(SYNC_LOG, true).
+-define(SYNC_LOG, false).
+
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
--record(operation, {op_number, payload :: payload()}).
+-record(operation, {op_number :: op_id(), payload :: payload()}).
 -type operation() :: #operation{}.
 -type vectorclock() :: dict().
 
@@ -100,11 +117,7 @@
 -type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
 -type tx() :: #transaction{}.
--type dc_address():: {inet:ip_address(),inet:port_number()}.
 -type cache_id() :: ets:tid().
-
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0,
-             dc_address/0]).
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
@@ -133,3 +146,5 @@
 	  read_set :: list(),
 	  is_static :: boolean(),
 	  full_commit :: boolean()}).
+
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0, cache_id/0]).

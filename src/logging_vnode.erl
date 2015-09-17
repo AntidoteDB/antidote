@@ -61,7 +61,8 @@
 		logs_map :: dict(),
 		clock :: non_neg_integer(),
 		senders_awaiting_ack :: dict(),
-		last_read :: term()}).
+		last_read :: term(),
+		memlist :: list()}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -158,9 +159,10 @@ init([Partition]) ->
         Map ->
             {ok, #state{partition=Partition,
                         logs_map=Map,
-                        clock=0,
+                        clock=0,	
                         senders_awaiting_ack=dict:new(),
-                        last_read=start}}
+			memlist=[],		
+                        last_read=start}}	
     end.
 
 %% @doc Read command: Returns the operations logged for Key
@@ -170,7 +172,7 @@ handle_command({read, LogId}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-           {Continuation, Ops} = 
+	    {Continuation, Ops} = 
                 case disk_log:chunk(Log, start) of
                     {C, O} -> {C,O};
                     {C, O, _} -> {C,O};
@@ -228,8 +230,10 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case insert_operation(Log, LogId, OpId, Payload) of
+	    Operation = #operation{op_number = OpId, payload = Payload},
+            case insert_operation(Log, LogId, Operation) of
                 {ok, OpId} ->
+		    inter_dc_log_sender_vnode:send(Partition, Operation),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of
@@ -248,7 +252,6 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
-
 handle_command({append_group, LogId, PayloadList}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
@@ -258,8 +261,10 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
 						      {NewNewClock, _Node} = OpId,
 						      case get_log_from_map(Map, Partition, LogId) of
 							  {ok, Log} ->
-							      case insert_operation(Log, LogId, OpId, Payload) of
+							      Operation = #operation{op_number = OpId, payload = Payload},
+							      case insert_operation(Log, LogId, Operation) of
 								  {ok, OpId} ->
+								      inter_dc_log_sender_vnode:send(Partition, Operation),
 								      {AccErr, AccSucc ++ [OpId], NewNewClock};
 								  {error, Reason} ->
 								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
@@ -298,11 +303,11 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
-    {LogId, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
+    {LogId, Operation} = binary_to_term(Data),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             %% Optimistic handling; crash otherwise.
-            {ok, _OpId} = insert_operation(Log, LogId, OpId, Payload),
+            {ok, _OpId} = insert_operation(Log, LogId, Operation),
             ok = disk_log:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
@@ -459,9 +464,9 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), op_id(), payload()) ->
+-spec insert_operation(log(), log_id(),  operation()) ->
                               {ok, op_id()} | {error, reason()}.
-insert_operation(Log, LogId, OpId, Payload) ->
+insert_operation(Log, LogId, #operation{op_number = OpId, payload = Payload}) ->
     Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
     case Result of
         ok ->

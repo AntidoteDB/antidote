@@ -603,6 +603,7 @@ clocksi_multiple_test_certification_check(Nodes) ->
     lager:info("Tx1 aborted. Test passed!"),
     pass.
 
+
 %% @doc Read an update a key multiple times.
 clocksi_multiple_read_update_test(Nodes) ->
     Node = hd(Nodes),

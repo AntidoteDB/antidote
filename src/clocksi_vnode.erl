@@ -28,6 +28,7 @@
 	 get_cache_name/2,
 	 get_active_txns_key/3,
 	 get_active_txns/2,
+	 get_active_txns_call/1,
          prepare/2,
          commit/3,
          single_commit/2,
@@ -91,6 +92,11 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
 	    Other
     end.
 
+get_active_txns_call(Partition) ->
+    riak_core_vnode_master:sync_command({Partition,node()},
+					{get_active_txns},
+					clocksi_vnode_master,
+					infinity).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -337,7 +343,8 @@ handle_command({abort, Transaction, Updates}, _Sender,
     [{Key, _Type, {_Op, _Actor}} | _Rest] -> 
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            Result = logging_vnode:append(Node,LogId,{TxId, aborted}),
+            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
+            Result = logging_vnode:append(Node,LogId, LogRecord),
             case Result of
                 {ok, _} ->
                     clean_and_notify(TxId, Updates, State);
@@ -357,11 +364,11 @@ handle_command({abort, Transaction, Updates}, _Sender,
 
 handle_command({get_active_txns}, _Sender,
 	       #state{partition=Partition} = State) ->
-    {reply, get_active_txns_internal(Partition), State};
+    {reply, get_active_txns_internal(get_cache_name(Partition,prepared)), State};
 
 handle_command({get_active_txns, Key}, _Sender,
 	       #state{partition=Partition} = State) ->
-    {reply, get_active_txns_key_internal(Partition, Key), State};
+    {reply, get_active_txns_key_internal(get_cache_name(Partition,prepared), Key), State};
 
 
 handle_command(_Message, _Sender, State) ->
