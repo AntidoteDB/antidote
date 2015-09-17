@@ -164,7 +164,14 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
 update_clock(State, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
   NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp - 1, State#state.vectorclock),
-  ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),
+
+  %% Update the vectorclock the OLD way
+  ok = vectorclock:update_clock(State#state.partition, DCID, Timestamp),
+  dc_utilities:call_vnode(State#state.partition, vectorclock_vnode_master, calculate_stable_snapshot),
+
+  %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
+  %%ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),
+
   State#state{vectorclock = NewClock}.
 
 get_partition_clock(State) ->
