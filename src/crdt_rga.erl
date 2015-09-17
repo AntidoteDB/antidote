@@ -126,6 +126,13 @@ unique() ->
 new_test() ->
     ?assertEqual([], new()).
 
+generate_downstream_invalid_position_test() ->
+    L = new(),
+    Result1 = generate_downstream({addRight, 1, 1}, 1, L),
+    ?assertMatch({error, {invalid_position, 1}}, Result1),
+    Result2 = generate_downstream({addRight, 1, -1}, 1, L),
+    ?assertMatch({error, {invalid_position, -1}}, Result2).
+
 generate_downstream_empty_rga_test() ->
     L = new(),
     {ok, DownstreamOp} = generate_downstream({addRight, 4, 0}, 1, L),
