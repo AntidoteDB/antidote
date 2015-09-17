@@ -46,7 +46,7 @@ start(_StartType, _StartArgs) ->
             ok = riak_core:register([{vnode_module, materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(materializer, self()),
 
-            ok = riak_core:register([{vnode_module, inter_dc_log_sender}]),
+            ok = riak_core:register([{vnode_module, inter_dc_log_sender_vnode}]),
             ok = riak_core_node_watcher:service_up(logsender, self()),
 
             ok = riak_core:register([{vnode_module, inter_dc_sub_vnode}]),

@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(inter_dc_log_sender).
+-module(inter_dc_log_sender_vnode).
 -behaviour(riak_core_vnode).
 
 %% Each logging_vnode informs this vnode about every new appended operation.
@@ -55,7 +55,7 @@
 
 %% API
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
-send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_master, {log_event, Operation}).
+send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
 
 init([Partition]) ->
   {ok, set_timer(#state{
