@@ -30,12 +30,19 @@
 -define(PORT, 10017).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Nodes] = rt:build_clusters([1]),
 
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
     Node = hd(Nodes),
     rt:wait_for_service(Node, antidote),
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(Node,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     pass = start_stop_test(),
     pass = get_empty_crdt_test(<<"key0">>),

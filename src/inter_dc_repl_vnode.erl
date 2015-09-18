@@ -46,7 +46,7 @@
                 reader}).
 
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 5000).
+-define(REPL_PERIOD, 10000).
 
 start_vnode(I) ->
     {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),

@@ -65,24 +65,12 @@ get_clock(Partition) ->
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
--spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()} | {error, term()}.
+-spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
 get_stable_snapshot() ->
-    %% Ask a random vnode for current stable snapshot time
-    Node = node(),
-    Preflist = riak_core_apl:active_owners(vectorclock),
-    Prefnode = [{Partition, Node1} ||
-                   {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
-    %% Take a random vnode
-    Index = random:uniform(length(Prefnode)),
-    Indexnode = lists:nth(Index, Prefnode),
-    try
-        riak_core_vnode_master:sync_command(
-          Indexnode, get_stable_snapshot, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
+    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+    %% to riak core meta-data) otherwise will have to change this
+    {ok,vectorclock_vnode:get_stable_snapshot()}.
+    
 
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())
