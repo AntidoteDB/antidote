@@ -104,7 +104,7 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
             {reply, #fpbsnapshotreadtxnresp{success=true,
                                             clock= term_to_binary(CommitTime),
                                             results=Reply}, State};
-        Other ->
+        _Other ->
             {reply, #fpbsnapshotreadtxnresp{success=false}, State}
     end;
 
@@ -114,13 +114,13 @@ process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
     Properties = antidote_pb_codec:decode(txn_properties, BProperties),
     Response = antidote:start_transaction(Clock, Properties),
     case Response of
-        {error, Reason} ->
-            {reply, antidote_pb_codec:encode(start_transaction_response,
-                                             {error, Reason}),
-             State};
         {ok, TxId} ->
             {reply, antidote_pb_codec:encode(start_transaction_response,
                                              {ok, TxId}),
+             State};
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(start_transaction_response,
+                                             {error, Reason}),
              State}
     end;
 
