@@ -261,6 +261,17 @@ is_operation(Operation) ->
             false
     end.
 
+-spec to_binary(Vers :: pos_integer(), mvreg()) -> {ok, binary()} |
+?UNSUPPORTED_VERSION.
+to_binary(1, MVR) ->
+    {ok, to_binary(MVR)};
+to_binary(Vers, _MVR) ->
+    ?UNSUPPORTED_VERSION(Vers).
+
+-spec to_version(pos_integer(), mvreg()) -> mvreg().
+to_version(_Version, MVR) ->
+    MVR.
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -466,9 +477,3 @@ is_operation_test() ->
     ?assertEqual(false, is_operation({anything, [1,2,3]})).
 
 -endif.
-
-to_binary(_TargetVers, _) ->
-    erlang:error(not_implemented).
-
-to_version(_, _) ->
-    erlang:error(not_implemented).
