@@ -34,9 +34,9 @@
          read/2,
          asyn_append/3,
          append/3,
-	 append_commit/3,
-	 append_group/3,
-	 asyn_append_group/3,
+         append_commit/3,
+         append_group/4,
+         asyn_append_group/4,
          asyn_read_from/3,
          read_from/3]).
 
@@ -128,18 +128,19 @@ append_commit(IndexNode, LogId, Payload) ->
 
 
 %% @doc synchronous append list of operations
--spec append_group(index_node(), key(), [term()]) -> {ok, op_id()} | {error, term()}.
-append_group(IndexNode, LogId, PayloadList) ->
+%% The IsLocal flag indicates if the operations in the transaction were handled by the local or remote DC.
+-spec append_group(index_node(), key(), [term()], boolean()) -> {ok, op_id()} | {error, term()}.
+append_group(IndexNode, LogId, PayloadList, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append_group, LogId, PayloadList},
+                                        {append_group, LogId, PayloadList, IsLocal},
                                         ?LOGGING_MASTER,
                                         infinity).
 
 %% @doc asynchronous append list of operations
--spec asyn_append_group(index_node(), key(), [term()]) -> ok.
-asyn_append_group(IndexNode, LogId, PayloadList) ->
+-spec asyn_append_group(index_node(), key(), [term()], boolean()) -> ok.
+asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
-				   {append_group, LogId, PayloadList},
+				   {append_group, LogId, PayloadList, IsLocal},
 				   ?LOGGING_MASTER,
 				   infinity).
 
@@ -251,7 +252,7 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
     end;
 
 
-handle_command({append_group, LogId, PayloadList}, _Sender,
+handle_command({append_group, LogId, PayloadList, IsLocal}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
                       partition=Partition}=State) ->
@@ -263,7 +264,10 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
                     Operation = #operation{op_number = OpId, payload = Payload},
 							      case insert_operation(Log, LogId, Operation) of
 								  {ok, OpId} ->
-								      inter_dc_log_sender_vnode:send(Partition, Operation),
+                      case IsLocal of
+                        true -> inter_dc_log_sender_vnode:send(Partition, Operation);
+                        false -> ok
+                      end,
 								      {AccErr, AccSucc ++ [OpId], NewNewClock};
 								  {error, Reason} ->
 								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}

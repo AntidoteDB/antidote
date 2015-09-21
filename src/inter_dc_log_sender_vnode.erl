@@ -64,6 +64,7 @@
 %% Send the new operation to the log_sender.
 %% The transaction will be buffered until all the operations in a transaction are collected,
 %% and then the transaction will be broadcasted via interDC.
+%% WARNING: only LOCALLY COMMITED operations (not from remote DCs) should be sent to log_sender_vnode.
 -spec send(partition_id(), #operation{}) -> ok.
 send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
 
@@ -88,16 +89,7 @@ handle_command({log_event, Operation}, _Sender, State) ->
     %% If the transaction was collected
     {ok, Ops} ->
       Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
-      %% sanity check - we only publish locally committed transactions
-      case inter_dc_txn:is_local(Txn) of
-        true ->
-          %% The transaction was committed locally, we can broadcast it
-          broadcast(State1, Txn);
-        false ->
-          %% The transaction is a remote one, ignore it.
-          %% The way to go in the future is to make sute we will only get the local transactions here.
-          State1
-      end;
+      broadcast(State1, Txn);
     %% If the transaction is not yet complete
     none -> State1
   end,
