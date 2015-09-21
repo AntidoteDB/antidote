@@ -28,7 +28,10 @@
          read_objects/2,
          update_objects/2,
          abort_transaction/1,
-         commit_transaction/1
+         commit_transaction/1,
+         create_bucket/2,
+         create_object/3,
+         delete_object/1
         ]).
 
 %% ==========================================================
@@ -50,7 +53,6 @@
          clocksi_icommit/1]).
 %% ===========================================================
 
--type bucket() :: term().
 -type txn_properties() :: term(). %% TODO: Define
 -type op_param() :: term(). %% TODO: Define
 -type bound_object() :: {key(), type(), bucket()}.
@@ -62,11 +64,10 @@
 start_transaction(Clock, _Properties) ->
     clocksi_istart_tx(Clock).
 
--spec abort_transaction(TxId::txid()) -> ok | {error, reason}.
+-spec abort_transaction(TxId::txid()) -> {error, reason}.
 abort_transaction(_TxId) ->
     %% TODO
     {error, operation_not_implemented}.
-    
 
 -spec commit_transaction(TxId::txid()) ->
                                 {ok, snapshot_time()} | {error, reason()}.
@@ -88,7 +89,7 @@ read_objects(Objects, TxId) ->
                                     {ok, Res} ->
                                         Res;
                                     {error, _Reason} ->
-                                        error                                            
+                                        error
                                 end
                         end, Objects),
     case lists:member(error, Results) of
@@ -116,6 +117,21 @@ update_objects(Updates, TxId) ->
         true -> {error, read_failed}; %% TODO: Capture the reason for error
         false -> ok
     end.
+
+%% Object creation and types
+-spec create_bucket(bucket(), type()) -> {ok, bucket()}.
+create_bucket(Bucket, _Type) ->
+    %% TODO: Bucket is not currently supported
+    {ok, Bucket}.
+
+-spec create_object(key(), type(), bucket()) -> {ok, {key(), type(), bucket()}}.
+create_object(Key, Type, Bucket) ->
+    %% TODO: Object creation is not currently supported
+    {ok, {Key, Type, Bucket}}.
+
+delete_object({_Key, _Type, _Bucket}) ->
+    %% TODO: Object deletion is not currently supported
+    {error, operation_not_supported}.
 
 %% Clock SI API
 
