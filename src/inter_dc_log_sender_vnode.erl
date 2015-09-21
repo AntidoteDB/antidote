@@ -55,6 +55,7 @@
 
 %% API
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
+-spec send(partition_id(), #operation{}) -> ok.
 send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
 
 init([Partition]) ->
@@ -93,18 +94,25 @@ handle_handoff_command( _Message , _Sender, State) -> {noreply, State}.
 handle_handoff_data(_Data, State) -> {reply, ok, State}.
 encode_handoff_item(Key, Operation) -> term_to_binary({Key, Operation}).
 is_empty(State) -> {true, State}.
-terminate(_Reason, State) -> del_timer(State), ok.
 delete(State) -> {ok, del_timer(State)}.
+terminate(_Reason, State) ->
+  _ = del_timer(State),
+  ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
+-spec del_timer(#state{}) -> #state{}.
 del_timer(State = #state{timer = none}) -> State;
-del_timer(State = #state{timer = Timer}) -> erlang:cancel_timer(Timer), State#state{timer = none}.
+del_timer(State = #state{timer = Timer}) ->
+  _ = erlang:cancel_timer(Timer),
+  State#state{timer = none}.
 
+-spec set_timer(#state{}) -> #state{}.
 set_timer(State) ->
   State1 = del_timer(State),
   State1#state{timer = erlang:send_after(?HEARTBEAT_PERIOD, self(), ping)}.
 
+-spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State, Txn) ->
   inter_dc_pub:broadcast(Txn),
   Id = inter_dc_txn:last_log_opid(Txn),

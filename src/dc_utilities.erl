@@ -18,6 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dc_utilities).
+-include("antidote.hrl").
 
 -export([
     get_my_dc_id/0,
@@ -38,29 +39,36 @@ get_my_dc_nodes() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:all_members(Ring).
 
+-spec partition_to_indexnode(partition_id()) -> {partition_id(), any()}.
 partition_to_indexnode(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     Node = riak_core_ring:index_owner(Ring, Partition),
     {Partition, Node}.
 
+-spec get_my_partitions() -> list(partition_id()).
 get_my_partitions() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:my_indices(Ring).
 
+-spec get_all_partitions() -> list(partition_id()).
 get_all_partitions() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     CHash = riak_core_ring:chash(Ring),
     Nodes = chash:nodes(CHash),
     [I || {I, _} <- Nodes].
 
+-spec call_vnode_sync(partition_id(), atom(), any()) -> any().
 call_vnode_sync(Partition, VMaster, Request) ->
     riak_core_vnode_master:sync_command(partition_to_indexnode(Partition), Request, VMaster).
 
+-spec call_vnode(partition_id(), atom(), any()) -> ok.
 call_vnode(Partition, VMaster, Request) ->
     riak_core_vnode_master:command(partition_to_indexnode(Partition), Request, VMaster).
 
+-spec bcast_vnode_sync(atom(), any()) -> any().
 bcast_vnode_sync(VMaster, Request) ->
     lists:map(fun(P) -> {P, call_vnode_sync(P, VMaster, Request)} end, get_all_partitions()).
 
+-spec bcast_vnode(atom(), any()) -> any().
 bcast_vnode(VMaster, Request) ->
     lists:map(fun(P) -> {P, call_vnode(P, VMaster, Request)} end, get_all_partitions()).
