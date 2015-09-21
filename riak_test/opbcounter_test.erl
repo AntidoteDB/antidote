@@ -22,6 +22,7 @@
 -export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 %% Test entry point.
@@ -32,7 +33,12 @@ confirm() ->
     increment_test(Nodes),
     decrement_test(Nodes),
     transfer_test(Nodes),
-    conditional_write_test(Nodes),
+    case ?CERT of
+	true ->
+	    conditional_write_test(Nodes);
+	false ->
+	    ok
+    end,
     rt:clean_cluster(Nodes),
     pass.
 
