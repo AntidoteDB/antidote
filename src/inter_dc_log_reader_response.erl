@@ -44,6 +44,7 @@
 
 %%%% API --------------------------------------------------------------------+
 
+%% Fetch the local address of a log_reader socket.
 -spec get_address() -> socket_address().
 get_address() ->
   {ok, List} = inet:getif(),
@@ -61,12 +62,17 @@ init([]) ->
   lager:info("Log reader started on port ~p", [Port]),
   {ok, #state{socket = Socket}}.
 
+%% Handle the remote request
 handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
+  %% Decode the message
   Msg = binary_to_term(BinaryMsg),
+  %% Create a response
   Response = case Msg of
     {read_log, Partition, From, To} -> {{dc_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)};
     _ -> {error, bad_request}
   end,
+  %% Send the response using the same socket .
+  %% (yes, that's how it works in ZeroMQ - the socket holds the context of the last )
   ok = erlzmq:send(Socket, term_to_binary(Response)),
   {noreply, State}.
 

@@ -21,6 +21,9 @@
 %% Log reader client - stores the ZeroMQ socket connections to all other DCs,
 %% performs queries and returns responses to appropriate vnodes.
 
+%% The unanswered_query caching is there only for the purpose of disconnecting DCs.
+%% The reliability-related features like resending the query are handled by ZeroMQ.
+
 
 -module(inter_dc_log_reader_query).
 -behaviour(gen_server).
@@ -51,12 +54,17 @@
 
 %%%% API --------------------------------------------------------------------+
 
+%% Instructs the log reader to ask the remote DC for a given range of operations.
+%% Instead of a simple request/response with blocking, the result is delivered
+%% asynchronously to inter_dc_sub_vnode.
 -spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
 query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
 
+%% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
 add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}).
 
+%% Disconnects from the DC.
 -spec del_dc(dcid()) -> ok.
 del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
 
@@ -65,7 +73,9 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new(), unanswered_queries = dict:new()}}.
 
+%% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, State) ->
+  %% Create a socket and store it
   Socket = zmq_utils:create_connect_socket(req, true, hd(LogReaders)),
   NewState = State#state{sockets = dict:store(DCID, Socket, State#state.sockets)},
 
@@ -80,20 +90,26 @@ handle_call({add_dc, DCID, LogReaders}, _From, State) ->
   lists:foreach(F, dict:to_list(NewState#state.unanswered_queries)),
   {reply, ok, NewState};
 
+%% Remove a DC. Unanswered queries are left untouched.
 handle_call({del_dc, DCID}, _From, State) ->
   ok = zmq_utils:close_socket(dict:fetch(DCID, State#state.sockets)),
   {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
 
+%% Handle an instruction to ask a remote DC.
 handle_call({query, PDCID, From, To}, _From, State) ->
   {DCID, Partition} = PDCID,
   case dict:find(DCID, State#state.sockets) of
+    %% If socket found
     {ok, Socket} ->
       Request = {read_log, Partition, From, To},
       ok = erlzmq:send(Socket, term_to_binary(Request)),
       {reply, ok, req_sent(PDCID, Request, State)};
+    %% If socket not found
     _ -> {reply, unknown_dc, State}
   end.
 
+%% Handle a response from any of the connected sockets
+%% Possible improvement - disconnect sockets unused for a defined period of time.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   {PDCID, Txns} = binary_to_term(BinaryMsg),
   inter_dc_sub_vnode:deliver_log_reader_resp(PDCID, Txns),
@@ -106,6 +122,9 @@ terminate(_Reason, State) ->
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
+%% Saves the request in the state, so it can be resent if the DC was disconnected.
 req_sent(PDCID, Req, State) -> State#state{unanswered_queries = dict:store(PDCID, Req, State#state.unanswered_queries)}.
+
+%% Removes the request from the list of unanswered queries.
 rsp_rcvd(PDCID, State) -> State#state{unanswered_queries = dict:erase(PDCID, State#state.unanswered_queries)}.
 

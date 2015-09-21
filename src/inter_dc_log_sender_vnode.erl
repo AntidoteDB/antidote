@@ -61,6 +61,9 @@
 
 %%%% API --------------------------------------------------------------------+
 
+%% Send the new operation to the log_sender.
+%% The transaction will be buffered until all the operations in a transaction are collected,
+%% and then the transaction will be broadcasted via interDC.
 -spec send(partition_id(), #operation{}) -> ok.
 send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
 
@@ -76,21 +79,31 @@ init([Partition]) ->
     timer = none
   })}.
 
+%% Handle the new operation
 handle_command({log_event, Operation}, _Sender, State) ->
+  %% Use the txn_assembler to check if the complete transaction was collected.
   {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
   State1 = State#state{buffer = NewBufState},
   State2 = case Result of
+    %% If the transaction was collected
     {ok, Ops} ->
       Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
       %% sanity check - we only publish locally committed transactions
       case inter_dc_txn:is_local(Txn) of
-        true -> broadcast(State1, Txn);
-        false -> State1
+        true ->
+          %% The transaction was committed locally, we can broadcast it
+          broadcast(State1, Txn);
+        false ->
+          %% The transaction is a remote one, ignore it.
+          %% The way to go in the future is to make sute we will only get the local transactions here.
+          State1
       end;
+    %% If the transaction is not yet complete
     none -> State1
   end,
   {noreply, State2}.
 
+%% Handle the ping request, managed by the timer (1s by default)
 handle_info(ping, State) ->
   PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
   {ok, set_timer(broadcast(State, PingTxn))}.
@@ -111,17 +124,20 @@ terminate(_Reason, State) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
+%% Cancels the ping timer, if one is set.
 -spec del_timer(#state{}) -> #state{}.
 del_timer(State = #state{timer = none}) -> State;
 del_timer(State = #state{timer = Timer}) ->
   _ = erlang:cancel_timer(Timer),
   State#state{timer = none}.
 
+%% Cancels the previous ping timer and sets a new one.
 -spec set_timer(#state{}) -> #state{}.
 set_timer(State) ->
   State1 = del_timer(State),
   State1#state{timer = erlang:send_after(?HEARTBEAT_PERIOD, self(), ping)}.
 
+%% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State, Txn) ->
   inter_dc_pub:broadcast(Txn),
