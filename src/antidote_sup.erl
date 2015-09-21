@@ -84,24 +84,20 @@ init(_Args) ->
     InterDcLogReaderRMaster = ?CHILD(inter_dc_log_reader_response, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
-  {ok,
-    {{one_for_one, 5, 10},
-      [
-        LoggingMaster,
-        ClockSIMaster,
-        ClockSIsTxCoordSup,
-        ClockSIiTxCoordSup,
-        ClockSIReadSup,
-        VectorClockMaster,
-        MaterializerMaster,
-        ZMQContextManager,
-        InterDcLogSenderMaster,
-        InterDcLogReaderQMaster,
-        InterDcLogReaderRMaster,
-        InterDcPub,
-        InterDcSub,
-        InterDcSubVnode,
-        InterDcDepVnode
-      ]
-    }
-  }.
+    {ok,
+     {{one_for_one, 5, 10},
+      [LoggingMaster,
+       ClockSIMaster,
+       ClockSIsTxCoordSup,
+       ClockSIiTxCoordSup,
+       ClockSIReadSup,
+       VectorClockMaster,
+       MaterializerMaster,
+       ZMQContextManager,
+       InterDcPub,
+       InterDcSub,
+       InterDcSubVnode,
+       InterDcDepVnode,
+       InterDcLogReaderQMaster,
+       InterDcLogReaderRMaster,
+        InterDcLogSenderMaster]}}.
