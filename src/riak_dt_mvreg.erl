@@ -44,7 +44,7 @@
 -behaviour(riak_dt).
 
 -export([new/0, value/1, value/2, update/3, merge/2,
-    equal/2, to_binary/1, from_binary/1, stats/1, stat/2, is_operation/1]).
+    equal/2, to_binary/1, from_binary/1, stats/1, stat/2, is_operation/1, to_binary/2, to_version/2]).
 -export([parent_clock/2, update/4]).
 
 -ifdef(TEST).
@@ -466,3 +466,9 @@ is_operation_test() ->
     ?assertEqual(false, is_operation({anything, [1,2,3]})).
 
 -endif.
+
+to_binary(_TargetVers, _) ->
+    erlang:error(not_implemented).
+
+to_version(_, _) ->
+    erlang:error(not_implemented).
