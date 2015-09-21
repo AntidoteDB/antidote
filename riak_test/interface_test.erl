@@ -33,11 +33,21 @@
 -define(PORT, 10017).
 
 confirm() ->
+    rt:update_app_config(all,[
+                              {riak_core, [{ring_creation_size, 8}]}
+                             ]),
     N = 1,
     [Nodes] = rt:build_clusters([N]),
 
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
+    Node = hd(Nodes),
+    rt:wait_for_service(Node, antidote),
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(Node,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
+
     simple_transaction_test(hd(Nodes)),
     read_write_test(hd(Nodes)),
     pb_test_read(hd(Nodes)),
@@ -46,7 +56,7 @@ confirm() ->
     pass.
 
 %% starts and transaction and read a key
-simple_transaction_test(Node) ->    
+simple_transaction_test(Node) ->
     Bound_object = {key, riak_dt_pncounter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
@@ -82,7 +92,7 @@ pb_test_counter_read_write(_Node) ->
     {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
-    ?assertEqual(1,Val),
+    ?assertEqual(1, antidotec_counter:value(Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 pb_test_set_read_write(_Node) ->
@@ -96,5 +106,5 @@ pb_test_set_read_write(_Node) ->
     {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
-    ?assertEqual(["a"],Val),
+    ?assertEqual(["a"],antidotec_set:value(Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
