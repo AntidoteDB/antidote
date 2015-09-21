@@ -86,10 +86,12 @@ process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(operation_response,
                                              {error, Reason}),
-             State};
-        ok ->
-            {reply, antidote_pb_codec:encode(operation_response, ok),
              State}
+            %% TODO: client initiated abort is not implemented yet
+            %% Add the following only after it is implemented to avoid dialyzer errors
+            %% ok ->
+            %%     {reply, antidote_pb_codec:encode(operation_response, ok),
+            %%      State}
     end;
 
 process(#apbcommittransaction{transaction_descriptor=Td}, State) ->
