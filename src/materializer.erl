@@ -66,41 +66,25 @@ check_operations([]) ->
     ok;
 check_operations([Op | Rest]) ->
     case check_operation(Op) of
-        ok ->
+        true ->
             check_operations(Rest);
-        {error, Reason} ->
-            {error, Reason}
+        false ->
+            {error, {type_check, Op}}
     end.
 
 %% @doc Check that an operation is correctly typed.
--spec check_operation(term()) -> 'ok' | {'error',{'type_check' | [1..255,...],_}}.
+-spec check_operation(term()) -> boolean().
 check_operation(Op) ->
-    try
-        case Op of
-        {update, {_, Type, {OpParams, Actor}}} ->
-                TypeString = lists:flatten(io_lib:format("~p", [Type])),
-                case string:str(TypeString, "riak_dt") of
-                    1 -> %% dealing with a state_based crdt
-                        case Type:is_operation(OpParams) of
-                            true ->
-                                ok;
-                            false ->
-                                {error, {type_check, Op}}
-                        end;
-                    0 -> %% dealing with an op_based crdt
-                        Type:generate_downstream(OpParams, Actor, Type:new()),
-                        ok
-                end;
-            {read, {_, Type}} ->
-                Type:new(),
-                ok;
-            _ ->
-                {error, {"Unknown operation format", Op}}
-        end
-    catch
-        error : _ ->
-            {error, {type_check, Op}}
+    case Op of
+        {update, {_, Type, {OpParams, _Actor}}} ->
+            (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type)) and
+                Type:is_operation(OpParams);
+        {read, {_, Type}} ->
+            (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type));
+        _ ->
+            false
     end.
+
 
 %% @doc Check that an atom is an op_based CRDT type.
 %%      The list of op_based CRDTS is defined in antidote.hrl
