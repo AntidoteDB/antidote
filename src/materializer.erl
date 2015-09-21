@@ -102,7 +102,8 @@ check_operation(Op) ->
             {error, {type_check, Op}}
     end.
 
-%% @doc Check that in a list of operations, all of them are correctly typed.
+%% @doc Check that an atom is an op_based CRDT type.
+%%      The list of op_based CRDTS is defined in antidote.hrl
 -spec is_crdt(term()) -> boolean().
 is_crdt(Term) ->
     is_atom(Term) and lists:member(Term, ?CRDTS).
