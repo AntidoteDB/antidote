@@ -24,6 +24,7 @@
 -export([
   now_millisec/0]).
 
+-spec now_millisec() -> non_neg_integer().
 now_millisec() ->
   {MegaSecs, Secs, MicroSecs} = erlang:now(),
   (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

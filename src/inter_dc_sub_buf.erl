@@ -17,14 +17,19 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%% Transaction buffer, used to check for message loss through operation log id gaps.
+
 -module(inter_dc_sub_buf).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
+%% API
 -export([
   new_state/1,
   process/2]).
 
+%% State
 -record(state, {
   state_name :: normal | buffering,
   pdcid :: pdcid(),
@@ -32,7 +37,10 @@
   queue :: queue()
 }).
 
-%% TODO: Fetch last observed ID from log. This way, in case of a node crash, the queue can be fetched again.
+%%%% API --------------------------------------------------------------------+
+
+%% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
+-spec new_state(pdcid()) -> #state{}.
 new_state(PDCID) -> #state{
   state_name = normal,
   pdcid = PDCID,
@@ -40,6 +48,7 @@ new_state(PDCID) -> #state{
   queue = queue:new()
 }.
 
+-spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #state{}) -> #state{}.
 process({txn, Txn}, State = #state{state_name = normal}) -> process_queue(push(Txn, State));
 process({txn, Txn}, State = #state{state_name = buffering}) ->
   lager:info("Buffering txn in ~p", [State#state.pdcid]),
@@ -54,6 +63,7 @@ process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buff
   NewState = State#state{last_observed_opid = NewLast},
   process_queue(NewState).
 
+%%%% Methods ----------------------------------------------------------------+
 process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
@@ -75,5 +85,8 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
       end
   end.
 
+-spec deliver(#interdc_txn{}) -> ok.
 deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
+
+-spec push(#interdc_txn{}, #state{}) -> #state{}.
 push(Txn, State) -> State#state{queue = queue:in(Txn, State#state.queue)}.

@@ -19,18 +19,31 @@
 %% -------------------------------------------------------------------
 
 %% Transaction assembler reads a stream of log operations and produces complete transactions.
+
 -module(log_txn_assembler).
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
--export([process/2, process_all/2, new_state/0]).
+%% If you can fix the dialyzer warns for process_all/3, be my guest.
+-dialyzer({nowarn_function, process_all/3}).
 
+%% API
+-export([
+  new_state/0,
+  process/2,
+  process_all/2]).
+
+%% State
 -record(state, {
   op_buffer :: dict()
 }).
 
+%%%% API --------------------------------------------------------------------+
+
+-spec new_state() -> #state{}.
 new_state() -> #state{op_buffer = dict:new()}.
 
--spec process(operation(), any()) -> {{ok, [operation()]}, any()} | {none, any()}.
+-spec process(operation(), #state{}) -> {{ok, [operation()]} | none, #state{}}.
 process(Operation, State) ->
   Payload = Operation#operation.payload,
   TxId = Payload#log_record.tx_id,
@@ -41,15 +54,23 @@ process(Operation, State) ->
     _ -> {none, State#state{op_buffer = dict:store(TxId, NewTxnBuf, State#state.op_buffer)}}
   end.
 
+%%-spec process_all([operation()], #state{}) -> {[#interdc_txn{}], #state{}}.
+-spec process_all([#operation{}],#state{op_buffer::'undefined' | dict()}) -> {[],#state{op_buffer::'undefined' | dict()}}.
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
+
+-spec process_all([#operation{}], [#interdc_txn{}], #state{}) -> {[#interdc_txn{}], #state{}}.
 process_all([], Accu, State) -> {Accu, State};
 process_all([H|T], Accu, State) ->
   {Result, NewState} = process(H, State),
-  case Result of
-    {ok, Txn} -> process_all(T, Accu ++ [Txn], NewState);
-    none -> process_all(T, Accu, NewState)
-  end.
+  NewAccu = case Result of
+    {ok, Txn} -> Accu ++ [Txn];
+    none -> Accu
+  end,
+  process_all(T, NewAccu, NewState).
 
+%%%% Methods ----------------------------------------------------------------+
+
+-spec find_or_default(#tx_id{}, any(), dict()) -> any().
 find_or_default(Key, Default, Dict) ->
   case dict:find(Key, Dict) of
     {ok, Val} -> Val;

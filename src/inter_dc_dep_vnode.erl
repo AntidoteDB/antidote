@@ -31,12 +31,12 @@
 
 %% API
 -export([
-  handle_transaction/1,
-  start_vnode/1]).
+  handle_transaction/1]).
 
 %% VNode methods
 -export([
   init/1,
+  start_vnode/1,
   handle_command/3,
   handle_coverage/4,
   handle_exit/3,
@@ -59,16 +59,19 @@
 
 %%%% API --------------------------------------------------------------------+
 
+%% Passes the received transaction to the dependency buffer.
+%% At this point no message can be lost (the transport layer must ensure all transactions are delivered reliably).
+-spec handle_transaction(#interdc_txn{}) -> ok.
+handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
+
+%%%% VNode methods ----------------------------------------------------------+
+
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   {ok, StableSnapshot} = vectorclock:get_stable_snapshot(),
   {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
-
-handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
-
-%%%% VNode methods ----------------------------------------------------------+
 
 %% Check the content of each queue, try to apply as many elements as possible.
 %% If any element was successfully pushed from any queue, repeat the process.
@@ -146,6 +149,7 @@ delete(State) -> {ok, State}.
 
 %%%% Utilities --------------------------------------------------------------+
 
+%% Push the transaction to an appropriate queue inside the state.
 -spec push_txn(#state{}, #interdc_txn{}) -> #state{}.
 push_txn(State = #state{queues = Queues}, Txn = #interdc_txn{dcid = DCID}) ->
   DCID = Txn#interdc_txn.dcid,
@@ -156,11 +160,14 @@ push_txn(State = #state{queues = Queues}, Txn = #interdc_txn{dcid = DCID}) ->
   NewQueue = queue:in(Txn, Queue),
   State#state{queues = dict:store(DCID, NewQueue, Queues)}.
 
+%% Remove one transaction from the chosen queue in the state.
 pop_txn(State = #state{queues = Queues}, DCID) ->
   Queue = dict:fetch(DCID, Queues),
   NewQueue = queue:drop(Queue),
   State#state{queues = dict:store(DCID, NewQueue, Queues)}.
 
+%% Update the clock value associated with the given DCID from the perspective of this partition.
+-spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
 update_clock(State, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
   NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp - 1, State#state.vectorclock),
@@ -174,10 +181,14 @@ update_clock(State, DCID, Timestamp) ->
 
   State#state{vectorclock = NewClock}.
 
+%% Get the current vectorclock from the perspective of this partition, with the updated entry for current DC.
+-spec get_partition_clock(#state{}) -> vectorclock().
 get_partition_clock(State) ->
   %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
   vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), inter_dc_utils:now_millisec(), State#state.vectorclock).
 
+%% Utility function: converts the transaction to a list of clocksi_payload ops.
+-spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#clocksi_payload{}).
 updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, snapshot = SnapshotTime}) ->
   lists:map(fun(#operation{payload = Logrecord}) ->
     {Key, Type, Op} = Logrecord#log_record.op_payload,

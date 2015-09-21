@@ -80,20 +80,24 @@ ops_by_type(#interdc_txn{operations = Ops}, Type) ->
   F = fun(Op) -> Type == Op#operation.payload#log_record.op_type end,
   lists:filter(F, Ops).
 
+-spec to_bin(#interdc_txn{}) -> binary().
 to_bin(Txn = #interdc_txn{partition = P}) ->
   Prefix = partition_to_bin(P),
   Msg = term_to_binary(Txn),
   <<Prefix/binary, Msg/binary>>.
 
+-spec from_bin(binary()) -> #interdc_txn{}.
 from_bin(Bin) ->
   L = byte_size(Bin),
   Msg = binary_part(Bin, {?PARTITION_BYTE_LENGTH, L - ?PARTITION_BYTE_LENGTH}),
   binary_to_term(Msg).
 
+-spec pad(non_neg_integer(), binary()) -> binary().
 pad(Width, Binary) ->
   case Width - byte_size(Binary) of
     N when N =< 0 -> Binary;
     N -> <<0:(N*8), Binary/binary>>
   end.
 
+-spec partition_to_bin(partition_id()) -> binary().
 partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigned(Partition)).

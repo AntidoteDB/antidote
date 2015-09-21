@@ -19,24 +19,39 @@
 %% -------------------------------------------------------------------
 
 %% Log reader reads all transactions in the log that happened between the defined
+
 -module(inter_dc_log_reader_response).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
+%% API
 -export([
-  start_link/0,
-  get_entries/3,
   get_address/0]).
+
+%% Server methods
 -export([
   init/1,
+  start_link/0,
   handle_call/3,
   handle_cast/2,
   handle_info/2,
   terminate/2,
   code_change/3]).
 
+%% State
 -record(state, {socket}). %% socket :: erlzmq_socket()
+
+%%%% API --------------------------------------------------------------------+
+
+-spec get_address() -> socket_address().
+get_address() ->
+  {ok, List} = inet:getif(),
+  {Ip, _, _} = hd(List),
+  {ok, Port} = application:get_env(antidote, logreader_port),
+  {Ip, Port}.
+
+%%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -62,29 +77,26 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%-spec get_entries(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
+-spec get_entries(non_neg_integer(),non_neg_integer(),non_neg_integer()) -> [].
 get_entries(Partition, From, To) ->
-  Logs = log_read_range(node(), Partition, From, To),
+  Logs = log_read_range(Partition, node(), From, To),
   Asm = log_txn_assembler:new_state(),
   {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
-  Txns = [inter_dc_txn:from_ops(TxnOps, Partition, none) || TxnOps <- OpLists],
+  Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),
   %% This is done in order to ensure that we only send the transactions we committed.
   %% We can remove this once the read_log_range is reimplemented.
   lists:filter(fun inter_dc_txn:is_local/1, Txns).
 
--spec get_address() -> socket_address().
-get_address() ->
-  {ok, List} = inet:getif(),
-  {Ip, _, _} = hd(List),
-  {ok, Port} = application:get_env(antidote, logreader_port),
-  {Ip, Port}.
-
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
-log_read_range(Node, Partition, From, To) ->
+-spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#operation{}].
+log_read_range(Partition, Node, From, To) ->
   {ok, RawOpList} = logging_vnode:read({Partition, Node}, [Partition]),
   OpList = lists:map(fun({_Partition, Op}) -> Op end, RawOpList),
   filter_operations(OpList, From, To).
 
+-spec filter_operations([#operation{}], log_opid(), log_opid()) -> [#operation{}].
 filter_operations(Ops, Min, Max) ->
   F = fun(Op) ->
     {Num, _Node} = Op#operation.op_number,

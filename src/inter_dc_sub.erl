@@ -17,31 +17,50 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%% InterDC subscriber - connects to remote PUB sockets and listens to a defined subset of messages.
+%% The messages are filter based on a binary prefix.
+
 -module(inter_dc_sub).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
+%% API
+-export([
+  add_dc/2,
+  del_dc/1
+]).
+
+%% Server methods
 -export([
   init/1,
+  start_link/0,
   handle_call/3,
   handle_cast/2,
   handle_info/2,
   terminate/2,
-  code_change/3,
-  start_link/0,
-  add_dc/2,
-  del_dc/1]).
+  code_change/3
+  ]).
+
+%% State
 -record(state, {
   sockets :: dict() % DCID -> socket
 }).
 
+%%%% API --------------------------------------------------------------------+
+
+%% TODO: persist added DCs in case of a node failure, reconnect on node restart.
+-spec add_dc(dcid(), [socket_address()]) -> ok.
+add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}).
+
+-spec del_dc(dcid()) -> ok.
+del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
+
+%%%% Server methods ---------------------------------------------------------+
+
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new()}}.
-
-%% TODO: persist added DCs in case of a node failure, reconnect on restart.
-add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}).
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
 
 handle_call({add_dc, DCID, Publishers}, _From, State) ->
   F = fun(Address) ->

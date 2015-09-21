@@ -26,12 +26,15 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
+%% API
 -export([
   deliver_txn/1,
-  start_vnode/1,
   deliver_log_reader_resp/2]).
+
+%% Vnode methods
 -export([
   init/1,
+  start_vnode/1,
   handle_command/3,
   handle_coverage/4,
   handle_exit/3,
@@ -45,13 +48,21 @@
   terminate/2,
   delete/1]).
 
+%% State
 -record(state, {
   partition :: non_neg_integer(),
   buffer_fsms :: dict() %% dcid -> relsub_fsm
 }).
 
+%%%% API --------------------------------------------------------------------+
+
+-spec deliver_txn(#interdc_txn{}) -> ok.
 deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
+
+-spec deliver_log_reader_resp(pdcid(), [#interdc_txn{}]) -> ok.
 deliver_log_reader_resp({DCID, Partition}, Txns) -> call(Partition, {log_reader_resp, DCID, Txns}).
+
+%%%% VNode methods ----------------------------------------------------------+
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).

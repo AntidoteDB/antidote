@@ -33,8 +33,6 @@
   forget_dc/1,
   forget_dcs/1]).
 
-%% TODO catch rpc errors
-
 -spec get_descriptor() -> {ok, interdc_descriptor()}.
 get_descriptor() ->
   Nodes = dc_utilities:get_my_dc_nodes(),

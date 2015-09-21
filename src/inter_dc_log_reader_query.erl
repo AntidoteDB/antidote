@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% Log reader client - stores the zeroMQ socket connections to all other DCs,
+%% Log reader client - stores the ZeroMQ socket connections to all other DCs,
 %% performs queries and returns responses to appropriate vnodes.
 
 
@@ -27,22 +27,40 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--record(state, {
-  sockets :: dict(), % DCID -> socket
-  unanswered_queries :: dict() % PDCID -> query
-}).
-
+%% API
 -export([
+  query/3,
+  add_dc/2,
+  del_dc/1]).
+
+%% Server methods
+-export([
+  start_link/0,
   init/1,
   handle_call/3,
   handle_cast/2,
   handle_info/2,
   terminate/2,
-  code_change/3,
-  query/3,
-  add_dc/2,
-  start_link/0,
-  del_dc/1]).
+  code_change/3]).
+
+%% State
+-record(state, {
+  sockets :: dict(), % DCID -> socket
+  unanswered_queries :: dict() % PDCID -> query
+}).
+
+%%%% API --------------------------------------------------------------------+
+
+-spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
+query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
+
+-spec add_dc(dcid(), [socket_address()]) -> ok.
+add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}).
+
+-spec del_dc(dcid()) -> ok.
+del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
+
+%%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new(), unanswered_queries = dict:new()}}.
@@ -91,8 +109,3 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 req_sent(PDCID, Req, State) -> State#state{unanswered_queries = dict:store(PDCID, Req, State#state.unanswered_queries)}.
 rsp_rcvd(PDCID, State) -> State#state{unanswered_queries = dict:erase(PDCID, State#state.unanswered_queries)}.
 
-%% API
-
-query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
-add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}).
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).

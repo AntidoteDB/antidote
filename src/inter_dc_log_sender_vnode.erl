@@ -17,21 +17,26 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(inter_dc_log_sender_vnode).
--behaviour(riak_core_vnode).
 
 %% Each logging_vnode informs this vnode about every new appended operation.
 %% This vnode assembles operations into transactions, and sends the transactions to appropriate destinations.
 %% If no transaction is sent in 10 seconds, heartbeat messages are sent instead.
 
+-module(inter_dc_log_sender_vnode).
+-behaviour(riak_core_vnode).
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
+
+
+%% API
 -export([
-  start_vnode/1,
   send/2]).
+
+%% VNode methods
 -export([
   init/1,
+  start_vnode/1,
   handle_command/3,
   handle_info/2,
   handle_coverage/4,
@@ -46,6 +51,7 @@
   terminate/2,
   delete/1]).
 
+%% Vnode state
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
@@ -53,10 +59,14 @@
   timer :: any()
 }).
 
-%% API
-start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
+%%%% API --------------------------------------------------------------------+
+
 -spec send(partition_id(), #operation{}) -> ok.
 send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
+
+%%%% VNode methods ----------------------------------------------------------+
+
+start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
   {ok, set_timer(#state{
