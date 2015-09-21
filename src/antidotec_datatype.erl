@@ -41,7 +41,7 @@
 
 %% @doc Constructs a new container for the type with the specified
 %% value and key. This should only be used internally by the client code.
--callback new(Key::byte(), Value::term()) -> datatype().
+-callback new(Value::term()) -> datatype().
 
 %% @doc Returns the original, unmodified value of the object. This does
 %% not include the execution of any locally-queued operations.
@@ -50,12 +50,9 @@
 %% @doc Returns the local value of the object, with the local operations applied.
 -callback dirty_value(datatype()) -> term().
 
-%% @doc Returns the message to get an object of the type of this container.
--callback message_for_get(binary()) -> term().
-
 %% @doc Extracts the list of operations to be append to the object's log.
 %% 'undefined' should be returned if the type is unmodified.
--callback to_ops(datatype()) -> update().
+-callback to_ops(term(), datatype()) -> update().
 
 %% @doc Determines whether the given term is the type managed by the
 %% container module.
@@ -66,10 +63,10 @@
 -callback type() -> typename().
 
 %% @doc Returns the module name for the container of the given CRDT data-type.
--spec module_for_type(riak_dt_orset | riak_dt_pncounter) ->
+-spec module_for_type(set | counter) ->
     antidotec_counter | antidotec_set.
-module_for_type(riak_dt_orset) -> antidotec_set;
-module_for_type(riak_dt_pncounter)  -> antidotec_counter.
+module_for_type(set) -> antidotec_set;
+module_for_type(counter)  -> antidotec_counter.
 
 %% @doc Returns the container module name for the given term. 
 %% Returns undefined if the module is not known.

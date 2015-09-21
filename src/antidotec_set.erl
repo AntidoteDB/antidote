@@ -23,14 +23,13 @@
 
 -behaviour(antidotec_datatype).
 
--export([new/1,
-         new/2,
-         message_for_get/1,
+-export([new/0,
+         new/1,
          value/1,
-         to_ops/1,
+         dirty_value/1,
+         to_ops/2,
          is_type/1,
-         type/0,
-         dirty_value/1
+         type/0
         ]).
 
 -export([add/2,
@@ -39,7 +38,6 @@
         ]).
 
 -record(antidote_set, {
-          key :: term(),
           set :: set(),
           adds :: set(),
           rems :: set()
@@ -54,84 +52,58 @@
 -endif.
 
 
--spec new(term()) -> antidote_set().
-new(Key) ->
-    #antidote_set{key=Key, set=sets:new(), adds=sets:new(), rems=sets:new()}.
+-spec new() -> antidote_set().
+new() ->
+    #antidote_set{set=sets:new(), adds=sets:new(), rems=sets:new()}.
 
--spec new(term(), list()) -> antidote_set().
-new(Key,[]) ->
-    #antidote_set{key=Key, set=sets:new(), adds=sets:new(), rems=sets:new()};
+-spec new(list()) -> antidote_set().
+new([]) ->
+    #antidote_set{set=sets:new(), adds=sets:new(), rems=sets:new()};
 
-new(Key, [_H | _] = List) ->
+new([_H | _] = List) ->
     Set = lists:foldl(fun(E,S) ->
                         sets:add_element(E,S)
                 end,sets:new(),List),
-    #antidote_set{key=Key, set=Set, adds=sets:new(), rems=sets:new()};
+    #antidote_set{set=Set, adds=sets:new(), rems=sets:new()};
 
+new(Set) ->
+    #antidote_set{set=Set, adds=sets:new(), rems=sets:new()}.
 
-new(Key, Set) ->
-    #antidote_set{key=Key, set=Set, adds=sets:new(), rems=sets:new()}.
+-spec value(antidote_set()) -> [term()].
+value(#antidote_set{set=Set}) -> sets:to_list(Set).
 
--spec value(antidote_set()) -> set().
-value(#antidote_set{set=Set}) -> Set.
-
--spec dirty_value(antidote_set()) -> set().
-dirty_value(#antidote_set{set=Set, adds=Adds}) ->
-    sets:union(Set,Adds).
+dirty_value(#antidote_set{set=Set, adds = Adds, rems=Rems}) ->
+    sets:to_list(sets:subtract(sets:union(Set, Adds), Rems)).
 
 %% @doc Adds an element to the local set container.
 -spec add(term(), antidote_set()) -> antidote_set().
-add(Elem, #antidote_set{set=Set, adds=Adds}=Fset) ->
-     case sets:is_element(Elem, Set) of
-        false -> Fset#antidote_set{adds=sets:add_element(Elem,Adds)};
-        true -> Fset
-     end.
+add(Elem, #antidote_set{adds=Adds}=Fset) ->
+    Fset#antidote_set{adds=sets:add_element(Elem,Adds)}.
+
 -spec remove(term(), antidote_set()) -> antidote_set().
-remove(Elem, #antidote_set{set=Set, adds=Adds, rems=Rems}=Fset) ->
-    case sets:is_element(Elem, Adds) of
-        true ->  Fset#antidote_set{adds=sets:del_element(Elem,Adds)};
-        false -> 
-            case sets:is_element(Elem, Set) of
-                true -> Fset#antidote_set{rems=sets:add_element(Elem,Rems)};
-                false -> Fset
-            end
-    end.
+remove(Elem, #antidote_set{rems=Rems}=Fset) ->
+    Fset#antidote_set{rems=sets:add_element(Elem,Rems)}.
 
 -spec contains(term(), antidote_set()) -> boolean().
-contains(Elem, #antidote_set{set=Set, adds=Adds, rems=Rems}) ->
-    case sets:is_element(Elem, Adds) of
-        true -> true;
-        false ->
-            case sets:is_element(Elem, Set) of
-                true -> not sets:is_element(Elem, Rems);
-                false -> false
-            end
-    end.
+contains(Elem, #antidote_set{set=Set}) ->
+    sets:is_element(Elem, Set).
 
 %% @doc Determines whether the passed term is a set container.
 -spec is_type(term()) -> boolean().
 is_type(T) ->
     is_record(T, antidote_set).
 
-
 %% @doc Returns the symbolic name of this container.
--spec type() -> riak_dt_orset.
-type() -> riak_dt_orset.
+-spec type() -> set.
+type() -> set.
 
-to_ops(#antidote_set{key=Key, adds=Adds, rems=Rems}) -> 
+to_ops(BoundObject, #antidote_set{adds=Adds, rems=Rems}) ->
     case sets:size(Adds) =:= 0 andalso sets:size(Rems) =:= 0 of
-        true -> undefined;
+        true -> [];
         false ->
-            AddsAsBin = lists:map(fun(X) ->
-                                          erlang:term_to_binary(X)
-                                  end,sets:to_list(Adds)),
-            RemsAsBin = lists:map(fun(X) ->
-                                          erlang:term_to_binary(X)
-                                  end,sets:to_list(Rems)),
-            [#fpbsetupdatereq{key=Key, adds=AddsAsBin, rems=RemsAsBin}]
+            [{BoundObject, add_all, sets:to_list(Adds)},
+             {BoundObject, remove_all, sets:to_list(Rems)}]
     end.
-
-message_for_get(Key) -> #fpbgetsetreq{key=Key}.
 
 
 %% ===================================================================
@@ -156,4 +128,3 @@ add_op_existing_set_test() ->
     [?_assert(ThreeElemSet =:= 3),
      ?_assert(TwoElemSet =:= 2)].
 -endif.
-

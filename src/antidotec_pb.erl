@@ -99,7 +99,12 @@ read_objects(Pid, Objects, TxId) ->
         {error, timeout} -> {error, timeout};
         _ ->
             case antidote_pb_codec:decode_response(Result) of
-                {read_objects, Values} -> {ok, Values};
+                {read_objects, Values} ->
+                    ResObjects = lists:map(fun({Type, Val}) ->
+                                        Mod = antidotec_datatype:module_for_type(Type),
+                                        Mod:new(Val)
+                                end, Values),
+                    {ok, ResObjects};
                 {error, Reason} -> {error, Reason};
                 Other -> {error, Other}
             end

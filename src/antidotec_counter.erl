@@ -23,14 +23,12 @@
 
 -behaviour(antidotec_datatype).
 
--export([new/1,
-         new/2,
-         message_for_get/1,
+-export([new/0, new/1,
          value/1,
-         to_ops/1,
+         to_ops/2,
          is_type/1,
-         type/0,
-         dirty_value/1
+         dirty_value/1,
+         type/0
         ]).
 
 -export([increment/1,
@@ -40,64 +38,62 @@
         ]).
 
 -record(counter, {
-          key :: term(),
           value :: integer(),
           increment :: integer()
          }).
 
--export_type([antidote_counter/0]).
--opaque antidote_counter() :: #counter{}.
+-export_type([antidotec_counter/0]).
+-opaque antidotec_counter() :: #counter{}.
 
--spec new(term()) -> antidote_counter().
-new(Key) ->
-    #counter{key=Key, value=0, increment=0}.
+-spec new() -> antidotec_counter().
+new() ->
+    #counter{value=0, increment=0}.
 
--spec new(term(), integer()) -> antidote_counter().
-new(Key, Value) ->
-    #counter{key=Key, value=Value, increment=0}.
+-spec new(integer()) -> antidotec_counter().
+new(Value) ->
+    #counter{value=Value, increment=0}.
 
--spec value(antidote_counter()) -> integer().
+-spec value(antidotec_counter()) -> integer().
 value(#counter{value=Value}) ->
     Value.
 
--spec dirty_value(antidote_counter()) -> integer().
+-spec dirty_value(antidotec_counter()) -> integer().
 dirty_value(#counter{value=Value, increment=Increment}) ->
-    Value + Increment.
+    Value+Increment.
 
 %% @doc Increments the counter with 1 unit.
--spec increment(antidote_counter()) -> antidote_counter().
+-spec increment(antidotec_counter()) -> antidotec_counter().
 increment(Counter) ->
     increment(1, Counter).
 
 %% @doc Increments the counter with Amount units.
--spec increment(integer(), antidote_counter()) -> antidote_counter().
-increment(Amount, #counter{increment=Value}=Counter) when is_integer(Amount) ->
-    Counter#counter{increment=Value+Amount}.
+-spec increment(integer(), antidotec_counter()) -> antidotec_counter().
+increment(Amount, #counter{increment=Increment}=Counter)
+  when is_integer(Amount) ->
+    Counter#counter{increment=Increment+Amount}.
 
 %% @doc Decrements the counter by 1.
--spec decrement(antidote_counter()) -> antidote_counter().
+-spec decrement(antidotec_counter()) -> antidotec_counter().
 decrement(Counter) ->
     increment(-1, Counter).
 
 %% @doc Decrements the counter by the passed amount.
--spec decrement(integer(), antidote_counter()) -> antidote_counter().
-decrement(Amount, #counter{increment=Value}=Counter) ->
+-spec decrement(integer(), antidotec_counter()) -> antidotec_counter().
+decrement(Amount, #counter{increment=Value}=Counter) 
+  when is_integer(Amount) ->
     Counter#counter{increment=Value-Amount}.
 
 -spec is_type(term()) -> boolean().
 is_type(T) ->
     is_record(T, counter).
 
--spec type() -> riak_dt_pncounter.
-type() -> riak_dt_pncounter.
+type() ->
+     counter.
 
-to_ops(#counter{key=_Key, increment=0}) -> undefined;
+to_ops(_BoundObject, #counter{increment=0}) -> [];
 
-to_ops(#counter{key=Key, increment=Amount}) when Amount < 0 ->
-    [#fpbdecrementreq{key=Key, amount=-Amount}];
+to_ops(BoundObject, #counter{increment=Amount}) when Amount < 0 ->
+    [{BoundObject, decrement, -Amount}];
 
-to_ops(#counter{key=Key, increment=Amount}) ->
-    [#fpbincrementreq{key=Key, amount=Amount}].
-
-message_for_get(Key) -> #fpbgetcounterreq{key=Key}.
-
+to_ops(BoundObject, #counter{increment=Amount}) ->
+    [{BoundObject, increment, Amount}].
