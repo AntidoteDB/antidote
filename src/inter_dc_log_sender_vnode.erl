@@ -55,7 +55,7 @@
 
 %% API
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
-send(Partition, Operation) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
+send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
 
 init([Partition]) ->
   {ok, set_timer(#state{
@@ -78,7 +78,7 @@ handle_command({log_event, Operation}, _Sender, State) ->
       end;
     none -> State1
   end,
-  {reply, ok, State2}.
+  {noreply, State2}.
 
 handle_info(ping, State) ->
   PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),

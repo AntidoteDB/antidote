@@ -50,7 +50,7 @@
   buffer_fsms :: dict() %% dcid -> relsub_fsm
 }).
 
-deliver_txn(Txn) -> call_sync(Txn#interdc_txn.partition, {txn, Txn}).
+deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
 deliver_log_reader_resp({DCID, Partition}, Txns) -> call(Partition, {log_reader_resp, DCID, Txns}).
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
@@ -59,12 +59,12 @@ start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
   Buf0 = get_buf(DCID, State),
   Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
-  {reply, ok, set_buf(DCID, Buf1, State)};
+  {noreply, set_buf(DCID, Buf1, State)};
 
 handle_command({log_reader_resp, DCID, Txns}, _Sender, State) ->
   Buf0 = get_buf(DCID, State),
   Buf1 = inter_dc_sub_buf:process({log_reader_resp, Txns}, Buf0),
-  {reply, ok, set_buf(DCID, Buf1, State)}.
+  {noreply, set_buf(DCID, Buf1, State)}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
@@ -80,14 +80,12 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-call_sync(Partition, Request) -> dc_utilities:call_vnode_sync(Partition, inter_dc_sub_vnode_master, Request).
 call(Partition, Request) -> dc_utilities:call_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of
     {ok, Buf} -> Buf;
-    error ->
-      inter_dc_sub_buf:new_state({DCID, State#state.partition})
+    error -> inter_dc_sub_buf:new_state({DCID, State#state.partition})
   end.
 
 set_buf(DCID, Buf, State) -> State#state{buffer_fsms = dict:store(DCID, Buf, State#state.buffer_fsms)}.
