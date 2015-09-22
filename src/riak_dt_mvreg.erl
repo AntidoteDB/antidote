@@ -242,9 +242,13 @@ to_binary(MVReg) ->
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(MVReg))/binary>>.
 
 %% @doc Decode binary `mvreg()'
--spec from_binary(binary()) -> mvreg().
+-spec from_binary(binary()) -> {ok, mvreg()} | ?UNSUPPORTED_VERSION | ?INVALID_BINARY.
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
-    binary_to_term(Bin).
+    {ok, riak_dt:from_binary(Bin)};
+from_binary(<<?TAG:8/integer, Vers:8/integer, _Bin/binary>>) ->
+    ?UNSUPPORTED_VERSION(Vers);
+from_binary(_B) ->
+    ?INVALID_BINARY.
 
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
