@@ -35,8 +35,10 @@
 %% a transaction currently in the prepare state that is blocking
 %% that read.
 -define(SPIN_WAIT, 10).
-%% HEARTBEAT_PERIOD: Frequency of sending the heartbeat messages in interDC layer
+%% HEARTBEAT_PERIOD: Period of sending the heartbeat messages in interDC layer
 -define(HEARTBEAT_PERIOD, 1000).
+%% VECTORCLOCK_UPDATE_PERIOD: Period of updates of the stable snapshot per partition
+-define(VECTORCLOCK_UPDATE_PERIOD, 100).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, true).

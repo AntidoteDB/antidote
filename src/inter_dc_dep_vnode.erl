@@ -54,7 +54,8 @@
 -record(state, {
   partition :: partition_id(),
   queues :: dict(), %% DCID -> queue()
-  vectorclock :: vectorclock()
+  vectorclock :: vectorclock(),
+  last_updated :: non_neg_integer()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -69,7 +70,7 @@ handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_s
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   {ok, StableSnapshot} = vectorclock:get_stable_snapshot(),
-  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot}}.
+  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
@@ -167,18 +168,33 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
 
 %% Update the clock value associated with the given DCID from the perspective of this partition.
 -spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
-update_clock(State, DCID, Timestamp) ->
+update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
   NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp - 1, State#state.vectorclock),
 
-  %% Update the vectorclock the OLD way
-  ok = vectorclock:update_clock(State#state.partition, DCID, Timestamp),
-  dc_utilities:call_vnode(State#state.partition, vectorclock_vnode_master, calculate_stable_snapshot),
+  %% Check if the stable snapshot should be refreshed.
+  %% It's an optimization that reduces communication overhead during intensive updates at remote DCs.
+  %% This assumes that heartbeats/updates arrive on a regular basis,
+  %% and that there is always the next one arriving shortly.
+  %% This causes the stable_snapshot to tick more slowly, which is an expected behaviour.
+  Now = now_milisec(),
+  NewLastUpdated = case Now > LastUpdated + ?VECTORCLOCK_UPDATE_PERIOD of
+    %% Stable snapshot was not updated for the defined period of time.
+    %% Push the changes and update the last_updated parameter to the current timestamp.
+    true ->
+      %% Update the vectorclock the OLD way
+      ok = vectorclock:update_clock(State#state.partition, DCID, Timestamp),
+      dc_utilities:call_vnode(State#state.partition, vectorclock_vnode_master, calculate_stable_snapshot),
 
-  %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-  %%ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),
+      %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
+      %%ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),
 
-  State#state{vectorclock = NewClock}.
+      Now;
+    %% Stable snapshot was recently updated, no need to do so.
+    false -> LastUpdated
+  end,
+
+  State#state{vectorclock = NewClock, last_updated = NewLastUpdated}.
 
 %% Get the current vectorclock from the perspective of this partition, with the updated entry for current DC.
 -spec get_partition_clock(#state{}) -> vectorclock().
@@ -200,6 +216,11 @@ updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTi
       txid =  Logrecord#log_record.tx_id
     }
   end, inter_dc_txn:ops_by_type(Txn, update)).
+
+now_milisec() ->
+  {MegaSecs, Secs, MicroSecs} = os:timestamp(),
+  USeconds = (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs,
+  USeconds div 1000.
 
 
 
