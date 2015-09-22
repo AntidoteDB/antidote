@@ -17,13 +17,25 @@ confirm() ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
 
+    rt:wait_until_ring_converged(Cluster1),
+    rt:wait_until_ring_converged(Cluster2),
+
+    rt:wait_until_registered(Cluster1, inter_dc_pub),
+    rt:wait_until_registered(Cluster2, inter_dc_pub),
+
+    rt:wait_until_registered(Cluster1, inter_dc_log_reader_response),
+    rt:wait_until_registered(Cluster2, inter_dc_log_reader_response),
+
+    rt:wait_until_registered(Cluster1, inter_dc_log_reader_query),
+    rt:wait_until_registered(Cluster2, inter_dc_log_reader_query),
+
+    rt:wait_until_registered(Cluster1, inter_dc_sub),
+    rt:wait_until_registered(Cluster2, inter_dc_sub),
+
     {ok, DC1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
 
     lager:info("DCs: ~p and ~p", [DC1, DC2]),
-
-    rt:wait_until_ring_converged(Cluster1),
-    rt:wait_until_ring_converged(Cluster2),
 
 
     ok = rpc:call(Node1, inter_dc_manager, observe_dc, [DC2]),

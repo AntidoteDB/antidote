@@ -21,6 +21,22 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
 
+    rt:wait_until_registered(HeadCluster1, inter_dc_pub),
+    rt:wait_until_registered(HeadCluster2, inter_dc_pub),
+    rt:wait_until_registered(HeadCluster3, inter_dc_pub),
+
+    rt:wait_until_registered(HeadCluster1, inter_dc_log_reader_response),
+    rt:wait_until_registered(HeadCluster2, inter_dc_log_reader_response),
+    rt:wait_until_registered(HeadCluster3, inter_dc_log_reader_response),
+
+    rt:wait_until_registered(HeadCluster1, inter_dc_log_reader_query),
+    rt:wait_until_registered(HeadCluster2, inter_dc_log_reader_query),
+    rt:wait_until_registered(HeadCluster3, inter_dc_log_reader_query),
+
+    rt:wait_until_registered(HeadCluster1, inter_dc_sub),
+    rt:wait_until_registered(HeadCluster2, inter_dc_sub),
+    rt:wait_until_registered(HeadCluster3, inter_dc_sub),
+
     {ok, DC1} = rpc:call(HeadCluster1, inter_dc_manager, get_descriptor, []),
     {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, get_descriptor, []),
     {ok, DC3} = rpc:call(HeadCluster3, inter_dc_manager, get_descriptor, []),
