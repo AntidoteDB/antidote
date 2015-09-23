@@ -300,6 +300,3 @@ is_operation_test() ->
     ?assertEqual(false, is_operation({add, 1, 4})).
 
 -endif.
-
-
-
