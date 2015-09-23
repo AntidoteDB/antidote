@@ -22,7 +22,8 @@
     generate_downstream/3,
     update/2,
     to_binary/1,
-    from_binary/1, is_operation/1]).
+    from_binary/1, 
+    is_operation/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
