@@ -21,9 +21,9 @@
 
 -export_type([rga/0, rga_op/0, rga_downstream_op/0]).
 
--ifdef(TEST).
+%% -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--endif.
+%% -endif.
 
 -type vertex() :: {atom(), any(), number()}.
 
@@ -266,6 +266,21 @@ concurrent_updates_in_two_replicas_test() ->
     {ok, R1_4} = update(DownstreamOp4, R1_3),
     {ok, R2_4} = update(DownstreamOp3, R2_3),
     ?assertEqual(R1_4, R2_4).
+
+is_operation_test() ->
+    %% addRight checks
+    ?assertEqual(false, is_operation({addRight, value, -1})),
+    ?assertEqual(true, is_operation({addRight, value, 0})),
+    ?assertEqual(true, is_operation({addRight, value, 1})),
+
+    %% remove checks
+    ?assertEqual(false, is_operation({remove, -1})),
+    ?assertEqual(true, is_operation({remove, 0})),
+    ?assertEqual(true, is_operation({remove, 1})),
+
+    %% invalid operation checks
+    ?assertEqual(false, is_operation({anything, 1})),
+    ?assertEqual(false, is_operation({add, 1, 4})).
 
 -endif.
 
