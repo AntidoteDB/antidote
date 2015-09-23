@@ -21,9 +21,9 @@
 
 -export_type([rga/0, rga_op/0, rga_downstream_op/0]).
 
-%% -ifdef(TEST).
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-%% -endif.
+-endif.
 
 -type vertex() :: {atom(), any(), number()}.
 
