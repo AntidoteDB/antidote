@@ -161,17 +161,17 @@ from_binary(<<B/binary>>) -> binary_to_term(B).
 is_operation(Operation) ->
     case Operation of
         {decrement, Number} ->
-            is_integer(Number) and (Number >= 0);
+            is_integer(Number) andalso (Number >= 0);
         {increment, Number} ->
-            is_integer(Number) and (Number >= 0);
+            is_integer(Number) andalso (Number >= 0);
         {transfer, Number, _} ->
-            is_integer(Number) and (Number >= 0);
+            is_integer(Number) andalso (Number >= 0);
         {{decrement, Number}, _} ->
-            is_integer(Number) and (Number >= 0);
+            is_integer(Number) andalso (Number >= 0);
         {{increment, Number}, _} ->
-            is_integer(Number) and (Number >= 0);
+            is_integer(Number) andalso (Number >= 0);
         {{transfer, Number, _}, _} ->
-            is_integer(Number) and (Number >= 0);
+            is_integer(Number) andalso (Number >= 0);
         _ ->
             false
     end.
