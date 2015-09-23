@@ -128,13 +128,10 @@ recursive_remove(Vertex, [H | T], L) ->
 %% @doc given an rga, this mehtod looks for all tombstones and removes them, returning the tombstone free rga.
 -spec purge_tombstones(rga()) -> rga_result().
 purge_tombstones(Rga) ->
-    L = lists:foldl(fun({Status, Value, UID}, L) ->
-        case Status == deleted of
-            true -> L;
-            _ -> [{Status, Value, UID} | L]
-        end
-    end, [], Rga),
-    {ok, lists:reverse(L)}.
+    L = lists:filter(fun({Status, _, _}) ->
+        Status == ok
+    end, Rga),
+    {ok, L}.
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
