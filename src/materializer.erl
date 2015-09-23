@@ -26,7 +26,10 @@
 
 -export([create_snapshot/1,
     update_snapshot/3,
-    materialize_eager/3, check_operations/1, check_operation/1, is_crdt/1]).
+    materialize_eager/3,
+    check_operations/1,
+    check_operation/1,
+    is_crdt/1]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
