@@ -87,7 +87,7 @@ value(Rga) ->
 update({addRight, RightVertex, NewVertex}, Rga) ->
     recursive_insert(RightVertex, NewVertex, Rga, []);
 update({remove, Vertex}, Rga) ->
-    recursive_remove(Vertex, Rga, []).
+    recursive_remove(Vertex, Rga).
 
 %% Private
 %% @doc recursively looks for the Vertex where the new element should be put to the right of.
@@ -115,15 +115,11 @@ add_element(Insert, [], L) ->
     {ok, lists:reverse([Insert | L])}.
 
 %% Private
-%% @doc recursively looks for the Vertex to be removed. Once it's found, it's marked as "deleted".
+%% @doc looks for the Vertex to be removed. Once it's found, it's marked as "deleted".
 %% The Vertex is not removed from the list, to allow adding elements to its right.
--spec recursive_remove(vertex(), rga(), list()) -> rga_result().
-recursive_remove(_, [], L) ->
-    {ok, L};
-recursive_remove({_, Value, UID}, [{_, Value, UID} | T], L) ->
-    {ok, lists:reverse(L) ++ [{deleted, Value, UID}] ++ T};
-recursive_remove(Vertex, [H | T], L) ->
-    recursive_remove(Vertex, T, [H | L]).
+-spec recursive_remove(vertex(), rga()) -> rga_result().
+recursive_remove({ok, Value, UID}, Rga) ->
+    {ok, lists:keyreplace(UID, 3, Rga, {deleted, Value, UID})}.
 
 %% @doc given an rga, this mehtod looks for all tombstones and removes them, returning the tombstone free rga.
 -spec purge_tombstones(rga()) -> rga_result().
