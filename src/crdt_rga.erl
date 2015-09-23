@@ -17,7 +17,7 @@
 %% @end
 -module(crdt_rga).
 
--export([new/0, update/2, purge_tombstones/1, generate_downstream/3, value/1]).
+-export([new/0, update/2, purge_tombstones/1, generate_downstream/3, value/1, is_operation/1]).
 
 -export_type([rga/0, rga_op/0, rga_downstream_op/0]).
 
@@ -119,6 +119,18 @@ purge_tombstones(Rga) ->
 %% @doc generate a unique identifier (best-effort).
 unique() ->
     crypto:strong_rand_bytes(20).
+
+%% @doc The following operation verifies that Operation is supported by this particular CRDT.
+-spec is_operation(term()) -> boolean().
+is_operation(Operation) ->
+    case Operation of
+        {addRight, _, Position} ->
+            (is_integer(Position) and (Position >= 0));
+        {remove, Position} ->
+            (is_integer(Position) and (Position >= 0));
+        _ ->
+            false
+    end.
 
 
 -ifdef(TEST).
