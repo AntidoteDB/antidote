@@ -26,6 +26,9 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, 8}]}
+    ]),
     [Nodes] = rt:build_clusters([1]),
 
     lager:info("Waiting for ring to converge."),
@@ -33,6 +36,10 @@ confirm() ->
 
     Node = hd(Nodes),
     rt:wait_for_service(Node, antidote),
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(Node,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     rt:log_to_nodes(Nodes, "Starting write operation 1"),
 

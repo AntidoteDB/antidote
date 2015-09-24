@@ -16,13 +16,14 @@
 
 %% API
 -export([new/0,
-         localPermissions/2,
-         permissions/1,
-         value/1,
-         generate_downstream/3,
-         update/2,
-         to_binary/1,
-         from_binary/1]).
+    localPermissions/2,
+    permissions/1,
+    value/1,
+    generate_downstream/3,
+    update/2,
+    to_binary/1,
+    from_binary/1, 
+    is_operation/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -154,6 +155,28 @@ to_binary(C) -> term_to_binary(C).
 -spec from_binary(binary()) -> bcounter().
 from_binary(<<B/binary>>) -> binary_to_term(B).
 
+%% @doc The following operation verifies
+%%      that Operation is supported by this particular CRDT.
+-spec is_operation(term()) -> boolean().
+is_operation(Operation) ->
+    case Operation of
+        {decrement, Number} ->
+            is_integer(Number) andalso (Number >= 0);
+        {increment, Number} ->
+            is_integer(Number) andalso (Number >= 0);
+        {transfer, Number, _} ->
+            is_integer(Number) andalso (Number >= 0);
+        {{decrement, Number}, _} ->
+            is_integer(Number) andalso (Number >= 0);
+        {{increment, Number}, _} ->
+            is_integer(Number) andalso (Number >= 0);
+        {{transfer, Number, _}, _} ->
+            is_integer(Number) andalso (Number >= 0);
+        _ ->
+            false
+    end.
+
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
@@ -256,4 +279,14 @@ binary_test() ->
     %% Assert marshaling and unmarshaling holds the same `bcounter()'.
     B = to_binary(Counter3),
     ?assertEqual(Counter3, from_binary(B)).
+
+is_operation_test() ->
+    ?assertEqual(true, is_operation({transfer, 2, r2})),
+    ?assertEqual(true, is_operation({increment, 50})),
+    ?assertEqual(false, is_operation(increment)),
+    ?assertEqual(true, is_operation({decrement, 50})),
+    ?assertEqual(false, is_operation(decrement)),
+    ?assertEqual(false, is_operation({anything, [1,2,3]})).
+
+
 -endif.

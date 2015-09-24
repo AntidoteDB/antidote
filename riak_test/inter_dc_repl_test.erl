@@ -6,6 +6,7 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
+
 confirm() ->
     % Must be a power of 2, minimum 8 and maximum 1024.
     rt:update_app_config(all,[
@@ -18,7 +19,7 @@ confirm() ->
 
     rt:wait_until_registered(Node1, inter_dc_manager),
     rt:wait_until_registered(Node2, inter_dc_manager),
-
+    
     {ok, DC1} = rpc:call(Node1, inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, start_receiver,[8092]),
 
@@ -26,6 +27,11 @@ confirm() ->
 
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(Node1,fun wait_init:check_ready/1),
+    rt:wait_until(Node2,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     ok = rpc:call(Node1, inter_dc_manager, add_dc,[DC2]),
     ok = rpc:call(Node2, inter_dc_manager, add_dc,[DC1]),
@@ -41,15 +47,15 @@ simple_replication_test(Cluster1, Cluster2) ->
     Node2 = hd(Cluster2),
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl}]),
+                            [key1, riak_dt_gcounter, {increment, ucl1}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl}]),
+                            [key1, riak_dt_gcounter, {increment, ucl2}]),
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl}]),
+                            [key1, riak_dt_gcounter, {increment, ucl3}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
     Result = rpc:call(Node1, antidote, read,
@@ -73,7 +79,7 @@ multiple_keys_test(Cluster1, Cluster2) ->
                    lists:seq(1,10)),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl}]),
+                            [key1, riak_dt_gcounter, {increment, ucl1}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
 
@@ -123,7 +129,7 @@ causality_test(Cluster1, Cluster2) ->
     ?assertMatch({ok, _}, AddResult1),
     AddResult2 = rpc:call(Node1,
                           antidote, append,
-                          [Key, riak_dt_orset, {{add, second}, act1}]),
+                          [Key, riak_dt_orset, {{add, second}, act2}]),
     ?assertMatch({ok, _}, AddResult2),
     {ok,{_,_,CommitTime}}=AddResult2,
 
@@ -131,7 +137,7 @@ causality_test(Cluster1, Cluster2) ->
     RemoveResult = rpc:call(Node2,
                             antidote, clocksi_bulk_update,
                             [CommitTime,
-                             [{update, Key, riak_dt_orset, {{remove, first}, act1}}]]),
+                             [{update, {Key, riak_dt_orset, {{remove, first}, act3}}}]]),
     ?assertMatch({ok, _}, RemoveResult),
     %% Read result
     Result = rpc:call(Node2, antidote, read,
@@ -180,9 +186,9 @@ atomic_write_txn(Node, Key1, Key2, Key3) ->
     Type = riak_dt_gcounter,
     Result= rpc:call(Node, antidote, clocksi_bulk_update,
                      [
-                      [{update, Key1, Type, {increment, a}},
-                       {update, Key2, Type, {increment, a}},
-                       {update, Key3, Type, {increment, a}}
+                      [{update, {Key1, Type, {increment, a}}},
+                       {update, {Key2, Type, {increment, a}}},
+                       {update, {Key3, Type, {increment, a}}}
                       ]]),
     ?assertMatch({ok, _}, Result).
 
