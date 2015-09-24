@@ -22,7 +22,7 @@ cleantests:
 distclean: clean devclean relclean cleanplt
 	$(REBAR) delete-deps
 
-rel: cleantests all
+rel: all
 	$(REBAR) generate
 
 relnocert: export NO_CERTIFICATION = true
