@@ -258,7 +258,7 @@ is_operation(Operation) ->
         {assign, _} ->
             true;
         {assign, _, Number} ->
-            (is_integer(Number) and (Number >= 0));
+            (is_integer(Number) andalso (Number >= 0));
         {propagate, _, _} ->
             true;
         _ ->
@@ -461,7 +461,7 @@ roundtrip_bin_test() ->
     {ok, MVReg3} = update({assign, 89}, a3, MVReg2),
     {ok, MVReg4} = update({assign, <<"this is a binary">>}, a4, MVReg3),
     Bin = to_binary(MVReg4),
-    Decoded = from_binary(Bin),
+    {ok, Decoded} = from_binary(Bin),
     ?assert(equal(MVReg4, Decoded)).
 
 %% @doc Check if stas return the correct size of MVReg.

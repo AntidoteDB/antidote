@@ -26,7 +26,10 @@
 
 -export([create_snapshot/1,
     update_snapshot/3,
-    materialize_eager/3, check_operations/1, check_operation/1, is_crdt/1]).
+    materialize_eager/3,
+    check_operations/1,
+    check_operation/1,
+    is_crdt/1]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
@@ -77,7 +80,7 @@ check_operations([Op | Rest]) ->
 check_operation(Op) ->
     case Op of
         {update, {_, Type, {OpParams, _Actor}}} ->
-            (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type)) and
+            (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type)) andalso
                 Type:is_operation(OpParams);
         {read, {_, Type}} ->
             (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type));
@@ -90,7 +93,7 @@ check_operation(Op) ->
 %%      The list of op_based CRDTS is defined in antidote.hrl
 -spec is_crdt(term()) -> boolean().
 is_crdt(Term) ->
-    is_atom(Term) and lists:member(Term, ?CRDTS).
+    is_atom(Term) andalso lists:member(Term, ?CRDTS).
 
 
 
