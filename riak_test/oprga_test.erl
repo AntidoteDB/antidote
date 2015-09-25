@@ -6,6 +6,10 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    NumVNodes = rt_config:get(num_vnodes, 8),
+    rt:update_app_config(all, [
+        {riak_core, [{ring_creation_size, NumVNodes}]}
+    ]),
     [Nodes] = rt:build_clusters([2]),
     lager:info("Nodes: ~p", [Nodes]),
     empty_test(Nodes),
