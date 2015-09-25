@@ -129,9 +129,9 @@ purge_tombstones(Rga) ->
     end, Rga),
     {ok, L}.
 
-%% @doc generate a unique identifier (best-effort).
+%% @doc generates a unique identifier based on the node and a unique reference.
 unique() ->
-    crypto:strong_rand_bytes(20).
+    {node(), make_ref()}.
 
 %% @doc The following operation verifies that Operation is supported by this particular CRDT.
 -spec is_operation(term()) -> boolean().
