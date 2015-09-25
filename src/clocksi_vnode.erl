@@ -539,7 +539,7 @@ clean_prepared(PreparedTx,[{Key, _Type, {_Op, _Actor}} | Rest],TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
--ifdef(NO_CERT).
+-ifdef(NO_CERTIFICATION).
 
 certification_check(_, _, _, _) ->
     true.
