@@ -84,6 +84,8 @@ min_dc_entry(VClocks, Dc) -> min_dc_entry(VClocks, Dc, get_clock_of_dc(hd(VClock
 min_dc_entry([], _, Min) -> Min;
 min_dc_entry([VClock|Tail], Dc, Min) -> min_dc_entry(Tail, Dc, min(Min, get_clock_of_dc(VClock, Dc))).
 
+dcids(VectorClock) -> lists:map(fun({K,_}) -> K end, dict:to_list(VectorClock)).
+
 find_min_of(VClocks, DcKeys) ->
   F = fun(Dc) -> {Dc, min_dc_entry(VClocks, Dc)} end,
   vectorclock:from_list(lists:map(F, DcKeys)).
@@ -118,7 +120,7 @@ handle_command(calculate_stable_snapshot, _Sender,
                 %% Some metadata values can be lists of size > 1, so we flatten the list now
                 AllVClocks = riak_core_metadata:fold(fun({_Key, V}, A) -> V ++ A end, [Clock], ?META_PREFIX),
                 %% Then we calculate the min vclock for specified DCID keys
-                find_min_of(AllVClocks, vectorclock:dcids(Clock));
+                find_min_of(AllVClocks, dcids(Clock));
             false ->
                 dict:new()
         end,

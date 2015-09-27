@@ -31,7 +31,7 @@
   set_clock_of_dc/3,
   get_stable_snapshot/0,
   from_list/1,
-  eq/2, lt/2, gt/2, le/2, ge/2, strict_ge/2, strict_le/2, dcids/1]).
+  eq/2, lt/2, gt/2, le/2, ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
 
@@ -124,93 +124,34 @@ set_clock_of_dc(DcId, Time, VectorClock) ->
 from_list(List) ->
     dict:from_list(List).
 
-dcids(VectorClock) -> lists:map(fun({K,_}) -> K end, dict:to_list(VectorClock)).
 
-eq(V1, V2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, V1) of
-                           {ok, Time1} ->
-                               case Time1 =:= Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error ->
-                               false
-                       end
-               end,
-               true, V2).
 
-le(V1, V2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, V1) of
-                           {ok, Time1} ->
-                               case Time1 =< Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error ->
-                               Result
-                       end
-               end,
-               true, V2).
+-spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
+for_all_keys(F, V1, V2) ->
+  %% We could but do not care about duplicate DC keys - finding duplicates is not worth the effort
+  AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+  lists:all(fun(DC) -> F(get_clock_of_dc(DC, V1), get_clock_of_dc(DC, V2)) end, AllDCs).
 
-ge(V1,V2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, V1) of
-                           {ok, Time1} ->
-                               case Time1 >= Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error ->
-                               false
-                       end
-               end,
-               true, V2).
+-spec eq(vectorclock(), vectorclock()) -> boolean().
+eq(V1, V2) -> for_all_keys(fun(A, B) -> A == B end, V1, V2).
 
-lt(V1,V2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, V1) of
-                           {ok, Time1} ->
-                               case Time1 < Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error ->
-                               Result
-                       end
-               end,
-               true, V2).
+-spec le(vectorclock(), vectorclock()) -> boolean().
+le(V1, V2) -> for_all_keys(fun(A, B) -> A =< B end, V1, V2).
 
-gt(V1,V2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, V1) of
-                           {ok, Time1} ->
-                               case Time1 > Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error ->
-                               false
-                       end
-               end,
-               true, V2).
+-spec ge(vectorclock(), vectorclock()) -> boolean().
+ge(V1, V2) -> for_all_keys(fun(A, B) -> A >= B end, V1, V2).
 
-strict_ge(V1,V2) ->
-    ge(V1,V2) and (not eq(V1,V2)).
+-spec lt(vectorclock(), vectorclock()) -> boolean().
+lt(V1, V2) -> for_all_keys(fun(A, B) -> A < B end, V1, V2).
 
-strict_le(V1,V2) ->
-    le(V1,V2) and (not eq(V1,V2)).
+-spec gt(vectorclock(), vectorclock()) -> boolean().
+gt(V1, V2) -> for_all_keys(fun(A, B) -> A > B end, V1, V2).
+
+-spec strict_ge(vectorclock(), vectorclock()) -> boolean().
+strict_ge(V1,V2) -> ge(V1,V2) and (not eq(V1,V2)).
+
+-spec strict_le(vectorclock(), vectorclock()) -> boolean().
+strict_le(V1,V2) -> le(V1,V2) and (not eq(V1,V2)).
 
 -ifdef(TEST).
 
