@@ -170,7 +170,7 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
 -spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
 update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
-  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp - 1, State#state.vectorclock),
+  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
 
   %% Check if the stable snapshot should be refreshed.
   %% It's an optimization that reduces communication overhead during intensive updates at remote DCs.
