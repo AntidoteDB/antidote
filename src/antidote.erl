@@ -42,14 +42,27 @@
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
 -spec append(key(), type(), {op(),term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {OpParam, Actor}) ->
-    clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,Type,{OpParam,Actor}).    
+append(Key, Type, {OpParams, Actor}) ->
+    case materializer:check_operations([{update, {Key, Type, {OpParams, Actor}}}]) of
+        ok ->
+            clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,
+                Type,{OpParams,Actor});
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 -spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
-    clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type).
+    case materializer:check_operations([{read, {Key, Type}}]) of
+        ok ->
+            clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% Clock SI API
 
@@ -70,8 +83,14 @@ clocksi_execute_tx(Clock, Operations) ->
 
 -spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Operations) ->
-    {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
-    gen_fsm:sync_send_event(CoordFsmPid, execute).
+    case materializer:check_operations(Operations) of
+        ok ->
+            {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
+            gen_fsm:sync_send_event(CoordFsmPid, execute);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:
@@ -114,11 +133,24 @@ clocksi_read(Key, Type) ->
 
 -spec clocksi_iread(txid(),key(),type()) -> {ok, snapshot()} | {error, term()}.
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
-    gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}).
+    case materializer:check_operations([{read, {Key, Type}}]) of
+        ok ->
+            gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}});
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 -spec clocksi_iupdate(txid(),key(),type(),op()) -> ok | {error, term()}.
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
-    gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}).
+    case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
+        ok ->
+            gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type,
+                OpParams}});
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% @doc This commits includes both prepare and commit phase. Thus
 %%      Client do not need to send to message to complete the 2PC

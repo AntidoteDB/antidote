@@ -26,37 +26,34 @@
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(Transaction::tx(), Node::term(), Key::key(),
-                             Type::type(), Update::op(), list()) ->
-                                    {ok, op()} | {error, atom()}.
+-spec generate_downstream_op(Transaction :: tx(), Node :: term(), Key :: key(),
+    Type :: type(), Update :: op(), list()) ->
+    {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
-    {Op, Actor} =  Update,
+    {Op, Actor} = Update,
     case clocksi_vnode:read_data_item(Node,
-                                      Transaction,
-                                      Key,
-                                      Type,
-				      WriteSet) of
+        Transaction,
+        Key,
+        Type,
+        WriteSet) of
         {ok, Snapshot} ->
-            DownstreamOp = case Type of
-                            crdt_bcounter ->
-                                case Type:generate_downstream(Op, Actor, Snapshot) of
-                                    {ok, OpParam} -> {update, OpParam};
-                                    {error, Error} -> {error, Error}
-                                end;
-                            crdt_orset ->
-                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
-                                {update, OpParam};
-                            crdt_pncounter ->
-                                {ok, OpParam} = Type:generate_downstream(Op, Actor, Snapshot),
-                                {update, OpParam};
-                            _ ->
-                                {ok, NewState} = Type:update(Op, Actor, Snapshot),
-                                {merge, NewState}
-                            end,
-            case DownstreamOp of
-                {error, Reason} -> {error, Reason};
-                _ -> {ok, DownstreamOp}
+            TypeString = lists:flatten(io_lib:format("~p", [Type])),
+            case string:str(TypeString, "riak_dt") of
+                0 -> %% dealing with an op_based crdt
+                    case Type:generate_downstream(Op, Actor, Snapshot) of
+                        {ok, OpParam} ->
+                            {ok, {update, OpParam}};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
+                1 -> %% dealing with a state_based crdt
+                    case Type:update(Op, Actor, Snapshot) of
+                        {ok, NewState} ->
+                            {ok, {merge, NewState}};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
             end;
-        {error, no_snapshot} ->
-            {error, no_snapshot}
+        {error, Reason} ->
+            {error, Reason}
     end.
