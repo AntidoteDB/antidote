@@ -166,9 +166,18 @@ check_operations_test() ->
     Key1 = bcounter2,
     Operations3 = [{update, {Key1, Type1, {{increment, 7}, r1}}}, {update,
         {Key1, Type1, {{increment, 5}, r2}}}, {read, {Key1, Type1}}],
-    ?assertEqual(ok, check_operations(Operations3)).
+    ?assertEqual(ok, check_operations(Operations3)),
+
+    Type2 = crdt_rga,
+    Key2 = rga,
+    Operations4 = [{update,{Key2, Type2, {{addRight,a,0},r}}}],
+    ?assertEqual(ok, check_operations(Operations4)),
+
+    ?assertEqual(ok,check_operations([{update, {key_add, crdt_rga, {{remove, 0}, xxx}}}])).
+    
 
 is_crdt_test() ->
     ?assertEqual(true, is_crdt(crdt_orset)),
+    ?assertEqual(true, is_crdt(crdt_rga)),
     ?assertEqual(false, is_crdt(whatever)).
 -endif.

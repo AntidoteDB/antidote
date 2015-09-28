@@ -10,7 +10,7 @@ confirm() ->
     rt:update_app_config(all, [
         {riak_core, [{ring_creation_size, NumVNodes}]}
     ]),
-    [Nodes] = rt:build_clusters([3]),
+    [Nodes] = rt:build_clusters([2]),
     lager:info("Nodes: ~p", [Nodes]),
     empty_test(Nodes),
     add_test(Nodes),
@@ -49,7 +49,6 @@ add_test(Nodes) ->
     Result5 = rpc:call(FirstNode, antidote, read, [Key, Type]),
     ?assertMatch({ok, [{ok, a, _}, {ok, b, _}, {ok, c, _}]}, Result5),
     lager:info("Add test OK").
-
 
 remove_test(Nodes) ->
     FirstNode = hd(Nodes),
