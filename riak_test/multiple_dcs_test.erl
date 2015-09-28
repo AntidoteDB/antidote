@@ -41,11 +41,12 @@ confirm() ->
     {ok, DC2} = rpc:call(HeadCluster2, inter_dc_manager, get_descriptor, []),
     {ok, DC3} = rpc:call(HeadCluster3, inter_dc_manager, get_descriptor, []),
 
-    lager:info("DC descriptors: ~p, ~p and ~p", [DC1, DC2, DC3]),
-
+    lager:info("DCs: ~p, ~p and ~p", [DC1, DC2, DC3]),
+    lager:info("Connecting DCs..."),
     ok = rpc:call(HeadCluster1, inter_dc_manager, observe_dcs_sync, [[DC2, DC3]]),
     ok = rpc:call(HeadCluster2, inter_dc_manager, observe_dcs_sync, [[DC1, DC3]]),
     ok = rpc:call(HeadCluster3, inter_dc_manager, observe_dcs_sync, [[DC1, DC2]]),
+    lager:info("DCs connected!"),
 
     simple_replication_test(Cluster1, Cluster2, Cluster3),
     parallel_writes_test(Cluster1, Cluster2, Cluster3),

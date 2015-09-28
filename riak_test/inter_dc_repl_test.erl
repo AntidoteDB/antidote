@@ -36,10 +36,10 @@ confirm() ->
     {ok, DC2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
 
     lager:info("DCs: ~p and ~p", [DC1, DC2]),
-
-
+    lager:info("Connecting DCs..."),
     ok = rpc:call(Node1, inter_dc_manager, observe_dc_sync, [DC2]),
     ok = rpc:call(Node2, inter_dc_manager, observe_dc_sync, [DC1]),
+    lager:info("DCs connected!"),
 
     simple_replication_test(Cluster1, Cluster2),
     multiple_keys_test(Cluster1, Cluster2),
