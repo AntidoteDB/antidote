@@ -68,25 +68,40 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
-      ExpectedPrev = Txn#interdc_txn.prev_log_opid,
-      case ExpectedPrev == Last of
-        true ->
+      TxnLast = Txn#interdc_txn.prev_log_opid,
+      case cmp(TxnLast, Last) of
+
+      %% If the received transaction is immediately after the last observed one
+        eq ->
           deliver(Txn),
           Max = inter_dc_txn:last_log_opid(Txn),
           process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
-        false ->
-          case inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, ExpectedPrev) of
+
+      %% If the transaction seems to come after an unknown transaction, ask the remote log
+        gt ->
+          case inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
             ok ->
               State#state{state_name = buffering};
             _ ->
               lager:warning("Failed to send log query to DC, will retry on next ping message"),
               State#state{state_name = normal}
-          end
+          end;
+
+      %% If the transaction has an old value, drop it.
+        lt ->
+          lager:warning("Dropping duplicate message"),
+          process_queue(State#state{queue = queue:drop(Queue)})
       end
   end.
 
 -spec deliver(#interdc_txn{}) -> ok.
 deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 
+%% TODO: consider dropping messages if the queue grows too large.
+%% The lost messages would be then fetched again by the log_reader.
 -spec push(#interdc_txn{}, #state{}) -> #state{}.
 push(Txn, State) -> State#state{queue = queue:in(Txn, State#state.queue)}.
+
+cmp(A, B) when A > B -> gt;
+cmp(A, B) when B > A -> lt;
+cmp(_, _) -> eq.
