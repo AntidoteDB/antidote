@@ -68,9 +68,9 @@ new() ->
 generate_downstream({addRight, Elem, Position}, _Actor, Rga) ->
     case (Position < 0) or (Position > length(Rga)) of
         true -> {error, {invalid_position, Position}};
-        false -> case length(Rga) of
-                     0 -> {ok, {addRight, {ok, 0, 0}, {ok, Elem, unique()}}};
-                     _ -> {ok, {addRight, lists:nth(Position, Rga), {ok, Elem, unique()}}}
+        false -> case (length(Rga) == 0) or (Position == 0) of
+                     true -> {ok, {addRight, {ok, 0, 0}, {ok, Elem, unique()}}};
+                     false -> {ok, {addRight, lists:nth(Position, Rga), {ok, Elem, unique()}}}
                  end
     end;
 generate_downstream({remove, Position}, _Actor, Rga) ->
