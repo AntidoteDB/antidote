@@ -16,6 +16,7 @@ confirm() ->
     add_test(Nodes),
     remove_test(Nodes),
     insert_after_remove_test(Nodes),
+    concurrency_test(Nodes),
     rt:clean_cluster(Nodes),
     pass.
 
@@ -93,3 +94,25 @@ insert_after_remove_test(Nodes) ->
     Result3 = rpc:call(FirstNode, antidote, read, [Key, Type]),
     ?assertMatch({ok, [{ok, a, _}, {ok, b, _}, {deleted, c, _}, {ok, d, _}]}, Result3),
     lager:info("Remove-Insert test OK").
+
+concurrency_test(Nodes) ->
+    FirstNode = hd(Nodes),
+    SecondNode = lists:nth(2, Nodes),
+    lager:info("Concurrency test started"),
+    Type = crdt_rga,
+    Key = key_concurrency,
+
+    %% insert in both nodes, an element in the beginning
+    Result1 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+        [[{update, {Key, Type, {{addRight, a, 0}, ucl}}}]]),
+    ?assertMatch({ok, _}, Result1),
+
+    Result2 = rpc:call(SecondNode, antidote, clocksi_execute_tx,
+        [[{update, {Key, Type, {{addRight, b, 0}, ucl}}}]]),
+    ?assertMatch({ok, _}, Result2),
+
+    Result3 = rpc:call(SecondNode, antidote, read, [Key, Type]),
+    %% the result should have first, element b, and then element a,
+    %% because node2 > node1
+    ?assertMatch({ok, [{ok, b, _}, {ok, a, _}]}, Result3),
+    lager:info("Concurrency test OK").
