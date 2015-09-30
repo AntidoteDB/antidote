@@ -25,8 +25,10 @@
 -export([
          start_transaction/2,
          %start_transaction/1,
-         read_objects/2,
+         read_objects/2, 
+         read_objects/3,
          update_objects/2,
+         update_objects/3,
          abort_transaction/1,
          commit_transaction/1,
          create_bucket/2,
@@ -118,6 +120,35 @@ update_objects(Updates, TxId) ->
         false -> ok
     end.
 
+%% For static transactions: bulk updates and bulk reads
+-spec update_objects(snapshot_time(), term(), [{bound_object(), op(), op_param()}]) ->
+                            {ok, snapshot_time()} | {error, reason()}.
+update_objects(Clock, _Properties, Updates) ->
+    Actor = actor, %% TODO: generate unique actors
+    Operations = lists:map( 
+                   fun({{Key, Type, _Bucket}, Op, OpParam}) ->
+                           {update, {Key, Type, {{Op,OpParam}, Actor}}}
+                   end,
+                   Updates),
+    case clocksi_execute_tx(Clock, Operations) of
+        {ok, {_TxId, [], CommitTime}} ->
+            {ok, CommitTime};
+        {error, Reason} -> {error, Reason}
+    end.
+             
+read_objects(Clock, _Properties, Objects) ->
+    Args = lists:map(
+             fun({Key, Type, _Bucket}) ->
+                        {read, {Key, Type}}
+             end,
+             Objects),
+    case clocksi_execute_tx(Clock, Operations) of
+        {ok, {_TxId, Result, CommitTime}} ->
+            {ok, Result, CommitTime};
+        {error, Reason} -> {error, Reason}
+    end.
+            
+    
 %% Object creation and types
 -spec create_bucket(bucket(), type()) -> {ok, bucket()}.
 create_bucket(Bucket, _Type) ->
