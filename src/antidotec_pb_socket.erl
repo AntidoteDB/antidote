@@ -42,7 +42,8 @@
           sock :: port(),       % gen_tcp socket
           active :: #request{} | undefined,     % active request
           connect_timeout=infinity :: timeout(), % timeout of TCP connection
-          keepalive = false :: boolean() % if true, enabled TCP keepalive for the socket
+          keepalive = false :: boolean(), % if true, enabled TCP keepalive for the socket
+          last_commit_time :: term() % temporarily store for static transactions
          }).
 
 -export([start_link/2, start_link/3,
@@ -55,7 +56,9 @@
          code_change/3,
          terminate/2]).
 
--export([call_infinity/2
+-export([call_infinity/2,
+         store_commit_time/2,
+         get_last_commit_time/1
         ]).
 
 %% @private
@@ -96,9 +99,21 @@ stop(Pid) ->
 call_infinity(Pid, Msg) ->
     gen_server:call(Pid, Msg, infinity).
 
+store_commit_time(Pid, TimeStamp) ->
+    gen_server:call(Pid, {store_commit_time, TimeStamp}, infinity).
+
+get_last_commit_time(Pid) ->
+    gen_server:call(Pid, get_commit_time, infinity). 
+
 %% @private
 handle_call({req, Msg, Timeout}, From, State) ->
     {noreply, send_request(new_request(Msg, From, Timeout), State)};
+
+handle_call({store_commit_time, TimeStamp}, _From, State) ->
+    {reply, ok, State#state{last_commit_time = TimeStamp}};
+
+handle_call(get_commit_time, _From, State=#state{last_commit_time = TimeStamp}) ->
+    {reply, {ok, TimeStamp}, State#state{last_commit_time = ignore}};
 
 handle_call(stop, _From, State) ->
     _ = disconnect(State),
