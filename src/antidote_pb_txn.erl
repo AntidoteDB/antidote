@@ -56,7 +56,11 @@ decode(Code, Bin) ->
         #apbreadobjects{} ->
             {ok, Msg, {"antidote.readobjects",<<>>}};
         #apbupdateobjects{} ->
-            {ok, Msg, {"antidote.updateobjects",<<>>}}
+            {ok, Msg, {"antidote.updateobjects",<<>>}};
+        #apbstaticupdateobjects{} ->
+            {ok, Msg, {"antidote.staticupdateobjects",<<>>}};
+        #apbstaticreadobjects{} ->
+            {ok, Msg, {"antidote.staticreadobjects",<<>>}}
     end.
 
 %% @doc encode/1 callback. Encodes an outgoing response message.
@@ -139,6 +143,44 @@ process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td},
              State};
         ok ->
             {reply, antidote_pb_codec:encode(operation_response, ok),
+             State}
+    end;
+process(#apbstaticupdateobjects{
+           transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
+           updates=BUpdates},
+        State) ->
+
+    Clock = binary_to_term(BClock),
+    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Updates = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(update_object, O) end,
+                        BUpdates),
+    Response = antidote:update_objects(Clock, Properties, Updates),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(commit_response,
+                                             {error, Reason}), State};
+        {ok, CommitTime} ->
+            {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
+             State}
+    end;            
+process(#apbstaticreadobjects{
+           transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
+           objects=BoundObjects},
+        State) ->
+    Clock = binary_to_term(BClock),
+    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Objects = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(bound_object, O) end,
+                        BoundObjects),
+    Response = antidote:read_objects(Clock, Properties, Objects),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(commit_response,
+                                             {error, Reason}), State};
+        {ok, Results, CommitTime} ->
+            {reply, antidote_pb_codec:encode(static_read_objects_response,
+                                             {ok, lists:zip(Objects,Results), CommitTime}),
              State}
     end.
 

@@ -56,6 +56,7 @@ confirm() ->
     pass = update_counter_crdt_test(<<"key1">>,<<"bucket">>, 10),
     pass = update_counter_crdt_and_read_test(<<"key2">>, 15),
     update_set_read_test(),
+    static_transaction_test(),
     pass.
 
 start_stop_test() ->
@@ -182,3 +183,27 @@ update_set_read_test() ->
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
+
+static_transaction_test() ->
+    Key = <<"key_static_update_read_set">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
+    Set = antidotec_set:new(),
+    Set1 = antidotec_set:add("a", Set),
+    Set2 = antidotec_set:add("b", Set1),
+
+    {ok, TxId} = antidotec_pb:start_transaction(Pid,
+                                                term_to_binary(ignore), [{static, true}]),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(Bound_object, Set2),
+                                     TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    %% Read committed updated
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), [{static, true}]),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    ?assertEqual(2,length(antidotec_set:value(Val))),
+    ?assertMatch(true, antidotec_set:contains("a", Val)),
+    ?assertMatch(true, antidotec_set:contains("b", Val)),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+    

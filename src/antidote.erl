@@ -142,7 +142,7 @@ read_objects(Clock, _Properties, Objects) ->
                         {read, {Key, Type}}
              end,
              Objects),
-    case clocksi_execute_tx(Clock, Operations) of
+    case clocksi_execute_tx(Clock, Args) of
         {ok, {_TxId, Result, CommitTime}} ->
             {ok, Result, CommitTime};
         {error, Reason} -> {error, Reason}
