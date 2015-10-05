@@ -174,6 +174,8 @@ perform_singleitem_update(Key, Type, Params) ->
                             CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                                 DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                             {ok, {TxId, [], CausalClock}};
+			abort ->
+			    {error, aborted};
                         {error, Reason} ->
                             {error, Reason}
                     end;
@@ -247,9 +249,9 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
                         undefined ->
                             ok;
                         _ ->
-                            _Res = gen_fsm:reply(Sender, {error, Error}),
-                            {error, Error}
-                    end
+                            _Res = gen_fsm:reply(Sender, {error, Error})
+                    end,
+		    {error, Error}
             end;
         {error, Reason} ->
             case Sender of
