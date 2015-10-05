@@ -49,7 +49,7 @@ init([Pid, Port]) ->
     {ok, ListenSocket} = gen_tcp:listen(
                            Port,
                            [{active,false}, binary,
-                            {packet,2},{reuseaddr, true}
+                            {packet,4},{reuseaddr, true}
                            ]),
     Pid ! ready,
     {ok, accept, #state{port=Port, listener=ListenSocket,last_child_pid=none},0}.
@@ -74,7 +74,9 @@ handle_sync_event(_Event, _From, _StateName, StateData) ->
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _SD) ->
+terminate(_Reason, _SN, _SD=#state{listener=ListenSocket}) ->
+    gen_tcp:close(ListenSocket),
+    lager:info("Closing socket"),
     ok.
 
 %% Helper function

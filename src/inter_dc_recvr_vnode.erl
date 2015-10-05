@@ -153,15 +153,15 @@ handle_command({process_queue, Transaction, From}, _Sender, State) ->
                        Transaction, State),
     %%ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {ok, NewState2} = inter_dc_repl_update:process_queue(NewState),
-    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
+    %ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
+    %% should probably remove this, and do groups of transactions instead of one at a time
     From ! {From, done_process},
-    {noreply, NewState2};
-
-handle_command({process_queue}, _Sender, State) ->
-    {ok, NewState2} = inter_dc_repl_update:process_queue(State),
-    ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
     {noreply, NewState2}.
 
+%% handle_command({process_queue}, _Sender, State) ->
+%%     {ok, NewState2} = inter_dc_repl_update:process_queue(State),
+%%     %ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
+%%     {noreply, NewState2}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -193,5 +193,6 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, _State = #recvr_state{partition=Partition}) ->
+    meta_data_sender:remove_partition(Partition),
     ok.

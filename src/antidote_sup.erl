@@ -23,7 +23,8 @@
 
 %% API
 -export([start_link/0,
-	 %%start_rep/1,
+	 start_rep/1,
+	 stop_rep/0,
 	 start_cross_dc_read_communication_recvr/1,
 	 start_collect_sent/0,
 	 start_safe_time_sender/0,
@@ -115,6 +116,15 @@ my_ip(local) ->
     {Ip, _, _} = lists:last(List),
     list_to_atom(inet_parse:ntoa(Ip)).
 
+stop_rep() ->
+    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
+    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_recvr),
+    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
+    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
+    ok = supervisor:terminate_child(?MODULE, inter_dc_communication_sup),
+    _ = supervisor:delete_child(?MODULE, inter_dc_communication_sup),
+    ok.
+    
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
@@ -123,38 +133,58 @@ init(_Args) ->
     LoggingMaster = {logging_vnode_master,
                      {riak_core_vnode_master, start_link, [logging_vnode]},
                      permanent, 5000, worker, [riak_core_vnode_master]},
-    ClockSIMaster = { clocksi_vnode_master,
-                      {riak_core_vnode_master, start_link, [clocksi_vnode]},
-                      permanent, 5000, worker, [riak_core_vnode_master]},
-
-    %% DataMaster = { data_vnode_master,
-    %%                   {riak_core_vnode_master, start_link, [data_vnode]},
-    %%                   permanent, 5000, worker, [riak_core_vnode_master]},
-
+    
+    ClockSIMaster = {clocksi_vnode_master,
+		     {riak_core_vnode_master, start_link, [clocksi_vnode]},
+		     permanent, 5000, worker, [riak_core_vnode_master]},
+    
     InterDcRepMaster = {inter_dc_repl_vnode_master,
                         {riak_core_vnode_master, start_link,
                          [inter_dc_repl_vnode]},
                         permanent, 5000, worker, [riak_core_vnode_master]},
 
-    InterDcRecvrMaster = { inter_dc_recvr_vnode_master,
-                           {riak_core_vnode_master, start_link,
-                            [inter_dc_recvr_vnode]},
-                           permanent, 5000, worker, [riak_core_vnode_master]},
+    InterDcRecvrMaster = {inter_dc_recvr_vnode_master,
+			  {riak_core_vnode_master, start_link,
+			   [inter_dc_recvr_vnode]},
+			  permanent, 5000, worker, [riak_core_vnode_master]},
 
-    ClockSIsTxCoordSup =  { clocksi_static_tx_coord_sup,
+    ClockSIsTxCoordSup =  {clocksi_static_tx_coord_sup,
                            {clocksi_static_tx_coord_sup, start_link, []},
                            permanent, 5000, supervisor, [clockSI_static_tx_coord_sup]},
 
-    ClockSIiTxCoordSup =  { clocksi_interactive_tx_coord_sup,
-                            {clocksi_interactive_tx_coord_sup, start_link, []},
-                            permanent, 5000, supervisor,
-                            [clockSI_interactive_tx_coord_sup]},
-
+    ClockSIiTxCoordSup =  {clocksi_interactive_tx_coord_sup,
+			   {clocksi_interactive_tx_coord_sup, start_link, []},
+			   permanent, 5000, supervisor,
+			   [clockSI_interactive_tx_coord_sup]},
+    
+    ClockSIReadSup = {clocksi_readitem_sup,
+    		      {clocksi_readitem_sup, start_link, []},
+    		      permanent, 5000, supervisor,
+    		      [clocksi_readitem_sup]},
+        
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
+    
+    InterDcSenderSup = {inter_dc_communication_sender_fsm_sup,
+			{inter_dc_communication_sender_fsm_sup, start_link, []},
+			permanent, 5000, supervisor,
+			[inter_dc_communication_sender_fsm_sup]},
+    
+    MetaDataManagerSup = {meta_data_manager_sup,
+			  {meta_data_manager_sup, start_link, []},
+			  permanent, 5000, supervisor,
+			  [meta_data_manager_sup]},
 
+    MetaDataSenderSup = {meta_data_sender_sup,
+			  {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
+			  permanent, 5000, supervisor,
+			  [meta_data_sender_sup]},
+    
+    InterDcManager = {inter_dc_manager,
+		      {inter_dc_manager, start_link, []},
+		      permanent, 5000, worker, [inter_dc_manager]},
 
     {ok,
      {{one_for_one, 5, 10},
@@ -163,6 +193,11 @@ init(_Args) ->
        %% DataMaster,
        ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
+       ClockSIReadSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
+       InterDcManager,
+       MetaDataManagerSup,
+       MetaDataSenderSup,
+       InterDcSenderSup,
        MaterializerMaster]}}.

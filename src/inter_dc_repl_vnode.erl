@@ -45,9 +45,6 @@
                 last_op,
                 reader}).
 
-%% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 500).
-
 start_vnode(I) ->
     {ok, Pid} = riak_core_vnode_master:get_vnode_pid(I, ?MODULE),
     %% Starts replication process by sending a trigger message
@@ -94,6 +91,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 							       0, DCs),
 						   NewReaderState;
 					       _ ->
+						   %% Here will resend all transactions, but should only resend failed ones
 						   lager:error("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
 						   Reader
 					   end

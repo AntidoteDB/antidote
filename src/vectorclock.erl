@@ -39,6 +39,8 @@
 	 get_safe_time/0,
 	 now_microsec/1,
 	 now_microsec_behind/3,
+	 new/0,
+	 get_stable_snapshot/0,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
@@ -198,7 +200,7 @@ wait_for_local_clock(Clock) ->
 	{ok,Time} ->
 	    wait_helper(Time);
 	error ->
-	    get_safe_time()
+	    ok
     end.
 
 wait_helper(WaitForTime) ->
@@ -225,6 +227,19 @@ get_random_node() ->
     random:seed(A1, A2, A3),
     Index = random:uniform(length(Prefnode)),
     lists:nth(Index, Prefnode).
+
+new() ->
+    dict:new().
+
+%% @doc get_stable_snapshot: Returns stable snapshot time
+%% in the current DC. stable snapshot time is the snapshot available at
+%% in all partitions
+-spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
+get_stable_snapshot() ->
+    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+    %% to riak core meta-data) otherwise will have to change this
+    {ok, meta_data_sender:get_merged_data()}.
+
 
 
 %% @doc Return true if Clock1 > Clock2

@@ -35,7 +35,8 @@ init_state(Partition) ->
     {ok, #recvr_state{lastRecvd = orddict:new(), %% stores last OpId received
                       lastCommitted = orddict:new(),
                       recQ = orddict:new(),
-                      partition=Partition}
+                      partition=Partition,
+		      partition_vclock = vectorclock:new()}
     }.
 
 %% @doc enqueue_update: Put transaction into queue for processing later
@@ -152,16 +153,10 @@ check_and_update(SnapshotTime, Localclock, Transaction,
 				    lager:debug("Heartbeat Received");
 				nonRepUpdate ->
 				    {Key2,Type2,Op2} = Logrecord#log_record.op_payload,
-				    
-%%-type transaction() :: {txid(), {dcid(), non_neg_integer()},
-%%                        vectorclock:vectorclock(), [#operation{}]}.
-%%-record(transaction, {snapshot_time, server_pid, vec_snapshot_time, txn_id}).
-%% {_TxId, {DcId, CommitTime}, VecSnapshotTime, Ops} = Transaction,
-
 				    OrgTrans = #transaction{snapshot_time=CommitTimeA,
 							    server_pid=DcIdA,vec_snapshot_time=VecSSA,txn_id=TxIdA},
 				    {ok, Downstream} =
-					clocksi_downstream:generate_downstream_op(OrgTrans,Key2,Type2,Op2,Ws,local,[]),
+					clocksi_downstream:generate_downstream_op(OrgTrans,Node,Key2,Type2,Op2,Ws,[],local),
 				    NewLogRecord = #log_record{tx_id=TxId,op_type=update,
 							       op_payload={Key2,Type2,Downstream}},
 				    NewOp = #operation{op_number=OpNum,payload=NewLogRecord},
@@ -185,15 +180,9 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                                    ok = materializer_vnode:update(Key, DownOp, true)
                            end, DownOps),
             %%TODO add error handling if append failed
-            {ok, NewState} = finish_update_dc(
+	    {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
-            %%{ok} = vectorclock:update_clock(Partition, Dc, Ts),
-	    %% Why is a stable snapshot calculated here??
-            %% riak_core_vnode_master:command(
-            %%   {Partition,node()}, calculate_stable_snapshot,
-            %%   vectorclock_vnode_master),
-	    %% TODO: Is this necessary
-            riak_core_vnode_master:command({Partition, node()}, {process_queue},
+	    riak_core_vnode_master:command({Partition, node()}, {process_queue},
                                            inter_dc_recvr_vnode_master),
             NewState;
         false ->
@@ -202,11 +191,22 @@ check_and_update(SnapshotTime, Localclock, Transaction,
     end.
 
 finish_update_dc(Dc, DcQ, Cts,
-                 State=#recvr_state{lastCommitted = LastCTS, recQ = RecQ}) ->
+                 State=#recvr_state{lastCommitted = LastCTS,
+				    partition_vclock = LC,
+				    partition = Partition,
+				    recQ = RecQ}) ->
+    %% Is it really needed to use -1 for the time
+    %% I am doing this because that is what is in
+    %% vectorclock_vnode update_clock
+    %% LC shouldnt be necessary for partial replication
+    NewLC = vectorclock:set_clock_of_dc(Dc, Cts - 1, LC),
+    ok = meta_data_sender:put_meta_dict(Partition, NewLC),
     DcQNew = queue:drop(DcQ),
     RecQNew = set(Dc, DcQNew, RecQ),
     LastCommNew = set(Dc, Cts, LastCTS),
-    {ok, State#recvr_state{lastCommitted = LastCommNew, recQ = RecQNew}}.
+    {ok, State#recvr_state{lastCommitted = LastCommNew,
+			   recQ = RecQNew,
+			   partition_vclock = NewLC}}.
 
 %% Checks depV against the committed timestamps
 check_dep(DepV, Localclock) ->

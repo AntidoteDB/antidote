@@ -36,18 +36,29 @@
 	 get_read_dcs_wids/0,
          add_read_dc/1,
          add_list_read_dcs/1,
-	 set_replication_keys/2
-	]).
+	 set_replication_keys/2,
+         stop_receiver/0]).
 
 -define(META_PREFIX_DC, {dcid,port}).
 -define(META_PREFIX_MY_DC, {mydcid,port}).
 -define(META_PREFIX_READ_DC, {dcidread,port}).
 -define(META_PREFIX_MY_READ_DC, {mydcidread,port}).
 
+
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+        terminate/2, code_change/3]).
+
+-record(state, {
+        dcs,
+        port
+    }).
+
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
+init([]) ->
+    {ok, #state{dcs=[]}}.
 
 get_my_dc_wid() ->
     riak_core_metadata:get(?META_PREFIX_MY_DC,mydc).
@@ -60,6 +71,9 @@ start_receiver({Id,{DcIp, Port}}) ->
     riak_core_metadata:put(?META_PREFIX_MY_DC,mydc,{Id,{DcIp,Port}}),
     ok.
 
+stop_receiver() ->
+    gen_server:call(?MODULE, {stop_receiver}, infinity).
+    
 %% Returns all DCs known to this DC.
 -spec get_dcs() ->[dc_address()].
 get_dcs() ->
@@ -98,6 +112,14 @@ get_my_read_dc() ->
 get_my_read_dc_wid() ->
     riak_core_metadata:get(?META_PREFIX_MY_READ_DC,mydc).
 
+handle_call({stop_receiver}, _From, State) ->
+    case antidote_sup:stop_rep() of
+        ok -> 
+            {reply, ok, State#state{port=0}}
+    end;
+
+handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->
+    {reply, {ok, DCs}, State}.
 
 start_read_receiver({Id,{DcIp,Port}}) ->
     riak_core_metadata:put(?META_PREFIX_MY_READ_DC,mydc,{Id,{DcIp,Port}}),
@@ -129,3 +151,17 @@ add_list_read_dcs(DCs) ->
 set_replication_keys(KeyDescription,Id) ->
     replication_check:set_replication(KeyDescription,Id).
 
+
+handle_cast(_Info, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @private
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.

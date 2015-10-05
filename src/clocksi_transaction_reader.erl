@@ -37,9 +37,8 @@
 
 %%-export_type([transaction/0]).
 
-%% transaction = {TxId, {DcId, CommitTime}, VecSnapshotTime, [Operations]}
-%%-type transaction() :: {txid(), {dcid(), non_neg_integer()},
-%%                        vectorclock:vectorclock(), [#operation{}]}.
+-type transaction() :: {txid(), commit_time(),
+                        snapshot_time(), [operation()]}.
 
 %% @doc Returns an iterator to read transactions from a partition
 %%  transactions can be read using get_next_transactions
@@ -84,7 +83,7 @@ get_next_transactions(State=#state{partition = Partition,
     Node = {Partition, node()},
     %% No transactions will commit in future with commit time < stable_time
     %% So it is safe to read all transactions committed before stable_time
-    Stable_time = get_stable_time(Node, PrevStableTime),
+    Stable_time = get_stable_time(Partition, PrevStableTime),
     {ok, NewOps} = read_next_ops(Node, LogId, Last_read_opid),
     case NewOps of
         [] -> Newlast_read_opid = Last_read_opid;
@@ -179,9 +178,12 @@ get_prev_stable_time(Reader) ->
 
 %% @doc construct_transaction: Returns a structure of type transaction()
 %% from a list of update operations and prepare/commit records
+
 %% For partial repl alg, also return DCs that replicate the ops of this Tx
 %% Will comment out the spec for now
 % -spec construct_transaction(Ops::[#operation{}]) -> transaction().
+
+-spec construct_transaction([operation()]) -> {transaction(), [dc_address()]}.
 construct_transaction(Ops) ->
     %% ToDo: Only send the ops that are replicatied, not the whole transaction if it replicates
     %% one of its keys
@@ -233,11 +235,11 @@ get_sorted_commit_records(Commitrecords) ->
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
-get_stable_time(Node, Prev_stable_time) ->
-    case riak_core_vnode_master:sync_command(
-           Node, {get_active_txns}, ?CLOCKSI_MASTER) of
+get_stable_time(Partition, Prev_stable_time) ->
+    case clocksi_vnode:get_active_txns(
+	   Partition, clocksi_vnode:get_cache_name(Partition,prepared)) of
         {ok, Active_txns} ->
-            lists:foldl(fun({_,{_TxId, Snapshot_time}}, Min_time) ->
+            lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
                                 case Min_time > Snapshot_time of
                                     true ->
                                         Snapshot_time;

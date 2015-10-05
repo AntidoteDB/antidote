@@ -62,8 +62,7 @@ check_clock(timeout, SD0=#state{vclock=Vclock}) ->
     Newclock = dict:erase(DcId, Vclock),
     case T_TS > Time of
         true ->
-	    SleepMilliSec = (T_TS -Time) div 1000 + 1,
-            timer:sleep(SleepMilliSec),
+            timer:sleep((T_TS - Time)div 1000 +1 ),
             {next_state, update_item, SD0#state{vclock=Newclock}, 0};
         false ->
             {next_state, update_item, SD0#state{vclock=Newclock}, 0}

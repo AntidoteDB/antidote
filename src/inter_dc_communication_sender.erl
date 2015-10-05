@@ -27,9 +27,10 @@
 
 -export([propagate_sync_safe_time/2,
          propagate_sync/3,
-	 perform_external_read/5
+	 perform_external_read/4
         ]).
 -export([init/1,
+	 start_link/5,
          code_change/4,
          handle_event/3,
          handle_info/3,
@@ -40,12 +41,10 @@
          wait_for_ack/2,
 	 wait_for_ack_no_close/2,
          stop/2,
-	 connect_err/2
+	 stop_error/2
         ]).
 
--record(state, {port, host, socket,message, caller, reply}). % the current socket
-
-
+-record(state, {port, host, socket,message, caller, reply, reason}). % the current socket
 
 %% ===================================================================
 %% Public API
@@ -61,11 +60,12 @@
 %				  -> ok | error.
 propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
     ListTxnDcs = dict:to_list(DictTransactionsDcs),
+
     Errors = lists:foldl(
 	       fun({DCs, Message}, Err) ->
 		       lists:foldl(
 			 fun({DcAddress, Port}, Acc) ->
-				 case start_link(
+				 case inter_dc_communication_sender_fsm_sup:start_fsm(
 					Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), Message}, self(), send_propagate) of
 				     {ok, _} ->
 					 receive
@@ -90,12 +90,6 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 						   [Other, Message]),
 						 Acc ++ [error]
 						 %%TODO: Retry if needed
-					 after ?SEND_TIMEOUT ->
-						 lager:error(
-						   "Send failed timeout Message ~p"
-							    ,[Message]),
-						 Acc ++ [{error, timeout}]
-						 %%TODO: Retry if needed
 					 end;
 				     _ ->
 					 Acc ++ [error]
@@ -117,7 +111,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 -spec propagate_sync_safe_time({DcAddress :: non_neg_integer(), Port :: port()}, Transaction :: tx())
 			      -> ok | error.
 propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
-    case start_link(
+    case inter_dc_communication_sender_fsm_sup:start_fsm(
 	   Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), [Transaction]}, self(), send_safe_time) of
 	{ok, _} ->
 	    receive
@@ -129,12 +123,6 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 		      [Other, Transaction]),
 		    error
 		    %%TODO: Retry if needed
-	    after ?SEND_TIMEOUT ->
-		    lager:error(
-		      "Send failed timeout Message ~p"
-			       ,[Transaction]),
-		    error
-		    %%TODO: Retry if needed
 	    end;
 	_ ->
 	    error
@@ -142,11 +130,11 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 
 
 
--spec perform_external_read({DcAddress :: non_neg_integer(), Port :: port()}, Key :: key(), Type :: crdt(), Transaction :: tx(), WriteSet :: list())
+-spec perform_external_read({DcAddress :: non_neg_integer(), Port :: port()}, Key :: key(), Type :: crdt(), Transaction :: tx())
 			   -> {ok, term()} | error.
-perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
+perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
     MyPid = self(),
-    ext_read_connection_fsm:perform_read(DcAddress,Port, {read_external, MyPid, {Key, Type, Transaction,WriteSet,dc_utilities:get_my_dc_id()}}),
+    ext_read_connection_fsm:perform_read(DcAddress,Port, {read_external, MyPid, {Key, Type, Transaction, dc_utilities:get_my_dc_id()}}),
     receive
 	{acknowledge, MyPid, Reply} ->
 	    {ok, Reply}
@@ -192,9 +180,8 @@ perform_external_read({DcAddress, Port}, Key, Type, Transaction,WriteSet) ->
 %%             to be send (Usually the caller of this function) 
 -spec start_link(Port :: port(), Host :: non_neg_integer(), Message :: [term()], ReplyTo :: pid(), MsgType :: atom())
 		-> {ok, pid()} | ignore | {error, term()}.
-start_link(Port, Host, Message, ReplyTo, _MsgType) ->
-						% gen_fsm:start_link(list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MsgType)), [Port, Host, Message, ReplyTo], []).
-    gen_fsm:start_link(?MODULE, [Port, Host, Message, ReplyTo], []).
+start_link(DestPort, DestHost, Message, ReplyTo, _MsgType) ->
+    gen_fsm:start_link(?MODULE, [DestPort, DestHost, Message, ReplyTo], []).
 
 %% start_link(Socket, Message, ReplyTo, _MsgType) ->
 %%     gen_fsm:start_link(?MODULE, [Socket, Message, ReplyTo], []).
@@ -214,10 +201,9 @@ init([Port,Host,Message,ReplyTo]) ->
 
 init([Socket,Message,ReplyTo]) ->
     {ok, send, #state{socket=Socket,
-                         message=Message,
-                         caller=ReplyTo,
-			 reply=empty}, 0}.
-
+		      message=Message,
+		      caller=ReplyTo,
+		      reply=empty}, 0}.
 
 send(timeout,State=#state{socket=Socket,message=Message}) ->
     ok=gen_tcp:send(Socket,term_to_binary(Message)),
@@ -225,42 +211,39 @@ send(timeout,State=#state{socket=Socket,message=Message}) ->
 
 connect(timeout, State=#state{port=Port,host=Host,message=Message}) ->
     case  gen_tcp:connect(Host, Port,
-                          [{active,once},binary, {packet,2}], ?CONNECT_TIMEOUT) of
-        { ok, Socket} ->
-            %%ok = inet:setopts(Socket, [{active, once}]),
+                          [{active,once}, binary, {packet,4}], ?CONNECT_TIMEOUT) of
+        {ok, Socket} ->
             ok = gen_tcp:send(Socket, term_to_binary(Message)),
-            %%ok = inet:setopts(Socket, [{active, once}]),
-            {next_state, wait_for_ack, State#state{socket=Socket},?SEND_TIMEOUT};
-        {error, _Reason} ->
-	    %% TODO, should be diferent
-            lager:error("Couldnot connect to remote DC"),
-            {next_state,connect_err, State, 0}
+            {next_state, wait_for_ack, State#state{socket=Socket},?CONNECT_TIMEOUT};
+        {error, Reason} ->
+            lager:error("Couldnot connect to remote DC: ~p", [Reason]),
+            {stop, normal, State#state{reason=Reason}}
     end.
 
-
 wait_for_ack_no_close({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message} )->
-    {stop, normal, State#state{reply=Reply}};
+    {stop, normal, State#state{reason=normal,reply=Reply}};
 wait_for_ack_no_close(timeout, State) ->
     %%TODO: Retry if needed
     lager:error("timeout in wait for ack"),
-    {next_state,connect_err,State,0}.
+    {next_state,stop_error,State#state{reason=timeout},0}.
 
-
-wait_for_ack({acknowledge, Reply}, State=#state{socket=_Socket, message=_Message} )->
-    {next_state, stop, State#state{reply=Reply},0};
-
+wait_for_ack(acknowledge, State)->
+    {next_state, stop, State#state{reason=normal},0};
 
 wait_for_ack(timeout, State) ->
     %%TODO: Retry if needed
-    lager:error("timeout in wait for ack"),
-    {next_state,connect_err,State,0}.
+    lager:error("Timeout in wait for ACK",[]),
+    %% Retry after timeout is handled in the propagate_sync loop above
+    %% So the fsm returns a normal stop so that it isn't restarted by the supervisor
+    {next_state,stop_error,State#state{reason=timeout},0}.
 
 stop(timeout, State=#state{socket=Socket}) ->
-    _ = gen_tcp:close(Socket),
+    _ = gen_tcp:close(Socket), 
     {stop, normal, State}.
 
-connect_err(timeout, State) ->
-    {stop, normal, State#state{reply={error,connect_error}}}.
+stop_error(timeout, State=#state{socket=Socket}) ->
+    _ = gen_tcp:close(Socket),
+    {stop, normal, State}.
 
 %% Converts incoming tcp message to an fsm event to self
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
@@ -284,6 +267,6 @@ handle_sync_event(_Event, _From, _StateName, StateData) ->
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(Reason, _SN, _State = #state{caller = Caller, reply = Reply}) ->
-    Caller ! {done, Reason, Reply},
+terminate(_Reason, _SN, _State = #state{caller = Caller, reason=Res}) ->
+    Caller ! {done, Res},
     ok.

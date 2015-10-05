@@ -79,7 +79,7 @@ receive_message(timeout, State=#state{socket=Socket,last_pid=LastPid}) ->
 				    ok
 			    end
 		    end,
-		    inter_dc_recvr_vnode:store_updates(Updates),
+		    ok = inter_dc_recvr_vnode:store_updates(Updates),
 		    receive
 			{NewPid, check_prev_done_process} ->
 			    NewPid ! {NewPid, prev_done_process}
@@ -104,7 +104,7 @@ receive_message(timeout, State=#state{socket=Socket,last_pid=LastPid}) ->
 		    end,
 		    {next_state, bad_msg, State, 0}		    
 	    end;
-        {error, Reason} ->
+	{error, Reason} ->
             lager:error("Problem with the socket, reason: ~p", [Reason]),
 	    gen_tcp:close(Socket),
 	    case LastPid of
