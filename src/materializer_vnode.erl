@@ -234,53 +234,68 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
 %% vnode when the write function calls it. That is done for garbage collection.
 -spec internal_read(key(), type(), snapshot_time(), txid() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
 internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
-    {LatestSnapshot,SnapshotCommitTime,IsFirst} =
-	case ets:lookup(SnapshotCache, Key) of
-	    [] ->
-		{clocksi_materializer:new(Type),ignore,true};
-	    [{_, SnapshotDict}] ->
-		case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
-		    {undefined, IsF} ->
-			{clocksi_materializer:new(Type),ignore,IsF};
-		    {{SCT, LS},IsF}->
-			{LS,SCT,IsF}
+    Result = case ets:lookup(SnapshotCache, Key) of
+		 [] ->
+		     %% First time reading this key, store an empty snapshot in the cache
+		     BlankSS = clocksi_materializer:new(Type),
+		     case TxId of
+			 ignore ->
+			     internal_store_ss(Key,BlankSS,vectorclock:new(),OpsCache,SnapshotCache);
+			 _ ->
+			     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
+		     end,
+		     {BlankSS,ignore,true};
+		 [{_, SnapshotDict}] ->
+		     case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
+			 {undefined, _IsF} ->
+			     {error, no_snapshot};
+			 {{SCT, LS},IsF}->
+			     {LS,SCT,IsF}
+		     end
+	     end,
+    {Length,Ops,LatestSnapshot,SnapshotCommitTime,IsFirst} =
+	case Result of
+	    {error, no_snapshot} ->
+		{L1,O1,LS1,SCT1,false} = logging_vnode:get(MinSnapshotTime),
+		{L1,O1,LS1,SCT1,false};
+	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
+		case ets:lookup(OpsCache, Key) of
+		    [] ->
+			{0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
+		    [{_, {Length1,Ops1}}] ->
+			{Length1,Ops1,LatestSnapshot1,SnapshotCommitTime1,IsFirst1}
 		end
 	end,
-    case ets:lookup(OpsCache, Key) of
-       [] ->
-            {ok, LatestSnapshot};
-	[{_, {Length,Ops}}] ->
-	    case Length of
-		0 ->
-		    {ok, LatestSnapshot};
-		_Len ->
-		    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
-			{ok, Snapshot, CommitTime, NewSS} ->
-			    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-			    %% for the given snapshot_time
-			    %% But is the snapshot not safe?
-			    case CommitTime of 
-				ignore ->
-				    {ok, Snapshot};
-				_ ->
-				    case NewSS and IsFirst of
-					%% Only store the snapshot if it would be at the end of the list and has new operations added to the
-					%% previous snapshot
-					true ->
-					    case TxId of
-						ignore ->
-						    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache);
-						_ ->
-						    materializer_vnode:store_ss(Key,Snapshot,CommitTime)
-					    end;
+    case Length of
+	0 ->
+	    {ok, LatestSnapshot};
+	_Len ->
+	    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
+		{ok, Snapshot, CommitTime, NewSS} ->
+		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+		    %% for the given snapshot_time
+		    %% But is the snapshot not safe?
+		    case CommitTime of 
+			ignore ->
+			    {ok, Snapshot};
+			_ ->
+			    case NewSS and IsFirst of
+				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
+				%% previous snapshot
+				true ->
+				    case TxId of
+					ignore ->
+					    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache);
 					_ ->
-					    ok
-				    end,
-				    {ok, Snapshot}
-			    end;
-			{error, Reason} ->
-			    {error, Reason}
-		    end
+					    materializer_vnode:store_ss(Key,Snapshot,CommitTime)
+				    end;
+				_ ->
+				    ok
+			    end,
+			    {ok, Snapshot}
+		    end;
+		{error, Reason} ->
+		    {error, Reason}
 	    end
     end.
 
