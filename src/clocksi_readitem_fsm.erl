@@ -209,20 +209,19 @@ check_clock(Key,Transaction,PreparedCache,Partition) ->
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
-check_prepared(Key,Transaction,PreparedCache,Partition) ->
+check_prepared(Key,Transaction,PreparedCache,_Partition) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
-    {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
-    check_prepared_list(Key,SnapshotTime,ActiveTxs).
-
-check_prepared_list(_Key,_SnapshotTime,[]) ->
-    ready;
-check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
-    case Time =< SnapshotTime of
-	true ->
-	    {not_ready, ?SPIN_WAIT};
-	false ->
-	    check_prepared_list(Key,SnapshotTime,Rest)
+    case ets:lookup(PreparedCache, Key) of
+        [] ->
+            ready;
+        [{Key, {_PreparedTxId, PrepareTime}}] ->
+            case PrepareTime =< SnapshotTime of
+                true ->
+                    {not_ready, ?SPIN_WAIT};
+                false ->
+                    ready
+            end
     end.
 
 %% @doc return:
