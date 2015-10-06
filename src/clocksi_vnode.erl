@@ -26,6 +26,7 @@
 -export([start_vnode/1,
     read_data_item/5,
     get_cache_name/2,
+    get_active_txns_key/3,
     get_active_txns/2,
     prepare/2,
     commit/3,
@@ -89,6 +90,28 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+%% @doc Return active transactions in prepare state with their preparetime for a given key
+%% should be run from same physical node
+get_active_txns_key(Key, Partition, TableName) ->
+    case ets:info(TableName) of
+        undefined ->
+            riak_core_vnode_master:sync_command({Partition, node()},
+                {get_active_txns, Key},
+                clocksi_vnode_master,
+                infinity);
+        _ ->
+            get_active_txns_key_internal(Key, TableName)
+    end.
+
+get_active_txns_key_internal(Key, TableName) ->
+    ActiveTxs = case ets:lookup(TableName, Key) of
+                    [] ->
+                        [];
+                    [{Key, List}] ->
+                        List
+                end,
+    {ok, ActiveTxs}.
 
 %% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
 %% should be run from same physical node
@@ -382,10 +405,10 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime) ->
     case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
-                [{Key, Type, {Op, Actor}} | Rest] ->
-                    ok = set_prepared(PreparedTx, [{Key, Type, {Op, Actor}} | Rest], TxId, PrepareTime),
+                [{Key, _, {_Op, _Actor}} | _] ->
+                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(erlang:now()),
-                    ok = set_prepared(PreparedTx, [{Key, Type, {Op, Actor}} | Rest], TxId, NewPrepare),
+                    ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
                     LogRecord = #log_record{tx_id = TxId,
                         op_type = prepare,
                         op_payload = NewPrepare},
@@ -400,12 +423,29 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime) ->
             {{error, write_conflict}, 0}
     end.
 
+set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
+    Acc;
+set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) ->
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+                    [] ->
+                        [];
+                    [{Key, List}] ->
+                        List
+                end,
+    case lists:keymember(TxId, 1, ActiveTxs) of
+        true ->
+            set_prepared(PreparedTx, Rest, TxId, Time, Acc);
+        false ->
+            true = ets:insert(PreparedTx, {Key, [{TxId, Time} | ActiveTxs]}),
+            set_prepared(PreparedTx, Rest, TxId, Time, dict:append_list(Key, ActiveTxs, Acc))
+    end.
 
-set_prepared(_PreparedTx, [], _TxId, _Time) ->
+reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
-set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time) ->
-    true = ets:insert(PreparedTx, {Key, {TxId, Time}}),
-    set_prepared(PreparedTx,Rest,TxId,Time).
+reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
+    %% Could do this more efficiently in case of multiple updates to the same key
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
@@ -416,7 +456,8 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
             Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
-            true = ets:insert(CommittedTx, {Key, TxCommitTime}),
+            lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
+                        Updates),
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
@@ -465,13 +506,20 @@ clean_and_notify(TxId, Updates, #state{
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
 clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
-        case ets:lookup(PreparedTx, Key) of
-        [{Key, {TxId, _Time}}] ->
-            true = ets:delete(PreparedTx, Key);
-        _ ->
-            ok
-    end,
-    clean_prepared(PreparedTx,Rest,TxId).
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+                    [] ->
+                        [];
+                    [{Key, List}] ->
+                        List
+                end,
+    NewActive = lists:keydelete(TxId, 1, ActiveTxs),
+    true = case NewActive of
+               [] ->
+                   ets:delete(PreparedTx, Key);
+               _ ->
+                   ets:insert(PreparedTx, {Key, NewActive})
+           end,
+    clean_prepared(PreparedTx, Rest, TxId).
 
 %% @doc converts a tuple {MegaSecs,Secs,MicroSecs} into microseconds
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
