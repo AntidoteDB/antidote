@@ -31,14 +31,14 @@
          set_clock_of_dc/3,
          from_list/1,
 	 wait_for_clock/1,
-	 wait_for_local_clock/1,
+	 wait_for_local_clock/2,
 	 get_random_node/0,
 	 update_sent_clock/3,
 	 update_safe_vector_local/1,
 	 update_safe_clock_local/2,
 	 get_safe_time/0,
 	 now_microsec/1,
-	 now_microsec_behind/3,
+	 now_microsec_behind/4,
 	 new/0,
 	 get_stable_snapshot/0,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
@@ -56,9 +56,8 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 
 
-now_microsec_behind(ClientClock,SafeClock,{MegaSecs, Secs, MicroSecs}) ->
+now_microsec_behind(ClientClock,SafeClock,{MegaSecs, Secs, MicroSecs},LocalDc) ->
     NowMicroBehind = vectorclock:now_microsec({MegaSecs, Secs, MicroSecs}) - (1000000 * ?BEHIND_SEC_LOCAL),
-    LocalDc = dc_utilities:get_my_dc_id(),
     NewDict = dict:fold(fun(DcId, Clock, NewDict) ->
 				NewClock = case DcId of
 					       LocalDc ->
@@ -117,7 +116,6 @@ update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
 			      -> {ok, vectorclock:vectorclock()} | {error, term()}.
 update_safe_vector_local(Vector) ->
     ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
-    
     ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
 				    dict:store(Key,Val,NewAcc) end,
 			    dict:new(), ClockList),
@@ -192,10 +190,9 @@ wait_for_clock(Clock) ->
     end.
 
 
--spec wait_for_local_clock(Clock :: vectorclock:vectorclock()) ->
+-spec wait_for_local_clock(Clock :: vectorclock:vectorclock(), dcid()) ->
                            ok | {error, term()}.
-wait_for_local_clock(Clock) ->
-    DcId = dc_utilities:get_my_dc_id(),
+wait_for_local_clock(Clock, DcId) ->
     case dict:find(DcId,Clock) of
 	{ok,Time} ->
 	    wait_helper(Time);

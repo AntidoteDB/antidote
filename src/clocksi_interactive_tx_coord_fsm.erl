@@ -590,10 +590,11 @@ get_snapshot_time(ClientClock, externalTransaction) ->
 %% was already updated somewhere in this DC
 
 get_snapshot_time(ClientClock, localTransaction) ->
-    vectorclock:wait_for_local_clock(ClientClock),
+    DcId = ?DC_UTIL:get_my_dc_id(),
+    vectorclock:wait_for_local_clock(ClientClock, DcId),
     case vectorclock:update_safe_vector_local(ClientClock) of
 	{ok, VecSnapshotTime} ->
-	    Clock = vectorclock:now_microsec_behind(ClientClock, VecSnapshotTime, erlang:now()),
+	    Clock = vectorclock:now_microsec_behind(ClientClock, VecSnapshotTime, erlang:now(), DcId),
 	    {ok, Clock};
 	{error, Reason} ->
 	    lager:error("Error getting snapshot time ~p", [Reason]),
@@ -638,113 +639,113 @@ get_snapshot_time(ClientClock, localTransaction) ->
 
 -ifdef(TEST).
 
-main_test_() ->
-    {foreach,
-     fun setup/0,
-     fun cleanup/1,
-     [
-      fun empty_prepare_test/1,
-      fun timeout_test/1,
+%% main_test_() ->
+%%     {foreach,
+%%      fun setup/0,
+%%      fun cleanup/1,
+%%      [
+%%       fun empty_prepare_test/1,
+%%       fun timeout_test/1,
 
-      fun update_single_abort_test/1,
-      fun update_single_success_test/1,
-      fun update_multi_abort_test1/1,
-      fun update_multi_abort_test2/1,
-      fun update_multi_success_test/1,
+%%       fun update_single_abort_test/1,
+%%       fun update_single_success_test/1,
+%%       fun update_multi_abort_test1/1,
+%%       fun update_multi_abort_test2/1,
+%%       fun update_multi_success_test/1,
 
-      fun read_single_fail_test/1,
-      fun read_success_test/1,
+%%       fun read_single_fail_test/1,
+%%       fun read_success_test/1,
 
-      fun downstream_fail_test/1,
-      fun get_snapshot_time_test/0,
-      fun wait_for_clock_test/0
-     ]}.
+%%       fun downstream_fail_test/1,
+%%       %% fun get_snapshot_time_test/0,
+%%       fun wait_for_clock_test/0
+%%      ]}.
 
-% Setup and Cleanup
-setup()      -> {ok,Pid} = clocksi_interactive_tx_coord_fsm:start_link(self(), ignore), Pid. 
-cleanup(Pid) -> case process_info(Pid) of undefined -> io:format("Already cleaned");
-                                           _ -> clocksi_interactive_tx_coord_fsm:stop(Pid) end.
+%% % Setup and Cleanup
+%% setup()      -> {ok,Pid} = clocksi_interactive_tx_coord_fsm:start_link(self(), ignore), Pid. 
+%% cleanup(Pid) -> case process_info(Pid) of undefined -> io:format("Already cleaned");
+%%                                            _ -> clocksi_interactive_tx_coord_fsm:stop(Pid) end.
 
-empty_prepare_test(Pid) ->
-    fun() ->
-            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% empty_prepare_test(Pid) ->
+%%     fun() ->
+%%             ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-timeout_test(Pid) ->
-    fun() ->
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {timeout, nothing, nothing}}, infinity)),
-            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% timeout_test(Pid) ->
+%%     fun() ->
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {timeout, nothing, nothing}}, infinity)),
+%%             ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-update_single_abort_test(Pid) ->
-    fun() ->
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% update_single_abort_test(Pid) ->
+%%     fun() ->
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+%%             ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-update_single_success_test(Pid) ->
-    fun() ->
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
-            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% update_single_success_test(Pid) ->
+%%     fun() ->
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
+%%             ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-update_multi_abort_test1(Pid) ->
-    fun() ->
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% update_multi_abort_test1(Pid) ->
+%%     fun() ->
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+%%             ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-update_multi_abort_test2(Pid) ->
-    fun() ->
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% update_multi_abort_test2(Pid) ->
+%%     fun() ->
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+%%             ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-update_multi_success_test(Pid) ->
-    fun() ->
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% update_multi_success_test(Pid) ->
+%%     fun() ->
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+%%             ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+%%             ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-read_single_fail_test(Pid) ->
-    fun() ->
-            ?assertEqual({error, mock_read_fail}, 
-                    gen_fsm:sync_send_event(Pid, {read, {read_fail, nothing}}, infinity))
-    end.
+%% read_single_fail_test(Pid) ->
+%%     fun() ->
+%%             ?assertEqual({error, mock_read_fail}, 
+%%                     gen_fsm:sync_send_event(Pid, {read, {read_fail, nothing}}, infinity))
+%%     end.
 
-read_success_test(Pid) ->
-    fun() ->
-            ?assertEqual({ok, 2}, 
-                    gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity)),
-            ?assertEqual({ok, [a]}, 
-                    gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
-            ?assertEqual({ok, mock_value}, 
-                    gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
-            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
-    end.
+%% read_success_test(Pid) ->
+%%     fun() ->
+%%             ?assertEqual({ok, 2}, 
+%%                     gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity)),
+%%             ?assertEqual({ok, [a]}, 
+%%                     gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
+%%             ?assertEqual({ok, mock_value}, 
+%%                     gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
+%%             ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+%%     end.
 
-downstream_fail_test(Pid) ->
-    fun() ->
-            ?assertEqual({error, mock_downstream_fail}, 
-                    gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
-    end.
+%% downstream_fail_test(Pid) ->
+%%     fun() ->
+%%             ?assertEqual({error, mock_downstream_fail}, 
+%%                     gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
+%%     end.
 
 
-get_snapshot_time_test() ->
-    {ok, SnapshotTime} = get_snapshot_time(),
-    ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime)).
+%% %% get_snapshot_time_test() ->
+%% %%     {ok, SnapshotTime} = get_snapshot_time(vectorclock:new(),localTransaction),
+%% %%     ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime)).
 
-wait_for_clock_test() ->
-    {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc,10}])),
-    ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime)),
-    VecClock = clocksi_vnode:now_microsec(now()),
-    {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
-    ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime2)).
+%% wait_for_clock_test() ->
+%%     {ok, SnapshotTime} = vectorclock:wait_for_local_clock(vectorclock:from_list([{mock_dc,10}]), ?DC_UTIL:get_my_dc_id()),
+%%     ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime)),
+%%     VecClock = clocksi_vnode:now_microsec(now()),
+%%     {ok, SnapshotTime2} = vectorclock:wait_for_local_clock(vectorclock:from_list([{mock_dc, VecClock}]), ?DC_UTIL:get_my_dc_id()),
+%%     ?assertMatch([{mock_dc,_}],dict:to_list(SnapshotTime2)).
 
 
 -endif.
