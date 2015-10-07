@@ -200,7 +200,7 @@ finish_update_dc(Dc, DcQ, Cts,
     %% vectorclock_vnode update_clock
     %% LC shouldnt be necessary for partial replication
     NewLC = vectorclock:set_clock_of_dc(Dc, Cts - 1, LC),
-    ok = meta_data_sender:put_meta_dict(Partition, NewLC),
+    ok = meta_data_sender:put_meta_dict(stable, Partition, NewLC),
     DcQNew = queue:drop(DcQ),
     RecQNew = set(Dc, DcQNew, RecQ),
     LastCommNew = set(Dc, Cts, LastCTS),

@@ -236,8 +236,8 @@ get_sorted_commit_records(Commitrecords) ->
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
 get_stable_time(Partition, Prev_stable_time) ->
-    case clocksi_vnode:get_active_txns(
-	   Partition, clocksi_vnode:get_cache_name(Partition,prepared)) of
+    case clocksi_vnode:get_active_txns(Partition,clocksi_vnode:get_cache_name(Partition,prepared)) of
+	%% case clocksi_vnode:get_active_txns_call(Partition) of
         {ok, Active_txns} ->
             lists:foldl(fun({_TxId, Snapshot_time}, Min_time) ->
                                 case Min_time > Snapshot_time of

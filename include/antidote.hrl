@@ -22,7 +22,7 @@
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(SAFE_SEND_PERIOD, 5000).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 100).
+-define(REPL_PERIOD, 500).
 
 
 %% Allow read concurrency on shared ets tables
@@ -58,19 +58,26 @@
 -define(SPIN_WAIT, 1).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
--define(META_DATA_SLEEP, 100).
+-define(META_DATA_SLEEP, 1000).
+%% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
--define(SYNC_LOG, true).
+-define(SYNC_LOG, false).
 
 -define(BEHIND_SEC_EXT, 0).
 -define(BEHIND_SEC_LOCAL, 0).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
+%% Enalble or disable the certification check
+-ifdef(NO_CERTIFICATION).
+-define(CERT, false).
+-else.
+-define(CERT, true).
+-endif.
 
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
