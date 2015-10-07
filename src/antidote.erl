@@ -166,57 +166,38 @@ delete_object({_Key, _Type, _Bucket}) ->
     %% TODO: Object deletion is not currently supported
     {error, operation_not_supported}.
 
-%% Clock SI API
-
-%% @doc Starts a new ClockSI interactive transaction.
-%%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
-%%      Returns: an ok message along with the new TxId.
-%%
--spec clocksi_istart_tx(Clock:: snapshot_time()) ->
-                               {ok, txid()} | {error, reason()}.
-clocksi_istart_tx(Clock) ->
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
-    receive
-        {ok, TxId} ->
-            {ok, TxId};
-        Other ->
-            {error, Other}
-    end.
-
--spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
-clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
-    case  gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}) of
-        {ok, Res} -> {ok, Res};
-        {error, Reason} -> {error, Reason}
-    end.
-
--spec clocksi_iupdate(txid(), key(), type(), term()) -> ok | {error, reason()}.
-clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
-    case gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}) of
-        ok -> ok;
-        {aborted, _} -> {error, aborted};
-        {error, Reason} -> {error, Reason}
-    end.
-
 %% =============================================================================
 %% OLD API, We might still need them
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}) ->
+-spec append(key(), type(), {op(),term()}) -> 
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {OpParam, Actor}) ->
-    clocksi_interactive_tx_coord_fsm:
-        perform_singleitem_update(Key,Type,{OpParam,Actor}).
+append(Key, Type, {OpParams, Actor}) ->
+    case materializer:check_operations([{update,
+                                         {Key, Type, {OpParams, Actor}}}]) of
+        ok ->
+            clocksi_interactive_tx_coord_fsm:
+                perform_singleitem_update(Key, Type,{OpParams,Actor});
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 -spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
-    clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type).
+    case materializer:check_operations([{read, {Key, Type}}]) of
+        ok ->
+            clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% Clock SI API
+%% TODO: Move these functions into clocksi files. Public interface should only 
+%%       contain generic transaction interface
 
 %% @doc Starts a new ClockSI transaction.
 %%      Input:
@@ -235,21 +216,12 @@ clocksi_execute_tx(Clock, Operations) ->
 
 -spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Operations) ->
-    {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
-    gen_fsm:sync_send_event(CoordFsmPid, execute).
-
-%% @doc Starts a new ClockSI interactive transaction.
-%%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
-%%      Returns: an ok message along with the new TxId.
-%%
-
--spec clocksi_istart_tx() -> {ok, txid()}.
-clocksi_istart_tx() ->
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
-    receive
-        {ok, TxId} ->
-            {ok, TxId}
+    case materializer:check_operations(Operations) of
+        ok ->
+            {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
+            gen_fsm:sync_send_event(CoordFsmPid, execute);
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 -spec clocksi_bulk_update(ClientClock:: snapshot_time(),
@@ -269,6 +241,49 @@ clocksi_read(ClientClock, Key, Type) ->
 -spec clocksi_read(key(), type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_read(Key, Type) ->
     clocksi_execute_tx([{read, {Key, Type}}]).
+
+
+%% @doc Starts a new ClockSI interactive transaction.
+%%      Input:
+%%      ClientClock: last clock the client has seen from a successful transaction.
+%%      Returns: an ok message along with the new TxId.
+%%
+-spec clocksi_istart_tx(Clock:: snapshot_time()) ->
+                               {ok, txid()} | {error, reason()}.
+clocksi_istart_tx(Clock) ->
+    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
+    receive
+        {ok, TxId} ->
+            {ok, TxId};
+        Other ->
+            {error, Other}
+    end.
+
+-spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
+clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
+    case materializer:check_operations([{read, {Key, Type}}]) of
+        ok ->
+            case  gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}) of
+                {ok, Res} -> {ok, Res};
+                {error, Reason} -> {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec clocksi_iupdate(txid(), key(), type(), term()) -> ok | {error, reason()}.
+clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
+    case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
+        ok ->
+            case gen_fsm:sync_send_event(CoordFsmPid,
+                                         {update, {Key, Type, OpParams}}) of
+                ok -> ok;
+                {aborted, _} -> {error, aborted};
+                {error, Reason} -> {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% @doc This commits includes both prepare and commit phase. Thus
 %%      Client do not need to send to message to complete the 2PC
