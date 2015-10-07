@@ -259,6 +259,16 @@ clocksi_istart_tx(Clock) ->
             {error, Other}
     end.
 
+clocksi_istart_tx() ->
+    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
+    receive
+        {ok, TxId} ->
+            {ok, TxId};
+        Other ->
+            {error, Other}
+    end.
+    
+
 -spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
