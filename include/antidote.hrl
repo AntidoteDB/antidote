@@ -13,7 +13,6 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 
-
 -define(SEND_TIMEOUT,20000).
 -define(CONNECT_TIMEOUT,10000).
 -define(EXT_READ_TIMEOUT,10000).
@@ -24,7 +23,7 @@
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(REPL_PERIOD, 500).
 
-
+-define(CRDTS, [crdt_bcounter, crdt_orset, crdt_pncounter]).
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption

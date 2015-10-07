@@ -62,8 +62,6 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 %% private functions
 
 
-
-
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
@@ -138,7 +136,6 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                     lager:error("Wrong transaction record format"),
                     erlang:error(bad_transaction_record)
             end,
-
     case check_dep(SnapshotTime, Localclock) of
         true ->
             {TheNewOps,_NewWs,NewLogRecords}
@@ -200,7 +197,8 @@ finish_update_dc(Dc, DcQ, Cts,
     %% vectorclock_vnode update_clock
     %% LC shouldnt be necessary for partial replication
     NewLC = vectorclock:set_clock_of_dc(Dc, Cts - 1, LC),
-    ok = meta_data_sender:put_meta_dict(stable, Partition, NewLC),
+    %% dont do stable time in local computation
+    %%ok = meta_data_sender:put_meta_dict(stable, Partition, NewLC),
     DcQNew = queue:drop(DcQ),
     RecQNew = set(Dc, DcQNew, RecQ),
     LastCommNew = set(Dc, Cts, LastCTS),

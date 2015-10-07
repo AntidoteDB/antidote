@@ -43,8 +43,8 @@
 -module(riak_dt_mvreg).
 -behaviour(riak_dt).
 
--export([new/0, value/1, value/2, update/3, merge/2, to_version/2,
-         equal/2, to_binary/1, to_binary/2, from_binary/1, stats/1, stat/2]).
+-export([new/0, value/1, value/2, update/3, merge/2,
+    equal/2, to_binary/1, from_binary/1, stats/1, stat/2, is_operation/1, to_binary/2, to_version/2]).
 -export([parent_clock/2, update/4]).
 
 -ifdef(TEST).
@@ -241,17 +241,40 @@ stat(_, _) -> undefined.
 to_binary(MVReg) ->
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(MVReg))/binary>>.
 
-to_binary(MVReg, _A) ->
-    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(MVReg))/binary>>.
-
-to_version(_A,_B) ->
-    ok.
-
-
 %% @doc Decode binary `mvreg()'
--spec from_binary(binary()) -> mvreg().
+-spec from_binary(binary()) -> {ok, mvreg()} | ?UNSUPPORTED_VERSION | ?INVALID_BINARY.
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
-    binary_to_term(Bin).
+    {ok, riak_dt:from_binary(Bin)};
+from_binary(<<?TAG:8/integer, Vers:8/integer, _Bin/binary>>) ->
+    ?UNSUPPORTED_VERSION(Vers);
+from_binary(_B) ->
+    ?INVALID_BINARY.
+
+%% @doc The following operation verifies
+%%      that Operation is supported by this particular CRDT.
+-spec is_operation(term()) -> boolean().
+is_operation(Operation) ->
+    case Operation of
+        {assign, _} ->
+            true;
+        {assign, _, Number} ->
+            (is_integer(Number) andalso (Number >= 0));
+        {propagate, _, _} ->
+            true;
+        _ ->
+            false
+    end.
+
+-spec to_binary(Vers :: pos_integer(), mvreg()) -> {ok, binary()} |
+?UNSUPPORTED_VERSION.
+to_binary(1, MVR) ->
+    {ok, to_binary(MVR)};
+to_binary(Vers, _MVR) ->
+    ?UNSUPPORTED_VERSION(Vers).
+
+-spec to_version(pos_integer(), mvreg()) -> mvreg().
+to_version(_Version, MVR) ->
+    MVR.
 
 %% ===================================================================
 %% EUnit tests
@@ -438,7 +461,7 @@ roundtrip_bin_test() ->
     {ok, MVReg3} = update({assign, 89}, a3, MVReg2),
     {ok, MVReg4} = update({assign, <<"this is a binary">>}, a4, MVReg3),
     Bin = to_binary(MVReg4),
-    Decoded = from_binary(Bin),
+    {ok, Decoded} = from_binary(Bin),
     ?assert(equal(MVReg4, Decoded)).
 
 %% @doc Check if stas return the correct size of MVReg.
@@ -449,5 +472,12 @@ stat_test() ->
     ?assertEqual([{value_size, 40}], stats(MVReg1)),
     ?assertEqual(40, stat(value_size, MVReg1)),
     ?assertEqual(undefined, stat(actor_count, MVReg1)).
+
+is_operation_test() ->
+    ?assertEqual(true, is_operation({assign, value})),
+    ?assertEqual(true, is_operation({assign, something, 20})),
+    ?assertEqual(false, is_operation({assign, something, some_value})),
+    ?assertEqual(false, is_operation({add, atom})),
+    ?assertEqual(false, is_operation({anything, [1,2,3]})).
 
 -endif.
