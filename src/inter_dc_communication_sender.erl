@@ -71,8 +71,8 @@ propagate_sync(Message, DCs) ->
                        end
                end, [],
 		  DCs),
-    case length(FailedDCs) of
-        0 ->
+    case FailedDCs of
+        [] ->
             ok;
         _ ->
             %% Retry until it is success
