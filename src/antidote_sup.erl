@@ -182,9 +182,9 @@ init(_Args) ->
 			  permanent, 5000, supervisor,
 			  [meta_data_sender_sup]},
     
-    InterDcManager = {inter_dc_manager,
-		      {inter_dc_manager, start_link, []},
-		      permanent, 5000, worker, [inter_dc_manager]},
+    %% InterDcManager = {inter_dc_manager,
+    %% 		      {inter_dc_manager, start_link, []},
+    %% 		      permanent, 5000, worker, [inter_dc_manager]},
 
     {ok,
      {{one_for_one, 5, 10},
@@ -196,7 +196,7 @@ init(_Args) ->
        ClockSIReadSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
-       InterDcManager,
+       %% InterDcManager,
        MetaDataManagerSup,
        MetaDataSenderSup,
        InterDcSenderSup,

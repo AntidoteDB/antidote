@@ -442,8 +442,8 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
 					    op_payload=NewPrepare},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
-		    NewUpdates = write_set_to_logrecord(TxId,TxWriteSet),
-                    Result = logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]),
+		    %% NewUpdates = write_set_to_logrecord(TxId,TxWriteSet),
+                    %% Result = logging_vnode:append_group(Node,LogId,NewUpdates ++ [LogRecord]),
                     Result = logging_vnode:append(Node,LogId,LogRecord),
 		    {Result, NewPrepare};
 		_ ->
@@ -553,28 +553,32 @@ certification_check(_TxId, [_H|_T], _CommittedTx, _ActiveTxPerKey) ->
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
     UpdateFunction = fun ({Rep, Key, Type, Op}, AccIn) ->
-			     CommittedDownstreamOp = case Rep of
-							 isReplicated ->
-							     #clocksi_payload{
+			     case Rep of
+				 isReplicated ->
+				     CommittedDownstreamOp = #clocksi_payload{
 								key = Key,
 								type = Type,
 								op_param = Op,
 								op_generate = downstream,
 								snapshot_time = Transaction#transaction.vec_snapshot_time,
 								commit_time = {DcId, TxCommitTime},
-								txid = Transaction#transaction.txn_id};
-							 notReplicated ->
-							     #clocksi_payload{
-								    key = Key,
-								type = Type,
-								op_param = Op,
-								    op_generate = upstream,
-								    snapshot_time = Transaction#transaction.vec_snapshot_time,
-								    commit_time = {DcId, TxCommitTime},
-								    txid = Transaction#transaction.txn_id}
-						     end,
-			     AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp,
-							       replication_check:is_replicated_here(Key))]
+								txid = Transaction#transaction.txn_id},
+				     AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp)];
+				 notReplicated ->
+				     AccIn
+			     end
+			     %% 			     	 notReplicated ->
+			     %% 			     	     #clocksi_payload{
+			     %% 			     		    key = Key,
+			     %% 			     		type = Type,
+			     %% 			     		op_param = Op,
+			     %% 			     		    op_generate = upstream,
+			     %% 			     		    snapshot_time = Transaction#transaction.vec_snapshot_time,
+			     %% 			     		    commit_time = {DcId, TxCommitTime},
+			     %% 			     		    txid = Transaction#transaction.txn_id}
+			     %% 			     end,
+			     %% AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp,
+			     %% 				       replication_check:is_replicated_here(Key))]
 		     end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
@@ -585,17 +589,18 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
             error
     end.
 
-write_set_to_logrecord(TxId, WriteSet) ->
-    lists:foldl(fun({Replicated, Key,Type,Op}, Acc) ->
-			case Replicated of
-			    isReplicated ->
-				OpType=update;
-			    notReplicated ->
-				OpType=nonRepUpdate
-			end,
-			Acc ++ [#log_record{tx_id=TxId, op_type=OpType,
-					    op_payload={Key, Type, Op}}]
-		   end,[],WriteSet).
+%% write_set_to_logrecord(TxId, WriteSet) ->
+%%     lists:foldl(fun({Replicated, Key,Type,Op}, Acc) ->
+%% 			case Replicated of
+%% 			    isReplicated ->
+%% 				OpType=update;
+%% 			    notReplicated ->
+%% 				OpType=nonRepUpdate
+%% 			end,
+%% 			Acc ++ [#log_record{tx_id=TxId, op_type=OpType,
+%% 					    op_payload={Key, Type, Op}}]
+%% 		   end,[],WriteSet).
+
 %% Internal functions
 filter_updates_per_key(Updates, Key) ->
     FilterMapFun = fun ({KeyPrime, _Type, Op}) ->

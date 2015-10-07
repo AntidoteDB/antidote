@@ -46,10 +46,6 @@
 -export_type([vectorclock/0]).
 
 -define(META_PREFIX_SAFE, {dcid,int}).
--define(BEHIND_SEC_EXT, 5).
--define(BEHIND_SEC_LOCAL, 10).
-
-
 
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

@@ -139,11 +139,11 @@ perform_singleitem_read(Key,Type) ->
     {Transaction,_TransactionId} = create_transaction_record(ignore),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
+    case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, [], []) of
 	{error, Reason} ->
 	    {error, Reason};
-	{ok, Snapshot} ->
-	    ReadResult = Type:value(Snapshot),
+	{ok, _Snapshot, ResultSnapshot} ->
+	    ReadResult = Type:value(ResultSnapshot),
 	    {ok, ReadResult}
     end.
 

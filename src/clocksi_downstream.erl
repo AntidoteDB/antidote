@@ -38,7 +38,7 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, ExternalS
 				      WriteSet,
 				      ExternalSnapshots,
 				      IsLocal) of
-        {ok, Snapshot} ->
+        {ok, _PrevSS, Snapshot} ->
             DownstreamOp = case Type of
 			       crdt_bcounter ->
 				   case Type:generate_downstream(Op, Actor, Snapshot) of

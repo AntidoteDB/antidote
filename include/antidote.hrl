@@ -20,7 +20,7 @@
 -define(CONNECTION_SLEEP_EXT_READ_LOOP, 1000).
 
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
--define(SAFE_SEND_PERIOD, 500).
+-define(SAFE_SEND_PERIOD, 5000).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(REPL_PERIOD, 100).
 
@@ -65,6 +65,9 @@
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, true).
+
+-define(BEHIND_SEC_EXT, 0).
+-define(BEHIND_SEC_LOCAL, 0).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).

@@ -30,7 +30,7 @@
 	 perform_external_read/4
         ]).
 -export([init/1,
-	 start_link/5,
+	 start_link/1,
          code_change/4,
          handle_event/3,
          handle_info/3,
@@ -66,7 +66,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 		       lists:foldl(
 			 fun({DcAddress, Port}, Acc) ->
 				 case inter_dc_communication_sender_fsm_sup:start_fsm(
-					Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), Message}, self(), send_propagate) of
+					[Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), Message}, self(), send_propagate]) of
 				     {ok, _} ->
 					 receive
 					     {done, normal, _Reply} ->
@@ -112,7 +112,7 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 			      -> ok | error.
 propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
     case inter_dc_communication_sender_fsm_sup:start_fsm(
-	   Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), [Transaction]}, self(), send_safe_time) of
+	   [Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), [Transaction]}, self(), send_safe_time]) of
 	{ok, _} ->
 	    receive
 		{done, normal, _Reply} ->
@@ -178,9 +178,9 @@ perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
 %%  Message : message to be sent
 %%  ReplyTo : Process id to which the success or failure message has
 %%             to be send (Usually the caller of this function) 
--spec start_link(Port :: port(), Host :: non_neg_integer(), Message :: [term()], ReplyTo :: pid(), MsgType :: atom())
-		-> {ok, pid()} | ignore | {error, term()}.
-start_link(DestPort, DestHost, Message, ReplyTo, _MsgType) ->
+%% -spec start_link([port(), non_neg_integer(), [term()], pid(), atom()])
+%% 		-> {ok, pid()} | ignore | {error, term()}.
+start_link([DestPort, DestHost, Message, ReplyTo, _MsgType]) ->
     gen_fsm:start_link(?MODULE, [DestPort, DestHost, Message, ReplyTo], []).
 
 %% start_link(Socket, Message, ReplyTo, _MsgType) ->
