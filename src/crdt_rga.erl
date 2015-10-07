@@ -68,7 +68,7 @@ new() ->
 generate_downstream({addRight, Elem, Position}, _Actor, Rga) ->
     case (Position < 0) or (Position > length(Rga)) of
         true -> {error, {invalid_position, Position}};
-        false -> case (length(Rga) == 0) or (Position == 0) of
+        false -> case (Rga == []) or (Position == 0) of
                      true -> {ok, {addRight, {ok, 0, 0}, {ok, Elem, unique()}}};
                      false -> {ok, {addRight, lists:nth(Position, Rga), {ok, Elem, unique()}}}
                  end
@@ -124,9 +124,7 @@ remove_vertex({ok, Value, UID}, Rga) ->
 %% @doc given an rga, this mehtod looks for all tombstones and removes them, returning the tombstone free rga.
 -spec purge_tombstones(rga()) -> rga_result().
 purge_tombstones(Rga) ->
-    L = lists:filter(fun({Status, _, _}) ->
-        Status == ok
-    end, Rga),
+    L = lists:filter(fun({Status, _, _}) -> Status == ok end, Rga),
     {ok, L}.
 
 %% @doc generates a unique identifier based on the node and a unique reference.
