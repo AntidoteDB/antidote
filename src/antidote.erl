@@ -17,6 +17,9 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%%@doc This file is the public api of antidote
+
 -module(antidote).
 
 -include("antidote.hrl").
@@ -24,8 +27,7 @@
 %% API for applications
 -export([
          start_transaction/2,
-         %start_transaction/1,
-         read_objects/2, 
+         read_objects/2,
          read_objects/3,
          update_objects/2,
          update_objects/3,
@@ -125,7 +127,7 @@ update_objects(Updates, TxId) ->
                             {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, _Properties, Updates) ->
     Actor = actor, %% TODO: generate unique actors
-    Operations = lists:map( 
+    Operations = lists:map(
                    fun({{Key, Type, _Bucket}, Op, OpParam}) ->
                            {update, {Key, Type, {{Op,OpParam}, Actor}}}
                    end,
@@ -135,11 +137,11 @@ update_objects(Clock, _Properties, Updates) ->
             {ok, CommitTime};
         {error, Reason} -> {error, Reason}
     end.
-             
+
 read_objects(Clock, _Properties, Objects) ->
     Args = lists:map(
              fun({Key, Type, _Bucket}) ->
-                        {read, {Key, Type}}
+                     {read, {Key, Type}}
              end,
              Objects),
     case clocksi_execute_tx(Clock, Args) of
@@ -147,8 +149,8 @@ read_objects(Clock, _Properties, Objects) ->
             {ok, Result, CommitTime};
         {error, Reason} -> {error, Reason}
     end.
-            
-    
+
+
 %% Object creation and types
 -spec create_bucket(bucket(), type()) -> {ok, bucket()}.
 create_bucket(Bucket, _Type) ->
