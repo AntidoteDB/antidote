@@ -30,7 +30,7 @@
 	 perform_external_read/4
         ]).
 -export([init/1,
-	 start_link/1,
+	 start_link/5,
          code_change/4,
          handle_event/3,
          handle_info/3,
@@ -91,7 +91,8 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 						 Acc ++ [error]
 						 %%TODO: Retry if needed
 					 end;
-				     _ ->
+				     Error ->
+					 lager:error("Error sending to ~w, ~w.  Error: ~w", [Port,DcAddress,Error]),
 					 Acc ++ [error]
 				 end
 			 end, Err, DCs)
@@ -180,7 +181,7 @@ perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
 %%             to be send (Usually the caller of this function) 
 %% -spec start_link([port(), non_neg_integer(), [term()], pid(), atom()])
 %% 		-> {ok, pid()} | ignore | {error, term()}.
-start_link([DestPort, DestHost, Message, ReplyTo, _MsgType]) ->
+start_link(DestPort, DestHost, Message, ReplyTo, _MsgType) ->
     gen_fsm:start_link(?MODULE, [DestPort, DestHost, Message, ReplyTo], []).
 
 %% start_link(Socket, Message, ReplyTo, _MsgType) ->

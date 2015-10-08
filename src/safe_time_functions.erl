@@ -29,14 +29,14 @@
 %% These functions are input to create a meta_data_sender
 %% The functions merge by taking the minimum of all entries per node per DC
 export_funcs_and_vals() ->
-    [safe, fun update_func_min/2, fun get_min_time/1, dict:new(), dict:new()].
+    [safe, fun update_func_min/2, fun get_max_time/1, dict:new(), dict:new()].
 
 update_func_min(Last,Time) ->
     case Last of
 	undefined ->
 	    true;
 	_ ->
-	    Time >= Last
+	    Time > Last
     end.
 
 %% This assumes the dicts being sent have all DCs
@@ -47,7 +47,7 @@ get_max_time(Dict) ->
 			      Acc1;
 			  _ ->
 			      dict:fold(fun(DcId, Time, Acc2) ->
-						PrevTime = case dict:find(DcId, Acc2)
+						PrevTime = case dict:find(DcId, Acc2) of
 							       {ok, Val} ->
 								   Val;
 							       error ->

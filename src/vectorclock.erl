@@ -27,17 +27,16 @@
 
 -export([is_greater_than/2,
          get_clock_of_dc/2,
-	 get_safe_time_dc/1,
+	 %% get_safe_time_dc/1,
          set_clock_of_dc/3,
          get_stable_snapshot/0,
 	 get_partition_snapshot/1,
          from_list/1,
 	 wait_for_clock/1,
 	 wait_for_local_clock/2,
-	 get_random_node/0,
 	 update_sent_clock/3,
 	 update_safe_vector_local/1,
-	 update_safe_clock_local/2,
+	 update_safe_clock_local/3,
 	 get_safe_time/0,
 	 now_microsec/1,
 	 now_microsec_behind/4,
@@ -81,19 +80,20 @@ now_microsec_behind(ClientClock,SafeClock,{MegaSecs, Secs, MicroSecs},LocalDc) -
 	    dict:store(LocalDc,NowMicroBehind,NewDict)
     end.
 
--spec get_safe_time_dc(DcId :: term())
-			     -> {ok, non_neg_integer()} | {error, term()}.
-get_safe_time_dc(DcId) ->
-    {ok, riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}])}.
+%% -spec get_safe_time_dc(DcId :: term())
+%% 			     -> {ok, non_neg_integer()} | {error, term()}.
+%% get_safe_time_dc(DcId) ->
+%%     {ok, riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}])}.
 
 
 -spec get_safe_time()
-               -> {ok, vectorclock()} | {error, term()}.
+               -> {ok, vectorclock()}.
 get_safe_time() ->
-    ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
-    ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
-				    dict:store(Key,Val,NewAcc) end,
-			    dict:new(), ClockList),
+    %% ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
+    %% ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
+    %% 				    dict:store(Key,Val,NewAcc) end,
+    %% 			    dict:new(), ClockList),
+    {ok, ClockDict} = get_stable_snapshot(),
     LocalDc = dc_utilities:get_my_dc_id(),
     LocalSafeClock = vectorclock:set_clock_of_dc(
 		       LocalDc, vectorclock:now_microsec(erlang:now()), ClockDict),
@@ -110,12 +110,13 @@ update_sent_clock({DcAddress,Port}, Partition, StableTime) ->
 %% updated safe time
 %% If no partition is given, it just calls a random partition
 -spec update_safe_vector_local(Vector :: vectorclock:vectorclock())
-			      -> {ok, vectorclock:vectorclock()} | {error, term()}.
+			      -> {ok, vectorclock:vectorclock()}.
 update_safe_vector_local(Vector) ->
-    ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
-    ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
-				    dict:store(Key,Val,NewAcc) end,
-			    dict:new(), ClockList),
+    {ok, ClockDict} = get_stable_snapshot(),
+    %% ClockList = riak_core_metadata:to_list(?META_PREFIX_SAFE),
+    %% ClockDict = lists:foldl(fun({Key,[Val|_T]},NewAcc) ->
+    %% 				    dict:store(Key,Val,NewAcc) end,
+    %% 			    dict:new(), ClockList),
     
     NewSafeClock = dict:fold(fun(DcId,Timestamp,NewDict) ->
 				     case dict:find(DcId, NewDict) of
@@ -123,73 +124,61 @@ update_safe_vector_local(Vector) ->
 					     dict:update(DcId, fun(OldTimestamp) ->
 								       case OldTimestamp < Timestamp of
 									   true ->
-									       try
-										   riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
-									       catch
-										   _:Reason ->
-										       lager:error("Exception caught ~p", [Reason])
-									       end,
+									       %% For now don't update the safe clock bc the metadata
+									       %% is already taking care of it
+									       %% update_safe_clock_local(Partition, DcId, Timestamp),
+									       %% riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
 									       Timestamp;
 									   _ -> 
 									       OldTimestamp
 								       end
 							       end, NewDict);
-					 error -> 
-					     try
-						 riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp)
-					     catch
-						 _:Reason ->
-						     lager:error("Exception caught ~p", [Reason])
-					     end,
+					 error ->
+					     %% update_safe_clock_local(Partition, DcId, Timestamp),
+					     %% riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
 					     dict:store(DcId, Timestamp, NewDict)
 				     end
 			     end, ClockDict, Vector),
     {ok,NewSafeClock}.
 
 
--spec update_safe_clock_local(partition(), DcId :: term(), Timestamp :: non_neg_integer())
+-spec update_safe_clock_local(partition_id(), DcId :: term(), Timestamp :: non_neg_integer())
 			     -> {ok, non_neg_integer()} | {error, term()}.
 update_safe_clock_local(Partition, DcId, Timestamp) ->
+    %% Should only update if lager??
     meta_data_sender:put_meta_data(safe,Partition,DcId,Timestamp),
-
-
-
-    DcSafeClock = riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}]),
+    {ok, Timestamp}.
+    %% DcSafeClock = riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}]),
     
-    case DcSafeClock < Timestamp of
-	true ->
-	    try
-		riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
-		{ok, Timestamp}
-	    catch
-		_:Reason ->
-		    lager:error("Exception caught ~p", [Reason]),
-		    {error,Reason}
-	    end;
-	false ->
-	    {ok, DcSafeClock}
-    end.
+    %% case DcSafeClock < Timestamp of
+    %% 	true ->
+    %% 	    try
+    %% 		riak_core_metadata:put(?META_PREFIX_SAFE,DcId,Timestamp),
+    %% 		{ok, Timestamp}
+    %% 	    catch
+    %% 		_:Reason ->
+    %% 		    lager:error("Exception caught ~p", [Reason]),
+    %% 		    {error,Reason}
+    %% 	    end;
+    %% 	false ->
+    %% 	    {ok, DcSafeClock}
+    %% end.
 
 
 %% TODO, fix this
 -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
-			    ok | {error, term()}.
+			    ok.
 wait_for_clock(Clock) ->
-    case get_safe_time() of
-	{ok, VecSnapshotTime} ->
-	    case vectorclock:ge(VecSnapshotTime, Clock) of
-		true ->
-		    %% No need to wait
-		    ok;
-		false ->
-		    %% wait for snapshot time to catch up with Client Clock
-		    timer:sleep(100),
-		    wait_for_clock(Clock)
-	    end;
-	{error, Reason} ->
-	    {error, Reason}
+    {ok, VecSnapshotTime} = get_stable_snapshot(),
+    case vectorclock:ge(VecSnapshotTime, Clock) of
+	true ->
+	    %% No need to wait
+	    ok;
+	false ->
+	    %% wait for snapshot time to catch up with Client Clock
+	    timer:sleep(100),
+	    wait_for_clock(Clock)
     end.
-
 
 -spec wait_for_local_clock(Clock :: vectorclock:vectorclock(), dcid()) ->
                            ok | {error, term()}.
@@ -213,19 +202,6 @@ wait_helper(WaitForTime) ->
 
 
 
-%% @doc Returns a random node
-get_random_node() ->
-    % Send the update to a random node
-    Node = node(),
-    Preflist = riak_core_apl:active_owners(vectorclock),
-    Prefnode = [{Partition, Node1} ||
-                   {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
-    %% Take a random vnode
-    {A1,A2,A3} = now(),
-    random:seed(A1, A2, A3),
-    Index = random:uniform(length(Prefnode)),
-    lists:nth(Index, Prefnode).
-
 new() ->
     dict:new().
 
@@ -234,7 +210,7 @@ new() ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable) of
+    case meta_data_sender:get_merged_data(safe) of
 	undefined ->
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),
@@ -245,7 +221,7 @@ get_stable_snapshot() ->
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta_dict(stable,Partition) of
+    case meta_data_sender:get_meta_dict(safe,Partition) of
 	undefined ->
 	    %% The partition isnt ready yet, wait for startup
 	    timer:sleep(10),

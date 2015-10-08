@@ -67,7 +67,7 @@ receive_message(timeout, State=#state{socket=Socket,last_pid=LastPid}) ->
                     %%ok =  inter_dc_recvr_vnode:store_updates(Updates),
 		    %% TODO: this is not safe because you can recieve a safe time beofre
 		    %% you have finished processing previous received update
-		    ok = gen_tcp:send(Socket, term_to_binary({acknowledge,ok})),
+		    ok = gen_tcp:send(Socket, term_to_binary(acknowledge)),
 		    gen_tcp:close(Socket),
 		    case LastPid of
 			none ->

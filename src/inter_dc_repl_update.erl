@@ -65,7 +65,8 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
 process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
-                                             partition = _Partition}) ->
+                                             partition = _Partition,
+					     partition_vclock = LC}) ->
     case queue:is_empty(DcQ) of
         false ->
             Transaction = queue:get(DcQ),
@@ -79,10 +80,14 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             {Dc, Ts} = CommitTime,
             %% Check for dependency of operations and write to log
 	    %% Gets safe_clock from the partition (instead of partition clock)
-            {ok, LC} = vectorclock:get_safe_time(),
+            %% {ok, LC} = vectorclock:get_safe_time(),
 	    %% Sets the time of the local DC in the safe clock to the current time,
-            LocalSafeClock = vectorclock:set_clock_of_dc(
-			       LocalDc, vectorclock:now_microsec(erlang:now()), LC),
+	    LocalSafeClock = vectorclock:set_clock_of_dc(
+                           Dc, 0,
+                           vectorclock:set_clock_of_dc(
+                             LocalDc, now_millisec(erlang:now()), LC)),
+            %% LocalSafeClock = vectorclock:set_clock_of_dc(
+	    %% 		       LocalDc, vectorclock:now_microsec(erlang:now()), LC),
 	    %% It assumes it is a duplicate just if has a smaller CTS?
 	    %% Maybe should keep a CTS per partition?
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
@@ -190,7 +195,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
 finish_update_dc(Dc, DcQ, Cts,
                  State=#recvr_state{lastCommitted = LastCTS,
 				    partition_vclock = LC,
-				    partition = Partition,
+				    partition = _Partition,
 				    recQ = RecQ}) ->
     %% Is it really needed to use -1 for the time
     %% I am doing this because that is what is in
@@ -226,5 +231,5 @@ enqueue(Dc, Data, RecQ) ->
             set(Dc, Q2, RecQ)
     end.
 
-%% now_millisec({MegaSecs, Secs, MicroSecs}) ->
-%%     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+now_millisec({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

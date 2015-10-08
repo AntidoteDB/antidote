@@ -151,7 +151,7 @@ put_meta_data(Name, Partition, Key, Value, Func) ->
 			  {ok, Prev} ->
 			      dict:store(Key, Func(Prev,Value), Dict)
 		      end,
-	    put_meta_dict(Partition, NewDict, undefined)
+	    put_meta_dict(Name, Partition, NewDict, undefined)
     end.
 
 -spec get_meta_dict(atom(),partition_id()) -> dict().

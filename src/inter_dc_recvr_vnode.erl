@@ -72,7 +72,8 @@ start_store_update(Transaction) ->
 	    %% (they all have been recieved, but not yet processed yet) otherwise some new
 	    %% transactions might be blocked temporarily
 	    {Dc, Ts} = Committime,
-	    {ok, _} = vectorclock:update_safe_clock_local(Dc, Ts);
+	    %%{ok, _} = vectorclock:update_safe_clock_local(Dc, Ts - 1);
+	    riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
         _ ->
 	    {SeparatedTransactions, FinalOps} =
 		lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->
@@ -115,6 +116,20 @@ receive_loop(Count,MyPid) ->
     receive_loop(Count - 1,MyPid).
     
 
+%% @doc Returns a random node
+get_random_node() ->
+    % Send the update to a random node
+    Node = node(),
+    Preflist = riak_core_apl:active_owners(inter_dc_recvr),
+    Prefnode = [{Partition, Node1} ||
+                   {{Partition, Node1},_Type} <- Preflist, Node1 =:= Node],
+    %% Take a random vnode
+    {A1,A2,A3} = os:timestamp(),
+    random:seed(A1, A2, A3),
+    Index = random:uniform(length(Prefnode)),
+    lists:nth(Index, Prefnode).
+
+
 %% store_update(Node, Transaction) ->
 %%     riak_core_vnode_master:sync_command(Node,
 %%                                         {store_update, Transaction},
@@ -156,7 +171,11 @@ handle_command({process_queue, Transaction, From}, _Sender, State) ->
     %ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
     %% should probably remove this, and do groups of transactions instead of one at a time
     From ! {From, done_process},
-    {noreply, NewState2}.
+    {noreply, NewState2};
+
+handle_command({process_safe, Dc, Ts}, _Sender, State=#recvr_state{partition=Partition}) ->
+    {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, Ts - 1),
+    {noreply, State}.
 
 %% handle_command({process_queue}, _Sender, State) ->
 %%     {ok, NewState2} = inter_dc_repl_update:process_queue(State),
