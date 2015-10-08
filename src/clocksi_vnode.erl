@@ -574,8 +574,8 @@ update_materializer(DownstreamOps1, Transaction, TxCommitTime) ->
 		     end,
     Results = lists:foldl(UpdateFunction, [], DownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
-    case length(Failures) of
-        0 ->
+    case Failures of
+        [] ->
             ok;
         _ ->
             error
