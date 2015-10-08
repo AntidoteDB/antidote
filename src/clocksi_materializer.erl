@@ -55,14 +55,11 @@ new(Type) ->
 		  [clocksi_payload()], txid() | ignore) -> {ok, snapshot(), 
 						   snapshot_time() | ignore, boolean()} | {error, reason()}.
 materialize(Type, Snapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
-    case materialize_intern(Type, [], SnapshotCommitTime, MinSnapshotTime, Ops, TxId, SnapshotCommitTime,false) of
-	 {ok, OpList, LastOpCt, IsNewSS} ->
-	    case apply_operations(Type, Snapshot, OpList) of
-		{ok, NewSS} ->
-		    {ok, NewSS, LastOpCt, IsNewSS};
-		{error, Reason} ->
-		    {error, Reason}
-	    end;
+    {ok, OpList, LastOpCt, IsNewSS} =
+	materialize_intern(Type, [], SnapshotCommitTime, MinSnapshotTime, Ops, TxId, SnapshotCommitTime,false),
+    case apply_operations(Type, Snapshot, OpList) of
+	{ok, NewSS} ->
+	    {ok, NewSS, LastOpCt, IsNewSS};
 	{error, Reason} ->
 	    {error, Reason}
     end.
@@ -110,7 +107,7 @@ apply_operations(Type,Snapshot,[Op | Rest]) ->
 		  txid() | ignore, 
 		  snapshot_time() | ignore,
 		  boolean()) ->
-			 {ok,[clocksi_payload()],snapshot_time()|ignore,boolean()} | {error, reason()}.
+			 {ok,[clocksi_payload()],snapshot_time()|ignore,boolean()}.
 materialize_intern(_Type, OpList, _SnapshotCommitTime, _MinSnapshotTime, [], _TxId, LastOpCt, NewSS) ->
     {ok, OpList, LastOpCt, NewSS};
 
@@ -133,8 +130,6 @@ materialize_intern(Type, OpList, SnapshotCommitTime, MinSnapshotTime, [Op|Rest],
 		     {ok, OpList, LastOpCt, false, NewSS} %% no update
 	     end,
     case Result of
-	{error, Reason1} ->
-	    {error,Reason1};
 	{ok, NewOpList1, NewLastOpCt, false, NewSS1} ->
 	    materialize_intern(Type,NewOpList1,SnapshotCommitTime,MinSnapshotTime,Rest,TxId,NewLastOpCt,NewSS1);
 	{ok, NewOpList1, NewLastOpCt, true, NewSS1} ->
