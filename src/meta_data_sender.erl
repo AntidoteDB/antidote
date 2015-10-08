@@ -309,7 +309,7 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 								 dict:store(PartitionId,Val,Acc);
 							     error ->
 								 %% Put a record in the ets table because there is none for this partition
-								 ets:insert_new(get_name(Name,?META_TABLE_NAME) ,{PartitionId,undefined}),
+								 ets:insert_new(get_name(Name,?META_TABLE_NAME),{PartitionId,dict:new()}),
 								 dict:store(PartitionId,undefined,Acc)
 							 end,
 						Acc2New = dict:erase(PartitionId,Acc2),
