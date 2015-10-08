@@ -558,9 +558,9 @@ check_keylog(TxId, [H | T], CommittedTx) ->
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
     Transaction :: tx(), TxCommitTime :: {term(), term()}) ->
     ok | error.
-update_materializer(DownstreamOps1, Transaction, TxCommitTime) ->
+update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
-    DownstreamOps = lists:reverse(DownstreamOps1),
+    ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun({Key, Type, Op}, AccIn) ->
 			     CommittedDownstreamOp =
 				 #clocksi_payload{
@@ -572,7 +572,7 @@ update_materializer(DownstreamOps1, Transaction, TxCommitTime) ->
 				    txid = Transaction#transaction.txn_id},
 			     [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
 		     end,
-    Results = lists:foldl(UpdateFunction, [], DownstreamOps),
+    Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
     case Failures of
         [] ->
