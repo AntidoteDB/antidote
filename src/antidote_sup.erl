@@ -98,6 +98,7 @@ start_ext_read_connection() ->
 start_senders() ->
     start_collect_sent(),
     start_safe_time_sender(),
+    start_ext_read_connection(),
     ok.
 
 start_recvrs(AddrType, Id, RecvrPorts, ReadPort) ->

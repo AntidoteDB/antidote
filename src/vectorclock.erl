@@ -169,7 +169,7 @@ update_safe_clock_local(Partition, DcId, Timestamp) ->
 -spec wait_for_clock(Clock :: vectorclock:vectorclock()) ->
 			    ok.
 wait_for_clock(Clock) ->
-    {ok, VecSnapshotTime} = get_stable_snapshot(),
+    {ok, VecSnapshotTime} = get_safe_time(),
     case vectorclock:ge(VecSnapshotTime, Clock) of
 	true ->
 	    %% No need to wait

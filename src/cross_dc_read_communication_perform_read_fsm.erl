@@ -30,6 +30,7 @@ init([Socket,Message]) ->
 receive_message(timeout, State=#state{socket=Socket,message=Message}) ->
     {ReplyValue,MsgId1} = case binary_to_term(Message) of
 			     {read_external, MsgId, {Key,Type,Transaction,_DcId}} ->
+				  lager:info("Doing external read for key ~w", [Key]),
 				 Preflist = log_utilities:get_preflist_from_key(Key),
 				 IndexNode = hd(Preflist),
 				 %% Is it safe to do a read like this from an external transaction?
@@ -43,13 +44,15 @@ receive_message(timeout, State=#state{socket=Socket,message=Message}) ->
 					 lager:error("error in cross read reason ~p", [Reason]),
 					 {{error, abort},MsgId};
 				     {ok, Snapshot, _SS2} ->
+					 lager:info("made a ss for ext read ~w", [Snapshot]),
 					 %%ReadResult = Type:value(Snapshot),
 					 {{ok, Snapshot},MsgId}
 				 end;
-			     Unknown ->
+			      Unknown ->
 				 lager:error("Weird message received in cross_dc_read_comm ~p end", [Unknown]),
 				 {Unknown,0}
 			 end,
+    lager:info("Sending reply for the ext read"),
     ok = gen_tcp:send(Socket,
 		      term_to_binary({acknowledge, MsgId1,
 				      {ReplyValue, inter_dc_manager:get_my_dc()}})),

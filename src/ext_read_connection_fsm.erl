@@ -72,6 +72,7 @@ loop_receive(timeout, State=#state{socket=Socket
     lager:info("loop rec~n",[]),
     receive
 	{read,Message} ->
+	    lager:info("in read connection sender"),
 	    ok = gen_tcp:send(Socket,term_to_binary(Message)),
 	    {next_state, loop_receive, State,0};
 	{tcp,_Sender,Data} ->
@@ -87,6 +88,7 @@ loop_receive(timeout, State=#state{socket=Socket
 received_tcp(Data,State) ->
     case binary_to_term(Data) of
 	{acknowledge, Pid, Reply} ->
+	    lager:info("got read reply"),
 	    Pid ! {acknowledge, Pid, Reply},
 	    {next_state, loop_receive, State,0};
 	Other ->

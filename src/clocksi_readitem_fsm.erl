@@ -247,6 +247,7 @@ check_clock(Key,Transaction,PreparedCache,Partition,IsLocal) ->
 	    %% origin DC is using time:now() for its time, instead of using
 	    %% time based on one of its dependencies
 	    %% Should fix this
+	    lager:info("waiting for clock for external read"),
 	    vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
 	    check_prepared(Key,Transaction,PreparedCache,Partition)
     end.

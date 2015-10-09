@@ -44,7 +44,7 @@
 	 stop_error/2
         ]).
 
--record(state, {port, host, socket,message, caller, reply, reason}). % the current socket
+-record(state, {port, host, socket,message, caller, reply, reason, reason_type}). % the current socket
 
 %% ===================================================================
 %% Public API
@@ -135,6 +135,7 @@ propagate_sync_safe_time({DcAddress, Port}, Transaction) ->
 			   -> {ok, term()} | error.
 perform_external_read({DcAddress, Port}, Key, Type, Transaction) ->
     MyPid = self(),
+    lager:info("Sending read to ~w, ~w, on key ~w", [DcAddress,Port,Key]),
     ext_read_connection_fsm:perform_read(DcAddress,Port, {read_external, MyPid, {Key, Type, Transaction, dc_utilities:get_my_dc_id()}}),
     receive
 	{acknowledge, MyPid, Reply} ->
@@ -204,6 +205,7 @@ init([Socket,Message,ReplyTo]) ->
     {ok, send, #state{socket=Socket,
 		      message=Message,
 		      caller=ReplyTo,
+		      reason_type=error,
 		      reply=empty}, 0}.
 
 send(timeout,State=#state{socket=Socket,message=Message}) ->
@@ -240,11 +242,11 @@ wait_for_ack(timeout, State) ->
 
 stop(timeout, State=#state{socket=Socket}) ->
     _ = gen_tcp:close(Socket), 
-    {stop, normal, State}.
+    {stop, normal, State#state{reason_type=normal}}.
 
 stop_error(timeout, State=#state{socket=Socket}) ->
     _ = gen_tcp:close(Socket),
-    {stop, normal, State}.
+    {stop, normal, State#state{reason_type=error}}.
 
 %% Converts incoming tcp message to an fsm event to self
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
@@ -268,6 +270,6 @@ handle_sync_event(_Event, _From, _StateName, StateData) ->
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _State = #state{caller = Caller, reason=Res}) ->
-    Caller ! {done, Res},
+terminate(_Reason, _SN, _State = #state{caller = Caller, reason=Res, reason_type=ResT}) ->
+    Caller ! {done, ResT, Res},
     ok.

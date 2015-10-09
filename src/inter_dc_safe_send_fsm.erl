@@ -62,6 +62,7 @@ loop_send_safe(timeout, State=#state{last_sent=LastSent,
     NewSent = dict:fold(fun(Dc, LastSentTs, LastSentAcc) ->
 				NewMax = collect_sent_time_fsm:get_max_sent_time(
 					   Dc, LastSentTs),
+				lager:info("New max ~w, prev ~w for ~w", [NewMax,LastSentTs,Dc]),
 				case NewMax > LastSentTs of
 				    true -> 
 					%% Send safetime just like doing a heartbeat transaction
@@ -70,6 +71,7 @@ loop_send_safe(timeout, State=#state{last_sent=LastSent,
 							 #log_record{op_type=safe_update, op_payload = 0}
 						    }],
 					DcId = dc_utilities:get_my_dc_id(),
+					lager:info("sending safe time ~w to ~w", [NewMax,Dc]),
 					%% Dont need clock, should just give an empty value
 					Clock = 0,
 					Time = NewMax,
@@ -81,9 +83,11 @@ loop_send_safe(timeout, State=#state{last_sent=LastSent,
 					case inter_dc_communication_sender:propagate_sync_safe_time(
 					       Dc, Transaction) of
 					    ok ->
+						lager:info("Ok safe send"),
 						dict:store(Dc, NewMax, LastSentAcc);
-					    _ ->
+					    Err ->
 						%% Keep the old time since there was an error sending the message
+						lager:info("Error safe send ~w", [Err]),
 						LastSentAcc
 					end;
 				    
