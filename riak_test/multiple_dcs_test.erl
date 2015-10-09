@@ -8,9 +8,14 @@
 
 
 confirm() ->
-    % Must be a power of 2, minimum 8 and maximum 1024.
+
+    %% This resets nodes, cleans up stale directories, etc.:
+    lager:info("Cleaning up..."),
+    rt:setup_harness(dummy, dummy),
+
+    NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
-        {riak_core, [{ring_creation_size, 8}]}
+        {riak_core, [{ring_creation_size, NumVNodes}]}
     ]),
     [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
     HeadCluster1 = hd(Cluster1),
