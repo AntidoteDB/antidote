@@ -83,7 +83,7 @@ start_vnode(I) ->
 read_data_item(Node, TxId, Key, Type, Updates) ->
     case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId) of
         {ok, Snapshot} ->
-            Updates2 = filter_updates_per_key(Updates, Key),
+            Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
             Snapshot2 = clocksi_materializer:materialize_eager
             (Type, Snapshot, Updates2),
             {ok, Snapshot2};
@@ -560,18 +560,19 @@ check_keylog(TxId, [H | T], CommittedTx) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
+    ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun({Key, Type, Op}, AccIn) ->
-        CommittedDownstreamOp =
-            #clocksi_payload{
-                key = Key,
-                type = Type,
-                op_param = Op,
-                snapshot_time = Transaction#transaction.vec_snapshot_time,
-                commit_time = {DcId, TxCommitTime},
-                txid = Transaction#transaction.txn_id},
-        AccIn ++ [materializer_vnode:update(Key, CommittedDownstreamOp)]
-    end,
-    Results = lists:foldl(UpdateFunction, [], DownstreamOps),
+			     CommittedDownstreamOp =
+				 #clocksi_payload{
+				    key = Key,
+				    type = Type,
+				    op_param = Op,
+				    snapshot_time = Transaction#transaction.vec_snapshot_time,
+				    commit_time = {DcId, TxCommitTime},
+				    txid = Transaction#transaction.txn_id},
+			     [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
+		     end,
+    Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
     case Failures of
         [] ->
@@ -581,15 +582,15 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     end.
 
 %% Internal functions
-filter_updates_per_key(Updates, Key) ->
-    FilterMapFun = fun({KeyPrime, _Type, Op}) ->
-        case KeyPrime == Key of
-            true -> {true, Op};
-            false -> false
-        end
-    end,
-    lists:filtermap(FilterMapFun, Updates).
-
+reverse_and_filter_updates_per_key(Updates, Key) ->
+    lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
+			case KeyPrime == Key of
+			    true ->
+				[Op | Acc];
+			    false ->
+				Acc
+			end
+		end, [], Updates).
 
 -ifdef(TEST).
 
@@ -605,7 +606,7 @@ filter_updates_per_key_test() ->
     ClockSIOp3 = {c, crdt_pncounter, Op3},
     ClockSIOp4 = {a, crdt_pncounter, Op4},
 
-    ?assertEqual([Op1, Op4],
-        filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
+    ?assertEqual([Op4, Op1],
+        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
 
 -endif.
