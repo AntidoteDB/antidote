@@ -22,7 +22,7 @@ confirm() ->
         {riak_core, [{ring_creation_size, NumVNodes}]}
     ]),
 
-    %Clean = rt_config:get(clean_cluster, true),
+    Clean = rt_config:get(clean_cluster, true),
     [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
@@ -30,15 +30,15 @@ confirm() ->
 
     ok = common:setup_dc_manager([Cluster1, Cluster2, Cluster3], [8091, 8092, 8093], true),
 
-    %simple_replication_test(Cluster1, Cluster2, Cluster3),
+    simple_replication_test(Cluster1, Cluster2, Cluster3),
 
-    %[Cluster4, Cluster5, Cluster6] = common:clean_clusters([Cluster1, Cluster2, Cluster3]),
-    %ok = common:setup_dc_manager([Cluster4, Cluster5, Cluster6], [8091, 8092, 8093], Clean),
-    parallel_writes_test(Cluster1, Cluster2, Cluster3),
+    [Cluster4, Cluster5, Cluster6] = common:clean_clusters([Cluster1, Cluster2, Cluster3]),
+    ok = common:setup_dc_manager([Cluster4, Cluster5, Cluster6], [8091, 8092, 8093], Clean),
+    parallel_writes_test(Cluster4, Cluster5, Cluster6),
 
-    %[Cluster7, Cluster8, Cluster9] = common:clean_clusters([Cluster4, Cluster5, Cluster6]),
-    %ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], [8091, 8092, 8093], Clean),
-    %failure_test({Cluster7, 8091}, {Cluster8, 8092}, {Cluster9, 8093}),
+    [Cluster7, Cluster8, Cluster9] = common:clean_clusters([Cluster4, Cluster5, Cluster6]),
+    ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], [8091, 8092, 8093], Clean),
+    failure_test({Cluster7, 8091}, {Cluster8, 8092}, {Cluster9, 8093}),
     pass.
 
 simple_replication_test(Cluster1, Cluster2, Cluster3) ->
