@@ -55,10 +55,11 @@
 %% @doc Data Type: state
 %%      where:
 %%          partition: the partition that the vnode is responsible for.
-%%          prepared_tx: a list of prepared transactions.
-%%          committed_tx: a list of committed transactions.
-%%          active_txs_per_key: a list of the active transactions that
-%%              have updated a key (but not yet finished).
+%%          prepared_tx: the prepared txn for each key. Note that for
+%%              each key, there can be at most one prepared txn in any
+%%              time.
+%%          committed_tx: the transaction id of the last committed
+%%              transaction for each key.
 %%          downstream_set: a list of the downstream operations that the
 %%              transactions generate.
 %%          write_set: a list of the write sets that the transactions
@@ -67,7 +68,6 @@
 -record(state, {partition :: partition_id(),
     prepared_tx :: cache_id(),
     committed_tx :: cache_id(),
-    active_txs_per_key :: cache_id(),
     read_servers :: non_neg_integer()}).
 
 %%%===================================================================
@@ -91,7 +91,6 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
             {error, Reason}
     end.
 
-
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
 get_active_txns_key(Key, Partition, TableName) ->
@@ -113,7 +112,6 @@ get_active_txns_key_internal(Key, TableName) ->
                         List
                 end,
     {ok, ActiveTxs}.
-
 
 %% @doc Return active transactions in prepare state with their preparetime for all keys for this partition
 %% should be run from same physical node
@@ -199,12 +197,10 @@ get_cache_name(Partition, Base) ->
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
-    ActiveTxsPerKey = ets:new(active_txs_per_key, [bag]),
     Num = clocksi_readitem_fsm:start_read_servers(Partition, ?READ_CONCURRENCY),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
-        active_txs_per_key = ActiveTxsPerKey,
         read_servers = Num}}.
 
 
@@ -262,11 +258,10 @@ handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partitio
 handle_command({prepare, Transaction, WriteSet}, _Sender,
     State = #state{partition = _Partition,
         committed_tx = CommittedTx,
-        active_txs_per_key = ActiveTxPerKey,
         prepared_tx = PreparedTx
     }) ->
     PrepareTime = now_microsec(erlang:now()),
-    {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+    {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
             {reply, {prepared, NewPrepare}, State};
@@ -284,11 +279,10 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
 handle_command({single_commit, Transaction, WriteSet}, _Sender,
     State = #state{partition = _Partition,
         committed_tx = CommittedTx,
-        active_txs_per_key = ActiveTxPerKey,
         prepared_tx = PreparedTx
     }) ->
     PrepareTime = now_microsec(erlang:now()),
-    {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime),
+    {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime),
     case Result of
         {ok, _} ->
             ResultCommit = commit(Transaction, NewPrepare, WriteSet, CommittedTx, State),
@@ -359,11 +353,6 @@ handle_command({get_active_txns}, _Sender,
     #state{partition = Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
 
-handle_command({get_active_txns, Key}, _Sender,
-    #state{partition = Partition} = State) ->
-    {reply, get_active_txns_key_internal(Partition, Key), State};
-
-
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
@@ -411,16 +400,15 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%% Internal Functions
 %%%===================================================================
 
-prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, PrepareTime) ->
+prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime) ->
     TxId = Transaction#transaction.txn_id,
-    case certification_check(TxId, TxWriteSet, CommittedTx, ActiveTxPerKey) of
+    case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
-                [{Key, Type, {Op, Actor}} | Rest] ->
-                    true = ets:insert(ActiveTxPerKey, {Key, Type, TxId}),
-                    PrepDict = set_prepared(PreparedTx, [{Key, Type, {Op, Actor}} | Rest], TxId, PrepareTime, dict:new()),
+                [{Key, _, {_Op, _Actor}} | _] ->
+                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(erlang:now()),
-                    ok = reset_prepared(PreparedTx, [{Key, Type, {Op, Actor}} | Rest], TxId, NewPrepare, PrepDict),
+                    ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
                     LogRecord = #log_record{tx_id = TxId,
                         op_type = prepare,
                         op_payload = NewPrepare},
@@ -434,7 +422,6 @@ prepare(Transaction, TxWriteSet, CommittedTx, ActiveTxPerKey, PreparedTx, Prepar
         false ->
             {{error, write_conflict}, 0}
     end.
-
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
@@ -460,7 +447,6 @@ reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Act
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
-
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
@@ -470,7 +456,8 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
             Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
-            true = ets:insert(CommittedTx, {TxId, TxCommitTime}),
+            lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
+                        Updates),
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
@@ -492,13 +479,27 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %% @doc clean_and_notify:
 %%      This function is used for cleanning the state a transaction
 %%      stores in the vnode while it is being procesed. Once a
-%%      transaction commits or aborts, it is necessary to:
-%%      1. notify all read_fsms that are waiting for this transaction to finish
-%%      2. clean the state of the transaction. Namely:
-%%      a. ActiteTxsPerKey,
-%%      b. PreparedTx
-%%
-clean_and_notify(TxId, Updates, #state{active_txs_per_key = _ActiveTxsPerKey,
+%%      transaction commits or aborts, it is necessary to clean the 
+%%      prepared record of a transaction T. There are three possibility
+%%      when trying to clean a record:
+%%      1. The record is prepared by T (with T's TxId).
+%%          If T is being committed, this is the normal. If T is being 
+%%          aborted, it means T successfully prepared here, but got 
+%%          aborted somewhere else.
+%%          In both cases, we should remove the record.
+%%      2. The record is empty.
+%%          This can only happen when T is being aborted. What can only
+%%          only happen is as follows: when T tried to prepare, someone
+%%          else has already prepared, which caused T to abort. Then 
+%%          before the partition receives the abort message of T, the
+%%          prepared transaction gets processed and the prepared record
+%%          is removed.
+%%          In this case, we don't need to do anything.
+%%      3. The record is prepared by another transaction M.
+%%          This can only happen when T is being aborted. We can not
+%%          remove M's prepare record, so we should not do anything
+%%          either. 
+clean_and_notify(TxId, Updates, #state{
     prepared_tx = PreparedTx}) ->
     ok = clean_prepared(PreparedTx, Updates, TxId).
 
@@ -528,31 +529,38 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 %%      to the prepared state.
 certification_check(_, [], _, _) ->
     true;
-certification_check(TxId, [H | T], CommittedTx, ActiveTxPerKey) ->
-    {Key, _Type, _} = H,
-    TxsPerKey = ets:lookup(ActiveTxPerKey, Key),
-    case check_keylog(TxId, TxsPerKey, CommittedTx) of
-        true ->
-            false;
-        false ->
-            certification_check(TxId, T, CommittedTx, ActiveTxPerKey)
+certification_check(TxId, [H | T], CommittedTx, PreparedTx) ->
+    SnapshotTime = TxId#tx_id.snapshot_time,
+    {Key, _, _} = H,
+    case ets:lookup(CommittedTx, Key) of
+        [{Key, CommitTime}] ->
+            case CommitTime > SnapshotTime of
+                true ->
+                    false;
+                false ->
+                    case check_prepared(TxId, PreparedTx, Key) of
+                        true ->
+                            certification_check(TxId, T, CommittedTx, PreparedTx);
+                        false ->
+                            false
+                    end
+            end;
+        [] ->
+            case check_prepared(TxId, PreparedTx, Key) of
+                true ->
+                    certification_check(TxId, T, CommittedTx, PreparedTx);
+                false ->
+                    false
+            end
     end.
 
-check_keylog(_, [], _) ->
-    false;
-check_keylog(TxId, [H | T], CommittedTx) ->
-    {_Key, _Type, ThisTxId} = H,
-    case ThisTxId > TxId of
-        true ->
-            CommitInfo = ets:lookup(CommittedTx, ThisTxId),
-            case CommitInfo of
-                [{_, _CommitTime}] ->
-                    true;
-                [] ->
-                    check_keylog(TxId, T, CommittedTx)
-            end;
-        false ->
-            check_keylog(TxId, T, CommittedTx)
+check_prepared(TxId, PreparedTx, Key) ->
+    _SnapshotTime = TxId#tx_id.snapshot_time,
+    case ets:lookup(PreparedTx, Key) of
+        [] ->
+            true;
+        _ ->
+            false
     end.
 
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
