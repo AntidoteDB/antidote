@@ -46,11 +46,23 @@ confirm() ->
     lager:info("Vnodes are started up"),
 
     pass = start_stop_test(),
+
+    [Nodes1] = common:clean_clusters([Nodes]),
     pass = get_empty_crdt_test(<<"key0">>),
+
+    [Nodes2] = common:clean_clusters([Nodes1]),
     pass = update_counter_crdt_test(<<"key1">>, 10),
+
+    [Nodes3] = common:clean_clusters([Nodes2]),
     pass = update_counter_crdt_and_read_test(<<"key2">>, 15),
+
+    [Nodes4] = common:clean_clusters([Nodes3]),
     pass = atomic_update_txn_test(),
+
+    [Nodes5] = common:clean_clusters([Nodes4]),
     pass = snapshot_read_test(),
+
+    [_] = common:clean_clusters([Nodes5]),
     pass = transaction_orset_test(),
     pass.
 
