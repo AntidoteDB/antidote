@@ -46,7 +46,7 @@
 	 check_partition_ready/3,
 	 start_read_servers/2,
 	 stop_read_servers/2,
-	 write_set_to_updates/4]).
+	 reverse_write_set_to_updates/4]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
@@ -217,10 +217,12 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, IsLocal},
 perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition,IsLocal) ->
     case check_clock(Key,Transaction,PreparedCache,Partition,IsLocal) of
 	{not_ready,Time} ->
+	    lager:info("spinning read"),
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
+	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction, IsLocal}),
 	    ok;
 	ready ->
+	    lager:info("ready to read"),
 	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
     end.
 
@@ -265,10 +267,11 @@ check_prepared_list(_Key,_SnapshotTime,[]) ->
     ready;
 check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
     case Time =< SnapshotTime of
-    true ->
-        {not_ready, ?SPIN_WAIT};
-    false ->
-        check_prepared_list(Key,SnapshotTime,Rest)
+	true ->
+	    lager:info("spin wait"),
+	    {not_ready, ?SPIN_WAIT};
+	false ->
+	    check_prepared_list(Key,SnapshotTime,Rest)
     end.
 
 %% @doc return:
@@ -306,27 +309,23 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, _SD) ->
     ok.
 
-write_set_to_updates(Txn, WriteSet, Key, ExtSnapshots) ->
-    NewWS=lists:foldl(fun({Replicated,KeyPrime,Type,Op}, Acc) ->
-			      case KeyPrime==Key of
-				  true ->
-				      case Replicated of
-					  isReplicated ->
-					      Acc ++ [{Replicated,KeyPrime,Type,Op}];
-					  notReplicated ->
-					      {ok, DownstreamRecord} = 
-						  clocksi_downstream:generate_downstream_op(
-						    Txn, {0,node()}, Key, Type, Op, Acc, ExtSnapshots, local),
-					      Acc ++ [{isReplicated,KeyPrime,Type,DownstreamRecord}]
-				      end;
-				  false ->
-				      Acc
-			      end
-		      end,[],WriteSet),
-    lists:foldl(fun({_Replicated,_Key2,_Type2,Update2}, Acc) ->
-			Acc ++ [Update2]
-		end,[],NewWS).
-
+reverse_write_set_to_updates(Txn, WriteSet, Key, ExtSnapshots) ->
+    lists:foldl(fun({Replicated,KeyPrime,Type,Op}, Acc) ->
+			case KeyPrime==Key of
+			    true ->
+				case Replicated of
+				    isReplicated ->
+					[Op | Acc];
+				    notReplicated ->
+					{ok, DownstreamRecord} = 
+					    clocksi_downstream:generate_downstream_op(
+					      Txn, {0,node()}, Key, Type, Op, Acc, ExtSnapshots, local),
+					[DownstreamRecord | Acc]
+				end;
+			    false ->
+				Acc
+			end
+		end,[],WriteSet).
 
 %% Internal functions
 

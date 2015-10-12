@@ -43,33 +43,38 @@ init_state(Partition) ->
 -spec enqueue_update(Transaction::clocksi_transaction_reader:transaction(),
                      #recvr_state{}) ->
                             {ok, #recvr_state{}}.
-enqueue_update(Transaction,
+enqueue_update({Transaction, From},
                State = #recvr_state{recQ = RecQ}) ->
     {_,{FromDC, _CommitTime},_,_} = Transaction,
-    RecQNew = enqueue(FromDC, Transaction, RecQ),
+    RecQNew = enqueue(FromDC, {Transaction, From}, RecQ),
     {ok, State#recvr_state{recQ = RecQNew}}.
 
 %% Process one transaction from Q for each DC each Q.
 %% This method must be called repeatedly
 %% inorder to process all updates
 process_queue(State=#recvr_state{recQ = RecQ}) ->
-    NewState = orddict:fold(
-                 fun(K, V, Res) ->
-                         process_q_dc(K, V, Res)
-                 end, State, RecQ),
-    {ok, NewState}.
+    {Ret, NewState} = orddict:fold(
+			fun(K, V, {DepSat, Acc}) ->
+				case process_q_dc(K, V, Acc) of				    
+				    {ok, NS} ->
+					{DepSat, NS};
+				    {dep_not_sat, NS} ->
+					{dep_not_sat, NS}
+				end
+			end, {ok, State}, RecQ),
+    {Ret, NewState}.
 
 %% private functions
 
 
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
-process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
+process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = _LastCTS,
                                              partition = _Partition,
 					     partition_vclock = LC}) ->
     case queue:is_empty(DcQ) of
         false ->
-            Transaction = queue:get(DcQ),
+            {Transaction,From} = queue:get(DcQ),
             {_TxId, CommitTime, VecSnapshotTime, _Ops} = Transaction,
 
 	    %% Tyler: Sets the time of the sending DC to 0 because
@@ -82,44 +87,58 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 	    %% Gets safe_clock from the partition (instead of partition clock)
             %% {ok, LC} = vectorclock:get_safe_time(),
 	    %% Sets the time of the local DC in the safe clock to the current time,
+	    {ok, Stable} = vectorclock:get_stable_snapshot(),
+	    LC1 = vectorclock:keep_max(Stable,LC),
 	    LocalSafeClock = vectorclock:set_clock_of_dc(
                            Dc, 0,
                            vectorclock:set_clock_of_dc(
-                             LocalDc, now_millisec(erlang:now()), LC)),
+                             LocalDc, now_millisec(erlang:now()), LC1)),
             %% LocalSafeClock = vectorclock:set_clock_of_dc(
 	    %% 		       LocalDc, vectorclock:now_microsec(erlang:now()), LC),
 	    %% It assumes it is a duplicate just if has a smaller CTS?
 	    %% Maybe should keep a CTS per partition?
-            case orddict:find(Dc, LastCTS) of  % Check for duplicate
-                {ok, CTS} ->
-                    if Ts >= CTS -> 
-			    %%lager:info("performing update1 ~p", [Transaction]),
-			    check_and_update(SnapshotTime, LocalSafeClock,
-                                             Transaction,
-                                             Dc, DcQ, Ts, StateData ) ;
-                       true ->
-                            %% %% TODO: Not right way check duplicates
-                            %% lager:info("Duplicate request, ~p, lastCTS ~p", [Transaction,LastCTS]),
-                            %% {ok, NewState} = finish_update_dc(
-                            %%                    Dc, DcQ, CTS, StateData),
-                            %% %%Duplicate request, drop from queue
-                            %% NewState
-			    check_and_update(SnapshotTime, LocalSafeClock,
-                                             Transaction,
-                                             Dc, DcQ, Ts, StateData )
+            %% case orddict:find(Dc, LastCTS) of  % Check for duplicate
+            %%     {ok, CTS} ->
+            %%         if Ts >= CTS -> 
+	    %% 		    %%lager:info("performing update1 ~p", [Transaction]),
+	    %% 		    check_and_update(SnapshotTime, LocalSafeClock,
+            %%                                  Transaction,
+            %%                                  Dc, DcQ, Ts, StateData ) ;
+            %%            true ->
+            %%                 %% %% TODO: Not right way check duplicates
+            %%                 %% lager:info("Duplicate request, ~p, lastCTS ~p", [Transaction,LastCTS]),
+            %%                 %% {ok, NewState} = finish_update_dc(
+            %%                 %%                    Dc, DcQ, CTS, StateData),
+            %%                 %% %%Duplicate request, drop from queue
+            %%                 %% NewState
+	    %% 		    check_and_update(SnapshotTime, LocalSafeClock,
+            %%                                  Transaction,
+            %%                                  Dc, DcQ, Ts, StateData )
 
-                    end;
-                _ ->
-		    %%lager:info("performing update2 ~p", [Transaction]),
-                    check_and_update(SnapshotTime, LocalSafeClock, Transaction,
-                                     Dc, DcQ, Ts, StateData)
+            %%         end;
+            %%     _ ->
+	    %% 	    %%lager:info("performing update2 ~p", [Transaction]),
+            %%         case check_and_update(SnapshotTime, LocalSafeClock, Transaction,
+	    %% 				  Dc, DcQ, Ts, StateData) of
+	    %% 		{ok, NewQ, NewS} ->
+	    %% 		    process_q_dc(Dc, NewQ, NewS);
+	    %% 		{dep_not_sat, NewS1} ->
+	    %% 		    {dep_not_sat, NewS1}
+	    %% 	    end
+	    %% end;
 
-            end;
+	    %% AM NOT CHECKING FOR DUPLICATES!!! Should fix this
+	    case check_and_update(SnapshotTime, LocalSafeClock, Transaction,
+				  Dc, DcQ, Ts, StateData) of
+		{ok, NewQ, NewS} ->
+		    From ! {From, done_process},
+		    process_q_dc(Dc, NewQ, NewS);
+		{dep_not_sat, NewS1} ->
+		    {dep_not_sat, NewS1}
+	    end;		
         true ->
-            StateData
+            {ok, StateData}
     end.
-
-    
 
 check_and_update(SnapshotTime, Localclock, Transaction,
                  Dc, DcQ, Ts,
@@ -179,17 +198,14 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                   NewTrans),
             lists:foreach( fun(DownOp) ->
                                    Key = DownOp#clocksi_payload.key,
-                                   ok = materializer_vnode:update(Key, DownOp, true)
+                                   ok = materializer_vnode:update(Key, DownOp)
                            end, DownOps),
             %%TODO add error handling if append failed
-	    {ok, NewState} = finish_update_dc(
-                               Dc, DcQ, Ts, StateData),
-	    riak_core_vnode_master:command({Partition, node()}, {process_queue},
-                                           inter_dc_recvr_vnode_master),
-            NewState;
-        false ->
+	    finish_update_dc(
+	      Dc, DcQ, Ts, StateData);
+	false ->
             lager:error("Dep not satisfied ~p", [Transaction]),
-            StateData
+            {dep_not_sat, StateData}
     end.
 
 finish_update_dc(Dc, DcQ, Cts,
@@ -201,13 +217,13 @@ finish_update_dc(Dc, DcQ, Cts,
     %% I am doing this because that is what is in
     %% vectorclock_vnode update_clock
     %% LC shouldnt be necessary for partial replication
-    NewLC = vectorclock:set_clock_of_dc(Dc, Cts - 1, LC),
+    NewLC = vectorclock:set_clock_of_dc(Dc, Cts, LC),
     %% dont do stable time in local computation
     %%ok = meta_data_sender:put_meta_dict(stable, Partition, NewLC),
     DcQNew = queue:drop(DcQ),
     RecQNew = set(Dc, DcQNew, RecQ),
     LastCommNew = set(Dc, Cts, LastCTS),
-    {ok, State#recvr_state{lastCommitted = LastCommNew,
+    {ok, DcQNew, State#recvr_state{lastCommitted = LastCommNew,
 			   recQ = RecQNew,
 			   partition_vclock = NewLC}}.
 

@@ -41,6 +41,7 @@
 	 now_microsec/1,
 	 now_microsec_behind/4,
 	 new/0,
+	 keep_max/2,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
@@ -268,6 +269,16 @@ set_clock_of_dc(DcId, Time, VectorClock) ->
 
 from_list(List) ->
     dict:from_list(List).
+
+keep_max(V1, V2) ->
+    fold_all_keys(fun(A, B, DC, Acc) -> dict:store(DC, max(A, B), Acc) end, V1, V2).
+
+fold_all_keys(F, V1, V2) ->
+    AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+    lists:foldl(fun(DC, Acc) ->
+			F(get_clock_of_dc(DC, V1), get_clock_of_dc(DC, V2), DC, Acc)
+		end, new(), AllDCs).
+
 
 -spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->

@@ -135,7 +135,7 @@ clocksi_read(Key, Type) ->
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}});
+            gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}, infinity);
         {error, Reason} ->
             {error, Reason}
     end.

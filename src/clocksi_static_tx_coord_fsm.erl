@@ -112,14 +112,14 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 			    _ ->
 				case Operation of
 				    {update, {Key, Type, OpParams}} ->
-					case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
+					case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Acc#tx_coord_state.external_snapshots,Transaction,undefined) of
 					    {error,Reason} ->
 						{error, Reason};
-					    NewUpdatedPartitions ->
+					    {ok, NewUpdatedPartitions} ->
 						Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
 					end;
 				    {read, {Key, Type}} ->
-					case clocksi_interactive_tx_coord_fsm:perform_read({Key,Type},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
+					case clocksi_interactive_tx_coord_fsm:perform_read({Key,Type},Acc#tx_coord_state.updated_partitions,Acc#tx_coord_state.external_snapshots,Transaction,undefined) of
 					    {error,Reason} ->
 						{error, Reason};
 					    {ok, ReadResult,NewExternal} ->

@@ -83,7 +83,6 @@ start_vnode(I) ->
 %% @doc Sends a read request to the Node that is responsible for the Key
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
-<<<<<<< HEAD
 read_data_item(Node, TxId, Key, Type, Updates, ExternalSnapshots, IsLocal) ->
     Result = case lists:keyfind(Key, 1, ExternalSnapshots) of
 		 {Key, Snapshot} ->
@@ -94,10 +93,10 @@ read_data_item(Node, TxId, Key, Type, Updates, ExternalSnapshots, IsLocal) ->
 	     end,
     case Result of
 	{ok, SS} ->
-	    Updates1=clocksi_readitem_fsm:write_set_to_updates(TxId,Updates,Key,ExternalSnapshots),
-            Updates2 = reverse_and_filter_updates_per_key(Updates1, Key),
+	    Updates1=clocksi_readitem_fsm:reverse_write_set_to_updates(TxId,Updates,Key,ExternalSnapshots),
+            %% Updates2 = reverse_and_filter_updates_per_key(Updates1, Key),
 	    Snapshot2=clocksi_materializer:materialize_eager
-			(Type, SS, Updates2),
+			(Type, SS, Updates1),
 	    {ok, SS, Snapshot2};
         {error, Reason} ->
             {error, Reason}

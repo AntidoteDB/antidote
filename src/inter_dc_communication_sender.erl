@@ -51,7 +51,6 @@
 %% ===================================================================
 
 %% Send a message to all DCs over a tcp connection
-<<<<<<< HEAD
 %% In partial repl alg this takes as input a dictionary with
 %% keys as list of DCs for transacitons that are replicated
 %% and values as the transactions
@@ -88,12 +87,12 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
 						    lager:error(
 						      "Send failed Reason:~p Message: ~p",
 						      [Other, Message]),
-						    Acc ++ [{DcId, {DcAddress,Port}}]
+						    Acc ++ [{DcAddress,Port}]
 						    %%TODO: Retry if needed
 					    end;
 					Error ->
 					    lager:error("Error sending to ~w, ~w.  Error: ~w", [Port,DcAddress,Error]),
-					    Acc ++ [{DcId, {DcAddress,Port}}]
+					    Acc ++ [{DcAddress,Port}]
 				    end
 			    end, Err, DCs)
 		  end, [], ListTxnDcs), 

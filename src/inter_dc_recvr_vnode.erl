@@ -155,32 +155,41 @@ init([Partition]) ->
             {error, Reason}
     end.
 
+handle_command({process_queue, From}, _Sender, State) ->
+    %%ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
+    {Result, NewState2} = inter_dc_repl_update:process_queue(State),
+    case Result of
+	ok ->
+	    %%ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
+	    %% should probably remove this, and do groups of transactions instead of one at a time
+	    %% The reply to let the proccesing for this transaction has finished is in the process_queue
+	    ok;
+	dep_not_sat ->
+	    riak_core_vnode:send_command_after(?META_DATA_SLEEP,{process_queue,From})
+    end,
+    {noreply, NewState2};
+
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
-%% handle_command({store_update, Transaction}, _Sender, State) ->
-%%     {ok, NewState} = inter_dc_repl_update:enqueue_update(
-%%                        Transaction, State),
-%%     ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
-%%     {reply, ok, NewState};
-
 handle_command({process_queue, Transaction, From}, _Sender, State) ->
     {ok, NewState} = inter_dc_repl_update:enqueue_update(
-                       Transaction, State),
+                       {Transaction, From}, State),
     %%ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
-    {ok, NewState2} = inter_dc_repl_update:process_queue(NewState),
-    %ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
-    %% should probably remove this, and do groups of transactions instead of one at a time
-    From ! {From, done_process},
+    {Result, NewState2} = inter_dc_repl_update:process_queue(NewState),
+    case Result of
+	ok ->
+	    %%ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
+	    %% should probably remove this, and do groups of transactions instead of one at a time
+	    %% The reply to let the proccesing for this transaction has finished is in the process_queue
+	    ok;
+	dep_not_sat ->
+	    riak_core_vnode:send_command_after(?META_DATA_SLEEP,{process_queue,From})
+    end,
     {noreply, NewState2};
 
 handle_command({process_safe, Dc, Ts}, _Sender, State=#recvr_state{partition=Partition}) ->
     {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, Ts - 1),
     {noreply, State}.
-
-%% handle_command({process_queue}, _Sender, State) ->
-%%     {ok, NewState2} = inter_dc_repl_update:process_queue(State),
-%%     %ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState2}),
-%%     {noreply, NewState2}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.
