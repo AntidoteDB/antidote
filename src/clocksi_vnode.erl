@@ -83,6 +83,7 @@ start_vnode(I) ->
 %% @doc Sends a read request to the Node that is responsible for the Key
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
+<<<<<<< HEAD
 read_data_item(Node, TxId, Key, Type, Updates, ExternalSnapshots, IsLocal) ->
     Result = case lists:keyfind(Key, 1, ExternalSnapshots) of
 		 {Key, Snapshot} ->
@@ -94,12 +95,12 @@ read_data_item(Node, TxId, Key, Type, Updates, ExternalSnapshots, IsLocal) ->
     case Result of
 	{ok, SS} ->
 	    Updates1=clocksi_readitem_fsm:write_set_to_updates(TxId,Updates,Key,ExternalSnapshots),
-	    Updates2=filter_updates_per_key(Updates1, Key),
+            Updates2 = reverse_and_filter_updates_per_key(Updates1, Key),
 	    Snapshot2=clocksi_materializer:materialize_eager
 			(Type, SS, Updates2),
 	    {ok, SS, Snapshot2};
-	Other ->
-	    Other
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 get_active_txns_call(Partition) ->
@@ -608,6 +609,7 @@ check_prepared(TxId, PreparedTx, Key) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
+    ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun ({Rep, Key, Type, Op}, AccIn) ->
 			     case Rep of
 				 isReplicated ->
@@ -636,10 +638,10 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
 			     %% AccIn++[materializer_vnode:update(Key, CommittedDownstreamOp,
 			     %% 				       replication_check:is_replicated_here(Key))]
 		     end,
-    Results = lists:foldl(UpdateFunction, [], DownstreamOps),
+    Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
-    case length(Failures) of
-        0 ->
+    case Failures of
+        [] ->
             ok;
         _ ->
             error
@@ -658,15 +660,15 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
 %% 		   end,[],WriteSet).
 
 %% Internal functions
-filter_updates_per_key(Updates, Key) ->
-    FilterMapFun = fun({KeyPrime, _Type, Op}) ->
-        case KeyPrime == Key of
-            true -> {true, Op};
-            false -> false
-        end
-    end,
-    lists:filtermap(FilterMapFun, Updates).
-
+reverse_and_filter_updates_per_key(Updates, Key) ->
+    lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
+			case KeyPrime == Key of
+			    true ->
+				[Op | Acc];
+			    false ->
+				Acc
+			end
+		end, [], Updates).
 
 -ifdef(TEST).
 
@@ -682,7 +684,7 @@ filter_updates_per_key_test() ->
     ClockSIOp3 = {c, crdt_pncounter, Op3},
     ClockSIOp4 = {a, crdt_pncounter, Op4},
 
-    ?assertEqual([Op1, Op4],
-        filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
+    ?assertEqual([Op4, Op1],
+        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
 
 -endif.

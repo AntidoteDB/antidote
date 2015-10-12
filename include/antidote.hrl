@@ -23,7 +23,7 @@
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(REPL_PERIOD, 5000).
 
--define(CRDTS, [crdt_bcounter, crdt_orset, crdt_pncounter]).
+-define(CRDTS, [crdt_bcounter, crdt_orset, crdt_pncounter, crdt_rga]).
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption

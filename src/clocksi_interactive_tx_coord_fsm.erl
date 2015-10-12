@@ -326,8 +326,8 @@ execute_op({OpType, Args}, Sender,
 prepare(SD0 = #tx_coord_state{
     transaction = Transaction,
     updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
-    case length(Updated_partitions) of
-        0 ->
+    case Updated_partitions of
+        [] ->
             Snapshot_time = Transaction#transaction.snapshot_time,
             case FullCommit of
                 false ->
@@ -336,11 +336,11 @@ prepare(SD0 = #tx_coord_state{
                 true ->
                     reply_to_client(SD0#tx_coord_state{state = committed_read_only})
             end;
-        1 ->
+        [_] ->
             ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
             {next_state, single_committing,
                 SD0#tx_coord_state{state = committing, num_to_ack = 1}};
-        _ ->
+        [_|_] ->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack = length(Updated_partitions),
             {next_state, receive_prepared,
@@ -352,8 +352,8 @@ prepare(SD0 = #tx_coord_state{
 prepare_2pc(SD0 = #tx_coord_state{
     transaction = Transaction,
     updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
-    case length(Updated_partitions) of
-        0 ->
+    case Updated_partitions of
+        [] ->
             Snapshot_time = Transaction#transaction.snapshot_time,
             case FullCommit of
                 false ->
@@ -363,7 +363,7 @@ prepare_2pc(SD0 = #tx_coord_state{
                 true ->
                     reply_to_client(SD0#tx_coord_state{state = committed_read_only})
             end;
-        _ ->
+        [_|_] ->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack = length(Updated_partitions),
             {next_state, receive_prepared,

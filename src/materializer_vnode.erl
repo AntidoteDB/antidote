@@ -359,10 +359,10 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
 				     [{_, {Len1,Dict1}}]->
 					 {Len1,Dict1}
 				 end,
-            OpsDict2=[DownstreamOp|OpsDict1],
+            OpsDict2=[DownstreamOp | OpsDict1],
             ets:insert(OpsCache, {Key, {Length1 + 1, OpsDict2}});
         false ->
-            OpsDict1=[DownstreamOp|OpsDict],
+            OpsDict1=[DownstreamOp | OpsDict],
             ets:insert(OpsCache, {Key, {Length + 1,OpsDict1}})
     end.
 

@@ -51,6 +51,7 @@
 %% ===================================================================
 
 %% Send a message to all DCs over a tcp connection
+<<<<<<< HEAD
 %% In partial repl alg this takes as input a dictionary with
 %% keys as list of DCs for transacitons that are replicated
 %% and values as the transactions
@@ -60,45 +61,44 @@
 %				  -> ok | error.
 propagate_sync(DictTransactionsDcs, StableTime, Partition) ->
     ListTxnDcs = dict:to_list(DictTransactionsDcs),
-
-    Errors = lists:foldl(
-	       fun({DCs, Message}, Err) ->
-		       lists:foldl(
-			 fun({DcAddress, Port}, Acc) ->
-				 case inter_dc_communication_sender_fsm_sup:start_fsm(
-					[Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), Message}, self(), send_propagate]) of
-				     {ok, _} ->
-					 receive
-					     {done, normal, _Reply} ->
-						 %% Update the sent clock for partial repl alg
-						 %% This DC should have recieved updates up to safe time
-						 %% Fix TODO: This should use the unique DcId
-						 %% for storing items here
-						 %% (i.e. the one that is included in the transactions) instead
-						 %% of the address and port, but I don't know how to
-						 %% get these ids??
-						 %% {ok, _} = vectorclock:update_sent_clock(
-						 %%	     Partition, {DcAddress, Port}, StableTime),
-						 %% Instead of using riak meta data, just send
-						 %% to a single server
-						 %%
-						 vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime),
-						 Acc;
-					     {done, Other, _Reply} ->
-						 lager:error(
-						   "Send failed Reason:~p Message: ~p",
-						   [Other, Message]),
-						 Acc ++ [error]
-						 %%TODO: Retry if needed
-					 end;
-				     Error ->
-					 lager:error("Error sending to ~w, ~w.  Error: ~w", [Port,DcAddress,Error]),
-					 Acc ++ [error]
-				 end
-			 end, Err, DCs)
-	       end, [], ListTxnDcs), 
-    case length(Errors) of
-        0 ->
+    FailedDCs = lists:foldl(
+		  fun({DCs, Message}, Err) ->
+			  lists:foldl(
+			    fun({DcAddress, Port}, Acc) ->
+				    case inter_dc_communication_sender_fsm_sup:start_fsm(
+					   [Port, DcAddress, {replicate, inter_dc_manager:get_my_dc(), Message}, self(), send_propagate]) of
+					{ok, _} ->
+					    receive
+						{done, normal, _Reply} ->
+						    %% Update the sent clock for partial repl alg
+						    %% This DC should have recieved updates up to safe time
+						    %% Fix TODO: This should use the unique DcId
+						    %% for storing items here
+						    %% (i.e. the one that is included in the transactions) instead
+						    %% of the address and port, but I don't know how to
+						    %% get these ids??
+						    %% {ok, _} = vectorclock:update_sent_clock(
+						    %%	     Partition, {DcAddress, Port}, StableTime),
+						    %% Instead of using riak meta data, just send
+						    %% to a single server
+						    %%
+						    vectorclock:update_sent_clock({DcAddress,Port}, Partition, StableTime),
+						    Acc;
+						{done, Other, _Reply} ->
+						    lager:error(
+						      "Send failed Reason:~p Message: ~p",
+						      [Other, Message]),
+						    Acc ++ [{DcId, {DcAddress,Port}}]
+						    %%TODO: Retry if needed
+					    end;
+					Error ->
+					    lager:error("Error sending to ~w, ~w.  Error: ~w", [Port,DcAddress,Error]),
+					    Acc ++ [{DcId, {DcAddress,Port}}]
+				    end
+			    end, Err, DCs)
+		  end, [], ListTxnDcs), 
+    case FailedDCs of
+        [] ->
             ok;
         _ -> 
 	    error
