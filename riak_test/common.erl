@@ -19,16 +19,46 @@
 %% -------------------------------------------------------------------
 -module(common).
 
--export([clean_cluster/1]).
+-export([clean_clusters/1,
+         setup_dc_manager/3]).
 
-clean_cluster(Nodes0)->
+clean_clusters(Clusters)->
     Clean = rt_config:get(clean_cluster, true),
     case Clean of
         true ->
-            rt:clean_cluster(Nodes0),
-            [Nodes1] = rt:build_clusters([length(Nodes0)]),
-            rt:wait_until_ring_converged(Nodes1),
-            Nodes1;
+            Sizes = lists:foldl(fun(Cluster, Acc) ->
+                                    rt:clean_cluster(Cluster),
+                                    Acc ++ [length(Cluster)]
+                                end, [], Clusters),
+            Clusters1 = rt:build_clusters(Sizes),
+            lists:foreach(fun(Cluster) ->
+                            rt:wait_until_ring_converged(Cluster)
+                          end, Clusters1),
+            Clusters1;
         false ->
-            Nodes0
+            Clusters
+    end.
+
+setup_dc_manager(Clusters, Ports, Clean) ->
+    case Clean of
+        true ->
+            {_, CombinedList} = lists:foldl(fun(Cluster, {Index, Result}) ->
+                                                {Index+1, Result ++ [{Cluster, lists:nth(Index, Ports)}]}
+                                            end, {1, []}, Clusters),
+            Heads = lists:foldl(fun({Cluster, Port}, Acc) ->
+                                    Node = hd(Cluster),
+                                    rt:wait_until_registered(Node, inter_dc_manager),
+                                    {ok, DC} = rpc:call(Node, inter_dc_manager, start_receiver,[Port]),
+                                    rt:wait_until(Node,fun wait_init:check_ready/1),
+                                    Acc ++ [{Node, DC}]
+                                end, [], CombinedList),
+            lists:foreach(fun({Node, DC}) ->
+                            Sublist = lists:subtract(Heads, [{Node, DC}]),
+                            lists:foreach(fun({_, RemoteDC}) ->
+                                            ok = rpc:call(Node, inter_dc_manager, add_dc,[RemoteDC])
+                                          end, Sublist)
+                          end, Heads),
+            ok;
+        false ->
+            ok
     end.
