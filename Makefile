@@ -16,7 +16,7 @@ clean:
 	$(REBAR) clean
 	rm -rf riak_test/ebin
 
-distclean: clean devclean relclean
+distclean: clean devclean relclean cleanplt
 	$(REBAR) delete-deps
 
 rel: all
@@ -51,7 +51,7 @@ stage-riak-test: all
 
 .PHONY : stagedevrel devrel
 
-DEVNODES ?= 6
+DEVNODES ?= 3
 
 # 'seq' is not available on all *BSD, so using an alternate in awk
 SEQ = $(shell awk 'BEGIN { for (i = 1; i < '$(DEVNODES)'; i++) printf("%i ", i); print i ;exit(0);}')
