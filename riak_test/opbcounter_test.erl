@@ -33,11 +33,18 @@ confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
     new_bcounter_test(Nodes),
+
+    [Nodes1] = common:clean_clusters([Nodes]),
     increment_test(Nodes),
-    decrement_test(Nodes),
-    transfer_test(Nodes),
-    conditional_write_test(Nodes),
-    %rt:clean_cluster(Nodes),
+
+    [Nodes2] = common:clean_clusters([Nodes1]),
+    decrement_test(Nodes2),
+
+    [Nodes3] = common:clean_clusters([Nodes2]),
+    transfer_test(Nodes3),
+
+    [Nodes4] = common:clean_clusters([Nodes3]),
+    conditional_write_test(Nodes4),
     pass.
 
 %% Tests creating a new `bcounter()'.
