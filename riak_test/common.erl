@@ -22,6 +22,10 @@
 -export([clean_clusters/1,
          setup_dc_manager/3]).
 
+%% It cleans the cluster and formes a new one with the same characteristic of the input one.
+%% In case the clean_cluster parameter is set to false in the riak_test configuration file
+%% the function simply returns the inputed set of clusters
+%% Clusters: A list of clusters as defined by rt
 clean_clusters(Clusters)->
     Clean = rt_config:get(clean_cluster, true),
     case Clean of
@@ -39,6 +43,11 @@ clean_clusters(Clusters)->
             Clusters
     end.
 
+%% It set ups the listeners and connect the different dcs automatically
+%% Input:   Clusters:   List of clusters
+%%          Ports:      Port number where setup the listeners. One per dc
+%%          Clean:      If true, the setting is done, otherwise, it is ignore. This is useful
+%%                      for the configurable clean_cluster parameter. 
 setup_dc_manager(Clusters, Ports, Clean) ->
     case Clean of
         true ->
