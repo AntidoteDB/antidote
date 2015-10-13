@@ -152,15 +152,14 @@ read_objects(Clock, _Properties, Objects) ->
 
 
 %% Object creation and types
--spec create_bucket(bucket(), type()) -> {ok, bucket()}.
-create_bucket(Bucket, _Type) ->
-    %% TODO: Bucket is not currently supported
-    {ok, Bucket}.
 
--spec create_object(key(), type(), bucket()) -> {ok, {key(), type(), bucket()}}.
-create_object(Key, Type, Bucket) ->
+create_bucket(_Bucket, _Type) ->
+    %% TODO: Bucket is not currently supported
+    {error, operation_not_supported}.
+
+create_object(_Key, _Type, _Bucket) ->
     %% TODO: Object creation is not currently supported
-    {ok, {Key, Type, Bucket}}.
+    {error, operation_not_supported}.
 
 delete_object({_Key, _Type, _Bucket}) ->
     %% TODO: Object deletion is not currently supported
