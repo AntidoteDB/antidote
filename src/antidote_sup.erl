@@ -22,7 +22,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/1]).
+-export([start_link/0, start_rep/2, stop_rep/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -34,14 +34,23 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-%% @doc: start_rep(Port) - starts a server which listens for incomming
-%% tcp connection on port Port. Server receives updates to replicate 
+%% @doc: start_rep(Port) - starts a server managed by Pid which listens for 
+%% incomming tcp connection on port Port. Server receives updates to replicate 
 %% from other DCs 
-start_rep(Port) ->
+start_rep(Pid, Port) ->
     supervisor:start_child(?MODULE, {inter_dc_communication_sup,
-                    {inter_dc_communication_sup, start_link, [Port]},
+                    {inter_dc_communication_sup, start_link, [Pid, Port]},
                     permanent, 5000, supervisor, [inter_dc_communication_sup]}).
 
+stop_rep() ->
+    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
+    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_recvr),
+    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
+    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
+    ok = supervisor:terminate_child(?MODULE, inter_dc_communication_sup),
+    _ = supervisor:delete_child(?MODULE, inter_dc_communication_sup),
+    ok.
+    
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
@@ -72,12 +81,17 @@ init(_Args) ->
                             {clocksi_interactive_tx_coord_sup, start_link, []},
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
-
     EigerReadTxCoordSup =  {eiger_readtx_coord_sup,
                            {eiger_readtx_coord_sup, start_link, []},
                            permanent, 5000, supervisor,
                            [eiger_readtx_coord_sup]},
 
+    
+    ClockSIReadSup = {clocksi_readitem_sup,
+    		      {clocksi_readitem_sup, start_link, []},
+    		      permanent, 5000, supervisor,
+    		      [clocksi_readitem_sup]},
+    
     VectorClockMaster = {vectorclock_vnode_master,
                          {riak_core_vnode_master,  start_link,
                           [vectorclock_vnode]},
@@ -87,6 +101,11 @@ init(_Args) ->
                           {riak_core_vnode_master,  start_link,
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
+
+    InterDcSenderSup = {inter_dc_communication_sender_fsm_sup,
+    		      {inter_dc_communication_sender_fsm_sup, start_link, []},
+    		      permanent, 5000, supervisor,
+    		      [inter_dc_communication_sender_fsm_sup]},
 
     InterDcManager = {inter_dc_manager,
                         {inter_dc_manager, start_link, []},
@@ -106,6 +125,7 @@ init(_Args) ->
        ClockSIMaster,
        ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
+       ClockSIReadSup,
        InterDcRepMaster,
        InterDcRecvrMaster,
        InterDcManager,
@@ -113,4 +133,5 @@ init(_Args) ->
        EigerReadTxCoordSup,
        EigerMaster,
        EigerMaterializerMaster,
+       InterDcSenderSup,
        MaterializerMaster]}}.

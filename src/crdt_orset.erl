@@ -46,7 +46,7 @@
 
 %% API
 -export([new/0, value/1, generate_downstream/3, update/2, equal/2,
-         to_binary/1, from_binary/1, value/2, precondition_context/1, stats/1, stat/2]).
+    to_binary/1, from_binary/1, value/2, precondition_context/1, stats/1, stat/2, is_operation/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -171,7 +171,7 @@ stat(element_count, ORSet) ->
     orddict:size(ORSet);
 stat(_, _) -> undefined.
 
--include("../deps/riak_dt/include/riak_dt_tags.hrl").
+-include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(TAG, ?DT_ORSET_TAG).
 -define(V1_VERS, 1).
 
@@ -243,6 +243,12 @@ minimum_tokens(Tokens) ->
     orddict:filter(fun(_Token, Removed) ->
             not Removed
         end, Tokens).
+
+%% @doc The following operation verifies
+%%      that Operation is supported by this particular CRDT.
+-spec is_operation(term()) -> boolean().
+is_operation(Operation) ->
+    riak_dt_orset:is_operation(Operation).
 
 %% ===================================================================
 %% EUnit tests

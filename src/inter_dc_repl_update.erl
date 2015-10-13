@@ -127,9 +127,12 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                           noop ->
                               lager:debug("Heartbeat Received");
                           update ->
-                              logging_vnode:append(Node, LogId, Logrecord);
+                              {ok, _} = logging_vnode:append(Node, LogId, Logrecord);
                           _ -> %% prepare or commit
-                              logging_vnode:append(Node, LogId, Logrecord),
+			      %% If enabled in antidote.hrl this will be ensure the log is written to disk
+			      %% For efficiency this could only be done when the entire list of new trans are processed,
+			      %% but then you would have to wait to update the clock as well
+                              {ok, _} = logging_vnode:append_commit(Node, LogId, Logrecord),
                               lager:debug("Prepare/Commit record")
                               %%TODO Write this to log
                       end
@@ -145,7 +148,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
             %%TODO add error handling if append failed
             {ok, NewState} = finish_update_dc(
                                Dc, DcQ, Ts, StateData),
-            {ok, _} = vectorclock:update_clock(Partition, Dc, Ts),
+            ok = vectorclock:update_clock(Partition, Dc, Ts),
             riak_core_vnode_master:command(
               {Partition,node()}, calculate_stable_snapshot,
               vectorclock_vnode_master),
@@ -165,10 +168,8 @@ finish_update_dc(Dc, DcQ, Cts,
     {ok, State#recvr_state{lastCommitted = LastCommNew, recQ = RecQNew}}.
 
 %% Checks depV against the committed timestamps
-check_dep(_DepV, _Localclock) ->
-    %Result = vectorclock:ge(Localclock, DepV),
-    %Result.
-    true.
+check_dep(DepV, Localclock) ->
+    vectorclock:ge(Localclock, DepV).
 
 %%Set a new value to the key.
 set(Key, Value, Orddict) ->

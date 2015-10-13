@@ -48,7 +48,7 @@
 -module(crdt_pncounter).
 
 -export([new/0, new/1, value/1, value/2, update/2, generate_downstream/3, to_binary/1, from_binary/1]).
--export([equal/2]).
+-export([equal/2, is_operation/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -148,7 +148,7 @@ equal({Inc1, Dec1}, {Inc2, Dec2}) ->
             false
     end.
 
--include("../deps/riak_dt/include/riak_dt_tags.hrl").
+-include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(TAG, ?DT_PNCOUNTER_TAG).
 -define(V1_VERS, 1).
 -define(V2_VERS, 2).
@@ -175,6 +175,13 @@ decrement_by(Decrement, PNCnt) ->
 
 unique(_Actor) ->
     crypto:strong_rand_bytes(20).
+
+%% @doc The following operation verifies
+%%      that Operation is supported by this particular CRDT.
+-spec is_operation(term()) -> boolean().
+is_operation(Operation) ->
+    riak_dt_pncounter:is_operation(Operation).
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================

@@ -26,7 +26,8 @@
 
 %% PB Services
 -define(SERVICES, [{antidote_pb_counter, 94, 98},
-                   {antidote_pb_set, 99, 101}]).
+                   {antidote_pb_set, 99, 101},
+                   {antidote_pb_txn, 102, 108}]).
 
 %% ===================================================================
 %% Application callbacks

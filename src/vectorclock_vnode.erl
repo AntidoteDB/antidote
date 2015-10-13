@@ -32,6 +32,7 @@
 -export([start_vnode/1]).
 
 -export([init/1,
+	 get_stable_snapshot/0,
          terminate/2,
          handle_command/3,
          is_empty/1,
@@ -48,12 +49,13 @@
 -ignore_xref([start_vnode/1]).
 
 -define(META_PREFIX, {partition,vectorclock}).
+-define(META_PREFIX_SS, {partition_ss,vectorclock}).
 
 -record(currentclock,{last_received_clock :: vectorclock:vectorclock(),
                       partition_vectorclock :: vectorclock:vectorclock(),
                       stable_snapshot :: vectorclock:vectorclock(),
-                      partition,
-                      num_p}).
+                      partition :: partition_id(),
+                      num_p :: non_neg_integer()}).
 
 %% API
 start_vnode(I) ->
@@ -68,6 +70,11 @@ init([Partition]) ->
                        stable_snapshot = dict:new(),
                        partition = Partition,
                        num_p=0}}.
+
+%% @doc get the stable time directly from the locally stored meta-data
+%%      instead of sending a reqest to a possibly external serialized server
+get_stable_snapshot() ->
+    riak_core_metadata:get(?META_PREFIX_SS,1,[{default,dict:new()}]).
 
 %% @doc
 handle_command(get_clock, _Sender,
@@ -104,9 +111,21 @@ handle_command(calculate_stable_snapshot, _Sender,
             false ->
                 dict:new()
         end,
-    {reply, {ok, Stable_snapshot},
-     State#currentclock{stable_snapshot=Stable_snapshot,
-                        num_p = NumPartitions}};
+    try
+	%% Instead of just storing the time in the state data, also store it in riak core
+	%% meta-data.  The reason for this is so that when starting a new transaction, the
+	%% corrdinator can read direclty from the nodes locally stored meta-data, instead of sending
+	%% a request to a serialized vnode.
+	%%
+	%% Not sure this is the best way to store data in riak core meta_data because everyone will be putting to the same key
+	%% which might cause conlifcts, but they are resolved anyway on read.
+	riak_core_metadata:put(?META_PREFIX_SS, 1, Stable_snapshot)
+    catch
+	_:Reason ->
+	    lager:error("Exception caught ~p! ",[Reason])
+    end,
+    {noreply, State#currentclock{
+      stable_snapshot=Stable_snapshot, num_p = NumPartitions}};
 
 %% @doc This function implements following code
 %% if last_received_vectorclock[partition][dc] < time
@@ -126,31 +145,31 @@ handle_command({update_clock, DcId, Timestamp}, _Sender,
                     %% Broadcast new pvv to other partition
                     try
                         riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                        {reply, {ok, NewPClock},
+                        {reply, ok,
                          State#currentclock{last_received_clock=NewLClock,
                                         partition_vectorclock=NewPClock}
                         }
                     catch
                         _:Reason ->
                             lager:error("Exception caught ~p! ",[Reason]),
-                            {reply, {ok, VClock},State}
+                            {reply, ok, State}
                     end;
                 false ->
-                    {reply, {ok, VClock}, State}
+                    {reply, ok, State}
             end;
         error ->
             NewLClock = dict:store(DcId, Timestamp, LastClock),
             NewPClock = dict:store(DcId, Timestamp - 1, VClock),
             try
                 riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
-                {reply, {ok, NewPClock},
+                {reply, ok,
                  State#currentclock{last_received_clock=NewLClock,
                                     partition_vectorclock=NewPClock}
                 }
             catch
                 _:Reason ->
                     lager:error("Exception caught ~p! ",[Reason]),
-                    {reply, {ok, VClock},State}
+                    {reply, ok, State}
             end
     end;
 

@@ -26,6 +26,10 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    NumVNodes = rt_config:get(num_vnodes, 8),
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, NumVNodes}]}
+    ]),
     NTestItems    = 10,
     NTestNodes    = 3,
 
@@ -39,6 +43,11 @@ confirm() ->
     Versions = [current || _ <- lists:seq(1, NTestNodes)],
     [RootNode | TestNodes] = rt:deploy_nodes(Versions,[logging]),
     rt:wait_for_service(RootNode, logging),
+
+
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(RootNode,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
 
     lager:info("Populating root node."),
     multiple_writes(RootNode, 1, NTestItems, ucl),
@@ -70,6 +79,11 @@ test_handoff(RootNode, NewNode, NTestItems) ->
     rt:join(NewNode, RootNode),
     ?assertEqual(ok, rt:wait_until_nodes_ready([RootNode, NewNode])),
     rt:wait_until_no_pending_changes([RootNode, NewNode]),
+    lager:info("Waiting until vnodes are started up"),
+    rt:wait_until(RootNode,fun wait_init:check_ready/1),
+    lager:info("Vnodes are started up"),
+
+
 
     %% See if we get the same data back from the joined node that we
     %% added to the root node.  Note: systest_read() returns
