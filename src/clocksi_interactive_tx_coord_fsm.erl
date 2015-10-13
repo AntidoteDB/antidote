@@ -590,7 +590,10 @@ get_snapshot_time(ClientClock, externalTransaction) ->
 
 get_snapshot_time(ClientClock, localTransaction) ->
     DcId = ?DC_UTIL:get_my_dc_id(),
-    vectorclock:wait_for_local_clock(ClientClock, DcId),
+    %% This waiting is done inefficiently
+    %% A lot of this stuff should only be done when there is a clock given by the client
+    %% vectorclock:wait_for_local_clock(ClientClock, DcId),
+    vectorclock:wait_for_clock(ClientClock),
     case vectorclock:update_safe_vector_local(ClientClock) of
 	{ok, VecSnapshotTime} ->
 	    Clock = vectorclock:now_microsec_behind(ClientClock, VecSnapshotTime, erlang:now(), DcId),
