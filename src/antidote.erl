@@ -68,7 +68,7 @@
 start_transaction(Clock, _Properties) ->
     clocksi_istart_tx(Clock).
 
--spec abort_transaction(TxId::txid()) -> {error, reason}.
+-spec abort_transaction(TxId::txid()) -> {error, reason()}.
 abort_transaction(_TxId) ->
     %% TODO
     {error, operation_not_implemented}.
