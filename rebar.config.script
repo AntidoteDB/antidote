@@ -1,0 +1,17 @@
+PROTOCOL = case os:getenv("TXN_PROTOCOL") of
+               false ->
+                   {d, 'PROTOCOL', clocksi}; %default is Clock SI
+               "clocksi" ->
+                   {d, 'PROTOCOL', clocksi};
+               "gentlerain" ->
+                   {d, 'PROTOCOL', gentlerain};
+               "ec" ->
+                   {d, 'PROTOCOL', ec}
+           end,
+case lists:keysearch(erl_opts, 1, CONFIG) of
+    {value, {erl_opts, Opts}} ->
+        NewOpts = [PROTOCOL | Opts],
+        lists:keyreplace(erl_opts, 1, CONFIG, {erl_opts, NewOpts});
+    false ->
+        CONFIG ++ [{erl_opts, PROTOCOL}]
+end.

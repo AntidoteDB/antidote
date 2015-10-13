@@ -45,8 +45,19 @@
 append(Key, Type, {OpParams, Actor}) ->
     case materializer:check_operations([{update, {Key, Type, {OpParams, Actor}}}]) of
         ok ->
-            clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,
-                Type,{OpParams,Actor});
+            %% Select which transaction protocol to use(compile time)
+            case ?PROTOCOL of
+                clocksi ->
+                    clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,
+                                                                               Type,{OpParams,Actor});
+                gentlerain ->
+                    %% Gentlerain share same source code with clocksi with some modifications
+                    %% Hence use the same call
+                    clocksi_interactive_tx_coord_fsm:perform_singleitem_update(Key,
+                                                                               Type,{OpParams,Actor});
+                ec ->
+                    erlang:error("EC not supported")
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
