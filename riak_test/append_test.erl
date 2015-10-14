@@ -26,14 +26,20 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
-        {riak_core, [{ring_creation_size, 8}]}
+        {riak_core, [{ring_creation_size, NumVNodes}]}
     ]),
-    [Nodes] = rt:build_clusters([1]),
+    [Nodes] = rt:build_clusters([3]),
 
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
 
+    append_test(Nodes),
+    append_failure_test(Nodes),
+    pass.
+
+append_test(Nodes) ->
     Node = hd(Nodes),
     rt:wait_for_service(Node, antidote),
 
@@ -67,6 +73,40 @@ confirm() ->
     ReadResult2 = rpc:call(Node,
                            antidote, read,
                            [key2, riak_dt_gcounter]),
-    ?assertEqual({ok, 1}, ReadResult2),
+    ?assertEqual({ok, 1}, ReadResult2).
 
-    pass.
+append_failure_test(Nodes) ->
+    N = hd(Nodes),
+    Key = append_failure,
+
+    %% Identify preference list for a given key.
+    Preflist = rpc:call(N, log_utilities, get_preflist_from_key, [Key]),
+    lager:info("Preference list: ~p", [Preflist]),
+
+    NodeList = [Node || {_Index, Node} <- Preflist],
+    lager:info("Responsible nodes for key: ~p", [NodeList]),
+
+    {A, _} = lists:split(1, NodeList),
+    First = hd(A),
+
+    %% Perform successful write and read.
+    WriteResult = rpc:call(First,
+                           antidote, append, [Key, riak_dt_gcounter, {increment, ucl}]),
+    lager:info("WriteResult: ~p", [WriteResult]),
+    ?assertMatch({ok, _}, WriteResult),
+
+    ReadResult = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
+    lager:info("ReadResult: ~p", [ReadResult]),
+    ?assertMatch({ok, 1}, ReadResult),
+
+    %% Partition the network.
+    lager:info("About to partition: ~p from: ~p", [A, Nodes -- A]),
+    PartInfo = rt:partition(A, Nodes -- A),
+
+    %% Heal the partition.
+    rt:heal(PartInfo),
+
+    %% Read after the partition has been healed.
+    ReadResult3 = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
+    lager:info("ReadResult3: ~p", [ReadResult3]),
+    ?assertMatch({ok, 1}, ReadResult3).
