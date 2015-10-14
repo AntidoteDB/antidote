@@ -26,6 +26,7 @@
 -export([start_vnode/1,
     read_data_item/5,
     get_cache_name/2,
+    get_min_prepared/1,
     get_active_txns_key/3,
     get_active_txns/2,
     prepare/2,
@@ -68,7 +69,8 @@
 -record(state, {partition :: partition_id(),
     prepared_tx :: cache_id(),
     committed_tx :: cache_id(),
-    read_servers :: non_neg_integer()}).
+    read_servers :: non_neg_integer(),
+    prepared_dict}).
 
 %%%===================================================================
 %%% API
@@ -105,10 +107,10 @@ get_active_txns_key(Key, Partition, TableName) ->
     end.
 
 get_active_txns_key_internal(Key, TableName) ->
-    ActiveTxs = case ets:lookup(TableName, Key) of
+    ActiveTxs = case ets:lookup(TableName, {prepare, Key}) of
                     [] ->
                         [];
-                    [{Key, List}] ->
+                    [{{prepare, Key}, List}] ->
                         List
                 end,
     {ok, ActiveTxs}.
@@ -130,7 +132,7 @@ get_active_txns_internal(TableName) ->
     ActiveTxs = case ets:tab2list(TableName) of
                     [] ->
                         [];
-                    [{Key1, List1} | Rest1] ->
+                    [{{prepare, Key1}, List1} | Rest1] ->
                         lists:foldl(fun({_Key, List}, Acc) ->
                             case List of
                                 [] ->
@@ -139,9 +141,15 @@ get_active_txns_internal(TableName) ->
                                     List ++ Acc
                             end
                         end,
-                            [], [{Key1, List1} | Rest1])
+                            [], [{{prepare, Key1}, List1} | Rest1])
                 end,
     {ok, ActiveTxs}.
+
+get_min_prepared(Partition) ->
+    riak_core_vnode_master:sync_command({Partition, node()},
+					get_min_prepared,
+					clocksi_vnode_master,
+					infinity).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
@@ -201,7 +209,8 @@ init([Partition]) ->
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
-        read_servers = Num}}.
+        read_servers = Num,
+        prepared_dict = orddict:new()}}.
 
 
 %% @doc The table holding the prepared transactions is shared with concurrent
@@ -249,6 +258,10 @@ handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition
              end,
     {reply, Result, SD0};
 
+handle_command(get_min_prepared, _Sender,
+	       State = #state{prepared_dict = PreparedDict}) ->
+    {reply, get_min_prep(PreparedDict), State};
+
 handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
     loop_until_started(Partition, Serv),
     Node = node(),
@@ -258,19 +271,20 @@ handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partitio
 handle_command({prepare, Transaction, WriteSet}, _Sender,
     State = #state{partition = _Partition,
         committed_tx = CommittedTx,
-        prepared_tx = PreparedTx
+        prepared_tx = PreparedTx,
+	prepared_dict = PreparedDict
     }) ->
     PrepareTime = now_microsec(erlang:now()),
-    {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime),
+    {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of
         {ok, _} ->
-            {reply, {prepared, NewPrepare}, State};
+            {reply, {prepared, NewPrepare}, State#state{prepared_dict = NewPreparedDict}};
         {error, timeout} ->
-            {reply, {error, timeout}, State};
+            {reply, {error, timeout}, State#state{prepared_dict = NewPreparedDict}};
         {error, no_updates} ->
-            {reply, {error, no_tx_record}, State};
+            {reply, {error, no_tx_record}, State#state{prepared_dict = NewPreparedDict}};
         {error, write_conflict} ->
-            {reply, abort, State}
+            {reply, abort, State#state{prepared_dict = NewPreparedDict}}
     end;
 
 %% @doc This is the only partition being updated by a transaction,
@@ -279,27 +293,29 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
 handle_command({single_commit, Transaction, WriteSet}, _Sender,
     State = #state{partition = _Partition,
         committed_tx = CommittedTx,
-        prepared_tx = PreparedTx
+        prepared_tx = PreparedTx,
+	prepared_dict = PreparedDict
     }) ->
     PrepareTime = now_microsec(erlang:now()),
-    {Result, NewPrepare} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime),
+    {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
+    NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
         {ok, _} ->
-            ResultCommit = commit(Transaction, NewPrepare, WriteSet, CommittedTx, State),
+            ResultCommit = commit(Transaction, NewPrepare, WriteSet, CommittedTx, NewState),
             case ResultCommit of
-                {ok, committed} ->
-                    {reply, {committed, NewPrepare}, State};
+                {ok, committed, NewPreparedDict2} ->
+                    {reply, {committed, NewPrepare}, NewState#state{prepared_dict = NewPreparedDict2}};
                 {error, materializer_failure} ->
-                    {reply, {error, materializer_failure}, State};
+                    {reply, {error, materializer_failure}, NewState};
                 {error, timeout} ->
-                    {reply, {error, timeout}, State};
+                    {reply, {error, timeout}, NewState};
                 {error, no_updates} ->
-                    {reply, no_tx_record, State}
+                    {reply, no_tx_record, NewState}
             end;
         {error, timeout} ->
-            {reply, {error, timeout}, State};
+            {reply, {error, timeout}, NewState};
         {error, no_updates} ->
-            {reply, {error, no_tx_record}, State};
+            {reply, {error, no_tx_record}, NewState};
         {error, write_conflict} ->
             {reply, abort, State}
     end;
@@ -314,8 +330,8 @@ handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
     } = State) ->
     Result = commit(Transaction, TxCommitTime, Updates, CommittedTx, State),
     case Result of
-        {ok, committed} ->
-            {reply, committed, State};
+        {ok, committed, NewPreparedDict} ->
+            {reply, committed, State#state{prepared_dict = NewPreparedDict}};
         {error, materializer_failure} ->
             {reply, {error, materializer_failure}, State};
         {error, timeout} ->
@@ -332,13 +348,13 @@ handle_command({abort, Transaction, Updates}, _Sender,
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
-            case Result of
-                {ok, _} ->
-                    clean_and_notify(TxId, Updates, State);
-                {error, timeout} ->
-                    clean_and_notify(TxId, Updates, State)
-            end,
-            {reply, ack_abort, State};
+            NewPreparedDict = case Result of
+				  {ok, _} ->
+				      clean_and_notify(TxId, Updates, State);
+				  {error, timeout} ->
+				      clean_and_notify(TxId, Updates, State)
+			      end,
+            {reply, ack_abort, State#state{prepared_dict = NewPreparedDict}};
         _ ->
             {reply, {error, no_tx_record}, State}
     end;
@@ -400,7 +416,7 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%% Internal Functions
 %%%===================================================================
 
-prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime) ->
+prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
     TxId = Transaction#transaction.txn_id,
     case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
@@ -409,34 +425,35 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime) ->
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(erlang:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
+		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
                     LogRecord = #log_record{tx_id = TxId,
                         op_type = prepare,
                         op_payload = NewPrepare},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
                     Result = logging_vnode:append(Node, LogId, LogRecord),
-                    {Result, NewPrepare};
+                    {Result, NewPrepare, NewPreparedDict};
                 _ ->
-                    {{error, no_updates}, 0}
+                    {{error, no_updates}, 0, PreparedDict}
             end;
         false ->
-            {{error, write_conflict}, 0}
+            {{error, write_conflict}, 0, PreparedDict}
     end.
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
 set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) ->
-    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+    ActiveTxs = case ets:lookup(PreparedTx, {prepare, Key}) of
                     [] ->
                         [];
-                    [{Key, List}] ->
+                    [{{prepare, Key}, List}] ->
                         List
                 end,
     case lists:keymember(TxId, 1, ActiveTxs) of
         true ->
             set_prepared(PreparedTx, Rest, TxId, Time, Acc);
         false ->
-            true = ets:insert(PreparedTx, {Key, [{TxId, Time} | ActiveTxs]}),
+            true = ets:insert(PreparedTx, {{prepare, Key}, [{TxId, Time} | ActiveTxs]}),
             set_prepared(PreparedTx, Rest, TxId, Time, dict:append_list(Key, ActiveTxs, Acc))
     end.
 
@@ -444,7 +461,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
 reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
-    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    true = ets:insert(PreparedTx, {{prepare, Key}, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
@@ -464,8 +481,8 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
                 {ok, _} ->
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
-                            ok = clean_and_notify(TxId, Updates, State),
-                            {ok, committed};
+                            NewPreparedDict = clean_and_notify(TxId, Updates, State),
+                            {ok, committed, NewPreparedDict};
                         error ->
                             {error, materializer_failure}
                     end;
@@ -500,24 +517,30 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %%          remove M's prepare record, so we should not do anything
 %%          either. 
 clean_and_notify(TxId, Updates, #state{
-    prepared_tx = PreparedTx}) ->
-    ok = clean_prepared(PreparedTx, Updates, TxId).
+    prepared_tx = PreparedTx, prepared_dict = PreparedDict}) ->
+    ok = clean_prepared(PreparedTx, Updates, TxId),
+    case get_time(PreparedDict, TxId) of
+	error ->
+	    PreparedDict;
+	{ok, Time} ->
+	    orddict:erase(Time, PreparedDict)
+    end.
 
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
 clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
-    ActiveTxs = case ets:lookup(PreparedTx, Key) of
+    ActiveTxs = case ets:lookup(PreparedTx, {prepare, Key}) of
                     [] ->
                         [];
-                    [{Key, List}] ->
+                    [{{prepare, Key}, List}] ->
                         List
                 end,
     NewActive = lists:keydelete(TxId, 1, ActiveTxs),
     true = case NewActive of
                [] ->
-                   ets:delete(PreparedTx, Key);
+                   ets:delete(PreparedTx, {prepare, Key});
                _ ->
-                   ets:insert(PreparedTx, {Key, NewActive})
+                   ets:insert(PreparedTx, {{prepare, Key}, NewActive})
            end,
     clean_prepared(PreparedTx, Rest, TxId).
 
@@ -556,7 +579,7 @@ certification_check(TxId, [H | T], CommittedTx, PreparedTx) ->
 
 check_prepared(TxId, PreparedTx, Key) ->
     _SnapshotTime = TxId#tx_id.snapshot_time,
-    case ets:lookup(PreparedTx, Key) of
+    case ets:lookup(PreparedTx, {prepare, Key}) of
         [] ->
             true;
         _ ->
@@ -599,6 +622,27 @@ reverse_and_filter_updates_per_key(Updates, Key) ->
 				Acc
 			end
 		end, [], Updates).
+
+
+%%-spec get_min(orddict()) -> non_neg_integer().		   
+get_min_prep(OrdDict) ->
+    case OrdDict of
+	[] ->
+	    {ok, clocksi_vnode:now_microsec(erlang:now())};
+	[{Time,_TxId}|_] ->
+	    {ok, Time}
+    end.
+
+%%-spec get_time(orddict(),txid()) -> non_neg_integer().
+get_time([],_TxIdCheck) ->
+    error;
+get_time([{Time,TxId} | Rest], TxIdCheck) ->
+    case TxId == TxIdCheck of
+	true ->
+	    {ok, Time};
+	false ->
+	    get_time(Rest, TxIdCheck)
+    end.
 
 -ifdef(TEST).
 
