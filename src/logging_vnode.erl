@@ -38,7 +38,8 @@
 	 append_group/3,
 	 asyn_append_group/3,
          asyn_read_from/3,
-         read_from/3]).
+         read_from/3,
+         get/2]).
 
 -export([init/1,
          terminate/2,
@@ -143,6 +144,15 @@ asyn_append_group(IndexNode, LogId, PayloadList) ->
 				   ?LOGGING_MASTER,
 				   infinity).
 
+%% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
+%% desired operations so a new snapshot can be created.
+-spec get(index_node(), {get, key(), vectorclock(), term(), term()}) ->
+    {number(), list(), snapshot(), vectorclock(), false}.
+get(IndexNode, Command) ->
+    riak_core_vnode_master:command(IndexNode,
+        Command,
+        ?LOGGING_MASTER,
+        infinity).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -278,9 +288,73 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
 	    {reply, Error, State}
     end;
 
+handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
+    #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
+    case get_log_from_map(Map, Partition, LogId) of
+        {ok, Log} ->
+            case get_ops_from_log(Log, Key, start, MinSnapshotTime, dict:new(), []) of
+                {error, Reason} ->
+                    {reply, {error, Reason}, State};
+                CommitedOpsForKey ->
+                    {reply, {length(CommitedOpsForKey), CommitedOpsForKey, clocksi_materializer:new(Type),
+                        vectorclock:new(), false}, State}
+            end;
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
+
+get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
+    case disk_log:chunk(Log, Continuation) of
+        eof ->
+            CommitedOps;
+        {error, Reason} ->
+            {error, Reason};
+        {NewContinuation, NewTerms} ->
+            {NewOps, NewCommitedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommitedOps),
+            get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommitedOps);
+        {NewContinuation, NewTerms, BadBytes} ->
+            case BadBytes > 0 of
+                true -> {error, bad_bytes};
+                false -> {NewOps, NewCommitedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommitedOps),
+                    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommitedOps)
+            end
+    end.
+
+
+filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommitedOps) ->
+    {Ops, CommitedOps};
+filter_terms_for_key([H|T], Key, MinSnapshotTime, Ops, CommitedOps) ->
+    {_, {_, {TxId, OpType, OpPayload}}} = H,
+    case OpType of
+        update ->
+            {Key1, _, _} = OpPayload,
+            case Key == Key1 of
+                true ->
+                    filter_terms_for_key(T, Key, MinSnapshotTime,
+                        dict:append(TxId, {TxId, OpType, OpPayload}, Ops), CommitedOps);
+                false ->
+                    filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
+            end;
+        commit ->
+            {{_DcId, TxCommitTime}, _SnapshotTime} = OpPayload,
+            case dict:find(TxId, Ops) of
+                {ok, Value} ->
+                    case vectorclock:is_greater_than(TxCommitTime, MinSnapshotTime) of
+                        true ->
+                            filter_terms_for_key(T, Key, MinSnapshotTime, Ops,
+                                lists:append(Value, CommitedOps));
+                        false ->
+                            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
+                    end;
+                _ ->
+                    filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
+            end;
+        _ ->
+            do_nothing
+    end.
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
