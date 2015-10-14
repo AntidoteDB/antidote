@@ -27,6 +27,10 @@
 
 %% Test entry point.
 confirm() ->
+    NumVNodes = rt_config:get(num_vnodes, 8),
+    rt:update_app_config(all,[
+        {riak_core, [{ring_creation_size, NumVNodes}]}
+    ]),
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
     new_bcounter_test(Nodes),
@@ -39,7 +43,7 @@ confirm() ->
 	false ->
 	    ok
     end,
-    rt:clean_cluster(Nodes),
+    %rt:clean_cluster(Nodes),
     pass.
 
 %% Tests creating a new `bcounter()'.
