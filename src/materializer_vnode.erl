@@ -78,7 +78,7 @@ read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition) ->
 						materializer_vnode_master,
 						infinity);
 	_ ->
-	    internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache)	    
+	    internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache)
     end.
 
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
@@ -256,8 +256,10 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
     {Length,Ops,LatestSnapshot,SnapshotCommitTime,IsFirst} =
 	case Result of
 	    {error, no_snapshot} ->
-		{L1,O1,LS1,SCT1,false} = logging_vnode:get(MinSnapshotTime),
-		{L1,O1,LS1,SCT1,false};
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+		    {L1,O1,LS1,SCT1,false} = logging_vnode:get(Node, {get, LogId, MinSnapshotTime, Type, Key}),
+		    {L1,O1,LS1,SCT1,false};
 	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
 		case ets:lookup(OpsCache, Key) of
 		    [] ->
@@ -275,7 +277,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
 		    %% for the given snapshot_time
 		    %% But is the snapshot not safe?
-		    case CommitTime of 
+		    case CommitTime of
 			ignore ->
 			    {ok, Snapshot};
 			_ ->
@@ -421,7 +423,7 @@ gc_test() ->
 
     {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1,2}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(0, Type:value(Res0)),
-    
+
     op_insert_gc(Key, generate_payload(10,11,Res0,a1), OpsCache, SnapshotCache),
     {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,12}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
@@ -429,35 +431,35 @@ gc_test() ->
     op_insert_gc(Key, generate_payload(20,21,Res1,a2), OpsCache, SnapshotCache),
     {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,22}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
-    
+
     op_insert_gc(Key, generate_payload(30,31,Res2,a3), OpsCache, SnapshotCache),
     {ok, Res3} = internal_read(Key, Type, vectorclock:from_list([{DC1,32}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(3, Type:value(Res3)),
-    
+
     op_insert_gc(Key, generate_payload(40,41,Res3,a4), OpsCache, SnapshotCache),
     {ok, Res4} = internal_read(Key, Type, vectorclock:from_list([{DC1,42}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(4, Type:value(Res4)),
-    
+
     op_insert_gc(Key, generate_payload(50,51,Res4,a5), OpsCache, SnapshotCache),
     {ok, Res5} = internal_read(Key, Type, vectorclock:from_list([{DC1,52}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(5, Type:value(Res5)),
-    
+
     op_insert_gc(Key, generate_payload(60,61,Res5,a6), OpsCache, SnapshotCache),
     {ok, Res6} = internal_read(Key, Type, vectorclock:from_list([{DC1,62}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(6, Type:value(Res6)),
-    
+
     op_insert_gc(Key, generate_payload(70,71,Res6,a7), OpsCache, SnapshotCache),
     {ok, Res7} = internal_read(Key, Type, vectorclock:from_list([{DC1,72}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(7, Type:value(Res7)),
-    
+
     op_insert_gc(Key, generate_payload(80,81,Res7,a8), OpsCache, SnapshotCache),
     {ok, Res8} = internal_read(Key, Type, vectorclock:from_list([{DC1,82}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(8, Type:value(Res8)),
-    
+
     op_insert_gc(Key, generate_payload(90,91,Res8,a9), OpsCache, SnapshotCache),
     {ok, Res9} = internal_read(Key, Type, vectorclock:from_list([{DC1,92}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(9, Type:value(Res9)),
-    
+
     op_insert_gc(Key, generate_payload(100,101,Res9,a10), OpsCache, SnapshotCache),
 
     %% Insert some new values
@@ -475,7 +477,7 @@ gc_test() ->
     {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1,142}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(13, Type:value(Res13)).
 
-    
+
 
 
 generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
@@ -529,7 +531,7 @@ seq_write_test() ->
     %% Read old version
     {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadOld)).
-    
+
 
 multipledc_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
@@ -600,7 +602,7 @@ concurrent_write_test() ->
 				      commit_time = {DC1, 1},
 				      txid=2},
     op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache),
-    
+
     %% Read different snapshots
     {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1,1}, {DC2, 0}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadDC1)),
@@ -608,11 +610,11 @@ concurrent_write_test() ->
     {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1,0},{DC2,1}]), ignore, OpsCache, SnapshotCache),
     io:format("Result2 = ~p", [ReadDC2]),
     ?assertEqual(1, Type:value(ReadDC2)),
-    
+
     %% Read snapshot including both increments
     {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC2,1}, {DC1,1}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)).
-    
+
 %% Check that a read to a key that has never been read or updated, returns the CRDTs initial value
 %% E.g., for a gcounter, return 0.
 read_nonexisting_key_test() ->
@@ -621,6 +623,6 @@ read_nonexisting_key_test() ->
     Type = riak_dt_gcounter,
     {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1,1}, {dc2, 0}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(0, Type:value(ReadResult)).
-    
-    
+
+
 -endif.
