@@ -107,10 +107,10 @@ get_active_txns_key(Key, Partition, TableName) ->
     end.
 
 get_active_txns_key_internal(Key, TableName) ->
-    ActiveTxs = case ets:lookup(TableName, {prepare, Key}) of
+    ActiveTxs = case ets:lookup(TableName, Key) of
                     [] ->
                         [];
-                    [{{prepare, Key}, List}] ->
+                    [{Key, List}] ->
                         List
                 end,
     {ok, ActiveTxs}.
@@ -132,7 +132,7 @@ get_active_txns_internal(TableName) ->
     ActiveTxs = case ets:tab2list(TableName) of
                     [] ->
                         [];
-                    [{{prepare, Key1}, List1} | Rest1] ->
+                    [{Key1, List1} | Rest1] ->
                         lists:foldl(fun({_Key, List}, Acc) ->
                             case List of
                                 [] ->
@@ -141,7 +141,7 @@ get_active_txns_internal(TableName) ->
                                     List ++ Acc
                             end
                         end,
-                            [], [{{prepare, Key1}, List1} | Rest1])
+                            [], [{Key1, List1} | Rest1])
                 end,
     {ok, ActiveTxs}.
 
@@ -443,17 +443,17 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
 set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) ->
-    ActiveTxs = case ets:lookup(PreparedTx, {prepare, Key}) of
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
-                    [{{prepare, Key}, List}] ->
+                    [{Key, List}] ->
                         List
                 end,
     case lists:keymember(TxId, 1, ActiveTxs) of
         true ->
             set_prepared(PreparedTx, Rest, TxId, Time, Acc);
         false ->
-            true = ets:insert(PreparedTx, {{prepare, Key}, [{TxId, Time} | ActiveTxs]}),
+            true = ets:insert(PreparedTx, {Key, [{TxId, Time} | ActiveTxs]}),
             set_prepared(PreparedTx, Rest, TxId, Time, dict:append_list(Key, ActiveTxs, Acc))
     end.
 
@@ -461,7 +461,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
 reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
-    true = ets:insert(PreparedTx, {{prepare, Key}, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
@@ -529,18 +529,18 @@ clean_and_notify(TxId, Updates, #state{
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
 clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
-    ActiveTxs = case ets:lookup(PreparedTx, {prepare, Key}) of
+    ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
-                    [{{prepare, Key}, List}] ->
+                    [{Key, List}] ->
                         List
                 end,
     NewActive = lists:keydelete(TxId, 1, ActiveTxs),
     true = case NewActive of
                [] ->
-                   ets:delete(PreparedTx, {prepare, Key});
+                   ets:delete(PreparedTx, Key);
                _ ->
-                   ets:insert(PreparedTx, {{prepare, Key}, NewActive})
+                   ets:insert(PreparedTx, {Key, NewActive})
            end,
     clean_prepared(PreparedTx, Rest, TxId).
 
@@ -579,7 +579,7 @@ certification_check(TxId, [H | T], CommittedTx, PreparedTx) ->
 
 check_prepared(TxId, PreparedTx, Key) ->
     _SnapshotTime = TxId#tx_id.snapshot_time,
-    case ets:lookup(PreparedTx, {prepare, Key}) of
+    case ets:lookup(PreparedTx, Key) of
         [] ->
             true;
         _ ->
