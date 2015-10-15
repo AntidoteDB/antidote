@@ -25,13 +25,20 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([get_clock/1, update_clock/3, get_clock_by_key/1,
-  is_greater_than/2,
+-export([
+  get_clock/1,
+  get_clock_by_key/1,
   get_clock_of_dc/2,
   set_clock_of_dc/3,
   get_stable_snapshot/0,
   from_list/1,
-  eq/2, lt/2, gt/2, le/2, ge/2, strict_ge/2, strict_le/2]).
+  eq/2,
+  lt/2,
+  gt/2,
+  le/2,
+  ge/2,
+  strict_ge/2,
+  strict_le/2, max/1, min/1]).
 
 -export_type([vectorclock/0]).
 
@@ -70,40 +77,7 @@ get_stable_snapshot() ->
     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
     %% to riak core meta-data) otherwise will have to change this
     {ok,vectorclock_vnode:get_stable_snapshot()}.
-    
 
--spec update_clock(Partition :: non_neg_integer(),
-                   Dc_id :: term(), Timestamp :: non_neg_integer())
-                  -> ok | {error, term()}.
-update_clock(Partition, Dc_id, Timestamp) ->
-    Indexnode = {Partition, node()},
-    try
-        riak_core_vnode_master:sync_command(Indexnode,
-          {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master)
-    catch
-        _:R ->
-            lager:error("Exception caught: ~p", [R]),
-            {error, R}
-    end.
-
-%% @doc Return true if Clock1 > Clock2
--spec is_greater_than(Clock1 :: vectorclock(), Clock2 :: vectorclock())
-                     -> boolean().
-is_greater_than(Clock1, Clock2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, Clock1) of
-                           {ok, Time1} ->
-                               case Time1 > Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error -> %%Localclock has not observered some dcid
-                               false
-                       end
-               end,
-               true, Clock2).
 
 get_clock_of_dc(Dcid, VectorClock) ->
     case dict:find(Dcid, VectorClock) of
@@ -123,6 +97,14 @@ set_clock_of_dc(DcId, Time, VectorClock) ->
 
 from_list(List) ->
     dict:from_list(List).
+
+max([]) -> dict:new();
+max([V]) -> V;
+max([V1,V2|T]) -> max([dict:merge(fun(_K, A, B) -> erlang:max(A, B) end, V1, V2)|T]).
+
+min([]) -> dict:new();
+min([V]) -> V;
+min([V1,V2|T]) -> min([dict:merge(fun(_K, A, B) -> erlang:min(A, B) end, V1, V2)|T]).
 
 
 

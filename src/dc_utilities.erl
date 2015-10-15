@@ -29,7 +29,9 @@
     call_vnode/3,
     get_all_partitions/0,
     bcast_vnode/2,
-    get_my_partitions/0]).
+    get_my_partitions/0,
+    ensure_all_vnodes_running/1,
+    get_partitions_num/0]).
 
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -57,6 +59,9 @@ get_all_partitions() ->
     Nodes = chash:nodes(CHash),
     [I || {I, _} <- Nodes].
 
+-spec get_partitions_num() -> non_neg_integer().
+get_partitions_num() -> length(get_all_partitions()).
+
 -spec call_vnode_sync(partition_id(), atom(), any()) -> any().
 call_vnode_sync(Partition, VMaster, Request) ->
     riak_core_vnode_master:sync_command(partition_to_indexnode(Partition), Request, VMaster).
@@ -67,8 +72,20 @@ call_vnode(Partition, VMaster, Request) ->
 
 -spec bcast_vnode_sync(atom(), any()) -> any().
 bcast_vnode_sync(VMaster, Request) ->
+    %% TODO: a parallel map function would be nice here
     lists:map(fun(P) -> {P, call_vnode_sync(P, VMaster, Request)} end, get_all_partitions()).
 
 -spec bcast_vnode(atom(), any()) -> any().
 bcast_vnode(VMaster, Request) ->
     lists:map(fun(P) -> {P, call_vnode(P, VMaster, Request)} end, get_all_partitions()).
+
+ensure_all_vnodes_running(VnodeType) ->
+    Partitions = get_partitions_num(),
+    Running = length(riak_core_vnode_manager:all_vnodes(VnodeType)),
+    case Partitions == Running of
+        true -> ok;
+        false ->
+            lager:info("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
+            timer:sleep(250),
+            ensure_all_vnodes_running(VnodeType)
+    end.

@@ -128,6 +128,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
+      lager:info("Updating clock due to write, DC=~p TS=~p", [DCID, Timestamp]),
       {update_clock(State, DCID, Timestamp), true}
   end.
 
@@ -168,7 +169,7 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
 
 %% Update the clock value associated with the given DCID from the perspective of this partition.
 -spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
-update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
+update_clock(State = #state{last_updated = LastUpdated, partition = Partition}, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
   NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
 
@@ -181,10 +182,13 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
   NewLastUpdated = case Now > LastUpdated + ?VECTORCLOCK_UPDATE_PERIOD of
     %% Stable snapshot was not updated for the defined period of time.
     %% Push the changes and update the last_updated parameter to the current timestamp.
+    %% WARNING: this update must push the whole contents of the partition vectorclock,
+    %% not just the current DCID/Timestamp pair in the arguments.
+    %% Failure to do so may lead to a deadlock during the connection phase.
     true ->
       %% Update the vectorclock the OLD way
-      ok = vectorclock:update_clock(State#state.partition, DCID, Timestamp),
-      dc_utilities:call_vnode(State#state.partition, vectorclock_vnode_master, calculate_stable_snapshot),
+      vectorclock_vnode:update_partition_clock(Partition, NewClock),
+      vectorclock_vnode:recalculate_stable_snapshot(Partition),
 
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
       %%ok = meta_data_sender:put_meta_dict(State#state.partition, NewClock),

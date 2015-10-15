@@ -37,6 +37,8 @@
 
 -spec get_descriptor() -> {ok, interdc_descriptor()}.
 get_descriptor() ->
+  %% Wait until all needed vnodes are spawned, so that the heartbeats are already being sent
+  ok = dc_utilities:ensure_all_vnodes_running(inter_dc_log_sender_vnode),
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address, []) end, Nodes),

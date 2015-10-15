@@ -79,6 +79,7 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
 
       %% If the transaction seems to come after an unknown transaction, ask the remote log
         gt ->
+          lager:info("Whoops, lost message. Asking the remote DC ~p", [State#state.pdcid]),
           case inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
             ok ->
               State#state{state_name = buffering};
