@@ -128,7 +128,6 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
-      lager:info("Updating clock due to write, DC=~p TS=~p", [DCID, Timestamp]),
       {update_clock(State, DCID, Timestamp), true}
   end.
 
