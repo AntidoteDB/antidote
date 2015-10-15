@@ -147,9 +147,9 @@ asyn_append_group(IndexNode, LogId, PayloadList) ->
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
 -spec get(index_node(), {get, key(), vectorclock(), term(), term()}) ->
-    {number(), list(), snapshot(), vectorclock(), false}.
+    {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
 get(IndexNode, Command) ->
-    riak_core_vnode_master:command(IndexNode,
+    riak_core_vnode_master:sync_command(IndexNode,
         Command,
         ?LOGGING_MASTER,
         infinity).
@@ -309,7 +309,7 @@ handle_command(_Message, _Sender, State) ->
 get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
-            CommitedOps;
+            lists:reverse(CommitedOps);
         {error, Reason} ->
             {error, Reason};
         {NewContinuation, NewTerms} ->
@@ -327,25 +327,33 @@ get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
 filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommitedOps) ->
     {Ops, CommitedOps};
 filter_terms_for_key([H|T], Key, MinSnapshotTime, Ops, CommitedOps) ->
-    {_, {_, {TxId, OpType, OpPayload}}} = H,
+    {_, {operation, _, #log_record{tx_id = TxId, op_type = OpType, op_payload = OpPayload}}} = H,
     case OpType of
         update ->
             {Key1, _, _} = OpPayload,
             case Key == Key1 of
                 true ->
                     filter_terms_for_key(T, Key, MinSnapshotTime,
-                        dict:append(TxId, {TxId, OpType, OpPayload}, Ops), CommitedOps);
+                        dict:append(TxId, OpPayload, Ops), CommitedOps);
                 false ->
                     filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
             end;
         commit ->
-            {{_DcId, TxCommitTime}, _SnapshotTime} = OpPayload,
+            {{DcId, TxCommitTime}, SnapshotTime} = OpPayload,
             case dict:find(TxId, Ops) of
-                {ok, Value} ->
-                    case vectorclock:is_greater_than(TxCommitTime, MinSnapshotTime) of
+                {ok, [{Key, Type, Op}]} ->
+                    case not vectorclock:is_greater_than(SnapshotTime, MinSnapshotTime) of
                         true ->
+                            CommittedDownstreamOp =
+                                #clocksi_payload{
+                                    key = Key,
+                                    type = Type,
+                                    op_param = Op,
+                                    snapshot_time = SnapshotTime,
+                                    commit_time = {DcId, TxCommitTime},
+                                    txid = TxId},
                             filter_terms_for_key(T, Key, MinSnapshotTime, Ops,
-                                lists:append(Value, CommitedOps));
+                                lists:append(CommitedOps, [CommittedDownstreamOp]));
                         false ->
                             filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
                     end;
@@ -353,7 +361,7 @@ filter_terms_for_key([H|T], Key, MinSnapshotTime, Ops, CommitedOps) ->
                     filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
             end;
         _ ->
-            do_nothing
+            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
     end.
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
