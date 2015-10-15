@@ -69,8 +69,48 @@ get_clock(Partition) ->
 get_stable_snapshot() ->
     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
     %% to riak core meta-data) otherwise will have to change this
-    {ok,vectorclock_vnode:get_stable_snapshot()}.
+    case ?PROTOCOL of
+        clocksi ->
+            {ok, vectorclock_vnode:get_stable_snapshot()};
+        gentlerain ->
+            %% For gentlerain use the same format as clocksi
+            %% But, replicate GST to all entries in the dict
+            StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
+            case dict:is_empty(StableSnapshot) of
+                true -> 
+                    {ok, StableSnapshot};
+                false ->
+                    ListTime = dict:fold( 
+                                 fun(_Key, Value, Acc) ->
+                                         [Value | Acc ]
+                                 end, [], StableSnapshot),
+                    GST = lists:min(ListTime),
+                    {ok, dict:map( 
+                           fun(_K, _V) ->
+                                   GST
+                           end,
+                           StableSnapshot)}
+            end
+    end.
     
+
+%% %% returns scalar global stable time for Gentlerain protocol
+%% %% This assumes there is no missing information about other DCs.
+%% %% If there is no entry for a DC, then the stable time returned will 
+%% %% be wrong. To fix this we have to fix the number of DCs before hand
+%% -spec get_scalar_stable_snapshot() -> {ok, non_neg_integer()}.
+%% get_scalar_stable_snapshot() ->
+%%     StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
+%%     case dict:is_empty(StableSnapshot) of
+%%         true -> 
+%%             {ok, 0};
+%%         false ->
+%%             ListTime = dict:fold( 
+%%                          fun(_Key, Value, Acc) ->
+%%                                  Value:Acc
+%%                          end, [], StableSnapshot),
+%%             {ok, lists:min(ListTime)}
+%%     end.
 
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())
