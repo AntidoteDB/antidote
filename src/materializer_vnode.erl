@@ -306,11 +306,9 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
 	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp=vector_orddict:last(PrunedSnapshots),
             {CT, _S} = FirstOp,
-	    io:format("before ~w~n", [CT]),
 	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
 					     vectorclock:keep_min(CT1,Acc)
 				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
-	    io:format("after ~w~n", [CommitTime]),
 	    {Length,OpsDict} = case ets:lookup(OpsCache, Key) of
 				   []->
 				       {0,[]};
