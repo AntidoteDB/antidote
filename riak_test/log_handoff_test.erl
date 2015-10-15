@@ -26,8 +26,9 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
+    NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
-        {riak_core, [{ring_creation_size, 8}]}
+        {riak_core, [{ring_creation_size, NumVNodes}]}
     ]),
     NTestItems    = 10,
     NTestNodes    = 3,

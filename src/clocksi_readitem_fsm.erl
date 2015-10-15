@@ -219,10 +219,10 @@ check_prepared_list(_Key,_SnapshotTime,[]) ->
     ready;
 check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
     case Time =< SnapshotTime of
-	true ->
-	    {not_ready, ?SPIN_WAIT};
-	false ->
-	    check_prepared_list(Key,SnapshotTime,Rest)
+    true ->
+        {not_ready, ?SPIN_WAIT};
+    false ->
+        check_prepared_list(Key,SnapshotTime,Rest)
     end.
 
 %% @doc return:
