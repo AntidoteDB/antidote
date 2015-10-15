@@ -306,6 +306,8 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
+%% @doc This method successively calls disk_log:chunk so all the log is read.
+%% With each valid chunk, filter_terms_for_key is called.
 get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
@@ -323,7 +325,9 @@ get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
             end
     end.
 
-
+%% @doc Given a list of log_records, this method filters the ones corresponding to Key.
+%% It returns a dict corresponding to all the ops matching Key and
+%% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
 filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommitedOps) ->
     {Ops, CommitedOps};
 filter_terms_for_key([H|T], Key, MinSnapshotTime, Ops, CommitedOps) ->
