@@ -16,6 +16,9 @@ clean:
 	$(REBAR) clean
 	rm -rf riak_test/ebin
 
+cleantests:
+	rm -rf riak_test/ebin
+
 distclean: clean devclean relclean cleanplt
 	$(REBAR) delete-deps
 
@@ -23,7 +26,10 @@ rel: all
 	$(REBAR) generate
 
 relgentlerain: export TXN_PROTOCOL=gentlerain
-relgentlerain: relclean rel
+relgentlerain: relclean cleantests rel
+
+relnocert: export NO_CERTIFICATION = true
+relnocert: relclean cleantests rel
 
 relclean:
 	rm -rf rel/antidote
