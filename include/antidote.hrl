@@ -112,8 +112,8 @@
                           txid :: txid()}).
 
 -record(transaction, {snapshot_time :: snapshot_time(),
-                      server_pid :: pid(), 
-                      vec_snapshot_time, 
+                      server_pid :: pid(),
+                      vec_snapshot_time,
                       txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
@@ -133,6 +133,7 @@
 -type partition_id()  :: non_neg_integer().
 -type log_id() :: [partition_id()].
 -type type() :: atom().
+-type bucket() :: term().
 -type snapshot() :: term().
 -type snapshot_time() ::  vectorclock:vectorclock().
 -type commit_time() ::  {dcid(), non_neg_integer()}.
@@ -143,8 +144,11 @@
 -type dc_address():: {inet:ip_address(),inet:port_number()}.
 -type cache_id() :: ets:tid().
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0, log/0, op_id/0, payload/0, operation/0, partition_id/0, type/0, snapshot/0, txid/0, tx/0,
-             dc_address/0]).
+-export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
+              log/0, op_id/0, payload/0, operation/0, partition_id/0,
+              type/0, snapshot/0, txid/0, tx/0,
+              bucket/0,
+              dc_address/0]).
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
@@ -160,17 +164,17 @@
 %%----------------------------------------------------------------------
 
 -record(tx_coord_state, {
-	  from :: {pid(), term()},
-	  transaction :: tx(),
+          from :: {pid(), term()},
+          transaction :: tx(),
+          updated_partitions :: list(),
 	  external_snapshots :: dict(),
-	  updated_partitions :: list(),
-	  num_to_ack :: non_neg_integer(),
-	  prepare_time :: non_neg_integer(),
-	  commit_time :: non_neg_integer(),
-	  commit_protocol :: term(),
-	  state :: active | prepared | committing | committed | undefined | aborted
-		 | committed_read_only,
-	  operations :: list(),
-	  read_set :: list(),
-	  is_static :: boolean(),
-	  full_commit :: boolean()}).
+          num_to_ack :: non_neg_integer(),
+          prepare_time :: non_neg_integer(),
+          commit_time :: non_neg_integer(),
+          commit_protocol :: term(),
+          state :: active | prepared | committing | committed | undefined
+                 | aborted | committed_read_only,
+          operations :: list(),
+          read_set :: list(),
+          is_static :: boolean(),
+          full_commit :: boolean()}).
