@@ -334,34 +334,40 @@ filter_terms_for_key([H|T], Key, MinSnapshotTime, Ops, CommitedOps) ->
     {_, {operation, _, #log_record{tx_id = TxId, op_type = OpType, op_payload = OpPayload}}} = H,
     case OpType of
         update ->
-            {Key1, _, _} = OpPayload,
-            case Key == Key1 of
-                true ->
-                    filter_terms_for_key(T, Key, MinSnapshotTime,
-                        dict:append(TxId, OpPayload, Ops), CommitedOps);
-                false ->
-                    filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
-            end;
+            handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommitedOps);
         commit ->
-            {{DcId, TxCommitTime}, SnapshotTime} = OpPayload,
-            case dict:find(TxId, Ops) of
-                {ok, [{Key, Type, Op}]} ->
-                    case not vectorclock:is_greater_than(SnapshotTime, MinSnapshotTime) of
-                        true ->
-                            CommittedDownstreamOp =
-                                #clocksi_payload{
-                                    key = Key,
-                                    type = Type,
-                                    op_param = Op,
-                                    snapshot_time = SnapshotTime,
-                                    commit_time = {DcId, TxCommitTime},
-                                    txid = TxId},
-                            filter_terms_for_key(T, Key, MinSnapshotTime, Ops,
-                                lists:append(CommitedOps, [CommittedDownstreamOp]));
-                        false ->
-                            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
-                    end;
-                _ ->
+            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommitedOps);
+        _ ->
+            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
+    end.
+
+handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommitedOps) ->
+    {Key1, _, _} = OpPayload,
+    case Key == Key1 of
+        true ->
+            filter_terms_for_key(T, Key, MinSnapshotTime,
+                dict:append(TxId, OpPayload, Ops), CommitedOps);
+        false ->
+            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
+    end.
+
+handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommitedOps) ->
+    {{DcId, TxCommitTime}, SnapshotTime} = OpPayload,
+    case dict:find(TxId, Ops) of
+        {ok, [{Key, Type, Op}]} ->
+            case not vectorclock:is_greater_than(SnapshotTime, MinSnapshotTime) of
+                true ->
+                    CommittedDownstreamOp =
+                        #clocksi_payload{
+                            key = Key,
+                            type = Type,
+                            op_param = Op,
+                            snapshot_time = SnapshotTime,
+                            commit_time = {DcId, TxCommitTime},
+                            txid = TxId},
+                    filter_terms_for_key(T, Key, MinSnapshotTime, Ops,
+                        lists:append(CommitedOps, [CommittedDownstreamOp]));
+                false ->
                     filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
             end;
         _ ->
