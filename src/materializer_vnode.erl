@@ -303,13 +303,16 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
 	    %% snapshots are no longer totally ordered
 	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp=vector_orddict:last(PrunedSnapshots),
-            {CommitTime, _S} = FirstOp,
+            {CT, _S} = FirstOp,
+	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
+					     vectorclock:keep_min(CT1,Acc)
+				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
 	    {Length,OpsDict} = case ets:lookup(OpsCache, Key) of
-			  []->
-			      {0,[]};
-			  [{_, {Len,Dict}}]->
-			      {Len,Dict}
-		      end,
+				   []->
+				       {0,[]};
+				   [{_, {Len,Dict}}]->
+				       {Len,Dict}
+			       end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
             true = ets:insert(OpsCache, {Key, {NewLength,PrunedOps}});

@@ -285,7 +285,6 @@ fold_all_keys(F, V1, V2) ->
 			F(A, B, DC, Acc)
 		end, new(), AllDCs).
 
-
 -spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->
   %% We could but do not care about duplicate DC keys - finding duplicates is not worth the effort
