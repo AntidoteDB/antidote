@@ -30,6 +30,7 @@
          get_clock_of_dc/2,
          set_clock_of_dc/3,
          get_stable_snapshot/0,
+         get_scalar_stable_time/0,
          from_list/1,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
@@ -92,7 +93,24 @@ get_stable_snapshot() ->
                            StableSnapshot)}
             end
     end.
-    
+
+%% Returns the minimum value in the stable vector snapshot time
+%% Useful for gentlerain protocol.
+-spec get_scalar_stable_time() -> {ok, non_neg_integer()}.
+get_scalar_stable_time() ->   
+    StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
+    case dict:is_empty(StableSnapshot) of
+        true -> 
+            {ok, 0};
+        false ->
+            ListTime = dict:fold( 
+                         fun(_Key, Value, Acc) ->
+                                 [Value | Acc ]
+                         end, [], StableSnapshot),
+            GST = lists:min(ListTime),
+            {ok, GST}
+    end.
+            
 
 %% %% returns scalar global stable time for Gentlerain protocol
 %% %% This assumes there is no missing information about other DCs.

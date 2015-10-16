@@ -144,10 +144,19 @@ read_objects(Clock, _Properties, Objects) ->
                      {read, {Key, Type}}
              end,
              Objects),
-    case clocksi_execute_tx(Clock, Args) of
-        {ok, {_TxId, Result, CommitTime}} ->
-            {ok, Result, CommitTime};
-        {error, Reason} -> {error, Reason}
+    case ?PROTOCOL of
+        clocksi ->
+            case clocksi_execute_tx(Clock, Args) of
+                {ok, {_TxId, Result, CommitTime}} ->
+                    {ok, Result, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end;
+        gentlerain ->
+            case gr_snapshot_read(Clock, Args) of
+                {ok, {_TxId, Result, CommitTime}} ->
+                    {ok, Result, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end
     end.
 
 
@@ -316,3 +325,17 @@ clocksi_iprepare({_, _, CoordFsmPid})->
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit).
+
+%%% Snapshot read for Gentlerain protocol
+gr_snapshot_read(ClientClock, Args) ->
+    GST = vectorclock:get_scalar_stable_time(),
+    DcId = dc_utilities:get_my_dc_id(),    
+    Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
+    case Dt =< GST of
+        true ->
+            clocksi_execute_tx(ClientClock, Args);
+        false ->
+            timer:sleep(10),
+            gr_snapshot_read(ClientClock, Args)
+    end.
+     
