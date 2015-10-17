@@ -26,6 +26,7 @@
          spawn_read/3]).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
@@ -49,8 +50,13 @@ confirm() ->
     clocksi_test4 (Nodes),
     clocksi_test_read_time(Nodes),
     clocksi_test_read_wait(Nodes),
-    clocksi_test_certification_check(Nodes),		
-    clocksi_multiple_test_certification_check(Nodes),
+    case ?CERT of
+	true ->
+	    clocksi_test_certification_check(Nodes),		
+	    clocksi_multiple_test_certification_check(Nodes);
+	false ->
+	    ok
+    end,
     clocksi_multiple_read_update_test(Nodes),
     clocksi_concurrency_test(Nodes),
     pass.
