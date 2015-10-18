@@ -15,13 +15,13 @@
 
 -define(SEND_TIMEOUT,20000).
 -define(CONNECT_TIMEOUT,10000).
--define(EXT_READ_TIMEOUT,10000).
+-define(EXT_READ_TIMEOUT,20000).
 -define(CONNECTION_SLEEP_EXT_READ_LOOP, 1000).
 
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
--define(SAFE_SEND_PERIOD, 5000).
+-define(SAFE_SEND_PERIOD, 50).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 5000).
+-define(REPL_PERIOD, 100).
 
 -define(CRDTS, [crdt_bcounter, crdt_orset, crdt_pncounter, crdt_rga]).
 %% Allow read concurrency on shared ets tables
@@ -57,7 +57,7 @@
 -define(SPIN_WAIT, 1).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
--define(META_DATA_SLEEP, 5000).
+-define(META_DATA_SLEEP, 50).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
@@ -65,10 +65,11 @@
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, false).
-<<<<<<< HEAD
 
--define(BEHIND_SEC_EXT, 0).
--define(BEHIND_SEC_LOCAL, 0).
+%% -define(BEHIND_SEC_EXT, 5).
+%% -define(BEHIND_SEC_LOCAL, 10).
+-define(BEHIND_SEC_EXT, 1).
+-define(BEHIND_SEC_LOCAL, 1).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).

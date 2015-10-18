@@ -147,10 +147,12 @@ loop_reads([Dc|T], Type, Key, Transaction, AllDc) ->
 	    {ok, {{ok, SS1}, _Dc}} ->
 		{ok, SS1};
 	    Result ->
+		lager:error("Error in ext read ~w", [Result]),
 		loop_reads(T,Type,Key,Transaction,AllDc)
 	end
     catch
-	_:_Reason ->
+	_:Reason ->
+	    lager:error("Caught error in ext read ~w", [Reason]),
 	    loop_reads(T,Type,Key,Transaction,AllDc)
     end;
 loop_reads([], Type, Key, Transaction, AllDc) ->
@@ -217,12 +219,10 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, IsLocal},
 perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition,IsLocal) ->
     case check_clock(Key,Transaction,PreparedCache,Partition,IsLocal) of
 	{not_ready,Time} ->
-	    lager:info("spinning read"),
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction, IsLocal}),
 	    ok;
 	ready ->
-	    lager:info("ready to read"),
 	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
     end.
 
@@ -249,7 +249,6 @@ check_clock(Key,Transaction,PreparedCache,Partition,IsLocal) ->
 	    %% origin DC is using time:now() for its time, instead of using
 	    %% time based on one of its dependencies
 	    %% Should fix this
-	    lager:info("waiting for clock for external read"),
 	    vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
 	    check_prepared(Key,Transaction,PreparedCache,Partition)
     end.
@@ -268,7 +267,6 @@ check_prepared_list(_Key,_SnapshotTime,[]) ->
 check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
     case Time =< SnapshotTime of
 	true ->
-	    lager:info("spin wait"),
 	    {not_ready, ?SPIN_WAIT};
 	false ->
 	    check_prepared_list(Key,SnapshotTime,Rest)

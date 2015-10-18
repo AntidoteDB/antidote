@@ -32,7 +32,6 @@ init([Socket]) ->
 receive_message(timeout, State=#state{socket=Socket}) ->
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
-	    lager:info("Got request for external read ~w", [binary_to_term(Message)]),
 	    {ok,_} = cross_dc_read_communication_perform_read_fsm_sup:start_fsm([Socket,Message]),
 	    {next_state,receive_message,State,0};
 	{error, Reason} ->

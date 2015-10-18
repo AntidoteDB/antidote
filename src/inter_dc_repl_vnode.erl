@@ -43,6 +43,7 @@
 -record(state, {partition,
                 dcid,
                 last_op,
+		con_dict,
                 reader}).
 
 start_vnode(I) ->
@@ -58,9 +59,11 @@ init([Partition]) ->
     {ok, #state{partition=Partition,
                 dcid=DcId,
 		last_op=empty,
+		con_dict=dict:new(),
                 reader = Reader}}.
 
 handle_command(trigger, _Sender, State=#state{partition=Partition,
+					      con_dict=ConDict,
                                               reader=Reader}) ->
     DCList = inter_dc_manager:get_dcs(),
     NewState = case DCList of
@@ -68,35 +71,36 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 		   DCList ->
 		       {NewReaderState, DictTransactionsDcs, StableTime} =
 			   clocksi_transaction_reader:get_next_transactions(Reader),
-		       NewReader = case dict:size(DictTransactionsDcs) of
-				       0 ->
-					   %% have to send safe time
-					   %% lager:info("stable time: ~p", [StableTime]),
+		       {NewReader,NewConDict} =
+			   case dict:size(DictTransactionsDcs) of
+			       0 ->
+				   %% have to send safe time
+				   %% lager:info("stable time: ~p", [StableTime]),
+				   DCs = inter_dc_manager:get_dcs(),
+				   lists:foldl(fun({DcAddress,Port},_Acc) ->
+						       vectorclock:update_sent_clock(
+							 {DcAddress,Port}, Partition, StableTime)
+					       end,
+					       0, DCs),
+				   {NewReaderState,ConDict};
+			       _ ->
+				   case inter_dc_communication_sender:propagate_sync(
+					  DictTransactionsDcs, StableTime, Partition, ConDict) of
+				       {ok,NewConDict1} ->
 					   DCs = inter_dc_manager:get_dcs(),
 					   lists:foldl(fun({DcAddress,Port},_Acc) ->
 							       vectorclock:update_sent_clock(
 								 {DcAddress,Port}, Partition, StableTime)
 						       end,
 						       0, DCs),
-					   NewReaderState;
-				       _ ->
-					   case inter_dc_communication_sender:propagate_sync(
-						  DictTransactionsDcs, StableTime, Partition) of
-					       ok ->
-						   DCs = inter_dc_manager:get_dcs(),
-						   lists:foldl(fun({DcAddress,Port},_Acc) ->
-								       vectorclock:update_sent_clock(
-									 {DcAddress,Port}, Partition, StableTime)
-							       end,
-							       0, DCs),
-						   NewReaderState;
-					       _ ->
-						   %% Here will resend all transactions, but should only resend failed ones
-						   lager:error("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
-						   Reader
-					   end
-				   end,
-		       State#state{reader=NewReader}
+					   {NewReaderState,NewConDict1};
+				       {error,NewConDict2} ->
+					   %% Here will resend all transactions, but should only resend failed ones
+					   lager:error("UnnnnnnnnnnnnnnnnnnnSuccessful send"),
+					   {Reader,NewConDict2}
+				   end
+			   end,
+		       State#state{reader=NewReader,con_dict=NewConDict}
 	       end,
     timer:sleep(?REPL_PERIOD),
     riak_core_vnode:send_command(self(), trigger),

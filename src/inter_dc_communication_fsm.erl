@@ -55,11 +55,13 @@ start_link(Socket, LastPid) ->
 
 
 init([Socket, LastPid]) ->
+    {A1,A2,A3} = os:timestamp(),
+    random:seed(A1, A2, A3),
     {ok, receive_message, #state{socket=Socket, last_pid=LastPid},0}.
 
 
-receive_message(timeout, State=#state{socket=Socket,last_pid=LastPid}) ->
-    MyPid = self(),
+receive_message(timeout, State=#state{socket=Socket,last_pid=_LastPid}) ->
+    %% MyPid = self(),
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
             case binary_to_term(Message) of
@@ -68,59 +70,59 @@ receive_message(timeout, State=#state{socket=Socket,last_pid=LastPid}) ->
 		    %% TODO: this is not safe because you can recieve a safe time beofre
 		    %% you have finished processing previous received update
 		    ok = gen_tcp:send(Socket, term_to_binary(acknowledge)),
-		    gen_tcp:close(Socket),
-		    case LastPid of
-			none ->
-			    ok;
-			_ ->
-			    LastPid ! {MyPid, check_prev_done_process},
-			    receive
-				{MyPid, prev_done_process} ->
-				    ok
-			    end
-		    end,
+		    %%gen_tcp:close(Socket),
+		    %% case LastPid of
+		    %% 	none ->
+		    %% 	    ok;
+		    %% 	_ ->
+		    %% 	    LastPid ! {MyPid, check_prev_done_process},
+		    %% 	    receive
+		    %% 		{MyPid, prev_done_process} ->
+		    %% 		    ok
+		    %% 	    end
+		    %% end,
 		    ok = inter_dc_recvr_vnode:store_updates(Updates),
-		    receive
-			{NewPid, check_prev_done_process} ->
-			    NewPid ! {NewPid, prev_done_process}
-		    end,
-		    {stop, normal, State};
+		    %% receive
+		    %% 	{NewPid, check_prev_done_process} ->
+		    %% 	    NewPid ! {NewPid, prev_done_process}
+		    %% end,
+		    {next_state, receive_message, State, 0};
 		Unknown ->
                     lager:error("Weird message received in inter_dc_comm_fsm ~p end", [Unknown]),
-		    gen_tcp:close(Socket),
-		    case LastPid of
-			none ->
-			    ok;
-			_ ->
-			    LastPid ! {MyPid, check_prev_done_process},
-			    receive
-				{MyPid, prev_done_process} ->
-				    ok
-			    end
-		    end,
-		    receive
-			{NewPid, check_prev_done_process} ->
-			    NewPid ! {NewPid, prev_done_process}
-		    end,
+		    %% gen_tcp:close(Socket),
+		    %% case LastPid of
+		    %% 	none ->
+		    %% 	    ok;
+		    %% 	_ ->
+		    %% 	    LastPid ! {MyPid, check_prev_done_process},
+		    %% 	    receive
+		    %% 		{MyPid, prev_done_process} ->
+		    %% 		    ok
+		    %% 	    end
+		    %% end,
+		    %% receive
+		    %% 	{NewPid, check_prev_done_process} ->
+		    %% 	    NewPid ! {NewPid, prev_done_process}
+		    %% end,
 		    {next_state, bad_msg, State, 0}		    
 	    end;
 	{error, Reason} ->
             lager:error("Problem with the socket, reason: ~p", [Reason]),
 	    gen_tcp:close(Socket),
-	    case LastPid of
-		none ->
-		    ok;
-		_ ->
-		    LastPid ! {MyPid, check_prev_done_process},
-		    receive
-			{MyPid, prev_done_process} ->
-			    ok
-		    end
-	    end,
-	    receive
-		{NewPid, check_prev_done_process} ->
-		    NewPid ! {NewPid, prev_done_process}
-	    end,
+	    %% case LastPid of
+	    %% 	none ->
+	    %% 	    ok;
+	    %% 	_ ->
+	    %% 	    LastPid ! {MyPid, check_prev_done_process},
+	    %% 	    receive
+	    %% 		{MyPid, prev_done_process} ->
+	    %% 		    ok
+	    %% 	    end
+	    %% end,
+	    %% receive
+	    %% 	{NewPid, check_prev_done_process} ->
+	    %% 	    NewPid ! {NewPid, prev_done_process}
+	    %% end,
 	    {next_state, bad_msg, State, 0}
     end.
     %%{next_state, done_queue,State=#state{child_pid=ChildPid,prev_child_pid=LastChildPid}}.

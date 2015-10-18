@@ -44,16 +44,16 @@
                 }).
 
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REGISTER, local).
--define(REGNAME(DC,PORT), get_atom(DC,PORT)).
-%-define(REGISTER, global).
-%-define(REGNAME(DC,PORT), global:whereis_name(get_atom(DC,PORT))).
+%%-define(REGISTER, local).
+%%-define(REGNAME(DC,PORT), get_atom(DC,PORT)).
+-define(REGISTER, global).
+-define(REGNAME(DC,PORT), global:whereis_name(get_atom(DC,PORT))).
 
 perform_read(DcAddress,Port,Message) ->
     Pid = ?REGNAME(DcAddress,Port),
     %%Pid ! {read, Message}.
-    gen_server:call({?REGISTER,Pid},
-		    {read,Message},infinity).
+    gen_server:call(Pid,
+		    {read,Message},?EXT_READ_TIMEOUT).
 
 start_link({DcAddress,Port}) ->
     gen_server:start_link({?REGISTER,get_atom(DcAddress,Port)},?MODULE, [{DcAddress,Port}], []).
@@ -62,16 +62,16 @@ init([{DcAddress,Port}]) ->
     case gen_tcp:connect(DcAddress, Port,
 			 [{active,true},binary, {packet,2}], ?CONNECT_TIMEOUT) of
 	{ok, Socket} ->
+	    lager:info("connected to ext DC for reads ~w ~w", [DcAddress,Port]),
 	    {ok, #state{socket=Socket}};
 	{error, Reason} ->
 	    lager:error("Couldnot connect to remote DC"),
 	    {error, Reason}
     end.
 
-handle_call({read, Message},_Sender,
+handle_call({read, Message},Sender,
 	    State=#state{socket=Socket}) ->
-    lager:info("in read connection sender"),
-    ok = gen_tcp:send(Socket,term_to_binary(Message)),
+    ok = gen_tcp:send(Socket,term_to_binary({read_external, Sender, Message})),
     {noreply,State}.
 
 handle_cast(Msg,State) ->
@@ -98,10 +98,9 @@ handle_cast(Msg,State) ->
 received_tcp(Data,State) ->
     case binary_to_term(Data) of
 	{acknowledge, Pid, Reply} ->
-	    lager:info("got read reply"),
-	    _Ignore=gen_server:reply(Pid, {acknowledge, Pid, Reply}),
+	    _Ignore=gen_server:reply(Pid, {acknowledge, Reply}),
 	    %% Pid ! {acknowledge, Pid, Reply},
-	    {next_state, loop_receive, State,0};
+	    {noreply, State};
 	Other ->
 	    lager:error("Weird msg recieved in ext read connection1: ~p", [Other]),
 	    {stop,badmsg,State}
@@ -112,7 +111,6 @@ handle_info(Message, StateData) ->
 	{tcp,_Sender,Data} ->
 	    received_tcp(Data,StateData);
 	_ ->
-	    lager:error("Recevied info:  ~p",[Message]),
 	    {stop,badmsg,StateData}
     end.
 
@@ -129,10 +127,10 @@ terminate(_Reason, _SD) ->
 
 %% Helper function
 get_atom(DcAddr, Port) ->
-    list_to_atom(atom_to_list(?MODULE) ++ my_ip() ++
+    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(node()) ++
 		     atom_to_list(DcAddr) ++ integer_to_list(Port)).
 
-my_ip() ->
-    {ok, List} = inet:getif(),
-    {Ip, _, _} = hd(List),
-    inet_parse:ntoa(Ip).
+%% my_ip() ->
+%%     {ok, List} = inet:getif(),
+%%     {Ip, _, _} = hd(List),
+%%     inet_parse:ntoa(Ip).
