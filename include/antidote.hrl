@@ -65,6 +65,7 @@
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, false).
+<<<<<<< HEAD
 
 -define(BEHIND_SEC_EXT, 0).
 -define(BEHIND_SEC_LOCAL, 0).

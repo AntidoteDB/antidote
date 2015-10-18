@@ -43,7 +43,7 @@ confirm() ->
 	false ->
 	    ok
     end,
-    rt:clean_cluster(Nodes),
+    %rt:clean_cluster(Nodes),
     pass.
 
 %% Tests creating a new `bcounter()'.
