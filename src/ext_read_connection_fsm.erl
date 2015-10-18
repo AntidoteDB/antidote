@@ -23,19 +23,21 @@
 %% all updates up to the given time
 
 -module(ext_read_connection_fsm).
--behaviour(gen_fsm).
+-behaviour(gen_server).
 -include("antidote.hrl").
 
 
 
 -export([start_link/1]).
 -export([init/1,
-         code_change/4,
+	 handle_call/3,
+	 handle_cast/2,
+         code_change/3,
          handle_event/3,
-         handle_info/3,
+         handle_info/2,
          handle_sync_event/4,
-         terminate/3]).
--export([loop_receive/2,
+         terminate/2]).
+-export([%% loop_receive/2,
 	 perform_read/3]).
 
 -record(state, {socket
@@ -49,55 +51,63 @@
 
 perform_read(DcAddress,Port,Message) ->
     Pid = ?REGNAME(DcAddress,Port),
-    Pid ! {read, Message}.
-
+    %%Pid ! {read, Message}.
+    gen_server:call({?REGISTER,Pid},
+		    {read,Message},infinity).
 
 start_link({DcAddress,Port}) ->
-    gen_fsm:start_link({?REGISTER,get_atom(DcAddress,Port)},?MODULE, [{DcAddress,Port}], []).
-
+    gen_server:start_link({?REGISTER,get_atom(DcAddress,Port)},?MODULE, [{DcAddress,Port}], []).
 
 init([{DcAddress,Port}]) ->
     case gen_tcp:connect(DcAddress, Port,
 			 [{active,true},binary, {packet,2}], ?CONNECT_TIMEOUT) of
 	{ok, Socket} ->
-	    {ok, loop_receive, #state{socket=Socket},0};
+	    {ok, #state{socket=Socket}};
 	{error, Reason} ->
 	    lager:error("Couldnot connect to remote DC"),
 	    {error, Reason}
     end.
 
+handle_call({read, Message},_Sender,
+	    State=#state{socket=Socket}) ->
+    lager:info("in read connection sender"),
+    ok = gen_tcp:send(Socket,term_to_binary(Message)),
+    {noreply,State}.
 
-loop_receive(timeout, State=#state{socket=Socket
-				  }) ->
-    lager:info("loop rec~n",[]),
-    receive
-	{read,Message} ->
-	    lager:info("in read connection sender"),
-	    ok = gen_tcp:send(Socket,term_to_binary(Message)),
-	    {next_state, loop_receive, State,0};
-	{tcp,_Sender,Data} ->
-	    received_tcp(Data,State);
-	{tcp_closed,_S} ->
-	    {stop,badmsg,State};
-	OtherMsg ->
-	    lager:error("Weird msg recieved in ext read connection2: ~p", [OtherMsg]),
-	    {stop,badmsg,State}
-    end.
+handle_cast(Msg,State) ->
+    lager:info("Weird message received ~w", [Msg]),
+    {noreply, State}.
+
+%% loop_receive(timeout, State=#state{socket=Socket
+%% 				  }) ->
+%%     lager:info("loop rec~n",[]),
+%%     receive
+%% 	{read,Message} ->
+%% 	    lager:info("in read connection sender"),
+%% 	    ok = gen_tcp:send(Socket,term_to_binary(Message)),
+%% 	    {next_state, loop_receive, State,0};
+%% 	{tcp,_Sender,Data} ->
+%% 	    received_tcp(Data,State);
+%% 	{tcp_closed,_S} ->
+%% 	    {stop,badmsg,State};
+%% 	OtherMsg ->
+%% 	    lager:error("Weird msg recieved in ext read connection2: ~p", [OtherMsg]),
+%% 	    {stop,badmsg,State}
+%%     end.
     
-
 received_tcp(Data,State) ->
     case binary_to_term(Data) of
 	{acknowledge, Pid, Reply} ->
 	    lager:info("got read reply"),
-	    Pid ! {acknowledge, Pid, Reply},
+	    _Ignore=gen_server:reply(Pid, {acknowledge, Pid, Reply}),
+	    %% Pid ! {acknowledge, Pid, Reply},
 	    {next_state, loop_receive, State,0};
 	Other ->
 	    lager:error("Weird msg recieved in ext read connection1: ~p", [Other]),
 	    {stop,badmsg,State}
     end.
     
-
-handle_info(Message, _StateName, StateData) ->
+handle_info(Message, StateData) ->
     case Message of
 	{tcp,_Sender,Data} ->
 	    received_tcp(Data,StateData);
@@ -112,9 +122,9 @@ handle_event(_Event, _StateName, StateData) ->
 handle_sync_event(_Event, _From, _StateName, StateData) ->
     {stop,badmsg,StateData}.
 
-code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
-terminate(_Reason, _SN, _SD) ->
+terminate(_Reason, _SD) ->
     ok.
 
 %% Helper function
