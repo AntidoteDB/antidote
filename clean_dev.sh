@@ -4,6 +4,7 @@
 # BenchParallel=$2
 DevCount=6
 
+touch ~/antidote/src/*
 echo Killing beam processes
 pkill beam
 for I in $(seq 1 $DevCount); do
