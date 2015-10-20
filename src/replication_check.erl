@@ -4,7 +4,8 @@
 	 get_dc_replicas_update/2,
 	 is_replicated_here/1,
 	 set_replication_list/1,
-	 set_replication_fun/2]).
+	 set_replication_fun/4,
+	 create_biased_key_function/2]).
 
 -define(META_PREFIX_REPLI_UPDATE, {dcidupdate,replication}).
 -define(META_PREFIX_REPLI_READ, {dcidread,replication}).
@@ -169,9 +170,10 @@ is_replicated_here(Key) ->
 	    ResList
     end.
 
-set_replication_fun(KeyFunction,DcNum) ->
+set_replication_fun(_KeyFunction,DcNum,RepFactor,NumDcs) ->
     try
-	riak_core_metadata:put(?META_PREFIX_REPLI_FUNC,function,{KeyFunction}),
+	Fun = create_biased_key_function(RepFactor,NumDcs),
+	riak_core_metadata:put(?META_PREFIX_REPLI_FUNC,function,{Fun}),
 	riak_core_metadata:put(?META_PREFIX_REPLI_DCNUM,number,DcNum)
     catch
 	_:Reason ->
@@ -198,4 +200,30 @@ get_key(Key) ->
 	false ->
 	    Key
     end.
+
 		
+create_biased_key_function(ReplicationFactor,NumDcs) ->
+    fun(Key) ->
+	    
+	    FirstDc = case Key rem NumDcs of
+			  0 ->
+			      NumDcs;
+			  Else ->
+			      Else
+		      end,
+	    ListFun = fun(Self,Count,Acc) ->
+			      case Count of
+				  ReplicationFactor ->
+				      Acc;
+				  _ ->
+				      case (FirstDc + Count) rem NumDcs of
+					  0 ->
+					      Self(Self,Count + 1,Acc ++ [{NumDcs}]);
+					  Other ->
+					      Self(Self,Count+1,Acc ++ [{Other}])
+				      end
+			      end
+		      end,
+	    ListFun(ListFun,1,[{FirstDc}])
+    end.
+    

@@ -36,7 +36,7 @@
 	 get_read_dcs_wids/0,
          add_read_dc/1,
          add_list_read_dcs/1,
-	 set_replication_fun/2,
+	 set_replication_fun/4,
 	 set_replication_list/1,
          stop_receiver/0]).
 
@@ -128,8 +128,8 @@ add_list_read_dcs(DCs) ->
 		end, 0, DCs),
     ok.
 
-set_replication_fun(KeyDescription,Id) ->
-    replication_check:set_replication_fun(KeyDescription,Id).
+set_replication_fun(KeyDescription,Id,RepFactor,NumDcs) ->
+    replication_check:set_replication_fun(KeyDescription,Id,RepFactor,NumDcs).
 
 set_replication_list(List) ->
     replication_check:set_replication_list(List).
