@@ -85,7 +85,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 			   case dict:size(DictTransactionsDcs) of
 			       0 ->
 				   %% have to send safe time
-				   %% lager:info("stable time: ~p", [StableTime]),
+				   lager:info("no txn, sending stable time: ~p", [StableTime]),
 				   DCs = inter_dc_manager:get_dcs(),
 				   lists:foldl(fun({DcAddress,Port},_Acc) ->
 						       vectorclock:update_sent_clock(

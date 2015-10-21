@@ -21,7 +21,7 @@
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(SAFE_SEND_PERIOD, 500).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 1000).
+-define(REPL_PERIOD, 10000).
 
 -define(CRDTS, [crdt_bcounter, crdt_orset, crdt_pncounter, crdt_rga]).
 %% Allow read concurrency on shared ets tables

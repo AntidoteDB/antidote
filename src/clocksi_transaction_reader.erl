@@ -83,8 +83,9 @@ get_next_transactions(State=#state{partition = Partition,
     Node = {Partition, node()},
     %% No transactions will commit in future with commit time < stable_time
     %% So it is safe to read all transactions committed before stable_time
-    Stable_time = get_stable_time(Partition, PrevStableTime),
+    Stable_time = PrevStableTime,
     {ok, NewOps} = read_next_ops(Node, LogId, Last_read_opid),
+    lager:info("new ops from read log ~w", [NewOps]),
     case NewOps of
         [] -> Newlast_read_opid = Last_read_opid;
         _ -> Newlast_read_opid = get_last_opid(NewOps)
@@ -130,11 +131,12 @@ get_next_transactions(State=#state{partition = Partition,
           end, {PendingOperations, dict:new()},
           Before),
 
+    NewStable_time = get_stable_time(Partition, PrevStableTime),
     NewState = State#state{pending_operations = NewPendingOps,
                            pending_commit_records = After,
-                           prev_stable_time = Stable_time,
+                           prev_stable_time = NewStable_time,
                            last_read_opid = Newlast_read_opid},
-    {NewState, DictTransactionsDcs, Stable_time}.
+    {NewState, DictTransactionsDcs, NewStable_time}.
 
 %% @doc returns all update operations in a txn in #clocksi_payload{} format
 -spec get_update_ops_from_transaction(Transaction::tx()) ->
