@@ -107,7 +107,7 @@ receive_message(timeout, State=#state{socket=Socket,last_pid=_LastPid}) ->
 		    {next_state, bad_msg, State, 0}		    
 	    end;
 	{error, Reason} ->
-            lager:error("Problem with the socket, reason: ~p", [Reason]),
+            lager:error("Problem with the socket, inter_dc_communication_fsm recvr, reason: ~p", [Reason]),
 	    gen_tcp:close(Socket),
 	    %% case LastPid of
 	    %% 	none ->

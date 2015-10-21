@@ -35,7 +35,7 @@ receive_message(timeout, State=#state{socket=Socket}) ->
 	    {ok,_} = cross_dc_read_communication_perform_read_fsm_sup:start_fsm([Socket,Message]),
 	    {next_state,receive_message,State,0};
 	{error, Reason} ->
-	    lager:error("Problem with the socket, reason: ~p", [Reason]),
+	    lager:error("Problem with the socket, cross_dc_read_com read rcvr, reason: ~p", [Reason]),
 	    {next_state, close_socket,State,?TIMEOUT}
     end.
 
