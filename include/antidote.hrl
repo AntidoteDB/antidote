@@ -19,9 +19,9 @@
 -define(CONNECTION_SLEEP_EXT_READ_LOOP, 1000).
 
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
--define(SAFE_SEND_PERIOD, 50).
+-define(SAFE_SEND_PERIOD, 500).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
--define(REPL_PERIOD, 100).
+-define(REPL_PERIOD, 1000).
 
 -define(CRDTS, [crdt_bcounter, crdt_orset, crdt_pncounter, crdt_rga]).
 %% Allow read concurrency on shared ets tables
@@ -57,7 +57,7 @@
 -define(SPIN_WAIT, 1).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
--define(META_DATA_SLEEP, 50).
+-define(META_DATA_SLEEP, 500).
 %% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).

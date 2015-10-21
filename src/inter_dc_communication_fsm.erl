@@ -57,6 +57,7 @@ start_link(Socket, LastPid) ->
 init([Socket, LastPid]) ->
     {A1,A2,A3} = os:timestamp(),
     random:seed(A1, A2, A3),
+    lager:info("Opened new receive connection ~w", [Socket]),
     {ok, receive_message, #state{socket=Socket, last_pid=LastPid},0}.
 
 
