@@ -38,6 +38,7 @@
          add_list_read_dcs/1,
 	 set_replication_fun/4,
 	 set_replication_list/1,
+	 simulate_partitions/1,
          stop_receiver/0]).
 
 -define(META_PREFIX_DC, {dcid,port}).
@@ -93,6 +94,8 @@ add_list_dcs(DCs) ->
 		end, 0, DCs),
     ok.
 
+simulate_partitions(Partition) ->
+    dc_utilities:bcast_vnode_sync(inter_dc_repl_vnode_master,{pause,Partition}).
 
 get_my_read_dc() ->
     {_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_READ_DC,mydc),
