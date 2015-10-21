@@ -69,8 +69,9 @@ handle_command({pause, ShouldPause}, _Sender, State) ->
     {reply, ok, State#state{pause=ShouldPause}};
 
 handle_command(trigger,_Sender, State=#state{pause=true}) ->
-    timer:sleep(?REPL_PERIOD),
-    riak_core_vnode:send_command(self(), trigger),
+    %% timer:sleep(?REPL_PERIOD),
+    %% riak_core_vnode:send_command(self(), trigger),
+    riak_core_vnode:send_command_after(?REPL_PERIOD, trigger),
     {noreply,State};
 handle_command(trigger, _Sender, State=#state{partition=Partition,
 					      con_dict=ConDict,
@@ -85,7 +86,6 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 			   case dict:size(DictTransactionsDcs) of
 			       0 ->
 				   %% have to send safe time
-				   lager:info("no txn, sending stable time: ~p", [StableTime]),
 				   DCs = inter_dc_manager:get_dcs(),
 				   lists:foldl(fun({DcAddress,Port},_Acc) ->
 						       vectorclock:update_sent_clock(
@@ -112,8 +112,9 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 			   end,
 		       State#state{reader=NewReader,con_dict=NewConDict}
 	       end,
-    timer:sleep(?REPL_PERIOD),
-    riak_core_vnode:send_command(self(), trigger),
+    %% timer:sleep(?REPL_PERIOD),
+    %% riak_core_vnode:send_command(self(), trigger),
+    riak_core_vnode:send_command_after(?REPL_PERIOD, trigger),
     {noreply,NewState}.
 
     

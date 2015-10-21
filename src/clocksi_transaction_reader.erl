@@ -85,7 +85,6 @@ get_next_transactions(State=#state{partition = Partition,
     %% So it is safe to read all transactions committed before stable_time
     Stable_time = PrevStableTime,
     {ok, NewOps} = read_next_ops(Node, LogId, Last_read_opid),
-    lager:info("new ops from read log ~w", [NewOps]),
     case NewOps of
         [] -> Newlast_read_opid = Last_read_opid;
         _ -> Newlast_read_opid = get_last_opid(NewOps)
