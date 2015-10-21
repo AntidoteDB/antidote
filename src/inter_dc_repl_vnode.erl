@@ -44,6 +44,7 @@
                 dcid,
                 last_op,
 		con_dict,
+		pause,
                 reader}).
 
 start_vnode(I) ->
@@ -59,9 +60,18 @@ init([Partition]) ->
     {ok, #state{partition=Partition,
                 dcid=DcId,
 		last_op=empty,
+		pause=false,
 		con_dict=dict:new(),
                 reader = Reader}}.
 
+
+handle_command({pause, ShouldPause}, _Sender, State) ->
+    {reply, ok, State#state{pause=ShouldPause}};
+
+handle_command(trigger,_Sender, State=#state{pause=true}) ->
+    timer:sleep(?REPL_PERIOD),
+    riak_core_vnode:send_command(self(), trigger),
+    {noreply,State};
 handle_command(trigger, _Sender, State=#state{partition=Partition,
 					      con_dict=ConDict,
                                               reader=Reader}) ->
