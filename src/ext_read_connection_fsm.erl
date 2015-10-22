@@ -46,17 +46,22 @@
 %% SAFE_SEND_PERIOD: Frequency of checking new transactions and sending to other DC
 %%-define(REGISTER, local).
 %%-define(REGNAME(DC,PORT), get_atom(DC,PORT)).
+%%-define(REGISTER, global).
+%%-define(REGNAME(DC,PORT), global:whereis_name(get_atom(DC,PORT))).
+
 -define(REGISTER, global).
--define(REGNAME(DC,PORT), global:whereis_name(get_atom(DC,PORT))).
+-define(REGNAME(MYDC,DC), {global,get_atom(MYDC,DC)}).
+
 
 perform_read(DcAddress,Port,Message) ->
-    Pid = ?REGNAME(DcAddress,Port),
+    %% Pid = ?REGNAME(DcAddress,Port),
     %%Pid ! {read, Message}.
-    gen_server:call(Pid,
+    gen_server:call(?REGNAME(inter_dc_manager:get_my_dc(),{DcAddress,Port}),
 		    {read,Message},?EXT_READ_TIMEOUT).
 
 start_link({DcAddress,Port}) ->
-    gen_server:start_link({?REGISTER,get_atom(DcAddress,Port)},?MODULE, [{DcAddress,Port}], []).
+    gen_server:start_link({?REGISTER, get_atom(inter_dc_manager:get_my_dc(),{DcAddress,Port})},
+			  ?MODULE, [{DcAddress,Port}], []).
 
 init([{DcAddress,Port}]) ->
     case gen_tcp:connect(DcAddress, Port,
@@ -126,9 +131,13 @@ terminate(_Reason, _SD) ->
     ok.
 
 %% Helper function
-get_atom(DcAddr, Port) ->
-    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(node()) ++
-		     atom_to_list(DcAddr) ++ integer_to_list(Port)).
+%% get_atom(DcAddr, Port) ->
+%%     list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(node()) ++
+%% 		     atom_to_list(DcAddr) ++ integer_to_list(Port)).
+
+get_atom({MyDcAddr, MyPort}, {DcAddr, Port}) ->
+    list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(MyDcAddr) ++
+		     integer_to_list(MyPort) ++ atom_to_list(DcAddr) ++ integer_to_list(Port)).
 
 %% my_ip() ->
 %%     {ok, List} = inet:getif(),

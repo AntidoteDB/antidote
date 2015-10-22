@@ -38,7 +38,7 @@
         ]).
 
 -define(REGISTER, local).
--define(REGNAME(MYDC,DC), {global,get_atom(MYDC,DC)}).
+%%-define(REGNAME(MYDC,DC), {global,get_atom(MYDC,DC)}).
 
 -define(TIMEOUT,10000).
 

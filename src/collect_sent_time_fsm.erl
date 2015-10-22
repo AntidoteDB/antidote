@@ -42,6 +42,7 @@
 
 -record(state, {sent_times,
 		num_partitions,
+		count,
                 dcid}).
 
 -define(REGISTER, global).
@@ -74,15 +75,18 @@ update_sent_time(DcId, Partition, Timestamp) ->
 
 
 start_link(DcId, StartTimestamp) ->
+    lager:info("Calling start at me ~w, for ~w", [inter_dc_manager:get_my_dc(),DcId]),
     gen_server:start_link({?REGISTER, get_atom(inter_dc_manager:get_my_dc(),DcId)},
 			  ?MODULE, [DcId, StartTimestamp], []).
 
 
 init([DcId, _StartTimestamp]) ->
+    lager:info("Starting safe time sender for ~w", [DcId]),
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     NumPartitions = riak_core_ring:num_partitions(Ring),
     SentTimes = dict:new(),
     {ok, #state{sent_times=SentTimes,
+		count=0,
 		num_partitions=NumPartitions,
 		dcid=DcId}}.
 
@@ -93,11 +97,14 @@ handle_cast({update_sent_time, Partition, Timestamp}, State=#state{sent_times=La
 
 
 handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
-						    num_partitions=NumPartitions}) ->
+						     count=Count,
+						     num_partitions=NumPartitions}) ->
     %% Maybe should use a more efficient data-structure so you don't
     %% have to iterate over an entire list each time
+    %% assume all partitions participate
     case dict:size(LastSent) of
 	NumPartitions ->
+	    %%NumPartitions ->
 	    [{_FirstPartition, FirstTimestamp}|_Rest] = dict:to_list(LastSent),
 	    Time = dict:fold(fun(_Partition, Timestamp, MinTimestamp) ->
 				     case Timestamp > MinTimestamp of
@@ -108,9 +115,18 @@ handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
 				     end
 			     end,
 			     FirstTimestamp, LastSent),
-	    {reply, Time, State};
-	_ ->
-	    {reply, 0, State}
+	    {reply, Time, State#state{count=0}};
+	Asize ->
+	    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	    NumPartitions1 = riak_core_ring:num_partitions(Ring),
+	    case Count > 100 of
+		true ->
+		    lager:error("not all nodes participated in safe time calc: ~w, ~w", [Asize, dict:to_list(LastSent)]),
+		    NewSent = dict:new(),
+		    {reply, 0, State#state{sent_times=NewSent, count=0,num_partitions=NumPartitions1}};
+		false ->
+		    {reply, 0, State#state{count=Count+1,num_partitions=NumPartitions1}}
+	    end
     end.
 
 
