@@ -71,9 +71,11 @@ start_store_update(Transaction) ->
 	    %% should wait until all updates up to this time have been processed locally
 	    %% (they all have been recieved, but not yet processed yet) otherwise some new
 	    %% transactions might be blocked temporarily
-	    {Dc, Ts} = Committime,
+	    %% {Dc, Ts} = Committime,
 	    %%{ok, _} = vectorclock:update_safe_clock_local(Dc, Ts - 1);
-	    riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
+	    %%riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
+	    %% FIX! This should send to all and calc min
+	    riak_core_vnode_master:command(get_random_node(),{process_queue,Transaction,self()},inter_dc_recvr_vnode_master);
         _ ->
 	    {SeparatedTransactions, FinalOps} =
 		lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->
@@ -93,27 +95,27 @@ start_store_update(Transaction) ->
 				    {NewDictNodeKey,NewListXtraOps} end,
 			    {dict:new(),[]}, Ops),
 	    %% Fix this: because sends a store_update per op, should instead send a message per partition
-	    WaitCount = dict:fold(fun(Node,Op2,Count) ->
+	    _WaitCount = dict:fold(fun(Node,Op2,Count) ->
 					  %% Maybe should only run this once???
 					  %% store_update(Node,{Txid,Committime,ST,lists:append(Op2,FinalOps)}),
 					  riak_core_vnode_master:command(Node,{process_queue,
 									       {Txid,Committime,ST,lists:append(Op2,FinalOps)}, self()},
 									 inter_dc_recvr_vnode_master),
 					  Count + 1
-				  end, 0, SeparatedTransactions),
-	    receive_loop(WaitCount,self())
+				  end, 0, SeparatedTransactions)
+	    %% receive_loop(WaitCount,self())
     end,
     ok.
 
 %% Helper function
-receive_loop(0,_MyPid) ->
-    ok;
-receive_loop(Count,MyPid) ->
-    receive
-	{MyPid, done_process} ->
-	    ok
-    end,
-    receive_loop(Count - 1,MyPid).
+%% receive_loop(0,_MyPid) ->
+%%     ok;
+%% receive_loop(Count,MyPid) ->
+%%     receive
+%% 	{MyPid, done_process} ->
+%% 	    ok
+%%     end,
+%%     receive_loop(Count - 1,MyPid).
     
 
 %% @doc Returns a random node
