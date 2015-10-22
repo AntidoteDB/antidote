@@ -78,7 +78,7 @@ get_next_transactions(State=#state{partition = Partition,
                                    pending_commit_records = PendingCommitRecords,
                                    prev_stable_time = PrevStableTime,
                                    last_read_opid = Last_read_opid,
-                                   dcid = DcId}
+                                   dcid = _DcId}
                      ) ->
     Node = {Partition, node()},
     %% No transactions will commit in future with commit time < stable_time
@@ -90,13 +90,14 @@ get_next_transactions(State=#state{partition = Partition,
         _ -> Newlast_read_opid = get_last_opid(NewOps)
     end,
 
+    DcId = dc_utilities:get_my_dc_id(),
+
     {PendingOperations, Commitrecords} =
         add_to_pending_operations(Pending, PendingCommitRecords, NewOps, DcId),
 
     Txns = get_sorted_commit_records(Commitrecords),
     %% "Before" contains all transactions committed before stable_time
     %% Also removed any external commited transactions since we don't want propagate those
-    DcId = dc_utilities:get_my_dc_id(),
     {Before, After} = lists:foldl(
     			fun(Logrecord, {AccBefore, AccAfter}) ->
     				{{Dcid, CommitTime}, _} = Logrecord#log_record.op_payload,

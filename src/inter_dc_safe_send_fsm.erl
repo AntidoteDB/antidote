@@ -58,7 +58,7 @@ init([]) ->
 
 
 loop_send_safe(timeout, State=#state{last_sent=LastSent,
-				     dcid=DcId, con_dict=CD}) ->
+				     dcid=_DcId, con_dict=CD}) ->
     {NewSent,NewCD} =
 	dict:fold(fun(Dc, LastSentTs, {LastSentAcc, ConDict}) ->
 			  NewMax = collect_sent_time_fsm:get_max_sent_time(

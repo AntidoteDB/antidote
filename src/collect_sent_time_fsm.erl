@@ -93,7 +93,6 @@ init([DcId, _StartTimestamp]) ->
 %% Updates the sent time of a given partition
 handle_cast({update_sent_time, Partition, Timestamp}, State=#state{sent_times=LastSent}) ->
     NewSent = dict:store(Partition, Timestamp, LastSent),
-    lager:info("updating sent time ~w for partition ~w", [Timestamp,Partition]),
     {noreply, State#state{sent_times=NewSent}}.
 
 

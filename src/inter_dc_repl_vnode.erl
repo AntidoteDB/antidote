@@ -85,7 +85,6 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
 		       {NewReader,NewConDict} =
 			   case dict:size(DictTransactionsDcs) of
 			       0 ->
-				   lager:info("No tx, sending safe time partition ~w", [Partition]),
 				   %% have to send safe time
 				   DCs = inter_dc_manager:get_dcs(),
 				   lists:foldl(fun({DcAddress,Port},_Acc) ->
