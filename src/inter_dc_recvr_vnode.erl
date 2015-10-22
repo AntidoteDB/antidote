@@ -71,11 +71,11 @@ start_store_update(Transaction) ->
 	    %% should wait until all updates up to this time have been processed locally
 	    %% (they all have been recieved, but not yet processed yet) otherwise some new
 	    %% transactions might be blocked temporarily
-	    %% {Dc, Ts} = Committime,
-	    %%{ok, _} = vectorclock:update_safe_clock_local(Dc, Ts - 1);
-	    %%riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
+	    {Dc, Ts} = Committime,
+	    %% {ok, _} = vectorclock:update_safe_clock_local(Dc, Ts - 1);
+	    riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
 	    %% FIX! This should send to all and calc min
-	    riak_core_vnode_master:command(get_random_node(),{process_queue,Transaction,self()},inter_dc_recvr_vnode_master);
+	    %% riak_core_vnode_master:command(get_random_node(),{process_queue,Transaction,self()},inter_dc_recvr_vnode_master);
         _ ->
 	    {SeparatedTransactions, FinalOps} =
 		lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->

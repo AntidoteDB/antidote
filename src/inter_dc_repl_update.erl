@@ -222,7 +222,7 @@ check_and_update(SnapshotTime, Localclock, Transaction,
 	    finish_update_dc(
 	      Dc, DcQ, Ts, StateData);
 	false ->
-            lager:error("Dep not satisfied ~p", [Transaction]),
+            %% lager:error("Dep not satisfied ~p", [Transaction]),
             {dep_not_sat, StateData}
     end.
 
