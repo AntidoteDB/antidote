@@ -75,11 +75,13 @@ update_sent_time(DcId, Partition, Timestamp) ->
 
 
 start_link(DcId, StartTimestamp) ->
+    lager:info("Calling start at me ~w, for ~w", [inter_dc_manager:get_my_dc(),DcId]),
     gen_server:start_link({?REGISTER, get_atom(inter_dc_manager:get_my_dc(),DcId)},
 			  ?MODULE, [DcId, StartTimestamp], []).
 
 
 init([DcId, _StartTimestamp]) ->
+    lager:info("Starting safe time sender for ~w", [DcId]),
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     NumPartitions = riak_core_ring:num_partitions(Ring),
     SentTimes = dict:new(),
@@ -91,6 +93,7 @@ init([DcId, _StartTimestamp]) ->
 %% Updates the sent time of a given partition
 handle_cast({update_sent_time, Partition, Timestamp}, State=#state{sent_times=LastSent}) ->
     NewSent = dict:store(Partition, Timestamp, LastSent),
+    lager:info("updating sent time ~w for partition ~w", [Timestamp,Partition]),
     {noreply, State#state{sent_times=NewSent}}.
 
 
@@ -114,12 +117,12 @@ handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
 			     end,
 			     FirstTimestamp, LastSent),
 	    {reply, Time, State#state{count=0}};
-	_ ->
+	Asize ->
 	    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
 	    NumPartitions1 = riak_core_ring:num_partitions(Ring),
-	    case Count > 10 of
+	    case Count > 100 of
 		true ->
-		    lager:error("not all nodes participated in safe time calc"),
+		    lager:error("not all nodes participated in safe time calc: ~w, ~w", [Asize, dict:to_list(LastSent)]),
 		    NewSent = dict:new(),
 		    {reply, 0, State#state{sent_times=NewSent, count=0,num_partitions=NumPartitions1}};
 		false ->
