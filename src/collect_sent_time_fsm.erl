@@ -42,6 +42,7 @@
 
 -record(state, {sent_times,
 		num_partitions,
+		count,
                 dcid}).
 
 -define(REGISTER, global).
@@ -83,6 +84,7 @@ init([DcId, _StartTimestamp]) ->
     NumPartitions = riak_core_ring:num_partitions(Ring),
     SentTimes = dict:new(),
     {ok, #state{sent_times=SentTimes,
+		count=0,
 		num_partitions=NumPartitions,
 		dcid=DcId}}.
 
@@ -93,11 +95,14 @@ handle_cast({update_sent_time, Partition, Timestamp}, State=#state{sent_times=La
 
 
 handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
-						    num_partitions=NumPartitions}) ->
+						     count=Count,
+						     num_partitions=NumPartitions}) ->
     %% Maybe should use a more efficient data-structure so you don't
     %% have to iterate over an entire list each time
+    %% assume all partitions participate
     case dict:size(LastSent) of
 	NumPartitions ->
+	    %%NumPartitions ->
 	    [{_FirstPartition, FirstTimestamp}|_Rest] = dict:to_list(LastSent),
 	    Time = dict:fold(fun(_Partition, Timestamp, MinTimestamp) ->
 				     case Timestamp > MinTimestamp of
@@ -108,9 +113,18 @@ handle_call({get_max_sent_time}, _From, State=#state{sent_times=LastSent,
 				     end
 			     end,
 			     FirstTimestamp, LastSent),
-	    {reply, Time, State};
+	    {reply, Time, State#state{count=0}};
 	_ ->
-	    {reply, 0, State}
+	    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	    NumPartitions1 = riak_core_ring:num_partitions(Ring),
+	    case Count > 10 of
+		true ->
+		    lager:error("not all nodes participated in safe time calc"),
+		    NewSent = dict:new(),
+		    {reply, 0, State#state{sent_times=NewSent, count=0,num_partitions=NumPartitions1}};
+		false ->
+		    {reply, 0, State#state{count=Count+1,num_partitions=NumPartitions1}}
+	    end
     end.
 
 
