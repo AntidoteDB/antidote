@@ -13,13 +13,13 @@ case os:getenv("NO_CERTIFICATION") of
 end.
 PROTOCOL = case os:getenv("TXN_PROTOCOL") of
                false ->
-                   {d, 'PROTOCOL', clocksi}; %default is Clock SI
+                   {d, 'USE_CLOCKSI', true}; %default is Clock SI
                "clocksi" ->
-                   {d, 'PROTOCOL', clocksi};
+                   {d, 'USE_CLOCKSI', true};
                "gentlerain" ->
-                   {d, 'PROTOCOL', gentlerain};
+                   {d, 'USE_GR', true};
                "ec" ->
-                   {d, 'PROTOCOL', ec}
+                   {d, 'USE_EC', true}
            end,
 case lists:keysearch(erl_opts, 1, CONFIG) of
     {value, {erl_opts, Opts}} ->

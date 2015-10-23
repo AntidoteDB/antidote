@@ -67,42 +67,49 @@ get_clock(Partition) ->
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
+-ifdef (USE_CLOCKSI).
 get_stable_snapshot() ->
     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
     %% to riak core meta-data) otherwise will have to change this
-    case ?PROTOCOL of
-        clocksi ->
-            {ok, vectorclock_vnode:get_stable_snapshot()};
-        gentlerain ->
-            %% For gentlerain use the same format as clocksi
-            %% But, replicate GST to all entries in the dict
-            StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
-            case dict:is_empty(StableSnapshot) of
-                true -> 
-                    {ok, StableSnapshot};
-                false ->
-                    ListTime = dict:fold( 
-                                 fun(_Key, Value, Acc) ->
-                                         [Value | Acc ]
-                                 end, [], StableSnapshot),
-                    GST = lists:min(ListTime),
-                    {ok, dict:map( 
-                           fun(_K, _V) ->
-                                   GST
-                           end,
-                           StableSnapshot)}
-            end
+    {ok, vectorclock_vnode:get_stable_snapshot()}.
+-else.
+-ifdef (USE_GR).
+get_stable_snapshot() ->
+    %% For gentlerain use the same format as clocksi
+    %% But, replicate GST to all entries in the dict
+    StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
+    case dict:is_empty(StableSnapshot) of
+        true -> 
+            {ok, StableSnapshot};
+        false ->
+            ListTime = dict:fold( 
+                         fun(_Key, Value, Acc) ->
+                                 [Value | Acc ]
+                         end, [], StableSnapshot),
+            GST = lists:min(ListTime),
+            {ok, dict:map( 
+                   fun(_K, _V) ->
+                           GST
+                   end,
+                   StableSnapshot)}
     end.
+-endif.
+-endif.
 
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.
 -spec get_scalar_stable_time() -> {ok, non_neg_integer()}.
 get_scalar_stable_time() ->   
     StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
-    case dict:is_empty(StableSnapshot) of
-        true -> 
+    %% dict:is_empty/1 is not available, hence using dict:size/1
+    %% to check whether it is empty
+    case dict:size(StableSnapshot) of
+        0 -> 
             {ok, 0};
-        false ->
+        _ ->
+            %% This is correct only if stablesnapshot has entries for
+            %% all DCs. Inorder to check that we need to configure the 
+            %% number of DCs in advance, which is not possible now.
             ListTime = dict:fold( 
                          fun(_Key, Value, Acc) ->
                                  [Value | Acc ]
@@ -111,25 +118,6 @@ get_scalar_stable_time() ->
             {ok, GST}
     end.
             
-
-%% %% returns scalar global stable time for Gentlerain protocol
-%% %% This assumes there is no missing information about other DCs.
-%% %% If there is no entry for a DC, then the stable time returned will 
-%% %% be wrong. To fix this we have to fix the number of DCs before hand
-%% -spec get_scalar_stable_snapshot() -> {ok, non_neg_integer()}.
-%% get_scalar_stable_snapshot() ->
-%%     StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
-%%     case dict:is_empty(StableSnapshot) of
-%%         true -> 
-%%             {ok, 0};
-%%         false ->
-%%             ListTime = dict:fold( 
-%%                          fun(_Key, Value, Acc) ->
-%%                                  Value:Acc
-%%                          end, [], StableSnapshot),
-%%             {ok, lists:min(ListTime)}
-%%     end.
-
 -spec update_clock(Partition :: non_neg_integer(),
                    Dc_id :: term(), Timestamp :: non_neg_integer())
                   -> ok | {error, term()}.

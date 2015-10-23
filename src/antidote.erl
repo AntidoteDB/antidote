@@ -138,27 +138,33 @@ update_objects(Clock, _Properties, Updates) ->
         {error, Reason} -> {error, Reason}
     end.
 
+-ifdef(USE_CLOCKSI).
 read_objects(Clock, _Properties, Objects) ->
     Args = lists:map(
              fun({Key, Type, _Bucket}) ->
                      {read, {Key, Type}}
              end,
              Objects),
-    case ?PROTOCOL of
-        clocksi ->
-            case clocksi_execute_tx(Clock, Args) of
-                {ok, {_TxId, Result, CommitTime}} ->
-                    {ok, Result, CommitTime};
-                {error, Reason} -> {error, Reason}
-            end;
-        gentlerain ->
-            case gr_snapshot_read(Clock, Args) of
-                {ok, {_TxId, Result, CommitTime}} ->
-                    {ok, Result, CommitTime};
-                {error, Reason} -> {error, Reason}
-            end
+    case clocksi_execute_tx(Clock, Args) of
+        {ok, {_TxId, Result, CommitTime}} ->
+            {ok, Result, CommitTime};
+        {error, Reason} -> {error, Reason}
     end.
-
+-else.
+-ifdef(USE_GR).
+read_objects(Clock, _Properties, Objects) ->
+    Args = lists:map(
+             fun({Key, Type, _Bucket}) ->
+                     {read, {Key, Type}}
+             end,
+             Objects),
+    case gr_snapshot_read(Clock, Args) of
+        {ok, {_TxId, Result, CommitTime}} ->
+            {ok, Result, CommitTime};
+        {error, Reason} -> {error, Reason}
+    end.
+-endif.
+-endif.
 
 %% Object creation and types
 
@@ -326,6 +332,7 @@ clocksi_iprepare({_, _, CoordFsmPid})->
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit).
 
+-ifdef(USE_GR).
 %%% Snapshot read for Gentlerain protocol
 gr_snapshot_read(ClientClock, Args) ->
     GST = vectorclock:get_scalar_stable_time(),
@@ -338,4 +345,5 @@ gr_snapshot_read(ClientClock, Args) ->
             timer:sleep(10),
             gr_snapshot_read(ClientClock, Args)
     end.
+-endif.
      
