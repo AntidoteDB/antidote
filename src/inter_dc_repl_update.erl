@@ -248,7 +248,8 @@ finish_update_dc(Dc, DcQ, Cts,
 
 %% Checks depV against the committed timestamps
 check_dep(DepV, Localclock) ->
-    vectorclock:ge(Localclock, DepV).
+    vectorclock:ge(Localclock, DepV),
+    true.
 
 %%Set a new value to the key.
 set(Key, Value, Orddict) ->
