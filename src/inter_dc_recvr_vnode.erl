@@ -39,6 +39,7 @@
          handoff_starting/2,
          handoff_cancelled/1,
          handoff_finished/2,
+	 get_random_node/0,
          handle_handoff_data/2,
          encode_handoff_item/2,
          handle_coverage/4,
@@ -71,11 +72,12 @@ start_store_update(Transaction) ->
 	    %% should wait until all updates up to this time have been processed locally
 	    %% (they all have been recieved, but not yet processed yet) otherwise some new
 	    %% transactions might be blocked temporarily
-	    {Dc, Ts} = Committime,
+	    %% {Dc, Ts} = Committime,
 	    %% {ok, _} = vectorclock:update_safe_clock_local(Dc, Ts - 1);
-	    riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
+	    %% riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
 	    %% FIX! This should send to all and calc min
 	    %% riak_core_vnode_master:command(get_random_node(),{process_queue,Transaction,self()},inter_dc_recvr_vnode_master);
+	    dc_utilities:bcast_vnode(inter_dc_recvr_vnode_master,{process_queue,Transaction,self()});
         _ ->
 	    {SeparatedTransactions, FinalOps} =
 		lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->

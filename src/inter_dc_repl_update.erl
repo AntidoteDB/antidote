@@ -69,7 +69,7 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
-process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = _LastCTS,
+process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 					     recQ = RecQ,
                                              partition = Partition,
 					     partition_vclock = LC}) ->
@@ -90,9 +90,10 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = _LastCTS,
 		    %% transactions might be blocked temporarily
 		    {Dc, Ts} = CommitTime,
 		    {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, Ts - 1),
+		    LastCommNew = set(Dc, Ts, LastCTS),
 		    DcQNew = queue:drop(DcQ),
 		    RecQNew = set(Dc, DcQNew, RecQ),
-		    {ok, StateData#recvr_state{recQ = RecQNew}};
+		    {ok, StateData#recvr_state{recQ = RecQNew, lastCommitted = LastCommNew}};
 		_ ->
 		    %% Tyler: Sets the time of the sending DC to 0 because
 		    %% ops are recieved in order by partition
