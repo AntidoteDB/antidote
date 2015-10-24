@@ -174,7 +174,7 @@ perform_singleitem_update(Key, Type, Params) ->
 	    LogRecord = #log_record{tx_id=TxId, op_type=OpType,
 				    op_payload={Key, Type, DownstreamRecord}},
 	    LogId = ?LOG_UTIL:get_logid_from_key(Key),
-	    case ?LOGGING_VNODE:append(IndexNode,LogId,LogRecord) of
+	    case ?LOGGING_VNODE:append(IndexNode,LogId,LogRecord,isLocal) of
 		{ok, _} ->
 		    case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
 			{committed, CommitTime} ->
@@ -264,7 +264,7 @@ perform_update(Args,Updated_partitions,ExternalReads,Transaction,Sender) ->
 		      LogRecord = #log_record{tx_id=TxId, op_type=OpType,
 					      op_payload={Key, Type, DownstreamRecord}},
 		      LogId = ?LOG_UTIL:get_logid_from_key(Key),
-		      case ?LOGGING_VNODE:append(IndexNode,LogId,LogRecord) of
+		      case ?LOGGING_VNODE:append(IndexNode,LogId,LogRecord,isLocal) of
 			  {ok, _} ->
 			      {ok, NewUpdatedPartitions};
 			  Error ->

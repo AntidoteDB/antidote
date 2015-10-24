@@ -210,7 +210,8 @@ check_and_update(SnapshotTime, Localclock, Transaction,
 				    {NewOps ++ [Op],Ws, NewRecords ++ [Logrecord]}
 			    end
 		    end, {[],[], []}, Ops),
-	    logging_vnode:append_group(Node, LogId, NewLogRecords),
+	    {DcIdB, _} = DcIdA,
+	    logging_vnode:append_group(Node, LogId, NewLogRecords, DcIdB),
 	    NewTrans = {TxIdA,{DcIdA,CommitTimeA},VecSSA,TheNewOps},
             DownOps =
                 clocksi_transaction_reader:get_update_ops_from_transaction(
