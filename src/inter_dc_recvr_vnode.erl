@@ -67,7 +67,7 @@ start_store_update(Transaction) ->
     case Op_type of
         noop ->
 	    lager:error("Recieved a noop message: ~p", [Transaction]);
-	safe_update ->
+	{safe_update,Partition} ->
 	    %% TODO: Before calling update_safe_clock,
 	    %% should wait until all updates up to this time have been processed locally
 	    %% (they all have been recieved, but not yet processed yet) otherwise some new
@@ -77,8 +77,13 @@ start_store_update(Transaction) ->
 	    %% riak_core_vnode_master:command(get_random_node(),{process_safe,Dc,Ts},inter_dc_recvr_vnode_master);
 	    %% FIX! This should send to all and calc min
 	    %% riak_core_vnode_master:command(get_random_node(),{process_queue,Transaction,self()},inter_dc_recvr_vnode_master);
-	    dc_utilities:bcast_vnode(inter_dc_recvr_vnode_master,{process_queue,Transaction,self()});
-        _ ->
+	    %% dc_utilities:bcast_vnode(inter_dc_recvr_vnode_master,{process_queue,Transaction,self(),true});
+	    Node = log_utilities:get_my_node(Partition),
+	    %% lager:info("got a safe time part ~p, node ~p", [Partition,Node]),
+	    riak_core_vnode_master:command({Partition,Node},{process_queue,
+							       Transaction, self(), true},
+					   inter_dc_recvr_vnode_master);
+	_ ->
 	    {SeparatedTransactions, FinalOps} =
 		lists:foldl(fun(Op1,{DictNodeKey,ListXtraOps}) ->
 				    case Op1#operation.payload#log_record.op_payload of
@@ -100,10 +105,11 @@ start_store_update(Transaction) ->
 	    _WaitCount = dict:fold(fun(Node,Op2,Count) ->
 					  %% Maybe should only run this once???
 					  %% store_update(Node,{Txid,Committime,ST,lists:append(Op2,FinalOps)}),
-					  riak_core_vnode_master:command(Node,{process_queue,
-									       {Txid,Committime,ST,lists:append(Op2,FinalOps)}, self()},
-									 inter_dc_recvr_vnode_master),
-					  Count + 1
+					   %% lager:info("Sending trans to ~p", [Node]),
+					   riak_core_vnode_master:command(Node,{process_queue,
+										{Txid,Committime,ST,lists:append(Op2,FinalOps)}, self(), false},
+									  inter_dc_recvr_vnode_master),
+					   Count + 1
 				  end, 0, SeparatedTransactions)
 	    %% receive_loop(WaitCount,self())
     end,
@@ -175,9 +181,16 @@ handle_command({process_queue, From}, _Sender, State) ->
 
 %% process one replication request from other Dc. Update is put in a queue for each DC.
 %% Updates are expected to recieve in causal order.
-handle_command({process_queue, Transaction, From}, _Sender, State) ->
-    {ok, NewState} = inter_dc_repl_update:enqueue_update(
-                       {Transaction, From}, State),
+handle_command({process_queue, Transaction, From, IsSafe}, _Sender, State) ->
+    {ok, NewState} =
+	case IsSafe of
+	    true ->
+		inter_dc_repl_update:enqueue_safe(
+		  {Transaction, From}, State);
+	    false ->
+		inter_dc_repl_update:enqueue_update(
+		  {Transaction, From}, State)
+	end,
     %%ok = dets:insert(State#recvr_state.statestore, {recvr_state, NewState}),
     {Result, NewState2} = inter_dc_repl_update:process_queue(NewState),
     case Result of
@@ -189,11 +202,11 @@ handle_command({process_queue, Transaction, From}, _Sender, State) ->
 	dep_not_sat ->
 	    riak_core_vnode:send_command_after(?META_DATA_SLEEP,{process_queue,From})
     end,
-    {noreply, NewState2};
+    {noreply, NewState2}.
 
-handle_command({process_safe, Dc, Ts}, _Sender, State=#recvr_state{partition=Partition}) ->
-    {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, Ts - 1),
-    {noreply, State}.
+%% handle_command({process_safe, Dc, Ts}, _Sender, State=#recvr_state{partition=Partition}) ->
+%%     {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, Ts - 1),
+%%     {noreply, State}.
 
 handle_handoff_command(_Message, _Sender, State) ->
     {noreply, State}.

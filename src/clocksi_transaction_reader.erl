@@ -136,7 +136,7 @@ get_next_transactions(State=#state{partition = Partition,
                            pending_commit_records = After,
                            prev_stable_time = NewStable_time,
                            last_read_opid = Newlast_read_opid},
-    {NewState, DictTransactionsDcs, NewStable_time}.
+    {NewState, DictTransactionsDcs, PrevStableTime}.
 
 %% @doc returns all update operations in a txn in #clocksi_payload{} format
 -spec get_update_ops_from_transaction(Transaction::tx()) ->

@@ -66,7 +66,40 @@ init([Partition]) ->
 
 
 handle_command({pause, ShouldPause}, _Sender, State) ->
-    {reply, ok, State#state{pause=ShouldPause}};
+    {noreply, State#state{pause=ShouldPause}};
+
+handle_command({send_safe_time, NewMax}, _Sender, State=#state{partition=Partition,
+							   con_dict=ConDict
+							  }) ->
+    DCList = inter_dc_manager:get_dcs(),
+    NewState = case DCList of
+		   [] -> State;
+		   DCList ->
+		       %% lager:info("con dict size ~p", [dict:size(ConDict)]),
+		       SafeTime = [#operation
+				   {payload =
+					#log_record{op_type={safe_update,Partition}, op_payload = 0}
+				   }],
+		       DcId = dc_utilities:get_my_dc_id(),
+		       %% Dont need clock, should just give an empty value
+		       Clock = 0,
+		       Time = NewMax,
+		       TxId = 0,
+		       %% Receiving DC treats safe time like a transaction
+		       %% So wrap safe time in a transaction structure
+		       Transaction = {TxId, {DcId, Time}, Clock, SafeTime},
+		       %% Send safe to the given Dc
+		       case inter_dc_communication_sender:propagate_sync_safe_time_list(
+			      DCList, Transaction,ConDict) of
+			   {ok,NewConDict} ->
+			       State#state{con_dict=NewConDict};
+			   {error,NewConDict1} ->
+			       %% Keep the old time since there was an error sending the message
+			       lager:error("Error safe send ~w", [error]),
+			       State#state{con_dict=NewConDict1}
+		       end
+	       end,
+    {noreply, NewState};
 
 handle_command(trigger,_Sender, State=#state{pause=true}) ->
     %% timer:sleep(?REPL_PERIOD),

@@ -66,27 +66,35 @@ loop_send_safe(timeout, State=#state{last_sent=LastSent,
 			  case NewMax > LastSentTs of
 			      true -> 
 				  %% Send safetime just like doing a heartbeat transaction
-				  SafeTime = [#operation
-					      {payload =
-						   #log_record{op_type=safe_update, op_payload = 0}
-					      }],
-				  DcId = dc_utilities:get_my_dc_id(),
-				  %% Dont need clock, should just give an empty value
-				  Clock = 0,
-				  Time = NewMax,
-				  TxId = 0,
-				  %% Receiving DC treats safe time like a transaction
-				  %% So wrap safe time in a transaction structure
-				  Transaction = {TxId, {DcId, Time}, Clock, SafeTime},
+				  %% SafeTime = [#operation
+				  %% 	      {payload =
+				  %% 		   #log_record{op_type=safe_update, op_payload = 0}
+				  %% 	      }],
+				  %% DcId = dc_utilities:get_my_dc_id(),
+				  %% %% Dont need clock, should just give an empty value
+				  %% Clock = 0,
+				  %% Time = NewMax,
+				  %% TxId = 0,
+				  %% %% Receiving DC treats safe time like a transaction
+				  %% %% So wrap safe time in a transaction structure
+				  %% Transaction = {TxId, {DcId, Time}, Clock, SafeTime},
 				  %% Send safe to the given Dc
-				  case inter_dc_communication_sender:propagate_sync_safe_time(
-					 Dc, Transaction,ConDict) of
-				      {ok,NewConDict} ->
-					  {dict:store(Dc, NewMax, LastSentAcc),NewConDict};
-				      {error,NewConDict1} ->
-					  %% Keep the old time since there was an error sending the message
-					  lager:error("Error safe send ~w", [error]),
-					  {LastSentAcc,NewConDict1}
+				  %% case inter_dc_communication_sender:propagate_sync_safe_time(
+				  %% 	 Dc, Transaction,ConDict) of
+				  %%     {ok,NewConDict} ->
+				  %% 	  {dict:store(Dc, NewMax, LastSentAcc),NewConDict};
+				  %%     {error,NewConDict1} ->
+				  %% 	  %% Keep the old time since there was an error sending the message
+				  %% 	  lager:error("Error safe send ~w", [error]),
+				  %% 	  {LastSentAcc,NewConDict1}
+				  %% end;
+				  case dc_utilities:bcast_vnode(inter_dc_repl_vnode_master,{send_safe_time, NewMax}) of
+				      _ ->
+					  {dict:store(Dc, NewMax, LastSentAcc),ConDict}
+				      %% Res ->
+				      %% 	  %% Keep the old time since there was an error sending the message
+				      %% 	  lager:error("Error safe send ~w", [Res]),
+				      %% 	  {LastSentAcc,ConDict}
 				  end;
 			      _  ->
 				  {LastSentAcc,ConDict}

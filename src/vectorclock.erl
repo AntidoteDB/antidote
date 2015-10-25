@@ -148,7 +148,7 @@ update_safe_vector_local(Vector) ->
 			     -> {ok, non_neg_integer()} | {error, term()}.
 update_safe_clock_local(Partition, DcId, Timestamp) ->
     %% Should only update if lager??
-    meta_data_sender:put_meta_data(safe,Partition,DcId,Timestamp),
+    meta_data_sender:put_meta_data(stable,Partition,DcId,Timestamp),
     {ok, Timestamp}.
     %% DcSafeClock = riak_core_metadata:get(?META_PREFIX_SAFE,DcId,[{default,0}]),
     
@@ -212,7 +212,7 @@ new() ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(safe) of
+    case meta_data_sender:get_merged_data(stable) of
 	undefined ->
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),
@@ -223,7 +223,7 @@ get_stable_snapshot() ->
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta_dict(safe,Partition) of
+    case meta_data_sender:get_meta_dict(stable,Partition) of
 	undefined ->
 	    %% The partition isnt ready yet, wait for startup
 	    timer:sleep(10),

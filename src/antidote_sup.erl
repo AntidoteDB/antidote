@@ -174,12 +174,12 @@ init(_Args) ->
 			[inter_dc_communication_sender_fsm_sup]},
     
     MetaDataManagerSup = {meta_data_manager_sup,
-			  {meta_data_manager_sup, start_link, [safe]},
+			  {meta_data_manager_sup, start_link, [stable]},
 			  permanent, 5000, supervisor,
 			  [meta_data_manager_sup]},
 
     MetaDataSenderSup = {meta_data_sender_sup,
-			  {meta_data_sender_sup, start_link, [safe_time_functions:export_funcs_and_vals()]},
+			  {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
 			  permanent, 5000, supervisor,
 			  [meta_data_sender_sup]},
     

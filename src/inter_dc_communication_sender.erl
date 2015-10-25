@@ -26,6 +26,7 @@
 -include("antidote.hrl").
 
 -export([propagate_sync_safe_time/3,
+	 propagate_sync_safe_time_list/3,
          propagate_sync/4,
 	 perform_external_read/4
         ]).
@@ -114,6 +115,17 @@ propagate_sync(DictTransactionsDcs, StableTime, Partition,CD1) ->
 	    {error,CD2}
     end.
 
+
+
+propagate_sync_safe_time_list(DcList, Transaction, ConDict) -> 
+    lists:foldl(fun(DC, {Res,ConDictAcc}) ->
+			case propagate_sync_safe_time(DC, Transaction, ConDictAcc) of
+			    {ok, NewConDict} ->
+				{Res, NewConDict};
+			    {error, NewConDict2} ->
+				{error, NewConDict2}
+			end
+		end, {ok, ConDict}, DcList).
 
 %% Used in partial repl alg
 %% Sends a single transaction like a heartbeat, except with

@@ -29,11 +29,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([init_state/1, enqueue_update/2, process_queue/1]).
+-export([init_state/1, enqueue_update/2, enqueue_safe/2, process_queue/1]).
 
 init_state(Partition) ->
     {ok, #recvr_state{lastRecvd = orddict:new(), %% stores last OpId received
-                      lastCommitted = orddict:new(),
+                      %%lastCommitted = orddict:new(),
                       recQ = orddict:new(),
                       partition=Partition,
 		      partition_vclock = vectorclock:new()}
@@ -44,18 +44,28 @@ init_state(Partition) ->
                      #recvr_state{}) ->
                             {ok, #recvr_state{}}.
 enqueue_update({Transaction, From},
-               State = #recvr_state{recQ = RecQ}) ->
+               State = #recvr_state{recQ = RecQ, partition = _Partition}) ->
     {_,{FromDC, _CommitTime},_,_} = Transaction,
+    %% lager:info("enqueue update dc ~p, part ~p", [FromDC, Partition]),
     RecQNew = enqueue(FromDC, {Transaction, From}, RecQ),
     {ok, State#recvr_state{recQ = RecQNew}}.
+
+enqueue_safe({Transaction, From},
+               State = #recvr_state{recQ = RecQ, partition = _Partition}) ->
+    {_,{FromDC, _CommitTime},_,_} = Transaction,
+    %% lager:info("enqueue safe dc ~p, part ~p", [FromDC, Partition]),
+    RecQNew = enqueue_safe(FromDC, {Transaction, From}, RecQ),
+    {ok, State#recvr_state{recQ = RecQNew}}.
+
+
 
 %% Process one transaction from Q for each DC each Q.
 %% This method must be called repeatedly
 %% inorder to process all updates
 process_queue(State=#recvr_state{recQ = RecQ}) ->
     {Ret, NewState} = orddict:fold(
-			fun(K, V, {DepSat, Acc}) ->
-				case process_q_dc(K, V, Acc) of				    
+			fun(K, _V, {DepSat, Acc}) ->
+				case process_q_dc(K, Acc) of				    
 				    {ok, NS} ->
 					{DepSat, NS};
 				    {dep_not_sat, NS} ->
@@ -69,10 +79,20 @@ process_queue(State=#recvr_state{recQ = RecQ}) ->
 
 %% Takes one transction from DC queue, checks whether its depV is satisfied
 %% and apply the update locally.
-process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
+process_q_dc(Dc, StateData=#recvr_state{%%lastCommitted = LastCTS,
 					     recQ = RecQ,
                                              partition = Partition,
 					     partition_vclock = LC}) ->
+    {ok, {DcQ,SafeQ}} = orddict:find(Dc, RecQ),
+    SafeTime = case queue:is_empty(SafeQ) of
+		   false ->
+		       {{_,SafeCommit1,_,_},_} = queue:get(SafeQ),
+		       {Dc, Ts1} = SafeCommit1,
+		       Ts1;
+		   true ->
+		       0
+	       end,
+
     case queue:is_empty(DcQ) of
         false ->
             {Transaction,_From} = queue:get(DcQ),
@@ -83,17 +103,20 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 	    %%Payload = Logrecord#log_record.op_payload,
 	    Op_type = Logrecord#log_record.op_type,
 	    case Op_type of
-		safe_update ->
+		{safe_update,Partition} ->
 		    %% TODO: Before calling update_safe_clock,
 		    %% should wait until all updates up to this time have been processed locally
 		    %% (they all have been recieved, but not yet processed yet) otherwise some new
 		    %% transactions might be blocked temporarily
-		    {Dc, Ts} = CommitTime,
-		    {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, Ts - 1),
-		    LastCommNew = set(Dc, Ts, LastCTS),
-		    DcQNew = queue:drop(DcQ),
-		    RecQNew = set(Dc, DcQNew, RecQ),
-		    {ok, StateData#recvr_state{recQ = RecQNew, lastCommitted = LastCommNew}};
+		    
+		    lager:error("Should not be safe update here"),
+		    %% {Dc, Ts} = CommitTime,
+		    %% {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, Ts - 1),
+		    %% LastCommNew = set(Dc, Ts, LastCTS),
+		    %% DcQNew = queue:drop(DcQ),
+		    %% RecQNew = set(Dc, DcQNew, RecQ),
+		    %% {ok, StateData#recvr_state{recQ = RecQNew}}; %% , lastCommitted = LastCommNew}};
+		    {ok, StateData};
 		_ ->
 		    %% Tyler: Sets the time of the sending DC to 0 because
 		    %% ops are recieved in order by partition
@@ -101,6 +124,16 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 				     Dc, 0, VecSnapshotTime),
 		    LocalDc = dc_utilities:get_my_dc_id(),
 		    {Dc, Ts} = CommitTime,
+
+		    {NewSafeQ,NewLC} = case (Ts > SafeTime) and (SafeTime > 0) of
+					   true ->
+					       %% lager:info("updating safe clock"),
+					       {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, SafeTime - 1),
+					       {queue:drop(SafeQ), vectorclock:set_clock_of_dc(Dc, SafeTime, LC)};
+					   false ->
+					       %% lager:info("not updating safe clock, ts ~p, st ~p, diff ~p", [Ts, SafeTime, SafeTime - Ts]),
+					       {SafeQ,LC}
+				       end,
 		    %% Check for dependency of operations and write to log
 		    %% Gets safe_clock from the partition (instead of partition clock)
 		    %% {ok, LC} = vectorclock:get_safe_time(),
@@ -108,9 +141,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 		    {ok, Stable} = vectorclock:get_stable_snapshot(),
 		    LC1 = vectorclock:keep_max(Stable,LC),
 		    LocalSafeClock = vectorclock:set_clock_of_dc(
-				       Dc, 0,
-				       vectorclock:set_clock_of_dc(
-					 LocalDc, now_millisec(erlang:now()), LC1)),
+				       LocalDc, now_millisec(erlang:now()), LC1),
 		    %% LocalSafeClock = vectorclock:set_clock_of_dc(
 		    %% 		       LocalDc, vectorclock:now_microsec(erlang:now()), LC),
 		    %% It assumes it is a duplicate just if has a smaller CTS?
@@ -147,21 +178,31 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
 		    
 		    %% AM NOT CHECKING FOR DUPLICATES!!! Should fix this
 		    case check_and_update(SnapshotTime, LocalSafeClock, Transaction,
-					  Dc, DcQ, Ts, StateData) of
-			{ok, NewQ, NewS} ->
+					  Dc, DcQ, Ts, {NewSafeQ, NewLC}, StateData) of
+			{ok, NewS} ->
 			    %% From ! {From, done_process},
-			    process_q_dc(Dc, NewQ, NewS);
+			    process_q_dc(Dc, NewS);
 			{dep_not_sat, NewS1} ->
 			    {dep_not_sat, NewS1}
 		    end
 	    end;		
 	true ->
-	    {ok, StateData}
+	    case queue:is_empty(SafeQ) of
+		false ->
+		    %% lager:info("got safe, but emptyq for part ~p", [Partition]),
+		    {ok, _} = vectorclock:update_safe_clock_local(Partition, Dc, SafeTime - 1),
+		    {ok, StateData#recvr_state{partition_vclock = vectorclock:set_clock_of_dc(Dc, SafeTime, LC),
+		    			       recQ=set(Dc, {DcQ, queue:drop(SafeQ)}, RecQ)}};
+		    %% {ok, StateData#recvr_state{partition_vclock = vectorclock:set_clock_of_dc(Dc, SafeTime, LC),
+		    %% 			       recQ=set(Dc, {DcQ, SafeQ}, RecQ)}};
+		true ->
+		    {ok, StateData}
+	    end
     end.
 
 check_and_update(SnapshotTime, Localclock, Transaction,
-                 Dc, DcQ, Ts,
-                 StateData = #recvr_state{partition = Partition} ) ->
+                 Dc, DcQ, Ts, {SafeQ, NewLC},
+                 StateData = #recvr_state{partition = Partition, recQ = RecQ} ) ->
     {TxIdA,{DcIdA,CommitTimeA},VecSSA,Ops} = Transaction,
     Node = {Partition,node()},
     FirstOp = hd(Ops),
@@ -179,7 +220,10 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                     lager:error("Wrong transaction record format"),
                     erlang:error(bad_transaction_record)
             end,
-    case check_dep(SnapshotTime, Localclock) of
+    LocalSafeClock = vectorclock:set_clock_of_dc(
+		       Dc, 1,
+		       Localclock),
+    case check_dep(SnapshotTime, LocalSafeClock) of
         true ->
             {TheNewOps,_NewWs,NewLogRecords}
 		= lists:foldl(
@@ -222,17 +266,17 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                            end, DownOps),
             %%TODO add error handling if append failed
 	    finish_update_dc(
-	      Dc, DcQ, Ts, StateData);
+	      Dc, DcQ, Ts, SafeQ, StateData);
 	false ->
-            %% lager:error("Dep not satisfied ~p", [Transaction]),
-            {dep_not_sat, StateData}
+            lager:error("Dep not satisfied", []),
+            {dep_not_sat, StateData#recvr_state{partition_vclock = NewLC, recQ=set(Dc, {DcQ, SafeQ}, RecQ)}}
     end.
 
-finish_update_dc(Dc, DcQ, Cts,
-                 State=#recvr_state{lastCommitted = LastCTS,
-				    partition_vclock = LC,
-				    partition = _Partition,
-				    recQ = RecQ}) ->
+finish_update_dc(Dc, DcQ, Cts, SafeQ,
+                 State=#recvr_state{%% lastCommitted = LastCTS,
+			  partition_vclock = LC,
+			  partition = _Partition,
+			  recQ = RecQ}) ->
     %% Is it really needed to use -1 for the time
     %% I am doing this because that is what is in
     %% vectorclock_vnode update_clock
@@ -241,9 +285,9 @@ finish_update_dc(Dc, DcQ, Cts,
     %% dont do stable time in local computation
     %%ok = meta_data_sender:put_meta_dict(stable, Partition, NewLC),
     DcQNew = queue:drop(DcQ),
-    RecQNew = set(Dc, DcQNew, RecQ),
-    LastCommNew = set(Dc, Cts, LastCTS),
-    {ok, DcQNew, State#recvr_state{lastCommitted = LastCommNew,
+    RecQNew = set(Dc, {DcQNew, SafeQ}, RecQ),
+    %% LastCommNew = set(Dc, Cts, LastCTS),
+    {ok, State#recvr_state{%% lastCommitted = LastCommNew,
 			   recQ = RecQNew,
 			   partition_vclock = NewLC}}.
 
@@ -259,14 +303,28 @@ set(Key, Value, Orddict) ->
 %%Put a value to the Queue corresponding to Dc in RecQ orddict
 enqueue(Dc, Data, RecQ) ->
     case orddict:find(Dc, RecQ) of
-        {ok, Q} ->
-            Q2 = queue:in(Data, Q),
-            set(Dc, Q2, RecQ);
+        {ok, {TransQ,SafeQ}} ->
+            Q2 = queue:in(Data, TransQ),
+            set(Dc, {Q2,SafeQ}, RecQ);
         error -> %key does not exist
             Q = queue:new(),
             Q2 = queue:in(Data,Q),
-            set(Dc, Q2, RecQ)
+	    SQ = queue:new(),
+            set(Dc, {Q2,SQ}, RecQ)
     end.
+
+enqueue_safe(Dc, Data, RecQ) ->
+    case orddict:find(Dc, RecQ) of
+        {ok, {TransQ,SafeQ}} ->
+            Q2 = queue:in(Data, SafeQ),
+            set(Dc, {TransQ,Q2}, RecQ);
+        error -> %key does not exist
+            Q = queue:new(),
+            Q2 = queue:in(Data,Q),
+	    TQ = queue:new(),
+            set(Dc, {TQ, Q2}, RecQ)
+    end.
+
 
 now_millisec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

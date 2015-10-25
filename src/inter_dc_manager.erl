@@ -95,7 +95,7 @@ add_list_dcs(DCs) ->
     ok.
 
 simulate_partitions(Partition) ->
-    dc_utilities:bcast_vnode_sync(inter_dc_repl_vnode_master,{pause,Partition}).
+    dc_utilities:bcast_vnode(inter_dc_repl_vnode_master,{pause,Partition}).
 
 get_my_read_dc() ->
     {_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_READ_DC,mydc),
