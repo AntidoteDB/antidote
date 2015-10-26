@@ -158,10 +158,21 @@ read_objects(Clock, _Properties, Objects) ->
                      {read, {Key, Type}}
              end,
              Objects),
-    case gr_snapshot_read(Clock, Args) of
-        {ok, {_TxId, Result, CommitTime}} ->
-            {ok, Result, CommitTime};
-        {error, Reason} -> {error, Reason}
+    case Args of
+        [_Op] -> %% Single object read = read latest value
+            case clocksi_execute_tx(Clock, Args) of
+                {ok, {_TxId, Result, CommitTime}} ->
+                    {ok, Result, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end;
+        [_|_] -> %% Read Multiple objects  = read from a snapshot
+            %% Snapshot includes all updates committed at time GST
+            %% from local and remore replicas
+            case gr_snapshot_read(Clock, Args) of
+                {ok, {_TxId, Result, CommitTime}} ->
+                    {ok, Result, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end
     end.
 -endif.
 -endif.
@@ -185,7 +196,7 @@ delete_object({_Key, _Type, _Bucket}) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}) -> 
+-spec append(key(), type(), {op(),term()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(Key, Type, {OpParams, Actor}) ->
     case materializer:check_operations([{update,
@@ -210,7 +221,7 @@ read(Key, Type) ->
 
 
 %% Clock SI API
-%% TODO: Move these functions into clocksi files. Public interface should only 
+%% TODO: Move these functions into clocksi files. Public interface should only
 %%       contain generic transaction interface
 
 %% @doc Starts a new ClockSI transaction.
@@ -281,7 +292,7 @@ clocksi_istart_tx() ->
         Other ->
             {error, Other}
     end.
-    
+
 
 -spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
@@ -335,9 +346,10 @@ clocksi_icommit({_, _, CoordFsmPid})->
 -ifdef(USE_GR).
 %%% Snapshot read for Gentlerain protocol
 gr_snapshot_read(ClientClock, Args) ->
-    GST = vectorclock:get_scalar_stable_time(),
-    DcId = dc_utilities:get_my_dc_id(),    
-    Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
+    {ok, GST} = vectorclock:get_scalar_stable_time(),
+    DcId = dc_utilities:get_my_dc_id(),
+    {ok, Dt} = vectorclock:get_clock_of_dc(DcId, ClientClock),
+    lager:info("GST ~p , DT ~p", [GST, Dt]),
     case Dt =< GST of
         true ->
             clocksi_execute_tx(ClientClock, Args);
@@ -346,4 +358,3 @@ gr_snapshot_read(ClientClock, Args) ->
             gr_snapshot_read(ClientClock, Args)
     end.
 -endif.
-     
