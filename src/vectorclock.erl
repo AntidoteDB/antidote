@@ -78,10 +78,10 @@ get_stable_snapshot() ->
     %% For gentlerain use the same format as clocksi
     %% But, replicate GST to all entries in the dict
     StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
-    case dict:is_empty(StableSnapshot) of
-        true -> 
+    case dict:size(StableSnapshot) of
+        0 -> 
             {ok, StableSnapshot};
-        false ->
+        _ ->
             ListTime = dict:fold( 
                          fun(_Key, Value, Acc) ->
                                  [Value | Acc ]
@@ -105,7 +105,12 @@ get_scalar_stable_time() ->
     %% to check whether it is empty
     case dict:size(StableSnapshot) of
         0 -> 
-            {ok, 0};
+            %% This case occur when updates from remote replicas has not yet received
+            %% or when there are no remote replicas
+            %% Since with current setup there is no mechanism
+            %% to distinguish these, we assume the second case
+            Now = clocksi_vnode:now_microsec(erlang:now()) - ?OLD_SS_MICROSEC,
+            {ok, Now};
         _ ->
             %% This is correct only if stablesnapshot has entries for
             %% all DCs. Inorder to check that we need to configure the 
