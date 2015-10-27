@@ -22,6 +22,7 @@
 -export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 %% Test entry point.
@@ -43,8 +44,13 @@ confirm() ->
     [Nodes3] = common:clean_clusters([Nodes2]),
     transfer_test(Nodes3),
 
-    [Nodes4] = common:clean_clusters([Nodes3]),
-    conditional_write_test(Nodes4),
+    case ?CERT of
+    true ->
+        [Nodes4] = common:clean_clusters([Nodes3]),
+        conditional_write_test(Nodes4);
+    false ->
+        ok
+    end,
     pass.
 
 %% Tests creating a new `bcounter()'.

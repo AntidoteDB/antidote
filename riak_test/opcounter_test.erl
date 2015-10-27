@@ -32,6 +32,7 @@
          spawn_read/3]).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
