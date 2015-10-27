@@ -453,8 +453,13 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
             Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
-            lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
-                        Updates),
+	    case ?CERT of
+		true ->
+		    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
+				  Updates);
+		false ->
+		    ok
+	    end,
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
@@ -522,6 +527,13 @@ clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
+-ifdef(NO_CERTIFICATION).
+
+certification_check(_, _, _, _) ->
+    true.
+
+-else.
+
 %% @doc Performs a certification check when a transaction wants to move
 %%      to the prepared state.
 certification_check(_, [], _, _) ->
@@ -559,6 +571,7 @@ check_prepared(TxId, PreparedTx, Key) ->
         _ ->
             false
     end.
+-endif.
 
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
     Transaction :: tx(), TxCommitTime :: {term(), term()}) ->
