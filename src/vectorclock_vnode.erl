@@ -90,7 +90,7 @@ init([Partition]) ->
 
 %% @doc : calculate stable snapshot as the minimum of all partition vectorclocks
 handle_command(calculate_stable_snapshot, _Sender, State) ->
-  Metadata = riak_core_metadata:to_list(?META_PREFIX),
+  Metadata = metadata_maybe_list(?META_PREFIX),
   %% If metadata does not contain clock of all partitions, do not calculate the stable snapshot
   case dc_utilities:get_partitions_num() == length(Metadata) of
     false -> lager:warning("Metadata misses entries for some partitions, skipping the calculate_stable_snapshot.");
@@ -115,6 +115,12 @@ handle_command({update_clock, NewClock}, _Sender, State = #state{vectorclock = C
 metadata_maybe_put(Prefix, Key, Value) ->
   case catch riak_core_metadata:put(Prefix, Key, Value) of
     {'EXIT', {shutdown, _}} -> lager:warning("Failed to update partition clock: shutting down.");
+    Normal -> Normal
+  end.
+
+metadata_maybe_list(Prefix) ->
+  case catch riak_core_metadata:to_list(Prefix) of
+    {badarg, _} -> lager:warning("Failed to fetch metadata!"), [];
     Normal -> Normal
   end.
 
