@@ -28,7 +28,7 @@ confirm() ->
 %% but if we read the initial value of the counter,
 %% we get 0, because no operations have a smaller commit time in the
 %% reconstruction of time 0 in the log. (this is a corner case)
-read_initial_value_not_in_ets_test(Nodes) ->
+read_pncounter_initial_value_not_in_ets_test(Nodes) ->
     lager:info("read_snapshot_not_in_ets_test started"),
     FirstNode = hd(Nodes),
     Type = crdt_pncounter,
@@ -43,9 +43,9 @@ read_initial_value_not_in_ets_test(Nodes) ->
     {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode,
         antidote, clocksi_read, [Key, Type]),
     ?assertEqual(15, ReadResult2),
-    lager:info("read_snapshot_not_in_ets_test OK").
+    lager:info("read_pncounter_initial_value_not_in_ets_test OK").
 
-read_old_value_not_in_ets_test(Nodes) ->
+read_pncounter_old_value_not_in_ets_test(Nodes) ->
     lager:info("read_old_value_not_in_ets_test started"),
     FirstNode = hd(Nodes),
     Type = crdt_pncounter,
@@ -64,7 +64,7 @@ read_old_value_not_in_ets_test(Nodes) ->
     {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
         [[{read, {Key, Type}}]]),
     ?assertEqual(20, ReadResult2),
-    lager:info("read_old_value_not_in_ets_test OK").
+    lager:info("read_pncounter_old_value_not_in_ets_test OK").
 
 %% Auxiliary method to increment a counter N times.
 increment_counter(_FirstNode, _Key, 0) ->
