@@ -59,7 +59,7 @@
 
 %% Vnode state
 -record(state, {
-  partition_vectorclock :: vectorclock:vectorclock(),
+  vectorclock :: vectorclock:vectorclock(),
   partition :: partition_id()
 }).
 
@@ -82,9 +82,9 @@ start_vnode(I) ->
 %% @doc Initialize the clock
 init([Partition]) ->
   NewPClock = dict:new(),
-  riak_core_metadata:put(?META_PREFIX, Partition, NewPClock),
+  metadata_maybe_put(?META_PREFIX, Partition, NewPClock),
   {ok, #state{
-    partition_vectorclock=NewPClock,
+    vectorclock = NewPClock,
     partition = Partition
   }}.
 
@@ -92,25 +92,31 @@ init([Partition]) ->
 handle_command(calculate_stable_snapshot, _Sender, State) ->
   Metadata = riak_core_metadata:to_list(?META_PREFIX),
   %% If metadata does not contain clock of all partitions, do not calculate the stable snapshot
-  VClocks = case dc_utilities:get_partitions_num() == length(Metadata) of
-    false -> [];
+  case dc_utilities:get_partitions_num() == length(Metadata) of
+    false -> lager:warning("Metadata misses entries for some partitions, skipping the calculate_stable_snapshot.");
     true ->
-      lists:foldl(fun({_Key, Value}, AccList) ->
+      VClocks = lists:foldl(fun({_Key, Value}, AccList) ->
         case is_list(Value) of
           true -> Value ++ AccList;
           false -> [Value] ++ AccList
         end
-      end, [], Metadata)
+      end, [], Metadata),
+      %% Calculate stable_snapshot from minimum of vectorclock of all partitions
+      StableSnapshot = vectorclock:min(VClocks),
+      metadata_maybe_put(?META_PREFIX_SS, 1, StableSnapshot)
   end,
-  %% Calculate stable_snapshot from minimum of vectorclock of all partitions
-  StableSnapshot = vectorclock:min(VClocks),
-  riak_core_metadata:put(?META_PREFIX_SS, 1, StableSnapshot),
   {noreply, State};
 
-handle_command({update_clock, NewClock}, _Sender, State = #state{partition_vectorclock = Current, partition = Partition}) ->
+handle_command({update_clock, NewClock}, _Sender, State = #state{vectorclock = Current, partition = Partition}) ->
   Max = vectorclock:max([Current, NewClock]),
-  riak_core_metadata:put(?META_PREFIX, Partition, Max),
-  {noreply, State#state{partition_vectorclock = Max}}.
+  metadata_maybe_put(?META_PREFIX, Partition, Max),
+  {noreply, State#state{vectorclock = Max}}.
+
+metadata_maybe_put(Prefix, Key, Value) ->
+  case catch riak_core_metadata:put(Prefix, Key, Value) of
+    {'EXIT', {shutdown, _}} -> lager:warning("Failed to update partition clock: shutting down.");
+    Normal -> Normal
+  end.
 
 handle_handoff_command( _Message , _Sender, State) -> {noreply, State}.
 handoff_starting(_TargetNode, State) -> {true, State}.
