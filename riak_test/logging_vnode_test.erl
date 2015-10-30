@@ -19,8 +19,9 @@ confirm() ->
     lager:info("Vnodes are started up"),
 
     lager:info("Nodes: ~p", [Nodes]),
-    read_initial_value_not_in_ets_test(Nodes),
-    read_old_value_not_in_ets_test(Nodes),
+    read_pncounter_initial_value_not_in_ets_test(Nodes),
+    read_pncounter_old_value_not_in_ets_test(Nodes),
+    read_orset_old_value_not_in_ets_test(Nodes),
     pass.
 
 %% First we remember the initial time of the counter (with value 0).
@@ -45,6 +46,10 @@ read_pncounter_initial_value_not_in_ets_test(Nodes) ->
     ?assertEqual(15, ReadResult2),
     lager:info("read_pncounter_initial_value_not_in_ets_test OK").
 
+%% First increment a counter 5 times and remember the snapshot.
+%% Then we increment the counter 15 times more so the old value is no
+%% in the ets. Reading the old value returns 5, and the new value is
+%% 20, as expected.
 read_pncounter_old_value_not_in_ets_test(Nodes) ->
     lager:info("read_old_value_not_in_ets_test started"),
     FirstNode = hd(Nodes),
@@ -66,6 +71,30 @@ read_pncounter_old_value_not_in_ets_test(Nodes) ->
     ?assertEqual(20, ReadResult2),
     lager:info("read_pncounter_old_value_not_in_ets_test OK").
 
+%% Add number 1 to 5 to an orset and remember the snapshot.
+%% Then we add numbers 6 to 20 and read the old value not in the ets.
+read_orset_old_value_not_in_ets_test(Nodes) ->
+    lager:info("read_pncounter_old_value_not_in_ets_test started"),
+    FirstNode = hd(Nodes),
+    Type = crdt_orset,
+    Key = read_orset_old_val,
+    add_elements_starting_from(FirstNode, Key, 5, 0),
+    {ok, {_, [ReadResult], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+        [[{read, {Key, Type}}]]),
+    ?assertEqual([1, 2, 3, 4, 5], ReadResult),
+    {ok, TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    add_elements_starting_from(FirstNode, Key, 15, 5),
+    {ok, ReadResult1} = rpc:call(FirstNode,
+        antidote, clocksi_iread, [TxId, Key, Type]),
+    %% old read value contains elements 1 to 5
+    ?assertEqual([1, 2, 3, 4, 5], ReadResult1),
+    {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+        [[{read, {Key, Type}}]]),
+    %% most recent read vale contains elements 1 to 20
+    ?assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+        13, 14, 15, 16, 17, 18, 19, 20], ReadResult2),
+    lager:info("read_pncounter_old_value_not_in_ets_test OK").
+
 %% Auxiliary method to increment a counter N times.
 increment_counter(_FirstNode, _Key, 0) ->
     ok;
@@ -74,3 +103,13 @@ increment_counter(FirstNode, Key, N) ->
         [[{update, {Key, crdt_pncounter, {increment, a}}}]]),
     ?assertMatch({ok, _}, WriteResult),
     increment_counter(FirstNode, Key, N - 1).
+
+%% Auxiliary mehtod that adds numbers in the range
+%% (Start, Start + N] to an orset.
+add_elements_starting_from(_FirstNode, _key, 0, _start) ->
+    ok;
+add_elements_starting_from(FirstNode, Key, N, Start) ->
+    WriteResult = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+        [[{update, {Key, crdt_orset, {{add, Start + N}, ucl}}}]]),
+    ?assertMatch({ok, _}, WriteResult),
+    add_elements_starting_from(FirstNode, Key, N - 1, Start).
