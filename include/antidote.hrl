@@ -42,8 +42,14 @@
 -define(VECTORCLOCK_UPDATE_PERIOD, 100).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
--define(SYNC_LOG, true).
+-define(SYNC_LOG, false).
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
+%% Enalble or disable the certification check
+-ifdef(NO_CERTIFICATION).
+-define(CERT, false).
+-else.
+-define(CERT, true).
+-endif.
 
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).

@@ -22,6 +22,7 @@
 -export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 %% Test entry point.
@@ -33,11 +34,23 @@ confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
     new_bcounter_test(Nodes),
+
+    [Nodes1] = common:clean_clusters([Nodes]),
     increment_test(Nodes),
-    decrement_test(Nodes),
-    transfer_test(Nodes),
-    conditional_write_test(Nodes),
-    %rt:clean_cluster(Nodes),
+
+    [Nodes2] = common:clean_clusters([Nodes1]),
+    decrement_test(Nodes2),
+
+    [Nodes3] = common:clean_clusters([Nodes2]),
+    transfer_test(Nodes3),
+
+    case ?CERT of
+    true ->
+        [Nodes4] = common:clean_clusters([Nodes3]),
+        conditional_write_test(Nodes4);
+    false ->
+        ok
+    end,
     pass.
 
 %% Tests creating a new `bcounter()'.

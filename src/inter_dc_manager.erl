@@ -48,13 +48,17 @@ get_descriptor() ->
 -spec observe_dc(interdc_descriptor()) -> ok.
 observe_dc(Descriptor) ->
   {DCID, Publishers, LogReaders} = Descriptor,
-  lager:info("Observing DC ~p", [DCID]),
-  %% Announce the new publisher addresses to all subscribers in this DC.
-  %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
-  %% But we want to balance the work, so all nodes take part in subscribing.
-  Nodes = dc_utilities:get_my_dc_nodes(),
-  lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders]) end, Nodes),
-  lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers]) end, Nodes).
+  case DCID == dc_utilities:get_my_dc_id() of
+    true -> ok;
+    false ->
+      lager:info("Observing DC ~p", [DCID]),
+      %% Announce the new publisher addresses to all subscribers in this DC.
+      %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
+      %% But we want to balance the work, so all nodes take part in subscribing.
+      Nodes = dc_utilities:get_my_dc_nodes(),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders]) end, Nodes),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers]) end, Nodes)
+  end.
 
 -spec observe_dcs([interdc_descriptor()]) -> ok.
 observe_dcs(Descriptors) -> lists:foreach(fun observe_dc/1, Descriptors).
@@ -73,10 +77,14 @@ observe_dc_sync(Descriptor) -> observe_dcs_sync([Descriptor]).
 
 -spec forget_dc(interdc_descriptor()) -> ok.
 forget_dc({DCID, _, _}) ->
-  lager:info("Forgetting DC ~p", [DCID]),
-  Nodes = dc_utilities:get_my_dc_nodes(),
-  lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, del_dc, [DCID]) end, Nodes),
-  lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes).
+  case DCID == dc_utilities:get_my_dc_id() of
+    true -> ok;
+    false ->
+      lager:info("Forgetting DC ~p", [DCID]),
+      Nodes = dc_utilities:get_my_dc_nodes(),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, del_dc, [DCID]) end, Nodes),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
+  end.
 
 -spec forget_dcs([interdc_descriptor()]) -> ok.
 forget_dcs(Descriptors) -> lists:foreach(fun forget_dc/1, Descriptors).
@@ -89,14 +97,18 @@ observe(DcNodeAddress) ->
   observe_dc(Desc).
 
 wait_for_stable_snapshot(DCID, MinValue) ->
-  {ok, SS} = vectorclock:get_stable_snapshot(),
-  Value = vectorclock:get_clock_of_dc(DCID, SS),
-  case Value > MinValue of
-    true ->
-      lager:info("Connected to DC ~p", [DCID]),
-      ok;
+  case DCID == dc_utilities:get_my_dc_id() of
+    true -> ok;
     false ->
-      lager:info("Waiting for DC ~p", [DCID]),
-      timer:sleep(1000),
-      wait_for_stable_snapshot(DCID, MinValue)
+      {ok, SS} = vectorclock:get_stable_snapshot(),
+      Value = vectorclock:get_clock_of_dc(DCID, SS),
+      case Value > MinValue of
+        true ->
+          lager:info("Connected to DC ~p", [DCID]),
+          ok;
+        false ->
+          lager:info("Waiting for DC ~p", [DCID]),
+          timer:sleep(1000),
+          wait_for_stable_snapshot(DCID, MinValue)
+      end
   end.
