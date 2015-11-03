@@ -9,7 +9,7 @@
 -type socket_address() :: {inet:ip_address(), inet:port_number()}.
 -type zmq_socket() :: any().
 -type pdcid() :: {dcid(), partition_id()}.
--type interdc_descriptor() :: {dcid(), [socket_address()], [socket_address()]}.
+-type interdc_descriptor() :: {dcid(), non_neg_integer(), [socket_address()], [socket_address()]}.
 -type log_opid() :: non_neg_integer().
 
 -record(interdc_txn, {

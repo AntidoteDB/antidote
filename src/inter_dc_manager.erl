@@ -42,22 +42,30 @@ get_descriptor() ->
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address, []) end, Nodes),
-  {ok, {dc_utilities:get_my_dc_id(), Publishers, LogReaders}}.
+  {ok, {dc_utilities:get_my_dc_id(), dc_utilities:get_partitions_num(), Publishers, LogReaders}}.
 
 
 -spec observe_dc(interdc_descriptor()) -> ok.
 observe_dc(Descriptor) ->
-  {DCID, Publishers, LogReaders} = Descriptor,
-  case DCID == dc_utilities:get_my_dc_id() of
-    true -> ok;
+  {DCID, PartitionsNumRemote, Publishers, LogReaders} = Descriptor,
+
+  PartitionsNumLocal = dc_utilities:get_partitions_num(),
+  case PartitionsNumRemote == PartitionsNumLocal of
     false ->
-      lager:info("Observing DC ~p", [DCID]),
-      %% Announce the new publisher addresses to all subscribers in this DC.
-      %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
-      %% But we want to balance the work, so all nodes take part in subscribing.
-      Nodes = dc_utilities:get_my_dc_nodes(),
-      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders]) end, Nodes),
-      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers]) end, Nodes)
+      lager:error("Cannot observe remote DC: partition number mismatch"),
+      {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
+    true ->
+      case DCID == dc_utilities:get_my_dc_id() of
+        true -> ok;
+        false ->
+          lager:info("Observing DC ~p", [DCID]),
+          %% Announce the new publisher addresses to all subscribers in this DC.
+          %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
+          %% But we want to balance the work, so all nodes take part in subscribing.
+          Nodes = dc_utilities:get_my_dc_nodes(),
+          lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders]) end, Nodes),
+          lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers]) end, Nodes)
+      end
   end.
 
 -spec observe_dcs([interdc_descriptor()]) -> ok.
@@ -76,7 +84,7 @@ observe_dcs_sync(Descriptors) ->
 observe_dc_sync(Descriptor) -> observe_dcs_sync([Descriptor]).
 
 -spec forget_dc(interdc_descriptor()) -> ok.
-forget_dc({DCID, _, _}) ->
+forget_dc({DCID, _, _, _}) ->
   case DCID == dc_utilities:get_my_dc_id() of
     true -> ok;
     false ->
