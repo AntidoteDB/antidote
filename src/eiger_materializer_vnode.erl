@@ -59,10 +59,9 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time
 -spec read(key(), type(), vectorclock:vectorclock(), txid()) -> {ok, term()} | {error, atom()}.
 read(Key, Type, Time, TxId) ->
-    DocIdx = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
-    Preflist = riak_core_apl:get_primary_apl(DocIdx, 1, materializer),
-    [{NewPref,_}] = Preflist,
-    riak_core_vnode_master:sync_command(NewPref,
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    riak_core_vnode_master:sync_command(IndexNode,
                                         {read, Key, Type, Time, TxId},
                                         eiger_materializer_vnode_master).
 
@@ -148,31 +147,28 @@ terminate(_Reason, _State) ->
 %% vnode when the write function calls it. That is done for garbage collection.
 -spec internal_read(term(),term(), atom(), integer(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache) ->
-    case ets:lookup(SnapshotCache, Key) of
-        [] ->
-        	SnapshotDict=orddict:new(),
-            LatestSnapshot=clocksi_materializer:new(Type),
-            SnapshotCommitTime = 0,
-            ExistsSnapshot=false;
-        [{_, SnapshotDict}] ->
-            case get_latest_snapshot(SnapshotDict, Time) of
-                {ok, {SnapshotCommitTime, LatestSnapshot}}->
-                    ExistsSnapshot=true;
-                {ok, no_snapshot} ->
-                	ExistsSnapshot=false,
-                    LatestSnapshot=clocksi_materializer:new(Type), 
-                    SnapshotCommitTime = 0 
-            end
-    end,
+    {ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotCommitTime} = 
+            case ets:lookup(SnapshotCache, Key) of
+                [] ->
+                    {false, orddict:new(), clocksi_materializer:new(Type), 0};
+                [{_, Dict}] ->
+                    case get_latest_snapshot(Dict, Time) of
+                        {ok, {SnapshotCT, LSnapshot}}->
+                            {true, Dict, LSnapshot, SnapshotCT};
+                        {ok, no_snapshot} ->
+                            {false, Dict, clocksi_materializer:new(Type), 0}
+                    end
+            end,
+    %lager:info("Info is ~w, ~w, ~w, ~w", [ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotCommitTime]),
 	case ets:lookup(OpsCache, Key) of
 		[] ->
 			case ExistsSnapshot of
-			true ->        						
-				riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotCommitTime}),
-				{ok, LatestSnapshot};
-			false ->
-				riak_core_vnode:reply(Sender, {error, no_snapshot}),
-				{error, no_snapshot}
+			    true ->        						
+				    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotCommitTime}),
+				    {ok, LatestSnapshot};
+			    false ->
+				    riak_core_vnode:reply(Sender, {ok, clocksi_materializer:new(Type), {ignore, 0}}),
+				    {error, no_snapshot}
 			end;
 		[{_, OpsDict}] ->
 			{ok, Ops} = filter_ops(OpsDict),
@@ -181,6 +177,7 @@ internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache) ->
 					riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotCommitTime}),
 					{ok, LatestSnapshot};
 				[_H|_T] ->
+                    %lager:info("Before applying ops"),
 					case apply_ops_to_snapshot(Type, LatestSnapshot, SnapshotCommitTime, Time, Ops, TxId) of
 					    {ok, Snapshot, CommitTime} ->
 			                case (Sender /= ignore) of
@@ -218,12 +215,14 @@ filter_ops(_, _Acc) ->
 
 apply_ops_to_snapshot(Type, Snapshot, SnapshotCommitTime, Time, [H|T], TxId) ->
     Ops = [H | T],
-    lager:info("One op: ~p", [H]),
+    %lager:info("One op: ~p, SnapshotTime ~w, time is ~w", [H, SnapshotCommitTime, Time]),
     case Time of
         latest ->
+            %lager:info("Eager Materialize!!"),
             eiger_materializer:materialize_eager(Type, Snapshot, SnapshotCommitTime, Ops);
         _ ->
-            eiger_materializer:materialize(Type, Snapshot, SnapshotCommitTime, Time, Ops, TxId, SnapshotCommitTime)
+            %lager:info("Materialize!!"),
+            eiger_materializer:materialize(Type, Snapshot, SnapshotCommitTime, Time, Ops, TxId)
     end.
     
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
@@ -309,7 +308,7 @@ op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
             ets:insert(OpsCache, {Key, OpsDict1});
         false ->
             OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
-            lager:info("Inserting op ~p", [DownstreamOp]),
+            %lager:info("OpsCache ~w: Inserting key ~w, op ~p", [OpsCache, Key, DownstreamOp]),
             ets:insert(OpsCache, {Key, OpsDict1})
     end.
 

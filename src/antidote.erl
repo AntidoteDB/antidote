@@ -34,6 +34,7 @@
          abort_transaction/1,
          commit_transaction/1,
          create_bucket/2,
+         check_log/1,
          create_object/3,
          delete_object/1
         ]).
@@ -79,15 +80,21 @@ eiger_readtx(KeysType) ->
             end
     end.
 
-eiger_updatetx(Updates, _Dependencies) ->
-    eiger_updatetx(Updates, _Dependencies, undefined).
+check_log(Key) ->
+    LogId = log_utilities:get_logid_from_key(Key),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    logging_vnode:read(IndexNode, LogId).
 
-eiger_updatetx(Updates, _Dependencies, Debug) ->
+eiger_updatetx(Updates, Dependencies) ->
+    eiger_updatetx(Updates, Dependencies, undefined).
+
+eiger_updatetx(Updates, Dependencies, Debug) ->
     case Updates of
         [{Key, _Type, _Param}|_Rest] ->
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
-            eiger_vnode:coordinate_tx(IndexNode, Updates, Debug);
+            eiger_vnode:coordinate_tx(IndexNode, Updates, Dependencies, Debug);
         [] ->
             {ok, empty};
         _ ->

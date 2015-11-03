@@ -23,7 +23,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/4]).
+-export([start_link/5]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -40,6 +40,7 @@
           from,
           vnode,
           updates,
+          deps,
           debug,
           transaction,
           scattered_updates,
@@ -51,15 +52,15 @@
 %%% API
 %%%===================================================================
 
-start_link(Vnode, From, Updates, Debug) ->
-    gen_fsm:start_link(?MODULE, [Vnode, From, Updates, Debug], []).
+start_link(Vnode, From, Updates, Deps, Debug) ->
+    gen_fsm:start_link(?MODULE, [Vnode, From, Updates, Deps, Debug], []).
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([Vnode, From, Updates, Debug]) ->
+init([Vnode, From, Updates, Deps, Debug]) ->
     {ok, SnapshotTime} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
     DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
@@ -71,6 +72,7 @@ init([Vnode, From, Updates, Debug]) ->
             vnode=Vnode,
             from=From,
             debug=Debug,
+            deps=Deps,
             transaction=Transaction,
             updates=Updates
            },
@@ -112,10 +114,11 @@ gather_prepare({prepared, Clock}, SD0=#state{vnode=Vnode, servers=Servers, ack=A
 wait_for_commit(commit, Sender, SD0) ->
     {next_state, send_commit, SD0#state{from=Sender}, 0}.
 
-send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, transaction=Transaction, commit_time=CommitTime, updates=Updates}) ->
+send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, deps=Deps, 
+                transaction=Transaction, commit_time=CommitTime, updates=Updates}) ->
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, CommitTime, length(Updates))
+                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, Deps, CommitTime, length(Updates))
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 

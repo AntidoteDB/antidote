@@ -248,7 +248,6 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
-
 handle_command({append_group, LogId, PayloadList}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,

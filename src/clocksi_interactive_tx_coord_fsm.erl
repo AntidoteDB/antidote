@@ -67,6 +67,7 @@
     execute_op/3,
     finish_op/3,
     prepare/1,
+    get_snapshot_time/0,
     prepare_2pc/1,
     process_prepared/2,
     receive_prepared/2,
