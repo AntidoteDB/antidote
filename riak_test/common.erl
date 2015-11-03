@@ -83,5 +83,3 @@ descriptors(Clusters) ->
     {ok, Descriptor} = rpc:call(hd(Cluster), inter_dc_manager, get_descriptor, []),
     Descriptor
   end, Clusters).
-
-

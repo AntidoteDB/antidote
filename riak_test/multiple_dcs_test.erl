@@ -30,12 +30,15 @@ confirm() ->
 
     ok = common:setup_dc_manager([Cluster1, Cluster2, Cluster3], first_run),
     simple_replication_test(Cluster1, Cluster2, Cluster3),
+
     [Cluster4, Cluster5, Cluster6] = common:clean_clusters([Cluster1, Cluster2, Cluster3]),
     ok = common:setup_dc_manager([Cluster4, Cluster5, Cluster6], Clean),
     parallel_writes_test(Cluster4, Cluster5, Cluster6),
+
     [Cluster7, Cluster8, Cluster9] = common:clean_clusters([Cluster4, Cluster5, Cluster6]),
     ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], Clean),
     failure_test(Cluster7, Cluster8, Cluster9),
+
     pass.
 
 simple_replication_test(Cluster1, Cluster2, Cluster3) ->
