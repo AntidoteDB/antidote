@@ -81,9 +81,9 @@ materialize(Type, Snapshot, SnapshotCommitTime, Time, [Op|Rest], TxId, LastOpCom
     case Type == Op#clocksi_payload.type of
         true ->
             %lager:info("Type is ~w", [Type]),
-            OpCommitTime=Op#clocksi_payload.commit_time,
+            OpEvt=Op#clocksi_payload.evt,
             %lager:info("OpCommitTime is ~w, SnapshotTime is ~w", [OpCommitTime, Time]),
-            case (is_op_in_snapshot(OpCommitTime, Time)
+            case (is_op_in_snapshot(OpEvt, Time)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
                         %lager:info("Gonna apply operations", [OpCommitTime, Time]),
@@ -98,7 +98,7 @@ materialize(Type, Snapshot, SnapshotCommitTime, Time, [Op|Rest], TxId, LastOpCom
                                         Time,
                                         Rest,
                                         TxId,
-                                        OpCommitTime);
+                                        OpEvt);
                         {error, Reason} ->
                             {error, Reason}
                     end;
@@ -116,10 +116,9 @@ materialize(Type, Snapshot, SnapshotCommitTime, Time, [Op|Rest], TxId, LastOpCom
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%			   SnapshotCommitTime = commit time of that snapshot.
 %%      Outptut: true or false
--spec is_op_in_snapshot({term(), non_neg_integer()}, non_neg_integer()) -> boolean().
-is_op_in_snapshot(OperationCommitTime, Time) ->
-	{_OpDc, OpCommitTime} = OperationCommitTime,
-    OpCommitTime =< Time.
+-spec is_op_in_snapshot(non_neg_integer(), non_neg_integer()) -> boolean().
+is_op_in_snapshot(OpEvt, Time) ->
+    OpEvt =< Time.
 
 %% @doc materialize_eager: apply updates in order without any checks
 -spec materialize_eager(type(), snapshot(), {term(), non_neg_integer()}, 
@@ -135,8 +134,9 @@ materialize_eager(_, Snapshot, _, CommitTime, []) ->
 materialize_eager(Type, Snapshot, SnapshotCommitTime, CommitTime, [Op|Rest]) ->
     %lager:info("Type is ~w, Op is ~w", [Type, Op]),
     OpParam = Op#clocksi_payload.op_param,
-    OpCommitTime=Op#clocksi_payload.commit_time,
-    case OpCommitTime > SnapshotCommitTime of
+    OpEvt=Op#clocksi_payload.evt,
+    {_, SnapshotT} = SnapshotCommitTime,
+    case OpEvt > SnapshotT of
         true ->
             %case OpParam of
             %    {merge, State} ->
@@ -145,7 +145,7 @@ materialize_eager(Type, Snapshot, SnapshotCommitTime, CommitTime, [Op|Rest]) ->
             {_, _, {Param, Actor}} = OpParam,
             {ok, NewSnapshot} = Type:update(Param, Actor, Snapshot),
             %end,
-            materialize_eager(Type, NewSnapshot, SnapshotCommitTime, OpCommitTime, Rest);
+            materialize_eager(Type, NewSnapshot, SnapshotCommitTime, OpEvt, Rest);
         false ->
             materialize_eager(Type, Snapshot, SnapshotCommitTime, CommitTime, Rest)
     end.

@@ -219,6 +219,7 @@ handle_command({commit_replicated, Transaction, Operations}, _Sender, State0=#st
                                         op_param = Op1,
                                         snapshot_time = VecSnapshotTime,
                                         commit_time = {DcId, CommitTime},
+                                        evt = CommitTime,
                                         txid =  Logrecord#log_record.tx_id
                                     },
                                     Acc0 ++ [NewRecord];
@@ -301,6 +302,7 @@ update_keys(Ups, Deps, Transaction, CommitTime, TotalOps, State0) ->
                                             op_param = Update,
                                             snapshot_time = Transaction#transaction.vec_snapshot_time,
                                             commit_time = {DcId, CommitTime},
+                                            evt = CommitTime,
                                             txid = Transaction#transaction.txn_id},
                     [CommittedOp|Acc] end, [], Ups),
     FirstOp = hd(Ups),
@@ -343,34 +345,33 @@ post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending0, min_pe
                                     riak_core_vnode:reply(Client, Reply)
                                   end, Orddict0),
                     BufferedReads=dict:erase(Key, BufferedReads0),
-                    State=State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
+                    State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
                 error ->
-                    State=State0#state{pending=Pending, min_pendings=MinPendings}
+                    State0#state{pending=Pending, min_pendings=MinPendings}
             end;
         _ ->
             Pending = dict:store(Key, List, Pending0),
             case dict:fetch(Key, MinPendings0) < PrepareTime of
                 true ->
-                    State=State0#state{pending=Pending};
+                    State0#state{pending=Pending};
                 false ->
                     Times = [PT || {_TxId, PT} <- List],
                     Min = lists:min(Times),
                     MinPendings =  dict:store(Key, Min, MinPendings0),
                     case dict:find(Key, BufferedReads0) of
                         {ok, Orddict0} ->
-                            case handle_pending_reads(Orddict0, CommitTime, Key, Clock) of
-                                [] ->
-                                    BufferedReads = dict:erase(Key, BufferedReads0);
-                                Orddict ->
-                                    BufferedReads = dict:store(Key, Orddict, BufferedReads0)
-                            end,
-                            State=State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
+                            BufferedReads = case handle_pending_reads(Orddict0, CommitTime, Key, Clock) of
+                                                [] ->
+                                                    dict:erase(Key, BufferedReads0);
+                                                Orddict ->
+                                                    dict:store(Key, Orddict, BufferedReads0)
+                                            end,
+                            State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
                         error ->
-                            State=State0#state{pending=Pending, min_pendings=MinPendings}
+                            State0#state{pending=Pending, min_pendings=MinPendings}
                     end
             end
-    end,
-    State.
+    end.
 
 delete_pending_entry([], _TxId, List) ->
     {List, not_found};
