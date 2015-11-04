@@ -66,10 +66,10 @@
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, false).
 
-%% -define(BEHIND_SEC_EXT, 5).
-%% -define(BEHIND_SEC_LOCAL, 10).
--define(BEHIND_SEC_EXT, 1).
--define(BEHIND_SEC_LOCAL, 1).
+-define(BEHIND_SEC_EXT, 5).
+-define(BEHIND_SEC_LOCAL, 10).
+%%-define(BEHIND_SEC_EXT, 1).
+%%-define(BEHIND_SEC_LOCAL, 1).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
