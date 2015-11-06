@@ -47,16 +47,32 @@ confirm() ->
 
     pass = start_stop_test(),
 
+    [Nodes1] = common:clean_clusters([Nodes]),
     simple_transaction_test(hd(Nodes)),
+
+    [Nodes2] = common:clean_clusters([Nodes1]),
     read_write_test(hd(Nodes)),
+
+    [Nodes3] = common:clean_clusters([Nodes2]),
     get_empty_crdt_test(),
+
+    [Nodes4] = common:clean_clusters([Nodes3]),
     pb_test_counter_read_write(hd(Nodes)),
+
+    [Nodes5] = common:clean_clusters([Nodes4]),
     pb_test_set_read_write(hd(Nodes)),
+
+    [Nodes6] = common:clean_clusters([Nodes5]),
     pb_empty_txn_clock_test(),
 
+    [Nodes7] = common:clean_clusters([Nodes6]),
     pass = update_counter_crdt_test(<<"key1">>,<<"bucket">>, 10),
+
+    [Nodes8] = common:clean_clusters([Nodes7]),
     pass = update_counter_crdt_and_read_test(<<"key2">>, 15),
+    [Nodes9] = common:clean_clusters([Nodes8]),
     update_set_read_test(),
+    [_] = common:clean_clusters([Nodes9]),
     static_transaction_test(),
     pass.
 
