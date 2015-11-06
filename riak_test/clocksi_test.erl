@@ -19,24 +19,28 @@
 %% -------------------------------------------------------------------
 -module(clocksi_test).
 
+-ifndef(USE_CLOCKSI).
+-export([confirm/0]).
+-else.
 -export([confirm/0,
 	 clocksi_test1/1,
 	 clocksi_test2/1,
 	 clocksi_test3/1,
 	 clocksi_test5/1,
-     clocksi_test_read_wait/1,
+         clocksi_test_read_wait/1,
 	 clocksi_test4/1,
 	 clocksi_test_read_time/1,
-     spawn_read/4,
+         spawn_read/4,
 	 clocksi_test_prepare/1,
-     clocksi_tx_noclock_test/1,
-     clocksi_single_key_update_read_test/1,
-     clocksi_multiple_key_update_read_test/1,
-     clocksi_test_certification_check/1,
-     clocksi_multiple_test_certification_check/1,
-     clocksi_multiple_read_update_test/1,
-     clocksi_concurrency_test/1,
+         clocksi_tx_noclock_test/1,
+         clocksi_single_key_update_read_test/1,
+         clocksi_multiple_key_update_read_test/1,
+         clocksi_test_certification_check/1,
+         clocksi_multiple_test_certification_check/1,
+         clocksi_multiple_read_update_test/1,
+         clocksi_concurrency_test/1,
 	 spawn_com/2]).
+-endif.
 
 -include_lib("eunit/include/eunit.hrl").
 -include("antidote.hrl").
