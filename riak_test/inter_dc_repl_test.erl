@@ -6,7 +6,10 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
-
+-ifndef(USE_CLOCKSI).
+confirm() ->
+    pass.
+-else.
 confirm() ->
     NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
@@ -203,3 +206,4 @@ atomic_read_txn(Node, Key1, Key2, Key3) ->
                         [TxId, Key3, Type]),
     ?assertEqual(R1,R2),
     ?assertEqual(R2,R3).
+-endif.
