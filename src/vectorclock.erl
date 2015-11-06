@@ -98,7 +98,7 @@ get_stable_snapshot() ->
 
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.
--spec get_scalar_stable_time() -> {ok, non_neg_integer()}.
+-spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
 get_scalar_stable_time() ->   
     StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
     %% dict:is_empty/1 is not available, hence using dict:size/1
@@ -110,7 +110,7 @@ get_scalar_stable_time() ->
             %% Since with current setup there is no mechanism
             %% to distinguish these, we assume the second case
             Now = clocksi_vnode:now_microsec(erlang:now()) - ?OLD_SS_MICROSEC,
-            {ok, Now};
+            {ok, Now, StableSnapshot};
         _ ->
             %% This is correct only if stablesnapshot has entries for
             %% all DCs. Inorder to check that we need to configure the 
@@ -120,7 +120,7 @@ get_scalar_stable_time() ->
                                  [Value | Acc ]
                          end, [], StableSnapshot),
             GST = lists:min(ListTime),
-            {ok, GST}
+            {ok, GST, StableSnapshot}
     end.
             
 -spec update_clock(Partition :: non_neg_integer(),

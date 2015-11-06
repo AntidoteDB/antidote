@@ -235,15 +235,17 @@ read(Key, Type) ->
 %%
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
+clocksi_execute_tx(Operations) ->
+    clocksi_execute_tx(ignore, Operations, update_clock).
+
 clocksi_execute_tx(Clock, Operations) ->
-    {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
-    gen_fsm:sync_send_event(CoordFsmPid, execute).
+    clocksi_execute_tx(Clock, Operations, update_clock).
 
 -spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_execute_tx(Operations) ->
+clocksi_execute_tx(Clock, Operations, UpdateClock) ->
     case materializer:check_operations(Operations) of
         ok ->
-            {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
+            {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock]),
             gen_fsm:sync_send_event(CoordFsmPid, execute);
         {error, Reason} ->
             {error, Reason}
@@ -346,13 +348,17 @@ clocksi_icommit({_, _, CoordFsmPid})->
 -ifdef(USE_GR).
 %%% Snapshot read for Gentlerain protocol
 gr_snapshot_read(ClientClock, Args) ->
-    {ok, GST} = vectorclock:get_scalar_stable_time(),
+    %% GST = scalar stable time
+    %% VST = vector stable time with entries for each dc
+    {ok, GST, VST} = vectorclock:get_scalar_stable_time(),
     DcId = dc_utilities:get_my_dc_id(),
     {ok, Dt} = vectorclock:get_clock_of_dc(DcId, ClientClock),
-    lager:info("GST ~p , DT ~p", [GST, Dt]),
     case Dt =< GST of
         true ->
-            clocksi_execute_tx(ClientClock, Args);
+            %% Set all entries in snapshot as GST
+            ST = dict:map(fun(_,_) -> GST end, VST),
+            SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
+            clocksi_execute_tx(SnapshotTime, Args, no_update_clock);
         false ->
             timer:sleep(10),
             gr_snapshot_read(ClientClock, Args)
