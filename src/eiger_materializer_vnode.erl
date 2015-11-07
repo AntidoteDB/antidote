@@ -84,9 +84,9 @@ handle_command({read, Key, Type, Time, TxId}, Sender,
     _=internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache),
     {noreply, State};
    
-handle_command({update, Key, DownstreamOp}, _Sender,
+handle_command({update, Key, Op}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
-    true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),
+    true = op_insert_gc(Key, Op, OpsCache, SnapshotCache),
     {reply, ok, State};
 
 handle_command(_Message, _Sender, State) ->
@@ -147,46 +147,56 @@ terminate(_Reason, _State) ->
 %% vnode when the write function calls it. That is done for garbage collection.
 -spec internal_read(term(),term(), atom(), integer(), txid() | ignore, atom() , atom() ) -> {ok, term()} | {error, no_snapshot}.
 internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache) ->
-    {ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotCommitTime} = 
+    lager:info("Trying to read for key ~w", [Key]),
+    {ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotEvt, SnapshotTimestamp} = 
             case ets:lookup(SnapshotCache, Key) of
                 [] ->
-                    {false, orddict:new(), clocksi_materializer:new(Type), 0};
+                    lager:info("No snapshot!!!!!, Type is ~w", [Type]),
+                    lager:info("No snapshot!!!!!, dict is ~w", [orddict:new()]),
+                    lager:info("No snapshot!!!!!, snapshot is ~w", [clocksi_materializer:new(Type)]),
+                    {false, orddict:new(), clocksi_materializer:new(Type), 0, {ignore, 0}};
                 [{_, Dict}] ->
+                    lager:info("There is a dict ~w", [Dict]),
                     case get_latest_snapshot(Dict, Time) of
-                        {ok, {SnapshotCT, LSnapshot}}->
-                            {true, Dict, LSnapshot, SnapshotCT};
+                        {ok, {CT, TEvt, LSnapshot}}->
+                            {true, Dict, LSnapshot, TEvt, CT};
                         {ok, no_snapshot} ->
-                            {false, Dict, clocksi_materializer:new(Type), 0}
+                            {false, Dict, clocksi_materializer:new(Type), 0, {ignore, 0}}
                     end
             end,
-    %lager:info("Info is ~w, ~w, ~w, ~w", [ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotCommitTime]),
+    lager:info("Info is ~w, ~w, ~w, ~w, ~w", [ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotEvt,
+            SnapshotTimestamp]),
 	case ets:lookup(OpsCache, Key) of
 		[] ->
 			case ExistsSnapshot of
 			    true ->        						
-				    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotCommitTime}),
+                    lager:info("Snapshot is ~w", [LatestSnapshot]),
+				    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotEvt, SnapshotTimestamp}),
 				    {ok, LatestSnapshot};
 			    false ->
-				    riak_core_vnode:reply(Sender, {ok, clocksi_materializer:new(Type), {ignore, 0}}),
+                    lager:info("no Snapshot"),
+				    riak_core_vnode:reply(Sender, {ok, clocksi_materializer:new(Type), 0, {ignore, 0}}),
 				    {error, no_snapshot}
 			end;
 		[{_, OpsDict}] ->
 			{ok, Ops} = filter_ops(OpsDict),
 			case Ops of
 				[] ->
-					riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotCommitTime}),
+                    lager:info("No op, snapshot is ~w", [LatestSnapshot]),
+					riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotEvt, SnapshotTimestamp}),
 					{ok, LatestSnapshot};
 				[_H|_T] ->
+                    lager:info("Trying to apply ops ~w", [Ops]),
                     %lager:info("Before applying ops"),
-					case apply_ops_to_snapshot(Type, LatestSnapshot, SnapshotCommitTime, Time, Ops, TxId) of
-					    {ok, Snapshot, CommitTime} ->
+					case apply_ops_to_snapshot(Type, LatestSnapshot, SnapshotEvt, SnapshotTimestamp, Time, Ops, TxId) of
+					    {ok, Snapshot, Evt, CommitTime} ->
 			                case (Sender /= ignore) of
 					            true ->
-							        riak_core_vnode:reply(Sender, {ok, Snapshot, CommitTime});
+							        riak_core_vnode:reply(Sender, {ok, Snapshot, Evt, CommitTime});
 							    false ->
 								    1=1
 					        end,
-						    SnapshotDict1=orddict:store(CommitTime,Snapshot, SnapshotDict),
+						    SnapshotDict1=orddict:store(CommitTime, {Evt, Snapshot}, SnapshotDict),
 						    snapshot_insert_gc(Key,SnapshotDict1, OpsDict, SnapshotCache, OpsCache),
 						    {ok, Snapshot};
 				        {error, Reason} ->
@@ -213,16 +223,16 @@ filter_ops([H|T], Acc) ->
 filter_ops(_, _Acc) ->
     {error, wrong_format}.
 
-apply_ops_to_snapshot(Type, Snapshot, SnapshotCommitTime, Time, [H|T], TxId) ->
+apply_ops_to_snapshot(Type, Snapshot, SnapshotEvt, SnapshotTimestamp, Time, [H|T], TxId) ->
     Ops = [H | T],
-    %lager:info("One op: ~p, SnapshotTime ~w, time is ~w", [H, SnapshotCommitTime, Time]),
+    lager:info("One op: ~p, SnapshotTime ~w, evt ~w, time is ~w", [H, SnapshotTimestamp, SnapshotEvt, Time]),
     case Time of
         latest ->
-            %lager:info("Eager Materialize!!"),
-            eiger_materializer:materialize_eager(Type, Snapshot, SnapshotCommitTime, Ops);
+            lager:info("Eager Materialize!!"),
+            eiger_materializer:materialize_eager(Type, Snapshot, SnapshotEvt, SnapshotTimestamp, Ops);
         _ ->
-            %lager:info("Materialize!!"),
-            eiger_materializer:materialize(Type, Snapshot, SnapshotCommitTime, Time, Ops, TxId)
+            lager:info("Materialize!!"),
+            eiger_materializer:materialize(Type, Snapshot, Time, Ops, TxId, SnapshotEvt, SnapshotTimestamp)
     end.
     
 %% @doc Obtains, from an orddict of Snapshots, the latest snapshot that can be included in
@@ -239,8 +249,8 @@ get_latest_snapshot(SnapshotDict, Time) ->
                 []->
                     {ok, no_snapshot};
                 [H1|T1]->
-                    {CommitTime, Snapshot} = lists:last([H1|T1]),
-                    {ok, {CommitTime, Snapshot}}
+                    {CommitTime, {Evt, Snapshot}} = lists:last([H1|T1]),
+                    {ok, {CommitTime, Evt, Snapshot}}
             end;
         Anything ->
             {error, wrong_format, Anything}
@@ -292,7 +302,7 @@ prune_ops(OpsDict, Threshold)->
 %% the GC mechanism.
 -spec op_insert_gc(term(), clocksi_payload(),
                    atom() , atom() )-> true.
-op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
+op_insert_gc(Key, Op, OpsCache, SnapshotCache)->
     OpsDict = case ets:lookup(OpsCache, Key) of
                   []->
                       orddict:new();
@@ -301,13 +311,13 @@ op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache)->
               end,
     case (orddict:size(OpsDict))>=?OPS_THRESHOLD of
         true ->
-            Type=DownstreamOp#clocksi_payload.type,
-            SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
+            Type=Op#clocksi_payload.type,
+            SnapshotTime=Op#clocksi_payload.snapshot_time,
             {_, _} = internal_read(ignore, Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
-            OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
+            OpsDict1=orddict:append(Op#clocksi_payload.commit_time, Op, OpsDict),
             ets:insert(OpsCache, {Key, OpsDict1});
         false ->
-            OpsDict1=orddict:append(DownstreamOp#clocksi_payload.commit_time, DownstreamOp, OpsDict),
+            OpsDict1=orddict:append(Op#clocksi_payload.commit_time, Op, OpsDict),
             %lager:info("OpsCache ~w: Inserting key ~w, op ~p", [OpsCache, Key, DownstreamOp]),
             ets:insert(OpsCache, {Key, OpsDict1})
     end.

@@ -87,7 +87,7 @@ execute_op(timeout, SD0=#state{keys_type=KeysType, my_dc=DcId}) ->
                   end, KeysType),
     {next_state, collect_reads, SD0#state{transaction=Transaction}}.
 
-collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
+collect_reads({Key, Value, EVT, LVT, Timestamp}, SD0=#state{received=Received0,
                                                  max_evt=MaxEVT0,
                                                  total=Total}) ->
     lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
@@ -97,7 +97,7 @@ collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
                 _ ->
                     max(MaxEVT0, EVT)
              end,
-    Received = [{Key, Value, EVT, LVT}|Received0],
+    Received = [{Key, Value, EVT, LVT, Timestamp}|Received0],
     case length(Received) of
         Total ->
             {next_state, compute_efft, SD0#state{received=Received, max_evt=MaxEVT}, 0};
@@ -108,7 +108,7 @@ collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
 compute_efft(timeout, SD0=#state{received=Received,
                                  max_evt=MaxEVT}) ->
     EffT = lists:foldl(fun(Elem, Min) ->
-                        {_Key, _Value, _EVT, LVT} = Elem,
+                        {_Key, _Value, _EVT, LVT, _} = Elem,
                         case LVT >= MaxEVT of
                             true ->
                                 case Min of
@@ -123,11 +123,11 @@ compute_efft(timeout, SD0=#state{received=Received,
                     end, infinity, Received),
     {next_state, second_round, SD0#state{eff_time=EffT}, 0}.
 
-second_round(timeout, SD0=#state{eff_time=EffT, my_dc=DcId,
+second_round(timeout, SD0=#state{eff_time=EffT, 
                                  total=Total, transaction=Transaction, 
                                  received=Received}) ->
     {FinalResults, FinalDeps} = lists:foldl(fun(Elem, {Results, Deps}) ->
-                                {Key, Value, EVT, LVT} = Elem,
+                                {Key, Value, EVT, LVT, Timestamp} = Elem,
                                 case (LVT < EffT) orelse (EVT == empty) of
                                     true ->
                                         Preflist = log_utilities:get_preflist_from_key(Key),
@@ -137,7 +137,7 @@ second_round(timeout, SD0=#state{eff_time=EffT, my_dc=DcId,
                                             Transaction#transaction.txn_id, EffT),
                                         {Results, Deps};
                                     _ ->
-                                        {[{Key, Value}|Results], [{Key, EVT, DcId}|Deps]}
+                                        {[{Key, Value}|Results], [{Key, Timestamp}|Deps]}
                                 end
                                end, {[], []}, Received),
     case length(FinalResults) of
@@ -147,10 +147,10 @@ second_round(timeout, SD0=#state{eff_time=EffT, my_dc=DcId,
             {next_state, collect_second_reads, SD0#state{final_results=FinalResults, final_deps=FinalDeps}}
     end.
 
-collect_second_reads({Key, Value, EVT}, SD0=#state{final_results=FinalResults0, final_deps=FinalDeps0,
-                                              my_dc=DcId, total=Total}) ->
+collect_second_reads({Key, Value, Timestamp}, SD0=#state{final_results=FinalResults0, final_deps=FinalDeps0,
+                                              total=Total}) ->
     FinalResults = [{Key, Value}|FinalResults0],
-    FinalDeps = [{Key, EVT, DcId}|FinalDeps0],
+    FinalDeps = [{Key, Timestamp}|FinalDeps0],
     case length(FinalResults) of
         Total ->
             {next_state, reply, SD0#state{final_results=FinalResults, final_deps=FinalDeps}, 0};

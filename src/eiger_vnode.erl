@@ -137,7 +137,7 @@ handle_command({read_key, Key, Type, TxId}, _Sender,
                #state{clock=Clock, min_pendings=MinPendings}=State) ->
     case dict:find(Key, MinPendings) of
         {ok, _Min} ->
-            {reply, {Key, empty, empty, Clock}, State};
+            {reply, {Key, empty, empty, Clock, empty}, State};
         error ->
             Reply = do_read(Key, Type, TxId, latest, State),
             {reply, Reply, State}
@@ -386,9 +386,8 @@ delete_pending_entry([Element|Rest], TxId, List) ->
 
 handle_pending_reads([], _CommitTime, _Key, _Clock) ->
     [];
-
 handle_pending_reads([Element|Rest], CommitTime, Key, Clock) ->
-    {Time, Type, TxId, Client} = Element,
+    {Time, {Client, Type, TxId}} = Element,
     case Time < CommitTime of
         true ->
             Reply = do_read(Key, Type, TxId, Time, #state{clock=Clock}),
@@ -399,16 +398,17 @@ handle_pending_reads([Element|Rest], CommitTime, Key, Clock) ->
     end.
 
 do_read(Key, Type, TxId, Time, #state{clock=Clock}) -> 
+    lager:info("Do read ~w, ~w", [Key, Type]),
     case eiger_materializer_vnode:read(Key, Type, Time, TxId) of
     %case eiger_materializer_vnode:read(Key, Time) of
-        {ok, Snapshot, {_CoordId, EVT}} ->
+        {ok, Snapshot, EVT, Timestamp} ->
             Value = Type:value(Snapshot),
             lager:info("Snapshot is ~w, EVT is ~w", [Snapshot, EVT]),
             case Time of
                 latest -> 
-                    {Key, Value, EVT, Clock};
+                    {Key, Value, EVT, Clock, Timestamp};
                 _ -> 
-                    {Key, Value, EVT}
+                    {Key, Value, Timestamp}
             end;
         {error, Reason} ->
             {error, Reason}
