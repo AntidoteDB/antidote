@@ -45,6 +45,7 @@
           scattered_updates,
           commit_time,
           ack,
+          dc,
           servers}).
 
 %%%===================================================================
@@ -60,23 +61,20 @@ start_link(Vnode, From, Updates, Debug) ->
 
 %% @doc Initialize the state.
 init([Vnode, From, Updates, Debug]) ->
-    {ok, SnapshotTime} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
     DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
-    Transaction = #transaction{snapshot_time=LocalClock,
-                               vec_snapshot_time=SnapshotTime,
-                               txn_id=TransactionId},
     SD = #state{
+            dc=DcId,
             vnode=Vnode,
             from=From,
             debug=Debug,
-            transaction=Transaction,
+            tx_id=TransactionId,
             updates=Updates
            },
     {ok, scatter_updates, SD, 0}.
 
-scatter_updates(timeout, SD0=#state{vnode=Vnode, updates=Updates, transaction=Transaction}) ->
+scatter_updates(timeout, SD0=#state{vnode=Vnode, updates=Updates, tx_id=TxId}) ->
     ScatteredUpdates = lists:foldl(fun(Update, Dict0) ->
                                     {Key, _Type, _Param} = Update,
                                     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -87,7 +85,7 @@ scatter_updates(timeout, SD0=#state{vnode=Vnode, updates=Updates, transaction=Tr
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
                     Keys = [Key || {Key, _Type, _Param} <- ListUpdates],
-                    eiger_vnode:prepare(IndexNode, Transaction, Clock, Keys)
+                    eiger_vnode:prepare(IndexNode, TxId, Clock, Keys)
                   end, dict:to_list(ScatteredUpdates)),
     Servers = length(dict:to_list(ScatteredUpdates)),
     {next_state, gather_prepare, SD0#state{scattered_updates=ScatteredUpdates, servers=Servers, ack=0, commit_time=0}}.
@@ -112,10 +110,10 @@ gather_prepare({prepared, Clock}, SD0=#state{vnode=Vnode, servers=Servers, ack=A
 wait_for_commit(commit, Sender, SD0) ->
     {next_state, send_commit, SD0#state{from=Sender}, 0}.
 
-send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, transaction=Transaction, commit_time=CommitTime, updates=Updates}) ->
+send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, tx_id=TxId, commit_time=CommitTime, updates=Updates, tx_id=TxId, dc=DcId}) ->
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, CommitTime, length(Updates))
+                    eiger_vnode:commit(IndexNode, TxId, ListUpdates, {DcId, CommitTime}, length(Updates))
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 
