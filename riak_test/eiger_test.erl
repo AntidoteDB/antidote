@@ -26,14 +26,19 @@
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->
-    [Nodes] = rt:build_clusters([3]),
-    lager:info("Nodes: ~p", [Nodes]),
-    eiger_test1(Nodes),
-    eiger_test2(Nodes),
-    eiger_test3(Nodes),
-    eiger_test4(Nodes),
-    eiger_test5(Nodes),
-    rt:clean_cluster(Nodes),
+    [Nodes1] = rt:build_clusters([3]),
+    lager:info("Nodes: ~p", [Nodes1]),
+
+    eiger_test1(Nodes1),
+    [Nodes2] = common:clean_clusters([Nodes1]),
+    eiger_test2(Nodes1),
+    [Nodes3] = common:clean_clusters([Nodes2]),
+    eiger_test3(Nodes2),
+    [Nodes4] = common:clean_clusters([Nodes3]),
+    eiger_test4(Nodes3),
+    [Nodes5] = common:clean_clusters([Nodes4]),
+    eiger_test5(Nodes5),
+    rt:clean_cluster(Nodes5),
     pass.
 
 %% @doc The following function tests Eiger very basic behaviour
