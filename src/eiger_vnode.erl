@@ -29,9 +29,8 @@
          read_key/4,
          read_key_time/5,
          prepare/4,
-         prepare_replicated/3,
-         commit/6,
-         commit_replicated/3,
+         remote_prepare/4,
+         commit/7,
          coordinate_tx/4,
          check_deps/2,
          notify_tx/2,
@@ -114,20 +113,14 @@ prepare(Node, Transaction, Clock, Keys) ->
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
-prepare_replicated(Node, TxId, Keys) ->
+remote_prepare(Node, TxId, TimeStamp, Keys) ->
     riak_core_vnode_master:command(Node,
-                                   {prepare_replicated, TxId, Keys},
+                                   {remote_prepare, TxId, TimeStamp, Keys},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
-commit(Node, Transaction, Updates, Deps, Clock, TotalOps) ->
+commit(Node, Transaction, Updates, Deps, TimeStamp, Clock, TotalOps) ->
     riak_core_vnode_master:command(Node,
-                                   {commit, Transaction, Updates, Deps, Clock, TotalOps},
-                                   {fsm, undefined, self()},
-                                   ?EIGER_MASTER).
-
-commit_replicated(Node, Transaction, Updates) ->
-    riak_core_vnode_master:command(Node,
-                                   {commit_replicated, Transaction, Updates},
+                                   {commit, Transaction, Updates, Deps, TimeStamp, Clock, TotalOps},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER).
 
@@ -230,49 +223,28 @@ handle_command({coordinate_tx, Updates, Deps, Debug}, Sender, #state{partition=P
     {noreply, State};
 
 handle_command({remote_prepare, TxId, TimeStamp, Keys0}, _Sender, #state{clock=Clock0, partition=Partition}=S0) ->
-    {DC1, C1} = TimeStamp,
+    {_DC1, C1} = TimeStamp,
     Clock = max(Clock0, C1) + 1,
     Keys1 = lists:foldl(fun(Key, Acc) ->
                             {Key, _Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, TxId, latest, S0#state{clock=Clock}),
-                            {C2, DC2} = TS2,
-                            case (C2 < C1) of
-                                true -> Acc + [Key];
+                            case eiger_ts_lt(TS2, TimeStamp) of
+                                true ->
+                                    Acc + [Key];
                                 false ->
-                                    case (C1 == C2) of
-                                        true ->
-                                            case (DC2<DC1) of
-                                                true -> Acc + [Key];
-                                                false -> Acc
-                                            end;
-                                        false -> Acc
-                                    end
+                                    Acc
                             end
                         end, [], Keys0),
     S1 = do_prepare(TxId, Clock, Keys1, S0),
     {reply, {prepared, Clock, Keys1, {Partition, node()}}, S1#state{clock=Clock}};
 
-%handle_command({prepare, TxId, CoordClock, Keys}, _Sender, S0=#state{clock=Clock0}) ->
-%    Clock = max(Clock0, CoordClock) + 1,
-%    S1 = do_prepare(TxId, Clock, Keys, S0),
-%    {reply, {prepared, Clock}, S1#state{clock=Clock}};
-
-handle_command({prepare, Transaction, CoordClock, Keys}, _Sender, #state{clock=Clock0, pending=Pending0, min_pendings=MinPendings0}=State) ->
+handle_command({prepare, Transaction, CoordClock, Keys}, _Sender, S0=#state{clock=Clock0}) ->
     Clock = max(Clock0, CoordClock) + 1,
-    {Pending, MinPendings} = lists:foldl(fun(Key, {P0, MP0}) ->
-                                            P = dict:append(Key, {Clock, Transaction#transaction.txn_id}, P0),
-                                            MP = case dict:find(Key, MP0) of
-                                                    {ok, _Min} ->
-                                                        MP0;
-                                                    _ ->
-                                                        dict:store(Key, Clock, MP0)
-                                                 end,
-                                            {P, MP}    
-                                        end, {Pending0, MinPendings0}, Keys),
-    {reply, {prepared, Clock}, State#state{clock=Clock, pending=Pending, min_pendings=MinPendings}};
+    S1 = do_prepare(Transaction#transaction.txn_id, Clock, Keys, S0),
+    {reply, {prepared, Clock}, S1#state{clock=Clock}};
 
-handle_command({commit, Transaction, Updates, Deps, CommitClock, TotalOps}, _Sender, State0=#state{clock=Clock0}) ->
+handle_command({commit, Transaction, Updates, Deps, TimeStamp, CommitClock, TotalOps}, _Sender, State0=#state{clock=Clock0}) ->
     Clock = max(Clock0, CommitClock),
-    case update_keys(Updates, Deps, Transaction, CommitClock, TotalOps, State0) of
+    case update_keys(Updates, Deps, Transaction, TimeStamp, CommitClock, TotalOps, State0) of
         {ok, State} ->
             {reply, {committed, CommitClock}, State#state{clock=Clock}};
         {error, Reason} ->
@@ -322,21 +294,20 @@ handle_exit(_Pid, _Reason, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-update_keys(Ups, Deps, Transaction, CommitTime, TotalOps, State0) ->
+update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTime, TotalOps, State0) ->
     Payloads = lists:foldl(fun(Update, Acc) ->
                     {Key, Type, _} = Update,
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Update}},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
-                    DcId = dc_utilities:get_my_dc_id(),
                     {ok, _} = logging_vnode:append(Node,LogId,LogRecord),
                     CommittedOp = #clocksi_payload{
                                             key = Key,
                                             type = Type,
                                             op_param = Update,
                                             snapshot_time = Transaction#transaction.vec_snapshot_time,
-                                            commit_time = {DcId, CommitTime},
+                                            commit_time = TimeStamp,
                                             evt = CommitTime,
                                             txid = Transaction#transaction.txn_id},
                     [CommittedOp|Acc] end, [], Ups),
@@ -349,10 +320,9 @@ update_keys(Ups, Deps, Transaction, CommitTime, TotalOps, State0) ->
                                     op_type=prepare,
                                     op_payload=CommitTime},
     logging_vnode:append(Node,LogId,PreparedLogRecord),
-    DcId = dc_utilities:get_my_dc_id(),
     CommitLogRecord=#log_record{tx_id=TxId,
                                 op_type=commit,
-                                op_payload={{DcId, CommitTime}, Transaction#transaction.vec_snapshot_time, Deps, TotalOps}},
+                                op_payload={TimeStamp, Transaction#transaction.vec_snapshot_time, Deps, TotalOps}},
     case logging_vnode:append(Node,LogId,CommitLogRecord) of
         {ok, _} ->
             State = lists:foldl(fun(Op, S0) ->
@@ -461,3 +431,16 @@ do_prepare(TxId, Clock, Keys, S0=#state{pending=Pending0, min_pendings=MinPendin
                                             {P, MP}
                                          end, {Pending0, MinPendings0}, Keys),
     S0#state{pending=Pending, min_pendings=MinPendings}.
+
+eiger_ts_lt(TS1, TS2) ->
+    {C1, DC1} = TS1,
+    {C2, DC2} = TS2,
+    case (C1 < C2) of
+        true -> true;
+        false ->
+            case (C1 == C2) of
+                true ->
+                    DC1<DC2;
+                false -> false
+            end
+    end.

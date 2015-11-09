@@ -124,9 +124,10 @@ wait_for_commit(commit, Sender, SD0) ->
 send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, deps=Deps, 
                 transaction=Transaction, commit_time=CommitTime, updates=Updates}) ->
     lager:info("Sending commit"),
+    DcId = dc_utilities:get_my_dc_id(),
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, Deps, CommitTime, length(Updates))
+                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, Deps, {DcId, CommitTime}, CommitTime, length(Updates))
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 

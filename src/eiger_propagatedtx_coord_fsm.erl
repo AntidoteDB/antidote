@@ -129,7 +129,7 @@ prepare(timeout, SD0=#state{tx_id=TxId, vnode=_Vnode, scattered_updates=Scattere
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
                     Keys = [Key || {Key, _Type, _Param} <- ListUpdates],
-                    eiger_vnode:prepare(IndexNode, TxId, TimeStamp,  Keys)
+                    eiger_vnode:remote_prepare(IndexNode, TxId, TimeStamp,  Keys)
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_prepare, SD0#state{ack=0, commit_clock=0}}.
 
@@ -154,9 +154,11 @@ gather_prepare({prepared, Clock, Keys, Partition}, SD0=#state{vnode=Vnode, n_par
     end.
 
 send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, tx_id=TxId, commit_clock=CommitClock, timestamp=TimeStamp}) ->
+    Transaction = #transaction{vec_snapshot_time=null,
+                               txn_id=TxId},
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, TxId, ListUpdates, TimeStamp, CommitClock, 1)
+                    eiger_vnode:commit(IndexNode, Transaction , ListUpdates, nodeps, TimeStamp, CommitClock, 1)
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 
