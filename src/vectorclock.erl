@@ -38,7 +38,7 @@
 
 -export_type([vectorclock/0]).
 
-
+-spec new() -> vectorclock().
 new() ->
     dict:new().
 
