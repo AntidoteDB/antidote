@@ -357,6 +357,8 @@ gr_snapshot_read(ClientClock, Args) ->
         true ->
             %% Set all entries in snapshot as GST
             ST = dict:map(fun(_,_) -> GST end, VST),
+            %% ST doesnot contain entry for local dc, hence explicitly 
+            %% add it in snapshot time
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
             clocksi_execute_tx(SnapshotTime, Args, no_update_clock);
         false ->
