@@ -43,9 +43,11 @@
           transaction,
           received=[] :: list(),
           final_results=[] :: list(),
+          final_deps=[] :: list(),
           max_evt=0 :: integer(),
           eff_time,
           keys_type,
+          my_dc :: term(),
           total :: integer()}).
 
 %%%===================================================================
@@ -61,17 +63,18 @@ start_link(From, KeysType) ->
 
 %% @doc Initialize the state.
 init([From, KeysType]) ->
+    DcId = dc_utilities:get_my_dc_id(),
     SD = #state{keys_type=KeysType,
                 from=From,
+                my_dc=DcId,
                 total=length(KeysType)},
     {ok, execute_op, SD, 0}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-execute_op(timeout, SD0=#state{keys_type=KeysType}) ->
+execute_op(timeout, SD0=#state{keys_type=KeysType, my_dc=DcId}) ->
     {ok, SnapshotTime} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
-    DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
@@ -84,18 +87,17 @@ execute_op(timeout, SD0=#state{keys_type=KeysType}) ->
                   end, KeysType),
     {next_state, collect_reads, SD0#state{transaction=Transaction}}.
 
-
-collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
+collect_reads({Key, Value, EVT, LVT, Timestamp}, SD0=#state{received=Received0,
                                                  max_evt=MaxEVT0,
                                                  total=Total}) ->
-    %lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
+    lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
     MaxEVT = case EVT of
                 empty ->
                     MaxEVT0;
                 _ ->
                     max(MaxEVT0, EVT)
              end,
-    Received = Received0 ++ [{Key, Value, EVT, LVT}],
+    Received = [{Key, Value, EVT, LVT, Timestamp}|Received0],
     case length(Received) of
         Total ->
             {next_state, compute_efft, SD0#state{received=Received, max_evt=MaxEVT}, 0};
@@ -106,7 +108,7 @@ collect_reads({Key, Value, EVT, LVT}, SD0=#state{received=Received0,
 compute_efft(timeout, SD0=#state{received=Received,
                                  max_evt=MaxEVT}) ->
     EffT = lists:foldl(fun(Elem, Min) ->
-                        {_Key, _Value, _EVT, LVT} = Elem,
+                        {_Key, _Value, _EVT, LVT, _} = Elem,
                         case LVT >= MaxEVT of
                             true ->
                                 case Min of
@@ -121,41 +123,44 @@ compute_efft(timeout, SD0=#state{received=Received,
                     end, infinity, Received),
     {next_state, second_round, SD0#state{eff_time=EffT}, 0}.
 
-second_round(timeout, SD0=#state{eff_time=EffT,
-                                 total=Total,
+second_round(timeout, SD0=#state{eff_time=EffT, 
+                                 total=Total, transaction=Transaction, 
                                  received=Received}) ->
-    FinalResults = lists:foldl(fun(Elem, Results) ->
-                                {Key, Value, EVT, LVT} = Elem,
+    {FinalResults, FinalDeps} = lists:foldl(fun(Elem, {Results, Deps}) ->
+                                {Key, Value, EVT, LVT, Timestamp} = Elem,
                                 case (LVT < EffT) orelse (EVT == empty) of
                                     true ->
                                         Preflist = log_utilities:get_preflist_from_key(Key),
                                         IndexNode = hd(Preflist),
-                                        eiger_vnode:read_key_time(IndexNode, Key, EffT),
-                                        Results;
+                                        %%This is ad-hoc..
+                                        eiger_vnode:read_key_time(IndexNode, Key, riak_dt_lwwreg, 
+                                            Transaction#transaction.txn_id, EffT),
+                                        {Results, Deps};
                                     _ ->
-                                        Results ++ [{Key, Value}]
+                                        {[{Key, Value}|Results], [{Key, Timestamp}|Deps]}
                                 end
-                               end, [], Received),
+                               end, {[], []}, Received),
     case length(FinalResults) of
         Total ->
-            {next_state, reply, SD0#state{final_results=FinalResults}, 0};
+            {next_state, reply, SD0#state{final_results=FinalResults, final_deps=FinalDeps}, 0};
         _ ->
-            {next_state, collect_second_reads, SD0#state{final_results=FinalResults}}
+            {next_state, collect_second_reads, SD0#state{final_results=FinalResults, final_deps=FinalDeps}}
     end.
 
-collect_second_reads({Key, Value}, SD0=#state{final_results=FinalResults0,
+collect_second_reads({Key, Value, Timestamp}, SD0=#state{final_results=FinalResults0, final_deps=FinalDeps0,
                                               total=Total}) ->
-    FinalResults = FinalResults0 ++ [{Key, Value}],
+    FinalResults = [{Key, Value}|FinalResults0],
+    FinalDeps = [{Key, Timestamp}|FinalDeps0],
     case length(FinalResults) of
         Total ->
-            {next_state, reply, SD0#state{final_results=FinalResults}, 0};
+            {next_state, reply, SD0#state{final_results=FinalResults, final_deps=FinalDeps}, 0};
         _ ->
-            {next_state, collect_second_reads, SD0#state{final_results=FinalResults}}
+            {next_state, collect_second_reads, SD0#state{final_results=FinalResults, final_deps=FinalDeps}}
     end.
 
-reply(timeout, SD0=#state{final_results=FinalResults,
+reply(timeout, SD0=#state{final_results=FinalResults, final_deps=FinalDeps,
                           from=From}) ->
-    From ! {ok, FinalResults},
+    From ! {ok, lists:reverse(FinalResults), lists:reverse(FinalDeps)},
     {stop, normal, SD0}.
 
 handle_info(_Info, _StateName, StateData) ->

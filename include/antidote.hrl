@@ -77,6 +77,7 @@
                           op_param :: op(),
                           snapshot_time :: snapshot_time(),
                           commit_time :: commit_time(),
+                          evt :: non_neg_integer(),
                           txid :: txid()}).
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(),
@@ -144,3 +145,6 @@
           read_set :: list(),
           is_static :: boolean(),
           full_commit :: boolean()}).
+
+%EIGER
+-define(EIGER_DATATYPE, riak_dt_lwwreg).

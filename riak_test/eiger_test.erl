@@ -45,6 +45,7 @@ eiger_test1(Nodes) ->
     Result0=rpc:call(FirstNode, antidote, eiger_updatetx,
                     [[], []]),
     ?assertMatch({ok, empty}, Result0),
+
     Result1=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[]]),
     ?assertMatch({ok, empty}, Result1),
@@ -52,13 +53,13 @@ eiger_test1(Nodes) ->
     % A simple read returns empty
     Result11=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[key1]]),
-    ?assertMatch({ok, [{key1, null}]}, Result11),
+    ?assertMatch({ok, [{key1, <<>>}], _}, Result11),
 
     %% Read what you wrote
     Result2=rpc:call(FirstNode, antidote, eiger_updatetx,
                     [[{key1, 1}, {key2, 2}], []]),
     ?assertMatch({ok, _}, Result2),
-    {ok, Result22}=rpc:call(FirstNode, antidote, eiger_readtx,
+    {ok, Result22, _}=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[key1, key2]]),
     ?assertMatch(true, compare_multiple_results([{key1, 1},{key2, 2}], Result22)),
     pass.
@@ -68,7 +69,7 @@ eiger_test2(Nodes) ->
     Key = eiger_test2,
     lager:info("Test2 started"),
     Result0=rpc:call(FirstNode, antidote, eiger_updatetx,
-                    [[{Key, 1}], []]),
+                    [[{Key,  1}], []]),
     ?assertMatch({ok, _}, Result0),
     {ok, Coord}=rpc:call(FirstNode, antidote, eiger_updatetx,
                     [[{Key, 2}], [], debug]),
@@ -81,11 +82,11 @@ eiger_test2(Nodes) ->
     ?assertMatch({ok, _EVT2}, Result1),
     receive
         Result2 ->
-            ?assertMatch({ok, [{Key, 2}]}, Result2)
+            ?assertMatch({ok, [{Key, 2}], _}, Result2)
     end,
     Result3=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[Key]]),
-    ?assertMatch({ok, [{Key, 2}]}, Result3),
+    ?assertMatch({ok, [{Key, 2}], _}, Result3),
     pass.
 
 eiger_test3(Nodes) ->
@@ -96,9 +97,9 @@ eiger_test3(Nodes) ->
                     [[{Key, 1}], []]),
     ?assertMatch({ok, _}, Result0),
     {ok, Coord}=rpc:call(FirstNode, antidote, eiger_updatetx,
-                    [[{Key, 2}], [], debug]),
+                    [[{Key,  2}], [], debug]),
     {ok, Coord2}=rpc:call(FirstNode, antidote, eiger_updatetx,
-                    [[{Key, 3}], [], debug]),
+                    [[{Key,  3}], [], debug]),
     LastNode= lists:last(Nodes),
     spawn(eiger_test, eiger_spawn_read, [LastNode, [Key], self()]),
     timer:sleep(2000),
@@ -111,11 +112,11 @@ eiger_test3(Nodes) ->
     ?assertMatch({ok, _EVT3}, Result2),
     receive
         Result3 ->
-            ?assertMatch({ok, [{Key, 3}]}, Result3)
+            ?assertMatch({ok, [{Key, 3}], _}, Result3)
     end,
     Result4=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[Key]]),
-    ?assertMatch({ok, [{Key, 3}]}, Result4),
+    ?assertMatch({ok, [{Key, 3}], _}, Result4),
 
     pass.
 
@@ -142,11 +143,11 @@ eiger_test4(Nodes) ->
     ?assertMatch({ok, _EVT3}, Result2),
     receive
         Result3 ->
-            ?assertMatch({ok, [{Key, 2}]}, Result3)
+            ?assertMatch({ok, [{Key, 2}], _}, Result3)
     end,
     Result4=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[Key]]),
-    ?assertMatch({ok, [{Key, 3}]}, Result4),
+    ?assertMatch({ok, [{Key, 3}], _}, Result4),
     pass.
 
 eiger_test5(Nodes) ->
@@ -167,10 +168,10 @@ eiger_test5(Nodes) ->
                     [Coord]),
     ?assertMatch({ok, _EVT2}, Result1),
     receive
-        {ok, Result2} ->
+        {ok, Result2, _} ->
             ?assertMatch(true, compare_multiple_results([{Key1, 1},{Key2, 1}], Result2))
     end,
-    {ok, Result3}=rpc:call(FirstNode, antidote, eiger_readtx,
+    {ok, Result3, _}=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[Key1, Key2]]),
     ?assertMatch(true, compare_multiple_results([{Key1, 2},{Key2, 1}], Result3)),
     pass.
@@ -190,8 +191,9 @@ eiger_test6(Nodes) ->
     done = n_updates(FirstNode, Key2a, 20, 0),
     done = n_updates(FirstNode, Key2b, 1, 0),
 
-    {ok, Result3}=rpc:call(FirstNode, antidote, eiger_readtx,
+    {ok, Result3, _}=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[Key1a, Key2a]]),
+    lager:info("Result 3: ~p", [Result3]),
     ?assertMatch(true, compare_multiple_results([{Key1a, 5},{Key2a, 20}], Result3)),
     pass.
 

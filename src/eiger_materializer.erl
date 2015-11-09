@@ -25,8 +25,8 @@
 -endif.
 
 -export([new/1,
-         materialize/6,
-         materialize_eager/4]).
+         materialize/7,
+         materialize_eager/5]).
 
 %% @doc Creates an empty CRDT
 %%      Input: Type: The type of CRDT to create
@@ -34,23 +34,6 @@
 -spec new(type()) -> term().
 new(Type) ->
     Type:new().
-
-
-%% @doc Calls the internal function materialize/6, with no TxId.
--spec materialize(type(), snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
-                      snapshot_time(), 
-                      [clocksi_payload()], txid()) -> {ok, snapshot(), 
-                      {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-%materialize(_Type, Snapshot, _SnapshotTime, []) ->
-%    {ok, Snapshot};
-materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
-    case materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId, SnapshotCommitTime) of
-    {ok, Val, CommitTime} ->
-    	{ok, Val, CommitTime};
-    {error, Reason} ->
-    	{error, Reason}
-    end.
 
 
 
@@ -66,51 +49,45 @@ materialize(Type, Snapshot, SnapshotCommitTime, SnapshotTime, Ops, TxId) ->
 %%      time taken from the last operation that was applied to the snapshot.
 -spec materialize(type(), 
 					  snapshot(),
-					  SnapshotCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore,
                       snapshot_time(),
                       [clocksi_payload()], 
-                      txid(), 
+                      txid(), non_neg_integer(), 
                       LastOpCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore) ->
                              {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-materialize(_, Snapshot, _SnapshotCommitTime, _SnapshotTime, [], _TxId, CommitTime) ->
-    {ok, Snapshot, CommitTime};
+materialize(_, Snapshot, _SnapshotTime, [], _TxId, Evt, CommitTime) ->
+    %lager:info("In mat.. No op!!"),
+    {ok, Snapshot, Evt, CommitTime};
 
-materialize(Type, Snapshot, SnapshotCommitTime, Time, [Op|Rest], TxId, LastOpCommitTime) ->
+materialize(Type, Snapshot, Time, [Op|Rest], TxId, LastEvt, LastOpCommitTime) ->
     case Type == Op#clocksi_payload.type of
         true ->
-            OpCommitTime=Op#clocksi_payload.commit_time,
-            case (is_op_in_snapshot(OpCommitTime, Time)
+            %lager:info("Type is ~w", [Type]),
+            OpEvt=Op#clocksi_payload.evt,
+            OpTimestamp=Op#clocksi_payload.commit_time,
+            %lager:info("OpCommitTime is ~w, SnapshotTime is ~w", [OpCommitTime, Time]),
+            case (is_op_in_snapshot(OpEvt, Time)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
-                	    case Op#clocksi_payload.op_param of
-                        {merge, State} ->
-                            NewSnapshot = Type:merge(Snapshot, State),
+                        %lager:info("Gonna apply operations", [OpCommitTime, Time]),
+                	    %case Op#clocksi_payload.op_param of
+                        %{merge, State} ->
+                    {_, _, {Param, Actor}} = Op#clocksi_payload.op_param,
+                    case Type:update(Param, Actor, Snapshot) of
+                        {ok, NewSnapshot} ->
                             materialize(Type,
                                         NewSnapshot,
-                                        SnapshotCommitTime,
                                         Time,
                                         Rest,
                                         TxId,
-                                        OpCommitTime);
-                        {update, DownstreamOp} ->
-                            case Type:update(DownstreamOp, Snapshot) of
-                                {ok, NewSnapshot} ->
-                                    materialize(Type,
-                                                NewSnapshot,
-                                                SnapshotCommitTime,
-                                                Time,
-                                                Rest,
-                                                TxId,
-                                                OpCommitTime);
-                                {error, Reason} ->
-                                    {error, Reason}
-                            end
+                                        OpEvt, OpTimestamp);
+                        {error, Reason} ->
+                            {error, Reason}
                     end;
                 false ->
-                    materialize(Type, Snapshot, SnapshotCommitTime, Time, Rest, TxId, LastOpCommitTime)
+                    materialize(Type, Snapshot, Time, Rest, TxId, LastEvt, LastOpCommitTime)
             end;
         false -> %% Op is not for this {Key, Type}
-            materialize(Type, Snapshot, SnapshotCommitTime, Time, Rest, TxId, LastOpCommitTime)
+            materialize(Type, Snapshot, Time, Rest, TxId, LastEvt, LastOpCommitTime)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
@@ -120,25 +97,36 @@ materialize(Type, Snapshot, SnapshotCommitTime, Time, [Op|Rest], TxId, LastOpCom
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%			   SnapshotCommitTime = commit time of that snapshot.
 %%      Outptut: true or false
--spec is_op_in_snapshot({term(), non_neg_integer()}, non_neg_integer()) -> boolean().
-is_op_in_snapshot(OperationCommitTime, Time) ->
-	{_OpDc, OpCommitTime} = OperationCommitTime,
-    OpCommitTime =< Time.
+-spec is_op_in_snapshot(non_neg_integer(), non_neg_integer()) -> boolean().
+is_op_in_snapshot(OpEvt, Time) ->
+    OpEvt =< Time.
 
 %% @doc materialize_eager: apply updates in order without any checks
--spec materialize_eager(type(), snapshot(), {term(), non_neg_integer()}, [clocksi_payload()]) -> snapshot().
-materialize_eager(_, Snapshot, CommitTime, []) ->
-    {ok, Snapshot, CommitTime};
-materialize_eager(Type, Snapshot, _CommitTime, [Op|Rest]) ->
+-spec materialize_eager(type(), snapshot(), non_neg_integer(), {term(), non_neg_integer()}, 
+            [clocksi_payload()]) -> snapshot().
+materialize_eager(Type, Snapshot, SnapshotEvt, SnapshotTimestamp, Ops) ->
+    materialize_eager(Type, Snapshot, SnapshotEvt, SnapshotEvt, SnapshotTimestamp, Ops).
+
+-spec materialize_eager(type(), snapshot(), non_neg_integer(),
+            non_neg_integer(), {term(), non_neg_integer()}, [clocksi_payload()]) -> snapshot().
+materialize_eager(_, Snapshot, _, Evt, Timestamp, []) ->
+    lager:info("In mat_eager.. no op"),
+    {ok, Snapshot, Evt, Timestamp};
+materialize_eager(Type, Snapshot, SnapshotEvt, OldEvt, OldTimestamp, [Op|Rest]) ->
     OpParam = Op#clocksi_payload.op_param,
-    case OpParam of
-        {merge, State} ->
-            NewSnapshot = Type:merge(Snapshot, State);
-        {update, DownstreamOp} ->
-            {ok, NewSnapshot} = Type:update(DownstreamOp, Snapshot)
-    end,
-    OpCommitTime=Op#clocksi_payload.commit_time,
-    materialize_eager(Type, NewSnapshot, OpCommitTime, Rest).
+    OpEvt=Op#clocksi_payload.evt,
+    OpTimestamp=Op#clocksi_payload.commit_time,
+    lager:info("Type is ~w, Op is ~w, OpEvt is ~w, Snapshot evt is ~w", 
+        [Type, Op, OpEvt, SnapshotEvt]),
+    case OpEvt > SnapshotEvt of 
+        true ->
+            {_, _, {Param, Actor}} = OpParam,
+            {ok, NewSnapshot} = Type:update(Param, Actor, Snapshot),
+            %end,
+            materialize_eager(Type, NewSnapshot, SnapshotEvt, OpEvt, OpTimestamp, Rest);
+        false ->
+            materialize_eager(Type, Snapshot, SnapshotEvt, OldEvt, OldTimestamp, Rest)
+    end.
 
 
 -ifdef(TEST).
@@ -211,9 +199,9 @@ materializer_clocksi_noop_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Ops = [],
-    {ok, PNCounter2, ignore} = materialize(crdt_pncounter, PNCounter, ignore,
+    {ok, PNCounter2, ignore, ignore} = materialize(crdt_pncounter, PNCounter, 1, Ops,
                                 vectorclock:from_list([{1,1}]),
-                                Ops, ignore, ignore),
+                                ignore, ignore),
     ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
     
     

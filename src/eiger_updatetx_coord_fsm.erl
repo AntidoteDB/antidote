@@ -23,7 +23,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/4]).
+-export([start_link/5]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -40,41 +40,48 @@
           from,
           vnode,
           updates,
+          deps,
           debug,
           transaction,
           scattered_updates,
           commit_time,
           ack,
-          dc,
           servers}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(Vnode, From, Updates, Debug) ->
-    gen_fsm:start_link(?MODULE, [Vnode, From, Updates, Debug], []).
+start_link(Vnode, From, Updates, Deps, Debug) ->
+    lager:info("Starting up fsm ~w", [Updates]),
+    gen_fsm:start_link(?MODULE, [Vnode, From, Updates, Deps, Debug], []).
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([Vnode, From, Updates, Debug]) ->
+init([Vnode, From, Updates, Deps, Debug]) ->
+    lager:info("Vnode got updates ~w", [Updates]),
+    {ok, SnapshotTime} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
     DcId = dc_utilities:get_my_dc_id(),
     {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
+    Transaction = #transaction{snapshot_time=LocalClock,
+                               vec_snapshot_time=SnapshotTime,
+                               txn_id=TransactionId},
     SD = #state{
-            dc=DcId,
             vnode=Vnode,
             from=From,
             debug=Debug,
-            tx_id=TransactionId,
+            deps=Deps,
+            transaction=Transaction,
             updates=Updates
            },
     {ok, scatter_updates, SD, 0}.
 
-scatter_updates(timeout, SD0=#state{vnode=Vnode, updates=Updates, tx_id=TxId}) ->
+scatter_updates(timeout, SD0=#state{vnode=Vnode, updates=Updates, transaction=Transaction}) ->
+    lager:info("Before scattering updates ~w", [Updates]),
     ScatteredUpdates = lists:foldl(fun(Update, Dict0) ->
                                     {Key, _Type, _Param} = Update,
                                     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -85,19 +92,22 @@ scatter_updates(timeout, SD0=#state{vnode=Vnode, updates=Updates, tx_id=TxId}) -
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
                     Keys = [Key || {Key, _Type, _Param} <- ListUpdates],
-                    eiger_vnode:prepare(IndexNode, TxId, Clock, Keys)
+                    eiger_vnode:prepare(IndexNode, Transaction, Clock, Keys)
                   end, dict:to_list(ScatteredUpdates)),
     Servers = length(dict:to_list(ScatteredUpdates)),
+    lager:info("Scattered updates to ~w", [Servers]),
     {next_state, gather_prepare, SD0#state{scattered_updates=ScatteredUpdates, servers=Servers, ack=0, commit_time=0}}.
 
 gather_prepare({prepared, Clock}, SD0=#state{vnode=Vnode, servers=Servers, ack=Ack0, from=From, debug=Debug, commit_time=CommitTime0}) ->
     ok = eiger_vnode:update_clock(Vnode, Clock),
     CommitTime = max(CommitTime0, Clock),
     Ack = Ack0 + 1,
+    lager:info("Preparing OK"),
     case Ack of
         Servers ->
             case Debug of
                 debug ->
+                    lager:info("Waiting for commit"),
                     riak_core_vnode:reply(From, {ok, self()}),
                     {next_state, wait_for_commit, SD0#state{ack=0, commit_time=CommitTime}};
                 undefined ->
@@ -108,12 +118,15 @@ gather_prepare({prepared, Clock}, SD0=#state{vnode=Vnode, servers=Servers, ack=A
     end.
 
 wait_for_commit(commit, Sender, SD0) ->
+    lager:info("Got commit"),
     {next_state, send_commit, SD0#state{from=Sender}, 0}.
 
-send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, tx_id=TxId, commit_time=CommitTime, updates=Updates, tx_id=TxId, dc=DcId}) ->
+send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, deps=Deps, 
+                transaction=Transaction, commit_time=CommitTime, updates=Updates}) ->
+    lager:info("Sending commit"),
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, TxId, ListUpdates, {DcId, CommitTime}, length(Updates))
+                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, Deps, CommitTime, length(Updates))
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 

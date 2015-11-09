@@ -34,6 +34,7 @@
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
 create_snapshot(Type) ->
+    lager:info("Before running create_snapshot ~w", [Type]),
     Type:new().
 
 %% @doc Applies an operation to a snapshot of a crdt. 
