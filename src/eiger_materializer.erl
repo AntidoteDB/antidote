@@ -65,7 +65,7 @@ materialize(Type, Snapshot, Time, [Op|Rest], TxId, LastEvt, LastOpCommitTime) ->
             OpEvt=Op#clocksi_payload.evt,
             OpTimestamp=Op#clocksi_payload.commit_time,
             %lager:info("OpCommitTime is ~w, SnapshotTime is ~w", [OpCommitTime, Time]),
-            case (is_op_in_snapshot(OpEvt, Time)
+            case (should_apply_op(OpEvt, Time, LastEvt)
                   or (TxId == Op#clocksi_payload.txid)) of
                 true ->
                         %lager:info("Gonna apply operations", [OpCommitTime, Time]),
@@ -97,9 +97,9 @@ materialize(Type, Snapshot, Time, [Op|Rest], TxId, LastEvt, LastOpCommitTime) ->
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%			   SnapshotCommitTime = commit time of that snapshot.
 %%      Outptut: true or false
--spec is_op_in_snapshot(non_neg_integer(), non_neg_integer()) -> boolean().
-is_op_in_snapshot(OpEvt, Time) ->
-    OpEvt =< Time.
+-spec should_apply_op(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> boolean().
+should_apply_op(OpEvt, Time, LastEvt) ->
+    (OpEvt =< Time) and (OpEvt > LastEvt).
 
 %% @doc materialize_eager: apply updates in order without any checks
 -spec materialize_eager(type(), snapshot(), non_neg_integer(), {term(), non_neg_integer()}, 
@@ -110,7 +110,7 @@ materialize_eager(Type, Snapshot, SnapshotEvt, SnapshotTimestamp, Ops) ->
 -spec materialize_eager(type(), snapshot(), non_neg_integer(),
             non_neg_integer(), {term(), non_neg_integer()}, [clocksi_payload()]) -> snapshot().
 materialize_eager(_, Snapshot, _, Evt, Timestamp, []) ->
-    lager:info("In mat_eager.. no op"),
+    lager:info("In mat_eager.. no op, snapshot is ~w", [Snapshot]),
     {ok, Snapshot, Evt, Timestamp};
 materialize_eager(Type, Snapshot, SnapshotEvt, OldEvt, OldTimestamp, [Op|Rest]) ->
     OpParam = Op#clocksi_payload.op_param,

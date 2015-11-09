@@ -33,7 +33,6 @@ confirm() ->
     eiger_test3(Nodes),
     eiger_test4(Nodes),
     eiger_test5(Nodes),
-    eiger_test6(Nodes),
     rt:clean_cluster(Nodes),
     pass.
 
@@ -91,39 +90,8 @@ eiger_test2(Nodes) ->
 
 eiger_test3(Nodes) ->
     FirstNode = hd(Nodes),
-    Key = eiger_test3,
-    lager:info("Test3 started"),
-    Result0=rpc:call(FirstNode, antidote, eiger_updatetx,
-                    [[{Key, 1}], []]),
-    ?assertMatch({ok, _}, Result0),
-    {ok, Coord}=rpc:call(FirstNode, antidote, eiger_updatetx,
-                    [[{Key,  2}], [], debug]),
-    {ok, Coord2}=rpc:call(FirstNode, antidote, eiger_updatetx,
-                    [[{Key,  3}], [], debug]),
-    LastNode= lists:last(Nodes),
-    spawn(eiger_test, eiger_spawn_read, [LastNode, [Key], self()]),
-    timer:sleep(2000),
-    
-    Result1=rpc:call(FirstNode, antidote, eiger_committx,
-                    [Coord]),
-    ?assertMatch({ok, _EVT2}, Result1),
-    Result2=rpc:call(FirstNode, antidote, eiger_committx,
-                    [Coord2]),
-    ?assertMatch({ok, _EVT3}, Result2),
-    receive
-        Result3 ->
-            ?assertMatch({ok, [{Key, 3}], _}, Result3)
-    end,
-    Result4=rpc:call(FirstNode, antidote, eiger_readtx,
-                    [[Key]]),
-    ?assertMatch({ok, [{Key, 3}], _}, Result4),
-
-    pass.
-
-eiger_test4(Nodes) ->
-    FirstNode = hd(Nodes),
     Key = eiger_test4,
-    lager:info("Test4 started"),
+    lager:info("Test3 started"),
     Result0=rpc:call(FirstNode, antidote, eiger_updatetx,
                     [[{Key, 1}], []]),
     ?assertMatch({ok, _}, Result0),
@@ -150,11 +118,11 @@ eiger_test4(Nodes) ->
     ?assertMatch({ok, [{Key, 3}], _}, Result4),
     pass.
 
-eiger_test5(Nodes) ->
+eiger_test4(Nodes) ->
     FirstNode = hd(Nodes),
     Key1 = eiger_test5a,
     Key2 = eiger_test5b,
-    lager:info("Test5 started"),
+    lager:info("Test4 started"),
     Result0=rpc:call(FirstNode, antidote, eiger_updatetx,
                     [[{Key1, 1},{Key2, 1}], []]),
     ?assertMatch({ok, _}, Result0),
@@ -176,9 +144,9 @@ eiger_test5(Nodes) ->
     ?assertMatch(true, compare_multiple_results([{Key1, 2},{Key2, 1}], Result3)),
     pass.
 
-eiger_test6(Nodes) ->
+eiger_test5(Nodes) ->
     FirstNode = hd(Nodes),
-    lager:info("Test6 started"),
+    lager:info("Test5 started"),
     {IndexNode1, Keys1} = n_keys_same_vnode(FirstNode, 2, [], [], empty),
     Key1a = hd(Keys1),
     Key1b = lists:last(Keys1),
