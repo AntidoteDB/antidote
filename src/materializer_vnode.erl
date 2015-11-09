@@ -253,7 +253,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 			     {LS,SCT,IsF}
 		     end
 	     end,
-    {Length,Ops,LatestSnapshot,SnapshotCommitTime,IsFirst} =
+    {Length,Ops,{LastOp,LatestSnapshot},SnapshotCommitTime,IsFirst} =
 	case Result of
 	    {error, no_snapshot} ->
 		LogId = log_utilities:get_logid_from_key(Key),
@@ -272,7 +272,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 	0 ->
 	    {ok, LatestSnapshot};
 	_Len ->
-	    case clocksi_materializer:materialize(Type, LatestSnapshot, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
+	    case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
 		{ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
 		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
 		    %% for the given snapshot_time

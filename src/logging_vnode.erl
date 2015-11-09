@@ -296,7 +296,7 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommitedOpsForKey ->
-                    {reply, {length(CommitedOpsForKey), CommitedOpsForKey, clocksi_materializer:new(Type),
+                    {reply, {length(CommitedOpsForKey), CommitedOpsForKey, {0,clocksi_materializer:new(Type)},
                         vectorclock:new(), false}, State}
             end;
         {error, Reason} ->
