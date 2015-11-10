@@ -20,8 +20,7 @@
 -module(common).
 
 -export([clean_clusters/1,
-         setup_dc_manager/3,
-	 setup_dc_manager_no_rt/3]).
+         setup_dc_manager/3]).
 
 %% It cleans the cluster and formes a new one with the same characteristic of the input one.
 %% In case the clean_cluster parameter is set to false in the riak_test configuration file
@@ -60,29 +59,6 @@ setup_dc_manager(Clusters, Ports, Clean) ->
                                     rt:wait_until_registered(Node, inter_dc_manager),
                                     {ok, DC} = rpc:call(Node, inter_dc_manager, start_receiver,[Port]),
                                     rt:wait_until(Node,fun wait_init:check_ready/1),
-                                    Acc ++ [{Node, DC}]
-                                end, [], CombinedList),
-            lists:foreach(fun({Node, DC}) ->
-                            Sublist = lists:subtract(Heads, [{Node, DC}]),
-                            lists:foreach(fun({_, RemoteDC}) ->
-                                            ok = rpc:call(Node, inter_dc_manager, add_dc,[RemoteDC])
-                                          end, Sublist)
-                          end, Heads),
-            ok;
-        false ->
-            ok
-    end.
-
-
-setup_dc_manager_no_rt(Clusters, Ports, Clean) ->
-    case Clean of
-        true ->
-            {_, CombinedList} = lists:foldl(fun(Cluster, {Index, Result}) ->
-                                                {Index+1, Result ++ [{Cluster, lists:nth(Index, Ports)}]}
-                                            end, {1, []}, Clusters),
-            Heads = lists:foldl(fun({Cluster, Port}, Acc) ->
-                                    Node = hd(Cluster),
-                                    {ok, DC} = rpc:call(Node, inter_dc_manager, start_receiver,[Port]),
                                     Acc ++ [{Node, DC}]
                                 end, [], CombinedList),
             lists:foreach(fun({Node, DC}) ->
