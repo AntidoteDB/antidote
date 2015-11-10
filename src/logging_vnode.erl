@@ -306,12 +306,19 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
+
+reverse_and_add_op_id([],_Id,Acc) ->
+    Acc;
+reverse_and_add_op_id([Next|Rest],Id,Acc) ->
+    reverse_and_add_op_id(Rest,Id+1,[{Id,Next}|Acc]).
+
+
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
 get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
-            lists:reverse(CommitedOps);
+            reverse_and_add_op_id(CommitedOps,0,[]);
         {error, Reason} ->
             {error, Reason};
         {NewContinuation, NewTerms} ->
