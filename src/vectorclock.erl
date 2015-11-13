@@ -25,6 +25,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+<<<<<<< HEAD
 -export([
   get_clock/1,
   get_clock_by_key/1,
@@ -39,9 +40,24 @@
   ge/2,
   strict_ge/2,
   strict_le/2, max/1, min/1]).
+=======
+-export([get_clock/1, update_clock/3, get_clock_by_key/1,
+         is_greater_than/2,
+         get_clock_of_dc/2,
+         set_clock_of_dc/3,
+         get_stable_snapshot/0,
+         from_list/1,
+	 keep_max/2,
+	 keep_min/2,
+	 new/0,
+         eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
+>>>>>>> fix-mat-ss-gc
 
 -export_type([vectorclock/0]).
 
+-spec new() -> vectorclock().
+new() ->
+    dict:new().
 
 -spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
 get_clock_by_key(Key) ->
@@ -98,6 +114,7 @@ set_clock_of_dc(DcId, Time, VectorClock) ->
 from_list(List) ->
     dict:from_list(List).
 
+<<<<<<< HEAD
 max([]) -> dict:new();
 max([V]) -> V;
 max([V1,V2|T]) -> max([dict:merge(fun(_K, A, B) -> erlang:max(A, B) end, V1, V2)|T]).
@@ -107,6 +124,21 @@ min([V]) -> V;
 min([V1,V2|T]) -> min([dict:merge(fun(_K, A, B) -> erlang:min(A, B) end, V1, V2)|T]).
 
 
+=======
+keep_max(V1, V2) ->
+    fold_all_keys(fun(A, B, DC, Acc) -> dict:store(DC, max(A, B), Acc) end, V1, V2).
+
+keep_min(V1, V2) ->
+    fold_all_keys(fun(A, B, DC, Acc) -> dict:store(DC, min(A, B), Acc) end, V1, V2).
+
+fold_all_keys(F, V1, V2) ->
+    AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+    lists:foldl(fun(DC, Acc) ->
+			{ok, A} = get_clock_of_dc(DC, V1),
+			{ok, B} = get_clock_of_dc(DC, V2),
+			F(A, B, DC, Acc)
+		end, new(), AllDCs).
+>>>>>>> fix-mat-ss-gc
 
 -spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->

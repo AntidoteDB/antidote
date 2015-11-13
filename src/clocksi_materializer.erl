@@ -46,15 +46,18 @@ new(Type) ->
 %%      Ops: The list of operations to apply in causal order
 %%      TxId: The Id of the transaction requesting the snapshot
 %%      Output: A tuple. The first element is ok, the seond is the CRDT after appliying the operations,
-%%      the third element is the smallest vectorclock that describes this snapshot,
-%%      the fourth element is a boolean, it it is true it means that the returned snapshot contains
+%%      the third element 1 minus the number of the operation with the smallest id not included in the snapshot,
+%%      the fourth element is the smallest vectorclock that describes this snapshot,
+%%      the fifth element is a boolean, it it is true it means that the returned snapshot contains
 %%      more operations than the one given as input, false otherwise.
--spec materialize(type(), snapshot(),
+-spec materialize(type(),
+		  snapshot(),
 		  integer(),
 		  snapshot_time() | ignore,
 		  snapshot_time(),
-		  [clocksi_payload()], txid() | ignore) -> {ok, snapshot(), integer(),
-							    snapshot_time() | ignore, boolean()} | {error, reason()}.
+		  [{integer(),clocksi_payload()}],
+		  txid() | ignore) ->
+			 {ok, snapshot(), integer(), snapshot_time() | ignore, boolean()} | {error, reason()}.
 materialize(Type, Snapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
     FirstId = case Ops of
 		  [] ->
@@ -63,7 +66,8 @@ materialize(Type, Snapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, Tx
 		      Id
 	      end,
     {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
-	materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, MinSnapshotTime, Ops, TxId, SnapshotCommitTime,false),
+	materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, MinSnapshotTime,
+			   Ops, TxId, SnapshotCommitTime,false),
     case apply_operations(Type, Snapshot, OpList) of
 	{ok, NewSS} ->
 	    {ok, NewSS, NewLastOp, LastOpCt, IsNewSS};
@@ -96,6 +100,10 @@ apply_operations(Type,Snapshot,[Op | Rest]) ->
 %%      Type: The type of the CRDT
 %%      OpList: Should be given initially as an empty list, this will accumulate
 %%      the operations to apply.
+%%      LastOp: 1 minus the number of the operation with the smallest id not included in the initial snapshot
+%%      FirstHole: The variable keeps track of 1 minus the number of the operation with the smallest id
+%%      not included in the new snapshot that is currently being generated, it should be initialised to the
+%%      id of the first op in OpList
 %%      SnapshotCommitTime: The time used to describe the intitial state of the CRDT given in Snapshot
 %%      MinSnapshotTime: The threshold time given by the reading transaction
 %%      Ops: The list of operations to apply in causal order
@@ -104,15 +112,16 @@ apply_operations(Type,Snapshot,[Op | Rest]) ->
 %%      NewSS: Boolean that is true if any operations should be applied, fale otherwise.  Should start as false.
 %%      Output: A tuple with 4 elements or an error.  The first element of the tuple is the atom ok.
 %%      The second element is the list of operations that should be applied to the snapshot.
-%%      The thrid element is the snapshot time of the last operation in the list.
-%%      The fourth element is a boolean, true if a new snapshot should be generated, false otherwise.
+%%      The third element 1 minus the number of the operation with the smallest id not included in the snapshot.
+%%      The fourth element is the snapshot time of the last operation in the list.
+%%      The fifth element is a boolean, true if a new snapshot should be generated, false otherwise.
 -spec materialize_intern(type(), 
 			 [clocksi_payload()],
 			 integer(),
 			 integer(),
 			 snapshot_time() | ignore,
 			 snapshot_time(),
-			 [clocksi_payload()], 
+			 [{integer(),clocksi_payload()}],
 			 txid() | ignore, 
 			 snapshot_time() | ignore,
 			 boolean()) ->
@@ -128,7 +137,7 @@ materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnaps
 		     %% Check if the op is not in the previous snapshot and should be included in the new one
 		     case (is_op_in_snapshot(TxId, Op, OpCom, OpSS, MinSnapshotTime, SnapshotCommitTime, LastOpCt)) of
 			 {true,_,NewOpCt} ->
-			     %% Include the new op
+			     %% Include the new op because it has a timestamp bigger than the snapshot being generated
 			     {ok, [Op | OpList], NewOpCt, false, true, FirstHole};			     
 			 {false,false,_} ->
 			     %% Dont include the op
@@ -191,29 +200,32 @@ is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Snapsho
 			    _ ->
 				PrevTime
 			end,
-    	    {Result,NewTime} = dict:fold(fun(DcIdOp,TimeOp,{Acc,PrevTime3}) ->
-						 Res1 = case dict:find(DcIdOp,SnapshotTime) of
-							    {ok, TimeSS} ->
-								case TimeSS < TimeOp of
-								    true ->
-									false;
-								    false ->
-									Acc
-								end;
-							    error ->
-								lager:error("Could not find DC in SS ~p", [SnapshotTime]),
-								false
-							end,
-						 Res2 = dict:update(DcIdOp,fun(Val) ->
-										   case TimeOp > Val of
-										       true ->
-											   TimeOp;
-										       false ->
-											   Val
-										   end
-									   end,TimeOp,PrevTime3),
-						 {Res1,Res2}
-					 end, {true,PrevTime2}, OpSSCommit),
+	    %% Result is true if the op should be included in the snapshot
+	    %% NewTime is the vectorclock of the snapshot with the time of Op included
+    	    {Result,NewTime} =
+		dict:fold(fun(DcIdOp,TimeOp,{Acc,PrevTime3}) ->
+				  Res1 = case dict:find(DcIdOp,SnapshotTime) of
+					     {ok, TimeSS} ->
+						 case TimeSS < TimeOp of
+						     true ->
+							 false;
+						     false ->
+							 Acc
+						 end;
+					     error ->
+						 lager:error("Could not find DC in SS ~p", [SnapshotTime]),
+						 false
+					 end,
+				  Res2 = dict:update(DcIdOp,fun(Val) ->
+								    case TimeOp > Val of
+									true ->
+									    TimeOp;
+									false ->
+									    Val
+								    end
+							    end,TimeOp,PrevTime3),
+				  {Res1,Res2}
+			  end, {true,PrevTime2}, OpSSCommit),
 	    case Result of
 		true ->
 		    {true,false,NewTime};
@@ -263,7 +275,73 @@ materializer_clocksi_test()->
                                    vectorclock:from_list([{1,7}]), Ops, ignore),
     ?assertEqual({6, vectorclock:from_list([{1,4}])}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
 
+%% This test tests when a a snapshot is generated that does not include all of the updates in the
+%% list of operations, precisely in the case where an operation is not taken, but the operations to
+%% the left and right of it in the list are taken.  When this snapshot is then used for a future
+%% read with a different timestamp, this missing value must be checked.
+materializer_missing_op_test() ->
+    PNCounter = new(crdt_pncounter),
+    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor1}},
+                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1,1},{2,1}])},
+    Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor2}},
+                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1,2},{2,1}])},
+    Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor3}},
+                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{1,1},{2,1}])},
+    Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor4}},
+                           commit_time = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1,2},{2,1}])},
+    Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
+    {ok, PNCounter2, LastOp, CommitTime2, _SsSave} = materialize(crdt_pncounter,
+							    PNCounter, 0, ignore, vectorclock:from_list([{1,3},{2,1}]),
+							    Ops, ignore),
+    ?assertEqual({3, vectorclock:from_list([{1,3},{2,1}])}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
+    {ok, PNCounter3, 4, CommitTime3, _SsSave} = materialize(crdt_pncounter,
+							    PNCounter2, LastOp, CommitTime2, vectorclock:from_list([{1,3},{2,2}]),
+							    Ops, ignore),
+    ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {crdt_pncounter:value(PNCounter3), CommitTime3}).
 
+%% This test tests the case when there are updates that only snapshots that contain entries from one of the DCs.
+%% This can happen for example if an update is commited before the DCs have been connected.
+%% It ensures that when we read using a snapshot with and without all the DCs we still include the correct updates.
+materializer_missing_dc_test() ->
+    PNCounter = new(crdt_pncounter),
+    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor1}},
+                           commit_time = {1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{1,1}])},
+    Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor2}},
+                           commit_time = {1, 2}, txid = 2, snapshot_time=vectorclock:from_list([{1,2}])},
+    Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor3}},
+                           commit_time = {2, 2}, txid = 3, snapshot_time=vectorclock:from_list([{2,1}])},
+    Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
+                           op_param = {update, {{increment,1}, actor4}},
+                           commit_time = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1,2}])},
+    Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
+    
+    {ok, PNCounterA, LastOpA, CommitTimeA, _SsSave} = materialize(crdt_pncounter,
+								  PNCounter, 0, ignore, vectorclock:from_list([{1,3}]),
+								  Ops, ignore),
+    ?assertEqual({3, vectorclock:from_list([{1,3}])}, {crdt_pncounter:value(PNCounterA), CommitTimeA}),
+    {ok, PNCounterB, 4, CommitTimeB, _SsSave} = materialize(crdt_pncounter,
+							    PNCounterA, LastOpA, CommitTimeA, vectorclock:from_list([{1,3},{2,2}]),
+							    Ops, ignore),
+    ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {crdt_pncounter:value(PNCounterB), CommitTimeB}),
+    
+    {ok, PNCounter2, LastOp, CommitTime2, _SsSave} = materialize(crdt_pncounter,
+								 PNCounter, 0, ignore, vectorclock:from_list([{1,3},{2,1}]),
+								 Ops, ignore),
+    ?assertEqual({3, vectorclock:from_list([{1,3}])}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
+    {ok, PNCounter3, 4, CommitTime3, _SsSave} = materialize(crdt_pncounter,
+							    PNCounter2, LastOp, CommitTime2, vectorclock:from_list([{1,3},{2,2}]),
+							    Ops, ignore),
+    ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {crdt_pncounter:value(PNCounter3), CommitTime3}).
+    
 materializer_clocksi_concurrent_test() ->
     PNCounter = new(crdt_pncounter),
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
