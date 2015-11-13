@@ -78,7 +78,7 @@ observe_dcs(Descriptors) -> lists:foreach(fun observe_dc/1, Descriptors).
 observe_dcs_sync(Descriptors) ->
   {ok, SS} = vectorclock:get_stable_snapshot(),
   observe_dcs(Descriptors),
-  lists:foreach(fun({DCID, _,_, _}) ->
+  lists:foreach(fun(#descriptor{dcid = DCID}) ->
     Value = vectorclock:get_clock_of_dc(DCID, SS),
     wait_for_stable_snapshot(DCID, Value)
   end, Descriptors).
