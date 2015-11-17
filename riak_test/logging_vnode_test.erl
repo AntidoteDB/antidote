@@ -19,9 +19,14 @@ confirm() ->
     lager:info("Vnodes are started up"),
 
     lager:info("Nodes: ~p", [Nodes]),
+    
     read_pncounter_initial_value_not_in_ets_test(Nodes),
-    read_pncounter_old_value_not_in_ets_test(Nodes),
-    read_orset_old_value_not_in_ets_test(Nodes),
+
+    [Nodes1] = common:clean_clusters([Nodes]),
+    read_pncounter_old_value_not_in_ets_test(Nodes1),
+
+    [Nodes2] = common:clean_clusters([Nodes1]),
+    read_orset_old_value_not_in_ets_test(Nodes2),
     pass.
 
 %% First we remember the initial time of the counter (with value 0).
