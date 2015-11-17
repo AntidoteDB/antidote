@@ -57,6 +57,7 @@ init([Socket]) ->
 
 
 receive_message(timeout, State=#state{socket=Socket}) ->
+    lager:info("Connection established"),
     case gen_tcp:recv(Socket, 0) of
         {ok, Message} ->
             case binary_to_term(Message) of

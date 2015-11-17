@@ -122,25 +122,26 @@ wait_for_commit(commit, Sender, SD0) ->
     {next_state, send_commit, SD0#state{from=Sender}, 0}.
 
 send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, deps=Deps, 
-                transaction=Transaction, commit_time=CommitTime, updates=Updates}) ->
+                transaction=Transaction, commit_time=CommitTime, updates=Updates, servers=Servers}) ->
     lager:info("Sending commit"),
     DcId = dc_utilities:get_my_dc_id(),
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
-                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, Deps, {DcId, CommitTime}, CommitTime, length(Updates))
+                    eiger_vnode:commit(IndexNode, Transaction, ListUpdates, {Deps, Servers}, {DcId, CommitTime}, CommitTime, length(Updates))
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 
 gather_commit({committed, Clock}, SD0=#state{vnode=Vnode, scattered_updates=_ScatteredUpdates, servers=Servers, ack=Ack0, from=From, commit_time=CommitTime, debug=Debug}) ->
     ok = eiger_vnode:update_clock(Vnode, Clock),
     Ack = Ack0 + 1,
+    DcId = dc_utilities:get_my_dc_id(),
     case Ack of
         Servers ->
             case Debug of
                 debug ->
-                    gen_fsm:reply(From, {ok, CommitTime});
+                    gen_fsm:reply(From, {ok, {DcId, CommitTime}});
                 undefined ->
-                    riak_core_vnode:reply(From, {ok, CommitTime})
+                    riak_core_vnode:reply(From, {ok, {DcId, CommitTime}})
             end,
             {stop, normal, SD0#state{ack=Ack}};
         _ ->

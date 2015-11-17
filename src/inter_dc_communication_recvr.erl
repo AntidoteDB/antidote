@@ -56,17 +56,19 @@ init([Pid, Port]) ->
 %% be processed in parallel
 accept(timeout, State=#state{listener=ListenSocket}) ->
     {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-    {ok, _} = inter_dc_communication_fsm_sup:start_fsm([AcceptSocket]),
+    {ok, _} = eiger_inter_dc_communication_fsm_sup:start_fsm([AcceptSocket]),
     {next_state, accept, State, 0}.
 
 handle_info(Message, _StateName, StateData) ->
     lager:error("Recevied info:  ~p",[Message]),
     {stop,badmsg,StateData}.
 
-handle_event(_Event, _StateName, StateData) ->
+handle_event(Event, _StateName, StateData) ->
+    lager:error("Recevied info:  ~p",[Event]),
     {stop,badmsg,StateData}.
 
-handle_sync_event(_Event, _From, _StateName, StateData) ->
+handle_sync_event(Event, _From, _StateName, StateData) ->
+    lager:error("Recevied info:  ~p",[Event]),
     {stop,badmsg,StateData}.
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.

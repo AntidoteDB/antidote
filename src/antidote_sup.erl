@@ -45,8 +45,8 @@ start_rep(Pid, Port) ->
 stop_rep() ->
     ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
     _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_recvr),
-    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
-    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
+    ok = supervisor:terminate_child(inter_dc_communication_sup, eiger_inter_dc_communication_fsm_sup),
+    _ = supervisor:delete_child(inter_dc_communication_sup, eiger_inter_dc_communication_fsm_sup),
     ok = supervisor:terminate_child(?MODULE, inter_dc_communication_sup),
     _ = supervisor:delete_child(?MODULE, inter_dc_communication_sup),
     ok.

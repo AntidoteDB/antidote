@@ -59,6 +59,8 @@
                 buffered_reads=dict:new() :: dict(),
                 pending=dict:new() :: dict(),
                 prop_txs=dict:new() :: dict(),
+                fsm_deps=dict:new() :: dict(),
+                deps_keys=dict:new() :: dict(),
                 clock=0 :: integer()}).
 
 %%%===================================================================
@@ -77,7 +79,7 @@ check_deps(Node, Deps) ->
 
 propagated_group_txs(Transactions) ->
     lists:foreach(fun(Txn) ->
-                    {Txid,_Commitime,_ST, _Deps, _Ops} = Txn,
+                    {Txid,_Commitime,_ST, _Deps, _Ops, _TOps} = Txn,
                     Preflist = log_utilities:get_preflist_from_key(Txid),
                     Indexnode = hd(Preflist),
                     notify_tx(Indexnode, Txn)
@@ -146,38 +148,42 @@ update_clock(Node, Clock) ->
 init([Partition]) ->
     {ok, #state{partition=Partition}}.
 
-handle_command({check_deps, _Deps}, _Sender, State0) ->
-    %RestDeps = lists:foldl(fun(Dep, Acc) ->
-    %                        {reply, {Key, _Value, EVT, _Clock}, S1} = do_read(Key, Type, TxId, latest, State#state{clock=Clock}),
-    %                        {C1, DC1} = EVT,
-    %                        case (C1 < C2) of
-    %                            true -> Acc + [Key];
-    %                            false ->
-    %                                case (C1 == C2) of
-    %                                    true ->
-    %                                        case (DC1<DC2) of
-    %                                            true -> Acc + [Key];
-    %                                            false -> Acc
-    %                                        end;
-    %                                    false -> Acc
-    %                                end
-    %                        end
- 
-    {reply, deps_checked, State0};
+handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_keys=DepsKeys0, partition=Partition}) ->
+    RestDeps = lists:foldl(fun({Key, TimeStamp}=Dep, Acc) ->
+                            {Key, Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, latest, latest, S0),
+                            lager:info("Dependency checking. Key: ~p, Value: ~p, ts: ~p",[Key, Value, TS2]),
+                            case eiger_ts_lt(TS2, TimeStamp) of
+                                true ->
+                                    Acc ++ [Dep];
+                                false ->
+                                    Acc
+                            end
+                        end, [], Deps),
+    case length(RestDeps) of
+        0 ->
+            {reply, deps_checked, S0};
+        Other ->
+            FsmDeps1 = dict:store(Sender, Other, FsmDeps0),
+            DepsKeys1 = lists:foldl(fun({Key, TimeStamp}=_Dep, Acc) ->
+                                        lager:info("[~p] Adding entry to deps pending: ~p", [{Partition, Key, TimeStamp}]),
+                                        dict:append(Key, {TimeStamp, Sender}, Acc)
+                                    end, DepsKeys0, RestDeps),
+            {noreply, S0#state{fsm_deps=FsmDeps1, deps_keys=DepsKeys1}}
+    end;
 
 handle_command({clean_propagated_tx_fsm, TxId}, _Sender, S0=#state{prop_txs=PropTxs0}) ->
     PropTxs1 = dict:erase(TxId, PropTxs0),
     {noreply, S0#state{prop_txs=PropTxs1}};
 
 handle_command({notify_tx, Transaction}, _Sender, State0=#state{prop_txs=PropTxs0, partition=Partition}) ->
-    {TxId, CommitTime, _ST, Deps, Ops} = Transaction,
+    {TxId, CommitTime, _ST, Deps, Ops, _TOps} = Transaction,
     case dict:find(TxId, PropTxs0) of
         {ok, FsmRef} ->
             gen_fsm:send_event(FsmRef, {notify, Ops, {Partition, node()}}),
             {noreply, State0};
         error ->
             {ok, FsmRef} = eiger_propagatedtx_coord_fsm:start_link({Partition, node()}, TxId, CommitTime, Deps, Ops),
-            PropTxs1 = dict:store(TxId, FsmRef),
+            PropTxs1 = dict:store(TxId, FsmRef, PropTxs0),
             {noreply, State0#state{prop_txs=PropTxs1}}
     end;
 
@@ -229,7 +235,7 @@ handle_command({remote_prepare, TxId, TimeStamp, Keys0}, _Sender, #state{clock=C
                             {Key, _Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, TxId, latest, S0#state{clock=Clock}),
                             case eiger_ts_lt(TS2, TimeStamp) of
                                 true ->
-                                    Acc + [Key];
+                                    Acc ++ [Key];
                                 false ->
                                     Acc
                             end
@@ -329,7 +335,8 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
                                     Key = Op#clocksi_payload.key,
                                     %% This can only return ok, it is therefore pointless to check the return value.
                                     eiger_materializer_vnode:update(Key, Op),
-                                    post_commit_update(Key, TxId, CommitTime, S0)
+                                    S1 = post_commit_dependencies(Key, TimeStamp, S0),
+                                    post_commit_update(Key, TxId, CommitTime, S1)
                                 end, State0, Payloads),
             {ok, State};
         {error, timeout} ->
@@ -376,6 +383,32 @@ post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending0, min_pe
                             State0#state{pending=Pending, min_pendings=MinPendings}
                     end
             end
+    end.
+
+post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys0, fsm_deps=FsmDeps, partition=Partition}) ->
+    lager:info("[~p] New tx, check deps. Key: ~p, ts: ~p",[Partition, Key, TimeStamp]),
+    case dict:find(Key, DepsKeys0) of
+        {ok, List0} ->
+            lager:info("List of dependencies: ~p", [List0]),
+            {List1, FsmDeps1} = lists:foldl(fun({TS2, Fsm}, {Acc, Dict0}) ->
+                                                lager:info("Dependency: {~p, ~p}", [TS2, Fsm]),
+                                                case eiger_ts_lt(TimeStamp, TS2) of
+                                                    true ->
+                                                        {Acc ++ [], Dict0};
+                                                    false ->
+                                                        case dict:fetch(Fsm, Dict0) of
+                                                            1 ->
+                                                                riak_core_vnode:reply(Fsm, deps_checked),
+                                                                {Acc, dict:erase(Fsm, Dict0)};
+                                                            Rest ->
+                                                                {Acc, dict:store(Fsm, Rest - 1, Dict0)} 
+                                                        end
+                                                end
+                                            end, {[], FsmDeps}, List0),
+            S0#state{deps_keys=dict:store(Key, List1, DepsKeys0), fsm_deps=FsmDeps1};
+        error ->
+            lager:info("List of dependencies empty for Key: ~p", [Key]),
+            S0
     end.
 
 delete_pending_entry([], _TxId, List) ->
