@@ -3,7 +3,8 @@
 -export([confirm/0,
          simple_replication_test/2,
          partition_test/2,
-         missing_dependency_test/1
+         missing_dependency_test/1,
+         multiple_keys_test/1
          ]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -36,6 +37,10 @@ confirm() ->
     Clusters3 = common:clean_clusters(Clusters2),
     ok = common:setup_dc_manager(Clusters3, Ports, Clean),
     missing_dependency_test(Clusters3),
+
+    Clusters4 = common:clean_clusters(Clusters3),
+    ok = common:setup_dc_manager(Clusters4, Ports, Clean),
+    multiple_keys_test(Clusters4),
     pass.
 
 %read in one dc and read the update from the other one.
@@ -116,4 +121,51 @@ missing_dependency_test([Cluster1, Cluster2, _Cluster3]) ->
     ?assertMatch([{Key, 2}], Result3),
     
     lager:info("missing dependency test passed!").
+
+%Test that eiger protocol works with transaction of multiple keys
+%and multiple dependencies 
+multiple_keys_test([Cluster1, Cluster2, _Cluster3]) ->
+    Node1 = hd(Cluster1),
+    Node2 = hd(Cluster2),
+    TotalKeys = 10,
+    Keys = k_unique_numes(TotalKeys, 10000),
+    KeyRead = multiple_keys_test,
+
+    {_, Operations} = lists:foldl(fun(Key, {C, Acc}) ->
+                                    {C + 1, Acc ++ [{Key, C}]}
+                                  end, {1, []}, Keys),
+
+    {_, TS1} = WriteResult1 = rpc:call(Node1, antidote, eiger_updatetx,[[{KeyRead, 9}],[]]),
+    ?assertMatch({ok, _}, WriteResult1),
+
+    {_, TS2} = WriteResult2 = rpc:call(Node1, antidote, eiger_updatetx,[Operations,[]]),
+    ?assertMatch({ok, _}, WriteResult2),
+
+    Dependencies0 = lists:fold(fun(Key, Acc) ->
+                                Acc ++ [{Key, TS2}]
+                               end, [], Keys),
+    Dependencies1 = Dependencies0 ++ [KeyRead, TS1],
+
+    ok=rpc:call(Node2, antidote, eiger_checkdeps, [Dependencies1]),
     
+    {ok, Result2, _}=rpc:call(Node2, antidote, eiger_readtx, [[KeyRead]]),
+    ?assertMatch([{KeyRead, 9}], Result2),
+
+    lager:info("multiple keys test passed!").
+
+k_unique_numes(Num, Range) ->
+    Seq = lists:seq(1, Num),
+    {L, _} = lists:foldl(fun(_, {L, Set}) ->
+                            N = uninum(Range, Set),
+                            {[N|L], sets:add_element(N, Set)}
+                         end, {[],  sets:new()}, Seq),
+    L.
+
+uninum(Range, Set) ->
+    R = random:uniform(Range),
+    case sets:is_element(R, Set) of
+        true ->
+            uninum(Range, Set);
+        false ->
+            R
+    end.
