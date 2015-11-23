@@ -394,7 +394,7 @@ post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys0, fsm_deps
                                                 lager:info("Dependency: {~p, ~p}", [TS2, Fsm]),
                                                 case eiger_ts_lt(TimeStamp, TS2) of
                                                     true ->
-                                                        {Acc ++ [], Dict0};
+                                                        {Acc ++ [{TS2, Fsm}], Dict0};
                                                     false ->
                                                         case dict:fetch(Fsm, Dict0) of
                                                             1 ->

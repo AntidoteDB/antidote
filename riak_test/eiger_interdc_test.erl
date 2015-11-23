@@ -2,7 +2,8 @@
 
 -export([confirm/0,
          simple_replication_test/2,
-         partition_test/2
+         partition_test/2,
+         missing_dependency_test/1
          ]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -31,6 +32,10 @@ confirm() ->
     Clusters2 = common:clean_clusters(Clusters1),
     ok = common:setup_dc_manager(Clusters2, Ports, Clean),
     partition_test(Clusters2, Ports),
+
+    Clusters3 = common:clean_clusters(Clusters2),
+    ok = common:setup_dc_manager(Clusters3, Ports, Clean),
+    missing_dependency_test(Clusters3),
     pass.
 
 %read in one dc and read the update from the other one.
@@ -84,4 +89,31 @@ partition_test([Cluster1, Cluster2, Cluster3], [_Port1, _Port2, Port3]) ->
     ?assertMatch([{Key, 2}], Result4),
 
     lager:info("partition_test test passed!").
+
+%Test that a propagated update gets evetually updated, and it does if
+% some dependencies are not satisfied.
+missing_dependency_test([Cluster1, Cluster2, _Cluster3]) ->
+    Node1 = hd(Cluster1),
+    Node2 = hd(Cluster2),
+    Key = missing_dependency_test,
+    {_, TS1} = WriteResult1 = rpc:call(Node1, antidote, eiger_updatetx,[[{Key, 1}],[]]),
+    ?assertMatch({ok, _}, WriteResult1),
+
+    {_, TS2} = WriteResult2 = rpc:call(Node1, antidote, eiger_updatetx,[[{Key, 2}],[{Key, TS1}]]),
+    ?assertMatch({ok, _}, WriteResult2),
+
+    ok=rpc:call(Node2, antidote, eiger_checkdeps, [[{Key, TS2}]]),
+
+    {ok, Result2, _}=rpc:call(Node2, antidote, eiger_readtx, [[Key]]),
+    ?assertMatch([{Key, 2}], Result2),
+    
+    {_, TS3} = WriteResult3 = rpc:call(Node1, antidote, eiger_updatetx,[[{Key, 3}],[{Key, {{node, cluster}, 89}}]]),
+    ?assertMatch({ok, _}, WriteResult3),
+
+    {badrpc, _Reason}=rpc:call(Node2, antidote, eiger_checkdeps,[[{Key, TS3}]], 10000),
+
+    {ok, Result3, _}=rpc:call(Node2, antidote, eiger_readtx, [[Key]]),
+    ?assertMatch([{Key, 2}], Result3),
+    
+    lager:info("missing dependency test passed!").
     

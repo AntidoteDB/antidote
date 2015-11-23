@@ -64,6 +64,7 @@ start_link(Vnode, TxId, TimeStamp, Deps, Ops) ->
 init([Vnode, TxId, TimeStamp, Deps, Ops]) ->
     {ListDeps, NPartitions} = Deps,
     DepsPartition = lists:foldl(fun(Dependency, Dict)->
+                                    lager:info("Dependency: ~p", [Dependency]),
                                     {Key, _TimeStamp} = Dependency,
                                     Preflist = log_utilities:get_preflist_from_key(Key),
                                     IndexNode = hd(Preflist),
