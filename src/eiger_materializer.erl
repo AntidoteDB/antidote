@@ -35,8 +35,6 @@
 new(Type) ->
     Type:new().
 
-
-
 %% @doc Applies the operation of a list to a CRDT. Only the
 %%      operations with smaller timestamp than the specified
 %%      are considered. Newer operations are discarded.
@@ -54,40 +52,40 @@ new(Type) ->
                       txid(), non_neg_integer(), 
                       LastOpCommitTime::{dcid(),CommitTime::non_neg_integer()} | ignore) ->
                              {ok,snapshot(), {dcid(),CommitTime::non_neg_integer()} | ignore} | {error, term()}.
-materialize(_, Snapshot, _SnapshotTime, [], _TxId, Evt, CommitTime) ->
-    %lager:info("In mat.. No op!!"),
-    {ok, Snapshot, Evt, CommitTime};
+materialize(Type, Snapshot, SnapshotTime, Ops, TxId, LastEvt, LastOpCommitTime) ->
+    {ok, OpsToApply} = materialize(Type, SnapshotTime, Ops, TxId, LastEvt, []),
+    lists:foldl(fun(Op, {ok, Acc1, _, _}) ->
+                      {_, _, {Param, Actor}} = Op#clocksi_payload.op_param,
+                      {assign, V} = Param,
+                      Evt = Op#clocksi_payload.evt,
+                      {ok, NewSnapshot} = Type:update({assign, V, Evt}, Actor, Acc1),
+                      {ok, NewSnapshot, Op#clocksi_payload.evt, Op#clocksi_payload.commit_time}
+                  end, {ok, Snapshot, LastEvt, LastOpCommitTime}, OpsToApply).
 
-materialize(Type, Snapshot, Time, [Op|Rest], TxId, LastEvt, LastOpCommitTime) ->
+materialize(_, _SnapshotTime, [], _TxId, _LastEvt, OpsToApply) ->
+    %lager:info("In mat.. No op!!"),
+    {ok, OpsToApply};
+materialize(Type, SnapshotTime, [{OpEvt, Op}|Rest], TxId, LastEvt, OpsToApply) ->
     case Type == Op#clocksi_payload.type of
         true ->
             %lager:info("Type is ~w", [Type]),
-            OpEvt=Op#clocksi_payload.evt,
-            OpTimestamp=Op#clocksi_payload.commit_time,
+            %OpEvt=Op#clocksi_payload.evt,
             %lager:info("OpCommitTime is ~w, SnapshotTime is ~w", [OpCommitTime, Time]),
-            case (should_apply_op(OpEvt, Time, LastEvt)
-                  or (TxId == Op#clocksi_payload.txid)) of
+            case has_applied_op(OpEvt, LastEvt) of
                 true ->
-                        %lager:info("Gonna apply operations", [OpCommitTime, Time]),
-                	    %case Op#clocksi_payload.op_param of
-                        %{merge, State} ->
-                    {_, _, {Param, Actor}} = Op#clocksi_payload.op_param,
-                    case Type:update(Param, Actor, Snapshot) of
-                        {ok, NewSnapshot} ->
-                            materialize(Type,
-                                        NewSnapshot,
-                                        Time,
-                                        Rest,
-                                        TxId,
-                                        OpEvt, OpTimestamp);
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
+                    {ok, OpsToApply};
+                    %{ok, Snapshot, LastEvt, LastOpCommitTime};
                 false ->
-                    materialize(Type, Snapshot, Time, Rest, TxId, LastEvt, LastOpCommitTime)
+                    case (op_below_timestamp(OpEvt, SnapshotTime)
+                        or (TxId == Op#clocksi_payload.txid)) of
+                        true ->
+                            materialize(Type, SnapshotTime, Rest, TxId, OpEvt, [Op|OpsToApply]);
+                        false ->
+                            materialize(Type, SnapshotTime, Rest, TxId, LastEvt, OpsToApply)
+                    end
             end;
         false -> %% Op is not for this {Key, Type}
-            materialize(Type, Snapshot, Time, Rest, TxId, LastEvt, LastOpCommitTime)
+            materialize(Type, SnapshotTime, Rest, TxId, LastEvt, OpsToApply)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
@@ -97,112 +95,82 @@ materialize(Type, Snapshot, Time, [Op|Rest], TxId, LastEvt, LastOpCommitTime) ->
 %%             SnapshotTime = Orddict of [{Dc, Ts}]
 %%			   SnapshotCommitTime = commit time of that snapshot.
 %%      Outptut: true or false
--spec should_apply_op(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> boolean().
-should_apply_op(OpEvt, Time, LastEvt) ->
-    (OpEvt =< Time) and (OpEvt > LastEvt).
+-spec op_below_timestamp(non_neg_integer(), non_neg_integer()) -> boolean().
+op_below_timestamp(OpEvt, Time) ->
+    OpEvt =< Time.
+
+-spec has_applied_op(non_neg_integer(), non_neg_integer()) -> boolean().
+has_applied_op(OpEvt, LastEvt) ->
+    OpEvt =< LastEvt.
 
 %% @doc materialize_eager: apply updates in order without any checks
 -spec materialize_eager(type(), snapshot(), non_neg_integer(), {term(), non_neg_integer()}, 
             [clocksi_payload()]) -> snapshot().
 materialize_eager(Type, Snapshot, SnapshotEvt, SnapshotTimestamp, Ops) ->
+    %lager:info("Materializer eager! Snapshot is ~p, Evt is ~p, Timestamp is ~p, Ops are ~p", [Snapshot, SnapshotEvt, SnapshotTimestamp, Ops]),
     materialize_eager(Type, Snapshot, SnapshotEvt, SnapshotEvt, SnapshotTimestamp, Ops).
 
 -spec materialize_eager(type(), snapshot(), non_neg_integer(),
             non_neg_integer(), {term(), non_neg_integer()}, [clocksi_payload()]) -> snapshot().
-materialize_eager(_, Snapshot, _, Evt, Timestamp, []) ->
-    lager:info("In mat_eager.. no op, snapshot is ~w", [Snapshot]),
-    {ok, Snapshot, Evt, Timestamp};
-materialize_eager(Type, Snapshot, SnapshotEvt, OldEvt, OldTimestamp, [Op|Rest]) ->
-    OpParam = Op#clocksi_payload.op_param,
-    OpEvt=Op#clocksi_payload.evt,
-    OpTimestamp=Op#clocksi_payload.commit_time,
-    lager:info("Type is ~w, Op is ~w, OpEvt is ~w, Snapshot evt is ~w", 
-        [Type, Op, OpEvt, SnapshotEvt]),
-    case OpEvt > SnapshotEvt of 
-        true ->
-            {_, _, {Param, Actor}} = OpParam,
-            {ok, NewSnapshot} = Type:update(Param, Actor, Snapshot),
-            %end,
-            materialize_eager(Type, NewSnapshot, SnapshotEvt, OpEvt, OpTimestamp, Rest);
-        false ->
-            materialize_eager(Type, Snapshot, SnapshotEvt, OldEvt, OldTimestamp, Rest)
-    end.
+materialize_eager(Type, Snapshot, SnapshotEvt, OldEvt, OldTimestamp, Ops) ->
+    OpsToApply = lists:foldl(fun({OpEvt, Op}, Acc) -> 
+    %                                lager:info("SnapshotEvt is ~w, OpEvt is ~w", [SnapshotEvt, OpEvt]),
+                                    case OpEvt > SnapshotEvt of
+                                    true -> [Op|Acc]; false -> Acc end end, [], Ops), 
+    lager:info("Snapshot is ~p, Ops to apply are ~p", [Snapshot, OpsToApply]),
+    lists:foldl(fun(Op, {ok, Acc1, _, _}) ->
+                    {_, _, {Param, Actor}} = Op#clocksi_payload.op_param,
+                    {assign, V} = Param,
+                    Evt = Op#clocksi_payload.evt,
+                    {ok, NewSnapshot} = Type:update({assign, V, Evt}, Actor, Acc1),
+                    %lager:info("Applying ~p to ~p, new value is ~p", [Param, Acc1, NewSnapshot]),
+                    {ok, NewSnapshot, Evt, Op#clocksi_payload.commit_time}
+                end, {ok, Snapshot, OldEvt, OldTimestamp}, OpsToApply).
+
 
 
 -ifdef(TEST).
 
-%materializer_clocksi_test()->
-%    PNCounter = new(crdt_pncounter),
-%    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
-%    Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
-%                           op_param = {update,{{increment,2},1}},
-%                           commit_time = {1, 1}, txid = 1},
-%    Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
-%                           op_param = {update,{{increment,1},1}},
-%                           commit_time = {1, 2}, txid = 2},
-%    Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
-%                           op_param = {update,{{increment,1},1}},
-%                           commit_time = {1, 3}, txid = 3},
-%    Op4 = #clocksi_payload{key = abc, type = crdt_pncounter,
-%                           op_param = {update,{{increment,2},1}},
-%                           commit_time = {1, 4}, txid = 4},
+materializer_clocksi_test()->
+    PNCounter = new(riak_dt_lwwreg),
+    ?assertEqual(<<>>,riak_dt_lwwreg:value(PNCounter)),
+    Op1 = #clocksi_payload{key = abc, type = riak_dt_lwwreg,
+                           op_param = {abc, riak_dt_lwwreg, {{assign,2},1}},
+                           evt=1,
+                           commit_time = {1, 1}, txid = 1},
+    Op2 = #clocksi_payload{key = abc, type = riak_dt_lwwreg,
+                           op_param = {abc, riak_dt_lwwreg, {{assign,1},1}},
+                           evt=3,
+                           commit_time = {2, 2}, txid = 2},
+    Op3 = #clocksi_payload{key = abc, type = riak_dt_lwwreg,
+                           op_param = {abc, riak_dt_lwwreg, {{assign,3},1}},
+                           evt=5,
+                           commit_time = {2, 4}, txid = 3},
+    Op4 = #clocksi_payload{key = abc, type = riak_dt_lwwreg,
+                           op_param = {abc, riak_dt_lwwreg, {{assign,4},1}},
+                           evt=6,
+                           commit_time = {1, 6}, txid = 4},
 
-%    Ops = [Op1,Op2,Op3,Op4],
-%    {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
-%                                      PNCounter, ignore, vectorclock:from_list([{1,3}]),
-%                                      Ops, ignore),
-%    ?assertEqual({4, {1,3}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
-%    {ok, PNcounter3, CommitTime3} = materialize(crdt_pncounter, PNCounter, ignore,
-%                                   vectorclock:from_list([{1,4}]),Ops, ignore),
-%    ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
-%    {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, PNCounter, ignore,
-%                                   vectorclock:from_list([{1,7}]),Ops, ignore),
-%    ?assertEqual({6, {1,4}}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
-
-%materializer_clocksi_concurrent_test() ->
-%    PNCounter = new(crdt_pncounter),
-%    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
-%    Op1 = #clocksi_payload{key = abc, type = crdt_pncounter,
-%                           op_param = {update, {{increment,2}, actor1}},
-%                           commit_time = {1, 1}, txid = 1},
-%    Op2 = #clocksi_payload{key = abc, type = crdt_pncounter,
-%                           op_param = {update, {{increment,1}, actor1}},
-%                           commit_time = {1, 2}, txid = 2},
-%    Op3 = #clocksi_payload{key = abc, type = crdt_pncounter,
-%                           op_param = {update, {{increment,1}, actor1}},
-%                           commit_time = {2, 1}, txid = 3},
-
-%    Ops = [Op1,Op2,Op3],
-%    {ok, PNCounter2, CommitTime2} = materialize(crdt_pncounter,
-%                                      PNCounter, ignore,
-%                                      vectorclock:from_list([{2,2},{1,2}]),
-%                                      Ops, ignore, ignore),
-%    ?assertEqual({4, {2,1}}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
-    
-    
-    
-%    Snapshot=new(crdt_pncounter),
-%    {ok, PNcounter3, CommitTime3} = materialize(crdt_pncounter, Snapshot, ignore,
-%                                   vectorclock:from_list([{1,2}]),Ops, ignore),
-%    ?assertEqual({3, {1,2}}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
-%    
-%    {ok, PNcounter4, CommitTime4} = materialize(crdt_pncounter, Snapshot, ignore,
-%                                   vectorclock:from_list([{2,1}]),Ops, ignore),
-%    ?assertEqual({1, {2,1}}, {crdt_pncounter:value(PNcounter4), CommitTime4}),
-    
-%    {ok, PNcounter5, CommitTime5} = materialize(crdt_pncounter, Snapshot, ignore,
-%                                   vectorclock:from_list([{1,1}]),Ops, ignore),
-%    ?assertEqual({2, {1,1}}, {crdt_pncounter:value(PNcounter5), CommitTime5}).
+    Ops = [{6,Op4},{5,Op3},{3,Op2},{1,Op1}],
+    {ok, PNCounter2, Evt2, CommitTime2} = materialize(riak_dt_lwwreg,
+                                      PNCounter, 4,
+                                      Ops, ignore, 0, ignore),
+    ?assertEqual({1, 3, {2,2}}, {riak_dt_lwwreg:value(PNCounter2), Evt2, CommitTime2}),
+    {ok, PNcounter3, Evt3, CommitTime3} = materialize(riak_dt_lwwreg, PNCounter,
+                                   5, Ops, ignore, 0, ignore),
+    ?assertEqual({3, 5, {2,4}}, {riak_dt_lwwreg:value(PNcounter3), Evt3, CommitTime3}),
+    {ok, PNcounter4, Evt4, CommitTime4} = materialize(riak_dt_lwwreg, PNCounter, 
+                                   7, Ops, ignore, 0, ignore),
+    ?assertEqual({4, 6, {1,6}}, {riak_dt_lwwreg:value(PNcounter4), Evt4, CommitTime4}).
 
 %% @doc Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
-    PNCounter = new(crdt_pncounter),
-    ?assertEqual(0,crdt_pncounter:value(PNCounter)),
+    PNCounter = new(riak_dt_lwwreg),
+    ?assertEqual(<<>>,riak_dt_lwwreg:value(PNCounter)),
     Ops = [],
-    {ok, PNCounter2, ignore, ignore} = materialize(crdt_pncounter, PNCounter, 1, Ops,
-                                vectorclock:from_list([{1,1}]),
-                                ignore, ignore),
-    ?assertEqual(0,crdt_pncounter:value(PNCounter2)).
+    {ok, PNCounter2, 0, ignore} = materialize(riak_dt_lwwreg, PNCounter, 1, Ops,
+                                ignore, 0,  ignore),
+    ?assertEqual(<<>>,riak_dt_lwwreg:value(PNCounter2)).
     
     
     

@@ -29,16 +29,23 @@ confirm() ->
     [Nodes1] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes1]),
 
+    %eiger_test1(Nodes1),
+    %[Nodes2] = common:clean_clusters([Nodes1]),
+    %eiger_test2(Nodes2),
+    %[Nodes3] = common:clean_clusters([Nodes2]),
+    %eiger_test3(Nodes2),
+    %[Nodes4] = common:clean_clusters([Nodes3]),
+    %eiger_test4(Nodes3),
+    %[Nodes5] = common:clean_clusters([Nodes4]),
+    %eiger_test5(Nodes5),
+    %rt:clean_cluster(Nodes5),
+
     eiger_test1(Nodes1),
-    [Nodes2] = common:clean_clusters([Nodes1]),
     eiger_test2(Nodes1),
-    [Nodes3] = common:clean_clusters([Nodes2]),
-    eiger_test3(Nodes2),
-    [Nodes4] = common:clean_clusters([Nodes3]),
-    eiger_test4(Nodes3),
-    [Nodes5] = common:clean_clusters([Nodes4]),
-    eiger_test5(Nodes5),
-    rt:clean_cluster(Nodes5),
+    eiger_test3(Nodes1),
+    eiger_test4(Nodes1),
+    eiger_test5(Nodes1),
+    rt:clean_cluster(Nodes1),
     pass.
 
 %% @doc The following function tests Eiger very basic behaviour
@@ -95,7 +102,7 @@ eiger_test2(Nodes) ->
 
 eiger_test3(Nodes) ->
     FirstNode = hd(Nodes),
-    Key = eiger_test4,
+    Key = eiger_test3,
     lager:info("Test3 started"),
     Result0=rpc:call(FirstNode, antidote, eiger_updatetx,
                     [[{Key, 1}], []]),
@@ -158,6 +165,7 @@ eiger_test5(Nodes) ->
     {_IndexNode2, Keys2} = n_keys_same_vnode(FirstNode, 2, [IndexNode1], [], empty),
     Key2a = hd(Keys2),
     Key2b = lists:last(Keys2),
+    lager:info("Key1a is ~p, Key1b is ~p, Key2a is ~p, Key2b is ~p", [Key1a, Key1b, Key2a, Key2b]),
     
     done = n_updates(FirstNode, Key1a, 5, 0),
     done = n_updates(FirstNode, Key1b, 5, 0),
@@ -166,6 +174,7 @@ eiger_test5(Nodes) ->
 
     {ok, Result3, _}=rpc:call(FirstNode, antidote, eiger_readtx,
                     [[Key1a, Key2a]]),
+    lager:info("Result3 is ~p", [Result3]),
     ?assertMatch(true, compare_multiple_results([{Key1a, 5},{Key2a, 20}], Result3)),
     pass.
 
