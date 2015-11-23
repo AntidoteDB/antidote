@@ -151,7 +151,7 @@ internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache) ->
                 [] ->
                     {false, [], clocksi_materializer:new(Type), 0, {ignore, 0}};
                 [{_, Dict}] ->
-                    io:format(user, "There is a dict ~w ~n", [Dict]),
+                    %lager:info(user, "There is a dict ~w ~n", [Dict]),
                     case get_latest_snapshot(Dict, Time) of
                         {ok, {TEvt, CT, LSnapshot}}->
                             {true, Dict, LSnapshot, TEvt, CT};
@@ -159,17 +159,17 @@ internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache) ->
                             {false, Dict, clocksi_materializer:new(Type), 0, {ignore, 0}}
                     end
             end,
-    io:format(user, "Info is ~w, ~w, ~w, ~w, ~w ~n", [ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotEvt,
-            SnapshotTimestamp]),
+    %lager:info(user, "Info is ~w, ~w, ~w, ~w, ~w ~n", [ExistsSnapshot, SnapshotDict, LatestSnapshot, SnapshotEvt,
+    %        SnapshotTimestamp]),
 	case ets:lookup(OpsCache, Key) of
 		[] ->
 			case ExistsSnapshot of
 			    true ->        						
-                    io:format(user, "Snapshot is ~w~n", [LatestSnapshot]),
+                    %lager:info(user, "Snapshot is ~w~n", [LatestSnapshot]),
 				    riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotEvt, SnapshotTimestamp}),
 				    {ok, LatestSnapshot};
 			    false ->
-                    io:format(user, "no Snapshot ~w ~n", [ExistsSnapshot]),
+                    %lager:info(user, "no Snapshot ~w ~n", [ExistsSnapshot]),
 				    riak_core_vnode:reply(Sender, {ok, clocksi_materializer:new(Type), 0, {ignore, 0}}),
 				    {error, no_snapshot}
 			end;
@@ -181,7 +181,7 @@ internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache) ->
 					riak_core_vnode:reply(Sender, {ok, LatestSnapshot, SnapshotEvt, SnapshotTimestamp}),
 					{ok, LatestSnapshot};
 				[_H|_T] ->
-                    io:format(user, "Trying to apply ops ~w ~n", [Ops]),
+                    %lager:info(user, "Trying to apply ops ~w ~n", [Ops]),
                     %lager:info("Before applying ops"),
 					case apply_ops_to_snapshot(Type, LatestSnapshot, SnapshotEvt, SnapshotTimestamp, Time, Ops, TxId) of
 					    {ok, Snapshot, Evt, CommitTime} ->
@@ -209,7 +209,7 @@ apply_ops_to_snapshot(Type, Snapshot, SnapshotEvt, SnapshotTimestamp, Time, Ops,
         latest ->
             %lager:info("Eager Materialize!!"),
             V = eiger_materializer:materialize_eager(Type, Snapshot, SnapshotEvt, SnapshotTimestamp, Ops),
-            lager:info("Value is ~w", [V]),
+            %lager:info("Value is ~w", [V]),
             V;
         _ ->
             %lager:info("Materialize!!"),
@@ -289,12 +289,12 @@ op_insert_gc(Key, Op, OpsCache, SnapshotCache)->
             {_, _} = internal_read(ignore, Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
             %OpsDict1=orddict:append(Op#clocksi_payload.commit_time, Op, OpsDict),
             OpsDict1=descend_insert(Op#clocksi_payload.evt, Op, OpsDict),
-            io:format(user, "OpDict is ~p, OpDict1 is ~p ~n", [OpsDict, OpsDict1]),
+            %lager:info("OpDict is ~p, OpDict1 is ~p ~n", [OpsDict, OpsDict1]),
             ets:insert(OpsCache, {Key, OpsDict1});
         false ->
             %OpsDict1=orddict:append(Op#clocksi_payload.commit_time, Op, OpsDict),
             OpsDict1=descend_insert(Op#clocksi_payload.evt, Op, OpsDict),
-            io:format(user, "OpDict is ~p, OpDict1 is ~p ~n", [OpsDict, OpsDict1]),
+            %lager:info("OpDict is ~p, OpDict1 is ~p ~n", [OpsDict, OpsDict1]),
             %lager:info("OpsCache ~w: Inserting key ~w, op ~p", [OpsCache, Key, DownstreamOp]),
             ets:insert(OpsCache, {Key, OpsDict1})
     end.
@@ -345,11 +345,11 @@ seq_write_test() ->
                                      txid = 1
                                     },
     op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache),
-    io:format("after making the first write: Opscache= ~p~n SnapCache=~p", [OpsCache, SnapshotCache]),
+    %lager:info("after making the first write: Opscache= ~p~n SnapCache=~p", [OpsCache, SnapshotCache]),
     %internal_read(Sender, Key, Type, Time, TxId, OpsCache, SnapshotCache),
     {ok, Res1} = internal_read(ignore, Key, Type, 16, ignore,  OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
-    io:format("after making the first read: Opscache= ~p~n SnapCache=~p", [OpsCache, SnapshotCache]),
+    %lager:info("after making the first read: Opscache= ~p~n SnapCache=~p", [OpsCache, SnapshotCache]),
    %% Insert second increment
     %{ok,Op2} = Type:update(increment, a, Res1),
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
@@ -360,11 +360,11 @@ seq_write_test() ->
                       txid=2},
 
     op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache),
-    io:format("after making the second write: Opscache= ~p~n SnapCache=~p ~n", [OpsCache, SnapshotCache]),
+    %lager:info("after making the second write: Opscache= ~p~n SnapCache=~p ~n", [OpsCache, SnapshotCache]),
     {ok, Res2} = internal_read(ignore, Key, Type, 21, ignore, OpsCache, SnapshotCache),
-    io:format("Res2 is ~p ~n", [Res2]),
+    %lager:info("Res2 is ~p ~n", [Res2]),
     ?assertEqual(2, Type:value(Res2)),
-    io:format("after making the second read: Opscache= ~p~n SnapCache=~p ~n", [OpsCache, SnapshotCache]),
+    %lager:info("after making the second read: Opscache= ~p~n SnapCache=~p ~n", [OpsCache, SnapshotCache]),
 
     %% Read old version
     {ok, ReadOld} = internal_read(ignore, Key, Type, 17, ignore, OpsCache, SnapshotCache),

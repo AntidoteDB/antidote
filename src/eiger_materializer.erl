@@ -117,7 +117,7 @@ materialize_eager(Type, Snapshot, SnapshotEvt, OldEvt, OldTimestamp, Ops) ->
     %                                lager:info("SnapshotEvt is ~w, OpEvt is ~w", [SnapshotEvt, OpEvt]),
                                     case OpEvt > SnapshotEvt of
                                     true -> [Op|Acc]; false -> Acc end end, [], Ops), 
-    lager:info("Snapshot is ~p, Ops to apply are ~p", [Snapshot, OpsToApply]),
+    %lager:info("Snapshot is ~p, Ops to apply are ~p", [Snapshot, OpsToApply]),
     lists:foldl(fun(Op, {ok, Acc1, _, _}) ->
                     {_, _, {Param, Actor}} = Op#clocksi_payload.op_param,
                     {assign, V} = Param,
