@@ -178,7 +178,12 @@ gather_prepare({prepared, Clock, Keys, Partition}, SD0=#state{vnode=Vnode, n_par
                             end
                            end, [], Updates0),
     lager:info("Updates to commit: ~p", [Updates1]),
-    ScatteredUpdates1 = dict:store(Partition, Updates1, ScatteredUpdates0),
+    case Updates1 of
+        [] ->
+            ScatteredUpdates1 = ScatteredUpdates0;
+        _List ->
+            ScatteredUpdates1 = dict:store(Partition, Updates1, ScatteredUpdates0)
+    end,
     CommitClock = max(CommitClock0, Clock),
     Ack = Ack0 + 1,
     case Ack of
