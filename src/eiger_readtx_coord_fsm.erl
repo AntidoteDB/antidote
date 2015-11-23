@@ -90,7 +90,7 @@ execute_op(timeout, SD0=#state{keys_type=KeysType, my_dc=DcId}) ->
 collect_reads({Key, Value, EVT, LVT, Timestamp}, SD0=#state{received=Received0,
                                                  max_evt=MaxEVT0,
                                                  total=Total}) ->
-    lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
+    %lager:info("Collecting reads Key ~p, Value ~p, EVT ~p, LVT ~p" ,[Key, Value, EVT, LVT]),
     MaxEVT = case EVT of
                 empty ->
                     MaxEVT0;

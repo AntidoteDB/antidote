@@ -332,11 +332,11 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
     case logging_vnode:append(Node,LogId,CommitLogRecord) of
         {ok, _} ->
             State = lists:foldl(fun(Op, S0) ->
-                                    Key = Op#clocksi_payload.key,
+                                    LKey = Op#clocksi_payload.key,
                                     %% This can only return ok, it is therefore pointless to check the return value.
-                                    eiger_materializer_vnode:update(Key, Op),
+                                    eiger_materializer_vnode:update(LKey, Op),
                                     S1 = post_commit_dependencies(Key, TimeStamp, S0),
-                                    post_commit_update(Key, TxId, CommitTime, S1)
+                                    post_commit_update(LKey, TxId, CommitTime, S1)
                                 end, State0, Payloads),
             {ok, State};
         {error, timeout} ->
