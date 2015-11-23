@@ -233,8 +233,10 @@ handle_command({remote_prepare, TxId, TimeStamp, Keys0}, _Sender, #state{clock=C
     Clock = max(Clock0, C1) + 1,
     Keys1 = lists:foldl(fun(Key, Acc) ->
                             {Key, _Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, TxId, latest, S0#state{clock=Clock}),
+                            lager:info("New: ~p VS Stored: ~p", [TimeStamp, TS2]),
                             case eiger_ts_lt(TS2, TimeStamp) of
                                 true ->
+                                    lager:info("Adding key: ~p", [Key]),
                                     Acc ++ [Key];
                                 false ->
                                     Acc
@@ -335,7 +337,7 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
                                     LKey = Op#clocksi_payload.key,
                                     %% This can only return ok, it is therefore pointless to check the return value.
                                     eiger_materializer_vnode:update(LKey, Op),
-                                    S1 = post_commit_dependencies(Key, TimeStamp, S0),
+                                    S1 = post_commit_dependencies(LKey, TimeStamp, S0),
                                     post_commit_update(LKey, TxId, CommitTime, S1)
                                 end, State0, Payloads),
             {ok, State};
@@ -401,6 +403,7 @@ post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys0, fsm_deps
                                                                 riak_core_vnode:reply(Fsm, deps_checked),
                                                                 {Acc, dict:erase(Fsm, Dict0)};
                                                             Rest ->
+                                                                lager:info("Still missing deps: ~p", [Rest - 1]),
                                                                 {Acc, dict:store(Fsm, Rest - 1, Dict0)} 
                                                         end
                                                 end

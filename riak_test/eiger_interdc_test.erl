@@ -141,10 +141,10 @@ multiple_keys_test([Cluster1, Cluster2, _Cluster3]) ->
     {_, TS2} = WriteResult2 = rpc:call(Node1, antidote, eiger_updatetx,[Operations,[]]),
     ?assertMatch({ok, _}, WriteResult2),
 
-    Dependencies0 = lists:fold(fun(Key, Acc) ->
-                                Acc ++ [{Key, TS2}]
-                               end, [], Keys),
-    Dependencies1 = Dependencies0 ++ [KeyRead, TS1],
+    Dependencies0 = lists:foldl(fun(Key, Acc) ->
+                                    Acc ++ [{Key, TS2}]
+                                end, [], Keys),
+    Dependencies1 = Dependencies0 ++ [{KeyRead, TS1}],
 
     ok=rpc:call(Node2, antidote, eiger_checkdeps, [Dependencies1]),
     

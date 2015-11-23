@@ -69,6 +69,9 @@ init([From, ListDeps]) ->
            },
     {ok, gather, SD}.
 
+gather(timeout, SD0) ->
+    {next_state, gather, SD0};
+
 gather(deps_checked, SD0=#state{deps_ack=DepsAck0, total_deps=NPDeps}) ->
     DepsAck1 = DepsAck0 + 1,
         case DepsAck1 of
