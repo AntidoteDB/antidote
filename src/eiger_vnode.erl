@@ -436,12 +436,12 @@ handle_pending_reads([Element|Rest], CommitTime, Key, Clock) ->
     end.
 
 do_read(Key, Type, TxId, Time, #state{clock=Clock}) -> 
-    lager:info("Do read ~w, ~w", [Key, Type]),
+    %lager:info("Do read ~w, ~w, ~w", [Key, Type, Time]),
     case eiger_materializer_vnode:read(Key, Type, Time, TxId) of
     %case eiger_materializer_vnode:read(Key, Time) of
         {ok, Snapshot, EVT, Timestamp} ->
             Value = Type:value(Snapshot),
-            lager:info("Snapshot is ~w, EVT is ~w", [Snapshot, EVT]),
+            %lager:info("Snapshot is ~w, EVT is ~w", [Snapshot, EVT]),
             case Time of
                 latest -> 
                     {Key, Value, EVT, Clock, Timestamp};
