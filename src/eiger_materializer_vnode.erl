@@ -35,6 +35,7 @@
 
 -export([start_vnode/1,
          read/4,
+         op_insert_gc/4,
          update/2]).
 
 -export([init/1,
@@ -239,6 +240,7 @@ above_snapshot(Evt, Threshold) ->
         latest ->
             false;
         _ ->
+            %lager:info("Threshold is ~w, Evt is ~w, Evt should be kept is ~w", [Threshold, Evt, (Evt >= Threshold)]),
             Evt >= Threshold 
     end.
 
@@ -249,10 +251,11 @@ above_snapshot(Evt, Threshold) ->
 snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
     case (length(SnapshotDict))>=?SNAPSHOT_THRESHOLD of
         true ->
-            PrunedSnapshots=lists:sublist(SnapshotDict, 1+?SNAPSHOT_THRESHOLD-?SNAPSHOT_MIN, ?SNAPSHOT_MIN),
+            PrunedSnapshots=lists:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp=lists:nth(1, PrunedSnapshots),
             {CommitTime, _S} = FirstOp,
             PrunedOps=prune_ops(OpsDict, CommitTime),
+            %lager:info("CommitTime is ~w: Ops dict before prune ~w, after prune is ~w", [CommitTime, OpsDict, PrunedOps]),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
             ets:insert(OpsCache, {Key, PrunedOps});
         false ->
@@ -262,7 +265,7 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
 -spec prune_ops([], {Dc::term(),CommitTime::non_neg_integer()})-> [].
 prune_ops(OpsDict, Threshold)->
-    %lager:info("OpsDict is ~w", [OpsDict]),
+    %lager:info("OpsDict is ~w", [OpsDict, ]),
     lists:filter(fun({_Key, Value}) ->
                            above_snapshot(Value#clocksi_payload.evt, Threshold) end, OpsDict).
 
@@ -286,11 +289,13 @@ op_insert_gc(Key, Op, OpsCache, SnapshotCache)->
             SnapshotTime=Op#clocksi_payload.snapshot_time,
             {_, _} = internal_read(ignore, Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
             %OpsDict1=orddict:append(Op#clocksi_payload.commit_time, Op, OpsDict),
+            %lager:info("Inserting op with ~w", [Op#clocksi_payload.evt]),
             OpsDict1=descend_insert(Op#clocksi_payload.evt, Op, OpsDict),
             %lager:info("OpDict is ~p, OpDict1 is ~p ~n", [OpsDict, OpsDict1]),
             ets:insert(OpsCache, {Key, OpsDict1});
         false ->
             %OpsDict1=orddict:append(Op#clocksi_payload.commit_time, Op, OpsDict),
+            %lager:info("Inserting op with ~w", [Op#clocksi_payload.evt]),
             OpsDict1=descend_insert(Op#clocksi_payload.evt, Op, OpsDict),
             %lager:info("OpDict is ~p, OpDict1 is ~p ~n", [OpsDict, OpsDict1]),
             %lager:info("OpsCache ~w: Inserting key ~w, op ~p", [OpsCache, Key, DownstreamOp]),
