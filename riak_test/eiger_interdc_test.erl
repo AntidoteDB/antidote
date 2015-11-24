@@ -4,7 +4,8 @@
          simple_replication_test/2,
          partition_test/2,
          missing_dependency_test/1,
-         multiple_keys_test/1
+         multiple_keys_test/1,
+         concurrent_updates_test/2
          ]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -28,19 +29,23 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster3),
 
     ok = common:setup_dc_manager(Clusters1, Ports, true),
-    simple_replication_test(Cluster1, Cluster2),
+    %simple_replication_test(Cluster1, Cluster2),
 
     Clusters2 = common:clean_clusters(Clusters1),
     ok = common:setup_dc_manager(Clusters2, Ports, Clean),
-    partition_test(Clusters2, Ports),
+    %partition_test(Clusters2, Ports),
 
     Clusters3 = common:clean_clusters(Clusters2),
     ok = common:setup_dc_manager(Clusters3, Ports, Clean),
-    missing_dependency_test(Clusters3),
+    %missing_dependency_test(Clusters3),
 
     Clusters4 = common:clean_clusters(Clusters3),
     ok = common:setup_dc_manager(Clusters4, Ports, Clean),
-    multiple_keys_test(Clusters4),
+    %multiple_keys_test(Clusters4),
+
+    Clusters5 = common:clean_clusters(Clusters4),
+    ok = common:setup_dc_manager(Clusters5, Ports, Clean),
+    concurrent_updates_test(Clusters5, Ports),
     pass.
 
 %read in one dc and read the update from the other one.
@@ -152,6 +157,44 @@ multiple_keys_test([Cluster1, Cluster2, _Cluster3]) ->
     ?assertMatch([{KeyRead, 9}], Result2),
 
     lager:info("multiple keys test passed!").
+
+%Test what happends when clusters concurrently update the same key
+concurrent_updates_test([Cluster1, Cluster2, _Cluster3], [Port1, Port2, _Port3]) ->
+    Node1 = hd(Cluster1),
+    Node2 = hd(Cluster2),
+    
+    Key1 = concurrent_updates_test_key1,
+    Key2 = concurrent_updates_test_key2,
+    Key3 = concurrent_updates_test_key3,
+    Key4 = concurrent_updates_test_key4,
+
+    {_, TS1} = WriteResult1 = rpc:call(Node1, antidote, eiger_updatetx,[[{Key1, 4}, {Key2, 5}],[]]),
+    ?assertMatch({ok, _}, WriteResult1),
+    
+    ok=rpc:call(Node2, antidote, eiger_checkdeps, [[{Key1, TS1}, {Key2, TS1}]]),
+
+    ok = rpc:call(Node2, inter_dc_manager, stop_receiver, []),
+    ok = rpc:call(Node1, inter_dc_manager, stop_receiver, []),
+    
+    {_, TS2} = WriteResult2 = rpc:call(Node1, antidote, eiger_updatetx,[[{Key2, 6}, {Key3, 2}],[]]),
+    ?assertMatch({ok, _}, WriteResult2),
+    
+    {_, TS3} = WriteResult3 = rpc:call(Node2, antidote, eiger_updatetx,[[{Key2, 7}, {Key4, 9}],[]]),
+    ?assertMatch({ok, _}, WriteResult3),
+
+    {ok, _} = rpc:call(Node2, inter_dc_manager, start_receiver, [Port2]),
+    {ok, _} = rpc:call(Node1, inter_dc_manager, start_receiver, [Port1]),
+
+    ok=rpc:call(Node2, antidote, eiger_checkdeps, [[{Key2, TS2}, {Key3, TS2}]]),
+    ok=rpc:call(Node1, antidote, eiger_checkdeps, [[{Key2, TS3}, {Key4, TS3}]]),
+
+    {ok, Result1, _}=rpc:call(Node1, antidote, eiger_readtx, [[Key2]]),
+    {ok, Result2, _}=rpc:call(Node2, antidote, eiger_readtx, [[Key2]]),
+
+    lager:info("Result 1: ~p, Result 2: ~p", [Result1, Result2]),
+    ?assertMatch(Result1, Result2),
+
+    lager:info("concurrent updates test passed").
 
 k_unique_numes(Num, Range) ->
     Seq = lists:seq(1, Num),

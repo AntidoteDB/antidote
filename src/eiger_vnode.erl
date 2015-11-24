@@ -43,6 +43,7 @@
          handle_command/3,
          is_empty/1,
          delete/1,
+         eiger_ts_lt/2,
          handle_handoff_command/3,
          handoff_starting/2,
          handoff_cancelled/1,
@@ -148,10 +149,9 @@ update_clock(Node, Clock) ->
 init([Partition]) ->
     {ok, #state{partition=Partition}}.
 
-handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_keys=DepsKeys0, partition=Partition}) ->
+handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_keys=DepsKeys0, partition=_Partition}) ->
     RestDeps = lists:foldl(fun({Key, TimeStamp}=Dep, Acc) ->
-                            {Key, Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, latest, latest, S0),
-                            lager:info("Dependency checking. Key: ~p, Value: ~p, ts: ~p",[Key, Value, TS2]),
+                            {Key, _Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, latest, latest, S0),
                             case eiger_ts_lt(TS2, TimeStamp) of
                                 true ->
                                     Acc ++ [Dep];
@@ -165,7 +165,6 @@ handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_key
         Other ->
             FsmDeps1 = dict:store(Sender, Other, FsmDeps0),
             DepsKeys1 = lists:foldl(fun({Key, TimeStamp}=_Dep, Acc) ->
-                                        lager:info("[~p] Adding entry to deps pending: ~p", [{Partition, Key, TimeStamp}]),
                                         dict:append(Key, {TimeStamp, Sender}, Acc)
                                     end, DepsKeys0, RestDeps),
             {noreply, S0#state{fsm_deps=FsmDeps1, deps_keys=DepsKeys1}}
@@ -233,15 +232,14 @@ handle_command({remote_prepare, TxId, TimeStamp, Keys0}, _Sender, #state{clock=C
     Clock = max(Clock0, C1) + 1,
     Keys1 = lists:foldl(fun(Key, Acc) ->
                             {Key, _Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, TxId, latest, S0#state{clock=Clock}),
-                            lager:info("New: ~p VS Stored: ~p", [TimeStamp, TS2]),
                             case eiger_ts_lt(TS2, TimeStamp) of
                                 true ->
-                                    lager:info("Adding key: ~p", [Key]),
                                     Acc ++ [Key];
                                 false ->
                                     Acc
                             end
                         end, [], Keys0),
+    lager:info("Keys ~p to be prepared. TimeStamp: ~p", [Keys1, TimeStamp]),
     S1 = do_prepare(TxId, Clock, Keys1, S0),
     {reply, {prepared, Clock, Keys1, {Partition, node()}}, S1#state{clock=Clock}};
 
@@ -346,6 +344,7 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
     end.
     
 post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending0, min_pendings=MinPendings0, buffered_reads=BufferedReads0, clock=Clock}) ->
+    lager:info("Key to post commit : ~p", [Key]),
     List0 = dict:fetch(Key, Pending0),
     {List, PrepareTime} = delete_pending_entry(List0, TxId, []),
     case List of
@@ -387,13 +386,10 @@ post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending0, min_pe
             end
     end.
 
-post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys0, fsm_deps=FsmDeps, partition=Partition}) ->
-    lager:info("[~p] New tx, check deps. Key: ~p, ts: ~p",[Partition, Key, TimeStamp]),
+post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys0, fsm_deps=FsmDeps, partition=_Partition}) ->
     case dict:find(Key, DepsKeys0) of
         {ok, List0} ->
-            lager:info("List of dependencies: ~p", [List0]),
             {List1, FsmDeps1} = lists:foldl(fun({TS2, Fsm}, {Acc, Dict0}) ->
-                                                lager:info("Dependency: {~p, ~p}", [TS2, Fsm]),
                                                 case eiger_ts_lt(TimeStamp, TS2) of
                                                     true ->
                                                         {Acc ++ [{TS2, Fsm}], Dict0};
@@ -403,14 +399,12 @@ post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys0, fsm_deps
                                                                 riak_core_vnode:reply(Fsm, deps_checked),
                                                                 {Acc, dict:erase(Fsm, Dict0)};
                                                             Rest ->
-                                                                lager:info("Still missing deps: ~p", [Rest - 1]),
                                                                 {Acc, dict:store(Fsm, Rest - 1, Dict0)} 
                                                         end
                                                 end
                                             end, {[], FsmDeps}, List0),
             S0#state{deps_keys=dict:store(Key, List1, DepsKeys0), fsm_deps=FsmDeps1};
         error ->
-            lager:info("List of dependencies empty for Key: ~p", [Key]),
             S0
     end.
 
@@ -469,8 +463,9 @@ do_prepare(TxId, Clock, Keys, S0=#state{pending=Pending0, min_pendings=MinPendin
     S0#state{pending=Pending, min_pendings=MinPendings}.
 
 eiger_ts_lt(TS1, TS2) ->
-    {C1, DC1} = TS1,
-    {C2, DC2} = TS2,
+    lager:info("ts1: ~p, ts2: ~p",[TS1, TS2]),
+    {DC1, C1} = TS1,
+    {DC2, C2} = TS2,
     case (C1 < C2) of
         true -> true;
         false ->

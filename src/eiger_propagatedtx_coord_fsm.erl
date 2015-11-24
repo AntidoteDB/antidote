@@ -180,7 +180,7 @@ gather_prepare({prepared, Clock, Keys, Partition}, SD0=#state{vnode=Vnode, n_par
     lager:info("Updates to commit: ~p", [Updates1]),
     case Updates1 of
         [] ->
-            ScatteredUpdates1 = ScatteredUpdates0;
+            ScatteredUpdates1 = dict:erase(Partition, ScatteredUpdates0);
         _List ->
             ScatteredUpdates1 = dict:store(Partition, Updates1, ScatteredUpdates0)
     end,
