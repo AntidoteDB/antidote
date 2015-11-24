@@ -27,7 +27,7 @@
 
 -define(SNAPSHOT_THRESHOLD, 10).
 -define(SNAPSHOT_MIN, 2).
--define(OPS_THRESHOLD, 50).
+-define(OPS_THRESHOLD, 20).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -229,20 +229,17 @@ get_latest_snapshot(SnapshotDict, Time) ->
             {ok, {Evt, CommitTime, Snapshot}}
     end.
 
-%% @doc Check whether a Key's operation or stored snapshot is included
-%%		in a snapshot defined by a vector clock
-%%      Input: Dc = Datacenter Id
-%%             CommitTime = local commit time of this Snapshot at DC
-%%             SnapshotTime = vector clock
-%%      Outptut: true or false
--spec belongs_to_snapshot(Evt::non_neg_integer(),
+%% @doc Check whether a Key's operation is included
+%%		in a snapshot. Return true if the op is not included
+%%      in the snapshot; false otherwise. 
+-spec above_snapshot(Evt::non_neg_integer(),
                           SnapshotTime::non_neg_integer()) -> boolean().
-belongs_to_snapshot(Evt, Time) ->
-    case Time of
+above_snapshot(Evt, Threshold) ->
+    case Threshold of
         latest ->
-            true;
+            false;
         _ ->
-            Evt =< Time
+            Evt >= Threshold 
     end.
 
 %% @doc Operation to insert a Snapshot in the cache and start
@@ -265,8 +262,9 @@ snapshot_insert_gc(Key, SnapshotDict, OpsDict, SnapshotCache, OpsCache)->
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
 -spec prune_ops([], {Dc::term(),CommitTime::non_neg_integer()})-> [].
 prune_ops(OpsDict, Threshold)->
-    lists:filter(fun(_Key, Value) ->
-                           (belongs_to_snapshot(Threshold, Value#clocksi_payload.snapshot_time)) end, OpsDict).
+    %lager:info("OpsDict is ~w", [OpsDict]),
+    lists:filter(fun({_Key, Value}) ->
+                           above_snapshot(Value#clocksi_payload.evt, Threshold) end, OpsDict).
 
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
@@ -319,13 +317,12 @@ first_belongs_to(Threshold, [{Key, _}|R]) when Threshold < Key ->
 
 %% @doc Testing belongs_to_snapshot returns true when a commit time 
 %% is smaller than a snapshot time
-belongs_to_snapshot_test()->
-
+above_snapshot_test()->
 	SnapshotVC= 10,
-	?assertEqual(true, belongs_to_snapshot(1, SnapshotVC)),
-	?assertEqual(true, belongs_to_snapshot(2, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot(11, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot(12, SnapshotVC)).
+	?assertEqual(false, above_snapshot(1, SnapshotVC)),
+	?assertEqual(false, above_snapshot(2, SnapshotVC)),
+	?assertEqual(true, above_snapshot(11, SnapshotVC)),
+	?assertEqual(true, above_snapshot(12, SnapshotVC)).
 
 seq_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
