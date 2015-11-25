@@ -80,7 +80,9 @@ commit_transaction(TxId) ->
         {ok, {_TxId, CommitTime}} ->
             {ok, CommitTime};
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason};
+        Other ->
+            {error, Other}
     end.
 
 -spec read_objects(Objects::[bound_object()], TxId::txid())
