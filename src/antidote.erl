@@ -134,10 +134,29 @@ update_objects(Clock, _Properties, Updates) ->
                            {update, {Key, Type, {{Op,OpParam}, Actor}}}
                    end,
                    Updates),
-    case clocksi_execute_tx(Clock, Operations) of
-        {ok, {_TxId, [], CommitTime}} ->
-            {ok, CommitTime};
-        {error, Reason} -> {error, Reason}
+    SingleKey = case Operations of
+                    [_O] -> %% Single key update
+                        case Clock of 
+                            ignore -> true;
+                            _ -> false
+                        end;
+                    [_H|_T] -> false
+                end,
+    case SingleKey of 
+        true ->  %% if single key, execute the fast path
+            [{update, {K, T, Op}}] = Operations,
+            case append(K, T, Op) of
+                {ok, {_TxId, [], CT}} ->
+                    {ok, CT};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        false ->
+            case clocksi_execute_tx(Clock, Operations) of
+                {ok, {_TxId, [], CommitTime}} ->
+                    {ok, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end
     end.
 
 read_objects(Clock, _Properties, Objects) ->
@@ -146,12 +165,32 @@ read_objects(Clock, _Properties, Objects) ->
                      {read, {Key, Type}}
              end,
              Objects),
-    case clocksi_execute_tx(Clock, Args) of
-        {ok, {_TxId, Result, CommitTime}} ->
-            {ok, Result, CommitTime};
-        {error, Reason} -> {error, Reason}
+    SingleKey = case Args of
+                    [_O] -> %% Single key update
+                        case Clock of 
+                            ignore -> true;
+                            _ -> false
+                        end;
+                    [_H|_T] -> false
+                end,
+    case SingleKey of
+        true -> %% Execute the fast path
+            [{read, {Key, Type}}] = Args,
+            case materializer:check_operations([{read, {Key, Type}}]) of
+                ok ->
+                    {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
+                        perform_singleitem_read(Key,Type),
+                    {ok, [Val], CommitTime};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        false -> 
+            case clocksi_execute_tx(Clock, Args) of
+                {ok, {_TxId, Result, CommitTime}} ->
+                    {ok, Result, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end
     end.
-
 
 %% Object creation and types
 
@@ -190,7 +229,9 @@ append(Key, Type, {OpParams, Actor}) ->
 read(Key, Type) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type);
+            {ok, Val, _CommitTime} = clocksi_interactive_tx_coord_fsm:
+                perform_singleitem_read(Key,Type),
+            {ok, Val};
         {error, Reason} ->
             {error, Reason}
     end.
