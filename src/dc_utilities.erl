@@ -105,6 +105,7 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
     end.
 
 ensure_all_vnodes_running_master(VnodeType) ->
+    check_registered(VnodeType),
     bcast_vnode_check_up(VnodeType,{hello}, get_all_partitions()).
 
 -spec check_staleness() -> ok.
@@ -115,3 +116,12 @@ check_staleness() ->
 		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
 		      ok
 	      end, ok, SS).
+
+check_registered(Name) ->
+    case whereis(Name) of
+	undefined ->
+	    timer:sleep(100),
+	    check_registered(Name);
+	_ ->
+	    ok
+    end.
