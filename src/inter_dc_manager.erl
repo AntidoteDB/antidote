@@ -38,7 +38,7 @@
 -spec get_descriptor() -> {ok, #descriptor{}}.
 get_descriptor() ->
   %% Wait until all needed vnodes are spawned, so that the heartbeats are already being sent
-  ok = dc_utilities:ensure_all_vnodes_running(inter_dc_log_sender_vnode),
+  ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address, []) end, Nodes),
@@ -62,6 +62,7 @@ observe_dc(#descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publish
         true -> ok;
         false ->
           lager:info("Observing DC ~p", [DCID]),
+          dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
           %% Announce the new publisher addresses to all subscribers in this DC.
           %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
           %% But we want to balance the work, so all nodes take part in subscribing.

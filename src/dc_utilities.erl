@@ -31,7 +31,9 @@
     bcast_vnode/2,
     get_my_partitions/0,
     ensure_all_vnodes_running/1,
-    get_partitions_num/0]).
+    ensure_all_vnodes_running_master/1,
+    get_partitions_num/0,
+    check_staleness/0]).
 
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -89,3 +91,27 @@ ensure_all_vnodes_running(VnodeType) ->
             timer:sleep(250),
             ensure_all_vnodes_running(VnodeType)
     end.
+
+bcast_vnode_check_up(_VMaster,_Request,[]) ->
+    ok;
+bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->   
+    case call_vnode_sync(P,VMaster,Request) of
+	ok ->
+	    bcast_vnode_check_up(VMaster,Request,Rest);
+	Msg ->
+	    lager:info("Vnode not up retrying, ~p, ~p, msg: ~p", [VMaster,P,Msg]),
+	    timer:sleep(1000),
+	    bcast_vnode_check_up(VMaster,Request,[P|Rest])
+    end.
+
+ensure_all_vnodes_running_master(VnodeType) ->
+    bcast_vnode_check_up(VnodeType,{hello}, get_all_partitions()).
+
+-spec check_staleness() -> ok.
+check_staleness() ->
+    Now = clocksi_vnode:now_microsec(erlang:now()),
+    {ok, SS} = vectorclock:get_stable_snapshot(),
+    dict:fold(fun(DcId,Time,_Acc) ->
+		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
+		      ok
+	      end, ok, SS).

@@ -93,23 +93,32 @@ handle_command({log_event, Operation}, _Sender, State) ->
     %% If the transaction is not yet complete
     none -> State1
   end,
-  {noreply, State2}.
+  {noreply, State2};
+
+handle_command({hello}, _Sender, State) ->
+    {reply, ok, State};
 
 %% Handle the ping request, managed by the timer (1s by default)
-handle_info(ping, State) ->
+%% Handle the ping request, managed by the timer (1s by default)
+handle_command(ping, _Sender, State) ->
   PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
-  {ok, set_timer(broadcast(State, PingTxn))}.
+  {noreply, set_timer(broadcast(State, PingTxn))}.
+
+handle_info(Info, State) ->
+    lager:info("Weird msg in log sender vnode: ~p", [Info]),
+    {ok, State}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
-handoff_starting(_TargetNode, State) -> {true, del_timer(State)}.
-handoff_cancelled(State) -> {ok, set_timer(State)}.
-handoff_finished(_TargetNode, State) -> {ok, set_timer(State)}.
+handoff_starting(_TargetNode, State) -> {true, State}.
+handoff_cancelled(State) ->
+    {ok, set_timer(State)}.
+handoff_finished(_TargetNode, State) -> {ok, State}.
 handle_handoff_command( _Message , _Sender, State) -> {noreply, State}.
 handle_handoff_data(_Data, State) -> {reply, ok, State}.
 encode_handoff_item(Key, Operation) -> term_to_binary({Key, Operation}).
 is_empty(State) -> {true, State}.
-delete(State) -> {ok, del_timer(State)}.
+delete(State) -> {ok, State}.
 terminate(_Reason, State) ->
   _ = del_timer(State),
   ok.
@@ -125,9 +134,17 @@ del_timer(State = #state{timer = Timer}) ->
 
 %% Cancels the previous ping timer and sets a new one.
 -spec set_timer(#state{}) -> #state{}.
-set_timer(State) ->
-  State1 = del_timer(State),
-  State1#state{timer = erlang:send_after(?HEARTBEAT_PERIOD, self(), ping)}.
+set_timer(State = #state{partition = Partition}) ->
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    Node = riak_core_ring:index_owner(Ring, Partition),
+    MyNode = node(),
+    case Node of
+	MyNode ->
+	    State1 = del_timer(State),
+	    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)};
+	_Other ->
+	    State
+    end.
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
@@ -155,3 +172,5 @@ get_stable_time(_Partition) ->
     %%                     Active_txns);
     %%     _ -> Now
     %% end.
+
+
