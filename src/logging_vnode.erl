@@ -370,7 +370,7 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommitedOps) ->
     {{DcId, TxCommitTime}, SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, [{Key, Type, Op}]} ->
-            case not vectorclock:is_greater_than(SnapshotTime, MinSnapshotTime) of
+            case not vectorclock:gt(SnapshotTime, MinSnapshotTime) of
                 true ->
                     CommittedDownstreamOp =
                         #clocksi_payload{
