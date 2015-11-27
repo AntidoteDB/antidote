@@ -62,7 +62,6 @@ connect_dcs(Clusters) ->
     rt:wait_until_registered(Node, inter_dc_log_reader_response),
     rt:wait_until_registered(Node, inter_dc_log_reader_query),
     rt:wait_until_registered(Node, inter_dc_sub),
-    timer:sleep(10000),
     lager:info("Making node ~p observe other DCs...", [Node]),
     %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
     rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
