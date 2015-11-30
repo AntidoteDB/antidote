@@ -27,10 +27,13 @@
 %% API for applications
 -export([
          start_transaction/2,
+         start_transaction/3,
          read_objects/2,
          read_objects/3,
+         read_objects/4,
          update_objects/2,
          update_objects/3,
+         update_objects/4,
          abort_transaction/1,
          commit_transaction/1,
          create_bucket/2,
@@ -42,12 +45,14 @@
 %% Old APIs, We would still need them for tests and benchmarks
 -export([append/3,
          read/2,
+         clocksi_execute_tx/3,
          clocksi_execute_tx/2,
          clocksi_execute_tx/1,
          clocksi_read/3,
          clocksi_read/2,
          clocksi_bulk_update/2,
          clocksi_bulk_update/1,
+         clocksi_istart_tx/2,
          clocksi_istart_tx/1,
          clocksi_istart_tx/0,
          clocksi_iread/3,
@@ -63,10 +68,15 @@
 
 %% Public API
 
+-spec start_transaction(Clock::snapshot_time(), Properties::txn_properties(), boolean())
+                       -> {ok, txid()} | {error, reason()}.
+start_transaction(Clock, _Properties, KeepAlive) ->
+    clocksi_istart_tx(Clock, KeepAlive).
+
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
                        -> {ok, txid()} | {error, reason()}.
 start_transaction(Clock, _Properties) ->
-    clocksi_istart_tx(Clock).
+    clocksi_istart_tx(Clock, false).
 
 -spec abort_transaction(TxId::txid()) -> {error, reason()}.
 abort_transaction(_TxId) ->
@@ -125,26 +135,32 @@ update_objects(Updates, TxId) ->
 %% For static transactions: bulk updates and bulk reads
 -spec update_objects(snapshot_time(), term(), [{bound_object(), op(), op_param()}]) ->
                             {ok, snapshot_time()} | {error, reason()}.
-update_objects(Clock, _Properties, Updates) ->
+update_objects(Clock, Properties, Updates) ->
+    update_objects(Clock, Properties, Updates, false).
+
+update_objects(Clock, _Properties, Updates, StayAlive) ->
     Actor = actor, %% TODO: generate unique actors
     Operations = lists:map(
                    fun({{Key, Type, _Bucket}, Op, OpParam}) ->
                            {update, {Key, Type, {{Op,OpParam}, Actor}}}
                    end,
                    Updates),
-    case clocksi_execute_tx(Clock, Operations) of
+    case clocksi_execute_tx(Clock, Operations, StayAlive) of
         {ok, {_TxId, [], CommitTime}} ->
             {ok, CommitTime};
         {error, Reason} -> {error, Reason}
     end.
 
-read_objects(Clock, _Properties, Objects) ->
+read_objects(Clock, Properties, Objects) ->
+    read_objects(Clock, Properties, Objects, false).
+
+read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
              fun({Key, Type, _Bucket}) ->
                      {read, {Key, Type}}
              end,
              Objects),
-    case clocksi_execute_tx(Clock, Args) of
+    case clocksi_execute_tx(Clock, Args, StayAlive) of
         {ok, {_TxId, Result, CommitTime}} ->
             {ok, Result, CommitTime};
         {error, Reason} -> {error, Reason}
@@ -209,19 +225,34 @@ read(Key, Type) ->
 %%
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
+clocksi_execute_tx(Clock, Operations, KeepAlive) ->
+    case materializer:check_operations(Operations) of
+        {error, Reason} ->
+            {error, Reason};
+        ok ->
+	    TxPid = case KeepAlive of
+			true ->
+			    whereis(clocksi_static_tx_coord_fsm:generate_name(self()));
+			false ->
+			    undefined
+		    end,
+	    CoordPid = case TxPid of
+			   undefined ->
+			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, KeepAlive]),
+			       CoordFsmPid;
+			   TxPid ->
+			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations}),
+			       TxPid
+		       end,
+	    gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT)
+    end.
+
 clocksi_execute_tx(Clock, Operations) ->
-    {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
-    gen_fsm:sync_send_event(CoordFsmPid, execute, ?OP_TIMEOUT).
+    clocksi_execute_tx(Clock, Operations, false).
 
 -spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Operations) ->
-    case materializer:check_operations(Operations) of
-        ok ->
-            {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
-            gen_fsm:sync_send_event(CoordFsmPid, execute);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    clocksi_execute_tx(ignore, Operations, false).
 
 -spec clocksi_bulk_update(ClientClock:: snapshot_time(),
                           [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
@@ -249,8 +280,19 @@ clocksi_read(Key, Type) ->
 %%
 -spec clocksi_istart_tx(Clock:: snapshot_time()) ->
                                {ok, txid()} | {error, reason()}.
-clocksi_istart_tx(Clock) ->
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock]),
+clocksi_istart_tx(Clock, KeepAlive) ->
+    TxPid = case KeepAlive of
+		true ->
+		    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
+		false ->
+		    undefined
+	    end,
+    case TxPid of
+	undefined ->
+	    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, KeepAlive]);
+	TxPid ->
+	    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock})
+    end,
     receive
         {ok, TxId} ->
             {ok, TxId};
@@ -258,21 +300,17 @@ clocksi_istart_tx(Clock) ->
             {error, Other}
     end.
 
+clocksi_istart_tx(Clock) ->
+    clocksi_istart_tx(Clock, false).
+
 clocksi_istart_tx() ->
-    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self()]),
-    receive
-        {ok, TxId} ->
-            {ok, TxId};
-        Other ->
-            {error, Other}
-    end.
-    
+    clocksi_istart_tx(ignore, false).
 
 -spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            case  gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}, ?OP_TIMEOUT) of
+            case gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}, ?OP_TIMEOUT) of
                 {ok, Res} -> {ok, Res};
                 {error, Reason} -> {error, Reason}
             end;
