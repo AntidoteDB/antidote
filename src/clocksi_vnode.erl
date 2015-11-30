@@ -239,8 +239,15 @@ check_table_ready([{Partition, Node} | Rest]) ->
 
 
 open_table(Partition) ->
-    ets:new(get_cache_name(Partition, prepared),
-        [set, protected, named_table, ?TABLE_CONCURRENCY]).
+    case ets:info(get_cache_name(Partition, prepared)) of
+	undefined ->
+	    ets:new(get_cache_name(Partition, prepared),
+		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
+	_ ->
+	    %% Other vnode hasn't finished closing tables
+	    timer:sleep(100),
+	    open_table(Partition)
+    end.
 
 loop_until_started(_Partition, 0) ->
     0;
