@@ -94,15 +94,27 @@ ensure_all_vnodes_running(VnodeType) ->
 
 bcast_vnode_check_up(_VMaster,_Request,[]) ->
     ok;
-bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->   
-    case call_vnode_sync(P,VMaster,Request) of
-	ok ->
-	    bcast_vnode_check_up(VMaster,Request,Rest);
-	Msg ->
-	    lager:info("Vnode not up retrying, ~p, ~p, msg: ~p", [VMaster,P,Msg]),
+bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
+    Err = try
+	      case call_vnode_sync(P,VMaster,Request) of
+		  ok ->
+		      false;
+		  Msg ->
+		      true
+	      end
+	  catch
+	      _Ex:_Res ->
+		  true
+	  end,
+    case Err of
+	true ->
+	    lager:info("Vnode not up retrying, ~p, ~p", [VMaster,P]),
 	    timer:sleep(1000),
-	    bcast_vnode_check_up(VMaster,Request,[P|Rest])
+	    bcast_vnode_check_up(VMaster,Request,[P|Rest]);
+	false ->
+	    bcast_vnode_check_up(VMaster,Request,Rest)
     end.
+    
 
 ensure_all_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
