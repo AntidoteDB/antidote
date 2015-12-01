@@ -25,9 +25,9 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 
--define(SNAPSHOT_THRESHOLD, 5).
--define(SNAPSHOT_MIN, 2).
--define(OPS_THRESHOLD, 10).
+-define(SNAPSHOT_THRESHOLD, 20).
+-define(SNAPSHOT_MIN, 10).
+-define(OPS_THRESHOLD, 40).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

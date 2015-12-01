@@ -17,7 +17,7 @@
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption
 %% is there will be several more reads than writes
--define(TABLE_CONCURRENCY, {read_concurrency,true}).
+-define(TABLE_CONCURRENCY, {read_concurrency,true}, {write_concurrency, true}).
 %% The read concurrency is the maximum number of concurrent
 %% readers per vnode.  This is so shared memory can be used
 %% in the case of keys that are read frequently.  There is
