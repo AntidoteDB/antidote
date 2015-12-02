@@ -81,6 +81,7 @@ bcast_vnode_sync(VMaster, Request) ->
 bcast_vnode(VMaster, Request) ->
     lists:map(fun(P) -> {P, call_vnode(P, VMaster, Request)} end, get_all_partitions()).
 
+-spec ensure_all_vnodes_running(atom()) -> ok.
 ensure_all_vnodes_running(VnodeType) ->
     Partitions = get_partitions_num(),
     Running = length(riak_core_vnode_manager:all_vnodes(VnodeType)),
@@ -99,7 +100,7 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
 	      case call_vnode_sync(P,VMaster,Request) of
 		  ok ->
 		      false;
-		  Msg ->
+		  _Msg ->
 		      true
 	      end
 	  catch

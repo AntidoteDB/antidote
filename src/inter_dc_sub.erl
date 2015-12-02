@@ -64,13 +64,18 @@ init([]) -> {ok, #state{sockets = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, State) ->
   F = fun(Address) ->
+    %% Create a subscriber socket for the specified DC
     Socket = zmq_utils:create_connect_socket(sub, true, Address),
+    %% For each partition in the current node:
     lists:foreach(fun(P) ->
+      %% Make the socket subscribe to messages prefixed with the given partition number
       ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
     end, dc_utilities:get_my_partitions()),
     Socket
   end,
   Sockets = lists:map(F, Publishers),
+  %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
+  %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
   {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
 
 handle_call({del_dc, DCID}, _From, State) ->
@@ -78,8 +83,11 @@ handle_call({del_dc, DCID}, _From, State) ->
   lists:foreach(fun zmq_utils:close_socket/1, Sockets),
   {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}}.
 
+%% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
+  %% decode the message
   Msg = inter_dc_txn:from_bin(BinaryMsg),
+  %% deliver the message to an appropriate vnode
   ok = inter_dc_sub_vnode:deliver_txn(Msg),
   {noreply, State}.
 

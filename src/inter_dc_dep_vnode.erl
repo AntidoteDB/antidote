@@ -112,7 +112,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
 
-  %% Check if the current clock is greather than or equal to the dependency vector
+  %% Check if the current clock is greater than or equal to the dependency vector
   case vectorclock:ge(CurrentClock, Dependencies) of
 
     %% If not, the transaction will not be stored right now.
@@ -208,15 +208,15 @@ get_partition_clock(State) ->
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
 -spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#clocksi_payload{}).
 updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, snapshot = SnapshotTime}) ->
-  lists:map(fun(#operation{payload = Logrecord}) ->
-    {Key, Type, Op} = Logrecord#log_record.op_payload,
+  lists:map(fun(#operation{payload = LogRecord}) ->
+    {Key, Type, Op} = LogRecord#log_record.op_payload,
     #clocksi_payload{
       key = Key,
       type = Type,
       op_param = Op,
       snapshot_time = SnapshotTime,
       commit_time = {DCID, CommitTime},
-      txid =  Logrecord#log_record.tx_id
+      txid =  LogRecord#log_record.tx_id
     }
   end, inter_dc_txn:ops_by_type(Txn, update)).
 

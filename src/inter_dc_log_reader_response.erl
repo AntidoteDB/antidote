@@ -72,7 +72,7 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
     _ -> {error, bad_request}
   end,
   %% Send the response using the same socket .
-  %% (yes, that's how it works in ZeroMQ - the socket holds the context of the last )
+  %% (yes, that's how it works in ZeroMQ - the socket holds the context of the last sent request)
   ok = erlzmq:send(Socket, term_to_binary(Response)),
   {noreply, State}.
 

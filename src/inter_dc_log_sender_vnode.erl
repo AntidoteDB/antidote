@@ -99,14 +99,9 @@ handle_command({hello}, _Sender, State) ->
     {reply, ok, State};
 
 %% Handle the ping request, managed by the timer (1s by default)
-%% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
   PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
   {noreply, set_timer(broadcast(State, PingTxn))}.
-
-handle_info(Info, State) ->
-    lager:info("Weird msg in log sender vnode: ~p", [Info]),
-    {ok, State}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
