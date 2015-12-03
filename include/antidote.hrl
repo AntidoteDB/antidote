@@ -42,7 +42,8 @@
 %% Uncomment the following line to use erlang:now()
 %% Otherwise os:timestamp() is used which can go backwards
 %% which is unsafe for clock-si
-%% -define(SAFE_TIME, true).
+-define(SAFE_TIME, true).
+
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 %% Enalble or disable the certification check
 -ifdef(NO_CERTIFICATION).
