@@ -77,7 +77,7 @@ process_q_dc(Dc, DcQ, StateData=#recvr_state{lastCommitted = LastCTS,
             Localclock = vectorclock:set_clock_of_dc(
                            Dc, 0,
                            vectorclock:set_clock_of_dc(
-                             LocalDc, now_millisec(erlang:now()), LC)),
+                             LocalDc, now_millisec(dc_utilities:now()), LC)),
             case orddict:find(Dc, LastCTS) of  % Check for duplicate
                 {ok, CTS} ->
                     if Ts >= CTS ->
