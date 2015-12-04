@@ -38,7 +38,6 @@
   init/1,
   start_vnode/1,
   handle_command/3,
-  handle_info/2,
   handle_coverage/4,
   handle_exit/3,
   handoff_starting/2,

@@ -58,7 +58,7 @@ init([Coordinator, VecSnapshotTime, Partition]) ->
 check_clock(timeout, SD0=#state{vclock=Vclock}) ->
     DcId = dc_utilities:get_my_dc_id(),
     {ok, T_TS} = vectorclock:get_clock_of_dc(DcId, Vclock),
-    Time = clocksi_vnode:now_microsec(erlang:now()),
+    Time = clocksi_vnode:now_microsec(dc_utilities:now()),
     Newclock = dict:erase(DcId, Vclock),
     case T_TS > Time of
         true ->

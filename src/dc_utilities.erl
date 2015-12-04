@@ -21,6 +21,7 @@
 -include("antidote.hrl").
 
 -export([
+    now/0,
     get_my_dc_id/0,
     get_my_dc_nodes/0,
     call_vnode_sync/3,
@@ -138,3 +139,15 @@ check_registered(Name) ->
 	_ ->
 	    ok
     end.
+
+-ifdef(SAFE_TIME).
+
+now() ->
+    erlang:now().
+
+-else.
+
+now() ->
+    os:timestamp().
+
+-endif.
