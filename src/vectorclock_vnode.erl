@@ -120,7 +120,7 @@ metadata_maybe_put(Prefix, Key, Value) ->
 
 metadata_maybe_list(Prefix) ->
   case catch riak_core_metadata:to_list(Prefix) of
-    {badarg, _} -> lager:warning("Failed to fetch metadata!"), [];
+    {'EXIT', Reason} -> lager:warning("Failed to fetch metadata (reason: ~p)", [Reason]), [];
     Normal -> Normal
   end.
 
