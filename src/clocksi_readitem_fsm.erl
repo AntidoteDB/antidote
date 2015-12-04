@@ -198,7 +198,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
 check_clock(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
-    Time = clocksi_vnode:now_microsec(erlang:now()),
+    Time = clocksi_vnode:now_microsec(dc_utilities:now()),
     case T_TS > Time of
         true ->
 	    {not_ready, (T_TS - Time) div 1000 +1};

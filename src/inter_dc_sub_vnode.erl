@@ -51,7 +51,7 @@
 %% State
 -record(state, {
   partition :: non_neg_integer(),
-  buffer_fsms :: dict() %% dcid -> relsub_fsm
+  buffer_fsms :: dict() %% dcid -> buffer
 }).
 
 %%%% API --------------------------------------------------------------------+

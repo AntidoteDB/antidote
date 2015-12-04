@@ -54,19 +54,19 @@ process(Operation, State) ->
     _ -> {none, State#state{op_buffer = dict:store(TxId, NewTxnBuf, State#state.op_buffer)}}
   end.
 
-%%-spec process_all([operation()], #state{}) -> {[#interdc_txn{}], #state{}}.
+%%-spec process_all([operation()], #state{}) -> {[#interdc_txn{}], #state{}}. %% TODO: fix this spec
 -spec process_all([#operation{}],#state{op_buffer::'undefined' | dict()}) -> {[],#state{op_buffer::'undefined' | dict()}}.
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
 
 -spec process_all([#operation{}], [#interdc_txn{}], #state{}) -> {[#interdc_txn{}], #state{}}.
-process_all([], Accu, State) -> {Accu, State};
-process_all([H|T], Accu, State) ->
+process_all([], Acc, State) -> {Acc, State};
+process_all([H|T], Acc, State) ->
   {Result, NewState} = process(H, State),
-  NewAccu = case Result of
-    {ok, Txn} -> Accu ++ [Txn];
-    none -> Accu
+  NewAcc = case Result of
+    {ok, Txn} -> Acc ++ [Txn];
+    none -> Acc
   end,
-  process_all(T, NewAccu, NewState).
+  process_all(T, NewAcc, NewState).
 
 %%%% Methods ----------------------------------------------------------------+
 
