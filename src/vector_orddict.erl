@@ -91,7 +91,7 @@ insert_bigger_internal(Vector,Val,[],0) ->
     {[{Vector,Val}],1};
 
 insert_bigger_internal(Vector,Val,[{FirstClock,FirstVal}|Rest],Size) ->
-    case vectorclock:gt(Vector,FirstClock) of
+    case not vectorclock:le(Vector,FirstClock) of
 	true ->
 	    {[{Vector,Val}|[{FirstClock,FirstVal}|Rest]],Size+1};
 	false ->
@@ -157,7 +157,7 @@ vector_orddict_insert_bigger_test() ->
     Vdict1 = vector_orddict:insert_bigger(CT1, 1,Vdict0),
     ?assertEqual(1,vector_orddict:size(Vdict1)),
     %% Should not insert because smaller
-    CT2 = vectorclock:from_list([{dc1,3},{dc2,8}]),
+    CT2 = vectorclock:from_list([{dc1,3},{dc2,3}]),
     Vdict2 = vector_orddict:insert_bigger(CT2, 2, Vdict1),
     ?assertEqual(1,vector_orddict:size(Vdict2)),
     %% Should insert because bigger

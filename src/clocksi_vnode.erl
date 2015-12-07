@@ -239,8 +239,15 @@ check_table_ready([{Partition, Node} | Rest]) ->
 
 
 open_table(Partition) ->
-    ets:new(get_cache_name(Partition, prepared),
-        [set, protected, named_table, ?TABLE_CONCURRENCY]).
+    case ets:info(get_cache_name(Partition, prepared)) of
+	undefined ->
+	    ets:new(get_cache_name(Partition, prepared),
+		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
+	_ ->
+	    %% Other vnode hasn't finished closing tables
+	    timer:sleep(100),
+	    open_table(Partition)
+    end.
 
 loop_until_started(_Partition, 0) ->
     0;
@@ -274,7 +281,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    PrepareTime = now_microsec(erlang:now()),
+    PrepareTime = now_microsec(dc_utilities:now()),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of
         {ok, _} ->
@@ -296,7 +303,7 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    PrepareTime = now_microsec(erlang:now()),
+    PrepareTime = now_microsec(dc_utilities:now()),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
@@ -423,7 +430,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
             case TxWriteSet of
                 [{Key, _, {_Op, _Actor}} | _] ->
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
-                    NewPrepare = now_microsec(erlang:now()),
+                    NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
                     LogRecord = #log_record{tx_id = TxId,
@@ -641,7 +648,7 @@ reverse_and_filter_updates_per_key(Updates, Key) ->
 get_min_prep(OrdDict) ->
     case OrdDict of
 	[] ->
-	    {ok, clocksi_vnode:now_microsec(erlang:now())};
+	    {ok, clocksi_vnode:now_microsec(dc_utilities:now())};
 	[{Time,_TxId}|_] ->
 	    {ok, Time}
     end.
