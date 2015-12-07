@@ -23,6 +23,14 @@
 %% in the case of keys that are read frequently.  There is
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
+%% This defines the concurrency for the meta-data tables that
+%% are responsible for storing the satble time that a transaction
+%% can read.  It is set to false because the erlang docs say
+%% you should only set to true if you have long bursts of either
+%% reads or writes, but here they should be interleaved (maybe).  But should
+%% do some performance testing.
+-define(META_TABLE_CONCURRENCY, {read_concurrency, false}, {write_concurrency, false}).
+-define(META_TABLE_STABLE_CONCURRENCY, {read_concurrency, true}, {write_concurrency, false}).
 %% This can be used for testing, so that transactions start with
 %% old snapshots to avoid clock-skew.
 %% This can break the tests is not set to 0
@@ -40,6 +48,12 @@
 -define(HEARTBEAT_PERIOD, 1000).
 %% VECTORCLOCK_UPDATE_PERIOD: Period of updates of the stable snapshot per partition
 -define(VECTORCLOCK_UPDATE_PERIOD, 100).
+%% This is the time that nodes will sleep inbetween sending meta-data
+%% to other physical nodes within the DC
+-define(META_DATA_SLEEP, 1000).
+-define(META_TABLE_NAME, a_meta_data_table).
+-define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
+-define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, false).
