@@ -28,19 +28,25 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 start_link() ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) -> erlzmq:context().
 
-handle_call(get_context, _From, Ctx) -> {reply, Ctx, Ctx}.
+handle_call(get_context, _From, Ctx) ->
+    {reply, Ctx, Ctx}.
 
-handle_cast(_Request, Ctx) -> {noreply, Ctx}.
+handle_cast(_Request, Ctx) ->
+    {noreply, Ctx}.
 
-handle_info(_Info, Ctx) -> {noreply, Ctx}.
+handle_info(_Info, Ctx) ->
+    {noreply, Ctx}.
 
-terminate(_Reason, Ctx) -> erlzmq:term(Ctx).
+terminate(_Reason, Ctx) ->
+    erlzmq:term(Ctx).
 
-code_change(_OldVsn, Ctx, _Extra) -> {ok, Ctx}.
+code_change(_OldVsn, Ctx, _Extra) ->
+    {ok, Ctx}.
 
 %% Context is a NIF object handle
-get() -> gen_server:call(?MODULE, get_context).
+get() ->
+    gen_server:call(?MODULE, get_context).
