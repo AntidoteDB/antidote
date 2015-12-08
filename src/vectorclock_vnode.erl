@@ -124,14 +124,25 @@ metadata_maybe_list(Prefix) ->
     Normal -> Normal
   end.
 
-handle_handoff_command( _Message , _Sender, State) -> {noreply, State}.
-handoff_starting(_TargetNode, State) -> {true, State}.
-handoff_cancelled(State) -> {ok, State}.
-handoff_finished(_TargetNode, State) -> {ok, State}.
-handle_handoff_data(_Data, State) -> {reply, ok, State}.
-encode_handoff_item(Key, Operation) -> term_to_binary({Key, Operation}).
-is_empty(State) -> {true, State}.
-delete(State) -> {ok, State}.
-handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
-handle_exit(_Pid, _Reason, State) -> {noreply, State}.
-terminate(_Reason, _State) -> ok.
+handle_handoff_command( _Message , _Sender, State) -> 
+    {noreply, State}.
+handoff_starting(_TargetNode, State) -> 
+    {true, State}.
+handoff_cancelled(State) -> 
+    {ok, State}.
+handoff_finished(_TargetNode, State) -> 
+    {ok, State}.
+handle_handoff_data(_Data, State) -> 
+    {reply, ok, State}.
+encode_handoff_item(Key, Operation) -> 
+    term_to_binary({Key, Operation}).
+is_empty(State) -> 
+    {true, State}.
+delete(State) -> 
+    {ok, State}.
+handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
+    {stop, not_implemented, State}.
+handle_exit(_Pid, _Reason, State) -> 
+    {noreply, State}.
+terminate(_Reason, _State) -> 
+    ok.
