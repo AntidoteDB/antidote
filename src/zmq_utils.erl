@@ -54,5 +54,4 @@ sub_filter(Socket, Prefix) ->
 
 close_socket(Socket) ->
   erlzmq:close(Socket).
-
-
+  
