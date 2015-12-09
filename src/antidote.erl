@@ -225,7 +225,7 @@ append(Key, Type, {OpParams, Actor}) ->
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
--spec read(key(), type()) -> {ok, val()} | {error, reason()}.
+-spec read(key(), type()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
 read(Key, Type) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
