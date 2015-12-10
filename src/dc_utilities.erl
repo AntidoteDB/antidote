@@ -21,23 +21,26 @@
 -include("antidote.hrl").
 
 -export([
-    now/0,
-    get_my_dc_id/0,
-    get_my_dc_nodes/0,
-    call_vnode_sync/3,
-    bcast_vnode_sync/2,
-    partition_to_indexnode/1,
-    call_vnode/3,
-    get_all_partitions/0,
-    bcast_vnode/2,
-    get_my_partitions/0,
-    ensure_all_vnodes_running/1,
-    ensure_all_vnodes_running_master/1,
-    get_partitions_num/0,
-    check_staleness/0]).
+  get_my_dc_id/0,
+  get_my_dc_nodes/0,
+  call_vnode_sync/3,
+  bcast_vnode_sync/2,
+  partition_to_indexnode/1,
+  call_vnode/3,
+  get_all_partitions/0,
+  bcast_vnode/2,
+  get_my_partitions/0,
+  ensure_all_vnodes_running/1,
+  ensure_all_vnodes_running_master/1,
+  get_partitions_num/0,
+  check_staleness/0,
+  now/0,
+  now_microsec/0,
+  now_millisec/0]).
 
 %% Returns the ID of the current DC.
--spec get_my_dc_id() -> dcid().
+%% -spec get_my_dc_id() -> dcid().
+-spec dc_utilities:get_my_dc_id() -> 'undefined' | {_,_}. %% TODO: enforce the more specific
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:cluster_name(Ring).
@@ -172,3 +175,12 @@ now() ->
     os:timestamp().
 
 -endif.
+
+-spec now_microsec() -> non_neg_integer().
+now_microsec() ->
+  {MegaSecs, Secs, MicroSecs} = dc_utilities:now(),
+  (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+
+-spec now_millisec() -> non_neg_integer().
+now_millisec() ->
+  now_microsec() div 1000.
