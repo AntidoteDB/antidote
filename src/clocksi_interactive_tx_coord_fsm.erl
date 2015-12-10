@@ -93,7 +93,7 @@ start_link(From) ->
     gen_fsm:start_link(?MODULE, [From, ignore, update_clock], []).
 
 start_link(From, Clientclock, no_update_clock) ->
-    gen_fsm:start_link(?MODULE, [From, Clientclock, no_update_clock]).
+    gen_fsm:start_link(?MODULE, [From, Clientclock, no_update_clock], []).
 
 finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -151,7 +151,7 @@ create_transaction_record(ClientClock, UpdateClock) ->
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type()) -> {ok, val()} | {error, reason()}.
+-spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock),
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -161,7 +161,9 @@ perform_singleitem_read(Key, Type) ->
             {error, Reason};
         {ok, Snapshot} ->
             ReadResult = Type:value(Snapshot),
-            {ok, ReadResult}
+            %% Read only transaction has no commit, hence return the snapshot time
+            CommitTime = Transaction#transaction.vec_snapshot_time,
+            {ok, ReadResult, CommitTime}
     end.
 
 
