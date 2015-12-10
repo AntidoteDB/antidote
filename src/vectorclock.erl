@@ -36,12 +36,12 @@
   eq/2,
   lt/2,
   gt/2,
-  keep_max/2,
-  keep_min/2,
   le/2,
   ge/2,
   strict_ge/2,
-  strict_le/2, max/1, min/1]).
+  strict_le/2,
+  max/1,
+  min/1]).
 
 -export_type([vectorclock/0]).
 
@@ -85,53 +85,51 @@ get_stable_snapshot() ->
     {ok,vectorclock_vnode:get_stable_snapshot()}.
 
 
-get_clock_of_dc(Dcid, VectorClock) ->
-    case dict:find(Dcid, VectorClock) of
-        {ok, Value} ->
-            {ok, Value};
-        error ->
-            {ok, 0}
-    end.
+-spec get_clock_of_dc(any(), vectorclock()) -> non_neg_integer().
+get_clock_of_dc(Key, VectorClock) ->
+  case dict:find(Key, VectorClock) of
+    {ok, Value} -> Value;
+    error -> 0
+  end.
 
-set_clock_of_dc(DcId, Time, VectorClock) ->
-    dict:update(DcId,
-                fun(_Value) ->
-                        Time
-                end,
-                Time,
-                VectorClock).
+-spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> ok.
+set_clock_of_dc(Key, Value, VectorClock) ->
+  dict:store(Key, Value, VectorClock).
 
+-spec from_list([{any(), non_neg_integer()}]) -> vectorclock().
 from_list(List) ->
     dict:from_list(List).
 
-max([]) -> dict:new();
+-spec max([vectorclock()]) -> vectorclock().
+max([]) -> new();
 max([V]) -> V;
-max([V1,V2|T]) -> max([dict:merge(fun(_K, A, B) -> erlang:max(A, B) end, V1, V2)|T]).
+max([V1,V2|T]) -> max([merge(fun erlang:max/2, V1, V2)|T]).
 
-min([]) -> dict:new();
+-spec min([vectorclock()]) -> vectorclock().
+min([]) -> new();
 min([V]) -> V;
-min([V1,V2|T]) -> min([dict:merge(fun(_K, A, B) -> erlang:min(A, B) end, V1, V2)|T]).
+min([V1,V2|T]) -> min([merge(fun erlang:min/2, V1, V2)|T]).
 
-
-keep_max(V1, V2) ->
-    fold_all_keys(fun(A, B, DC, Acc) -> dict:store(DC, max(A, B), Acc) end, V1, V2).
-
-keep_min(V1, V2) ->
-    fold_all_keys(fun(A, B, DC, Acc) -> dict:store(DC, min(A, B), Acc) end, V1, V2).
-
-fold_all_keys(F, V1, V2) ->
-    AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
-    lists:foldl(fun(DC, Acc) ->
-			{ok, A} = get_clock_of_dc(DC, V1),
-			{ok, B} = get_clock_of_dc(DC, V2),
-			F(A, B, DC, Acc)
-		end, new(), AllDCs).
+-spec merge(fun((non_neg_integer(), non_neg_integer()) -> non_neg_integer()), vectorclock(), vectorclock()) -> vectorclock().
+merge(F, V1, V2) ->
+  AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+  Func = fun(DC) ->
+    A = get_clock_of_dc(DC, V1),
+    B = get_clock_of_dc(DC, V2),
+    {DC, F(A, B)}
+  end,
+  from_list(lists:map(Func, AllDCs)).
 
 -spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->
   %% We could but do not care about duplicate DC keys - finding duplicates is not worth the effort
   AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
-  lists:all(fun(DC) -> F(get_clock_of_dc(DC, V1), get_clock_of_dc(DC, V2)) end, AllDCs).
+  Func = fun(DC) ->
+    A = get_clock_of_dc(DC, V1),
+    B = get_clock_of_dc(DC, V2),
+    F(A, B)
+  end,
+  lists:all(Func, AllDCs).
 
 -spec eq(vectorclock(), vectorclock()) -> boolean().
 eq(V1, V2) -> for_all_keys(fun(A, B) -> A == B end, V1, V2).
@@ -171,5 +169,40 @@ vectorclock_test() ->
     ?assertEqual(le(V1,V4), false),
     ?assertEqual(eq(V1,V4), false),
     ?assertEqual(ge(V1,V5), false).
+
+vectorclock_max_test() ->
+  V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
+  V2 = vectorclock:from_list([{1, 6}, {2, 3}]),
+  V3 = vectorclock:from_list([{1, 3}, {3, 2}]),
+
+  Expected12 = vectorclock:from_list([{1, 6}, {2, 4}]),
+  Expected23 = vectorclock:from_list([{1, 6}, {2, 3}, {3, 2}]),
+  Expected13 = vectorclock:from_list([{1, 5}, {2, 4}, {3, 2}]),
+  Expected123 = vectorclock:from_list([{1, 6}, {2, 4}, {3, 2}]),
+  Unexpected123 = vectorclock:from_list([{1, 5}, {2, 5}, {3, 5}]),
+
+  ?assertEqual(eq(max([V1, V2]), Expected12), true),
+  ?assertEqual(eq(max([V2, V3]), Expected23), true),
+  ?assertEqual(eq(max([V1, V3]), Expected13), true),
+  ?assertEqual(eq(max([V1, V2, V3]), Expected123), true),
+  ?assertEqual(eq(max([V1, V2, V3]), Unexpected123), false).
+
+
+vectorclock_min_test() ->
+  V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
+  V2 = vectorclock:from_list([{1, 6}, {2, 3}]),
+  V3 = vectorclock:from_list([{1, 3}, {3, 2}]),
+
+  Expected12 = vectorclock:from_list([{1, 5}, {2, 3}]),
+  Expected23 = vectorclock:from_list([{1, 3}]),
+  Expected13 = vectorclock:from_list([{1, 3}]),
+  Expected123 = vectorclock:from_list([{1, 3}]),
+  Unexpected123 = vectorclock:from_list([{1, 3}, {2, 3}, {3, 2}]),
+
+  ?assertEqual(eq(min([V1, V2]), Expected12), true),
+  ?assertEqual(eq(min([V2, V3]), Expected23), true),
+  ?assertEqual(eq(min([V1, V3]), Expected13), true),
+  ?assertEqual(eq(min([V1, V2, V3]), Expected123), true),
+  ?assertEqual(eq(min([V1, V2, V3]), Unexpected123), false).
 
 -endif.
