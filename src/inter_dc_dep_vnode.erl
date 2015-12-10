@@ -203,7 +203,7 @@ update_clock(State = #state{last_updated = LastUpdated, partition = Partition}, 
 -spec get_partition_clock(#state{}) -> vectorclock().
 get_partition_clock(State) ->
   %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
-  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_millisec(), State#state.vectorclock).
+  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
 -spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#clocksi_payload{}).

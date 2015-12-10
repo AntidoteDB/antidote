@@ -92,7 +92,7 @@ get_clock_of_dc(Key, VectorClock) ->
     error -> 0
   end.
 
--spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> ok.
+-spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> vectorclock().
 set_clock_of_dc(Key, Value, VectorClock) ->
   dict:store(Key, Value, VectorClock).
 
