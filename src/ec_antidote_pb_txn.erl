@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(antidote_pb_txn).
+-module(ec_antidote_pb_txn).
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -27,7 +27,7 @@
 -behaviour(riak_api_pb_service).
 
 -include_lib("riak_pb/include/antidote_pb.hrl").
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -export([init/0,
          decode/2,
@@ -48,19 +48,19 @@ decode(Code, Bin) ->
     Msg = riak_pb_codec:decode(Code, Bin),
     case Msg of
         #apbstarttransaction{} ->
-            {ok, Msg, {"antidote.startxn",<<>>}};
+            {ok, Msg, {"ec_antidote.startxn",<<>>}};
         #apbaborttransaction{} ->
-            {ok, Msg, {"antidote.aborttxn",<<>>}};
+            {ok, Msg, {"ec_antidote.aborttxn",<<>>}};
         #apbcommittransaction{} ->
-            {ok, Msg, {"antidote.committxn",<<>>}};
+            {ok, Msg, {"ec_antidote.committxn",<<>>}};
         #apbreadobjects{} ->
-            {ok, Msg, {"antidote.readobjects",<<>>}};
+            {ok, Msg, {"ec_antidote.readobjects",<<>>}};
         #apbupdateobjects{} ->
-            {ok, Msg, {"antidote.updateobjects",<<>>}};
+            {ok, Msg, {"ec_antidote.updateobjects",<<>>}};
         #apbstaticupdateobjects{} ->
-            {ok, Msg, {"antidote.staticupdateobjects",<<>>}};
+            {ok, Msg, {"ec_antidote.staticupdateobjects",<<>>}};
         #apbstaticreadobjects{} ->
-            {ok, Msg, {"antidote.staticreadobjects",<<>>}}
+            {ok, Msg, {"ec_antidote.staticreadobjects",<<>>}}
     end.
 
 %% @doc encode/1 callback. Encodes an outgoing response message.
@@ -71,7 +71,7 @@ process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
         State) ->
     Clock = binary_to_term(BClock),
     Properties = antidote_pb_codec:decode(txn_properties, BProperties),
-    Response = antidote:start_transaction(Clock, Properties),
+    Response = ec_antidote:start_transaction(Clock, Properties),
     case Response of
         {ok, TxId} ->
             {reply, antidote_pb_codec:encode(start_transaction_response,
@@ -85,7 +85,7 @@ process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
 
 process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
     TxId = binary_to_term(Td),
-    Response = antidote:abort_transaction(TxId),
+    Response = ec_antidote:abort_transaction(TxId),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(operation_response,
@@ -100,7 +100,7 @@ process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
 
 process(#apbcommittransaction{transaction_descriptor=Td}, State) ->
     TxId = binary_to_term(Td),
-    Response = antidote:commit_transaction(TxId),
+    Response = ec_antidote:commit_transaction(TxId),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
@@ -117,7 +117,7 @@ process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td},
                         BoundObjects),
 
     TxId = binary_to_term(Td),
-    Response = antidote:read_objects(Objects, TxId),
+    Response = ec_antidote:read_objects(Objects, TxId),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(read_objects_response,
@@ -135,7 +135,7 @@ process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td},
                         BUpdates),
 
     TxId = binary_to_term(Td),
-    Response = antidote:update_objects(Updates, TxId),
+    Response = ec_antidote:update_objects(Updates, TxId),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(operation_response,
@@ -155,7 +155,7 @@ process(#apbstaticupdateobjects{
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
-    Response = antidote:update_objects(Clock, Properties, Updates),
+    Response = ec_antidote:update_objects(Clock, Properties, Updates),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
@@ -165,21 +165,20 @@ process(#apbstaticupdateobjects{
              State}
     end;            
 process(#apbstaticreadobjects{
-           transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
+           transaction=#apbstarttransaction{properties = BProperties},
            objects=BoundObjects},
         State) ->
-    Clock = binary_to_term(BClock),
     Properties = antidote_pb_codec:decode(txn_properties, BProperties),
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-    Response = antidote:read_objects(Clock, Properties, Objects),
+    Response = ec_antidote:read_objects(Properties, Objects),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
                                              {error, Reason}), State};
         {ok, Results, CommitTime} ->
-            {reply, antidote_pb_codec:encode(static_read_objects_response,
+            {reply, antidote_pb_codec:encode(static_read_obqqqqqqjects_response,
                                              {ok, lists:zip(Objects,Results), CommitTime}),
              State}
     end.

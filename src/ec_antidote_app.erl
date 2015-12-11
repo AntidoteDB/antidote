@@ -25,35 +25,35 @@
 -export([start/2, stop/1]).
 
 %% PB Services
--define(SERVICES, [{antidote_pb_txn, 109, 128}]).
+-define(SERVICES, [{ec_antidote_pb_txn, 109, 128}]).
 
 %% ===================================================================
 %% Application callbacks
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    case antidote_sup:start_link() of
+    case ec_antidote_sup:start_link() of
         {ok, Pid} ->
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
-            %%ClockSI layer
+            %%EC layer
 
-            ok = riak_core:register([{vnode_module, clocksi_vnode}]),
-            ok = riak_core_node_watcher:service_up(clocksi, self()),
+            ok = riak_core:register([{vnode_module, ec_vnode}]),
+            ok = riak_core_node_watcher:service_up(ec, self()),
 
             ok = riak_core:register([{vnode_module, vectorclock_vnode}]),
             ok = riak_core_node_watcher:service_up(vectorclock, self()),
 
-            ok = riak_core:register([{vnode_module, materializer_vnode}]),
-            ok = riak_core_node_watcher:service_up(materializer, self()),
+            ok = riak_core:register([{vnode_module, ec_materializer_vnode}]),
+            ok = riak_core_node_watcher:service_up(ec_materializer, self()),
 
             ok = riak_core:register([{vnode_module, inter_dc_repl_vnode}]),
             ok = riak_core_node_watcher:service_up(interdcreplication, self()),
             ok = riak_core:register([{vnode_module, inter_dc_recvr_vnode}]),
             ok = riak_core_node_watcher:service_up(inter_dc_recvr, self()),
 
-            ok = riak_core_ring_events:add_guarded_handler(antidote_ring_event_handler, []),
-            ok = riak_core_node_watcher_events:add_guarded_handler(antidote_node_event_handler, []),
+            ok = riak_core_ring_events:add_guarded_handler(ec_antidote_ring_event_handler, []),
+            ok = riak_core_node_watcher_events:add_guarded_handler(ec_antidote_node_event_handler, []),
             ok = riak_api_pb_service:register(?SERVICES),
             {ok, Pid};
         {error, Reason} ->

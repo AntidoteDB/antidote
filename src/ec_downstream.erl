@@ -19,41 +19,26 @@
 %% -------------------------------------------------------------------
 -module(ec_downstream).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
--export([generate_downstream_op/6]).
+-export([generate_downstream_op/5]).
 
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(Transaction :: tx(), Node :: term(), Key :: key(),
+-spec generate_downstream_op(Node :: term(), Key :: key(),
     Type :: type(), Update :: op(), list()) ->
-    {ok, op()} | {error, atom()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
-    {Op, Actor} = Update,
-    case clocksi_vnode:read_data_item(Node,
-        Transaction,
-        Key,
-        Type,
-        WriteSet) of
-        {ok, Snapshot} ->
-            TypeString = lists:flatten(io_lib:format("~p", [Type])),
-            case string:str(TypeString, "riak_dt") of
-                0 -> %% dealing with an op_based crdt
-                    case Type:generate_downstream(Op, Actor, Snapshot) of
-                        {ok, OpParam} ->
-                            {ok, {update, OpParam}};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
-                1 -> %% dealing with a state_based crdt
-                    case Type:update(Op, Actor, Snapshot) of
-                        {ok, NewState} ->
-                            {ok, {merge, NewState}};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end
-            end;
+  {ok, op()} | {error, atom()}.
+generate_downstream_op(Node, Key, Type, Update, WriteSet) ->
+  {Op, Actor} = Update,
+  case ec_vnode:read_data_item(Node, Key, Type, WriteSet) of
+    {ok, Snapshot} ->
+      case Type:update(Op, Actor, Snapshot) of
+        {ok, NewState} ->
+          {ok, {merge, NewState}};
         {error, Reason} ->
-            {error, Reason}
-    end.
+          {error, Reason}
+      end;
+    {error, Reason} ->
+      {error, Reason}
+  end.

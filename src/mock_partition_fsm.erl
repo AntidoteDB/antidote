@@ -26,7 +26,7 @@
 
 -module(mock_partition_fsm).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 %% API
 -export([start_link/0]).

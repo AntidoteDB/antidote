@@ -23,7 +23,7 @@
 -module(inter_dc_repl_update).
 
 -include("inter_dc_repl.hrl").
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -39,7 +39,7 @@ init_state(Partition) ->
     }.
 
 %% @doc enqueue_update: Put transaction into queue for processing later
--spec enqueue_update(Transaction::clocksi_transaction_reader:transaction(),
+-spec enqueue_update(Transaction::ec_transaction_reader:transaction(),
                      #recvr_state{}) ->
                             {ok, #recvr_state{}}.
 enqueue_update(Transaction,
@@ -138,11 +138,11 @@ check_and_update(SnapshotTime, Localclock, Transaction,
                       end
               end, Ops),
             DownOps =
-                clocksi_transaction_reader:get_update_ops_from_transaction(
+                ec_transaction_reader:get_update_ops_from_transaction(
                   Transaction),
             lists:foreach( fun(DownOp) ->
-                                   Key = DownOp#clocksi_payload.key,
-                                   ok = materializer_vnode:update(Key, DownOp)
+                                   Key = DownOp#ec_payload.key,
+                                   ok = ec_materializer_vnode:update(Key, DownOp)
                            end, DownOps),
             lager:debug("Update from remote DC applied:",[payload]),
             %%TODO add error handling if append failed

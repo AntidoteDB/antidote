@@ -3,7 +3,7 @@
 -export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 confirm() ->

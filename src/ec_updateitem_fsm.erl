@@ -21,7 +21,7 @@
 
 -behavior(gen_fsm).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 %% API
 -export([start_link/3]).
@@ -53,7 +53,7 @@ init([Coordinator, VecSnapshotTime, Partition]) ->
     {ok, check_clock, SD, 0}.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behinf, it sleeps the fms until the clock
+%%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 check_clock(timeout, SD0=#state{vclock=Vclock}) ->
     DcId = dc_utilities:get_my_dc_id(),

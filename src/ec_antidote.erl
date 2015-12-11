@@ -22,39 +22,34 @@
 
 -module(ec_antidote).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 %% API for applications
 -export([
-         start_transaction/2,
-         read_objects/2,
-         read_objects/3,
-         update_objects/2,
-         update_objects/3,
-         abort_transaction/1,
-         commit_transaction/1,
-         create_bucket/2,
-         create_object/3,
-         delete_object/1
-        ]).
+    start_transaction/2,
+    read_objects/2,
+    update_objects/2,
+    update_objects/3,
+    abort_transaction/1,
+    commit_transaction/1,
+    create_bucket/2,
+    create_object/3,
+    delete_object/1
+]).
 
 %% ==========================================================
 %% Old APIs, We would still need them for tests and benchmarks
 -export([append/3,
-         read/2,
-         ec_execute_tx/2,
-         ec_execute_tx/1,
-         ec_read/3,
-         ec_read/2,
-         ec_bulk_update/2,
-         ec_bulk_update/1,
-         ec_istart_tx/1,
-         ec_istart_tx/0,
-         ec_iread/3,
-         ec_iupdate/4,
-         ec_iprepare/1,
-         ec_full_icommit/1,
-         ec_icommit/1]).
+    read/2,
+    ec_execute_tx/1,
+    ec_read/2,
+    ec_bulk_update/1,
+    ec_istart_tx/0,
+    ec_iread/3,
+    ec_iupdate/4,
+    ec_iprepare/1,
+    ec_full_icommit/1,
+    ec_icommit/1]).
 %% ===========================================================
 
 -type txn_properties() :: term(). %% TODO: Define
@@ -63,18 +58,18 @@
 
 %% Public API
 
--spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
-                       -> {ok, txid()} | {error, reason()}.
-start_transaction(Clock, _Properties) ->
-    ec_istart_tx(Clock).
+-spec start_transaction(Clock :: snapshot_time(), Properties :: txn_properties())
+      -> {ok, txid()} | {error, reason()}.
+start_transaction(_Clock, _Properties) ->
+    ec_istart_tx().
 
--spec abort_transaction(TxId::txid()) -> {error, reason()}.
+-spec abort_transaction(TxId :: txid()) -> {error, reason()}.
 abort_transaction(_TxId) ->
     %% TODO
     {error, operation_not_implemented}.
 
--spec commit_transaction(TxId::txid()) ->
-                                {ok, snapshot_time()} | {error, reason()}.
+-spec commit_transaction(TxId :: txid()) ->
+    {ok, snapshot_time()} | {error, reason()}.
 commit_transaction(TxId) ->
     case ec_full_icommit(TxId) of
         {ok, {_TxId, CommitTime}} ->
@@ -83,18 +78,18 @@ commit_transaction(TxId) ->
             {error, Reason}
     end.
 
--spec read_objects(Objects::[bound_object()], TxId::txid())
-                  -> {ok, [term()]} | {error, reason()}.
+-spec read_objects(Objects :: [bound_object()], TxId :: txid())
+      -> {ok, [term()]} | {error, reason()}.
 read_objects(Objects, TxId) ->
     %%TODO: Transaction co-ordinator handles multiple reads
     %% Executes each read as in a interactive transaction
     Results = lists:map(fun({Key, Type, _Bucket}) ->
-                                case ec_iread(TxId, Key, Type) of
-                                    {ok, Res} ->
-                                        Res;
-                                    {error, _Reason} ->
-                                        error
-                                end
+        case ec_iread(TxId, Key, Type) of
+            {ok, Res} ->
+                Res;
+            {error, _Reason} ->
+                error
+        end
                         end, Objects),
     case lists:member(error, Results) of
         true -> {error, read_failed}; %% TODO: Capture the reason for error
@@ -102,21 +97,21 @@ read_objects(Objects, TxId) ->
     end.
 
 -spec update_objects([{bound_object(), op(), op_param()}], txid())
-                    -> ok | {error, reason()}.
+      -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     %% TODO: How to generate Actor,
     %% Actor ID must be removed from crdt update interface
     Actor = TxId,
     %% Execute each update as in an interactive transaction
     Results = lists:map(
-                fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-                        case ec_iupdate(TxId, Key, Type,
-                                             {{Op, OpParam}, Actor}) of
-                            ok -> ok;
-                            {error, _Reason} ->
-                                error
-                        end
-                end, Updates),
+        fun({{Key, Type, _Bucket}, Op, OpParam}) ->
+            case ec_iupdate(TxId, Key, Type,
+                {{Op, OpParam}, Actor}) of
+                ok -> ok;
+                {error, _Reason} ->
+                    error
+            end
+        end, Updates),
     case lists:member(error, Results) of
         true -> {error, read_failed}; %% TODO: Capture the reason for error
         false -> ok
@@ -124,29 +119,17 @@ update_objects(Updates, TxId) ->
 
 %% For static transactions: bulk updates and bulk reads
 -spec update_objects(snapshot_time(), term(), [{bound_object(), op(), op_param()}]) ->
-                            {ok, snapshot_time()} | {error, reason()}.
-update_objects(Clock, _Properties, Updates) ->
+    {ok, snapshot_time()} | {error, reason()}.
+update_objects(_Clock, _Properties, Updates) ->
     Actor = actor, %% TODO: generate unique actors
     Operations = lists:map(
-                   fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-                           {update, {Key, Type, {{Op,OpParam}, Actor}}}
-                   end,
-                   Updates),
-    case ec_execute_tx(Clock, Operations) of
+        fun({{Key, Type, _Bucket}, Op, OpParam}) ->
+            {update, {Key, Type, {{Op, OpParam}, Actor}}}
+        end,
+        Updates),
+    case ec_execute_tx(Operations) of
         {ok, {_TxId, [], CommitTime}} ->
             {ok, CommitTime};
-        {error, Reason} -> {error, Reason}
-    end.
-
-read_objects(Clock, _Properties, Objects) ->
-    Args = lists:map(
-             fun({Key, Type, _Bucket}) ->
-                     {read, {Key, Type}}
-             end,
-             Objects),
-    case ec_execute_tx(Clock, Args) of
-        {ok, {_TxId, Result, CommitTime}} ->
-            {ok, Result, CommitTime};
         {error, Reason} -> {error, Reason}
     end.
 
@@ -170,14 +153,14 @@ delete_object({_Key, _Type, _Bucket}) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}) -> 
-                    {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+-spec append(key(), type(), {op(), term()}) ->
+    {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(Key, Type, {OpParams, Actor}) ->
-    case materializer:check_operations([{update,
-                                         {Key, Type, {OpParams, Actor}}}]) of
+    case ec_materializer:check_operations([{update,
+        {Key, Type, {OpParams, Actor}}}]) of
         ok ->
             ec_interactive_tx_coord_fsm:
-                perform_singleitem_update(Key, Type,{OpParams,Actor});
+            perform_singleitem_update(Key, Type, {OpParams, Actor});
         {error, Reason} ->
             {error, Reason}
     end.
@@ -186,9 +169,9 @@ append(Key, Type, {OpParams, Actor}) ->
 %%      object stored at some key.
 -spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
+    case ec_materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            ec_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type);
+            ec_interactive_tx_coord_fsm:perform_singleitem_read(Key, Type);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -207,15 +190,10 @@ read(Key, Type) ->
 %%      the transaction, in case the tx ends successfully.
 %%      error message in case of a failure.
 %%
--spec ec_execute_tx(Clock :: snapshot_time(),
-                         [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-ec_execute_tx(Clock, Operations) ->
-    {ok, CoordFsmPid} = ec_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
-    gen_fsm:sync_send_event(CoordFsmPid, execute).
 
 -spec ec_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 ec_execute_tx(Operations) ->
-    case materializer:check_operations(Operations) of
+    case ec_materializer:check_operations(Operations) of
         ok ->
             {ok, CoordFsmPid} = ec_static_tx_coord_sup:start_fsm([self(), Operations]),
             gen_fsm:sync_send_event(CoordFsmPid, execute);
@@ -223,19 +201,9 @@ ec_execute_tx(Operations) ->
             {error, Reason}
     end.
 
--spec ec_bulk_update(ClientClock:: snapshot_time(),
-                          [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-ec_bulk_update(ClientClock, Operations) ->
-    ec_execute_tx(ClientClock, Operations).
-
 -spec ec_bulk_update([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 ec_bulk_update(Operations) ->
     ec_execute_tx(Operations).
-
--spec ec_read(ClientClock :: snapshot_time(),
-                   Key :: key(), Type:: type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-ec_read(ClientClock, Key, Type) ->
-    ec_execute_tx(ClientClock, [{read, {Key, Type}}]).
 
 -spec ec_read(key(), type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 ec_read(Key, Type) ->
@@ -244,19 +212,7 @@ ec_read(Key, Type) ->
 
 %% @doc Starts a new ec interactive transaction.
 %%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
-%%
--spec ec_istart_tx(Clock:: snapshot_time()) ->
-                               {ok, txid()} | {error, reason()}.
-ec_istart_tx(Clock) ->
-    {ok, _} = ec_interactive_tx_coord_sup:start_fsm([self(), Clock]),
-    receive
-        {ok, TxId} ->
-            {ok, TxId};
-        Other ->
-            {error, Other}
-    end.
 
 ec_istart_tx() ->
     {ok, _} = ec_interactive_tx_coord_sup:start_fsm([self()]),
@@ -266,13 +222,13 @@ ec_istart_tx() ->
         Other ->
             {error, Other}
     end.
-    
+
 
 -spec ec_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
 ec_iread({_, _, CoordFsmPid}, Key, Type) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
+    case ec_materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            case  gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}) of
+            case gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}) of
                 {ok, Res} -> {ok, Res};
                 {error, Reason} -> {error, Reason}
             end;
@@ -282,12 +238,12 @@ ec_iread({_, _, CoordFsmPid}, Key, Type) ->
 
 -spec ec_iupdate(txid(), key(), type(), term()) -> ok | {error, reason()}.
 ec_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
-    case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
+    case ec_materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
             case gen_fsm:sync_send_event(CoordFsmPid,
-                                         {update, {Key, Type, OpParams}}) of
-                ok -> ok;
-                {aborted, _} -> {error, aborted};
+                {update, {Key, Type, OpParams}}) of
+                    ok -> ok;
+                    {aborted, _} -> {error, aborted};
                 {error, Reason} -> {error, Reason}
             end;
         {error, Reason} ->
@@ -301,18 +257,18 @@ ec_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
 %%      To keep with the current api this is still done in 2 steps,
 %%      but should be changed when the new transaction api is decided
 -spec ec_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}} | {error, reason()}.
-ec_full_icommit({_, _, CoordFsmPid})->
+ec_full_icommit({_, _, CoordFsmPid}) ->
     case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}) of
-        {ok,_PrepareTime} ->
+        {ok, _PrepareTime} ->
             gen_fsm:sync_send_event(CoordFsmPid, commit);
         Msg ->
             Msg
     end.
 
 -spec ec_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
-ec_iprepare({_, _, CoordFsmPid})->
+ec_iprepare({_, _, CoordFsmPid}) ->
     gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}).
 
 -spec ec_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
-ec_icommit({_, _, CoordFsmPid})->
+ec_icommit({_, _, CoordFsmPid}) ->
     gen_fsm:sync_send_event(CoordFsmPid, commit).

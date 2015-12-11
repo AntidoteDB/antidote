@@ -24,7 +24,7 @@
 -module(inter_dc_recvr_vnode).
 -behaviour(riak_core_vnode).
 -include("inter_dc_repl.hrl").
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -export([start_vnode/1,
          %%API begin
@@ -51,7 +51,7 @@ start_vnode(I) ->
 
 %% @doc store_updates: sends the updates from remote DC to corresponding
 %%  partition's vnode. Input is a list of transactions from remote DC.
--spec store_updates(Transactions::[clocksi_transaction_reader:transaction()])
+-spec store_updates(Transactions::[ec_transaction_reader:transaction()])
                    -> ok.
 store_updates(Transactions) ->
     Transaction = hd(Transactions),

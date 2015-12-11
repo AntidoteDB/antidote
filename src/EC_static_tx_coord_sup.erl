@@ -23,10 +23,10 @@
 
 -behavior(supervisor).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -export([start_fsm/1,
-         start_link/0]).
+    start_link/0]).
 
 -export([init/1]).
 
@@ -45,8 +45,8 @@ generate_module_name(N) ->
 generate_supervisor_spec(N) ->
     Module = generate_module_name(N),
     {Module,
-     {ec_static_tx_coord_worker_sup, start_link, [Module]},
-      permanent, 5000, supervisor, [ec_static_tx_coord_worker_sup]}.
+        {ec_static_tx_coord_worker_sup, start_link, [Module]},
+        permanent, 5000, supervisor, [ec_static_tx_coord_worker_sup]}.
 
 %% @doc Starts the coordinator of a Ec static transaction.
 init([]) ->

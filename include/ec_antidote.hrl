@@ -1,10 +1,10 @@
 -define(BUCKET, <<"antidote">>).
 -define(MASTER, antidote_vnode_master).
 -define(LOGGING_MASTER, logging_vnode_master).
--define(CLOCKSI_MASTER, clocksi_vnode_master).
--define(CLOCKSI_GENERATOR_MASTER,
-        clocksi_downstream_generator_vnode_master).
--define(CLOCKSI, clocksi).
+-define(EC_MASTER, ec_vnode_master).
+-define(EC_GENERATOR_MASTER,
+        ec_downstream_generator_vnode_master).
+-define(EC, ec).
 -define(REPMASTER, antidote_rep_vnode_master).
 -define(N, 1).
 -define(OP_TIMEOUT, infinity).
@@ -69,10 +69,10 @@
 %% DELTA has the same meaning as in the clock-SI paper.
 -define(DELTA, 10000).
 
--define(CLOCKSI_TIMEOUT, 1000).
+-define(EC_TIMEOUT, 1000).
 
 -record(tx_id, {snapshot_time, server_pid :: pid()}).
--record(clocksi_payload, {key :: key(),
+-record(ec_payload, {key :: key(),
                           type :: type(),
                           op_param :: op(),
                           snapshot_time :: snapshot_time(),
@@ -103,9 +103,9 @@
 -type bucket() :: term().
 -type snapshot() :: term().
 -type snapshot_time() ::  vectorclock:vectorclock().
--type commit_time() ::  {dcid(), non_neg_integer()}.
+-type commit_time() ::  {non_neg_integer()}.
 -type txid() :: #tx_id{}.
--type clocksi_payload() :: #clocksi_payload{}.
+-type ec_payload() :: #ec_payload{}.
 -type dcid() :: term().
 -type tx() :: #transaction{}.
 -type dc_address():: {inet:ip_address(),inet:port_number()}.

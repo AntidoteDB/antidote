@@ -1,5 +1,5 @@
 %% -*- erlang -*-
-{application, antidote,
+{application, ec_antidote,
  [
   {description, "SyncFree reference platform"},
   {vsn, "1"},
@@ -11,6 +11,6 @@
                   riak_api,
                   riak_core
                  ]},
-  {mod, { antidote_app, []}},
+  {mod, { ec_antidote_app, []}},
   {env, []}
  ]}.

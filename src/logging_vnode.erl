@@ -21,7 +21,7 @@
 
 -behaviour(riak_core_vnode).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -ifdef(TEST).
@@ -296,7 +296,7 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommitedOpsForKey ->
-                    {reply, {length(CommitedOpsForKey), CommitedOpsForKey, clocksi_materializer:new(Type),
+                    {reply, {length(CommitedOpsForKey), CommitedOpsForKey, ec_materializer:new(Type),
                         vectorclock:new(), false}, State}
             end;
         {error, Reason} ->
@@ -358,7 +358,7 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommitedOps) ->
             case not vectorclock:is_greater_than(SnapshotTime, MinSnapshotTime) of
                 true ->
                     CommittedDownstreamOp =
-                        #clocksi_payload{
+                        #ec_payload{
                             key = Key,
                             type = Type,
                             op_param = Op,

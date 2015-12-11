@@ -23,7 +23,7 @@
 -module(inter_dc_communication_sender).
 -behaviour(gen_fsm).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -export([start_link/4,
          propagate_sync/2

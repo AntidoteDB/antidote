@@ -94,7 +94,7 @@ init(_Args) ->
 
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
-                           [materializer_vnode]},
+                           [ec_materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
     InterDcSenderSup = {inter_dc_communication_sender_fsm_sup,

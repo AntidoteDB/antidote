@@ -23,7 +23,7 @@
 
 -module(inter_dc_repl_vnode).
 -behaviour(riak_core_vnode).
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -export([start_vnode/1,
          init/1,
@@ -57,7 +57,7 @@ start_vnode(I) ->
 %% riak_core_vnode call backs
 init([Partition]) ->
     DcId = dc_utilities:get_my_dc_id(),
-    {ok, Reader} = clocksi_transaction_reader:init(Partition, DcId),
+    {ok, Reader} = ec_transaction_reader:init(Partition, DcId),
     {ok, #state{partition=Partition,
                 dcid=DcId,
                 reader = Reader}}.
@@ -70,7 +70,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
         [] -> State;
         DCs ->
             {NewReaderState, Transactions} =
-                clocksi_transaction_reader:get_next_transactions(Reader),
+                ec_transaction_reader:get_next_transactions(Reader),
             NewReader = case Transactions of
                 [] ->
                     %% Send heartbeat
@@ -80,7 +80,7 @@ handle_command(trigger, _Sender, State=#state{partition=Partition,
                                  }],
                     DcId = dc_utilities:get_my_dc_id(),
                     {ok, Clock} = vectorclock:get_clock(Partition),
-                    Time = clocksi_transaction_reader:get_prev_stable_time(NewReaderState),
+                    Time = ec_transaction_reader:get_prev_stable_time(NewReaderState),
                     TxId = 0,
                     %% Receiving DC treats hearbeat like a transaction
                     %% So wrap heartbeat in a transaction structure

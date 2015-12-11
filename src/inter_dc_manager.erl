@@ -21,7 +21,7 @@
 -module(inter_dc_manager).
 -behaviour(gen_server).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -export([start_link/0,
          start_receiver/1,
@@ -79,13 +79,13 @@ init([]) ->
     {ok, #state{dcs=[]}}.
 
 handle_call({start_receiver, Port}, _From, State) ->
-    {ok, _} = antidote_sup:start_rep(self(), Port),
+    {ok, _} = ec_antidote_sup:start_rep(self(), Port),
     receive
         ready -> {reply, {ok, my_dc(Port)}, State#state{port=Port}}
     end;
 
 handle_call({stop_receiver}, _From, State) ->
-    case antidote_sup:stop_rep() of
+    case ec_antidote_sup:stop_rep() of
         ok -> 
             {reply, ok, State#state{port=0}}
     end;

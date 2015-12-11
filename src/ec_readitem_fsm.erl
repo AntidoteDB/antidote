@@ -21,7 +21,7 @@
 
 -behavior(gen_server).
 
--include("antidote.hrl").
+-include("ec_antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -32,28 +32,27 @@
 
 %% Callbacks
 -export([init/1,
-	 handle_call/3,
-	 handle_cast/2,
-	 code_change/3,
-         handle_event/3,
-	 check_servers_ready/0,
-         handle_info/2,
-         handle_sync_event/4,
-         terminate/2]).
+    handle_call/3,
+    handle_cast/2,
+    code_change/3,
+    handle_event/3,
+    check_servers_ready/0,
+    handle_info/2,
+    handle_sync_event/4,
+    terminate/2]).
 
 %% States
--export([read_data_item/4,
-	 check_partition_ready/3,
-	 start_read_servers/2,
-	 stop_read_servers/2]).
+-export([read_data_item/3,
+    check_partition_ready/3,
+    start_read_servers/2,
+    stop_read_servers/2]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
-		id :: non_neg_integer(),
-		ops_cache :: cache_id(),
-		snapshot_cache :: cache_id(),
-		prepared_cache :: cache_id(),
-		self :: atom()}).
+    id :: non_neg_integer(),
+    ops_cache :: cache_id(),
+    snapshot_cache :: cache_id(),
+    self :: atom()}).
 
 %%%===================================================================
 %%% API
@@ -66,31 +65,31 @@
 %%      reading from ets tables shared by the clock_si and materializer
 %%      vnodes, they should be started on the same physical nodes as
 %%      the vnodes with the same partition.
--spec start_link(partition_id(),non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Partition,Id) ->
+-spec start_link(partition_id(), non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Partition, Id) ->
     Addr = node(),
-    gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
+    gen_server:start_link({global, generate_server_name(Addr, Partition, Id)}, ?MODULE, [Partition, Id], []).
 
--spec start_read_servers(partition_id(),non_neg_integer()) -> non_neg_integer().
+-spec start_read_servers(partition_id(), non_neg_integer()) -> non_neg_integer().
 start_read_servers(Partition, Count) ->
     Addr = node(),
     start_read_servers_internal(Addr, Partition, Count).
 
--spec stop_read_servers(partition_id(),non_neg_integer()) -> ok.
+-spec stop_read_servers(partition_id(), non_neg_integer()) -> ok.
 stop_read_servers(Partition, Count) ->
     Addr = node(),
     stop_read_servers_internal(Addr, Partition, Count).
 
--spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
-read_data_item({Partition,Node},Key,Type,Transaction) ->
+-spec read_data_item(index_node(), key(), type()) -> {error, term()} | {ok, snapshot()}.
+read_data_item({Partition, Node}, Key, Type) ->
     try
-	gen_server:call({global,generate_random_server_name(Node,Partition)},
-			{perform_read,Key,Type,Transaction},infinity)
+        gen_server:call({global, generate_random_server_name(Node, Partition)},
+            {perform_read, Key, Type}, infinity)
     catch
         _:Reason ->
             lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
-	    check_server_ready([{Partition,Node}]),
-            read_data_item({Partition,Node},Key,Type,Transaction)
+            check_server_ready([{Partition, Node}]),
+            read_data_item({Partition, Node}, Key, Type)
     end.
 
 %% @doc This checks all partitions in the system to see if all read
@@ -105,51 +104,50 @@ check_servers_ready() ->
 -spec check_server_ready([index_node()]) -> boolean().
 check_server_ready([]) ->
     true;
-check_server_ready([{Partition,Node}|Rest]) ->
-    Result = riak_core_vnode_master:sync_command({Partition,Node},
-						 {check_servers_ready},
-						 ?ec_MASTER,
-						 infinity),
+check_server_ready([{Partition, Node} | Rest]) ->
+    Result = riak_core_vnode_master:sync_command({Partition, Node},
+        {check_servers_ready},
+        ?EC_MASTER,
+        infinity),
     case Result of
-	false ->
-	    false;
-	true ->
-	    check_server_ready(Rest)
+        false ->
+            false;
+        true ->
+            check_server_ready(Rest)
     end.
 
 -spec check_partition_ready(node(), partition_id(), non_neg_integer()) -> boolean().
-check_partition_ready(_Node,_Partition,0) ->
+check_partition_ready(_Node, _Partition, 0) ->
     true;
-check_partition_ready(Node,Partition,Num) ->
-    case global:whereis_name(generate_server_name(Node,Partition,Num)) of
-	undefined ->
-	    false;
-	_Res ->
-	    check_partition_ready(Node,Partition,Num-1)
+check_partition_ready(Node, Partition, Num) ->
+    case global:whereis_name(generate_server_name(Node, Partition, Num)) of
+        undefined ->
+            false;
+        _Res ->
+            check_partition_ready(Node, Partition, Num - 1)
     end.
-
 
 
 %%%===================================================================
 %%% Internal
 %%%===================================================================
 
-start_read_servers_internal(_Node,_Partition,0) ->
+start_read_servers_internal(_Node, _Partition, 0) ->
     0;
 start_read_servers_internal(Node, Partition, Num) ->
-    {ok,_Id} = ec_readitem_sup:start_fsm(Partition,Num),
-    start_read_servers_internal(Node, Partition, Num-1).
+    {ok, _Id} = ec_readitem_sup:start_fsm(Partition, Num),
+    start_read_servers_internal(Node, Partition, Num - 1).
 
-stop_read_servers_internal(_Node,_Partition,0) ->
+stop_read_servers_internal(_Node, _Partition, 0) ->
     ok;
-stop_read_servers_internal(Node,Partition, Num) ->
+stop_read_servers_internal(Node, Partition, Num) ->
     try
-	gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
+        gen_server:call({global, generate_server_name(Node, Partition, Num)}, {go_down})
     catch
-	_:_Reason->
-	    ok
+        _:_Reason ->
+            ok
     end,
-    stop_read_servers_internal(Node, Partition, Num-1).
+    stop_read_servers_internal(Node, Partition, Num - 1).
 
 
 generate_server_name(Node, Partition, Id) ->
@@ -160,99 +158,55 @@ generate_random_server_name(Node, Partition) ->
 
 init([Partition, Id]) ->
     Addr = node(),
-    OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
-    SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
-    PreparedCache = ec_vnode:get_cache_name(Partition,prepared),
-    Self = generate_server_name(Addr,Partition,Id),
-    {ok, #state{partition=Partition, id=Id, ops_cache=OpsCache,
-		snapshot_cache=SnapshotCache,
-		prepared_cache=PreparedCache,self=Self}}.
+    OpsCache = ec_materializer_vnode:get_cache_name(Partition, ops_cache),
+    SnapshotCache = ec_materializer_vnode:get_cache_name(Partition, snapshot_cache),
+    Self = generate_server_name(Addr, Partition, Id),
+    {ok, #state{partition = Partition, id = Id, ops_cache = OpsCache,
+        snapshot_cache = SnapshotCache,
+        self = Self}}.
 
-handle_call({perform_read, Key, Type, Transaction},Coordinator,
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
-    {noreply,SD0};
+handle_call({perform_read, Key, Type}, Coordinator,
+  SD0 = #state{ops_cache = OpsCache, snapshot_cache = SnapshotCache, partition = Partition}) ->
+    ok = perform_read_internal(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition),
+    {noreply, SD0};
 
-handle_call({go_down},_Sender,SD0) ->
-    {stop,shutdown,ok,SD0}.
+handle_call({go_down}, _Sender, SD0) ->
+    {stop, shutdown, ok, SD0}.
 
-handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
-    {noreply,SD0}.
+handle_cast({perform_read_cast, Coordinator, Key, Type},
+  SD0 = #state{ops_cache = OpsCache, snapshot_cache = SnapshotCache, partition = Partition}) ->
+    ok = perform_read_internal(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition),
+    {noreply, SD0}.
 
-perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition) ->
-    case check_clock(Key,Transaction,PreparedCache,Partition) of
-	{not_ready,Time} ->
-	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
-	    ok;
-	ready ->
-	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
-    end.
-
-%% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behind, it sleeps the fms until the clock
-%%      catches up. CLOCK-SI: clock skew.
-%%
-check_clock(Key,Transaction,PreparedCache,Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    T_TS = TxId#tx_id.snapshot_time,
-    Time = ec_vnode:now_microsec(erlang:now()),
-    case T_TS > Time of
-        true ->
-	    {not_ready, (T_TS - Time) div 1000 +1};
-        false ->
-	    check_prepared(Key,Transaction,PreparedCache,Partition)
-    end.
-
-%% @doc check_prepared: Check if there are any transactions
-%%      being prepared on the tranaction being read, and
-%%      if they could violate the correctness of the read
-check_prepared(Key,Transaction,PreparedCache,Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
-    {ok, ActiveTxs} = ec_vnode:get_active_txns_key(Key,Partition,PreparedCache),
-    check_prepared_list(Key,SnapshotTime,ActiveTxs).
-
-check_prepared_list(_Key,_SnapshotTime,[]) ->
-    ready;
-check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
-    case Time =< SnapshotTime of
-    true ->
-        {not_ready, ?SPIN_WAIT};
-    false ->
-        check_prepared_list(Key,SnapshotTime,Rest)
-    end.
+perform_read_internal(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition) ->
+    return(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition).
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
-return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
-    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
+return(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition) ->
+    case ec_materializer_vnode:read(Key, Type, OpsCache, SnapshotCache, Partition) of
         {ok, Snapshot} ->
-            Reply={ok, Snapshot};
+            Reply = {ok, Snapshot};
         {error, Reason} ->
-            Reply={error, Reason}
+            Reply = {error, Reason}
     end,
-    _Ignore=gen_server:reply(Coordinator, Reply),
+    _Ignore = gen_server:reply(Coordinator, Reply),
     ok.
 
 
-handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
-    {noreply,SD0};
+handle_info({perform_read_cast, Coordinator, Key, Type},
+  SD0 = #state{ops_cache = OpsCache, snapshot_cache = SnapshotCache, partition = Partition}) ->
+    ok = perform_read_internal(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition),
+    {noreply, SD0};
 
 handle_info(_Info, StateData) ->
-    {noreply,StateData}.
+    {noreply, StateData}.
 
 handle_event(_Event, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 handle_sync_event(_Event, _From, _StateName, StateData) ->
-    {stop,badmsg,StateData}.
+    {stop, badmsg, StateData}.
 
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 

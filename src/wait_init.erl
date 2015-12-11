@@ -46,7 +46,7 @@ check_ready(Node) ->
 	true ->
 	    case rpc:call(Node,clocksi_readitem_fsm,check_servers_ready,[]) of
 		true ->
-		    case rpc:call(Node,materializer_vnode,check_tables_ready,[]) of
+		    case rpc:call(Node,ec_materializer_vnode,check_tables_ready,[]) of
 			true ->
 			    lager:info("Node ~w is ready! ~n", [Node]),
 			    true;
