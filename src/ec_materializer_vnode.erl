@@ -231,10 +231,10 @@ internal_read(Key, Type, OpsCache, SnapshotCache) ->
     case ets:lookup(OpsCache, Key) of
         [] ->
             {ok, LatestSnapshot};
-        {_, [{Op1CommitTime, Op1}]} ->
-            case (LatestCommitTime = ignore or vectorclock:is_greater_than(Op1CommitTime, LatestCommitTime)) of
+        [{_, {Op1CommitTime, Op1}}] ->
+            case (LatestCommitTime == ignore) or (Op1CommitTime > LatestCommitTime) of
                 true ->
-                    lager:info("materializer_vnode: about to materialize to Type: ~p, LatestSnapshot=~p, Operation:~p",[Type, LatestSnapshot, Op1]),
+                    lager:info("materializer_vnode: about to materialize to Type: ~p, LatestSnapshot=~p, Operation:~p", [Type, LatestSnapshot, Op1]),
                     case ec_materializer:materialize_eager(Type, LatestSnapshot, Op1) of
                         {error, Reason} ->
                             {error, Reason};
