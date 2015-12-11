@@ -41,11 +41,32 @@ new(Type) ->
 create_snapshot(Type) ->
     Type:new().
 
+%% @doc Applies an operation to a snapshot of a crdt.
+%%      This function yields an error if the crdt does not have a corresponding update operation.
+-spec update_snapshot(type(), snapshot(), op()) -> {ok, snapshot()} | {error, reason()}.
+update_snapshot(Type, Snapshot, Op) ->
+    case Op of
+        {merge, State} ->
+            {ok, Type:merge(Snapshot, State)};
+        {update, DownstreamOp} ->
+            Type:update(DownstreamOp, Snapshot);
+        _ ->
+            lager:info("Unexpected log record: ~p for snapshot: ~p", [Op, Snapshot]),
+            {error, unexpected_format}
+    end.
+
 %% @doc Apply updates in given order without any checks.
 %%    Careful: In contrast to materialize/6, it takes just operations, not ec_payloads!
--spec materialize_eager(type(), snapshot(), [op()]) -> snapshot() | {error, term()}.
-materialize_eager(Type, Snapshot, Ops) ->
-    ec_materializer:materialize_eager(Type, Snapshot, Ops).
+-spec materialize_eager(type(), snapshot(), [op()]) -> snapshot() | {error, reason()}.
+materialize_eager(_Type, Snapshot, []) ->
+    Snapshot;
+materialize_eager(Type, Snapshot, [Op | Rest]) ->
+    case update_snapshot(Type, Snapshot, Op) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, Result} ->
+            materialize_eager(Type, Result, Rest)
+    end.
 
 %% @doc Check that in a list of operations, all of them are correctly typed.
 -spec check_operations(list()) -> ok | {error, term()}.

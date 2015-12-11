@@ -67,11 +67,13 @@ start_vnode(I) ->
 read(Key, Type, OpsCache, SnapshotCache, Partition) ->
     case ets:info(OpsCache) of
         undefined ->
+            lager:info("interactive_coord: opscache undefined"),
             riak_core_vnode_master:sync_command({Partition, node()},
                 {read, Key, Type},
                 ec_materializer_vnode_master,
                 infinity);
         _ ->
+            lager:info("interactive_coord: running internal_read"),
             internal_read(Key, Type, OpsCache, SnapshotCache)
     end.
 
@@ -211,9 +213,9 @@ terminate(_Reason, _State = #state{ops_cache = OpsCache, snapshot_cache = Snapsh
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_store_ss(key(), snapshot(), cache_id(), cache_id()) -> true.
-internal_store_ss(Key, Snapshot, OpsCache, SnapshotCache) ->
-    snapshot_insert(Key, Snapshot, SnapshotCache, OpsCache).
+-spec internal_store_ss(key(), snapshot(), commit_time(), cache_id()) -> true.
+internal_store_ss(Key, Snapshot, CommitTime, SnapshotCache) ->
+    snapshot_insert(Key, Snapshot, CommitTime, SnapshotCache).
 
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
@@ -232,6 +234,7 @@ internal_read(Key, Type, OpsCache, SnapshotCache) ->
         {_, [{Op1CommitTime, Op1}]} ->
             case (LatestCommitTime = ignore or vectorclock:is_greater_than(Op1CommitTime, LatestCommitTime)) of
                 true ->
+                    lager:info("materializer_vnode: about to materialize to Type: ~p, LatestSnapshot=~p, Operation:~p",[Type, LatestSnapshot, Op1]),
                     case ec_materializer:materialize_eager(Type, LatestSnapshot, Op1) of
                         {error, Reason} ->
                             {error, Reason};

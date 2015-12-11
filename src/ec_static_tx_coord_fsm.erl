@@ -47,7 +47,7 @@
 -endif.
 
 %% API
--export([start_link/3,
+-export([
     start_link/2]).
 
 %% Callbacks
@@ -73,11 +73,8 @@
 %%% API
 %%%===================================================================
 
-start_link(From, ClientClock, Operations) ->
-    gen_fsm:start_link(?MODULE, [From, ClientClock, Operations], []).
-
 start_link(From, Operations) ->
-    gen_fsm:start_link(?MODULE, [From, ignore, Operations], []).
+    gen_fsm:start_link(?MODULE, [From, Operations], []).
 
 
 %%%===================================================================
@@ -119,7 +116,9 @@ execute_batch_ops(execute, Sender, SD = #tx_coord_state{operations = Operations}
                             {error, Reason} ->
                                 {error, Reason};
                             ReadResult ->
+                                lager:info("static_coord: executed read no problem"),
                                 Acc#tx_coord_state{read_set = [ReadResult | Acc#tx_coord_state.read_set]}
+
                         end
                 end
         end
@@ -127,10 +126,10 @@ execute_batch_ops(execute, Sender, SD = #tx_coord_state{operations = Operations}
     NewState = lists:foldl(ExecuteOp, SD, Operations),
     _Res = case NewState of
                {error, Reason} ->
-                   %From ! {error, Reason},
                    gen_fsm:reply(Sender, {error, Reason}),
                    {stop, normal, SD};
                _ ->
+                   lager:info("static_coord:static coord preparing"),
                    ec_interactive_tx_coord_fsm:prepare(NewState#tx_coord_state{from = Sender})
            end.
 

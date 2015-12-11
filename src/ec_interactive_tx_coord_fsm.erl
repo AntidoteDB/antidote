@@ -178,8 +178,7 @@ perform_singleitem_update(Key, Type, Params) ->
     end.
 
 
-perform_read(Args, UpdatedPartitions, Sender) ->
-    {Key, Type} = Args,
+perform_read({Key, Type}, UpdatedPartitions, Sender) ->
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     WriteSet = case lists:keyfind(IndexNode, 1, UpdatedPartitions) of
@@ -188,15 +187,15 @@ perform_read(Args, UpdatedPartitions, Sender) ->
                    {IndexNode, WS} ->
                        WS
                end,
+    lager:info("interactive_coord: about to read Key ~p from node ~p with type ~p and writeset ~p",[Key, IndexNode, Type, WriteSet]),
     case ?ec_VNODE:read_data_item(IndexNode, Key, Type, WriteSet) of
         {error, Reason} ->
             case Sender of
                 undefined ->
-                    ok;
+                    {error, Reason};
                 _ ->
-                    _Res = gen_fsm:reply(Sender, {error, Reason})
-            end,
-            {error, Reason};
+                    gen_fsm:reply(Sender, {error, Reason})
+            end;
         {ok, Snapshot} ->
             Type:value(Snapshot)
     end.

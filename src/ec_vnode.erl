@@ -79,11 +79,15 @@ start_vnode(I) ->
 read_data_item(Node, Key, Type, Updates) ->
     case ec_readitem_fsm:read_data_item(Node, Key, Type) of
         {ok, Snapshot} ->
+            lager:info("ec_vnode: got this snapshot from the read fsm ~p",[Snapshot]),
             %% All this should be done at the vnode.
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+            lager:info("interactive_coord: about to call mat eager with type ~p, Snapshot ~p and Updates2 ~p",[Type, Snapshot, Updates2]),
             Snapshot2 = ec_materializer:materialize_eager(Type, Snapshot, Updates2),
+            lager:info("ec_vnode: returning it"),
             {ok, Snapshot2};
         {error, Reason} ->
+            lager:info("ec_vnode: got error"),
             {error, Reason}
     end.
 
@@ -191,13 +195,14 @@ handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partitio
 
 handle_command({prepare, CommitTime, WriteSet}, _Sender,
   State = #state{partition = _Partition}) ->
-    case internal_prepare(CommitTime, WriteSet) of
+    lager:info("ec_vnode:handle_command_prepare: got this Writeset: ~p and this commit time ~p", [WriteSet, CommitTime]),
+    case internal_prepare(WriteSet, CommitTime) of
         {ok, _} ->
             {reply, {prepared}, State};
         {error, timeout} ->
             {reply, {error, timeout}, State};
         {error, no_updates} ->
-            {reply, {error, no_tx_record}, State};
+            {reply, {error, no_updates}, State};
         {error, write_conflict} ->
             {reply, abort, State}
     end;
@@ -207,6 +212,7 @@ handle_command({prepare, CommitTime, WriteSet}, _Sender,
 %%      coordinator that sent the request.
 handle_command({single_commit, WriteSet}, _Sender,
   State = #state{partition = _Partition}) ->
+    lager:info("ec_vnode:handle command single_commit: got this Writeset: ~p ", [WriteSet]),
     CommitTime = now_microsec(erlang:now()),
     Result = internal_prepare(WriteSet, CommitTime),
     case Result of
@@ -220,12 +226,12 @@ handle_command({single_commit, WriteSet}, _Sender,
                 {error, timeout} ->
                     {reply, {error, timeout}, State};
                 {error, no_updates} ->
-                    {reply, no_tx_record, State}
+                    {reply, {error, no_updates}, State}
             end;
         {error, timeout} ->
             {reply, {error, timeout}, State};
         {error, no_updates} ->
-            {reply, {error, no_tx_record}, State};
+            {reply, {error, no_updates}, State};
         {error, write_conflict} ->
             {reply, abort, State}
     end;
@@ -237,6 +243,7 @@ handle_command({single_commit, WriteSet}, _Sender,
 handle_command({commit, TxCommitTime, Updates}, _Sender,
   #state{partition = _Partition
   } = State) ->
+    lager:info("ec_vnode:handle_command_commit: got this commitTime: ~p and this writeSet ~p", [TxCommitTime, Updates]),
     Result = internal_commit(TxCommitTime, Updates),
     case Result of
         {ok, committed} ->
@@ -246,7 +253,7 @@ handle_command({commit, TxCommitTime, Updates}, _Sender,
         {error, timeout} ->
             {reply, {error, timeout}, State};
         {error, no_updates} ->
-            {reply, no_tx_record, State}
+            {reply, no_updates, State}
     end;
 
 handle_command({abort, Updates}, _Sender,
@@ -262,7 +269,7 @@ handle_command({abort, Updates}, _Sender,
                     {reply, {error, Reason}, State}
             end;
         _ ->
-            {reply, {error, no_tx_record}, State}
+            {reply, {error, no_updates}, State}
     end;
 
 handle_command(_Message, _Sender, State) ->
@@ -313,6 +320,7 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%%===================================================================
 
 internal_prepare(TxWriteSet, CommitTime) ->
+    lager:info("ec_vnode:internal_prepare: got this Writeset: ~p and this commit time ~p", [TxWriteSet, CommitTime]),
     case TxWriteSet of
         [{Key, _, {_Op, _Actor}} | _] ->
             LogRecord = #log_record{tx_id = undefined,
@@ -386,9 +394,9 @@ update_materializer(DownstreamOps, TxCommitTime) ->
                 key = Key,
                 type = Type,
                 op_param = Op,
-                snapshot_time = no_snapshot_time,
+                snapshot_time = undefined,
                 commit_time = TxCommitTime,
-                txid = no_snapshot_time},
+                txid = undefined},
         [ec_materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
                      end,
     Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),

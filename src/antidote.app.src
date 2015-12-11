@@ -1,5 +1,5 @@
 %% -*- erlang -*-
-{application, ec_antidote,
+{application, antidote,
  [
   {description, "SyncFree reference platform"},
   {vsn, "1"},

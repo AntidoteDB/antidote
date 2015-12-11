@@ -186,8 +186,10 @@ perform_read_internal(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition
 return(Coordinator, Key, Type, OpsCache, SnapshotCache, Partition) ->
     case ec_materializer_vnode:read(Key, Type, OpsCache, SnapshotCache, Partition) of
         {ok, Snapshot} ->
+            lager:info("got this snapshot from the materializer: ~p", [Snapshot]),
             Reply = {ok, Snapshot};
         {error, Reason} ->
+            lager:info("found the following error: ~p", [Reason]),
             Reply = {error, Reason}
     end,
     _Ignore = gen_server:reply(Coordinator, Reply),
