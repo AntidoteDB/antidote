@@ -45,12 +45,6 @@
 -define(SAFE_TIME, true).
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
-%% Enalble or disable the certification check
--ifdef(NO_CERTIFICATION).
--define(CERT, false).
--else.
--define(CERT, true).
--endif.
 
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
