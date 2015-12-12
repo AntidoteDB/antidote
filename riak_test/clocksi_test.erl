@@ -56,6 +56,9 @@ confirm() ->
     rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
     lager:info("Nodes: ~p", [Nodes]),
+    Param = rpc:call(hd(Nodes), antidote, does_certification_check,
+                    []),
+    ?assertEqual(0,Param),
 
     clocksi_test1(Nodes),
 
@@ -95,15 +98,15 @@ confirm() ->
     [Nodes12] = common:clean_clusters([Nodes11]),
     clocksi_concurrency_test(Nodes12),
 
-    case ?CERT of
-    true ->
-        [Nodes13] = common:clean_clusters([Nodes12]),
-        clocksi_test_certification_check(Nodes13),
-
-        [Nodes14] = common:clean_clusters([Nodes13]),
-        clocksi_multiple_test_certification_check(Nodes14);
-    false -> 
-        ok
+    case rpc:call(hd(Nodes), antidote, does_certification_check,[]) of
+        true ->
+            [Nodes13] = common:clean_clusters([Nodes12]),
+            clocksi_test_certification_check(Nodes13),
+    
+            [Nodes14] = common:clean_clusters([Nodes13]),
+            clocksi_multiple_test_certification_check(Nodes14);
+        false -> 
+            ok
     end,
     pass.
 

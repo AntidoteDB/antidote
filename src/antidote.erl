@@ -54,7 +54,8 @@
          clocksi_iupdate/4,
          clocksi_iprepare/1,
          clocksi_full_icommit/1,
-         clocksi_icommit/1]).
+         clocksi_icommit/1,
+         does_certification_check/0]).
 %% ===========================================================
 
 -type txn_properties() :: term(). %% TODO: Define
@@ -359,3 +360,12 @@ clocksi_iprepare({_, _, CoordFsmPid})->
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT).
+
+-spec does_certification_check() -> boolean().
+does_certification_check() ->
+    case application:get_env(antidote, txn_cert) of
+        {ok, true} 
+            -> true;
+        _
+            -> false
+    end.
