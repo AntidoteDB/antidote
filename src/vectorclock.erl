@@ -37,8 +37,6 @@
   gt/2,
   le/2,
   ge/2,
-  keep_max/2,
-  keep_min/2,
   strict_ge/2,
   strict_le/2,
   max/1,
