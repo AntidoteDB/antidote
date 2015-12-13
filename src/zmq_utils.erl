@@ -49,8 +49,8 @@ connection_string({Ip, Port}) ->
   end,
   lists:flatten(io_lib:format("tcp://~s:~p", [IpString, Port])).
 
-sub_filter(Socket, Prefix) -> erlzmq:setsockopt(Socket, subscribe, Prefix).
+sub_filter(Socket, Prefix) ->
+  erlzmq:setsockopt(Socket, subscribe, Prefix).
 
-close_socket(Socket) -> erlzmq:close(Socket).
-
-
+close_socket(Socket) ->
+  erlzmq:close(Socket).

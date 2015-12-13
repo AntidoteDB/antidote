@@ -177,7 +177,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
   %% This assumes that heartbeats/updates arrive on a regular basis,
   %% and that there is always the next one arriving shortly.
   %% This causes the stable_snapshot to tick more slowly, which is an expected behaviour.
-  Now = now_milisec(),
+  Now = dc_utilities:now_millisec(),
   NewLastUpdated = case Now > LastUpdated + ?VECTORCLOCK_UPDATE_PERIOD of
     %% Stable snapshot was not updated for the defined period of time.
     %% Push the changes and update the last_updated parameter to the current timestamp.
@@ -200,7 +200,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
 -spec get_partition_clock(#state{}) -> vectorclock().
 get_partition_clock(State) ->
   %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
-  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), inter_dc_utils:now_millisec(), State#state.vectorclock).
+  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
 -spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#clocksi_payload{}).
@@ -216,12 +216,3 @@ updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTi
       txid =  LogRecord#log_record.tx_id
     }
   end, inter_dc_txn:ops_by_type(Txn, update)).
-
-now_milisec() ->
-  {MegaSecs, Secs, MicroSecs} = os:timestamp(),
-  USeconds = (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs,
-  USeconds div 1000.
-
-
-
-

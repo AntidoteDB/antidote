@@ -21,67 +21,91 @@
 -include("antidote.hrl").
 
 -export([
-    now/0,
-    get_my_dc_id/0,
-    get_my_dc_nodes/0,
-    call_vnode_sync/3,
-    bcast_vnode_sync/2,
-    partition_to_indexnode/1,
-    call_vnode/3,
-    get_all_partitions/0,
-    bcast_vnode/2,
-    get_my_partitions/0,
-    ensure_all_vnodes_running/1,
-    ensure_all_vnodes_running_master/1,
-    get_partitions_num/0,
-    check_staleness/0]).
+  get_my_dc_id/0,
+  get_my_dc_nodes/0,
+  call_vnode_sync/3,
+  bcast_vnode_sync/2,
+  partition_to_indexnode/1,
+  call_vnode/3,
+  get_all_partitions/0,
+  bcast_vnode/2,
+  get_my_partitions/0,
+  ensure_all_vnodes_running/1,
+  ensure_all_vnodes_running_master/1,
+  get_partitions_num/0,
+  check_staleness/0,
+  now/0,
+  now_microsec/0,
+  now_millisec/0]).
 
+%% Returns the ID of the current DC.
+%% -spec get_my_dc_id() -> dcid().
+-spec dc_utilities:get_my_dc_id() -> 'undefined' | {_,_}. %% TODO: enforce the more specific
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:cluster_name(Ring).
 
+%% Returns the list of all node addresses in the cluster.
+-spec get_my_dc_nodes() -> [node()].
 get_my_dc_nodes() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:all_members(Ring).
 
+%% Returns the IndexNode tuple used by riak_core_vnode_master:command functions.
 -spec partition_to_indexnode(partition_id()) -> {partition_id(), any()}.
 partition_to_indexnode(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     Node = riak_core_ring:index_owner(Ring, Partition),
     {Partition, Node}.
 
--spec get_my_partitions() -> list(partition_id()).
-get_my_partitions() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    riak_core_ring:my_indices(Ring).
-
--spec get_all_partitions() -> list(partition_id()).
+%% Returns a list of all partition indices in the cluster.
+%% The partitions indices are 160-bit numbers that equally division the keyspace.
+%% For example, for a cluster with 8 partitions, the indices would take following values:
+%% 0, 1 * 2^157, 2 * 2^157, 3 * 2^157, 4 * 2^157, 5 * 2^157, 6 * 2^157, 7 * 2^157.
+%% The partition numbers are erlang integers. To obtain the binary representation of the index,
+%% use the inter_dc_txn:partition_to_bin/1 function.
+-spec get_all_partitions() -> [partition_id()].
 get_all_partitions() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     CHash = riak_core_ring:chash(Ring),
     Nodes = chash:nodes(CHash),
     [I || {I, _} <- Nodes].
 
+%% Returns the partition indices hosted by the local (caller) node.
+-spec get_my_partitions() -> [partition_id()].
+get_my_partitions() ->
+  {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+  riak_core_ring:my_indices(Ring).
+
+%% Returns the number of partitions.
 -spec get_partitions_num() -> non_neg_integer().
 get_partitions_num() -> length(get_all_partitions()).
 
+%% Sends the synchronous command to a vnode of a specified type and responsible for a specified partition number.
 -spec call_vnode_sync(partition_id(), atom(), any()) -> any().
 call_vnode_sync(Partition, VMaster, Request) ->
     riak_core_vnode_master:sync_command(partition_to_indexnode(Partition), Request, VMaster).
 
+%% Sends the asynchronous command to a vnode of a specified type and responsible for a specified partition number.
 -spec call_vnode(partition_id(), atom(), any()) -> ok.
 call_vnode(Partition, VMaster, Request) ->
     riak_core_vnode_master:command(partition_to_indexnode(Partition), Request, VMaster).
 
+%% Sends the same (synchronous) command to all vnodes of a given type.
 -spec bcast_vnode_sync(atom(), any()) -> any().
 bcast_vnode_sync(VMaster, Request) ->
     %% TODO: a parallel map function would be nice here
     lists:map(fun(P) -> {P, call_vnode_sync(P, VMaster, Request)} end, get_all_partitions()).
 
+%% Sends the same (asynchronous) command to all vnodes of a given type.
 -spec bcast_vnode(atom(), any()) -> any().
 bcast_vnode(VMaster, Request) ->
     lists:map(fun(P) -> {P, call_vnode(P, VMaster, Request)} end, get_all_partitions()).
 
+%% Checks if all vnodes of a particular type are running.
+%% The method uses riak_core methods to perform the check and was
+%% shown to be unreliable in some very specific circumstances.
+%% Use with caution.
 -spec ensure_all_vnodes_running(atom()) -> ok.
 ensure_all_vnodes_running(VnodeType) ->
     Partitions = get_partitions_num(),
@@ -151,3 +175,12 @@ now() ->
     os:timestamp().
 
 -endif.
+
+-spec now_microsec() -> non_neg_integer().
+now_microsec() ->
+  {MegaSecs, Secs, MicroSecs} = dc_utilities:now(),
+  (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+
+-spec now_millisec() -> non_neg_integer().
+now_millisec() ->
+  now_microsec() div 1000.

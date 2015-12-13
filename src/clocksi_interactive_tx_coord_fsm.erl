@@ -124,7 +124,7 @@ create_transaction_record(ClientClock) ->
                                  get_snapshot_time(ClientClock)
                          end,
     DcId = ?DC_UTIL:get_my_dc_id(),
-    {ok, LocalClock} = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
+    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = self()},
     Transaction = #transaction{snapshot_time = LocalClock,
         vec_snapshot_time = SnapshotTime,
@@ -135,7 +135,7 @@ create_transaction_record(ClientClock) ->
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type()) -> {ok, val()} | {error, reason()}.
+-spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore),
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -145,7 +145,9 @@ perform_singleitem_read(Key, Type) ->
             {error, Reason};
         {ok, Snapshot} ->
             ReadResult = Type:value(Snapshot),
-            {ok, ReadResult}
+            %% Read only transaction has no commit, hence return the snapshot time
+            CommitTime = Transaction#transaction.vec_snapshot_time,
+            {ok, ReadResult, CommitTime}
     end.
 
 
@@ -550,8 +552,7 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(snapshot_time())
-        -> {ok, snapshot_time()}.
+-spec get_snapshot_time(snapshot_time()) -> {ok, snapshot_time()}.
 get_snapshot_time(ClientClock) ->
     wait_for_clock(ClientClock).
 
@@ -560,15 +561,11 @@ get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
     DcId = ?DC_UTIL:get_my_dc_id(),
-    SnapshotTime = dict:update(DcId,
-        fun(_Old) -> Now end,
-        Now, VecSnapshotTime),
-
+    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
     {ok, SnapshotTime}.
 
 
--spec wait_for_clock(snapshot_time()) ->
-    {ok, snapshot_time()}.
+-spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
 wait_for_clock(Clock) ->
     {ok, VecSnapshotTime} = get_snapshot_time(),
     case vectorclock:ge(VecSnapshotTime, Clock) of
