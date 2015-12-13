@@ -53,7 +53,7 @@
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
 -type operation() :: #operation{}.
--type vectorclock() :: dict().
+-type vectorclock() :: vectorclock:vectorclock().
 
 
 %% The way records are stored in the log.
@@ -74,7 +74,8 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time, server_pid :: pid()}).
+-record(tx_id, {snapshot_time :: snapshot_time(), 
+                server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
                           op_param :: op(),
