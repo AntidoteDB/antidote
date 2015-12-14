@@ -154,7 +154,7 @@ put_meta_data(Name, Partition, Key, Value, Func) ->
 	    put_meta_dict(Name, Partition, NewDict, undefined)
     end.
 
--spec get_meta_dict(atom(),partition_id()) -> dict().
+-spec get_meta_dict(atom(),partition_id()) -> dict() | undefined.
 get_meta_dict(Name,Partition) ->
     case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
@@ -180,7 +180,7 @@ remove_partition(Name,Partition) ->
 
 %% Add info about a new DC. This info could be
 %% used by other modules to communicate to other DC
--spec get_merged_data(atom()) -> dict().
+-spec get_merged_data(atom()) -> dict() | undefined.
 get_merged_data(Name) ->
     case ets:info(get_name(Name, ?META_TABLE_STABLE_NAME)) of
 	undefined ->
@@ -189,7 +189,7 @@ get_merged_data(Name) ->
 	    case ets:lookup(get_name(Name,?META_TABLE_STABLE_NAME), merged_data) of
 		[] ->
 		    dict:new();
-		[{merged_data,Other}] ->
+		[{merged_data, Other}] ->
 		    Other
 	    end
     end.
@@ -254,7 +254,7 @@ terminate(_Reason, _SN, _SD) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
--spec get_meta_data(atom(),fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.
+-spec get_meta_data(atom(),fun((dict()) -> dict()),boolean()) -> {true,dict()} | false.
 get_meta_data(Name, MergeFunc, CheckNodes) ->
     TablesReady = case ets:info(get_name(Name,?REMOTE_META_TABLE_NAME)) of
 		      undefined ->
@@ -352,14 +352,14 @@ get_node_list() ->
     MyNode = node(),
     lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
 
--spec get_node_and_partition_list() -> {[node()],[partition_id()],boolean()}.
+-spec get_node_and_partition_list() -> {[node()],[partition_id()],true}.
 get_node_and_partition_list() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     MyNode = node(),
     NodeList = lists:delete(MyNode, riak_core_ring:ready_members(Ring)),
     PartitionList = riak_core_ring:my_indices(Ring),
     %% Deciding if the nodes might change by checking the is_resizing function is not
-    %% safe becuase can cause inconsistencies during concurrency, so this should
+    %% safe can cause inconsistencies under concurrency, so this should
     %% be done differently
     %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
     Resize = true,

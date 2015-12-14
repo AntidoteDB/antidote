@@ -53,8 +53,8 @@ new() ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable) of
-	undefined ->
+  case meta_data_sender:get_merged_data(stable) of
+	  undefined ->
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),
 	    get_stable_snapshot();
@@ -64,9 +64,9 @@ get_stable_snapshot() ->
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
-    case meta_data_sender:get_meta_dict(stable,Partition) of
-	undefined ->
-	    %% The partition isnt ready yet, wait for startup
+  case meta_data_sender:get_meta_dict(stable,Partition) of
+	  undefined ->
+	    %% The partition isn't ready yet, wait for startup
 	    timer:sleep(10),
 	    get_partition_snapshot(Partition);
 	SS ->
