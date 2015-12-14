@@ -43,7 +43,7 @@
 	 get_node_list/0,
 	 get_node_and_partition_list/0,
 	 get_merged_data/1,
-         remove_partition/2,
+	 remove_partition/2,
 	 get_name/2,
 	 send_meta_data/2]).
 
@@ -52,7 +52,7 @@
 	 code_change/4,
 	 handle_event/3,
 	 handle_info/3,
-         handle_sync_event/4,
+	 handle_sync_event/4,
 	 terminate/3]).
 
 
@@ -70,11 +70,11 @@
 %% ===================================================================
 
 %% This fsm is responsible for sending meta-data that has been collected on this
-%% phyical node and sending it to all other physical nodes in the riak ring.
+%% physical node and sending it to all other physical nodes in the riak ring.
 %% There will be one instance of this fsm running on each physical machine.
-%% During execution of the system, v-nodes may be continually writing to the
+%% During execution of the system, vnodes may be continually writing to the dict.
 %% 
-%% At a period given in antidote.hrl it will trigger itself to send the meta-data.
+%% At a period, defined in antidote.hrl, it will trigger itself to send the meta-data.
 %% This will cause the meta-data to be broadcast to all other physical nodes in
 %% the cluster.  Before sending the meta-data it calls the merge function on the
 %% meta-data stored by each vnode located at this partition.
