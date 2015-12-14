@@ -52,7 +52,7 @@ update_snapshot(Type, Snapshot, Op) ->
             Type:update(DownstreamOp, Snapshot);
         _ ->
             lager:info("Unexpected log record: ~p for snapshot: ~p", [Op, Snapshot]),
-            {error, unexpected_format}
+            {error, unexpected_format, Op}
     end.
 
 %% @doc Apply updates in given order without any checks.

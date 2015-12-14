@@ -218,7 +218,7 @@ perform_update(Args, UpdatedPartitions, Sender) ->
                                            [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
                                        _ ->
                                            lists:keyreplace(IndexNode, 1, UpdatedPartitions,
-                                               {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
+                                               {IndexNode, [{Key, Type, DownstreamRecord}]})
                                    end,
             case Sender of
                 undefined ->

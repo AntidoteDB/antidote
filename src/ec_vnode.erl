@@ -214,26 +214,17 @@ handle_command({single_commit, WriteSet}, _Sender,
   State = #state{partition = _Partition}) ->
     lager:info("ec_vnode:handle command single_commit: got this Writeset: ~p ", [WriteSet]),
     CommitTime = now_microsec(erlang:now()),
-    Result = internal_prepare(WriteSet, CommitTime),
-    case Result of
+    case internal_prepare(WriteSet, CommitTime) of
         {ok, _} ->
             ResultCommit = internal_commit(WriteSet, CommitTime),
             case ResultCommit of
                 {ok, committed} ->
                     {reply, {committed, CommitTime}, State};
-                {error, materializer_failure} ->
-                    {reply, {error, materializer_failure}, State};
-                {error, timeout} ->
-                    {reply, {error, timeout}, State};
-                {error, no_updates} ->
-                    {reply, {error, no_updates}, State}
+                {error, Reason} ->
+                    {reply, {error, {internal_commit_error, Reason}}, State}
             end;
-        {error, timeout} ->
-            {reply, {error, timeout}, State};
-        {error, no_updates} ->
-            {reply, {error, no_updates}, State};
-        {error, write_conflict} ->
-            {reply, abort, State}
+        {error, Reason} ->
+            {reply, {error, {internal_prepare_error, Reason}}, State}
     end;
 
 
@@ -329,11 +320,14 @@ internal_prepare(TxWriteSet, CommitTime) ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             logging_vnode:append(Node, LogId, LogRecord);
-        _ ->
-            {error, no_updates}
+        [] ->
+            lager:info("ec_vnode:internal_prepare there were no updates"),
+            {error, no_updates};
+        WriteSet ->
+            {error, {wrong_format, WriteSet}}
     end.
 
-internal_commit(TxCommitTime, Updates) ->
+internal_commit(Updates, TxCommitTime) ->
     LogRecord = #log_record{tx_id = undefined,
         op_type = commit,
         op_payload = TxCommitTime},
@@ -352,8 +346,10 @@ internal_commit(TxCommitTime, Updates) ->
                 {error, timeout} ->
                     {error, timeout}
             end;
-        _ ->
-            {error, no_updates}
+        [] ->
+            {error, no_updates};
+        Format ->
+            {error, {wrong_format, Format}}
     end.
 
 %% @doc clean_and_notify:

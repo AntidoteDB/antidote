@@ -234,13 +234,19 @@ internal_read(Key, Type, OpsCache, SnapshotCache) ->
         [{_, {Op1CommitTime, Op1}}] ->
             case (LatestCommitTime == ignore) or (Op1CommitTime > LatestCommitTime) of
                 true ->
-                    lager:info("materializer_vnode: about to materialize to Type: ~p, LatestSnapshot=~p, Operation:~p", [Type, LatestSnapshot, Op1]),
-                    case ec_materializer:materialize_eager(Type, LatestSnapshot, Op1) of
+                    lager:info("materializer_vnode: about to materialize to Type: ~p, LatestSnapshot=~p, Operation:~p", [Type, LatestSnapshot, Op1#ec_payload.op_param]),
+                    DownstreamOp = Op1#ec_payload.op_param,
+                    case ec_materializer:materialize_eager(Type, LatestSnapshot, [DownstreamOp]) of
                         {error, Reason} ->
                             {error, Reason};
                         UpdatedSnapshot ->
-                            internal_store_ss(Key, UpdatedSnapshot, Op1CommitTime, SnapshotCache)
-                    end
+                            lager:info("materializer_vnode: about to insert Key ~p, UpdatedSnapshot ~p, Op1CommitTime ~p, SnapshotCache ~p", [Key, UpdatedSnapshot, Op1CommitTime, SnapshotCache]),
+                            %internal_store_ss(Key, UpdatedSnapshot, Op1CommitTime, SnapshotCache)
+                            ok = store_ss(Key, UpdatedSnapshot, Op1CommitTime),
+                            {ok, UpdatedSnapshot}
+                    end;
+                false ->
+                    {ok, LatestSnapshot}
             end
     end.
 

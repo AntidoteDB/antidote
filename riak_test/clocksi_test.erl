@@ -210,7 +210,7 @@ ec_test2(Nodes) ->
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %%      It tests the API operation that allows clients to run interactive txs
-%%      explicitely calling prepare and commit.
+%%      explicitly calling prepare and commit.
 ec_test3(Nodes) ->
     FirstNode = hd(Nodes),
     lager:info("Test2 started"),
