@@ -56,10 +56,7 @@ confirm() ->
     rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
     lager:info("Nodes: ~p", [Nodes]),
-    Param = rpc:call(hd(Nodes), antidote, does_certification_check,
-                    []),
-    ?assertEqual(0,Param),
-
+   
     clocksi_test1(Nodes),
 
     [Nodes1] = common:clean_clusters([Nodes]),

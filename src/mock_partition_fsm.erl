@@ -83,7 +83,7 @@ set_clock_of_dc(_,_,Clock) ->
     Clock.
 
 get_clock_of_dc(_DcId, _SnapshotTime) ->
-    {ok, 0}.
+    0.
 
 get_preflist_from_key(_Key) ->
     {ok, Pid} = mock_partition_fsm:start_link(),
