@@ -54,7 +54,8 @@
          clocksi_iupdate/4,
          clocksi_iprepare/1,
          clocksi_full_icommit/1,
-         clocksi_icommit/1]).
+         clocksi_icommit/1,
+         does_certification_check/0]).
 %% ===========================================================
 
 -type txn_properties() :: term(). %% TODO: Define
@@ -409,3 +410,12 @@ gr_snapshot_read(ClientClock, Args) ->
             gr_snapshot_read(ClientClock, Args)
     end.
 -endif.
+
+-spec does_certification_check() -> boolean().
+does_certification_check() ->
+    case application:get_env(antidote, txn_cert) of
+        {ok, true} 
+            -> true;
+        _
+            -> false
+    end.
