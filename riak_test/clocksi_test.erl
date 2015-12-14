@@ -19,9 +19,6 @@
 %% -------------------------------------------------------------------
 -module(clocksi_test).
 
--ifndef(USE_CLOCKSI).
--export([confirm/0]).
--else.
 -export([confirm/0,
 	 clocksi_test1/1,
 	 clocksi_test2/1,
@@ -40,21 +37,17 @@
          clocksi_multiple_read_update_test/1,
          clocksi_concurrency_test/1,
 	 spawn_com/2]).
--endif.
 
 -include_lib("eunit/include/eunit.hrl").
 -include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
--ifndef(USE_CLOCKSI).
-confirm() ->
-    pass.
--else.
 confirm() ->
     NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
-        {riak_core, [{ring_creation_size, NumVNodes}]}
-    ]),
+                              {riak_core, [{ring_creation_size, NumVNodes}]},
+                              {antidote, [{txn_prot, clocksi}]}                              
+                             ]),
     [Nodes] = rt:build_clusters([3]),
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes),
@@ -63,10 +56,8 @@ confirm() ->
     rt:wait_until(hd(Nodes),fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
     lager:info("Nodes: ~p", [Nodes]),
-    Param = rpc:call(hd(Nodes), antidote, does_certification_check,
-                    []),
-    ?assertEqual(0,Param),
-
+    {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
+    ?assertMatch(clocksi, Prot),
     clocksi_test1(Nodes),
 
     [Nodes1] = common:clean_clusters([Nodes]),
@@ -109,7 +100,7 @@ confirm() ->
         true ->
             [Nodes13] = common:clean_clusters([Nodes12]),
             clocksi_test_certification_check(Nodes13),
-    
+
             [Nodes14] = common:clean_clusters([Nodes13]),
             clocksi_multiple_test_certification_check(Nodes14);
         false -> 
@@ -732,4 +723,3 @@ clocksi_concurrency_test(Nodes) ->
              ?assertEqual({ok, 2}, Result),
              pass
      end.
--endif.

@@ -160,7 +160,6 @@ update_objects(Clock, _Properties, Updates) ->
             end
     end.
 
--ifdef(USE_CLOCKSI).
 read_objects(Clock, _Properties, Objects) ->
     Args = lists:map(
              fun({Key, Type, _Bucket}) ->
@@ -186,41 +185,35 @@ read_objects(Clock, _Properties, Objects) ->
                 {error, Reason} ->
                     {error, Reason}
             end;
-        false -> 
-            case clocksi_execute_tx(Clock, Args) of
-                {ok, {_TxId, Result, CommitTime}} ->
-                    {ok, Result, CommitTime};
-                {error, Reason} -> {error, Reason}
+        false ->
+            case application:get_env(antidote, txn_prot) of
+                {ok, clocksi} ->
+                    case clocksi_execute_tx(Clock, Args) of
+                        {ok, {_TxId, Result, CommitTime}} ->
+                            {ok, Result, CommitTime};
+                        {error, Reason} -> {error, Reason}
+                    end;
+                {ok, gr} ->
+                    case Args of
+                        [_Op] -> %% Single object read = read latest value
+                            case clocksi_execute_tx(Clock, Args) of
+                                {ok, {_TxId, Result, CommitTime}} ->
+                                    {ok, Result, CommitTime};
+                                {error, Reason} -> {error, Reason}
+                            end;
+                        [_|_] -> %% Read Multiple objects  = read from a snapshot
+                            %% Snapshot includes all updates committed at time GST
+                            %% from local and remore replicas
+                            case gr_snapshot_read(Clock, Args) of
+                                {ok, {_TxId, Result, CommitTime}} ->
+                                    {ok, Result, CommitTime};
+                                {error, Reason} -> {error, Reason}
+                            end
+                    end
             end
     end.
--else.
--ifdef(USE_GR).
-read_objects(Clock, _Properties, Objects) ->
-    Args = lists:map(
-             fun({Key, Type, _Bucket}) ->
-                     {read, {Key, Type}}
-             end,
-             Objects),
-    case Args of
-        [_Op] -> %% Single object read = read latest value
-            case clocksi_execute_tx(Clock, Args) of
-                {ok, {_TxId, Result, CommitTime}} ->
-                    {ok, Result, CommitTime};
-                {error, Reason} -> {error, Reason}
-            end;
-        [_|_] -> %% Read Multiple objects  = read from a snapshot
-            %% Snapshot includes all updates committed at time GST
-            %% from local and remore replicas
-            case gr_snapshot_read(Clock, Args) of
-                {ok, {_TxId, Result, CommitTime}} ->
-                    {ok, Result, CommitTime};
-                {error, Reason} -> {error, Reason}
-            end
-    end.
--endif.
--endif.
-%% Object creation and types
 
+%% Object creation and types
 create_bucket(_Bucket, _Type) ->
     %% TODO: Bucket is not currently supported
     {error, operation_not_supported}.
@@ -389,7 +382,6 @@ clocksi_iprepare({_, _, CoordFsmPid})->
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT).
 
--ifdef(USE_GR).
 %%% Snapshot read for Gentlerain protocol
 gr_snapshot_read(ClientClock, Args) ->
     %% GST = scalar stable time
@@ -409,7 +401,6 @@ gr_snapshot_read(ClientClock, Args) ->
             timer:sleep(10),
             gr_snapshot_read(ClientClock, Args)
     end.
--endif.
 
 -spec does_certification_check() -> boolean().
 does_certification_check() ->

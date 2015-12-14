@@ -73,34 +73,32 @@ get_clock(Partition) ->
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
--ifdef (USE_CLOCKSI).
 get_stable_snapshot() ->
-    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
-    %% to riak core meta-data) otherwise will have to change this
-    {ok, vectorclock_vnode:get_stable_snapshot()}.
--else.
--ifdef (USE_GR).
-get_stable_snapshot() ->
-    %% For gentlerain use the same format as clocksi
-    %% But, replicate GST to all entries in the dict
-    StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
-    case dict:size(StableSnapshot) of
-        0 -> 
-            {ok, StableSnapshot};
-        _ ->
-            ListTime = dict:fold( 
-                         fun(_Key, Value, Acc) ->
-                                 [Value | Acc ]
-                         end, [], StableSnapshot),
-            GST = lists:min(ListTime),
-            {ok, dict:map( 
-                   fun(_K, _V) ->
-                           GST
-                   end,
-                   StableSnapshot)}
+    case application:get_env(antidote, txn_prot) of
+        {ok, clocksi} -> 
+            %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+            %% to riak core meta-data) otherwise will have to change this
+            {ok, vectorclock_vnode:get_stable_snapshot()};
+        {ok, gr} ->
+            %% For gentlerain use the same format as clocksi
+            %% But, replicate GST to all entries in the dict
+            StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
+            case dict:size(StableSnapshot) of
+                0 -> 
+                    {ok, StableSnapshot};
+                _ ->
+                    ListTime = dict:fold( 
+                                 fun(_Key, Value, Acc) ->
+                                         [Value | Acc ]
+                                 end, [], StableSnapshot),
+                    GST = lists:min(ListTime),
+                    {ok, dict:map( 
+                           fun(_K, _V) ->
+                                   GST
+                           end,
+                           StableSnapshot)}
+            end
     end.
--endif.
--endif.
 
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.

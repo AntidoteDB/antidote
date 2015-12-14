@@ -28,20 +28,19 @@
 -include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
--ifndef(USE_GR).
-%% Do not run the tests if antidote not build for GR
-confirm() ->
-    pass.
--else.
 confirm() ->
     NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
-        {riak_core, [{ring_creation_size, NumVNodes}]}
-    ]),
+                              {riak_core, [{ring_creation_size, NumVNodes}]},
+                              {antidote, [{txn_prot, gr}]}
+                             ]),
     [Nodes1, Nodes2] = rt:build_clusters([1,1]),
+    
+    {ok, Prot} = rpc:call(hd(Nodes1), application, get_env, [antidote, txn_prot]),
+    ?assertMatch(gr, Prot),
     rt:wait_until_registered(hd(Nodes1), inter_dc_manager),
     rt:wait_until_registered(hd(Nodes2), inter_dc_manager),
-    
+
     {ok, DC1} = rpc:call(hd(Nodes1), inter_dc_manager, start_receiver,[8091]),
     {ok, DC2} = rpc:call(hd(Nodes2), inter_dc_manager, start_receiver,[8092]),
 
@@ -69,7 +68,7 @@ confirm() ->
     read_multiple_test(Nodes1),
 
     %% Test Replication
-    
+
     replication_test(hd(Nodes1), hd(Nodes2)),
     pass.
 
@@ -105,5 +104,3 @@ replication_test(Node1, Node2) ->
     {ok, Res2, _} = rpc:call(Node2, antidote, read_objects, [CT2, {}, [O1, O2]]),
     %% Since CT1 < CT2, any snapshot that includes second write must include first write
     ?assertMatch([1,1], Res2).
-
--endif.
