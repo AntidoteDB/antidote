@@ -354,7 +354,9 @@ handle_command({abort, Transaction, Updates}, _Sender,
         [{Key, _Type, {_Op, _Actor}} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
+            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
+            Result = logging_vnode:append(Node,LogId, LogRecord),
+            %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
 				  {ok, _} ->
 				      clean_and_notify(TxId, Updates, State);

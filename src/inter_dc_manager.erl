@@ -17,113 +17,110 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-
 -module(inter_dc_manager).
--behaviour(gen_server).
-
 -include("antidote.hrl").
-
--export([start_link/0,
-         start_receiver/1,
-         get_dcs/0,
-         add_dc/1,
-         add_list_dcs/1,
-         stop_receiver/0]).
-
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-        terminate/2, code_change/3]).
-
--record(state, {
-        dcs,
-        port
-    }).
+-include("inter_dc_repl.hrl").
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-export([
+  get_descriptor/0,
+  observe_dc/1,
+  observe_dc_sync/1,
+  observe/1,
+  observe_dcs/1,
+  observe_dcs_sync/1,
+  forget_dc/1,
+  forget_dcs/1]).
 
-%% Starts listening to TCP port for incomming requests from other DCs
-%% Returns the address of the DC, which could be used by others to communicate
--spec start_receiver(port()) -> {ok, dc_address()}.
-start_receiver(Port) ->
-    gen_server:call(?MODULE, {start_receiver, Port}, infinity).
-
-stop_receiver() ->
-    gen_server:call(?MODULE, {stop_receiver}, infinity).
-    
-%% Returns all DCs known to this DC.
--spec get_dcs() ->{ok, [dc_address()]}.
-get_dcs() ->
-    gen_server:call(?MODULE, get_dcs, infinity).
-
-%% Add info about a new DC. This info could be
-%% used by other modules to communicate to other DC
--spec add_dc(dc_address()) -> ok.
-add_dc(NewDC) ->
-    gen_server:call(?MODULE, {add_dc, NewDC}, infinity).
-
-%% Add a list of DCs to this DC
--spec add_list_dcs([dc_address()]) -> ok.
-add_list_dcs(DCs) ->
-    gen_server:call(?MODULE, {add_list_dcs, DCs}, infinity).
+-spec get_descriptor() -> {ok, #descriptor{}}.
+get_descriptor() ->
+  %% Wait until all needed vnodes are spawned, so that the heartbeats are already being sent
+  ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
+  Nodes = dc_utilities:get_my_dc_nodes(),
+  Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address, []) end, Nodes),
+  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address, []) end, Nodes),
+  {ok, #descriptor{
+    dcid = dc_utilities:get_my_dc_id(),
+    partition_num = dc_utilities:get_partitions_num(),
+    publishers = Publishers,
+    logreaders = LogReaders
+  }}.
 
 
-%% ===================================================================
-%% gen_server callbacks
-%% ===================================================================
+-spec observe_dc(#descriptor{}) -> ok.
+observe_dc(#descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
+  PartitionsNumLocal = dc_utilities:get_partitions_num(),
+  case PartitionsNumRemote == PartitionsNumLocal of
+    false ->
+      lager:error("Cannot observe remote DC: partition number mismatch"),
+      {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
+    true ->
+      case DCID == dc_utilities:get_my_dc_id() of
+        true -> ok;
+        false ->
+          lager:info("Observing DC ~p", [DCID]),
+          dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
+          %% Announce the new publisher addresses to all subscribers in this DC.
+          %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
+          %% But we want to balance the work, so all nodes take part in subscribing.
+          Nodes = dc_utilities:get_my_dc_nodes(),
+          lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders]) end, Nodes),
+          lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers]) end, Nodes)
+      end
+  end.
 
-init([]) ->
-    {ok, #state{dcs=[]}}.
+-spec observe_dcs([#descriptor{}]) -> ok.
+observe_dcs(Descriptors) -> lists:foreach(fun observe_dc/1, Descriptors).
 
-handle_call({start_receiver, Port}, _From, State) ->
-    {ok, _} = antidote_sup:start_rep(self(), Port),
-    receive
-        ready -> {reply, {ok, my_dc(Port)}, State#state{port=Port}}
-    end;
+-spec observe_dcs_sync([#descriptor{}]) -> ok.
+observe_dcs_sync(Descriptors) ->
+  {ok, SS} = vectorclock:get_stable_snapshot(),
+  observe_dcs(Descriptors),
+  lists:foreach(fun(#descriptor{dcid = DCID}) ->
+    Value = vectorclock:get_clock_of_dc(DCID, SS),
+    wait_for_stable_snapshot(DCID, Value)
+  end, Descriptors).
 
-handle_call({stop_receiver}, _From, State) ->
-    case antidote_sup:stop_rep() of
-        ok -> 
-            {reply, ok, State#state{port=0}}
-    end;
+-spec observe_dc_sync(#descriptor{}) -> ok.
+observe_dc_sync(Descriptor) -> observe_dcs_sync([Descriptor]).
 
-handle_call(get_dcs, _From, #state{dcs=DCs} = State) ->
-    {reply, {ok, DCs}, State};
+-spec forget_dc(#descriptor{}) -> ok.
+forget_dc(#descriptor{dcid = DCID}) ->
+  case DCID == dc_utilities:get_my_dc_id() of
+    true -> ok;
+    false ->
+      lager:info("Forgetting DC ~p", [DCID]),
+      Nodes = dc_utilities:get_my_dc_nodes(),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, del_dc, [DCID]) end, Nodes),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
+  end.
 
-handle_call({add_dc, OtherDC}, _From, #state{dcs=DCs} = State) ->
-    NewDCs = add_dc(OtherDC, DCs),
-    {reply, ok, State#state{dcs=NewDCs}};
+-spec forget_dcs([#descriptor{}]) -> ok.
+forget_dcs(Descriptors) -> lists:foreach(fun forget_dc/1, Descriptors).
 
-handle_call({add_list_dcs, OtherDCs}, _From, #state{dcs=DCs} = State) ->
-    NewDCs = add_dcs(OtherDCs, DCs),
-    {reply, ok, State#state{dcs=NewDCs}}.
+%%%%%%%%%%%%%
+%% Utils
 
-handle_cast(_Info, State) ->
-    {noreply, State}.
+observe(DcNodeAddress) ->
+  {ok, Desc} = rpc:call(DcNodeAddress, inter_dc_manager, get_descriptor, []),
+  observe_dc(Desc).
 
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-%% @private
-terminate(_Reason, _State) ->
-    ok.
-
-%% @private
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-my_dc(DcPort) ->
-    {ok, List} = inet:getif(),
-    {Ip, _, _} = hd(List),
-    DcIp = inet_parse:ntoa(Ip),
-    DcId = dc_utilities:get_my_dc_id(),
-    {DcId, {DcIp, DcPort}}.
-
-add_dc({DcId, DcAddress}, DCs) -> 
-    orddict:store(DcId, DcAddress, DCs).
-
-add_dcs(OtherDCs, DCs) ->
-    lists:foldl(fun add_dc/2, DCs, OtherDCs).
+wait_for_stable_snapshot(DCID, MinValue) ->
+  case DCID == dc_utilities:get_my_dc_id() of
+    true -> ok;
+    false ->
+      {ok, SS} = vectorclock:get_stable_snapshot(),
+      Value = vectorclock:get_clock_of_dc(DCID, SS),
+      case Value > MinValue of
+        true ->
+          lager:info("Connected to DC ~p", [DCID]),
+          ok;
+        false ->
+          lager:info("Waiting for DC ~p", [DCID]),
+          timer:sleep(1000),
+          wait_for_stable_snapshot(DCID, MinValue)
+      end
+  end.
