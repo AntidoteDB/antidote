@@ -6,10 +6,6 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
--ifndef(USE_CLOCKSI).
-confirm() ->
-    pass.
--else.
 confirm() ->
     NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
@@ -22,6 +18,9 @@ confirm() ->
 
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
+
+    {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
+    ?assertMatch(clocksi, Prot),
 
     ok = common:setup_dc_manager([Cluster1, Cluster2], first_run),
     simple_replication_test(Cluster1, Cluster2),
@@ -205,4 +204,3 @@ atomic_read_txn(Node, Key1, Key2, Key3) ->
                         [TxId, Key3, Type]),
     ?assertEqual(R1,R2),
     ?assertEqual(R2,R3).
--endif.

@@ -38,15 +38,9 @@ confirm() ->
     
     {ok, Prot} = rpc:call(hd(Nodes1), application, get_env, [antidote, txn_prot]),
     ?assertMatch(gr, Prot),
-    rt:wait_until_registered(hd(Nodes1), inter_dc_manager),
-    rt:wait_until_registered(hd(Nodes2), inter_dc_manager),
-
-    {ok, DC1} = rpc:call(hd(Nodes1), inter_dc_manager, start_receiver,[8091]),
-    {ok, DC2} = rpc:call(hd(Nodes2), inter_dc_manager, start_receiver,[8092]),
-
-    ok = rpc:call(hd(Nodes1), inter_dc_manager, add_dc,[DC2]),
-    ok = rpc:call(hd(Nodes2), inter_dc_manager, add_dc,[DC1]),
-
+    
+    ok = common:setup_dc_manager([Nodes1, Nodes2], first_run),
+    
     lager:info("Waiting for ring to converge."),
     rt:wait_until_ring_converged(Nodes1),
     rt:wait_until_ring_converged(Nodes2),
@@ -61,8 +55,8 @@ confirm() ->
     %% Check whether heartbeats from all replicas has received
     %% After this stable snapshot vectorclock contain entry for all DCs
     %% This is required for correct functioning of the protocol
-    rt:wait_until(hd(Nodes1), fun wait_init:check_replication_complete/1),
-    rt:wait_until(hd(Nodes2), fun wait_init:check_replication_complete/1),
+    %rt:wait_until(hd(Nodes1), fun wait_init:check_replication_complete/1),
+    %rt:wait_until(hd(Nodes2), fun wait_init:check_replication_complete/1),
     %% Test read and write on single nodes
     read_write_test(Nodes1),
     read_multiple_test(Nodes1),

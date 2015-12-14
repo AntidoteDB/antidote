@@ -20,8 +20,7 @@
 -module(wait_init).
 
 -export([wait_ready_nodes/1,
-	 check_ready/1,
-         check_replication_complete/1
+	 check_ready/1
         ]).
 
 %% @doc This function takes a list of pysical nodes connected to the an
@@ -63,26 +62,4 @@ check_ready(Node) ->
 	false ->
 	    lager:info("Checking if node ~w is ready ~n", [Node]),
 	    false
-    end.
-
-%% @doc This function checks whether stable snapshot vectorclock contains
-%% entry for all DCs. If yes, it has received heartbeats from all replicas 
-%% and all partitions. This is important for correct functioning of 
-%% GR protocol. Clocksi can still work without this check
-check_replication_complete(Node) ->
-    {ok, Dcs} =  rpc:call(Node, inter_dc_manager, get_dcs, []),
-    NOtherReplicas = length(Dcs),
-    case rpc:call(Node, vectorclock, get_stable_snapshot, []) of
-        {ok, StableSnapshot} ->
-            lager:info("StableSnapshot ~p", [StableSnapshot]),
-            case dict:size(StableSnapshot) of
-                NOtherReplicas ->
-                    true;
-                _ ->
-                    false
-            end;
-        false ->
-            false
-    end.
-                    
-                
+    end.                
