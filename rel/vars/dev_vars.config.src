@@ -10,6 +10,8 @@
 {handoff_port,      @HANDOFFPORT@}.
 {pb_ip,             "127.0.0.1"}.
 {pb_port,           @PBPORT@}.
+{pubsub_port,       @PUBSUBPORT@}.
+{logreader_port,    @LOGREADERPORT@}.
 
 %%
 %% etc/vm.args

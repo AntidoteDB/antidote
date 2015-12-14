@@ -34,9 +34,9 @@
          read/2,
          asyn_append/3,
          append/3,
-	 append_commit/3,
-	 append_group/3,
-	 asyn_append_group/3,
+         append_commit/3,
+         append_group/4,
+         asyn_append_group/4,
          asyn_read_from/3,
          read_from/3,
          get/2]).
@@ -129,18 +129,19 @@ append_commit(IndexNode, LogId, Payload) ->
 
 
 %% @doc synchronous append list of operations
--spec append_group(index_node(), key(), [term()]) -> {ok, op_id()} | {error, term()}.
-append_group(IndexNode, LogId, PayloadList) ->
+%% The IsLocal flag indicates if the operations in the transaction were handled by the local or remote DC.
+-spec append_group(index_node(), key(), [term()], boolean()) -> {ok, op_id()} | {error, term()}.
+append_group(IndexNode, LogId, PayloadList, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append_group, LogId, PayloadList},
+                                        {append_group, LogId, PayloadList, IsLocal},
                                         ?LOGGING_MASTER,
                                         infinity).
 
 %% @doc asynchronous append list of operations
--spec asyn_append_group(index_node(), key(), [term()]) -> ok.
-asyn_append_group(IndexNode, LogId, PayloadList) ->
+-spec asyn_append_group(index_node(), key(), [term()], boolean()) -> ok.
+asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
-				   {append_group, LogId, PayloadList},
+				   {append_group, LogId, PayloadList, IsLocal},
 				   ?LOGGING_MASTER,
 				   infinity).
 
@@ -238,8 +239,10 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
     {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case insert_operation(Log, LogId, OpId, Payload) of
+            Operation = #operation{op_number = OpId, payload = Payload},
+            case insert_operation(Log, LogId, Operation) of
                 {ok, OpId} ->
+                  inter_dc_log_sender_vnode:send(Partition, Operation),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of
@@ -258,7 +261,7 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
-handle_command({append_group, LogId, PayloadList}, _Sender,
+handle_command({append_group, LogId, PayloadList, IsLocal}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
                       partition=Partition}=State) ->
@@ -267,8 +270,13 @@ handle_command({append_group, LogId, PayloadList}, _Sender,
 						      {NewNewClock, _Node} = OpId,
 						      case get_log_from_map(Map, Partition, LogId) of
 							  {ok, Log} ->
-							      case insert_operation(Log, LogId, OpId, Payload) of
+                    Operation = #operation{op_number = OpId, payload = Payload},
+							      case insert_operation(Log, LogId, Operation) of
 								  {ok, OpId} ->
+                      case IsLocal of
+                        true -> inter_dc_log_sender_vnode:send(Partition, Operation);
+                        false -> ok
+                      end,
 								      {AccErr, AccSucc ++ [OpId], NewNewClock};
 								  {error, Reason} ->
 								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
@@ -295,7 +303,7 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommitedOpsForKey ->
-                    {reply, {length(CommitedOpsForKey), CommitedOpsForKey, clocksi_materializer:new(Type),
+                    {reply, {length(CommitedOpsForKey), CommitedOpsForKey, {0,clocksi_materializer:new(Type)},
                         vectorclock:new(), false}, State}
             end;
         {error, Reason} ->
@@ -305,12 +313,19 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
+
+reverse_and_add_op_id([],_Id,Acc) ->
+    Acc;
+reverse_and_add_op_id([Next|Rest],Id,Acc) ->
+    reverse_and_add_op_id(Rest,Id+1,[{Id,Next}|Acc]).
+
+
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
 get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
-            lists:reverse(CommitedOps);
+            reverse_and_add_op_id(CommitedOps,0,[]);
         {error, Reason} ->
             {error, Reason};
         {NewContinuation, NewTerms} ->
@@ -354,7 +369,7 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommitedOps) ->
     {{DcId, TxCommitTime}, SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, [{Key, Type, Op}]} ->
-            case not vectorclock:is_greater_than(SnapshotTime, MinSnapshotTime) of
+            case not vectorclock:gt(SnapshotTime, MinSnapshotTime) of
                 true ->
                     CommittedDownstreamOp =
                         #clocksi_payload{
@@ -389,11 +404,11 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
-    {LogId, #operation{op_number=OpId, payload=Payload}} = binary_to_term(Data),
+    {LogId, Operation} = binary_to_term(Data),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             %% Optimistic handling; crash otherwise.
-            {ok, _OpId} = insert_operation(Log, LogId, OpId, Payload),
+            {ok, _OpId} = insert_operation(Log, LogId, Operation),
             ok = disk_log:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
@@ -550,13 +565,12 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), op_id(), payload()) ->
-                              {ok, op_id()} | {error, reason()}.
-insert_operation(Log, LogId, OpId, Payload) ->
-    Result =disk_log:log(Log, {LogId, #operation{op_number=OpId, payload=Payload}}),
+-spec insert_operation(log(), log_id(), operation()) -> {ok, op_id()} | {error, reason()}.
+insert_operation(Log, LogId, Operation) ->
+    Result = disk_log:log(Log, {LogId, Operation}),
     case Result of
         ok ->
-            {ok, OpId};
+            {ok, Operation#operation.op_number};
         {error, Reason} ->
             {error, Reason}
     end.

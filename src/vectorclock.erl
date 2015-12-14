@@ -25,14 +25,22 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([get_clock/1, update_clock/3, get_clock_by_key/1,
-         is_greater_than/2,
-         get_clock_of_dc/2,
-         set_clock_of_dc/3,
-         get_stable_snapshot/0,
-         from_list/1,
-	 new/0,
-         eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
+-export([
+  get_clock_of_dc/2,
+  set_clock_of_dc/3,
+  get_stable_snapshot/0,
+  get_partition_snapshot/1,
+  from_list/1,
+  new/0,
+  eq/2,
+  lt/2,
+  gt/2,
+  le/2,
+  ge/2,
+  strict_ge/2,
+  strict_le/2,
+  max/1,
+  min/1]).
 
 -export_type([vectorclock/0]).
 
@@ -40,100 +48,76 @@
 new() ->
     dict:new().
 
--spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
-get_clock_by_key(Key) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    Indexnode = hd(Preflist),
-    try
-        riak_core_vnode_master:sync_command(
-          Indexnode, get_clock, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
-
--spec get_clock(Partition :: non_neg_integer())
-               -> {ok, vectorclock()} | {error, term()}.
-get_clock(Partition) ->
-    Indexnode = {Partition, node()},
-    try
-        riak_core_vnode_master:sync_command(
-           Indexnode, get_clock, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
-
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
--spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
+-spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
-    %% to riak core meta-data) otherwise will have to change this
-    {ok,vectorclock_vnode:get_stable_snapshot()}.
-    
-
--spec update_clock(Partition :: non_neg_integer(),
-                   Dc_id :: term(), Timestamp :: non_neg_integer())
-                  -> ok | {error, term()}.
-update_clock(Partition, Dc_id, Timestamp) ->
-    Indexnode = {Partition, node()},
-    try
-        riak_core_vnode_master:sync_command(Indexnode,
-          {update_clock, Dc_id, Timestamp}, vectorclock_vnode_master)
-    catch
-        _:R ->
-            lager:error("Exception caught: ~p", [R]),
-            {error, R}
+  case meta_data_sender:get_merged_data(stable) of
+	  undefined ->
+	    %% The snapshot isn't realy yet, need to wait for startup
+	    timer:sleep(10),
+	    get_stable_snapshot();
+	SS ->
+	    {ok, SS}
     end.
 
-%% @doc Return true if Clock1 > Clock2
--spec is_greater_than(Clock1 :: vectorclock(), Clock2 :: vectorclock())
-                     -> boolean().
-is_greater_than(Clock1, Clock2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, Clock1) of
-                           {ok, Time1} ->
-                               case Time1 > Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error -> %%Localclock has not observered some dcid
-                               false
-                       end
-               end,
-               true, Clock2).
-
-get_clock_of_dc(Dcid, VectorClock) ->
-    case dict:find(Dcid, VectorClock) of
-        {ok, Value} ->
-            {ok, Value};
-        error ->
-            {ok, 0}
+-spec get_partition_snapshot(partition_id()) -> snapshot_time().
+get_partition_snapshot(Partition) ->
+  case meta_data_sender:get_meta_dict(stable,Partition) of
+	  undefined ->
+	    %% The partition isn't ready yet, wait for startup
+	    timer:sleep(10),
+	    get_partition_snapshot(Partition);
+	SS ->
+	    SS
     end.
 
-set_clock_of_dc(DcId, Time, VectorClock) ->
-    dict:update(DcId,
-                fun(_Value) ->
-                        Time
-                end,
-                Time,
-                VectorClock).
+-spec get_clock_of_dc(any(), vectorclock()) -> non_neg_integer().
+get_clock_of_dc(Key, VectorClock) ->
+  case dict:find(Key, VectorClock) of
+    {ok, Value} -> Value;
+    error -> 0
+  end.
 
+-spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> vectorclock().
+set_clock_of_dc(Key, Value, VectorClock) ->
+  dict:store(Key, Value, VectorClock).
+
+-spec from_list([{any(), non_neg_integer()}]) -> vectorclock().
 from_list(List) ->
     dict:from_list(List).
+
+-spec max([vectorclock()]) -> vectorclock().
+max([]) -> new();
+max([V]) -> V;
+max([V1,V2|T]) -> max([merge(fun erlang:max/2, V1, V2)|T]).
+
+-spec min([vectorclock()]) -> vectorclock().
+min([]) -> new();
+min([V]) -> V;
+min([V1,V2|T]) -> min([merge(fun erlang:min/2, V1, V2)|T]).
+
+-spec merge(fun((non_neg_integer(), non_neg_integer()) -> non_neg_integer()), vectorclock(), vectorclock()) -> vectorclock().
+merge(F, V1, V2) ->
+  AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+  Func = fun(DC) ->
+    A = get_clock_of_dc(DC, V1),
+    B = get_clock_of_dc(DC, V2),
+    {DC, F(A, B)}
+  end,
+  from_list(lists:map(Func, AllDCs)).
 
 -spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->
   %% We could but do not care about duplicate DC keys - finding duplicates is not worth the effort
   AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
-  lists:all(fun(DC) -> F(get_clock_of_dc(DC, V1), get_clock_of_dc(DC, V2)) end, AllDCs).
-
+  Func = fun(DC) ->
+    A = get_clock_of_dc(DC, V1),
+    B = get_clock_of_dc(DC, V2),
+    F(A, B)
+  end,
+  lists:all(Func, AllDCs).
 
 -spec eq(vectorclock(), vectorclock()) -> boolean().
 eq(V1, V2) -> for_all_keys(fun(A, B) -> A == B end, V1, V2).
@@ -173,5 +157,40 @@ vectorclock_test() ->
     ?assertEqual(le(V1,V4), false),
     ?assertEqual(eq(V1,V4), false),
     ?assertEqual(ge(V1,V5), false).
+
+vectorclock_max_test() ->
+  V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
+  V2 = vectorclock:from_list([{1, 6}, {2, 3}]),
+  V3 = vectorclock:from_list([{1, 3}, {3, 2}]),
+
+  Expected12 = vectorclock:from_list([{1, 6}, {2, 4}]),
+  Expected23 = vectorclock:from_list([{1, 6}, {2, 3}, {3, 2}]),
+  Expected13 = vectorclock:from_list([{1, 5}, {2, 4}, {3, 2}]),
+  Expected123 = vectorclock:from_list([{1, 6}, {2, 4}, {3, 2}]),
+  Unexpected123 = vectorclock:from_list([{1, 5}, {2, 5}, {3, 5}]),
+
+  ?assertEqual(eq(max([V1, V2]), Expected12), true),
+  ?assertEqual(eq(max([V2, V3]), Expected23), true),
+  ?assertEqual(eq(max([V1, V3]), Expected13), true),
+  ?assertEqual(eq(max([V1, V2, V3]), Expected123), true),
+  ?assertEqual(eq(max([V1, V2, V3]), Unexpected123), false).
+
+
+vectorclock_min_test() ->
+  V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
+  V2 = vectorclock:from_list([{1, 6}, {2, 3}]),
+  V3 = vectorclock:from_list([{1, 3}, {3, 2}]),
+
+  Expected12 = vectorclock:from_list([{1, 5}, {2, 3}]),
+  Expected23 = vectorclock:from_list([{1, 3}]),
+  Expected13 = vectorclock:from_list([{1, 3}]),
+  Expected123 = vectorclock:from_list([{1, 3}]),
+  Unexpected123 = vectorclock:from_list([{1, 3}, {2, 3}, {3, 2}]),
+
+  ?assertEqual(eq(min([V1, V2]), Expected12), true),
+  ?assertEqual(eq(min([V2, V3]), Expected23), true),
+  ?assertEqual(eq(min([V1, V3]), Expected13), true),
+  ?assertEqual(eq(min([V1, V2, V3]), Expected123), true),
+  ?assertEqual(eq(min([V1, V2, V3]), Unexpected123), false).
 
 -endif.

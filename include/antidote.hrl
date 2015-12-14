@@ -23,6 +23,14 @@
 %% in the case of keys that are read frequently.  There is
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
+%% This defines the concurrency for the meta-data tables that
+%% are responsible for storing the stable time that a transaction
+%% can read.  It is set to false because the erlang docs say
+%% you should only set to true if you have long bursts of either
+%% reads or writes, but here they should be interleaved (maybe).  But should
+%% do some performance testing.
+-define(META_TABLE_CONCURRENCY, {read_concurrency, false}, {write_concurrency, false}).
+-define(META_TABLE_STABLE_CONCURRENCY, {read_concurrency, true}, {write_concurrency, false}).
 %% This can be used for testing, so that transactions start with
 %% old snapshots to avoid clock-skew.
 %% This can break the tests is not set to 0
@@ -36,21 +44,30 @@
 %% a transaction currently in the prepare state that is blocking
 %% that read.
 -define(SPIN_WAIT, 10).
+%% HEARTBEAT_PERIOD: Period of sending the heartbeat messages in interDC layer
+-define(HEARTBEAT_PERIOD, 1000).
+%% VECTORCLOCK_UPDATE_PERIOD: Period of updates of the stable snapshot per partition
+-define(VECTORCLOCK_UPDATE_PERIOD, 100).
+%% This is the time that nodes will sleep inbetween sending meta-data
+%% to other physical nodes within the DC
+-define(META_DATA_SLEEP, 1000).
+-define(META_TABLE_NAME, a_meta_data_table).
+-define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
+-define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
 %% At commit, if this is set to true, the logging vnode
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, false).
+%% Uncomment the following line to use erlang:now()
+%% Otherwise os:timestamp() is used which can go backwards
+%% which is unsafe for clock-si
+-define(SAFE_TIME, true).
+
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
-%% Enalble or disable the certification check
--ifdef(NO_CERTIFICATION).
--define(CERT, false).
--else.
--define(CERT, true).
--endif.
 
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
 -type operation() :: #operation{}.
--type vectorclock() :: dict().
+-type vectorclock() :: vectorclock:vectorclock().
 
 
 %% The way records are stored in the log.
@@ -71,7 +88,8 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time, server_pid :: pid()}).
+-record(tx_id, {snapshot_time :: snapshot_time(), 
+                server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
                           op_param :: op(),
@@ -109,15 +127,12 @@
 -type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
 -type tx() :: #transaction{}.
--type dc_address():: {inet:ip_address(),inet:port_number()}.
 -type cache_id() :: ets:tid().
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
               log/0, op_id/0, payload/0, operation/0, partition_id/0,
               type/0, snapshot/0, txid/0, tx/0,
-              bucket/0,
-              dc_address/0]).
-
+              bucket/0]).
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:

@@ -18,24 +18,24 @@
 %%
 %% -------------------------------------------------------------------
 %% @doc Supervise the fsm.
--module(inter_dc_communication_sender_fsm_sup).
+-module(meta_data_sender_sup).
 -behavior(supervisor).
 
 -export([start_fsm/1,
-         start_link/0]).
+         start_link/1]).
 -export([init/1]).
 
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link(FunsAndInitState) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, FunsAndInitState).
 
 
 start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
 
-init([]) ->
-    Worker = {inter_dc_communication_sender,
-              {inter_dc_communication_sender, start_link, []},
-              transient, 5000, worker, [inter_dc_communication_sender]},
-    {ok, {{simple_one_for_one, 5, 10}, [Worker]}}.
+init(FunsAndInitState) ->
+    Worker = {meta_data_sender,
+              {meta_data_sender, start_link, FunsAndInitState},
+              transient, 5000, worker, [meta_data_sender]},
+    {ok, {{one_for_one, 5, 10}, [Worker]}}.

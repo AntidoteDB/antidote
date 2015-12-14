@@ -198,7 +198,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
 check_clock(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
-    Time = clocksi_vnode:now_microsec(erlang:now()),
+    Time = clocksi_vnode:now_microsec(dc_utilities:now()),
     case T_TS > Time of
         true ->
 	    {not_ready, (T_TS - Time) div 1000 +1};
@@ -229,6 +229,7 @@ check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
 %%  - Reads and returns the log of specified Key using replication layer.
 return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+    %%lager:info("Here is the vector snapshot time we'll be reading from: ~p", [VecSnapshotTime]),
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
         {ok, Snapshot} ->
