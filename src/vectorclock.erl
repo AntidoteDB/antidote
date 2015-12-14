@@ -26,23 +26,22 @@
 -endif.
 
 -export([
-  new/0,
-  get_clock/1,
-  get_clock_by_key/1,
-  get_clock_of_dc/2,
-  set_clock_of_dc/3,
-  get_stable_snapshot/0,
+         get_clock_of_dc/2,
+         set_clock_of_dc/3,
+         get_stable_snapshot/0,
          get_scalar_stable_time/0,
-  from_list/1,
-  eq/2,
-  lt/2,
-  gt/2,
-  le/2,
-  ge/2,
-  strict_ge/2,
-  strict_le/2,
-  max/1,
-  min/1]).
+         get_partition_snapshot/1,
+         from_list/1,
+         new/0,
+         eq/2,
+         lt/2,
+         gt/2,
+         le/2,
+         ge/2,
+         strict_ge/2,
+         strict_le/2,
+         max/1,
+         min/1]).
 
 -export_type([vectorclock/0]).
 
@@ -50,68 +49,60 @@
 new() ->
     dict:new().
 
--spec get_clock_by_key(Key :: key()) -> {ok, vectorclock:vectorclock()} | {error, term()}.
-get_clock_by_key(Key) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    Indexnode = hd(Preflist),
-    try
-        riak_core_vnode_master:sync_command(
-          Indexnode, get_clock, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
-
--spec get_clock(Partition :: non_neg_integer())
-               -> {ok, vectorclock()} | {error, term()}.
-get_clock(Partition) ->
-    Indexnode = {Partition, node()},
-    try
-        riak_core_vnode_master:sync_command(
-           Indexnode, get_clock, vectorclock_vnode_master)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p", [Reason]),
-            {error, Reason}
-    end.
-
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
--spec get_stable_snapshot() -> {ok, vectorclock:vectorclock()}.
+-spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case application:get_env(antidote, txn_prot) of
-        {ok, clocksi} -> 
-            %% This is fine if transactions coordinators exists on the ring (i.e. they have access
-            %% to riak core meta-data) otherwise will have to change this
-            {ok, vectorclock_vnode:get_stable_snapshot()};
-        {ok, gr} ->
-            %% For gentlerain use the same format as clocksi
-            %% But, replicate GST to all entries in the dict
-            StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
-            case dict:size(StableSnapshot) of
-                0 -> 
-                    {ok, StableSnapshot};
-                _ ->
-                    ListTime = dict:fold( 
-                                 fun(_Key, Value, Acc) ->
-                                         [Value | Acc ]
-                                 end, [], StableSnapshot),
-                    GST = lists:min(ListTime),
-                    {ok, dict:map( 
-                           fun(_K, _V) ->
-                                   GST
-                           end,
-                           StableSnapshot)}
+    case meta_data_sender:get_merged_data(stable) of
+        undefined ->
+	    %% The snapshot isn't realy yet, need to wait for startup
+	    timer:sleep(10),
+	    get_stable_snapshot();
+	SS ->
+            case application:get_env(antidote, txn_prot) of
+                {ok, clocksi} -> 
+                    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+                    %% to riak core meta-data) otherwise will have to change this
+                    {ok, SS};
+                {ok, gr} ->
+                    %% For gentlerain use the same format as clocksi
+                    %% But, replicate GST to all entries in the dict
+                    StableSnapshot = SS,
+                    case dict:size(StableSnapshot) of
+                        0 -> 
+                            {ok, StableSnapshot};
+                        _ ->
+                            ListTime = dict:fold( 
+                                         fun(_Key, Value, Acc) ->
+                                                 [Value | Acc ]
+                                         end, [], StableSnapshot),
+                            GST = lists:min(ListTime),
+                            {ok, dict:map( 
+                                   fun(_K, _V) ->
+                                           GST
+                                   end,
+                                   StableSnapshot)}
+                    end
             end
+    end.
+
+-spec get_partition_snapshot(partition_id()) -> snapshot_time().
+get_partition_snapshot(Partition) ->
+  case meta_data_sender:get_meta_dict(stable,Partition) of
+	  undefined ->
+	    %% The partition isn't ready yet, wait for startup
+	    timer:sleep(10),
+	    get_partition_snapshot(Partition);
+	SS ->
+	    SS
     end.
 
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.
 -spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
 get_scalar_stable_time() ->   
-    StableSnapshot = vectorclock_vnode:get_stable_snapshot(),
+    {ok, StableSnapshot} = get_stable_snapshot(),
     %% dict:is_empty/1 is not available, hence using dict:size/1
     %% to check whether it is empty
     case dict:size(StableSnapshot) of
@@ -120,7 +111,7 @@ get_scalar_stable_time() ->
             %% or when there are no remote replicas
             %% Since with current setup there is no mechanism
             %% to distinguish these, we assume the second case
-            Now = clocksi_vnode:now_microsec(erlang:now()) - ?OLD_SS_MICROSEC,
+            Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
             {ok, Now, StableSnapshot};
         _ ->
             %% This is correct only if stablesnapshot has entries for
