@@ -51,6 +51,8 @@
 %% State
 -record(state, {
   partition :: non_neg_integer(),
+  use_delay :: boolean(),
+  dc_delays :: dict(),
   buffer_fsms :: dict() %% dcid -> buffer
 }).
 
@@ -64,13 +66,36 @@ deliver_log_reader_resp({DCID, Partition}, Txns) -> call(Partition, {log_reader_
 
 %%%% VNode methods ----------------------------------------------------------+
 
-init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
+init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new(), use_delay = false, dc_delays = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
-  Buf0 = get_buf(DCID, State),
-  Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
-  {noreply, set_buf(DCID, Buf1, State)};
+handle_command({add_delay, DCID, Delay}, _Sender, State = #state{dc_delays = DcDelays}) ->
+    {reply, ok, State#state{use_delay = true, dc_delays = dict:store(DCID, Delay, DcDelays)}};
+
+handle_command({txn_delayed, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
+    process_txn(Txn, DCID, State);
+
+handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State = #state{use_delay = UseDelay, dc_delays = DcDelays}) ->
+    DelayTime =
+	case UseDelay of
+	    true ->
+		case dict:find(DCID, DcDelays) of
+		    {ok, Time} ->
+			Time;
+		    error ->
+			false
+		end;
+	    false ->
+		false
+	end,
+    case DelayTime of
+	false ->
+	    process_txn(Txn, DCID, State);
+	_ ->
+	    lager:info("Adding delay ~p, for ~p", [DelayTime, DCID]),
+	    riak_core_vnode:send_command_after(DelayTime, {txn_delayed, Txn}),
+	    {noreply, State}
+    end;
 
 handle_command({log_reader_resp, DCID, Txns}, _Sender, State) ->
   Buf0 = get_buf(DCID, State),
@@ -92,6 +117,11 @@ delete(State) -> {ok, State}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 call(Partition, Request) -> dc_utilities:call_vnode(Partition, inter_dc_sub_vnode_master, Request).
+
+process_txn(Txn, DCID, State) ->
+    Buf0 = get_buf(DCID, State),
+    Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
+    {noreply, set_buf(DCID, Buf1, State)}.
 
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of
