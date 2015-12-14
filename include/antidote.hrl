@@ -24,7 +24,7 @@
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
 %% This defines the concurrency for the meta-data tables that
-%% are responsible for storing the satble time that a transaction
+%% are responsible for storing the stable time that a transaction
 %% can read.  It is set to false because the erlang docs say
 %% you should only set to true if you have long bursts of either
 %% reads or writes, but here they should be interleaved (maybe).  But should
