@@ -239,7 +239,7 @@ handle_command({remote_prepare, TxId, TimeStamp, Keys0}, _Sender, #state{clock=C
                                     Acc
                             end
                         end, [], Keys0),
-    lager:info("Keys ~p to be prepared. TimeStamp: ~p", [Keys1, TimeStamp]),
+    %lager:info("Keys ~p to be prepared. TimeStamp: ~p", [Keys1, TimeStamp]),
     S1 = do_prepare(TxId, Clock, Keys1, S0),
     {reply, {prepared, Clock, Keys1, {Partition, node()}}, S1#state{clock=Clock}};
 
@@ -344,7 +344,7 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
     end.
     
 post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending0, min_pendings=MinPendings0, buffered_reads=BufferedReads0, clock=Clock}) ->
-    lager:info("Key to post commit : ~p", [Key]),
+    %lager:info("Key to post commit : ~p", [Key]),
     List0 = dict:fetch(Key, Pending0),
     {List, PrepareTime} = delete_pending_entry(List0, TxId, []),
     case List of
@@ -463,7 +463,7 @@ do_prepare(TxId, Clock, Keys, S0=#state{pending=Pending0, min_pendings=MinPendin
     S0#state{pending=Pending, min_pendings=MinPendings}.
 
 eiger_ts_lt(TS1, TS2) ->
-    lager:info("ts1: ~p, ts2: ~p",[TS1, TS2]),
+   %lager:info("ts1: ~p, ts2: ~p",[TS1, TS2]),
     {DC1, C1} = TS1,
     {DC2, C2} = TS2,
     case (C1 < C2) of

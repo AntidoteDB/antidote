@@ -64,7 +64,7 @@ start_link(Vnode, TxId, TimeStamp, Deps, Ops) ->
 init([Vnode, TxId, TimeStamp, Deps, Ops]) ->
     {ListDeps, NPartitions} = Deps,
     DepsPartition = lists:foldl(fun(Dependency, Dict)->
-                                    lager:info("Dependency: ~p", [Dependency]),
+                                    %lager:info("Dependency: ~p", [Dependency]),
                                     {Key, _TimeStamp} = Dependency,
                                     Preflist = log_utilities:get_preflist_from_key(Key),
                                     IndexNode = hd(Preflist),
@@ -113,7 +113,7 @@ gather(timeout, SD0) ->
 
 gather({notify, Ops, _Partition}, SD0=#state{scattered_updates=ScatteredUpdates0, notifies=Notifies0, n_partitions=NPartitions, deps_ack=DepsAck, vnode=Vnode, tx_id=TxId, n_partitions_deps=NPDeps}) ->
     Notifies1 = Notifies0 + 1,
-    lager:info("Received a notify. Received: ~p, total: ~p. Deps total: ~p, received: ~p", [Notifies1, NPartitions, NPDeps, DepsAck]),
+    %lager:info("Received a notify. Received: ~p, total: ~p. Deps total: ~p, received: ~p", [Notifies1, NPartitions, NPDeps, DepsAck]),
     ScatteredUpdates1 = lists:foldl(fun(Operation, Acc) ->
                                         Logrecord = Operation#operation.payload,
                                         case Logrecord#log_record.op_type of
@@ -130,7 +130,7 @@ gather({notify, Ops, _Partition}, SD0=#state{scattered_updates=ScatteredUpdates0
         NPartitions ->
             case DepsAck of
                 NPDeps ->
-                    lager:info("Lets prepare"),
+                    %lager:info("Lets prepare"),
                     eiger_vnode:clean_propagated_tx_fsm(Vnode, TxId),
                     {next_state, prepare, SD0#state{scattered_updates=ScatteredUpdates1, notifies=Notifies1}, 0};
                 _ ->
@@ -141,7 +141,7 @@ gather({notify, Ops, _Partition}, SD0=#state{scattered_updates=ScatteredUpdates0
     end;
 
 gather(deps_checked, SD0=#state{notifies=Notifies, n_partitions=NPartitions, deps_ack=DepsAck0, tx_id=TxId, vnode=Vnode, n_partitions_deps=NPDeps}) ->
-    lager:info("Received deps_checked"),
+    %lager:info("Received deps_checked"),
     DepsAck1 = DepsAck0 + 1,
     case Notifies of
         NPartitions ->
@@ -157,7 +157,7 @@ gather(deps_checked, SD0=#state{notifies=Notifies, n_partitions=NPartitions, dep
     end.
 
 prepare(timeout, SD0=#state{tx_id=TxId, vnode=_Vnode, scattered_updates=ScatteredUpdates0, timestamp=TimeStamp}) ->
-    lager:info("About to prepare"),
+    %lager:info("About to prepare"),
     lists:foreach(fun(Slice) ->
                     {IndexNode, ListUpdates} = Slice,
                     Keys = [Key || {Key, _Type, _Param} <- ListUpdates],
@@ -166,18 +166,18 @@ prepare(timeout, SD0=#state{tx_id=TxId, vnode=_Vnode, scattered_updates=Scattere
     {next_state, gather_prepare, SD0#state{ack=0, commit_clock=0, n_partitions=length(dict:fetch_keys(ScatteredUpdates0))}}.
 
 gather_prepare({prepared, Clock, Keys, Partition}, SD0=#state{vnode=Vnode, n_partitions=NPartitions, ack=Ack0, commit_clock=CommitClock0, scattered_updates=ScatteredUpdates0}) ->
-    lager:info("Prepared: received= ~p, total= ~p", [Ack0+1, NPartitions]),
+    %lager:info("Prepared: received= ~p, total= ~p", [Ack0+1, NPartitions]),
     ok = eiger_vnode:update_clock(Vnode, Clock),
     Updates0 = dict:fetch(Partition, ScatteredUpdates0),
     Updates1 = lists:foldl(fun(Update, Acc) ->
                             {Key, _Type, _Param} = Update,
-                            lager:info("Is ~p contained in ~p", [Key, Keys]),
+                            %lager:info("Is ~p contained in ~p", [Key, Keys]),
                             case contains(Key, Keys) of
                                 true -> Acc ++ [Update];
                                 false -> Acc
                             end
                            end, [], Updates0),
-    lager:info("Updates to commit: ~p", [Updates1]),
+    %lager:info("Updates to commit: ~p", [Updates1]),
     case Updates1 of
         [] ->
             ScatteredUpdates1 = dict:erase(Partition, ScatteredUpdates0);
@@ -203,7 +203,7 @@ send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, tx_id=TxId, 
     {next_state, gather_commit, SD0}.
 
 gather_commit({committed, Clock}, SD0=#state{vnode=Vnode, n_partitions=NPartitions, ack=Ack0}) ->
-    lager:info("Committed: received= ~p, total= ~p", [Ack0+1, NPartitions]),
+    %lager:info("Committed: received= ~p, total= ~p", [Ack0+1, NPartitions]),
     ok = eiger_vnode:update_clock(Vnode, Clock),
     Ack1 = Ack0 + 1,
     case Ack1 of
