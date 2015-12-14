@@ -145,3 +145,6 @@
           read_set :: list(),
           is_static :: boolean(),
           full_commit :: boolean()}).
+
+%EIGER
+-define(EIGER_DATATYPE, riak_dt_lwwreg).

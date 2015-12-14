@@ -54,6 +54,7 @@
 propagate_sync(Message, DCs) ->
     FailedDCs = lists:foldl(
                fun({DcId, {DcAddress, Port}}, Acc) ->
+                        lager:info("Sending to: ~p", [{DcId, {DcAddress, Port}}]),
                        case inter_dc_communication_sender_fsm_sup:start_fsm(
                               [Port, DcAddress, Message, self()]) of
                            {ok, _} ->

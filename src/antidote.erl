@@ -51,6 +51,7 @@
          eiger_updatetx/2,
          eiger_updatetx/3,
          eiger_committx/1,
+         eiger_checkdeps/1,
          clocksi_bulk_update/2,
          clocksi_bulk_update/1,
          clocksi_istart_tx/1,
@@ -67,7 +68,13 @@
 -type bound_object() :: {key(), type(), bucket()}.
 
 %% Public API
-
+eiger_checkdeps(Deps) ->
+    {ok, _} = eiger_checkdeps_fsm:start_link(self(), Deps),
+    receive
+        ok ->
+            ok   
+    end.
+    
 eiger_readtx(KeysType) ->
     case KeysType of
         [] ->
