@@ -99,8 +99,11 @@ handle_command({hello}, _Sender, State) ->
 
 %% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
-    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
+    lager:info("Sending a ping"),
+    %PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
+    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, time),
     {noreply, set_timer(broadcast(State, PingTxn))}.
+    %{noreply, State}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
     {stop, not_implemented, State}.
@@ -158,6 +161,6 @@ broadcast(State, Txn) ->
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
-get_stable_time(Partition) ->
-    {ok, Time} = clocksi_vnode:get_min_prepared(Partition),
-    Time.
+%get_stable_time(Partition) ->
+%    {ok, Time} = clocksi_vnode:get_min_prepared(Partition),
+%    Time.

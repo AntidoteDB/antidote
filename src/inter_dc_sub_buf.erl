@@ -96,7 +96,15 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   end.
 
 -spec deliver(#interdc_txn{}) -> ok.
-deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
+deliver(Txn) -> 
+    Ops = Txn#interdc_txn.operations,
+    Commitoperation = lists:last(Ops),
+    Commitrecord = Commitoperation#operation.payload,
+    {CommitTime, VecSnapshotTime, Deps, TotalOps} = Commitrecord#log_record.op_payload,
+    TxId = Commitrecord#log_record.tx_id,
+    Preflist = log_utilities:get_preflist_from_key(TxId),
+    IndexNode = hd(Preflist),
+    eiger_vnode:notify_tx(IndexNode, {TxId, CommitTime, VecSnapshotTime, Deps, Ops, TotalOps}).
 
 %% TODO: consider dropping messages if the queue grows too large.
 %% The lost messages would be then fetched again by the log_reader.
