@@ -264,8 +264,12 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 		case ets:lookup(OpsCache, Key) of
 		    [] ->
 			{0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
-		    [{_, {Length1,Ops1}}] ->
-			{Length1,Ops1,LatestSnapshot1,SnapshotCommitTime1,IsFirst1}
+		    [Tuple] ->
+			io:format("found a tuple ~p", [Tuple]),
+			[Key,Length1,_OpId|AllOps] = tuple_to_list(Tuple),
+			{Length1, lists:sublist(AllOps,Length1), LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
+			%% [{_, {Length1,Ops1}}] ->
+			%% 	{Length1,Ops1,LatestSnapshot1,SnapshotCommitTime1,IsFirst1}
 		end
 	end,
     case Length of
@@ -326,15 +330,16 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
 	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
 					     vectorclock:min([CT1, Acc])
 				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
-	    {Length,OpsDict} = case ets:lookup(OpsCache, Key) of
-				   []->
-				       {0,[]};
-				   [{_, {Len,Dict}}]->
-				       {Len,Dict}
-			       end,
+	    {Length,OpId,OpsDict} = case ets:lookup(OpsCache, Key) of
+					[] ->
+					    {0, 0, []};
+					[Tuple] ->
+					    [Key,Length1,OpId1|Ops] = tuple_to_list(Tuple),
+					    {Length1, OpId1, lists:sublist(Ops,Length1)}
+				    end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-            true = ets:insert(OpsCache, {Key, {NewLength,PrunedOps}});
+            true = ets:insert(OpsCache, list_to_tuple([Key,NewLength,OpId|PrunedOps ++ lists:seq(NewLength+1,?OPS_THRESHOLD)]));
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
@@ -368,24 +373,34 @@ prune_ops({_Len,OpsDict}, Threshold)->
 %% the GC mechanism.
 -spec op_insert_gc(key(), clocksi_payload(), cache_id(), cache_id()) -> true.
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
-    {Length,OpsDict,NewId} = case ets:lookup(OpsCache, Key) of
-				 []->
-				     {0,[],1};
-				 [{_, {Len,[{PrevId,First}|Rest]}}]->
-				     {Len,[{PrevId,First}|Rest],PrevId+1}
-		       end,
+    case ets:member(OpsCache, Key) of
+	false ->
+	    ets:insert(OpsCache, erlang:make_tuple(3+?OPS_THRESHOLD,0,[{1,Key}]));
+	true ->
+	    ok
+    end,
+    NewId = ets:update_counter(OpsCache, Key,
+			       {3,1}),
+    Length = ets:lookup_element(OpsCache, Key, 2),
+    %% {Length,OpsDict,NewId} = case ets:lookup(OpsCache, Key) of
+    %% 				 []->
+    %% 				     {0,[],1};
+    %% 				 [{_, {Len,[{PrevId,First}|Rest]}}]->
+    %% 				     {Len,[{PrevId,First}|Rest],PrevId+1}
+    %% 		       end,
     case (Length)>=?OPS_THRESHOLD of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
 	    %% Have to get the new ops dict because the interal_read can change it
-	    [{_, {Length1,OpsDict1}}] = ets:lookup(OpsCache, Key),
-            OpsDict2=[{NewId,DownstreamOp} | OpsDict1],
-            ets:insert(OpsCache, {Key, {Length1 + 1, OpsDict2}});
+	    Length1 = ets:lookup_element(OpsCache, Key, 2),
+	    true = ets:update_element(OpsCache, Key, [{Length1+4,{NewId,DownstreamOp}}, {2,Length1+1}]);
+            %% ets:insert(OpsCache, {Key, {Length1 + 1, OpsDict2}});
         false ->
-            OpsDict1=[{NewId,DownstreamOp} | OpsDict],
-            ets:insert(OpsCache, {Key, {Length + 1,OpsDict1}})
+	    true = ets:update_element(OpsCache, Key, [{Length + 4, {NewId,DownstreamOp}}, {2,Length+1}])
+	    %% OpsDict1=[{NewId,DownstreamOp} | OpsDict],
+            %% ets:insert(OpsCache, {Key, {Length + 1,OpsDict1}})
     end.
 
 
