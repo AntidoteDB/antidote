@@ -378,7 +378,7 @@ prune_ops({_Len,OpsDict}, Threshold)->
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     case ets:member(OpsCache, Key) of
 	false ->
-	    ets:insert(OpsCache, erlang:make_tuple(3+?OPS_THRESHOLD,0,[{1,Key}]));
+	    ets:insert(OpsCache, erlang:make_tuple(4+?OPS_THRESHOLD,0,[{1,Key}]));
 	true ->
 	    ok
     end,
