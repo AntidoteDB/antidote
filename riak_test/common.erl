@@ -19,8 +19,9 @@
 %% -------------------------------------------------------------------
 -module(common).
 
--export([clean_clusters/1,
-         setup_dc_manager/3]).
+-export([
+  clean_clusters/1,
+  setup_dc_manager/2]).
 
 %% It cleans the cluster and formes a new one with the same characteristic of the input one.
 %% In case the clean_cluster parameter is set to false in the riak_test configuration file
@@ -45,29 +46,40 @@ clean_clusters(Clusters)->
 
 %% It set ups the listeners and connect the different dcs automatically
 %% Input:   Clusters:   List of clusters
-%%          Ports:      Port number where setup the listeners. One per dc
 %%          Clean:      If true, the setting is done, otherwise, it is ignore. This is useful
-%%                      for the configurable clean_cluster parameter. 
-setup_dc_manager(Clusters, Ports, Clean) ->
-    case Clean of
-        true ->
-            {_, CombinedList} = lists:foldl(fun(Cluster, {Index, Result}) ->
-                                                {Index+1, Result ++ [{Cluster, lists:nth(Index, Ports)}]}
-                                            end, {1, []}, Clusters),
-            Heads = lists:foldl(fun({Cluster, Port}, Acc) ->
-                                    Node = hd(Cluster),
-                                    rt:wait_until_registered(Node, inter_dc_manager),
-                                    {ok, DC} = rpc:call(Node, inter_dc_manager, start_receiver,[Port]),
-                                    rt:wait_until(Node,fun wait_init:check_ready/1),
-                                    Acc ++ [{Node, DC}]
-                                end, [], CombinedList),
-            lists:foreach(fun({Node, DC}) ->
-                            Sublist = lists:subtract(Heads, [{Node, DC}]),
-                            lists:foreach(fun({_, RemoteDC}) ->
-                                            ok = rpc:call(Node, inter_dc_manager, add_dc,[RemoteDC])
-                                          end, Sublist)
-                          end, Heads),
-            ok;
-        false ->
-            ok
-    end.
+%%                      for the configurable clean_cluster parameter.
+setup_dc_manager(Clusters, first_run) -> connect_dcs(Clusters);
+setup_dc_manager(_Clusters, false) -> ok;
+setup_dc_manager(Clusters, true) -> disconnect_dcs(Clusters), connect_dcs(Clusters).
+
+connect_dcs(Clusters) ->
+  lager:info("Connecting DC clusters..."),
+  Descriptors = descriptors(Clusters),
+  lists:foreach(fun(Cluster) ->
+    Node = hd(Cluster),
+    lager:info("Waiting until vnodes start on node ~p", [Node]),
+    rt:wait_until_registered(Node, inter_dc_pub),
+    rt:wait_until_registered(Node, inter_dc_log_reader_response),
+    rt:wait_until_registered(Node, inter_dc_log_reader_query),
+    rt:wait_until_registered(Node, inter_dc_sub),
+    lager:info("Making node ~p observe other DCs...", [Node]),
+    %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
+    rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+  end, Clusters),
+  lager:info("DC clusters connected!").
+
+disconnect_dcs(Clusters) ->
+  lager:info("Disconnecting DC clusters..."),
+  Descriptors = descriptors(Clusters),
+  lists:foreach(fun(Cluster) ->
+    Node = hd(Cluster),
+    lager:info("Making node ~p forget other DCs...", [Node]),
+    rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+  end, Clusters),
+  lager:info("DC clusters disconnected!").
+
+descriptors(Clusters) ->
+  lists:map(fun(Cluster) ->
+    {ok, Descriptor} = rpc:call(hd(Cluster), inter_dc_manager, get_descriptor, []),
+    Descriptor
+  end, Clusters).

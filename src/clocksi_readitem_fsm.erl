@@ -229,6 +229,7 @@ check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
 %%  - Reads and returns the log of specified Key using replication layer.
 return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+    %%lager:info("Here is the vector snapshot time we'll be reading from: ~p", [VecSnapshotTime]),
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
         {ok, Snapshot} ->

@@ -324,7 +324,7 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
             FirstOp=vector_orddict:last(PrunedSnapshots),
             {CT, _S} = FirstOp,
 	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
-					     vectorclock:keep_min(CT1,Acc)
+					     vectorclock:min([CT1, Acc])
 				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
 	    {Length,OpsDict} = case ets:lookup(OpsCache, Key) of
 				   []->

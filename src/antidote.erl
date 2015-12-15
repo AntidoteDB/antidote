@@ -59,7 +59,8 @@
          clocksi_iupdate/4,
          clocksi_iprepare/1,
          clocksi_full_icommit/1,
-         clocksi_icommit/1]).
+         clocksi_icommit/1,
+         does_certification_check/0]).
 %% ===========================================================
 
 -type txn_properties() :: term(). %% TODO: Define
@@ -90,7 +91,9 @@ commit_transaction(TxId) ->
         {ok, {_TxId, CommitTime}} ->
             {ok, CommitTime};
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason};
+        Other ->
+            {error, Other}
     end.
 
 -spec read_objects(Objects::[bound_object()], TxId::txid())
@@ -145,10 +148,29 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
                            {update, {Key, Type, {{Op,OpParam}, Actor}}}
                    end,
                    Updates),
-    case clocksi_execute_tx(Clock, Operations, StayAlive) of
-        {ok, {_TxId, [], CommitTime}} ->
-            {ok, CommitTime};
-        {error, Reason} -> {error, Reason}
+    SingleKey = case Operations of
+                    [_O] -> %% Single key update
+                        case Clock of 
+                            ignore -> true;
+                            _ -> false
+                        end;
+                    [_H|_T] -> false
+                end,
+    case SingleKey of 
+        true ->  %% if single key, execute the fast path
+            [{update, {K, T, Op}}] = Operations,
+            case append(K, T, Op) of
+                {ok, {_TxId, [], CT}} ->
+                    {ok, CT};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        false ->
+            case clocksi_execute_tx(Clock, Operations, StayAlive) of
+                {ok, {_TxId, [], CommitTime}} ->
+                    {ok, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end
     end.
 
 read_objects(Clock, Properties, Objects) ->
@@ -160,12 +182,32 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                      {read, {Key, Type}}
              end,
              Objects),
-    case clocksi_execute_tx(Clock, Args, StayAlive) of
-        {ok, {_TxId, Result, CommitTime}} ->
-            {ok, Result, CommitTime};
-        {error, Reason} -> {error, Reason}
+    SingleKey = case Args of
+                    [_O] -> %% Single key update
+                        case Clock of 
+                            ignore -> true;
+                            _ -> false
+                        end;
+                    [_H|_T] -> false
+                end,
+    case SingleKey of
+        true -> %% Execute the fast path
+            [{read, {Key, Type}}] = Args,
+            case materializer:check_operations([{read, {Key, Type}}]) of
+                ok ->
+                    {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
+                        perform_singleitem_read(Key,Type),
+                    {ok, [Val], CommitTime};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        false -> 
+            case clocksi_execute_tx(Clock, Args, StayAlive) of
+                {ok, {_TxId, Result, CommitTime}} ->
+                    {ok, Result, CommitTime};
+                {error, Reason} -> {error, Reason}
+            end
     end.
-
 
 %% Object creation and types
 
@@ -200,11 +242,13 @@ append(Key, Type, {OpParams, Actor}) ->
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
--spec read(key(), type()) -> {ok, val()} | {error, reason()}.
+-spec read(key(), type()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
 read(Key, Type) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            clocksi_interactive_tx_coord_fsm:perform_singleitem_read(Key,Type);
+            {ok, Val, _CommitTime} = clocksi_interactive_tx_coord_fsm:
+                perform_singleitem_read(Key,Type),
+            {ok, Val};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -354,3 +398,12 @@ clocksi_iprepare({_, _, CoordFsmPid})->
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT).
+
+-spec does_certification_check() -> boolean().
+does_certification_check() ->
+    case application:get_env(antidote, txn_cert) of
+        {ok, true} 
+            -> true;
+        _
+            -> false
+    end.
