@@ -229,6 +229,10 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
     SnapshotDict1=vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict),
     snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache).
 
+sub_reverse(_List,0,Acc) ->
+    Acc;
+sub_reverse([First|Rest],Length,Acc) ->
+    sub_reverse(Rest,Length-1,[First|Acc]).
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
@@ -265,9 +269,8 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 		    [] ->
 			{0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
 		    [Tuple] ->
-			io:format("found a tuple ~p", [Tuple]),
 			[Key,Length1,_OpId|AllOps] = tuple_to_list(Tuple),
-			{Length1, lists:sublist(AllOps,Length1), LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
+			{Length1, sub_reverse(AllOps,Length1,[]), LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
 			%% [{_, {Length1,Ops1}}] ->
 			%% 	{Length1,Ops1,LatestSnapshot1,SnapshotCommitTime1,IsFirst1}
 		end
@@ -335,11 +338,11 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
 					    {0, 0, []};
 					[Tuple] ->
 					    [Key,Length1,OpId1|Ops] = tuple_to_list(Tuple),
-					    {Length1, OpId1, lists:sublist(Ops,Length1)}
+					    {Length1, OpId1, sub_reverse(Ops,Length1,[])}
 				    end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-            true = ets:insert(OpsCache, list_to_tuple([Key,NewLength,OpId|PrunedOps ++ lists:seq(NewLength+1,?OPS_THRESHOLD)]));
+            true = ets:insert(OpsCache, list_to_tuple([Key,NewLength,OpId|lists:reverse(PrunedOps) ++ lists:seq(NewLength+1,?OPS_THRESHOLD)]));
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
