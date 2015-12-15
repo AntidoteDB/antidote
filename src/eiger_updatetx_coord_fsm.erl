@@ -22,6 +22,8 @@
 
 -include("antidote.hrl").
 
+-define(VECTORCLOCK, vectorclock).
+
 %% API
 -export([start_link/5]).
 
@@ -65,10 +67,10 @@ init([Vnode, From, Updates, Deps, Debug]) ->
     %lager:info("Vnode got updates ~w", [Updates]),
     {ok, SnapshotTime} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
     DcId = dc_utilities:get_my_dc_id(),
-    {ok, LocalClock} = vectorclock:get_clock_of_dc(DcId, SnapshotTime),
+    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{snapshot_time=LocalClock, server_pid=self()},
     Transaction = #transaction{snapshot_time=LocalClock,
-                               vec_snapshot_time=SnapshotTime,
+                               vec_snapshot_time=none,
                                txn_id=TransactionId},
     SD = #state{
             vnode=Vnode,
