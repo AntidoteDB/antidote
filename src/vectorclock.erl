@@ -83,7 +83,9 @@ get_stable_snapshot() ->
                                            GST
                                    end,
                                    StableSnapshot)}
-                    end
+                    end;
+                _ ->
+                    {ok, SS}
             end
     end.
 
