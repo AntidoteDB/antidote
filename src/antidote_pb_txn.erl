@@ -146,41 +146,39 @@ process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td},
              State}
     end;
 process(#apbstaticupdateobjects{
-           transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
+           transaction=#apbstarttransaction{timestamp=BDeps, properties = _BProperties},
            updates=BUpdates},
         State) ->
 
-    Clock = binary_to_term(BClock),
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Deps = binary_to_term(BDeps),
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
-    Response = antidote:update_objects(Clock, Properties, Updates),
+    Response = antidote:eiger_updatetx(Updates, Deps, undefined),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
                                              {error, Reason}), State};
-        {ok, CommitTime} ->
-            {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
+        {ok, NewDeps} ->
+            {reply, antidote_pb_codec:encode(commit_response, {ok, NewDeps}),
              State}
     end;            
 process(#apbstaticreadobjects{
-           transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            objects=BoundObjects},
         State) ->
-    Clock = binary_to_term(BClock),
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-    Response = antidote:read_objects(Clock, Properties, Objects),
+    KeysType = [{Key, Type} || {Key, Type, _} <- Objects],
+    Response = antidote:eiger_readtx(KeysType),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
                                              {error, Reason}), State};
-        {ok, Results, CommitTime} ->
+        {ok, Results, Dependency} ->
+            R = [{{K, riak_dt_lwwreg, <<"bucket">>}, V}  || {K,V} <- Results],
             {reply, antidote_pb_codec:encode(static_read_objects_response,
-                                             {ok, lists:zip(Objects,Results), CommitTime}),
+                                             {ok, R, Dependency}),
              State}
     end.
 

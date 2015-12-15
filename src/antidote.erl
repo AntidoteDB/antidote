@@ -79,9 +79,8 @@ eiger_readtx(KeysType) ->
     case KeysType of
         [] ->
             {ok, empty};
-        List ->
-            NewList = [{Key, riak_dt_lwwreg} || Key <- List],
-            {ok, _} = eiger_readtx_coord_sup:start_fsm([self(), NewList]),
+        _ ->
+            {ok, _} = eiger_readtx_coord_sup:start_fsm([self(), KeysType]),
             receive
                 EndOfTx ->
                     EndOfTx
@@ -99,8 +98,8 @@ eiger_updatetx(Updates, Dependencies) ->
 
 eiger_updatetx(Updates, Dependencies, Debug) ->
     case Updates of
-        [{Key, _Value}|_Rest] ->
-            NewList = [{K, riak_dt_lwwreg,  {{assign, V}, V}} ||  {K, V} <- Updates],
+        [{{Key, _Type, _Bucket}, _Op, _Param}|_Rest] ->
+            NewList = [{K, T,  {{Op, Param}, ignore}} ||  {{K, T, _}, Op, Param} <- Updates],
             Preflist = log_utilities:get_preflist_from_key(Key),
             IndexNode = hd(Preflist),
             eiger_vnode:coordinate_tx(IndexNode, NewList, Dependencies, Debug);
