@@ -185,16 +185,35 @@ read_objects(Clock, _Properties, Objects) ->
                 {error, Reason} ->
                     {error, Reason}
             end;
-        false -> 
-            case clocksi_execute_tx(Clock, Args) of
-                {ok, {_TxId, Result, CommitTime}} ->
-                    {ok, Result, CommitTime};
-                {error, Reason} -> {error, Reason}
+        false ->
+            case application:get_env(antidote, txn_prot) of
+                {ok, clocksi} ->
+                    case clocksi_execute_tx(Clock, Args) of
+                        {ok, {_TxId, Result, CommitTime}} ->
+                            {ok, Result, CommitTime};
+                        {error, Reason} -> {error, Reason}
+                    end;
+                {ok, gr} ->
+                    case Args of
+                        [_Op] -> %% Single object read = read latest value
+                            case clocksi_execute_tx(Clock, Args) of
+                                {ok, {_TxId, Result, CommitTime}} ->
+                                    {ok, Result, CommitTime};
+                                {error, Reason} -> {error, Reason}
+                            end;
+                        [_|_] -> %% Read Multiple objects  = read from a snapshot
+                            %% Snapshot includes all updates committed at time GST
+                            %% from local and remore replicas
+                            case gr_snapshot_read(Clock, Args) of
+                                {ok, {_TxId, Result, CommitTime}} ->
+                                    {ok, Result, CommitTime};
+                                {error, Reason} -> {error, Reason}
+                            end
+                    end
             end
     end.
 
 %% Object creation and types
-
 create_bucket(_Bucket, _Type) ->
     %% TODO: Bucket is not currently supported
     {error, operation_not_supported}.
@@ -212,7 +231,7 @@ delete_object({_Key, _Type, _Bucket}) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}) -> 
+-spec append(key(), type(), {op(),term()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(Key, Type, {OpParams, Actor}) ->
     case materializer:check_operations([{update,
@@ -239,7 +258,7 @@ read(Key, Type) ->
 
 
 %% Clock SI API
-%% TODO: Move these functions into clocksi files. Public interface should only 
+%% TODO: Move these functions into clocksi files. Public interface should only
 %%       contain generic transaction interface
 
 %% @doc Starts a new ClockSI transaction.
@@ -253,16 +272,18 @@ read(Key, Type) ->
 %%
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
+clocksi_execute_tx(Operations) ->
+    clocksi_execute_tx(ignore, Operations, update_clock).
+
 clocksi_execute_tx(Clock, Operations) ->
-    {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations]),
-    gen_fsm:sync_send_event(CoordFsmPid, execute, ?OP_TIMEOUT).
+    clocksi_execute_tx(Clock, Operations, update_clock).
 
 -spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_execute_tx(Operations) ->
+clocksi_execute_tx(Clock, Operations, UpdateClock) ->
     case materializer:check_operations(Operations) of
         ok ->
-            {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Operations]),
-            gen_fsm:sync_send_event(CoordFsmPid, execute);
+            {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock]),
+            gen_fsm:sync_send_event(CoordFsmPid, execute, ?OP_TIMEOUT);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -310,7 +331,7 @@ clocksi_istart_tx() ->
         Other ->
             {error, Other}
     end.
-    
+
 
 -spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
 clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
@@ -360,6 +381,26 @@ clocksi_iprepare({_, _, CoordFsmPid})->
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
     gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT).
+
+%%% Snapshot read for Gentlerain protocol
+gr_snapshot_read(ClientClock, Args) ->
+    %% GST = scalar stable time
+    %% VST = vector stable time with entries for each dc
+    {ok, GST, VST} = vectorclock:get_scalar_stable_time(),
+    DcId = dc_utilities:get_my_dc_id(),
+    Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
+    case Dt =< GST of
+        true ->
+            %% Set all entries in snapshot as GST
+            ST = dict:map(fun(_,_) -> GST end, VST),
+            %% ST doesnot contain entry for local dc, hence explicitly 
+            %% add it in snapshot time
+            SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
+            clocksi_execute_tx(SnapshotTime, Args, no_update_clock);
+        false ->
+            timer:sleep(10),
+            gr_snapshot_read(ClientClock, Args)
+    end.
 
 -spec does_certification_check() -> boolean().
 does_certification_check() ->
