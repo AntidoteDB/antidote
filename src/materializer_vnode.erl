@@ -26,7 +26,7 @@
 
 
 -define(SNAPSHOT_THRESHOLD, 10).
--define(SNAPSHOT_MIN, 5).
+-define(SNAPSHOT_MIN, 3).
 -define(OPS_THRESHOLD, 50).
 
 -ifdef(TEST).
@@ -159,7 +159,7 @@ handle_command({update, Key, DownstreamOp}, _Sender,
 
 handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
-    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache),
+    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,false),
     {noreply, State};
 
 
@@ -218,8 +218,8 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_store_ss(key(), snapshot(), snapshot_time(), cache_id(), cache_id()) -> true.
-internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
+-spec internal_store_ss(key(), snapshot(), snapshot_time(), cache_id(), cache_id(),boolean()) -> true.
+internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
 			   vector_orddict:new();
@@ -227,7 +227,7 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache) ->
 			   SnapshotDictA
 		   end,
     SnapshotDict1=vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict),
-    snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache).
+    snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache,ShouldGc).
 
 sub_reverse(_List,0,Acc) ->
     Acc;
@@ -238,13 +238,16 @@ sub_reverse([First|Rest],Length,Acc) ->
 %% vnode when the write function calls it. That is done for garbage collection.
 -spec internal_read(key(), type(), snapshot_time(), txid() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
 internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
+    internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,false).
+
+internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc) ->
     Result = case ets:lookup(SnapshotCache, Key) of
 		 [] ->
 		     %% First time reading this key, store an empty snapshot in the cache
 		     BlankSS = {0,clocksi_materializer:new(Type)},
 		     case TxId of
 			 ignore ->
-			     internal_store_ss(Key,BlankSS,vectorclock:new(),OpsCache,SnapshotCache);
+			     internal_store_ss(Key,BlankSS,vectorclock:new(),OpsCache,SnapshotCache,false);
 			 _ ->
 			     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
 		     end,
@@ -294,7 +297,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
 				true ->
 				    case TxId of
 					ignore ->
-					    internal_store_ss(Key,{NewLastOp,Snapshot},CommitTime,OpsCache,SnapshotCache);
+					    internal_store_ss(Key,{NewLastOp,Snapshot},CommitTime,OpsCache,SnapshotCache,ShouldGc);
 					_ ->
 					    materializer_vnode:store_ss(Key,{NewLastOp,Snapshot},CommitTime)
 				    end;
@@ -321,10 +324,10 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
-                         cache_id(),cache_id() ) -> true.
-snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache)->
+                         cache_id(),cache_id(),boolean()) -> true.
+snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
     %% Should check op size here also, when run from op gc
-    case (vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD of
+    case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) or ShouldGc of
         true ->
 	    %% snapshots are no longer totally ordered
 	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
@@ -395,7 +398,7 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
-            {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache),
+            {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache, true),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    Length1 = ets:lookup_element(OpsCache, Key, 2),
 	    true = ets:update_element(OpsCache, Key, [{Length1+4,{NewId,DownstreamOp}}, {2,Length1+1}]);
