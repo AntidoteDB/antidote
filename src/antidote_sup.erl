@@ -104,6 +104,11 @@ init(_Args) ->
                               {riak_core_vnode_master, start_link, [eiger_materializer_vnode]},
                               permanent, 5000, worker, [riak_core_vnode_master]},
 
+    EigerReadTxCoordSup =  {eiger_readtx_coord_sup,
+                           {eiger_readtx_coord_sup, start_link, []},
+                           permanent, 5000, supervisor,
+                           [eiger_readtx_coord_sup]},
+
     {ok,
      {{one_for_one, 5, 10},
       [LoggingMaster,

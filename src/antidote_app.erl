@@ -42,16 +42,13 @@ start(_StartType, _StartArgs) ->
 
             ok = riak_core:register([{vnode_module, eiger_materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(eiger_materializer, self()),
-            %%ClockSI layer
 
+            %%ClockSI layer
             ok = riak_core:register([{vnode_module, clocksi_vnode}]),
             ok = riak_core_node_watcher:service_up(clocksi, self()),
 
             ok = riak_core:register([{vnode_module, materializer_vnode}]),
             ok = riak_core_node_watcher:service_up(materializer, self()),
-
-            ok = riak_core:register([{vnode_module, eiger_inter_dc_repl_vnode}]),
-            ok = riak_core_node_watcher:service_up(interdcreplication, self()),
 
             ok = riak_core:register([{vnode_module, inter_dc_log_sender_vnode}]),
             ok = riak_core_node_watcher:service_up(logsender, self()),

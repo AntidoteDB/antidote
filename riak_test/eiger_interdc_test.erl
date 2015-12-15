@@ -2,10 +2,10 @@
 
 -export([confirm/0,
          simple_replication_test/2,
-         partition_test/2,
+         partition_test/1,
          missing_dependency_test/1,
          multiple_keys_test/1,
-         concurrent_updates_test/2
+         concurrent_updates_test/1
          ]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -21,31 +21,30 @@ confirm() ->
 
     Clean = rt_config:get(clean_cluster, true),
 
-    Clusters1 = [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
-    Ports = [8091, 8092, 8093],
+    Clusters1 = [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1, 1, 1]),
 
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
 
-    ok = common:setup_dc_manager(Clusters1, Ports, true),
-    %simple_replication_test(Cluster1, Cluster2),
+    ok = common:setup_dc_manager_eiger(Clusters1,first_run),
+    simple_replication_test(Cluster1, Cluster2),
 
     Clusters2 = common:clean_clusters(Clusters1),
-    ok = common:setup_dc_manager(Clusters2, Ports, Clean),
-    %partition_test(Clusters2, Ports),
+    ok = common:setup_dc_manager_eiger(Clusters2, Clean),
+    partition_test(Clusters2),
 
     Clusters3 = common:clean_clusters(Clusters2),
-    ok = common:setup_dc_manager(Clusters3, Ports, Clean),
-    %missing_dependency_test(Clusters3),
+    ok = common:setup_dc_manager_eiger(Clusters3, Clean),
+    missing_dependency_test(Clusters3),
 
     Clusters4 = common:clean_clusters(Clusters3),
-    ok = common:setup_dc_manager(Clusters4, Ports, Clean),
-    %multiple_keys_test(Clusters4),
+    ok = common:setup_dc_manager_eiger(Clusters4, Clean),
+    multiple_keys_test(Clusters4),
 
     Clusters5 = common:clean_clusters(Clusters4),
-    ok = common:setup_dc_manager(Clusters5, Ports, Clean),
-    concurrent_updates_test(Clusters5, Ports),
+    ok = common:setup_dc_manager_eiger(Clusters5, Clean),
+    concurrent_updates_test(Clusters5),
     pass.
 
 %read in one dc and read the update from the other one.
@@ -62,7 +61,7 @@ simple_replication_test(Cluster1, Cluster2) ->
     lager:info("Simple replication test passed!").
 
 %test multiple failure scenarios
-partition_test([Cluster1, Cluster2, Cluster3], [_Port1, _Port2, Port3]) ->
+partition_test([Cluster1, Cluster2, Cluster3]) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     Node3 = hd(Cluster3),
@@ -74,9 +73,13 @@ partition_test([Cluster1, Cluster2, Cluster3], [_Port1, _Port2, Port3]) ->
 
     ok=rpc:call(Node3, antidote, eiger_checkdeps,[[{Key, TS1}]]),
 
-    %% Simulate failure of NODE3 by stoping the receiver
-    ok = rpc:call(Node3, inter_dc_manager, stop_receiver, []),
+     %% Simulate failure of NODE3 by stoping the receiver
+    {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
+    {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
 
+    %% Simulate failure of NODE3 by stoping the receiver
+    ok = rpc:call(Node3, inter_dc_manager, forget_dcs, [[D1, D2]]),
+    
     {_, TS2} = WriteResult2 = rpc:call(Node1, antidote, eiger_updatetx,[[{Key, 2}],[]]),
     ?assertMatch({ok, _}, WriteResult2),
 
@@ -91,9 +94,10 @@ partition_test([Cluster1, Cluster2, Cluster3], [_Port1, _Port2, Port3]) ->
     ?assertMatch([{Key, 2}], Result3),
 
     %% NODE3 comes back 
-    {ok, _} = rpc:call(Node3, inter_dc_manager, start_receiver, [Port3]),
+    ok = rpc:call(Node3, inter_dc_manager, observe_dcs, [[D1, D2]]),
 
     ok=rpc:call(Node3, antidote, eiger_checkdeps,[[{Key, TS2}]]),
+    lager:info("Already here"),
 
     {ok, Result4, _}=rpc:call(Node3, antidote, eiger_readtx, [[Key]]),
     ?assertMatch([{Key, 2}], Result4),
@@ -159,9 +163,10 @@ multiple_keys_test([Cluster1, Cluster2, _Cluster3]) ->
     lager:info("multiple keys test passed!").
 
 %Test what happends when clusters concurrently update the same key
-concurrent_updates_test([Cluster1, Cluster2, _Cluster3], [Port1, Port2, _Port3]) ->
+concurrent_updates_test([Cluster1, Cluster2, Cluster3]) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
+    Node3 = hd(Cluster3),
     
     Key1 = concurrent_updates_test_key1,
     Key2 = concurrent_updates_test_key2,
@@ -173,17 +178,22 @@ concurrent_updates_test([Cluster1, Cluster2, _Cluster3], [Port1, Port2, _Port3])
     
     ok=rpc:call(Node2, antidote, eiger_checkdeps, [[{Key1, TS1}, {Key2, TS1}]]),
 
-    ok = rpc:call(Node2, inter_dc_manager, stop_receiver, []),
-    ok = rpc:call(Node1, inter_dc_manager, stop_receiver, []),
-    
+%% Simulate failure of NODE3 by stoping the receiver
+    {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
+    {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
+    {ok, D3} = rpc:call(Node3, inter_dc_manager, get_descriptor, []),
+
+    ok = rpc:call(Node2, inter_dc_manager, forget_dcs, [[D1, D3]]),
+    ok = rpc:call(Node1, inter_dc_manager, forget_dcs, [[D2, D3]]),
+
     {_, TS2} = WriteResult2 = rpc:call(Node1, antidote, eiger_updatetx,[[{Key2, 6}, {Key3, 2}],[]]),
     ?assertMatch({ok, _}, WriteResult2),
     
     {_, TS3} = WriteResult3 = rpc:call(Node2, antidote, eiger_updatetx,[[{Key2, 7}, {Key4, 9}],[]]),
     ?assertMatch({ok, _}, WriteResult3),
 
-    {ok, _} = rpc:call(Node2, inter_dc_manager, start_receiver, [Port2]),
-    {ok, _} = rpc:call(Node1, inter_dc_manager, start_receiver, [Port1]),
+    ok = rpc:call(Node2, inter_dc_manager, observe_dcs, [[D1, D3]]),
+    ok = rpc:call(Node1, inter_dc_manager, observe_dcs, [[D2, D3]]),
 
     ok=rpc:call(Node2, antidote, eiger_checkdeps, [[{Key2, TS2}, {Key3, TS2}]]),
     ok=rpc:call(Node1, antidote, eiger_checkdeps, [[{Key2, TS3}, {Key4, TS3}]]),
