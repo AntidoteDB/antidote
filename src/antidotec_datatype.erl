@@ -27,7 +27,7 @@
 -endif.
 
 
--define(MODULES, [antidotec_counter, antidotec_set]).
+-define(MODULES, [antidotec_counter, antidotec_set, antidotec_reg]).
 
 -export([module_for_type/1,
          module_for_term/1]).
@@ -63,10 +63,11 @@
 -callback type() -> typename().
 
 %% @doc Returns the module name for the container of the given CRDT data-type.
--spec module_for_type(set | counter) ->
-    antidotec_counter | antidotec_set.
+-spec module_for_type(set | counter | reg) ->
+    antidotec_counter | antidotec_set | antidotec_reg.
 module_for_type(set) -> antidotec_set;
-module_for_type(counter)  -> antidotec_counter.
+module_for_type(counter)  -> antidotec_counter,
+module_for_type(reg) -> antidotec_reg.
 
 %% @doc Returns the container module name for the given term. 
 %% Returns undefined if the module is not known.
