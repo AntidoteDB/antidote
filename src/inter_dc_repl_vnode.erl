@@ -23,7 +23,7 @@
 
 -module(inter_dc_repl_vnode).
 -behaviour(riak_core_vnode).
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -export([start_vnode/1,
          init/1,

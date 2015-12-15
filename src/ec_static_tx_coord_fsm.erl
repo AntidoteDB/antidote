@@ -27,7 +27,7 @@
 
 -behavior(gen_fsm).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -116,7 +116,7 @@ execute_batch_ops(execute, Sender, SD = #tx_coord_state{operations = Operations}
                             {error, Reason} ->
                                 {error, Reason};
                             ReadResult ->
-                                lager:info("static_coord: executed read no problem"),
+                                %lager:info("static_coord: executed read no problem"),
                                 Acc#tx_coord_state{read_set = [ReadResult | Acc#tx_coord_state.read_set]}
 
                         end
@@ -129,7 +129,7 @@ execute_batch_ops(execute, Sender, SD = #tx_coord_state{operations = Operations}
                    gen_fsm:reply(Sender, {error, Reason}),
                    {stop, normal, SD};
                _ ->
-                   lager:info("static_coord:static coord preparing"),
+                   %lager:info("static_coord:static coord preparing"),
                    ec_interactive_tx_coord_fsm:prepare(NewState#tx_coord_state{from = Sender})
            end.
 

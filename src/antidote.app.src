@@ -11,6 +11,6 @@
                   riak_api,
                   riak_core
                  ]},
-  {mod, { ec_antidote_app, []}},
+  {mod, {antidote_app, []}},
   {env, []}
  ]}.

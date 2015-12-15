@@ -21,7 +21,7 @@
 
 -behaviour(riak_core_vnode).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -ifdef(TEST).

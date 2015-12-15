@@ -22,7 +22,7 @@
 -export([confirm/0]).
 
 -include_lib("eunit/include/eunit.hrl").
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 -define(HARNESS, (rt_config:get(rt_harness))).
 
 %% Test entry point.

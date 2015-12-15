@@ -20,9 +20,9 @@
 
 %%@doc This file is the public api of antidote
 
--module(ec_antidote).
+-module(antidote).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 %% API for applications
 -export([
@@ -242,8 +242,8 @@ ec_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
         ok ->
             case gen_fsm:sync_send_event(CoordFsmPid,
                 {update, {Key, Type, OpParams}}) of
-                    ok -> ok;
-                    {aborted, _} -> {error, aborted};
+                ok -> ok;
+                {aborted, _} -> {error, aborted};
                 {error, Reason} -> {error, Reason}
             end;
         {error, Reason} ->

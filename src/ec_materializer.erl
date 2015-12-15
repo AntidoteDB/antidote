@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(ec_materializer).
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -51,7 +51,7 @@ update_snapshot(Type, Snapshot, Op) ->
         {update, DownstreamOp} ->
             Type:update(DownstreamOp, Snapshot);
         _ ->
-            lager:info("Unexpected log record: ~p for snapshot: ~p", [Op, Snapshot]),
+            %lager:info("Unexpected log record: ~p for snapshot: ~p", [Op, Snapshot]),
             {error, unexpected_format, Op}
     end.
 

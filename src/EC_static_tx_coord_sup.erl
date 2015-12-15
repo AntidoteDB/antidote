@@ -23,7 +23,7 @@
 
 -behavior(supervisor).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -export([start_fsm/1,
     start_link/0]).

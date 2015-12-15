@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(vector_orddict).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

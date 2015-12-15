@@ -27,7 +27,7 @@
 
 -behavior(gen_fsm).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -187,7 +187,7 @@ perform_read({Key, Type}, UpdatedPartitions, Sender) ->
                    {IndexNode, WS} ->
                        WS
                end,
-    lager:info("interactive_coord: about to read Key ~p from node ~p with type ~p and writeset ~p",[Key, IndexNode, Type, WriteSet]),
+    %lager:info("interactive_coord: about to read Key ~p from node ~p with type ~p and writeset ~p",[Key, IndexNode, Type, WriteSet]),
     case ?ec_VNODE:read_data_item(IndexNode, Key, Type, WriteSet) of
         {error, Reason} ->
             case Sender of

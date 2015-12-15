@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(ec_downstream).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -export([generate_downstream_op/5]).
 

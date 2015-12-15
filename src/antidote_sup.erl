@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(ec_antidote_sup).
+-module(antidote_sup).
 
 -behaviour(supervisor).
 

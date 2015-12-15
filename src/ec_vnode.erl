@@ -20,7 +20,7 @@
 -module(ec_vnode).
 -behaviour(riak_core_vnode).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
@@ -79,15 +79,15 @@ start_vnode(I) ->
 read_data_item(Node, Key, Type, Updates) ->
     case ec_readitem_fsm:read_data_item(Node, Key, Type) of
         {ok, Snapshot} ->
-            lager:info("ec_vnode: got this snapshot from the read fsm ~p",[Snapshot]),
+            %lager:info("ec_vnode: got this snapshot from the read fsm ~p",[Snapshot]),
             %% All this should be done at the vnode.
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-            lager:info("interactive_coord: about to call mat eager with type ~p, Snapshot ~p and Updates2 ~p",[Type, Snapshot, Updates2]),
+            %lager:info("interactive_coord: about to call mat eager with type ~p, Snapshot ~p and Updates2 ~p",[Type, Snapshot, Updates2]),
             Snapshot2 = ec_materializer:materialize_eager(Type, Snapshot, Updates2),
-            lager:info("ec_vnode: returning it"),
+            %lager:info("ec_vnode: returning it"),
             {ok, Snapshot2};
         {error, Reason} ->
-            lager:info("ec_vnode: got error"),
+            %lager:info("ec_vnode: got error"),
             {error, Reason}
     end.
 
@@ -195,7 +195,7 @@ handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partitio
 
 handle_command({prepare, CommitTime, WriteSet}, _Sender,
   State = #state{partition = _Partition}) ->
-    lager:info("ec_vnode:handle_command_prepare: got this Writeset: ~p and this commit time ~p", [WriteSet, CommitTime]),
+    %lager:info("ec_vnode:handle_command_prepare: got this Writeset: ~p and this commit time ~p", [WriteSet, CommitTime]),
     case internal_prepare(WriteSet, CommitTime) of
         {ok, _} ->
             {reply, {prepared}, State};
@@ -212,7 +212,7 @@ handle_command({prepare, CommitTime, WriteSet}, _Sender,
 %%      coordinator that sent the request.
 handle_command({single_commit, WriteSet}, _Sender,
   State = #state{partition = _Partition}) ->
-    lager:info("ec_vnode:handle command single_commit: got this Writeset: ~p ", [WriteSet]),
+    %lager:info("ec_vnode:handle command single_commit: got this Writeset: ~p ", [WriteSet]),
     CommitTime = now_microsec(erlang:now()),
     case internal_prepare(WriteSet, CommitTime) of
         {ok, _} ->
@@ -234,7 +234,7 @@ handle_command({single_commit, WriteSet}, _Sender,
 handle_command({commit, TxCommitTime, Updates}, _Sender,
   #state{partition = _Partition
   } = State) ->
-    lager:info("ec_vnode:handle_command_commit: got this commitTime: ~p and this writeSet ~p", [TxCommitTime, Updates]),
+    %lager:info("ec_vnode:handle_command_commit: got this commitTime: ~p and this writeSet ~p", [TxCommitTime, Updates]),
     Result = internal_commit(TxCommitTime, Updates),
     case Result of
         {ok, committed} ->
@@ -311,7 +311,7 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%%===================================================================
 
 internal_prepare(TxWriteSet, CommitTime) ->
-    lager:info("ec_vnode:internal_prepare: got this Writeset: ~p and this commit time ~p", [TxWriteSet, CommitTime]),
+    %lager:info("ec_vnode:internal_prepare: got this Writeset: ~p and this commit time ~p", [TxWriteSet, CommitTime]),
     case TxWriteSet of
         [{Key, _, {_Op, _Actor}} | _] ->
             LogRecord = #log_record{tx_id = undefined,
@@ -321,7 +321,7 @@ internal_prepare(TxWriteSet, CommitTime) ->
             [Node] = log_utilities:get_preflist_from_key(Key),
             logging_vnode:append(Node, LogId, LogRecord);
         [] ->
-            lager:info("ec_vnode:internal_prepare there were no updates"),
+            %lager:info("ec_vnode:internal_prepare there were no updates"),
             {error, no_updates};
         WriteSet ->
             {error, {wrong_format, WriteSet}}

@@ -23,7 +23,7 @@
 -module(inter_dc_repl_update).
 
 -include("inter_dc_repl.hrl").
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

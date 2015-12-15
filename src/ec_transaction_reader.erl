@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(ec_transaction_reader).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -record(state, {partition :: partition_id(),
                 logid :: log_id(),

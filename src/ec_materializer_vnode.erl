@@ -21,7 +21,7 @@
 
 -behaviour(riak_core_vnode).
 
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -ifdef(TEST).
@@ -67,13 +67,13 @@ start_vnode(I) ->
 read(Key, Type, OpsCache, SnapshotCache, Partition) ->
     case ets:info(OpsCache) of
         undefined ->
-            lager:info("interactive_coord: opscache undefined"),
+            %lager:info("interactive_coord: opscache undefined"),
             riak_core_vnode_master:sync_command({Partition, node()},
                 {read, Key, Type},
                 ec_materializer_vnode_master,
                 infinity);
         _ ->
-            lager:info("interactive_coord: running internal_read"),
+            %lager:info("interactive_coord: running internal_read"),
             internal_read(Key, Type, OpsCache, SnapshotCache)
     end.
 
@@ -234,13 +234,13 @@ internal_read(Key, Type, OpsCache, SnapshotCache) ->
         [{_, {Op1CommitTime, Op1}}] ->
             case (LatestCommitTime == ignore) or (Op1CommitTime > LatestCommitTime) of
                 true ->
-                    lager:info("materializer_vnode: about to materialize to Type: ~p, LatestSnapshot=~p, Operation:~p", [Type, LatestSnapshot, Op1#ec_payload.op_param]),
+                    %lager:info("materializer_vnode: about to materialize to Type: ~p, LatestSnapshot=~p, Operation:~p", [Type, LatestSnapshot, Op1#ec_payload.op_param]),
                     DownstreamOp = Op1#ec_payload.op_param,
                     case ec_materializer:materialize_eager(Type, LatestSnapshot, [DownstreamOp]) of
                         {error, Reason} ->
                             {error, Reason};
                         UpdatedSnapshot ->
-                            lager:info("materializer_vnode: about to insert Key ~p, UpdatedSnapshot ~p, Op1CommitTime ~p, SnapshotCache ~p", [Key, UpdatedSnapshot, Op1CommitTime, SnapshotCache]),
+                            %lager:info("materializer_vnode: about to insert Key ~p, UpdatedSnapshot ~p, Op1CommitTime ~p, SnapshotCache ~p", [Key, UpdatedSnapshot, Op1CommitTime, SnapshotCache]),
                             %internal_store_ss(Key, UpdatedSnapshot, Op1CommitTime, SnapshotCache)
                             ok = store_ss(Key, UpdatedSnapshot, Op1CommitTime),
                             {ok, UpdatedSnapshot}

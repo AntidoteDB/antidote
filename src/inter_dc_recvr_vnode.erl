@@ -24,7 +24,7 @@
 -module(inter_dc_recvr_vnode).
 -behaviour(riak_core_vnode).
 -include("inter_dc_repl.hrl").
--include("ec_antidote.hrl").
+-include("antidote.hrl").
 
 -export([start_vnode/1,
          %%API begin
