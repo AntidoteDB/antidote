@@ -10,7 +10,6 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
-
 confirm() ->
 
     %% This resets nodes, cleans up stale directories, etc.:
@@ -27,6 +26,9 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
+
+    {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
+    ?assertMatch(clocksi, Prot),
 
     ok = common:setup_dc_manager([Cluster1, Cluster2, Cluster3], first_run),
     simple_replication_test(Cluster1, Cluster2, Cluster3),

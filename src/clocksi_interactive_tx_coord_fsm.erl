@@ -49,7 +49,8 @@
 
 %% API
 -export([start_link/2,
-    start_link/1]).
+         start_link/1,
+         start_link/3]).
 
 %% Callbacks
 -export([init/1,
@@ -61,7 +62,7 @@
     stop/1]).
 
 %% States
--export([create_transaction_record/1,
+-export([create_transaction_record/2,
     perform_update/4,
     perform_read/4,
     execute_op/3,
@@ -87,10 +88,13 @@
 %%%===================================================================
 
 start_link(From, Clientclock) ->
-    gen_fsm:start_link(?MODULE, [From, Clientclock], []).
+    gen_fsm:start_link(?MODULE, [From, Clientclock, update_clock], []).
 
 start_link(From) ->
-    gen_fsm:start_link(?MODULE, [From, ignore], []).
+    gen_fsm:start_link(?MODULE, [From, ignore, update_clock], []).
+
+start_link(From, Clientclock, no_update_clock) ->
+    gen_fsm:start_link(?MODULE, [From, Clientclock, no_update_clock], []).
 
 finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -102,8 +106,13 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([From, ClientClock]) ->
-    {Transaction, TransactionId} = create_transaction_record(ClientClock),
+%%      From - Pid of process to which reply is send
+%%      ClientClock - the last clock seen by the client
+%%      UpdateClock - whether snapshot time must be updated to the latest
+%%                    stable time or use the clientclock as it is (This is
+%%                    used for GR protocol)
+init([From, ClientClock, UpdateClock]) ->
+    {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock),
     SD = #tx_coord_state{
         transaction = Transaction,
         updated_partitions = [],
@@ -114,15 +123,22 @@ init([From, ClientClock]) ->
     From ! {ok, TransactionId},
     {ok, execute_op, SD}.
 
--spec create_transaction_record(snapshot_time() | ignore) -> {tx(), txid()}.
-create_transaction_record(ClientClock) ->
+-spec create_transaction_record(snapshot_time() | ignore,
+                                update_clock | no_update_clock)
+                               -> {tx(), txid()}.
+create_transaction_record(ClientClock, UpdateClock) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
     {ok, SnapshotTime} = case ClientClock of
                              ignore ->
                                  get_snapshot_time();
                              _ ->
-                                 get_snapshot_time(ClientClock)
+                                 case UpdateClock of
+                                     update_clock ->
+                                         get_snapshot_time(ClientClock);
+                                     no_update_clock ->
+                                         {ok, ClientClock}
+                                 end
                          end,
     DcId = ?DC_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
@@ -138,7 +154,7 @@ create_transaction_record(ClientClock) ->
 %%      transaction fsm and directly in the calling thread.
 -spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore),
+    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
@@ -157,7 +173,7 @@ perform_singleitem_read(Key, Type) ->
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore),
+    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of

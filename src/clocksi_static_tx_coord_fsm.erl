@@ -48,7 +48,8 @@
 
 %% API
 -export([start_link/3,
-         start_link/2]).
+         start_link/2,
+         start_link/4]).
 
 %% Callbacks
 -export([init/1,
@@ -74,10 +75,13 @@
 %%%===================================================================
 
 start_link(From, ClientClock, Operations) ->
-    gen_fsm:start_link(?MODULE, [From, ClientClock, Operations], []).
+    gen_fsm:start_link(?MODULE, [From, ClientClock, Operations, update_clock], []).
 
 start_link(From, Operations) ->
-    gen_fsm:start_link(?MODULE, [From, ignore, Operations], []).
+    gen_fsm:start_link(?MODULE, [From, ignore, Operations, update_clock], []).
+
+start_link(From, ClientClock, Operations, UpdateClock) ->
+    gen_fsm:start_link(?MODULE, [From, ClientClock, Operations, UpdateClock], []).
 
 
 %%%===================================================================
@@ -85,8 +89,8 @@ start_link(From, Operations) ->
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([From, ClientClock, Operations]) ->
-    {Transaction,_TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock),
+init([From, ClientClock, Operations, UpdateClock]) ->
+    {Transaction,_TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock),
     SD = #tx_coord_state{
             transaction = Transaction,
             updated_partitions=[],
