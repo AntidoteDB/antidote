@@ -307,7 +307,12 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
                     LogRecord = #log_record{tx_id=TxId, op_type=update, op_payload={Key, Type, Update}},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
-                    {ok, _} = logging_vnode:append(Node,LogId,LogRecord),
+                    case Deps of
+                        nodeps ->
+                            {ok, _} = logging_vnode:nonlocal_append(Node,LogId,LogRecord);
+                        _ ->    
+                            {ok, _} = logging_vnode:append(Node,LogId,LogRecord)
+                    end,
                     CommittedOp = #clocksi_payload{
                                             key = Key,
                                             type = Type,
@@ -325,11 +330,22 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
     PreparedLogRecord = #log_record{tx_id=TxId,
                                     op_type=prepare,
                                     op_payload=CommitTime},
-    logging_vnode:append(Node,LogId,PreparedLogRecord),
+    case Deps of
+        nodeps ->
+            {ok, _} = logging_vnode:nonlocal_append(Node,LogId,PreparedLogRecord);
+        _ ->    
+            {ok, _} = logging_vnode:append(Node,LogId,PreparedLogRecord)
+    end,
     CommitLogRecord=#log_record{tx_id=TxId,
                                 op_type=commit,
                                 op_payload={TimeStamp, Transaction#transaction.vec_snapshot_time, Deps, TotalOps}},
-    case logging_vnode:append(Node,LogId,CommitLogRecord) of
+    case Deps of
+        nodeps ->
+            ResultCommit = logging_vnode:nonlocal_append(Node,LogId,CommitLogRecord);
+        _ ->    
+            ResultCommit = logging_vnode:append(Node,LogId,CommitLogRecord)
+    end,
+    case ResultCommit of
         {ok, _} ->
             State = lists:foldl(fun(Op, S0) ->
                                     LKey = Op#clocksi_payload.key,

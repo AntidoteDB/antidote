@@ -34,6 +34,7 @@
          read/2,
          asyn_append/3,
          append/3,
+         nonlocal_append/3,
          append_commit/3,
          append_group/4,
          asyn_append_group/4,
@@ -114,7 +115,13 @@ asyn_append(Preflist, Log, Payload) ->
 -spec append(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, false},
+                                        {append, LogId, Payload, false, true},
+                                        ?LOGGING_MASTER,
+                                        infinity).
+
+nonlocal_append(IndexNode, LogId, Payload) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                                        {append, LogId, Payload, false, false},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -123,7 +130,7 @@ append(IndexNode, LogId, Payload) ->
 -spec append_commit(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
 append_commit(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, ?SYNC_LOG},
+                                        {append, LogId, Payload, ?SYNC_LOG, true},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -231,7 +238,7 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload, Sync}, _Sender,
+handle_command({append, LogId, Payload, Sync, Local}, _Sender,
                #state{logs_map=Map,
                       clock=Clock,
                       partition=Partition}=State) ->
@@ -242,18 +249,23 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
             Operation = #operation{op_number = OpId, payload = Payload},
             case insert_operation(Log, LogId, Operation) of
                 {ok, OpId} ->
-                  inter_dc_log_sender_vnode:send(Partition, Operation),
-		    case Sync of
-			true ->
-			    case disk_log:sync(Log) of
-				ok ->
-				    {reply, {ok, OpId}, State#state{clock=NewClock}};
-				{error, Reason} ->
-				    {reply, {error, Reason}, State}
-			    end;
-			false ->
-			    {reply, {ok, OpId}, State#state{clock=NewClock}}
-		    end;
+                    case Local of
+                        true ->
+                            inter_dc_log_sender_vnode:send(Partition, Operation);
+                        _ ->
+                            noop
+                    end,
+		            case Sync of
+			            true ->
+			                case disk_log:sync(Log) of
+				                ok ->
+				                    {reply, {ok, OpId}, State#state{clock=NewClock}};
+				                {error, Reason} ->
+				                    {reply, {error, Reason}, State}
+			                end;
+			            false ->
+			                {reply, {ok, OpId}, State#state{clock=NewClock}}
+		            end;
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
             end;
