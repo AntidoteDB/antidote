@@ -66,7 +66,7 @@
 -spec module_for_type(set | counter | reg) ->
     antidotec_counter | antidotec_set | antidotec_reg.
 module_for_type(set) -> antidotec_set;
-module_for_type(counter)  -> antidotec_counter,
+module_for_type(counter)  -> antidotec_counter;
 module_for_type(reg) -> antidotec_reg.
 
 %% @doc Returns the container module name for the given term. 

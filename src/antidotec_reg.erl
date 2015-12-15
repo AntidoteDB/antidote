@@ -26,6 +26,7 @@
 -export([new/0,
          new/1,
          value/1,
+         dirty_value/1,
          is_type/1,
          to_ops/2,
          type/0
@@ -58,6 +59,7 @@ new(Value) ->
 -spec value(antidote_reg()) -> [term()].
 value(#antidote_reg{value=Value}) -> Value.
 
+dirty_value(#antidote_reg{value=Value}) -> Value.
 
 %% @doc Determines whether the passed term is a reg container.
 -spec is_type(term()) -> boolean().
