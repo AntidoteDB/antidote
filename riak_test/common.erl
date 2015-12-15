@@ -21,6 +21,7 @@
 
 -export([
   clean_clusters/1,
+  setup_dc_manager_eiger/2,
   setup_dc_manager/2]).
 
 %% It cleans the cluster and formes a new one with the same characteristic of the input one.
@@ -52,6 +53,10 @@ setup_dc_manager(Clusters, first_run) -> connect_dcs(Clusters);
 setup_dc_manager(_Clusters, false) -> ok;
 setup_dc_manager(Clusters, true) -> disconnect_dcs(Clusters), connect_dcs(Clusters).
 
+setup_dc_manager_eiger(Clusters, first_run) -> connect_dcs_eiger(Clusters);
+setup_dc_manager_eiger(Clusters, false) -> setup_dc_manager(Clusters, false);
+setup_dc_manager_eiger(Clusters, true) -> disconnect_dcs_eiger(Clusters), connect_dcs_eiger(Clusters).
+
 connect_dcs(Clusters) ->
   lager:info("Connecting DC clusters..."),
   Descriptors = descriptors(Clusters),
@@ -67,6 +72,32 @@ connect_dcs(Clusters) ->
     rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
   end, Clusters),
   lager:info("DC clusters connected!").
+
+connect_dcs_eiger(Clusters) ->
+  lager:info("Connecting DC clusters..."),
+  Descriptors = descriptors(Clusters),
+  lists:foreach(fun(Cluster) ->
+    Node = hd(Cluster),
+    lager:info("Waiting until vnodes start on node ~p", [Node]),
+    rt:wait_until_registered(Node, inter_dc_pub),
+    rt:wait_until_registered(Node, inter_dc_log_reader_response),
+    rt:wait_until_registered(Node, inter_dc_log_reader_query),
+    rt:wait_until_registered(Node, inter_dc_sub),
+    lager:info("Making node ~p observe other DCs...", [Node]),
+    %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
+    rpc:call(Node, inter_dc_manager, observe_dcs, [Descriptors])
+  end, Clusters),
+  lager:info("DC clusters connected!").
+
+disconnect_dcs_eiger(Clusters) ->
+  lager:info("Disconnecting DC clusters eiger..."),
+  Descriptors = descriptors(Clusters),
+  lists:foreach(fun(Cluster) ->
+    Node = hd(Cluster),
+    lager:info("Making node ~p forget other DCs...", [Node]),
+    rpc:call(Node, inter_dc_manager, observe_dcs, [Descriptors])
+  end, Clusters),
+  lager:info("DC clusters disconnected!").
 
 disconnect_dcs(Clusters) ->
   lager:info("Disconnecting DC clusters..."),
