@@ -35,6 +35,7 @@
 
 
 -export([start_link/5,
+	 start/1,
 	 put_meta_dict/3,
 	 put_meta_dict/4,
 	 put_meta_data/4,
@@ -45,6 +46,7 @@
 	 get_merged_data/1,
 	 remove_partition/2,
 	 get_name/2,
+	 send_meta_data/3,
 	 send_meta_data/2]).
 
 %% Callbacks
@@ -106,6 +108,11 @@
 start_link(Name,UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
 		       ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
+
+-spec start(list()) -> ok.
+start(Name) ->
+    gen_fsm:sync_send_event(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)),
+			    start).
 
 -spec put_meta_dict(atom(),partition_id(), dict()) -> ok.
 put_meta_dict(Name,Partition,Dict) ->
@@ -211,8 +218,8 @@ init([Name,UpdateFunction,MergeFunction,InitialLocal,InitialMerged]) ->
 				name = Name,
 				should_check_nodes=true}}.
 
-send_meta_data(start, Sender, State) ->
-    {}.
+send_meta_data(start, _Sender, State) ->
+    {reply, ok, send_meta_data, State#state{should_check_nodes=true}, ?META_DATA_SLEEP}.
 
 send_meta_data(timeout, State = #state{last_result = LastResult,
 				       update_function = UpdateFunction,
@@ -364,7 +371,7 @@ get_node_and_partition_list() ->
     %% safe can cause inconsistencies under concurrency, so this should
     %% be done differently
     %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
-    Resize = true,
+    Resize = false,
     {NodeList,PartitionList,Resize}.
 
 get_name(Name,TableName) ->
