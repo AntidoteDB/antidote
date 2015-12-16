@@ -291,7 +291,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 			ignore ->
 			    {ok, Snapshot};
 			_ ->
-			    case NewSS and IsFirst of
+			    case (NewSS and IsFirst) or ShouldGc of
 				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
 				%% previous snapshot
 				true ->
