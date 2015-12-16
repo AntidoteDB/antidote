@@ -27,7 +27,8 @@
 %% API for applications
 -export([
          start_transaction/2,
-         read_objects/2,
+    read_objects/2,
+    read_objects/3,
          update_objects/2,
          update_objects/3,
          abort_transaction/1,
@@ -131,11 +132,69 @@ update_objects(_Clock, _Properties, Updates) ->
         end,
         Updates),
     case ec_execute_tx(Operations) of
-        {ok, {_TxId, [], CommitTime}} ->
+        {ok, {[], CommitTime}} ->
             {ok, CommitTime};
         {error, Reason} -> {error, Reason}
     end.
 
+read_objects(Clock, _Properties, Objects) ->
+    Args = lists:map(
+             fun({Key, Type, _Bucket}) ->
+                     {read, {Key, Type}}
+             end,
+             Objects),
+    SingleKey = case Args of
+                    [_O] -> %% Single key update
+                        case Clock of
+                            ignore -> true;
+                            _ -> false
+                        end;
+                    [_H|_T] -> false
+                end,
+    case SingleKey of
+        true -> %% Execute the fast path
+            [{read, {Key, Type}}] = Args,
+            case ec_materializer:check_operations([{read, {Key, Type}}]) of
+                ok ->
+                    {ok, Val} = ec_interactive_tx_coord_fsm:
+                        perform_singleitem_read(Key,Type),
+                    {ok, [Val], ignore};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        false ->
+            case application:get_env(antidote, txn_prot) of
+%%                {ok, ec} ->
+%%                    case ec_execute_tx(Clock, Args) of
+%%                        {ok, {_TxId, Result, CommitTime}} ->
+%%                            {ok, Result, CommitTime};
+%%                        {error, Reason} -> {error, Reason}
+%%                    end;
+                {ok, ec} ->
+                    case ec_execute_tx(Args) of
+                        {ok, {_TxId, Result, CommitTime}} ->
+                            {ok, Result, CommitTime};
+                        {error, Reason} -> {error, Reason}
+                    end
+%%                {ok, gr} ->
+%%                    case Args of
+%%                        [_Op] -> %% Single object read = read latest value
+%%                            case ec_execute_tx(Clock, Args) of
+%%                                {ok, {_TxId, Result, CommitTime}} ->
+%%                                    {ok, Result, CommitTime};
+%%                                {error, Reason} -> {error, Reason}
+%%                            end;
+%%                        [_|_] -> %% Read Multiple objects  = read from a snapshot
+%%                            %% Snapshot includes all updates committed at time GST
+%%                            %% from local and remore replicas
+%%                            case gr_snapshot_read(Clock, Args) of
+%%                                {ok, {_TxId, Result, CommitTime}} ->
+%%                                    {ok, Result, CommitTime};
+%%                                {error, Reason} -> {error, Reason}
+%%                            end
+%%                    end
+            end
+    end.
 
 %% Object creation and types
 create_bucket(_Bucket, _Type) ->
