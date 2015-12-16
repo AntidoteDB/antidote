@@ -169,8 +169,9 @@ handle_command(_Message, _Sender, State) ->
 handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0} ,
                        _Sender,
                        State = #state{ops_cache = OpsCache}) ->
-    F = fun({Key,Operation}, A) ->
-                Fun(Key, Operation, A)
+    F = fun(Key, A) ->
+		[Key1|_]=tuple_to_list(Key),
+                Fun(Key1, Key, A)
         end,
     Acc = ets:foldl(F, Acc0, OpsCache),
     {reply, Acc, State}.
@@ -185,8 +186,8 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, State=#state{ops_cache=OpsCache}) ->
-    {Key, Operation} = binary_to_term(Data),
-    true = ets:insert(OpsCache, {Key, Operation}),
+    {_Key, Operation} = binary_to_term(Data),
+    true = ets:insert(OpsCache, Operation),
     {reply, ok, State}.
 
 encode_handoff_item(Key, Operation) ->
