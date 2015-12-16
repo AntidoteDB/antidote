@@ -209,8 +209,10 @@ init([Name,UpdateFunction,MergeFunction,InitialLocal,InitialMerged]) ->
 				update_function = UpdateFunction,
 				merge_function = MergeFunction,
 				name = Name,
-				should_check_nodes=true},
-     ?META_DATA_SLEEP}.
+				should_check_nodes=true}}.
+
+send_meta_data(start, Sender, State) ->
+    {}.
 
 send_meta_data(timeout, State = #state{last_result = LastResult,
 				       update_function = UpdateFunction,
