@@ -226,7 +226,12 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
 		       [{_, SnapshotDictA}] ->
 			   SnapshotDictA
 		   end,
-    SnapshotDict1=vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict),
+    SnapshotDict1 = case ShouldGc of
+			true ->
+			    vector_orddict:insert_bigger(CommitTime,Snapshot, vector_orddict:new());
+			false ->
+			    vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict)
+		    end,
     snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache,ShouldGc).
 
 sub_reverse(_List,0,Acc) ->
@@ -330,7 +335,7 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
     case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) or ShouldGc of
         true ->
 	    %% snapshots are no longer totally ordered
-	    PrunedSnapshots=vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
+	    PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp=vector_orddict:last(PrunedSnapshots),
             {CT, _S} = FirstOp,
 	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
