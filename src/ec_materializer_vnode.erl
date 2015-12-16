@@ -260,11 +260,13 @@ snapshot_insert(Key, Snapshot, SnapshotCommitTime, SnapshotCache) ->
 %% @doc Insert an operation
 -spec op_insert(key(), ec_payload(), cache_id()) -> true.
 op_insert(Key, DownstreamOp, OpsCache) ->
+    %lager:info("inserting Downstream: ~p",[DownstreamOp]),
     OpCommitTime = DownstreamOp#ec_payload.commit_time,
     case ets:lookup(OpsCache, Key) of
         [] ->
             ets:insert(OpsCache, {Key, {OpCommitTime, DownstreamOp}});
         [{_, {StoredCommitTime, _}}] ->
+            %lager:info("Comparing Already commited: ~p, new to commit ~p",[StoredCommitTime, OpCommitTime ]),
             case OpCommitTime > StoredCommitTime of
                 true ->
                     ets:insert(OpsCache, {Key, {DownstreamOp#ec_payload.commit_time, DownstreamOp}});

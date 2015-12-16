@@ -316,7 +316,7 @@ internal_prepare(TxWriteSet, CommitTime) ->
         [{Key, _, {_Op, _Actor}} | _] ->
             LogRecord = #log_record{tx_id = undefined,
                 op_type = prepare,
-                op_payload = CommitTime},
+                op_payload = {CommitTime, []}},
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             logging_vnode:append(Node, LogId, LogRecord);
@@ -330,7 +330,7 @@ internal_prepare(TxWriteSet, CommitTime) ->
 internal_commit(Updates, TxCommitTime) ->
     LogRecord = #log_record{tx_id = undefined,
         op_type = commit,
-        op_payload = TxCommitTime},
+        op_payload = {TxCommitTime, Updates}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),

@@ -95,16 +95,7 @@ confirm() ->
     [Nodes12] = common:clean_clusters([Nodes11]),
     ec_concurrency_test(Nodes12),
 
-    case ?CERT of
-    true ->
-        [Nodes13] = common:clean_clusters([Nodes12]),
-        ec_test_certification_check(Nodes13),
-
-        [Nodes14] = common:clean_clusters([Nodes13]),
-        ec_multiple_test_certification_check(Nodes14);
-    false -> 
-        ok
-    end,
+    ok,
     pass.
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx

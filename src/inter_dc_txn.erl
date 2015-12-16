@@ -26,54 +26,48 @@
 %% API
 -export([
   from_ops/3,
-  ping/3,
+%%  ping/3,,
   is_local/1,
-  ops_by_type/2, to_bin/1, from_bin/1, partition_to_bin/1, last_log_opid/1, is_ping/1]).
+  ops_by_type/2, to_bin/1, from_bin/1, partition_to_bin/1, last_log_opid/1]).
 
 %% Functions
 
--spec from_ops([#operation{}], partition_id(), log_opid() | none) -> #interdc_txn{}.
-from_ops(Ops, Partition, PrevLogOpId) ->
-  LastOp = lists:last(Ops),
-  CommitPld = LastOp#operation.payload,
+-spec from_ops(#operation{}, partition_id(), log_opid() | none) -> #interdc_txn{}.
+from_ops(Operation, Partition, PrevLogOpId) ->
+%%    lager:info("called with operation: ~p~n partition ~p~n prevlogopid ~p~n",[Operation, Partition, PrevLogOpId]),
+  CommitPld = Operation#operation.payload,
   commit = CommitPld#log_record.op_type, %% sanity check
-  {{DCID, CommitTime}, SnapshotTime} = CommitPld#log_record.op_payload,
+    LogOpID = Operation#operation.op_number,
+  {TxCommitTime, Updates} = CommitPld#log_record.op_payload,
   #interdc_txn{
-    dcid = DCID,
+    dcid = dc_utilities:get_my_dc_id(),
     partition = Partition,
-    prev_log_opid = PrevLogOpId,
-    operations = Ops,
-    snapshot = SnapshotTime,
-    timestamp = CommitTime
+    operations = Updates,
+    timestamp = TxCommitTime,
+      log_opid = LogOpID,
+      prev_log_opid = PrevLogOpId
   }.
-
--spec ping(partition_id(), log_opid(), non_neg_integer()) -> #interdc_txn{}.
-ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
-  dcid = dc_utilities:get_my_dc_id(),
-  partition = Partition,
-  prev_log_opid = PrevLogOpId,
-  operations = [],
-  snapshot = dict:new(),
-  timestamp = Timestamp
-}.
+%%
+%%-spec ping(partition_id(), log_opid(), non_neg_integer()) -> #interdc_txn{}.
+%%ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
+%%  dcid = dc_utilities:get_my_dc_id(),
+%%  partition = Partition,
+%%  prev_log_opid = PrevLogOpId,
+%%  operations = [],
+%%  snapshot = dict:new(),
+%%  timestamp = Timestamp
+%%}.
 
 -spec last_log_opid(#interdc_txn{}) -> log_opid().
-last_log_opid(Txn = #interdc_txn{operations = Ops, prev_log_opid = LogOpId}) ->
-  case is_ping(Txn) of
-    true -> LogOpId;
-    false ->
-      LastOp = lists:last(Ops),
-      CommitPld = LastOp#operation.payload,
-      commit = CommitPld#log_record.op_type, %% sanity check
-      {Max, _} = LastOp#operation.op_number,
-      Max
-  end.
+last_log_opid(Txn) ->
+    Txn#interdc_txn.log_opid.
+
 
 -spec is_local(#interdc_txn{}) -> boolean().
 is_local(#interdc_txn{dcid = DCID}) -> DCID == dc_utilities:get_my_dc_id().
 
--spec is_ping(#interdc_txn{}) -> boolean().
-is_ping(#interdc_txn{operations = Ops}) -> Ops == [].
+%%-spec is_ping(#interdc_txn{}) -> boolean().
+%%is_ping(#interdc_txn{operations = Ops}) -> Ops == [].
 
 -spec ops_by_type(#interdc_txn{}, any()) -> [#operation{}].
 ops_by_type(#interdc_txn{operations = Ops}, Type) ->

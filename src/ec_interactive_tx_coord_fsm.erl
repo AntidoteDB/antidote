@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 %% @doc The coordinator for a given Clock SI interactive transaction.
 %%      It handles the state of the tx and executes the operations sequentially
-%%      by sending each operation to the responsible ec_vnode of the
+%%      by sending each operation to the responsible clockSI_vnode of the
 %%      involved key. when a tx is finalized (committed or aborted, the fsm
 %%      also finishes.
 
@@ -39,7 +39,6 @@
 -define(LOGGING_VNODE, mock_partition_fsm).
 -else.
 -define(DC_UTIL, dc_utilities).
--define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
 -define(ec_VNODE, ec_vnode).
 -define(ec_DOWNSTREAM, ec_downstream).

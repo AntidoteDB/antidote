@@ -31,7 +31,7 @@
          handle_sync_event/4, terminate/3]).
 
 %% States
--export([check_clock/2, update_item/2]).
+-export([update_item/2]).
 
 -record(state,
         {partition, vclock, coordinator}).

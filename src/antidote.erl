@@ -28,7 +28,6 @@
 -export([
          start_transaction/2,
          read_objects/2,
-         read_objects/3,
          update_objects/2,
          update_objects/3,
          abort_transaction/1,
@@ -174,7 +173,7 @@ append(Key, Type, {OpParams, Actor}) ->
 read(Key, Type) ->
     case ec_materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            {ok, Val, _CommitTime} = ec_interactive_tx_coord_fsm:
+            {ok, Val} = ec_interactive_tx_coord_fsm:
                 perform_singleitem_read(Key,Type),
             {ok, Val};
         {error, Reason} ->

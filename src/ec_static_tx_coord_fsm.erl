@@ -39,7 +39,6 @@
 -define(LOGGING_VNODE, mock_partition_fsm).
 -else.
 -define(DC_UTIL, dc_utilities).
--define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
 -define(EC_VNODE, ec_vnode).
 -define(EC_DOWNSTREAM, ec_downstream).

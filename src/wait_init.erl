@@ -43,9 +43,9 @@ wait_ready_nodes([Node|Rest]) ->
 %% except it takes as input a sinlge physical node instead of a list
 check_ready(Node) ->
     lager:info("Checking if node ~w is ready ~n", [Node]),
-    case rpc:call(Node,clocksi_vnode,check_tables_ready,[]) of
+    case rpc:call(Node,ec_vnode,check_tables_ready,[]) of
 	true ->
-	    case rpc:call(Node,clocksi_readitem_fsm,check_servers_ready,[]) of
+	    case rpc:call(Node,ec_readitem_fsm,check_servers_ready,[]) of
 		true ->
 		    case rpc:call(Node,ec_materializer_vnode,check_tables_ready,[]) of
 			true ->

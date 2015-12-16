@@ -33,7 +33,7 @@
   ensure_all_vnodes_running/1,
   ensure_all_vnodes_running_master/1,
   get_partitions_num/0,
-  check_staleness/0,
+%%  check_staleness/0,
   now/0,
   now_microsec/0,
   now_millisec/0]).
@@ -146,14 +146,14 @@ ensure_all_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
     bcast_vnode_check_up(VnodeType,{hello}, get_all_partitions()).
 
--spec check_staleness() -> ok.
-check_staleness() ->
-    Now = clocksi_vnode:now_microsec(erlang:now()),
-    {ok, SS} = vectorclock:get_stable_snapshot(),
-    dict:fold(fun(DcId,Time,_Acc) ->
-		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
-		      ok
-	      end, ok, SS).
+%%-spec check_staleness() -> ok.
+%%check_staleness() ->
+%%    Now = ec_vnode:now_microsec(erlang:now()),
+%%    {ok, SS} = vectorclock:get_stable_snapshot(),
+%%    dict:fold(fun(DcId,Time,_Acc) ->
+%%		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
+%%		      ok
+%%	      end, ok, SS).
 
 check_registered(Name) ->
     case whereis(Name) of
