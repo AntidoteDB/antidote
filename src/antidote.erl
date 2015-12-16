@@ -26,30 +26,32 @@
 
 %% API for applications
 -export([
-    start_transaction/2,
-    read_objects/2,
-    update_objects/2,
-    update_objects/3,
-    abort_transaction/1,
-    commit_transaction/1,
-    create_bucket/2,
-    create_object/3,
-    delete_object/1
-]).
+         start_transaction/2,
+         read_objects/2,
+         read_objects/3,
+         update_objects/2,
+         update_objects/3,
+         abort_transaction/1,
+         commit_transaction/1,
+         create_bucket/2,
+         create_object/3,
+         delete_object/1
+        ]).
 
 %% ==========================================================
 %% Old APIs, We would still need them for tests and benchmarks
 -export([append/3,
-    read/2,
-    ec_execute_tx/1,
-    ec_read/2,
-    ec_bulk_update/1,
-    ec_istart_tx/0,
-    ec_iread/3,
-    ec_iupdate/4,
-    ec_iprepare/1,
-    ec_full_icommit/1,
-    ec_icommit/1]).
+         read/2,
+         ec_execute_tx/1,
+         ec_read/2,
+         ec_bulk_update/1,
+         ec_istart_tx/0,
+         ec_iread/3,
+         ec_iupdate/4,
+         ec_iprepare/1,
+         ec_full_icommit/1,
+         ec_icommit/1,
+         does_certification_check/0]).
 %% ===========================================================
 
 -type txn_properties() :: term(). %% TODO: Define
@@ -75,7 +77,9 @@ commit_transaction(TxId) ->
         {ok, {_TxId, CommitTime}} ->
             {ok, CommitTime};
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason};
+        Other ->
+            {error, Other}
     end.
 
 -spec read_objects(Objects :: [bound_object()], TxId :: txid())
@@ -135,7 +139,6 @@ update_objects(_Clock, _Properties, Updates) ->
 
 
 %% Object creation and types
-
 create_bucket(_Bucket, _Type) ->
     %% TODO: Bucket is not currently supported
     {error, operation_not_supported}.
@@ -167,18 +170,20 @@ append(Key, Type, {OpParams, Actor}) ->
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
--spec read(key(), type()) -> {ok, val()} | {error, reason()}.
+-spec read(key(), type()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
 read(Key, Type) ->
     case ec_materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            ec_interactive_tx_coord_fsm:perform_singleitem_read(Key, Type);
+            {ok, Val, _CommitTime} = ec_interactive_tx_coord_fsm:
+                perform_singleitem_read(Key,Type),
+            {ok, Val};
         {error, Reason} ->
             {error, Reason}
     end.
 
 
 %% Clock SI API
-%% TODO: Move these functions into ec files. Public interface should only 
+%% TODO: Move these functions into ec files. Public interface should only
 %%       contain generic transaction interface
 
 %% @doc Starts a new ec transaction.
@@ -223,12 +228,11 @@ ec_istart_tx() ->
             {error, Other}
     end.
 
-
 -spec ec_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
 ec_iread({_, _, CoordFsmPid}, Key, Type) ->
     case ec_materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}) of
+            case  gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}, ?OP_TIMEOUT) of
                 {ok, Res} -> {ok, Res};
                 {error, Reason} -> {error, Reason}
             end;
@@ -241,7 +245,7 @@ ec_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     case ec_materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
             case gen_fsm:sync_send_event(CoordFsmPid,
-                {update, {Key, Type, OpParams}}) of
+                                         {update, {Key, Type, OpParams}}, ?OP_TIMEOUT) of
                 ok -> ok;
                 {aborted, _} -> {error, aborted};
                 {error, Reason} -> {error, Reason}
@@ -258,17 +262,26 @@ ec_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
 %%      but should be changed when the new transaction api is decided
 -spec ec_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}} | {error, reason()}.
 ec_full_icommit({_, _, CoordFsmPid}) ->
-    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}) of
+    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}, ?OP_TIMEOUT) of
         {ok, _PrepareTime} ->
-            gen_fsm:sync_send_event(CoordFsmPid, commit);
+            gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT);
         Msg ->
             Msg
     end.
 
 -spec ec_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
 ec_iprepare({_, _, CoordFsmPid}) ->
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}).
+    gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT).
 
--spec ec_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
+-spec ec_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}, ?OP_TIMEOUT}.
 ec_icommit({_, _, CoordFsmPid}) ->
-    gen_fsm:sync_send_event(CoordFsmPid, commit).
+    gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT).
+
+-spec does_certification_check() -> boolean().
+does_certification_check() ->
+    case application:get_env(antidote, txn_cert) of
+        {ok, true}
+            -> true;
+        _
+            -> false
+    end.

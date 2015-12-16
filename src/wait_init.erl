@@ -20,7 +20,8 @@
 -module(wait_init).
 
 -export([wait_ready_nodes/1,
-	 check_ready/1]).
+	 check_ready/1
+        ]).
 
 %% @doc This function takes a list of pysical nodes connected to the an
 %% instance of the antidote distributed system.  For each of the phyisical nodes
@@ -61,6 +62,4 @@ check_ready(Node) ->
 	false ->
 	    lager:info("Checking if node ~w is ready ~n", [Node]),
 	    false
-    end.
-
-    
+    end.                

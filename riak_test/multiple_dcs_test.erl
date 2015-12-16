@@ -10,7 +10,6 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
-
 confirm() ->
 
     %% This resets nodes, cleans up stale directories, etc.:
@@ -28,17 +27,20 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
 
-    ok = common:setup_dc_manager([Cluster1, Cluster2, Cluster3], [8091, 8092, 8093], true),
+    {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
+    ?assertMatch(clocksi, Prot),
 
+    ok = common:setup_dc_manager([Cluster1, Cluster2, Cluster3], first_run),
     simple_replication_test(Cluster1, Cluster2, Cluster3),
 
     [Cluster4, Cluster5, Cluster6] = common:clean_clusters([Cluster1, Cluster2, Cluster3]),
-    ok = common:setup_dc_manager([Cluster4, Cluster5, Cluster6], [8091, 8092, 8093], Clean),
+    ok = common:setup_dc_manager([Cluster4, Cluster5, Cluster6], Clean),
     parallel_writes_test(Cluster4, Cluster5, Cluster6),
 
     [Cluster7, Cluster8, Cluster9] = common:clean_clusters([Cluster4, Cluster5, Cluster6]),
-    ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], [8091, 8092, 8093], Clean),
-    failure_test({Cluster7, 8091}, {Cluster8, 8092}, {Cluster9, 8093}),
+    ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], Clean),
+    failure_test(Cluster7, Cluster8, Cluster9),
+
     pass.
 
 simple_replication_test(Cluster1, Cluster2, Cluster3) ->
@@ -192,7 +194,7 @@ multiple_writes(Node, Key, Actor, ReplyTo) ->
 %% Test: when a DC is disconnected for a while and connected back it should
 %%  be able to read the missing updates. This should not affect the causal 
 %%  dependency protocol
-failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
+failure_test(Cluster1, Cluster2, Cluster3) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     Node3 = hd(Cluster3),
@@ -203,7 +205,10 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
     ?assertMatch({ok, _}, WriteResult1),
 
     %% Simulate failure of NODE3 by stoping the receiver
-    ok = rpc:call(Node3, inter_dc_manager, stop_receiver, []),
+    {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
+    {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
+
+    ok = rpc:call(Node3, inter_dc_manager, forget_dcs, [[D1, D2]]),
 
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
@@ -223,8 +228,8 @@ failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
     ?assertEqual({ok, 3}, ReadResult),
     lager:info("Done append in Node1"),
 
-    %% NODE3 comes back 
-    {ok, _} = rpc:call(Node3, inter_dc_manager, start_receiver, [Port3]),
+    %% NODE3 comes back
+    ok = rpc:call(Node3, inter_dc_manager, observe_dcs, [[D1, D2]]),
 
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,

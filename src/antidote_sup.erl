@@ -22,10 +22,14 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_rep/2, stop_rep/0]).
+-export([start_link/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
+
+%% Helper macro for declaring children of supervisor
+-define(CHILD(I, Type, Args), {I, {I, start_link, Args}, permanent, 5000, Type, [I]}).
+-define(VNODE(I, M), {I, {riak_core_vnode_master, start_link, [M]}, permanent, 5000, worker, [riak_core_vnode_master]}).
 
 %% ===================================================================
 %% API functions
@@ -33,23 +37,6 @@
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-%% @doc: start_rep(Port) - starts a server managed by Pid which listens for 
-%% incomming tcp connection on port Port. Server receives updates to replicate 
-%% from other DCs 
-start_rep(Pid, Port) ->
-    supervisor:start_child(?MODULE, {inter_dc_communication_sup,
-                    {inter_dc_communication_sup, start_link, [Pid, Port]},
-                    permanent, 5000, supervisor, [inter_dc_communication_sup]}).
-
-stop_rep() ->
-    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_recvr),
-    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_recvr),
-    ok = supervisor:terminate_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
-    _ = supervisor:delete_child(inter_dc_communication_sup, inter_dc_communication_fsm_sup),
-    ok = supervisor:terminate_child(?MODULE, inter_dc_communication_sup),
-    _ = supervisor:delete_child(?MODULE, inter_dc_communication_sup),
-    ok.
     
 %% ===================================================================
 %% Supervisor callbacks
@@ -62,16 +49,6 @@ init(_Args) ->
     EcMaster = { ec_vnode_master,
                       {riak_core_vnode_master, start_link, [ec_vnode]},
                       permanent, 5000, worker, [riak_core_vnode_master]},
-
-    InterDcRepMaster = {inter_dc_repl_vnode_master,
-                        {riak_core_vnode_master, start_link,
-                         [inter_dc_repl_vnode]},
-                        permanent, 5000, worker, [riak_core_vnode_master]},
-
-    InterDcRecvrMaster = { inter_dc_recvr_vnode_master,
-                           {riak_core_vnode_master, start_link,
-                            [inter_dc_recvr_vnode]},
-                           permanent, 5000, worker, [riak_core_vnode_master]},
 
     EcsTxCoordSup =  { ec_static_tx_coord_sup,
                            {ec_static_tx_coord_sup, start_link, []},
@@ -87,24 +64,31 @@ init(_Args) ->
     		      permanent, 5000, supervisor,
     		      [ec_readitem_sup]},
     
-    VectorClockMaster = {vectorclock_vnode_master,
-                         {riak_core_vnode_master,  start_link,
-                          [vectorclock_vnode]},
-                         permanent, 5000, worker, [riak_core_vnode_master]},
-
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
                            [ec_materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
 
-    InterDcSenderSup = {inter_dc_communication_sender_fsm_sup,
-    		      {inter_dc_communication_sender_fsm_sup, start_link, []},
-    		      permanent, 5000, supervisor,
-    		      [inter_dc_communication_sender_fsm_sup]},
+    ZMQContextManager = ?CHILD(zmq_context, worker, []),
+    InterDcPub = ?CHILD(inter_dc_pub, worker, []),
+    InterDcSub = ?CHILD(inter_dc_sub, worker, []),
+    InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
+    InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
+    InterDcLogReaderQMaster = ?CHILD(inter_dc_log_reader_query, worker, []),
+    InterDcLogReaderRMaster = ?CHILD(inter_dc_log_reader_response, worker, []),
+    InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
-    InterDcManager = {inter_dc_manager,
-                        {inter_dc_manager, start_link, []},
-                        permanent, 5000, worker, [inter_dc_manager]},
+    
+    MetaDataManagerSup = {meta_data_manager_sup,
+			  {meta_data_manager_sup, start_link, [stable]},
+			  permanent, 5000, supervisor,
+			  [meta_data_manager_sup]},
+
+    MetaDataSenderSup = {meta_data_sender_sup,
+			  {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
+			  permanent, 5000, supervisor,
+			  [meta_data_sender_sup]},
+
 
     {ok,
      {{one_for_one, 5, 10},
@@ -113,9 +97,14 @@ init(_Args) ->
        EcsTxCoordSup,
        EciTxCoordSup,
        EcReadSup,
-       InterDcRepMaster,
-       InterDcRecvrMaster,
-       InterDcManager,
-       VectorClockMaster,
-       InterDcSenderSup,
-       MaterializerMaster]}}.
+       MaterializerMaster,
+       ZMQContextManager,
+       InterDcPub,
+       InterDcSub,
+       InterDcSubVnode,
+       InterDcDepVnode,
+       InterDcLogReaderQMaster,
+       InterDcLogReaderRMaster,
+       InterDcLogSenderMaster,
+       MetaDataManagerSup,
+       MetaDataSenderSup]}}.

@@ -52,22 +52,6 @@ init([Coordinator, VecSnapshotTime, Partition]) ->
                 vclock=VecSnapshotTime},
     {ok, check_clock, SD, 0}.
 
-%% @doc check_clock: Compares its local clock with the tx timestamp.
-%%      if local clock is behind, it sleeps the fms until the clock
-%%      catches up. CLOCK-SI: clock skew.
-check_clock(timeout, SD0=#state{vclock=Vclock}) ->
-    DcId = dc_utilities:get_my_dc_id(),
-    {ok, T_TS} = vectorclock:get_clock_of_dc(DcId, Vclock),
-    Time = ec_vnode:now_microsec(erlang:now()),
-    Newclock = dict:erase(DcId, Vclock),
-    case T_TS > Time of
-        true ->
-            timer:sleep((T_TS - Time)div 1000 +1 ),
-            {next_state, update_item, SD0#state{vclock=Newclock}, 0};
-        false ->
-            {next_state, update_item, SD0#state{vclock=Newclock}, 0}
-    end.
-
 %% @doc simply finishes the fsm.
 update_item(timeout, SD0=#state{coordinator=Coordinator}) ->
     riak_core_vnode:reply(Coordinator, ok),
