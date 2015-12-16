@@ -280,8 +280,6 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 		    [Tuple] ->
 			[Key,Length1,_OpId|AllOps] = tuple_to_list(Tuple),
 			{Length1, sub_reverse(AllOps,Length1,[]), LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
-			%% [{_, {Length1,Ops1}}] ->
-			%% 	{Length1,Ops1,LatestSnapshot1,SnapshotCommitTime1,IsFirst1}
 		end
 	end,
     case Length of
@@ -394,12 +392,6 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     NewId = ets:update_counter(OpsCache, Key,
 			       {3,1}),
     Length = ets:lookup_element(OpsCache, Key, 2),
-    %% {Length,OpsDict,NewId} = case ets:lookup(OpsCache, Key) of
-    %% 				 []->
-    %% 				     {0,[],1};
-    %% 				 [{_, {Len,[{PrevId,First}|Rest]}}]->
-    %% 				     {Len,[{PrevId,First}|Rest],PrevId+1}
-    %% 		       end,
     case (Length)>=?OPS_THRESHOLD of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
@@ -408,11 +400,8 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
 	    %% Have to get the new ops dict because the interal_read can change it
 	    Length1 = ets:lookup_element(OpsCache, Key, 2),
 	    true = ets:update_element(OpsCache, Key, [{Length1+4,{NewId,DownstreamOp}}, {2,Length1+1}]);
-            %% ets:insert(OpsCache, {Key, {Length1 + 1, OpsDict2}});
         false ->
 	    true = ets:update_element(OpsCache, Key, [{Length + 4, {NewId,DownstreamOp}}, {2,Length+1}])
-	    %% OpsDict1=[{NewId,DownstreamOp} | OpsDict],
-            %% ets:insert(OpsCache, {Key, {Length + 1,OpsDict1}})
     end.
 
 
