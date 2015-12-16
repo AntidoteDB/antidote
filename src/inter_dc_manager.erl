@@ -28,7 +28,7 @@
 -export([
   get_descriptor/0,
   observe_dc/1,
-%%  observe_dc_sync/1,
+  observe_dc_sync/1,
   observe/1,
 %%  observe_dcs/1,
 %%  observe_dcs_sync/1,
@@ -49,6 +49,9 @@ get_descriptor() ->
     logreaders = LogReaders
   }}.
 
+
+observe_dc_sync(Desc) ->
+    observe_dc(Desc).
 
 -spec observe_dc(#descriptor{}) -> ok.
 observe_dc(#descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
