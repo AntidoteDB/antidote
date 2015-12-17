@@ -78,11 +78,11 @@ handle_cast({update_meta_data, Name, NodeId, Dict}, State) ->
     {noreply, State};
 
 handle_cast({update_meta_data_new, Name, NodeId}, State) ->
-    true = ets:insert_new(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), {NodeId, undefined}),
+    ets:insert_new(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), {NodeId, undefined}),
     {noreply, State};
 
 handle_cast({remove_node,Name,NodeId}, State) ->
-    true = ets:delete(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), NodeId),
+    ets:delete(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), NodeId),
     {noreply, State};
 
 handle_cast(_Info, State) ->
