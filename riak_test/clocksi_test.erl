@@ -140,7 +140,7 @@ clocksi_test1(Nodes) ->
                       {read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result2),
     {ok, {_, ReadSet2, _}}=Result2, 
-    ?assertMatch([0,1], ReadSet2),
+    ?assertMatch([0,0], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
@@ -258,7 +258,7 @@ clocksi_test_prepare(Nodes) ->
     Type = riak_dt_pncounter,
 
     Key1=clocksi_test_prepare_key1,
-    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa],1),
+    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
     IndexNode = hd(Preflist),
 
     Key2 = find_key_same_node(FirstNode,IndexNode,1),
