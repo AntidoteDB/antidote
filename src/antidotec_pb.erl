@@ -31,16 +31,18 @@
 -define(TIMEOUT, 10000).
 
 -spec start_transaction(Pid::term(), TimeStamp::term(), TxnProperties::term())
-                       -> {ok, term()} | {error, term()}.
+        -> {ok,{interactive,term()} | {static,{term(),term()}}} | {error, term()}.
 start_transaction(Pid, TimeStamp, TxnProperties) ->
     case is_static(TxnProperties) of
-        true -> {ok, {static, {TimeStamp, TxnProperties}}};
+        true -> 
+            {ok, {static, {TimeStamp, TxnProperties}}};
         false ->
             EncMsg = antidote_pb_codec:encode(start_transaction,
                                               {TimeStamp, TxnProperties}),
             Result = antidotec_pb_socket:call_infinity(Pid,{req, EncMsg, ?TIMEOUT}),
             case Result of
-                {error, timeout} -> {error, timeout};
+                {error, timeout} -> 
+                    {error, timeout};
                 _ ->
                     case antidote_pb_codec:decode_response(Result) of
                         {start_transaction, TxId} ->
@@ -67,7 +69,7 @@ abort_transaction(Pid, {interactive, TxId}) ->
             end
     end.
 
--spec commit_transaction(Pid::term(), TxId::term()) ->
+-spec commit_transaction(Pid::term(), TxId::{interactive,term()} | {static,term()}) ->
                                 {ok, term()} | {error, term()}.
 commit_transaction(Pid, {interactive, TxId}) ->
     EncMsg = antidote_pb_codec:encode(commit_transaction, TxId),

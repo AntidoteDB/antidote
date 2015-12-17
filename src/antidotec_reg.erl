@@ -70,8 +70,9 @@ is_type(T) ->
 -spec type() -> reg.
 type() -> reg.
 
+-spec to_ops(term(),term()) -> [].
 to_ops(_, _) ->
-    ok.
+    [].
 
 assign(_, Value) ->
     #antidote_reg{value=Value}.
