@@ -97,7 +97,6 @@ partition_test([Cluster1, Cluster2, Cluster3]) ->
     ok = rpc:call(Node3, inter_dc_manager, observe_dcs, [[D1, D2]]),
 
     ok=rpc:call(Node3, antidote, eiger_checkdeps,[[{Key, TS2}]]),
-    lager:info("Already here"),
 
     {ok, Result4, _}=rpc:call(Node3, antidote, eiger_readtx, [[Key]]),
     ?assertMatch([{Key, 2}], Result4),
