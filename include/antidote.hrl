@@ -158,4 +158,5 @@
           operations :: list(),
           read_set :: list(),
           is_static :: boolean(),
-          full_commit :: boolean()}).
+          full_commit :: boolean(),
+	  stay_alive :: boolean()}).
