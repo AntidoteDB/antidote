@@ -74,7 +74,7 @@ init([Name]) ->
     {ok, #state{table=Table}}.
 
 handle_cast({update_meta_data, Name, NodeId, Dict}, State) ->
-    ets:insert(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), {NodeId, Dict}),
+    true = ets:insert(meta_data_sender:get_name(Name,?REMOTE_META_TABLE_NAME), {NodeId, Dict}),
     {noreply, State};
 
 handle_cast({update_meta_data_new, Name, NodeId}, State) ->
