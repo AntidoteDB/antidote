@@ -109,7 +109,7 @@ start_link(Name,UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
 		       ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
 
--spec start(list()) -> ok.
+-spec start(atom()) -> ok.
 start(Name) ->
     gen_fsm:sync_send_event(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)),
 			    start).
@@ -371,7 +371,7 @@ get_node_and_partition_list() ->
     %% safe can cause inconsistencies under concurrency, so this should
     %% be done differently
     %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
-    Resize = false,
+    Resize = true,
     {NodeList,PartitionList,Resize}.
 
 get_name(Name,TableName) ->

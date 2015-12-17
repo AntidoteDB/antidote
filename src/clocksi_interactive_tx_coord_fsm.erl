@@ -83,7 +83,8 @@
     abort/2,
     perform_singleitem_read/2,
     perform_singleitem_update/3,
-    reply_to_client/1]).
+    reply_to_client/1,
+    generate_name/1]).
 
 %%%===================================================================
 %%% API
@@ -132,6 +133,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        stay_alive = StayAlive
       }.
 
+-spec generate_name(pid()) -> atom().
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
@@ -144,7 +146,7 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
     SD#tx_coord_state{transaction=Transaction}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-				boolean(), pid(), boolean()) -> {tx(), txid()}.
+				boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
