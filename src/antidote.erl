@@ -371,7 +371,7 @@ clocksi_istart_tx(Clock, KeepAlive) ->
 	    end,
     _ = case TxPid of
 	undefined ->
-	    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, KeepAlive]);
+	    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, KeepAlive]);
 	TxPid ->
 	    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock})
     end,
