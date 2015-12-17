@@ -1,5 +1,5 @@
 REBAR = $(shell pwd)/rebar
-.PHONY: rel deps test
+.PHONY: rel deps test relgentlerain
 
 all: deps compile test compile-riak-test
 
@@ -24,6 +24,9 @@ distclean: clean devclean relclean cleanplt
 
 rel: all
 	$(REBAR) generate
+
+relgentlerain: export TXN_PROTOCOL=gentlerain
+relgentlerain: relclean cleantests rel
 
 relnocert: export NO_CERTIFICATION = true
 relnocert: relclean cleantests rel

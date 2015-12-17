@@ -44,12 +44,12 @@ confirm() ->
     [Nodes3] = common:clean_clusters([Nodes2]),
     transfer_test(Nodes3),
 
-    case rpc:call(hd(Nodes), antidote, does_certification_check, []) of
-        true ->
+    case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
+        {ok, true} ->
             [Nodes4] = common:clean_clusters([Nodes3]),
             conditional_write_test(Nodes4);
-        false ->
-            ok
+        _ -> 
+            pass
     end,
     pass.
 
