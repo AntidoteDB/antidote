@@ -346,7 +346,6 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
 	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,NewLength},{3,OpId}|PrunedOps]));
-	%% true = ets:insert(OpsCache, list_to_tuple([Key,NewLength,OpId|lists:reverse(PrunedOps) ++ lists:seq(NewLength+1,?OPS_THRESHOLD)]));
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
