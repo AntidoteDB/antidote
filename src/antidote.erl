@@ -166,7 +166,7 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
                     {error, Reason}
             end;
         false ->
-            case clocksi_execute_tx(Clock, Operations, StayAlive) of
+            case clocksi_execute_tx(Clock, Operations, update_clock, StayAlive) of
                 {ok, {_TxId, [], CommitTime}} ->
                     {ok, CommitTime};
                 {error, Reason} -> {error, Reason}
@@ -204,7 +204,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
-                    case clocksi_execute_tx(Clock, Args, StayAlive) of
+                    case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
                         {ok, {_TxId, Result, CommitTime}} ->
                             {ok, Result, CommitTime};
                         {error, Reason} -> {error, Reason}
@@ -212,7 +212,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                 {ok, gr} ->
                     case Args of
                         [_Op] -> %% Single object read = read latest value
-                            case clocksi_execute_tx(Clock, Args, StayAlive) of
+                            case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
                                 {ok, {_TxId, Result, CommitTime}} ->
                                     {ok, Result, CommitTime};
                                 {error, Reason} -> {error, Reason}
