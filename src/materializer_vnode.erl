@@ -28,6 +28,7 @@
 -define(SNAPSHOT_THRESHOLD, 10).
 -define(SNAPSHOT_MIN, 3).
 -define(OPS_THRESHOLD, 50).
+-define(FIRST_OP, 4).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -235,11 +236,6 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
 		    end,
     snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache,ShouldGc).
 
-sub_reverse(_List,0,Acc) ->
-    Acc;
-sub_reverse([First|Rest],Length,Acc) ->
-    sub_reverse(Rest,Length-1,[First|Acc]).
-
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
 -spec internal_read(key(), type(), snapshot_time(), txid() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
@@ -278,8 +274,8 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 		    [] ->
 			{0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
 		    [Tuple] ->
-			[Key,Length1,_OpId|AllOps] = tuple_to_list(Tuple),
-			{Length1, sub_reverse(AllOps,Length1,[]), LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
+			{Key,Length1,_OpId,AllOps} = tuple_to_key(Tuple),
+			{Length1, AllOps, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
 		end
 	end,
     case Length of
@@ -295,7 +291,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 			ignore ->
 			    {ok, Snapshot};
 			_ ->
-			    case (NewSS and IsFirst) or ShouldGc of
+			    case (NewSS and IsFirst) orelse ShouldGc of
 				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
 				%% previous snapshot
 				true ->
@@ -331,7 +327,7 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
                          cache_id(),cache_id(),boolean()) -> true.
 snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
     %% Should check op size here also, when run from op gc
-    case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) or ShouldGc of
+    case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) orelse ShouldGc of
         true ->
 	    %% snapshots are no longer totally ordered
 	    PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
@@ -344,12 +340,13 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 					[] ->
 					    {0, 0, []};
 					[Tuple] ->
-					    [Key,Length1,OpId1|Ops] = tuple_to_list(Tuple),
-					    {Length1, OpId1, sub_reverse(Ops,Length1,[])}
+					    {Key,Length1,OpId1,Ops} = tuple_to_key(Tuple),
+					    {Length1, OpId1, Ops}
 				    end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-            true = ets:insert(OpsCache, list_to_tuple([Key,NewLength,OpId|lists:reverse(PrunedOps) ++ lists:seq(NewLength+1,?OPS_THRESHOLD)]));
+	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,NewLength},{3,OpId}|PrunedOps]));
+	%% true = ets:insert(OpsCache, list_to_tuple([Key,NewLength,OpId|lists:reverse(PrunedOps) ++ lists:seq(NewLength+1,?OPS_THRESHOLD)]));
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
@@ -364,18 +361,47 @@ prune_ops({_Len,OpsDict}, Threshold)->
 %% So can add a stop function to ordered_filter
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
-    Res = lists:filter(fun({_OpId,Op}) ->
-			       OpCommitTime=Op#clocksi_payload.commit_time,
-			       (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
-		       end, OpsDict),
-    NewOps = case Res of
-		 [] ->
-		     [First|_Rest] = OpsDict,
-		     [First];
-		 _ ->
-		     Res
-	     end,
-    {length(NewOps),NewOps}.
+    Res = reverse_and_filter(fun({_OpId,Op}) ->
+				     OpCommitTime=Op#clocksi_payload.commit_time,
+				     (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
+			     end, OpsDict, ?FIRST_OP, []),
+    case Res of
+	{_,[]} ->
+	    [First|_Rest] = OpsDict,
+	    {1,[{?FIRST_OP,First}]};
+	_ ->
+	    Res
+    end.
+
+%% This is an internal function used to convert the tuple stored in ets
+%% to a tuple and list usable by the materializer
+-spec tuple_to_key(tuple()) -> {any(),non_neg_integer(),non_neg_integer(),list()}.
+tuple_to_key(Tuple) ->
+    Key = element(1, Tuple),
+    Length = element(2, Tuple),
+    OpId = element(3, Tuple),
+    Ops = tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]),
+    {Key,Length,OpId,Ops}.
+tuple_to_key_int(Next,Next,_Tuple,Acc) ->
+    Acc;
+tuple_to_key_int(Next,Last,Tuple,Acc) ->
+    tuple_to_key_int(Next+1,Last,Tuple,[element(Next,Tuple)|Acc]).
+
+%% This is an internal function used to filter ops and reverse the list
+%% It returns a tuple where the first element is the lenght of the list returned
+%% The elements in the list also include the location that they will be placed
+%% in the tuple in the ets table, this way the list can be used
+%% directly in the erlang:make_tuple function
+-spec reverse_and_filter(fun(),list(),non_neg_integer(),list()) -> {non_neg_integer(),list()}.
+reverse_and_filter(_Fun,[],Id,Acc) ->
+    {Id-?FIRST_OP,Acc};
+reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
+    case Fun(First) of
+	true ->
+	    reverse_and_filter(Fun,Rest,Id+1,[{Id,First}|Acc]);
+	false ->
+	    reverse_and_filter(Fun,Rest,Id,Acc)
+    end.
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
@@ -385,7 +411,7 @@ prune_ops({_Len,OpsDict}, Threshold)->
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     case ets:member(OpsCache, Key) of
 	false ->
-	    ets:insert(OpsCache, erlang:make_tuple(4+?OPS_THRESHOLD,0,[{1,Key}]));
+	    ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key}]));
 	true ->
 	    ok
     end,
@@ -399,9 +425,9 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache, true),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    Length1 = ets:lookup_element(OpsCache, Key, 2),
-	    true = ets:update_element(OpsCache, Key, [{Length1+4,{NewId,DownstreamOp}}, {2,Length1+1}]);
+	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,Length1+1}]);
         false ->
-	    true = ets:update_element(OpsCache, Key, [{Length + 4, {NewId,DownstreamOp}}, {2,Length+1}])
+	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,Length+1}])
     end.
 
 
