@@ -39,7 +39,7 @@
 -record(state, {
           address :: address(),    % address to connect to
           port :: portnum(),       % port to connect to
-          sock :: port() | undefined,           % gen_tcp socket
+          sock :: port(),           % gen_tcp socket
           active :: #request{} | undefined,     % active request
           connect_timeout = infinity :: timeout(), % timeout of TCP connection
           keepalive = false :: boolean(), % if true, enabled TCP keepalive for the socket
@@ -70,8 +70,8 @@ init([Address, Port, _Options]) ->
     case connect(State) of
         {error, Reason} ->
             {stop, {tcp, Reason}};
-        {ok, State} -> 
-            {ok, State}
+        {ok, State2} -> 
+            {ok, State2}
     end.
 
 %% @doc Create a linked process to talk with the riak server on Address:Port
