@@ -49,6 +49,9 @@ get_descriptor() ->
     logreaders = LogReaders
   }}.
 
+-spec start_bg_processes(list()) -> ok.
+start_bg_processes(Name) ->
+    ok.
 
 observe_dc_sync(Desc) ->
     observe_dc(Desc).
