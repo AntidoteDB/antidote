@@ -352,7 +352,7 @@ clocksi_istart_tx(Clock, KeepAlive) ->
 		false ->
 		    undefined
 	    end,
-    case TxPid of
+    _ = case TxPid of
 	undefined ->
 	    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, KeepAlive]);
 	TxPid ->
