@@ -69,7 +69,6 @@ handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_s
 
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
-  %% {ok, StableSnapshot} = vectorclock:get_stable_snapshot(),
   StableSnapshot = vectorclock:new(),
   {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0}}.
 
