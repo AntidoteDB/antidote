@@ -43,6 +43,7 @@
 
 %% States
 -export([read_data_item/4,
+        async_read_data_item/5,
 	 check_partition_ready/3,
 	 start_read_servers/2,
 	 stop_read_servers/2]).
@@ -86,6 +87,18 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
     try
 	gen_server:call({global,generate_random_server_name(Node,Partition)},
 			{perform_read,Key,Type,Transaction},infinity)
+    catch
+        _:Reason ->
+            lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+	    check_server_ready([{Partition,Node}]),
+            read_data_item({Partition,Node},Key,Type,Transaction)
+    end.
+
+-spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> {error, term()} | {ok, snapshot()}.
+async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
+    try
+	gen_server:cast({global,generate_random_server_name(Node,Partition)},
+            {perform_read_cast, Coordinator, Key, Type, Transaction})
     catch
         _:Reason ->
             lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
@@ -185,6 +198,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
     case check_clock(Key,Transaction,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+        lager:info("Not ready"),
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
@@ -229,15 +243,24 @@ check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
 %%  - Reads and returns the log of specified Key using replication layer.
 return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    %%lager:info("Here is the vector snapshot time we'll be reading from: ~p", [VecSnapshotTime]),
+    %lager:info("Here is the vector snapshot time we'll be reading from: ~p", [VecSnapshotTime]),
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
         {ok, Snapshot} ->
-            Reply={ok, Snapshot};
+            case Coordinator of
+                {fsm, Sender} -> %% Return Type and Value directly here.
+                    gen_fsm:send_event(Sender, {ok, {Key, Type, Snapshot}});
+                _ ->
+                    _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
+            end;
         {error, Reason} ->
-            Reply={error, Reason}
+            case Coordinator of
+                {fsm, Sender} -> %% Return Type and Value directly here.
+                    gen_fsm:send_event(Sender, {error, Reason});
+                _ ->
+                    _Ignore=gen_server:reply(Coordinator, {error, Reason})
+            end
     end,
-    _Ignore=gen_server:reply(Coordinator, Reply),
     ok.
 
 

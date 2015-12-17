@@ -48,6 +48,7 @@
          clocksi_execute_tx/3,
          clocksi_execute_tx/2,
          clocksi_execute_tx/1,
+         clocksi_execute_int_tx/1,
          clocksi_read/3,
          clocksi_read/2,
          clocksi_bulk_update/2,
@@ -298,6 +299,21 @@ clocksi_execute_tx(Clock, Operations) ->
 clocksi_execute_tx(Operations) ->
     clocksi_execute_tx(ignore, Operations, false).
 
+-spec clocksi_execute_int_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
+clocksi_execute_int_tx(Operations) ->
+    {ok, TxId} = clocksi_istart_tx(),
+    case execute_ops(Operations, TxId, []) of
+        {error, Reason} ->
+            {error, Reason};
+        ReadSet ->
+            case clocksi_full_icommit(TxId) of
+                {ok, {TxId, CommitTime}} ->
+                    {ok, {TxId, ReadSet, CommitTime}};
+                Other ->
+                    Other
+            end
+    end.
+
 -spec clocksi_bulk_update(ClientClock:: snapshot_time(),
                           [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_bulk_update(ClientClock, Operations) ->
@@ -407,3 +423,15 @@ does_certification_check() ->
         _
             -> false
     end.
+
+execute_ops([], _TxId, ReadSet) ->
+    lists:reverse(ReadSet);
+execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
+    case clocksi_iupdate(TxId, Key, Type, OpParams) of
+        ok -> execute_ops(Rest, TxId, ReadSet);
+        {error, Reason} ->
+            {error, Reason}
+    end;
+execute_ops([{read, {Key, Type}}|Rest], TxId, ReadSet) ->
+    {ok, Value} = clocksi_iread(TxId, Key, Type),
+    execute_ops(Rest, TxId, [Value|ReadSet]).
