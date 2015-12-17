@@ -71,7 +71,9 @@ init([Address, Port, _Options]) ->
         {error, Reason} ->
             {stop, {tcp, Reason}};
         {ok, State} -> 
-            {ok, State}
+            {ok, State};
+	Other ->
+	    Other
     end.
 
 %% @doc Create a linked process to talk with the riak server on Address:Port
