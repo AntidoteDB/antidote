@@ -63,13 +63,19 @@ start_link(Vnode, TxId, TimeStamp, Deps, Ops) ->
 %% @doc Initialize the state.
 init([Vnode, TxId, TimeStamp, Deps, Ops]) ->
     {ListDeps, NPartitions} = Deps,
+    NewList = case ListDeps of
+                [_H|_T] ->
+                    ListDeps;
+                _ ->
+                    []
+              end,
     DepsPartition = lists:foldl(fun(Dependency, Dict)->
                                     %lager:info("Dependency: ~p", [Dependency]),
                                     {Key, _TimeStamp} = Dependency,
                                     Preflist = log_utilities:get_preflist_from_key(Key),
                                     IndexNode = hd(Preflist),
                                     dict:append(IndexNode, Dependency, Dict)
-                                end, dict:new(), ListDeps),
+                                end, dict:new(), NewList),
     lists:foreach(fun({Partition, Slice}) ->
                     eiger_vnode:check_deps(Partition, Slice)
                   end, dict:to_list(DepsPartition)),
