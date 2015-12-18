@@ -99,7 +99,7 @@ handle_command({hello}, _Sender, State) ->
 
 %% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
-    lager:info("Sending a ping"),
+    %%lager:info("Sending a ping"),
     %PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
     PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, time),
     {noreply, set_timer(broadcast(State, PingTxn))}.

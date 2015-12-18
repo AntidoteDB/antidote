@@ -37,8 +37,8 @@ from_ops(Ops, Partition, PrevLogOpId) ->
   LastOp = lists:last(Ops),
   CommitPld = LastOp#operation.payload,
   commit = CommitPld#log_record.op_type, %% sanity check
-  {{DCID, CommitTime}, VecSnapshotTime, Deps, _TotalOps} = CommitPld#log_record.op_payload,
-  lager:info("Deps: ~p, DC: ~p", [Deps, DCID]),
+  {{DCID, CommitTime}, VecSnapshotTime, _Deps, _TotalOps} = CommitPld#log_record.op_payload,
+    %%lager:info("Deps: ~p, DC: ~p", [Deps, DCID]),
   #interdc_txn{
     dcid = DCID,
     partition = Partition,
