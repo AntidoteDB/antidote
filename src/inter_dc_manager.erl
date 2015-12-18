@@ -28,6 +28,7 @@
 -export([
   get_descriptor/0,
   observe_dc/1,
+	 start_bg_processes/1,
   observe_dc_sync/1,
   observe/1,
 %%  observe_dcs/1,
@@ -50,7 +51,7 @@ get_descriptor() ->
   }}.
 
 -spec start_bg_processes(list()) -> ok.
-start_bg_processes(Name) ->
+start_bg_processes(_Name) ->
     ok.
 
 observe_dc_sync(Desc) ->
