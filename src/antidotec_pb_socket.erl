@@ -39,15 +39,18 @@
 -record(state, {
           address :: address(),    % address to connect to
           port :: portnum(),       % port to connect to
-          sock :: port(),       % gen_tcp socket
+          sock :: port() | undefined,           % gen_tcp socket
           active :: #request{} | undefined,     % active request
-          connect_timeout=infinity :: timeout(), % timeout of TCP connection
+          connect_timeout = infinity :: timeout(), % timeout of TCP connection
           keepalive = false :: boolean(), % if true, enabled TCP keepalive for the socket
           last_commit_time :: term() % temporarily store for static transactions
          }).
 
--export([start_link/2, start_link/3,
-         start/2, start/3,
+
+-export([start_link/2, 
+         start_link/3,
+         start/2, 
+         start/3,
          stop/1,
          handle_call/3,
          handle_info/2,
@@ -63,11 +66,12 @@
 
 %% @private
 init([Address, Port, _Options]) ->
-    State = #state{address = Address, port = Port, active = undefined},
+    State = #state{address = Address, port = Port, active = undefined, sock = undefined},
     case connect(State) of
         {error, Reason} ->
             {stop, {tcp, Reason}};
-        Ok -> Ok
+        {ok, State2} -> 
+            {ok, State2}
     end.
 
 %% @doc Create a linked process to talk with the riak server on Address:Port
@@ -162,7 +166,8 @@ connect(State) when State#state.sock =:= undefined ->
                          State#state.connect_timeout) of
         {ok, Sock} ->
             {ok, State#state{sock = Sock}};
-        Error -> Error
+        {error, Reason} -> 
+            {error, Reason}
     end.
 
 
@@ -210,9 +215,6 @@ send_request(Request0, State) when State#state.active =:= undefined  ->
             maybe_reply({noreply,State#state{active = Request}});
         {error, Reason} ->
             lager:warning("Socket error while sending riakc request: ~p.", [Reason]),
-            gen_tcp:close(State#state.sock);
-        Other ->
-            lager:warning("Socket error while sending riakc request: ~p.", [Other]),
             gen_tcp:close(State#state.sock)
     end.
 
