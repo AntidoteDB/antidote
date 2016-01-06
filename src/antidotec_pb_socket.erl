@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 
 -define(FIRST_RECONNECT_INTERVAL, 100).
--define(TIMEOUT, 1000).
+-define(TIMEOUT, 5000).
 
 %% The TCP/IP host name or address of the Riak node
 -type address() :: string() | atom() | inet:ip_address().
