@@ -87,7 +87,7 @@ handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State = #state{u
 	    true ->
 		case dict:find(DCID, DcDelays) of
 		    {ok, Time} ->
-			Time;
+			{ok, Time};
 		    error ->
 			false
 		end;
@@ -97,9 +97,8 @@ handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State = #state{u
     case DelayTime of
 	false ->
 	    process_txn(Txn, DCID, State);
-	_ ->
-	    %% lager:info("Adding delay ~p, for ~p", [DelayTime, DCID]),
-	    riak_core_vnode:send_command_after(DelayTime, {txn_delayed}),
+	{ok, Time1} ->
+	    riak_core_vnode:send_command_after(Time1, {txn_delayed}),
 	    {noreply, State#state{queue = queue:in(Txn, Queue)}}
     end;
 
