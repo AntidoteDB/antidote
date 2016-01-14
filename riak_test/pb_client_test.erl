@@ -48,31 +48,41 @@ confirm() ->
     pass = start_stop_test(),
 
     [Nodes1] = common:clean_clusters([Nodes]),
+    rt:wait_for_service(Node, antidote),
     simple_transaction_test(hd(Nodes)),
 
     [Nodes2] = common:clean_clusters([Nodes1]),
+    rt:wait_for_service(Node, antidote),
     read_write_test(hd(Nodes)),
 
     [Nodes3] = common:clean_clusters([Nodes2]),
+    rt:wait_for_service(Node, antidote),
     get_empty_crdt_test(),
 
     [Nodes4] = common:clean_clusters([Nodes3]),
+    rt:wait_for_service(Node, antidote),
     pb_test_counter_read_write(hd(Nodes)),
 
     [Nodes5] = common:clean_clusters([Nodes4]),
+    rt:wait_for_service(Node, antidote),
     pb_test_set_read_write(hd(Nodes)),
 
     [Nodes6] = common:clean_clusters([Nodes5]),
+    rt:wait_for_service(Node, antidote),
     pb_empty_txn_clock_test(),
 
     [Nodes7] = common:clean_clusters([Nodes6]),
+    rt:wait_for_service(Node, antidote),
     pass = update_counter_crdt_test(<<"key1">>,<<"bucket">>, 10),
 
     [Nodes8] = common:clean_clusters([Nodes7]),
+    rt:wait_for_service(Node, antidote),
     pass = update_counter_crdt_and_read_test(<<"key2">>, 15),
     [Nodes9] = common:clean_clusters([Nodes8]),
+    rt:wait_for_service(Node, antidote),
     update_set_read_test(),
     [_] = common:clean_clusters([Nodes9]),
+    rt:wait_for_service(Node, antidote),
     static_transaction_test(),
     pass.
 
