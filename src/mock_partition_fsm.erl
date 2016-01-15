@@ -169,8 +169,6 @@ execute_op({ack_abort,From,_},State) ->
     gen_fsm:send_event(From, ack_abort),
     {stop, normal, State}.
 
-
-
 %% =====================================================================
 handle_info(_Info, _StateName, StateData) ->
     {stop,badmsg,StateData}.
