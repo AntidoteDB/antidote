@@ -97,7 +97,6 @@ get_logid_from_key(_Key) ->
 
 abort(UpdatedPartitions, _Transactions) ->
     Self = self(),
-    io:format("sending abort to ~p", [UpdatedPartitions]),
     lists:foreach(fun({Fsm,Rest}) -> gen_fsm:send_event(Fsm, {ack_abort, Self, Rest}) end, UpdatedPartitions).
 
 single_commit(UpdatedPartitions, _Transaction) ->
