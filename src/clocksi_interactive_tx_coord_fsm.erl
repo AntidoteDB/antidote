@@ -105,7 +105,7 @@ start_link(From,Clientclock,UpdateClock) ->
     start_link(From,Clientclock,UpdateClock,false).
 
 start_link(From) ->
-    start_link(From, ignore).
+    start_link(From, ignore, update_clock).
 
 finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
