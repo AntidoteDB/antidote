@@ -62,11 +62,11 @@ query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
-add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}).
+add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}, ?COMM_TIMEOUT).
 
 %% Disconnects from the DC.
 -spec del_dc(dcid()) -> ok.
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
+del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -76,7 +76,7 @@ init([]) -> {ok, #state{sockets = dict:new(), unanswered_queries = dict:new()}}.
 %% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, State) ->
   %% Create a socket and store it
-  Socket = zmq_utils:create_connect_socket(req, true, hd(LogReaders)),
+  Socket = connect_to_node(hd(LogReaders)),
   NewState = State#state{sockets = dict:store(DCID, Socket, State#state.sockets)},
 
   F = fun({{QDCID, _}, Request}) ->
@@ -128,3 +128,23 @@ req_sent(PDCID, Req, State) -> State#state{unanswered_queries = dict:store(PDCID
 %% Removes the request from the list of unanswered queries.
 rsp_rcvd(PDCID, State) -> State#state{unanswered_queries = dict:erase(PDCID, State#state.unanswered_queries)}.
 
+connect_to_node([]) ->
+    lager:error("Unable to subscribe to DC log reader"),
+    connection_error;
+connect_to_node([Address| Rest]) ->
+    %% Test the connection
+    Socket1 = zmq_utils:create_connect_socket(req, false, Address),
+    erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    erlzmq:send(Socket1, term_to_binary({is_up})),
+    Res = erlzmq:recv(Socket1),
+    lager:info("Res ~p", [Res]),
+    zmq_utils:close_socket(Socket1),
+    case Res of
+	{ok, _} ->
+	    %% Create a subscriber socket for the specified DC
+	    Socket = zmq_utils:create_connect_socket(req, true, Address),
+	    %% For each partition in the current node:
+	    Socket;
+	_ ->
+	    connect_to_node(Rest)
+    end.

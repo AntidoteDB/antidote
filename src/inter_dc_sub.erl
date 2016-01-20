@@ -52,10 +52,10 @@
 
 %% TODO: persist added DCs in case of a node failure, reconnect on node restart.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
-add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}).
+add_dc(DCID, Publishers) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers}, ?COMM_TIMEOUT).
 
 -spec del_dc(dcid()) -> ok.
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
+del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -63,17 +63,7 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, State) ->
-  F = fun(Address) ->
-    %% Create a subscriber socket for the specified DC
-    Socket = zmq_utils:create_connect_socket(sub, true, Address),
-    %% For each partition in the current node:
-    lists:foreach(fun(P) ->
-      %% Make the socket subscribe to messages prefixed with the given partition number
-      ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
-    end, dc_utilities:get_my_partitions()),
-    Socket
-  end,
-  Sockets = lists:map(F, Publishers),
+  Sockets = lists:map(fun connect_to_node/1, Publishers),
   %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
   %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
   {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
@@ -96,3 +86,27 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
   F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,
   lists:foreach(F, dict:to_list(State#state.sockets)).
+
+connect_to_node([]) ->
+    lager:error("Unable to subscribe to DC"),
+    connection_error;
+connect_to_node([Address|Rest]) ->
+    %% Test the connection
+    Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
+    erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    ok = zmq_utils:sub_filter(Socket1, <<>>),
+    Res = erlzmq:recv(Socket1),
+    ok = zmq_utils:close_socket(Socket1),
+    case Res of
+	{ok, _} ->
+	    %% Create a subscriber socket for the specified DC
+	    Socket = zmq_utils:create_connect_socket(sub, true, Address),
+	    %% For each partition in the current node:
+	    lists:foreach(fun(P) ->
+				  %% Make the socket subscribe to messages prefixed with the given partition number
+				  ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
+			  end, dc_utilities:get_my_partitions()),
+	    Socket;
+	_ ->
+	    connect_to_node(Rest)
+    end.
