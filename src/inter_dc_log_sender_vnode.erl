@@ -72,12 +72,16 @@ send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_se
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-  {ok, set_timer(#state{
+  {ok, #state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
     last_log_id = 0,
     timer = none
-  })}.
+  }}.
+
+%% Start the timer
+handle_command({start_timer}, _Sender, State) ->
+    {reply, ok, set_timer(true, State)};
 
 %% Handle the new operation
 handle_command({log_event, Operation}, _Sender, State) ->
@@ -137,17 +141,28 @@ del_timer(State = #state{timer = Timer}) ->
 
 %% Cancels the previous ping timer and sets a new one.
 -spec set_timer(#state{}) -> #state{}.
-set_timer(State = #state{partition = Partition}) ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    Node = riak_core_ring:index_owner(Ring, Partition),
-    MyNode = node(),
-    case Node of
-	MyNode ->
+set_timer(State) ->
+    set_timer(false,State).
+
+-spec set_timer(boolean(), #state{}) -> #state{}.
+set_timer(First, State = #state{partition = Partition}) ->
+    case First of
+	true ->
+	    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	    Node = riak_core_ring:index_owner(Ring, Partition),
+	    MyNode = node(),
+	    case Node of
+		MyNode ->
+		    State1 = del_timer(State),
+		    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)};
+		_Other ->
+		    State
+	    end;
+	false ->
 	    State1 = del_timer(State),
-	    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)};
-	_Other ->
-	    State
+	    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)}
     end.
+		
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.

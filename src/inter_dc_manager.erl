@@ -27,6 +27,7 @@
 
 -export([
   get_descriptor/0,
+  start_bg_processes/1,
   observe_dc/1,
   observe_dc_sync/1,
   observe/1,
@@ -72,6 +73,16 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc)
 	    end
     end.
+
+-spec start_bg_processes(list()) -> ok.
+start_bg_processes(Name) ->
+    %% Start the meta-data senders
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    lists:foreach(fun(Node) -> ok = rpc:call(Node, meta_data_sender, start, [Name]) end, Nodes),
+    %% Start the timers sending the heartbeats
+    %% FIXME: Shouldn't the return value be matched??
+    _ = dc_utilities:bcast_vnode_sync(inter_dc_log_sender_vnode_master, {start_timer}),
+    ok.
 
 -spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
 connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc) ->
