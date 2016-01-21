@@ -50,7 +50,7 @@ get_descriptor() ->
   }}.
 
 
--spec observe_dc(#descriptor{}) -> ok | {error, term()}.
+-spec observe_dc(#descriptor{}) -> ok | inter_dc_conn_err().
 observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
     PartitionsNumLocal = dc_utilities:get_partitions_num(),
     case PartitionsNumRemote == PartitionsNumLocal of
@@ -71,7 +71,7 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 	    end
     end.
 
--spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, term()}.
+-spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
 connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc) ->
     ok;
 connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc) ->
@@ -91,10 +91,10 @@ connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc) ->
 	    {error, connection_error}
     end.
 
--spec observe_dcs([#descriptor{}]) -> [ok | {error, term()}].
+-spec observe_dcs([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs(Descriptors) -> lists:map(fun observe_dc/1, Descriptors).
 
--spec observe_dcs_sync([#descriptor{}]) -> [ok | {error, term()}].
+-spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
     {ok, SS} = vectorclock:get_stable_snapshot(),
     DCs = lists:map(fun(DC) ->
@@ -111,8 +111,8 @@ observe_dcs_sync(Descriptors) ->
 		  end, DCs),
     [Result1 || {Result1, _DC1} <- DCs].
 
--spec observe_dc_sync(#descriptor{}) -> ok | {error, term()}.
-observe_dc_sync(Descriptor) -> 
+-spec observe_dc_sync(#descriptor{}) -> ok | inter_dc_conn_err().
+observe_dc_sync(Descriptor) ->
     [Res] = observe_dcs_sync([Descriptor]),
     Res.
 

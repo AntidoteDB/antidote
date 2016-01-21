@@ -141,10 +141,10 @@ connect_to_node([]) ->
 connect_to_node([Address| Rest]) ->
     %% Test the connection
     Socket1 = zmq_utils:create_connect_socket(req, false, Address),
-    erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
-    erlzmq:send(Socket1, term_to_binary({is_up})),
+    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    ok = erlzmq:send(Socket1, term_to_binary({is_up})),
     Res = erlzmq:recv(Socket1),
-    zmq_utils:close_socket(Socket1),
+    ok = zmq_utils:close_socket(Socket1),
     case Res of
 	{ok, _} ->
 	    %% Create a subscriber socket for the specified DC

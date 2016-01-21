@@ -229,7 +229,7 @@ failure_test(Cluster1, Cluster2, Cluster3) ->
     lager:info("Done append in Node1"),
 
     %% NODE3 comes back
-    ok = rpc:call(Node3, inter_dc_manager, observe_dcs, [[D1, D2]]),
+    [ok, ok] = rpc:call(Node3, inter_dc_manager, observe_dcs, [[D1, D2]]),
 
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,

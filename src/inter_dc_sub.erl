@@ -112,7 +112,7 @@ connect_to_node([]) ->
 connect_to_node([Address|Rest]) ->
     %% Test the connection
     Socket1 = zmq_utils:create_connect_socket(sub, false, Address),
-    erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
     ok = zmq_utils:sub_filter(Socket1, <<>>),
     Res = erlzmq:recv(Socket1),
     ok = zmq_utils:close_socket(Socket1),
