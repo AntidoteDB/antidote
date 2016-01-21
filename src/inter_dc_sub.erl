@@ -63,15 +63,23 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, State) ->
-  Sockets = lists:map(fun connect_to_node/1, Publishers),
-  %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
-  %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
-  {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
+    case connect_to_nodes(Publishers, []) of
+	{ok, Sockets} ->
+	    %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
+	    %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
+	    {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
+	connection_error ->
+	    {reply, error, State}
+    end;
 
 handle_call({del_dc, DCID}, _From, State) ->
-  Sockets = dict:fetch(DCID, State#state.sockets),
-  lists:foreach(fun zmq_utils:close_socket/1, Sockets),
-  {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}}.
+    case dict:find(DCID, State#state.sockets) of
+      {ok, Sockets} ->
+	    lists:foreach(fun zmq_utils:close_socket/1, Sockets),
+	    {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+	error ->
+	    {reply, ok, State}
+    end.
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
@@ -86,6 +94,17 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
   F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,
   lists:foreach(F, dict:to_list(State#state.sockets)).
+
+connect_to_nodes([], Acc) ->
+    {ok, Acc};
+connect_to_nodes([Node|Rest], Acc) ->
+    case connect_to_node(Node) of
+	{ok, Socket} ->
+	    connect_to_nodes(Rest, [Socket|Acc]);
+	connection_error ->
+	    lists:foreach(fun zmq_utils:close_socket/1, Acc),
+	    connection_error
+    end.
 
 connect_to_node([]) ->
     lager:error("Unable to subscribe to DC"),
@@ -106,7 +125,7 @@ connect_to_node([Address|Rest]) ->
 				  %% Make the socket subscribe to messages prefixed with the given partition number
 				  ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
 			  end, dc_utilities:get_my_partitions()),
-	    Socket;
+	    {ok, Socket};
 	_ ->
 	    connect_to_node(Rest)
     end.

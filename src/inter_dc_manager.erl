@@ -50,27 +50,46 @@ get_descriptor() ->
   }}.
 
 
--spec observe_dc(#descriptor{}) -> ok.
+-spec observe_dc(#descriptor{}) -> ok | {error, term()}.
 observe_dc(#descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
-  PartitionsNumLocal = dc_utilities:get_partitions_num(),
-  case PartitionsNumRemote == PartitionsNumLocal of
-    false ->
-      lager:error("Cannot observe remote DC: partition number mismatch"),
-      {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
-    true ->
-      case DCID == dc_utilities:get_my_dc_id() of
-        true -> ok;
-        false ->
-          lager:info("Observing DC ~p", [DCID]),
-          dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
-          %% Announce the new publisher addresses to all subscribers in this DC.
-          %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
-          %% But we want to balance the work, so all nodes take part in subscribing.
-          Nodes = dc_utilities:get_my_dc_nodes(),
-          lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) end, Nodes),
-          lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) end, Nodes)
-      end
-  end.
+    PartitionsNumLocal = dc_utilities:get_partitions_num(),
+    case PartitionsNumRemote == PartitionsNumLocal of
+	false ->
+	    lager:error("Cannot observe remote DC: partition number mismatch"),
+	    {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
+	true ->
+	    case DCID == dc_utilities:get_my_dc_id() of
+		true -> ok;
+		false ->
+		    lager:info("Observing DC ~p", [DCID]),
+		    dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
+		    %% Announce the new publisher addresses to all subscribers in this DC.
+		    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
+		    %% But we want to balance the work, so all nodes take part in subscribing.
+		    Nodes = dc_utilities:get_my_dc_nodes(),
+		    connect_nodes(Nodes, DCID, LogReaders, Publishers)
+	    end
+    end.
+
+-spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()]) -> ok | {error, term()}.
+connect_nodes([], _DCID, _LogReaders, _Publishers) ->
+    ok;
+connect_nodes([Node|Rest], DCID, LogReaders, Publishers) ->
+    case rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
+	ok ->
+	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
+		ok ->
+		    connect_nodes(Rest, DCID, LogReaders, Publishers);
+		_ ->
+		    lager:error("Unable to connect to publisher ~p", [DCID]),
+		    forget_dc(DCID),
+		    {error, connection_error}
+	    end;
+	_ ->
+	    lager:error("Unable to connect to log reader ~p", [DCID]),
+	    forget_dc(DCID),
+	    {error, connection_error}
+    end.
 
 -spec observe_dcs([#descriptor{}]) -> ok.
 observe_dcs(Descriptors) -> lists:foreach(fun observe_dc/1, Descriptors).
