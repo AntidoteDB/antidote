@@ -36,7 +36,9 @@ confirm() ->
     rt:wait_until_ring_converged(Nodes),
 
     append_test(Nodes),
-    append_failure_test(Nodes),
+
+    [Nodes1] = common:clean_clusters([Nodes]),
+    append_failure_test(Nodes1),
     pass.
 
 append_test(Nodes) ->

@@ -10,6 +10,7 @@
 -define(OP_TIMEOUT, infinity).
 -define(COORD_TIMEOUT, infinity).
 -define(COMM_TIMEOUT, infinity).
+-define(ZMQ_TIMEOUT, 5000).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 
@@ -35,7 +36,7 @@
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
 %% This defines the concurrency for the meta-data tables that
-%% are responsible for storing the satble time that a transaction
+%% are responsible for storing the stable time that a transaction
 %% can read.  It is set to false because the erlang docs say
 %% you should only set to true if you have long bursts of either
 %% reads or writes, but here they should be interleaved (maybe).  But should
@@ -54,11 +55,14 @@
 %% wake up and retry. I.e. a read waiting for
 %% a transaction currently in the prepare state that is blocking
 %% that read.
--define(SPIN_WAIT, 1).
+-define(SPIN_WAIT, 10).
+%% HEARTBEAT_PERIOD: Period of sending the heartbeat messages in interDC layer
+-define(HEARTBEAT_PERIOD, 1000).
+%% VECTORCLOCK_UPDATE_PERIOD: Period of updates of the stable snapshot per partition
+-define(VECTORCLOCK_UPDATE_PERIOD, 100).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
--define(META_DATA_SLEEP, 500).
-%% REPL_PERIOD: Frequency of checking new transactions and sending to other DC
+-define(META_DATA_SLEEP, 1000).
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
@@ -66,24 +70,23 @@
 %% will ensure that the transaction record is written to disk
 -define(SYNC_LOG, false).
 
+
 -define(BEHIND_SEC_EXT, 5).
 -define(BEHIND_SEC_LOCAL, 10).
 %%-define(BEHIND_SEC_EXT, 1).
 %%-define(BEHIND_SEC_LOCAL, 1).
 
+%% Uncomment the following line to use erlang:now()
+%% Otherwise os:timestamp() is used which can go backwards
+%% which is unsafe for clock-si
+-define(SAFE_TIME, true).
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
-%% Enalble or disable the certification check
--ifdef(NO_CERTIFICATION).
--define(CERT, false).
--else.
--define(CERT, true).
--endif.
 
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
 -type operation() :: #operation{}.
--type vectorclock() :: dict().
+-type vectorclock() :: vectorclock:vectorclock().
 
 
 %% The way records are stored in the log.
@@ -104,7 +107,8 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time, server_pid :: pid()}).
+-record(tx_id, {snapshot_time :: snapshot_time(), 
+                server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
 			  op_generate=downstream :: atom(),
@@ -143,15 +147,13 @@
 -type clocksi_payload() :: #clocksi_payload{}.
 -type dcid() :: term().
 -type tx() :: #transaction{}.
--type dc_address():: {inet:ip_address(),inet:port_number()}.
 -type cache_id() :: ets:tid().
+-type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
               log/0, op_id/0, payload/0, operation/0, partition_id/0,
               type/0, snapshot/0, txid/0, tx/0,
-              bucket/0,
-              dc_address/0]).
-
+              bucket/0]).
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:
@@ -179,4 +181,5 @@
           operations :: list(),
           read_set :: list(),
           is_static :: boolean(),
-          full_commit :: boolean()}).
+          full_commit :: boolean(),
+	  stay_alive :: boolean()}).

@@ -61,13 +61,8 @@ encode(Message) ->
 process(#fpbatomicupdatetxnreq{clock=BClock,ops = Ops}, State) ->
     Updates = decode_au_txn_ops(Ops),
     Clock = binary_to_term(BClock),
-    Response =
-        case Clock of
-            ignore ->
-                antidote:clocksi_bulk_update(Updates);
-            _ ->
-                antidote:clocksi_bulk_update(Clock, Updates)
-        end,
+    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Response = antidote:start_transaction(Clock, Properties, true),
     case Response of
         {error, _Reason} ->
             {reply, #fpbatomicupdatetxnresp{success = false}, State};
@@ -81,22 +76,37 @@ process(#fpbsnapshotreadtxnreq{clock=BClock,ops = Ops}, State) ->
     ReadReqs = decode_snapshot_read_ops(Ops),
     %%TODO: change this to interactive reads
     Clock = binary_to_term(BClock),
-    Response =
-        case Clock of
-            ignore ->
-                antidote:clocksi_execute_tx(ReadReqs);
-            _ -> antidote:clocksi_execute_tx(Clock, ReadReqs)
-        end,
+    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Updates = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(update_object, O) end,
+                        BUpdates),
+    Response = antidote:update_objects(Clock, Properties, Updates, true),
     case Response of
-        {ok, {_TxId, ReadSet, CommitTime}} ->
-            Zipped = lists:zip(ReadReqs, ReadSet),
-            Reply = encode_snapshot_read_response(Zipped),
-            {reply, #fpbsnapshotreadtxnresp{success=true,
-                                            clock= term_to_binary(CommitTime),
-                                            results=Reply}, State};
-        Other ->
-            lager:info("Clocksi execute received ~p",[Other]),
-            {reply, #fpbsnapshotreadtxnresp{success=false}, State}
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(commit_response,
+                                             {error, Reason}), State};
+        {ok, CommitTime} ->
+            {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
+             State}
+    end;            
+process(#apbstaticreadobjects{
+           transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
+           objects=BoundObjects},
+        State) ->
+    Clock = binary_to_term(BClock),
+    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Objects = lists:map(fun(O) ->
+                                antidote_pb_codec:decode(bound_object, O) end,
+                        BoundObjects),
+    Response = antidote:read_objects(Clock, Properties, Objects, true),
+    case Response of
+        {error, Reason} ->
+            {reply, antidote_pb_codec:encode(commit_response,
+                                             {error, Reason}), State};
+        {ok, Results, CommitTime} ->
+            {reply, antidote_pb_codec:encode(static_read_objects_response,
+                                             {ok, lists:zip(Objects,Results), CommitTime}),
+             State}
     end.
 
 

@@ -83,7 +83,7 @@ set_clock_of_dc(_,_,Clock) ->
     Clock.
 
 get_clock_of_dc(_DcId, _SnapshotTime) ->
-    {ok, 0}.
+    0.
 
 get_preflist_from_key(_Key) ->
     {ok, Pid} = mock_partition_fsm:start_link(),
@@ -95,8 +95,9 @@ get_stable_snapshot() ->
 get_logid_from_key(_Key) ->
     self().
 
-abort(_UpdatedPartitions, _Transactions) ->
-    ok.
+abort(UpdatedPartitions, _Transactions) ->
+    Self = self(),
+    lists:foreach(fun({Fsm,Rest}) -> gen_fsm:send_event(Fsm, {ack_abort, Self, Rest}) end, UpdatedPartitions).
 
 single_commit(UpdatedPartitions, _Transaction) ->
     Self = self(),
@@ -162,6 +163,10 @@ execute_op({prepare,From,[{Key,_,_}|_]},State) ->
                 _ -> abort
             end,
     gen_fsm:send_event(From, Result),
+    {next_state, execute_op, State};
+
+execute_op({ack_abort,From,_},State) ->
+    gen_fsm:send_event(From, ack_abort),
     {stop, normal, State}.
 
 %% =====================================================================

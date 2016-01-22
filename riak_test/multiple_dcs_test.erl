@@ -1,11 +1,14 @@
 -module(multiple_dcs_test).
 
--export([confirm/0, multiple_writes/4]).
+-export([confirm/0,
+         multiple_writes/4,
+         simple_replication_test/3,
+         failure_test/3,
+         parallel_writes_test/3]).
 
 -include_lib("eunit/include/eunit.hrl").
 
 -define(HARNESS, (rt_config:get(rt_harness))).
-
 
 confirm() ->
 
@@ -17,103 +20,115 @@ confirm() ->
     rt:update_app_config(all,[
         {riak_core, [{ring_creation_size, NumVNodes}]}
     ]),
-    [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
-    HeadCluster1 = hd(Cluster1),
-    HeadCluster2 = hd(Cluster2),
-    HeadCluster3 = hd(Cluster3),
 
+    Clean = rt_config:get(clean_cluster, true),
+    [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
 
-    %% rt:wait_until_registered(HeadCluster1, inter_dc_manager),
-    %% rt:wait_until_registered(HeadCluster2, inter_dc_manager),
-    %% rt:wait_until_registered(HeadCluster3, inter_dc_manager),
+    %% %% rt:wait_until_registered(HeadCluster1, inter_dc_manager),
+    %% %% rt:wait_until_registered(HeadCluster2, inter_dc_manager),
+    %% %% rt:wait_until_registered(HeadCluster3, inter_dc_manager),
 
-    timer:sleep(10000), %%TODO: wait for inter_dc_manager to be up
-    lager:info("Waiting until vnodes are started up"),
-    rt:wait_until(HeadCluster1,fun wait_init:check_ready/1),
-    rt:wait_until(HeadCluster2,fun wait_init:check_ready/1),
-    rt:wait_until(HeadCluster3,fun wait_init:check_ready/1),
-    lager:info("Vnodes are started up"),
+    %% timer:sleep(10000), %%TODO: wait for inter_dc_manager to be up
+    %% lager:info("Waiting until vnodes are started up"),
+    %% rt:wait_until(HeadCluster1,fun wait_init:check_ready/1),
+    %% rt:wait_until(HeadCluster2,fun wait_init:check_ready/1),
+    %% rt:wait_until(HeadCluster3,fun wait_init:check_ready/1),
+    %% lager:info("Vnodes are started up"),
 
-    %% {ok, DC1up1,DC1read1} = rpc:call(HeadCluster1, antidote_sup, start_recvrs,[local,1,9000,9001]),
-    %% {ok, DC2up1,DC2read1} = rpc:call(HeadCluster2, antidote_sup, start_recvrs,[local,2,9002,9003]),
-    %% {ok, DC3up1,DC3read1} = rpc:call(HeadCluster3, antidote_sup, start_recvrs,[local,3,9004,9005]),
-    %% lager:info("Receivers start results ~p, ~p and ~p", [DC1up, DC2up, DC3up]),
+    %% %% {ok, DC1up1,DC1read1} = rpc:call(HeadCluster1, antidote_sup, start_recvrs,[local,1,9000,9001]),
+    %% %% {ok, DC2up1,DC2read1} = rpc:call(HeadCluster2, antidote_sup, start_recvrs,[local,2,9002,9003]),
+    %% %% {ok, DC3up1,DC3read1} = rpc:call(HeadCluster3, antidote_sup, start_recvrs,[local,3,9004,9005]),
+    %% %% lager:info("Receivers start results ~p, ~p and ~p", [DC1up, DC2up, DC3up]),
 
-    {ok, _DC1up,DC1read1} = rpc:call(HeadCluster1, antidote_sup, start_recvrs,[local,1,[7002,7003],8001]),
-    {ok, _DC2up,DC2read1} = rpc:call(HeadCluster2, antidote_sup, start_recvrs,[local,2,[7011,7013],8002]),
-    {ok, _DC3up,DC3read1} = rpc:call(HeadCluster3, antidote_sup, start_recvrs,[local,3,[7021,7022],8003]),
-    DC1read = {1,DC1read1},
-    DC2read = {2,DC2read1},
-    DC3read = {3,DC3read1},
-    %% DC1up1 = {1,{'127.0.0.1',7002}},
-    DC1up2 = {1,{'127.0.0.1',7002}},
-    DC1up3 = {1,{'127.0.0.1',7003}},
-    DC2up1 = {2,{'127.0.0.1',7011}},
-    %% DC2up2 = {2,{'127.0.0.1',7011}},
-    DC2up3 = {2,{'127.0.0.1',7013}},
-    DC3up1 = {3,{'127.0.0.1',7021}},
-    DC3up2 = {3,{'127.0.0.1',7022}},
-    %% DC3up3 = {3,{'127.0.0.1',7021}},
+    %% {ok, _DC1up,DC1read1} = rpc:call(HeadCluster1, antidote_sup, start_recvrs,[local,1,[7002,7003],8001]),
+    %% {ok, _DC2up,DC2read1} = rpc:call(HeadCluster2, antidote_sup, start_recvrs,[local,2,[7011,7013],8002]),
+    %% {ok, _DC3up,DC3read1} = rpc:call(HeadCluster3, antidote_sup, start_recvrs,[local,3,[7021,7022],8003]),
+    %% DC1read = {1,DC1read1},
+    %% DC2read = {2,DC2read1},
+    %% DC3read = {3,DC3read1},
+    %% %% DC1up1 = {1,{'127.0.0.1',7002}},
+    %% DC1up2 = {1,{'127.0.0.1',7002}},
+    %% DC1up3 = {1,{'127.0.0.1',7003}},
+    %% DC2up1 = {2,{'127.0.0.1',7011}},
+    %% %% DC2up2 = {2,{'127.0.0.1',7011}},
+    %% DC2up3 = {2,{'127.0.0.1',7013}},
+    %% DC3up1 = {3,{'127.0.0.1',7021}},
+    %% DC3up2 = {3,{'127.0.0.1',7022}},
+    %% %% DC3up3 = {3,{'127.0.0.1',7021}},
 
-    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2up1, DC3up1]]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1up2, DC3up2]]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1up3, DC2up3]]),
-    ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_read_dcs,[[DC2read, DC3read]]),
-    ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_read_dcs,[[DC1read, DC3read]]),
-    ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_read_dcs,[[DC1read, DC2read]]),
-    
-    %% ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2up, DC3up]]),
-    %% ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1up, DC3up]]),
-    %% ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1up, DC2up]]),
-
+    %% ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2up1, DC3up1]]),
+    %% ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1up2, DC3up2]]),
+    %% ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1up3, DC2up3]]),
     %% ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_read_dcs,[[DC2read, DC3read]]),
     %% ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_read_dcs,[[DC1read, DC3read]]),
     %% ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_read_dcs,[[DC1read, DC2read]]),
+    
+    %% %% ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_dcs,[[DC2up, DC3up]]),
+    %% %% ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_dcs,[[DC1up, DC3up]]),
+    %% %% ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_dcs,[[DC1up, DC2up]]),
 
-    ok = rpc:call(HeadCluster1, antidote_sup, start_senders, []),
-    ok = rpc:call(HeadCluster2, antidote_sup, start_senders, []),
-    ok = rpc:call(HeadCluster3, antidote_sup, start_senders, []),
+    %% %% ok = rpc:call(HeadCluster1, inter_dc_manager, add_list_read_dcs,[[DC2read, DC3read]]),
+    %% %% ok = rpc:call(HeadCluster2, inter_dc_manager, add_list_read_dcs,[[DC1read, DC3read]]),
+    %% %% ok = rpc:call(HeadCluster3, inter_dc_manager, add_list_read_dcs,[[DC1read, DC2read]]),
 
+    %% ok = rpc:call(HeadCluster1, antidote_sup, start_senders, []),
+    %% ok = rpc:call(HeadCluster2, antidote_sup, start_senders, []),
+    %% ok = rpc:call(HeadCluster3, antidote_sup, start_senders, []),
+
+    {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
+    ?assertMatch(clocksi, Prot),
+
+    ok = common:setup_dc_manager([Cluster1, Cluster2, Cluster3], first_run),
     simple_replication_test(Cluster1, Cluster2, Cluster3),
-    parallel_writes_test(Cluster1, Cluster2, Cluster3),
-    failure_test({Cluster1, 8091}, {Cluster2,8092}, {Cluster3,8093}),
+
+    [Cluster4, Cluster5, Cluster6] = common:clean_clusters([Cluster1, Cluster2, Cluster3]),
+    ok = common:setup_dc_manager([Cluster4, Cluster5, Cluster6], Clean),
+    parallel_writes_test(Cluster4, Cluster5, Cluster6),
+
+    [Cluster7, Cluster8, Cluster9] = common:clean_clusters([Cluster4, Cluster5, Cluster6]),
+    ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], Clean),
+    failure_test(Cluster7, Cluster8, Cluster9),
+
     pass.
 
 simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     Node3 = hd(Cluster3),
+
+    Key1 = simple_replication_test,
+    
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl1}]),
+                            [Key1, riak_dt_gcounter, {increment, ucl1}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl2}]),
+                            [Key1, riak_dt_gcounter, {increment, ucl2}]),
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [key1, riak_dt_gcounter, {increment, ucl3}]),
+                            [Key1, riak_dt_gcounter, {increment, ucl3}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
     ReadResult = rpc:call(Node1, antidote, read,
-                          [key1, riak_dt_gcounter]),
+                          [Key1, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, ReadResult),
 
     lager:info("Done append in Node1"),
 
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
-                           [CommitTime, key1, riak_dt_gcounter]),
+                           [CommitTime, Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet1],_} }= ReadResult2,
     ?assertEqual(3, ReadSet1),
     lager:info("Done Read in Node3"),
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
-                           [CommitTime, key1, riak_dt_gcounter]),
+                           [CommitTime, Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet2],_} }= ReadResult3,
     ?assertEqual(3, ReadSet2),
 
@@ -121,14 +136,14 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     WriteResult4= rpc:call(Node2,
                            antidote, clocksi_bulk_update,
                            [ CommitTime,
-                             [{update, {key1, riak_dt_gcounter, {increment, ucl4}}}]]),
+                             [{update, {Key1, riak_dt_gcounter, {increment, ucl4}}}]]),
     ?assertMatch({ok, _}, WriteResult4),
     {ok,{_,_,CommitTime2}}=WriteResult4,
     lager:info("Done append in Node2"),
     WriteResult5= rpc:call(Node3,
                            antidote, clocksi_bulk_update,
                            [CommitTime2,
-                            [{update, {key1, riak_dt_gcounter, {increment, ucl5}}}]]),
+                            [{update, {Key1, riak_dt_gcounter, {increment, ucl5}}}]]),
     ?assertMatch({ok, _}, WriteResult5),
     {ok,{_,_,CommitTime3}}=WriteResult5,
     lager:info("Done append in Node3"),
@@ -138,19 +153,19 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
         CommitTime3,
     ReadResult4 = rpc:call(Node1,
                            antidote, clocksi_read,
-                           [SnapshotTime, key1, riak_dt_gcounter]),
+                           [SnapshotTime, Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet4],_} }= ReadResult4,
     ?assertEqual(5, ReadSet4),
     lager:info("Done read in Node1"),
     ReadResult5 = rpc:call(Node2,
                            antidote, clocksi_read,
-                           [SnapshotTime,key1, riak_dt_gcounter]),
+                           [SnapshotTime,Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet5],_} }= ReadResult5,
     ?assertEqual(5, ReadSet5),
     lager:info("Done read in Node2"),
     ReadResult6 = rpc:call(Node3,
                            antidote, clocksi_read,
-                           [SnapshotTime,key1, riak_dt_gcounter]),
+                           [SnapshotTime,Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet6],_} }= ReadResult6,
     ?assertEqual(5, ReadSet6),
     pass.
@@ -159,7 +174,7 @@ parallel_writes_test(Cluster1, Cluster2, Cluster3) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     Node3 = hd(Cluster3),
-    Key = parkey,
+    Key = parallel_writes_test,
     Pid = self(),
     %% WriteFun = fun(A,B,C,D) ->
     %%                    multiple_writes(A,B,C,D)
@@ -231,48 +246,52 @@ multiple_writes(Node, Key, Actor, ReplyTo) ->
 %% Test: when a DC is disconnected for a while and connected back it should
 %%  be able to read the missing updates. This should not affect the causal 
 %%  dependency protocol
-failure_test({Cluster1,_Port1}, {Cluster2, _Port2}, {Cluster3,Port3}) ->
+failure_test(Cluster1, Cluster2, Cluster3) ->
     Node1 = hd(Cluster1),
     Node2 = hd(Cluster2),
     Node3 = hd(Cluster3),
+    Key = failure_test,
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [ftkey1, riak_dt_gcounter, {increment, ucl11}]),
+                            [Key, riak_dt_gcounter, {increment, ucl11}]),
     ?assertMatch({ok, _}, WriteResult1),
 
     %% Simulate failure of NODE3 by stoping the receiver
-    ok = rpc:call(Node3, inter_dc_manager, stop_receiver, []),
+    {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
+    {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
+
+    ok = rpc:call(Node3, inter_dc_manager, forget_dcs, [[D1, D2]]),
 
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [ftkey1, riak_dt_gcounter, {increment, ucl12}]),
+                            [Key, riak_dt_gcounter, {increment, ucl12}]),
     ?assertMatch({ok, _}, WriteResult2),
     %% Induce some delay
     rpc:call(Node3, antidote, read,
-             [ftkey1, riak_dt_gcounter]),
+             [Key, riak_dt_gcounter]),
 
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [ftkey1, riak_dt_gcounter, {increment, ucl13}]),
+                            [Key, riak_dt_gcounter, {increment, ucl13}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
     ReadResult = rpc:call(Node1, antidote, read,
-                          [ftkey1, riak_dt_gcounter]),
+                          [Key, riak_dt_gcounter]),
     ?assertEqual({ok, 3}, ReadResult),
     lager:info("Done append in Node1"),
 
-    %% NODE3 comes back 
-    {ok, _} = rpc:call(Node3, inter_dc_manager, start_receiver, [Port3]),
+    %% NODE3 comes back
+    [ok, ok] = rpc:call(Node3, inter_dc_manager, observe_dcs, [[D1, D2]]),
 
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
-                           [CommitTime, ftkey1, riak_dt_gcounter]),
+                           [CommitTime, Key, riak_dt_gcounter]),
     {ok, {_,[ReadSet2],_} }= ReadResult3,
     ?assertEqual(3, ReadSet2),
     lager:info("Done read from Node2"),
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
-                           [CommitTime, ftkey1, riak_dt_gcounter]),
+                           [CommitTime, Key, riak_dt_gcounter]),
     {ok, {_,[ReadSet1],_} }= ReadResult2,
     ?assertEqual(3, ReadSet1),
     lager:info("Done Read in Node3"),

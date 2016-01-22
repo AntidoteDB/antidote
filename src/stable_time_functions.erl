@@ -42,9 +42,10 @@ update_func_min(Last,Time) ->
 %% This assumes the dicts being sent have all DCs
 get_min_time(Dict) ->
     {MinDict,FoundUndefined} =
-	dict:fold(fun(_NodeId, NodeDict, {Acc1,Undefined}) ->
+	dict:fold(fun(NodeId, NodeDict, {Acc1,Undefined}) ->
 			  case NodeDict of
 			      undefined ->
+				  lager:info("missing a time for node ~p", [NodeId]),
 				  {Acc1,true};
 			      _ ->
 				  RetDict =

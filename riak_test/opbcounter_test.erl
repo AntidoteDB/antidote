@@ -34,16 +34,23 @@ confirm() ->
     [Nodes] = rt:build_clusters([3]),
     lager:info("Nodes: ~p", [Nodes]),
     new_bcounter_test(Nodes),
+
+    [Nodes1] = common:clean_clusters([Nodes]),
     increment_test(Nodes),
-    decrement_test(Nodes),
-    transfer_test(Nodes),
-    case ?CERT of
-	true ->
-	    conditional_write_test(Nodes);
-	false ->
-	    ok
+
+    [Nodes2] = common:clean_clusters([Nodes1]),
+    decrement_test(Nodes2),
+
+    [Nodes3] = common:clean_clusters([Nodes2]),
+    transfer_test(Nodes3),
+
+    case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
+        {ok, true} ->
+            [Nodes4] = common:clean_clusters([Nodes3]),
+            conditional_write_test(Nodes4);
+        _ -> 
+            pass
     end,
-    %rt:clean_cluster(Nodes),
     pass.
 
 %% Tests creating a new `bcounter()'.

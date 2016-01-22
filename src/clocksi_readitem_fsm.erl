@@ -172,8 +172,19 @@ send_external_read(Key, Type, Transaction) ->
 start_read_servers_internal(_Node,_Partition,0) ->
     0;
 start_read_servers_internal(Node, Partition, Num) ->
-    {ok,_Id} = clocksi_readitem_sup:start_fsm(Partition,Num),
-    start_read_servers_internal(Node, Partition, Num-1).
+    case clocksi_readitem_sup:start_fsm(Partition,Num) of
+	{ok,_Id} ->
+	    start_read_servers_internal(Node, Partition, Num-1);
+	_ ->
+	    try
+		gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
+	    catch
+		_:_Reason->
+		    ok
+	    end,
+	    start_read_servers_internal(Node, Partition, Num)
+    end.
+	    
 
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
@@ -235,7 +246,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
 check_clock(Key,Transaction,PreparedCache,Partition,IsLocal) ->
     TxId = Transaction#transaction.txn_id,
     T_TS = TxId#tx_id.snapshot_time,
-    Time = vectorclock:now_microsec(erlang:now()),
+    Time = clocksi_vnode:now_microsec(dc_utilities:now()),
     case IsLocal of
 	local -> 
 	    case T_TS > Time of
@@ -250,7 +261,6 @@ check_clock(Key,Transaction,PreparedCache,Partition,IsLocal) ->
 	    %% time based on one of its dependencies
 	    %% Should fix this
 	    vectorclock:wait_for_clock(Transaction#transaction.vec_snapshot_time),
-	    check_prepared(Key,Transaction,PreparedCache,Partition)
     end.
 
 %% @doc check_prepared: Check if there are any transactions
@@ -276,6 +286,7 @@ check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
 %%  - Reads and returns the log of specified Key using replication layer.
 return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
+    %%lager:info("Here is the vector snapshot time we'll be reading from: ~p", [VecSnapshotTime]),
     TxId = Transaction#transaction.txn_id,
     Reply = case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
 		{ok, Snapshot} ->

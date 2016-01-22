@@ -64,7 +64,7 @@ materialize_eager(Type, Snapshot, [Op | Rest]) ->
 
 
 %% @doc Check that in a list of operations, all of them are correctly typed.
--spec check_operations(list()) -> ok | {error, term()}.
+-spec check_operations(list()) -> ok | {error, {type_check, term()}}.
 check_operations([]) ->
     ok;
 check_operations([Op | Rest]) ->

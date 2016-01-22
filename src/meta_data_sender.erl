@@ -35,6 +35,7 @@
 
 
 -export([start_link/5,
+	 start/1,
 	 put_meta_dict/3,
 	 put_meta_dict/4,
 	 put_meta_data/4,
@@ -43,8 +44,9 @@
 	 get_node_list/0,
 	 get_node_and_partition_list/0,
 	 get_merged_data/1,
-         remove_partition/2,
+	 remove_partition/2,
 	 get_name/2,
+	 send_meta_data/3,
 	 send_meta_data/2]).
 
 %% Callbacks
@@ -52,7 +54,7 @@
 	 code_change/4,
 	 handle_event/3,
 	 handle_info/3,
-         handle_sync_event/4,
+	 handle_sync_event/4,
 	 terminate/3]).
 
 
@@ -70,11 +72,11 @@
 %% ===================================================================
 
 %% This fsm is responsible for sending meta-data that has been collected on this
-%% phyical node and sending it to all other physical nodes in the riak ring.
+%% physical node and sending it to all other physical nodes in the riak ring.
 %% There will be one instance of this fsm running on each physical machine.
-%% During execution of the system, v-nodes may be continually writing to the
+%% During execution of the system, vnodes may be continually writing to the dict.
 %% 
-%% At a period given in antidote.hrl it will trigger itself to send the meta-data.
+%% At a period, defined in antidote.hrl, it will trigger itself to send the meta-data.
 %% This will cause the meta-data to be broadcast to all other physical nodes in
 %% the cluster.  Before sending the meta-data it calls the merge function on the
 %% meta-data stored by each vnode located at this partition.
@@ -106,6 +108,11 @@
 start_link(Name,UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
 		       ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
+
+-spec start(atom()) -> ok.
+start(Name) ->
+    gen_fsm:sync_send_event(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)),
+			    start).
 
 -spec put_meta_dict(atom(),partition_id(), dict()) -> ok.
 put_meta_dict(Name,Partition,Dict) ->
@@ -154,7 +161,7 @@ put_meta_data(Name, Partition, Key, Value, Func) ->
 	    put_meta_dict(Name, Partition, NewDict, undefined)
     end.
 
--spec get_meta_dict(atom(),partition_id()) -> dict().
+-spec get_meta_dict(atom(),partition_id()) -> dict() | undefined.
 get_meta_dict(Name,Partition) ->
     case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
@@ -180,7 +187,7 @@ remove_partition(Name,Partition) ->
 
 %% Add info about a new DC. This info could be
 %% used by other modules to communicate to other DC
--spec get_merged_data(atom()) -> dict().
+-spec get_merged_data(atom()) -> dict() | undefined.
 get_merged_data(Name) ->
     case ets:info(get_name(Name, ?META_TABLE_STABLE_NAME)) of
 	undefined ->
@@ -189,7 +196,7 @@ get_merged_data(Name) ->
 	    case ets:lookup(get_name(Name,?META_TABLE_STABLE_NAME), merged_data) of
 		[] ->
 		    dict:new();
-		[{merged_data,Other}] ->
+		[{merged_data, Other}] ->
 		    Other
 	    end
     end.
@@ -209,8 +216,10 @@ init([Name,UpdateFunction,MergeFunction,InitialLocal,InitialMerged]) ->
 				update_function = UpdateFunction,
 				merge_function = MergeFunction,
 				name = Name,
-				should_check_nodes=true},
-     ?META_DATA_SLEEP}.
+				should_check_nodes=true}}.
+
+send_meta_data(start, _Sender, State) ->
+    {reply, ok, send_meta_data, State#state{should_check_nodes=true}, ?META_DATA_SLEEP}.
 
 send_meta_data(timeout, State = #state{last_result = LastResult,
 				       update_function = UpdateFunction,
@@ -254,7 +263,7 @@ terminate(_Reason, _SN, _SD) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
--spec get_meta_data(atom(),fun((dict()) -> dict()),boolean()) -> {boolean(),dict()} | false.
+-spec get_meta_data(atom(),fun((dict()) -> dict()),boolean()) -> {true,dict()} | false.
 get_meta_data(Name, MergeFunc, CheckNodes) ->
     TablesReady = case ets:info(get_name(Name,?REMOTE_META_TABLE_NAME)) of
 		      undefined ->
@@ -352,21 +361,21 @@ get_node_list() ->
     MyNode = node(),
     lists:delete(MyNode, riak_core_ring:ready_members(Ring)).
 
--spec get_node_and_partition_list() -> {[node()],[partition_id()],boolean()}.
+-spec get_node_and_partition_list() -> {[node()],[partition_id()],true}.
 get_node_and_partition_list() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     MyNode = node(),
     NodeList = lists:delete(MyNode, riak_core_ring:ready_members(Ring)),
     PartitionList = riak_core_ring:my_indices(Ring),
     %% Deciding if the nodes might change by checking the is_resizing function is not
-    %% safe becuase can cause inconsistencies during concurrency, so this should
+    %% safe can cause inconsistencies under concurrency, so this should
     %% be done differently
     %% Resize = riak_core_ring:is_resizing(Ring) or riak_core_ring:is_post_resize(Ring) or riak_core_ring:is_resize_complete(Ring),
     Resize = true,
     {NodeList,PartitionList,Resize}.
 
 get_name(Name,TableName) ->
-    list_to_atom(atom_to_list(Name) ++ atom_to_list(TableName)).
+    list_to_atom(atom_to_list(Name) ++ atom_to_list(TableName) ++ atom_to_list(node())).
 
 -ifdef(TEST).
 
