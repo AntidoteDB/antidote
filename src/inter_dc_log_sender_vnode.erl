@@ -54,7 +54,7 @@
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
-  last_log_id :: log_opid(),
+  last_log_id :: dict(),
   timer :: any()
 }).
 
@@ -75,7 +75,7 @@ init([Partition]) ->
   {ok, #state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
-    last_log_id = 0,
+    last_log_id = dict:new(),
     timer = none
   }}.
 
@@ -91,8 +91,8 @@ handle_command({log_event, Operation}, _Sender, State) ->
   State2 = case Result of
     %% If the transaction was collected
     {ok, Ops} ->
-      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
-      broadcast(State1, Txn);
+      {Txn, NewIdDict} = inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.last_log_id),
+      broadcast(State1#state{last_log_id = NewIdDict}, Txn);
     %% If the transaction is not yet complete
     none -> State1
   end,

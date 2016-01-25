@@ -21,7 +21,7 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--define(PARTITION_BYTE_LENGTH, 30).
+-define(PARTITION_BYTE_LENGTH, 40).
 
 %% API
 -export([
@@ -37,37 +37,45 @@
 	 is_ping/1]).
 
 %% Functions
--spec ops_to_dc_transactions([#operation{}]) -> [{dcid(),#operation{}}].
-ops_to_dc_transactions(Ops) ->
-    DCs = replication_check:get_dc_ids((Op#operation.payload)#payload.key),
+-spec ops_to_dc_transactions([#operation{}]) -> {[#interdc_txn{}], dict()}.
+ops_to_dc_transactions(Ops, Partition, PrevLogIdDict) ->
     Dict = lists:foldl(fun(Op, Acc) ->
+			       DCs = replication_check:get_dc_ids((Op#operation.payload)#payload.key),			       
 			       lists:foldl(fun(DCID, Acc2) ->
 						   dict:update(DCID, fun(Trans) ->
 									     [Op|Trans]
 								     end, [Trans], Acc2)
 					   end, Acc, DCs)
 		       end, dict:new(), Ops),
-    dict:to_list(List).
+    dict:fold(fun(DCID1, OpList, {Acc1, NewLogIdDict}) ->
+		      OpId = case dict:find(DCID1, NewLogIdDict) of
+				 {ok, OpId} -> OpId;
+				 error -> 0
+			     end,
+		      {[from_ops(OpList, Partition, OpId, DCID1, replication_check:get_dc_partitions(DCID1)) | Acc1], dict:update_counter(DCID1, 1, NewLogIdDict)}
+	      end, {[], PrevLogIdDict}, Dict).
 
--spec from_ops([#operation{}], partition_id(), log_opid() | none, dcid(), gb_tree()) -> #interdc_txn{}.
-from_ops(Ops, Partition, PrevLogOpId, DestDC, DestPartTree) ->
-    DestPart = case gb_trees:lookup(Partition, DestPartTree) of
-		   {value, Par} ->
+-spec from_ops([#operation{}], partition_id(), log_opid() | none, dcid(), tuple()) -> #interdc_txn{}.
+from_ops(Ops, Partition, PrevLogOpId, DestDC, {DestPartDict, DestPartTuple, DestPartSize}) ->
+    DestPart = case dict:find(Partition, DestPartDict) of
+		   {ok, Par} ->
 		       Par;
-		   none ->
-		       random:uniform(gb_trees:size())
-		   LastOp = lists:last(Ops),
-		   CommitPld = LastOp#operation.payload,
-		   commit = CommitPld#log_record.op_type, %% sanity check
-		   {{DCID, CommitTime}, SnapshotTime} = CommitPld#log_record.op_payload,
-		   #interdc_txn{
-    dcid = DCID,
-    partition = Partition,
-    prev_log_opid = PrevLogOpId,
-    operations = Ops,
-    snapshot = SnapshotTime,
-    timestamp = CommitTime
-  }.
+		   error ->
+		       element(random:uniform(DestPartSize), DestPartTuple)
+	       end,
+    LastOp = lists:last(Ops),
+    CommitPld = LastOp#operation.payload,
+    commit = CommitPld#log_record.op_type, %% sanity check
+    {{DCID, CommitTime}, SnapshotTime} = CommitPld#log_record.op_payload,
+    #interdc_txn{
+       dest = DestDC,
+       dcid = DCID,
+       partition = Partition,
+       prev_log_opid = PrevLogOpId,
+       operations = Ops,
+       snapshot = SnapshotTime,
+       timestamp = CommitTime
+      }.
 
 -spec ping(partition_id(), log_opid(), non_neg_integer()) -> #interdc_txn{}.
 ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
@@ -103,16 +111,16 @@ ops_by_type(#interdc_txn{operations = Ops}, Type) ->
   lists:filter(F, Ops).
 
 -spec to_bin(#interdc_txn{}) -> binary().
-to_bin(Txn = #interdc_txn{partition = P}) ->
-  Prefix = partition_to_bin(P),
-  Msg = term_to_binary(Txn),
-  <<Prefix/binary, Msg/binary>>.
+to_bin(Txn = #interdc_txn{dest = DestDC, partition = P}) ->
+    Prefix = dcid_to_bin(DestDC, P),
+    Msg = term_to_binary(Txn),
+    <<Prefix/binary, Msg/binary>>.
 
 -spec from_bin(binary()) -> #interdc_txn{}.
 from_bin(Bin) ->
-  L = byte_size(Bin),
-  Msg = binary_part(Bin, {?PARTITION_BYTE_LENGTH, L - ?PARTITION_BYTE_LENGTH}),
-  binary_to_term(Msg).
+    L = byte_size(Bin),
+    Msg = binary_part(Bin, {?PARTITION_BYTE_LENGTH, L - ?PARTITION_BYTE_LENGTH}),
+    binary_to_term(Msg).
 
 -spec pad(non_neg_integer(), binary()) -> binary().
 pad(Width, Binary) when byte_size(Binary) <= Width ->
@@ -124,5 +132,6 @@ pad(Width, Binary) when byte_size(Binary) <= Width ->
 -spec partition_to_bin(partition_id()) -> binary().
 partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigned(Partition)).
 
+-spec dcid_to_bin(dcid(), partition_id()) -> binary().
 dcid_to_bin(DCID, Partition) ->
     pad(?PARTITION_BYTE_LENGTH, <<atom_to_binary(DCID)/binary, binary:encode_unsigned(Partition)/binary>>).
