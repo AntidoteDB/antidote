@@ -85,26 +85,26 @@ handle_command({start_timer}, _Sender, State) ->
 
 %% Handle the new operation
 handle_command({log_event, Operation}, _Sender, State) ->
-  %% Use the txn_assembler to check if the complete transaction was collected.
-  {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
-  State1 = State#state{buffer = NewBufState},
-  State2 = case Result of
-    %% If the transaction was collected
-    {ok, Ops} ->
-      {Txn, NewIdDict} = inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.last_log_id),
-      broadcast(State1#state{last_log_id = NewIdDict}, Txn);
-    %% If the transaction is not yet complete
-    none -> State1
-  end,
-  {noreply, State2};
+    %% Use the txn_assembler to check if the complete transaction was collected.
+    {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
+    State1 = State#state{buffer = NewBufState},
+    State2 = case Result of
+		 %% If the transaction was collected
+		 {ok, Ops} ->
+		     {Txns, NewIdDict} = inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.last_log_id),
+		     broadcast(State1#state{last_log_id = NewIdDict}, Txns);
+		 %% If the transaction is not yet complete
+		 none -> State1
+	     end,
+    {noreply, State2};
 
 handle_command({hello}, _Sender, State) ->
-  {reply, ok, State};
+    {reply, ok, State};
 
 %% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
     PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
-    {noreply, set_timer(broadcast(State, PingTxn))}.
+    {noreply, set_timer(broadcast(State, [PingTxn]))}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
     {stop, not_implemented, State}.
@@ -166,10 +166,9 @@ set_timer(First, State = #state{partition = Partition}) ->
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
-broadcast(State, Txn) ->
-  inter_dc_pub:broadcast(Txn),
-  Id = inter_dc_txn:last_log_opid(Txn),
-  State#state{last_log_id = Id}.
+broadcast(State, Txns) ->
+    inter_dc_pub:broadcast(Txns),
+    State.
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.

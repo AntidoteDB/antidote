@@ -61,12 +61,14 @@ get_address_list() ->
     {ok, Port} = application:get_env(antidote, pubsub_port),
     [{Ip1, Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}].
 
--spec broadcast(#interdc_txn{}) -> ok.
-broadcast(Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
-    {'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
-    Normal -> Normal
-  end.
+-spec broadcast([#interdc_txn{}]) -> [term()].
+broadcast(Txns) ->
+    lists:map(fun(Txn) ->
+		      case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
+			  {'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+			  Normal -> Normal
+		      end
+	      end, Txns).
 
 %%%% Server methods ---------------------------------------------------------+
 

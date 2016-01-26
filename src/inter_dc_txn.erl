@@ -48,15 +48,22 @@ ops_to_dc_transactions(Ops, Partition, PrevLogIdDict) ->
 					   end, Acc, DCs)
 		       end, dict:new(), Ops),
     dict:fold(fun(DCID1, OpList, {Acc1, NewLogIdDict}) ->
-		      OpId = case dict:find(DCID1, NewLogIdDict) of
+		      PrevDCId = case dict:find(DCID1, NewLogIdDict) of
 				 {ok, OpId} -> OpId;
 				 error -> 0
 			     end,
-		      {[from_ops(OpList, Partition, OpId, DCID1, replication_check:get_dc_partitions(DCID1)) | Acc1], dict:update_counter(DCID1, 1, NewLogIdDict)}
+		      PrevTotalId = case dict:find(total_count, NewLogIdDict) of
+					{ok, OpId} -> OpId;
+					error -> 0
+				    end,
+		      NewLogIdDict1 = dict:update_counter(total_count, 1, NewLogIdDict),
+		      NewLogIdDict2 = dict:update_counter(DCID1, 1, NewLogIdDict),
+		      {[from_ops(OpList, Partition, PrevDCId, PrevTotalId, DCID1, replication_check:get_dc_partitions(DCID1))
+			| Acc1], NewLogIdDict2}
 	      end, {[], PrevLogIdDict}, Dict).
 
--spec from_ops([#operation{}], partition_id(), log_opid() | none, dcid(), tuple()) -> #interdc_txn{}.
-from_ops(Ops, Partition, PrevLogOpId, DestDC, {DestPartDict, DestPartTuple, DestPartSize}) ->
+-spec from_ops([#operation{}], partition_id(), log_opid() | none, log_opid() | none, dcid(), tuple()) -> #interdc_txn{}.
+from_ops(Ops, Partition, PrevDCId, PrevTotalId, DestDC, {DestPartDict, DestPartTuple, DestPartSize}) ->
     DestPart = case dict:find(Partition, DestPartDict) of
 		   {ok, Par} ->
 		       Par;
@@ -71,7 +78,8 @@ from_ops(Ops, Partition, PrevLogOpId, DestDC, {DestPartDict, DestPartTuple, Dest
        dest = DestDC,
        dcid = DCID,
        partition = Partition,
-       prev_log_opid = PrevLogOpId,
+       prev_log_opid = PrevDCId,
+       prev_log_total_opid = PrevTotalId,
        operations = Ops,
        snapshot = SnapshotTime,
        timestamp = CommitTime
