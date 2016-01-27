@@ -133,6 +133,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        stay_alive = StayAlive
       }.
 
+-spec generate_name(pid()) -> atom().
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
