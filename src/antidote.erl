@@ -307,7 +307,12 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
 			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, UpdateClock}),
 			       TxPid
 		       end,
-	    gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT)
+	    case gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT) of
+		{aborted, Info} ->
+		    {error, {aborted, Info}};
+		Other ->
+		    Other
+	    end
     end.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->
