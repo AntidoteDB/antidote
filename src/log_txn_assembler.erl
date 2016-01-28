@@ -47,7 +47,7 @@ new_state() -> #state{op_buffer = dict:new()}.
 process(Operation, State) ->
   Payload = Operation#operation.payload,
   TxId = Payload#log_record.tx_id,
-  NewTxnBuf = find_or_default(TxId, [], State#state.op_buffer) ++ [Operation],
+  NewTxnBuf = [Operation | find_or_default(TxId, [], State#state.op_buffer)],
   case Payload#log_record.op_type of
     commit -> {{ok, NewTxnBuf}, State#state{op_buffer = dict:erase(TxId, State#state.op_buffer)}};
     abort -> {none, State#state{op_buffer = dict:erase(TxId, State#state.op_buffer)}};

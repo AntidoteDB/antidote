@@ -52,11 +52,12 @@
 
 %% Vnode state
 -record(state, {
-  partition :: partition_id(),
-  buffer, %% log_tx_assembler:state
-  last_log_id :: dict(),
-  timer :: any()
-}).
+	  partition :: partition_id(),
+	  buffer, %% log_tx_assembler:state
+	  last_log_id :: dict(),
+	  dcit :: dcid(),
+	  timer :: any()
+	 }).
 
 %%%% API --------------------------------------------------------------------+
 
@@ -73,10 +74,11 @@ start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
   {ok, #state{
-    partition = Partition,
-    buffer = log_txn_assembler:new_state(),
-    last_log_id = dict:new(),
-    timer = none
+	  partition = Partition,
+	  buffer = log_txn_assembler:new_state(),
+	  last_log_id = dict:new(),
+	  dcid = replication_check:get_my_dcid(),
+	  timer = none
   }}.
 
 %% Start the timer
@@ -91,7 +93,8 @@ handle_command({log_event, Operation}, _Sender, State) ->
     State2 = case Result of
 		 %% If the transaction was collected
 		 {ok, Ops} ->
-		     {Txns, NewIdDict} = inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.last_log_id),
+		     {Txns, NewIdDict} = inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition,
+									     State1#state.dcid, State1#state.last_log_id),
 		     broadcast(State1#state{last_log_id = NewIdDict}, Txns);
 		 %% If the transaction is not yet complete
 		 none -> State1
@@ -104,7 +107,7 @@ handle_command({hello}, _Sender, State) ->
 %% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
     PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
-    {noreply, set_timer(broadcast(State, [PingTxn]))}.
+    {noreply, set_timer(broadcast(State, PingTxn))}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
     {stop, not_implemented, State}.

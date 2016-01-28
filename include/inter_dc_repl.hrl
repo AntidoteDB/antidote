@@ -16,8 +16,10 @@
 	  dest :: dcid(),
 	  dcid :: dcid(),
 	  partition :: partition_id(),
+	  dest_partition :: partition_id(),
 	  prev_log_opid :: log_opid() | none, %% the value is *none* if the transaction is read directly from the log
 	  prev_log_total_opid :: log_opid() | none, %% the value is *none* if the transaction is read directly from the log
+	  opid_dict :: dict() | none, %% For heartbeats, keeps the last opid sent to all partitions at the desintation DC
 	  snapshot :: snapshot_time(),
 	  timestamp :: non_neg_integer(),
 	  operations :: [operation()] %% if the OP list is empty, the message is a HEARTBEAT

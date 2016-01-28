@@ -45,7 +45,8 @@
 
 %% State
 -record(state, {
-  sockets :: dict() % DCID -> socket
+	  sockets :: dict(), % DCID -> socket
+	  opid_dict :: dict()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -60,7 +61,7 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new()}}.
+init([]) -> {ok, #state{sockets = dict:new(), opid_dict = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers}, _From, State) ->
     case connect_to_nodes(Publishers, []) of
@@ -82,12 +83,17 @@ handle_call({del_dc, DCID}, _From, State) ->
     end.
 
 %% handle an incoming interDC transaction from a remote node.
-handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
+handle_info({zmq, _Socket, BinaryMsg, _Flags}, State = #state{OpIdDict = opid_dict}) ->
   %% decode the message
-  Msg = inter_dc_txn:from_bin(BinaryMsg),
-  %% deliver the message to an appropriate vnode
-  ok = inter_dc_sub_vnode:deliver_txn(Msg),
-  {noreply, State}.
+    Msg = inter_dc_txn:from_bin(BinaryMsg),
+    %% deliver the message to an appropriate vnode
+    case inter_dc_txn:is_ping(Msg) of
+	true -> 	    %% Should bcast the ping txn?
+	    ;
+	false ->
+	    ok = inter_dc_sub_vnode:deliver_txn(Msg)
+    end,
+    {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

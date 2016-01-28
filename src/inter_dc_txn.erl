@@ -25,8 +25,7 @@
 
 %% API
 -export([
-	 ops_to_dc_transactions/1,
-	 from_ops/3,
+	 ops_to_dc_transactions/4,
 	 ping/3,
 	 is_local/1,
 	 ops_by_type/2,
@@ -37,63 +36,105 @@
 	 is_ping/1]).
 
 %% Functions
--spec ops_to_dc_transactions([#operation{}]) -> {[#interdc_txn{}], dict()}.
-ops_to_dc_transactions(Ops, Partition, PrevLogIdDict) ->
+-spec ops_to_dc_transactions([#operation{}]) -> {[#interdc_txn{}], dcid(), dict()}.
+ops_to_dc_transactions([CommitOp | NotCommitOps], Partition, MyDCID, PrevLogIdDict) ->
+    CommitId = Operation#operation.op_number,
+    %% Go through the ops checking where they are replicated
+    %% For each DC where it is replicated there will be an entry in the dict
+    %% The key is the DCID and the value is the list of ops replicated there
     Dict = lists:foldl(fun(Op, Acc) ->
 			       DCs = replication_check:get_dc_ids((Op#operation.payload)#payload.key),			       
 			       lists:foldl(fun(DCID, Acc2) ->
 						   dict:update(DCID, fun(Trans) ->
 									     [Op|Trans]
-								     end, [Trans], Acc2)
+								     end, [Op | [CommitOp]], Acc2)
 					   end, Acc, DCs)
-		       end, dict:new(), Ops),
-    dict:fold(fun(DCID1, OpList, {Acc1, NewLogIdDict}) ->
-		      PrevDCId = case dict:find(DCID1, NewLogIdDict) of
-				 {ok, OpId} -> OpId;
-				 error -> 0
-			     end,
-		      PrevTotalId = case dict:find(total_count, NewLogIdDict) of
-					{ok, OpId} -> OpId;
-					error -> 0
-				    end,
-		      NewLogIdDict1 = dict:update_counter(total_count, 1, NewLogIdDict),
-		      NewLogIdDict2 = dict:update_counter(DCID1, 1, NewLogIdDict),
-		      {[from_ops(OpList, Partition, PrevDCId, PrevTotalId, DCID1, replication_check:get_dc_partitions(DCID1))
-			| Acc1], NewLogIdDict2}
-	      end, {[], PrevLogIdDict}, Dict).
+		       end, dict:new(), NotCommitOps),
+    PrevTotalId = case dict:find(total_count, PrevLogIdDict) of
+		      {ok, OpId} -> OpId;
+		      error -> 0
+		  end,
+    %% The new max Id for all txns is the id of the commit op
+    NewLogIdDict = dict:store(total_count, CommitId, PrevLogIdDict),
+    %% Now go through the dict, and create a inter-dc txn for each record
+    %% For each DC that will receive the txn, update the locally stored dict that keeps
+    %% track of the last id sent for that DC this is stored, by key containing the id
+    %% of this partition and the destination partition
+    dict:fold(fun(DCID1, OpList, {Acc1, NewLogIdDict1}) ->
+		      DestPart = get_dc_partition(Partition, DCID1),
+		      {PrevDCId, DCDict} = case dict:find(DCID1, NewLogIdDict1) of
+					       {ok, DCDictOps} ->
+						   case dict:find({Partition, DestPart}, DCDictOps) of
+						       {ok, OpId1} -> {OpId1, DcDictOps};
+						       error -> {0, DcDictOps}
+						   end;
+					       error ->
+						   {0, dict:new()}
+					   end,
+		      NewLogIdDict2 = dict:store(DCID1, dict:store({Partition, DestPart}, CommitId, DCDict), NewLogIdDict1),
+		      CommitPld = CommitOp#operation.payload,
+		      commit = CommitPld#log_record.op_type, %% sanity check
+		      {{DCID, CommitTime}, SnapshotTime} = CommitPld#log_record.op_payload,
+		      Txn = #interdc_txn{
+			       dest = DCID1,
+			       dcid = MyDCID,
+			       dest_partition = DestPart,
+			       partition = Partition,
+			       prev_log_opid = PrevDCId,
+			       prev_log_total_opid = PrevTotalId,
+			       operations = Ops,
+			       snapshot = SnapshotTime,
+			       timestamp = CommitTime
+			      },
+		      {[Txn | Acc1], NewLogIdDict2}
+	      end, {[], NewLogIdDict}, Dict).
 
--spec from_ops([#operation{}], partition_id(), log_opid() | none, log_opid() | none, dcid(), tuple()) -> #interdc_txn{}.
-from_ops(Ops, Partition, PrevDCId, PrevTotalId, DestDC, {DestPartDict, DestPartTuple, DestPartSize}) ->
-    DestPart = case dict:find(Partition, DestPartDict) of
-		   {ok, Par} ->
-		       Par;
-		   error ->
-		       element(random:uniform(DestPartSize), DestPartTuple)
-	       end,
-    LastOp = lists:last(Ops),
-    CommitPld = LastOp#operation.payload,
-    commit = CommitPld#log_record.op_type, %% sanity check
-    {{DCID, CommitTime}, SnapshotTime} = CommitPld#log_record.op_payload,
-    #interdc_txn{
-       dest = DestDC,
-       dcid = DCID,
-       partition = Partition,
-       prev_log_opid = PrevDCId,
-       prev_log_total_opid = PrevTotalId,
-       operations = Ops,
-       snapshot = SnapshotTime,
-       timestamp = CommitTime
-      }.
+%% Check if the destination DC contains the same partition id as the local partition that this txn was created on
+%% If no, just pick a random partition to send it to on the destination DC
+-spec get_dc_partition(partition_id(), dcid()) -> partition_id().
+get_dc_partition(Partition, DCID) ->
+    {DestPartDict, DestPartTuple, DestPartSize} = replication_check:get_dc_partitions(DCID),
+    case dict:find(Partition, DestPartDict) of
+	{ok, Par} ->
+	    Par;
+	error ->
+	    element(random:uniform(DestPartSize), DestPartTuple)
+    end.
 
--spec ping(partition_id(), log_opid(), non_neg_integer()) -> #interdc_txn{}.
-ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
-  dcid = dc_utilities:get_my_dc_id(),
-  partition = Partition,
-  prev_log_opid = PrevLogOpId,
-  operations = [],
-  snapshot = dict:new(),
-  timestamp = Timestamp
-}.
+-spec ping(partition_id(), dict(), dict()) -> [#interdc_txn{}].
+ping(Partition, PrevLogIdDict, TimestampDict) ->
+    %% PrevLogIdDict needs to be the size of number of connections
+    %% so when it is received the receiver can know if there are
+    %% any msgs missing on any connection
+    DCs = replication_check:get_all_dc_ids(),
+    MyDCID = dc_utilities:get_my_dc_id(),
+    PrevTotalId = case dict:find(total_count, PrevLogIdDict) of
+		      {ok, OpId} -> OpId;
+		      error -> 0
+		  end,
+    lists:map(fun(DCID) ->
+		      DestPart = get_dc_partition(Partition, DCID),
+		      DCDictOpId = case dict:find(DCID, PrevLogIdDict) of
+				       {ok, DCDict} -> DCDict;
+				       error -> dict:new()
+				   end,
+		      Timestamp = case dict:find(DCID, TimestampDict) of
+				      {ok, Timestamp} -> Timestamp;
+				      error -> 0
+				  end,
+		      #interdc_txn{
+			 dest = DCID,
+			 dcid = MyDCID,
+			 dest_partition = DestPart,
+			 partition = Partition,
+			 op_id_dict = DCDictOpId,
+			 %% prev_log_opid = ,
+			 pre_log_total_opid = PreTotalId,
+			 operations = [],
+			 snapshot = dict:new(),
+			 timestamp = Timestamp
+			}
+	      end, [], DCs).
 
 -spec last_log_opid(#interdc_txn{}) -> log_opid().
 last_log_opid(Txn = #interdc_txn{operations = Ops, prev_log_opid = LogOpId}) ->
@@ -119,7 +160,7 @@ ops_by_type(#interdc_txn{operations = Ops}, Type) ->
   lists:filter(F, Ops).
 
 -spec to_bin(#interdc_txn{}) -> binary().
-to_bin(Txn = #interdc_txn{dest = DestDC, partition = P}) ->
+to_bin(Txn = #interdc_txn{dest = DestDC, dest_partition = {_, P}}) ->
     Prefix = dcid_to_bin(DestDC, P),
     Msg = term_to_binary(Txn),
     <<Prefix/binary, Msg/binary>>.
