@@ -163,10 +163,13 @@ init([Partition]) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
+    lager:info("Opening logs for partition ~w", [Partition]),
     case open_logs(LogFile, Preflists, dict:new()) of
         {error, Reason} ->
+	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
         Map ->
+	    lager:info("Done opening logs for partition ~w", [Partition]),
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         clock=0,
