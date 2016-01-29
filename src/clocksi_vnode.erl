@@ -246,6 +246,12 @@ open_table(Partition) ->
 	_ ->
 	    %% Other vnode hasn't finished closing tables
 	    timer:sleep(100),
+	    try
+		ets:delete(get_cache_name(Partition, prepared))
+	    catch
+		_:_Reason->
+		    ok
+	    end,
 	    open_table(Partition)
     end.
 

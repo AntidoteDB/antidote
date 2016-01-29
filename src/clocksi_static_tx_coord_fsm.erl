@@ -63,6 +63,7 @@
 	 committing/3,
 	 committing_2pc/3,
 	 receive_committed/2,
+	 receive_aborted/2,
 	 abort/2,
 	 handle_event/3,
 	 handle_info/3,
@@ -224,20 +225,33 @@ receive_committed(committed, S0=#tx_coord_state{num_to_ack= NumToAck}) ->
            {next_state, receive_committed, S0#tx_coord_state{num_to_ack= NumToAck-1}}
     end.
 
-abort(abort, SD0=#tx_coord_state{transaction = Transaction,
-                        updated_partitions=UpdatedPartitions}) ->
-    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted});
+abort(abort, SD0=#tx_coord_state{transaction = _Transaction,
+                        updated_partitions=_UpdatedPartitions}) ->
+    clocksi_interactive_tx_coord_fsm:abort(SD0);
 
-abort({prepared, _}, SD0=#tx_coord_state{transaction=Transaction,
-                        updated_partitions=UpdatedPartitions}) ->
-    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted});
+abort({prepared, _}, SD0=#tx_coord_state{transaction=_Transaction,
+                        updated_partitions=_UpdatedPartitions}) ->
+    clocksi_interactive_tx_coord_fsm:abort(SD0);
 
-abort(_, SD0=#tx_coord_state{transaction = Transaction,
-			     updated_partitions=UpdatedPartitions}) ->
-    ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=aborted}).
+abort(_, SD0=#tx_coord_state{transaction = _Transaction,
+			     updated_partitions=_UpdatedPartitions}) ->
+    clocksi_interactive_tx_coord_fsm:abort(SD0).
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+%%	aborted the tx and finishes operation.
+%%      Should we retry sending the aborted message if we don't receive a
+%%      reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+receive_aborted(ack_abort, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
+    case NumToAck of
+        1 ->
+            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state = aborted});
+        _ ->
+            {next_state, receive_aborted, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
+    end;
+
+receive_aborted(_, S0) ->
+    {next_state, receive_aborted, S0}.
 
 
 %% =============================================================================

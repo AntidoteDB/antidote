@@ -79,6 +79,7 @@
     committing_single/3,
     committing/3,
     receive_committed/2,
+    receive_aborted/2,
     abort/1,
     abort/2,
     perform_singleitem_read/2,
@@ -133,6 +134,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        stay_alive = StayAlive
       }.
 
+-spec generate_name(pid()) -> atom().
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
@@ -519,24 +521,44 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the transaction aborts.
 abort(SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
-    ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#tx_coord_state{state = aborted}).
+			    updated_partitions = UpdatedPartitions}) ->
+    NumToAck = length(UpdatedPartitions),
+    case NumToAck of
+        0 ->
+            reply_to_client(SD0#tx_coord_state{state = aborted});
+        _ ->
+            ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
+            {next_state, receive_aborted,
+                SD0#tx_coord_state{num_to_ack = NumToAck, state = aborted}}
+    end.
 
-abort(abort, SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
-    ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#tx_coord_state{state = aborted});
+abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
+				   updated_partitions = _UpdatedPartitions}) ->
+    abort(SD0);
 
-abort({prepared, _}, SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
-    ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#tx_coord_state{state = aborted});
+abort({prepared, _}, SD0 = #tx_coord_state{transaction = _Transaction,
+					   updated_partitions = _UpdatedPartitions}) ->
+    abort(SD0);
 
-abort(_, SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
-    ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-    reply_to_client(SD0#tx_coord_state{state = aborted}).
+abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
+			       updated_partitions = _UpdatedPartitions}) ->
+    abort(SD0).
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+%%	aborted the tx and finishes operation.
+%%      Should we retry sending the aborted message if we don't receive a
+%%      reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+receive_aborted(ack_abort, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
+    case NumToAck of
+        1 ->
+            reply_to_client(S0#tx_coord_state{state = aborted});
+        _ ->
+            {next_state, receive_aborted, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
+    end;
+
+receive_aborted(_, S0) ->
+    {next_state, receive_aborted, S0}.
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
