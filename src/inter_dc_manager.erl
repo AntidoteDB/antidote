@@ -97,8 +97,18 @@ start_bg_processes(Name) ->
     Nodes = dc_utilities:get_my_dc_nodes(),
     lists:foreach(fun(Node) -> ok = rpc:call(Node, meta_data_sender, start, [Name]) end, Nodes),
     %% Start the timers sending the heartbeats
-    %% FIXME: Shouldn't the return value be matched??
-    _ = dc_utilities:bcast_vnode_sync(inter_dc_log_sender_vnode_master, {start_timer}),
+    lager:info("Starting heartbeat sender timers"),
+    Responses = dc_utilities:bcast_vnode_sync(inter_dc_log_sender_vnode_master, {start_timer}),
+    %% Be sure they all started ok, crash otherwise
+    ok = lists:foreach(fun({_, ok}) ->
+			       ok
+		       end, Responses),
+    lager:info("Starting read servers"),
+    Responses2 = dc_utilities:bcast_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
+    %% Be sure they all started ok, crash otherwise
+    ok = lists:foreach(fun({_, true}) ->
+			       ok
+		       end, Responses2),
     ok.
 
 -spec observe_dcs([#descriptor{}]) -> [ok | inter_dc_conn_err()].
