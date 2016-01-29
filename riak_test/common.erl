@@ -28,10 +28,10 @@
 %% the function simply returns the inputed set of clusters
 %% Clusters: A list of clusters as defined by rt
 clean_clusters(Clusters)->
-    disconnect_dcs(Clusters),
     Clean = rt_config:get(clean_cluster, true),
     case Clean of
         true ->
+	    disconnect_dcs(Clusters),
             Sizes = lists:foldl(fun(Cluster, Acc) ->
                                     rt:clean_cluster(Cluster),
                                     Acc ++ [length(Cluster)]
