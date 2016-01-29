@@ -71,7 +71,7 @@ connect_dcs(Clusters) ->
     Node = hd(Cluster),
     lager:info("Making node ~p observe other DCs...", [Node]),
     %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-    rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+    [ok, ok, ok] = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
   end, Clusters),
   lager:info("DC clusters connected!").
 
@@ -81,7 +81,7 @@ disconnect_dcs(Clusters) ->
   lists:foreach(fun(Cluster) ->
     Node = hd(Cluster),
     lager:info("Making node ~p forget other DCs...", [Node]),
-    rpc:call(Node, inter_dc_manager, forget_dcs, [Descriptors])
+    ok = rpc:call(Node, inter_dc_manager, forget_dcs, [Descriptors])
   end, Clusters),
   lager:info("DC clusters disconnected!").
 
