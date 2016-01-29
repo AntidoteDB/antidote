@@ -67,11 +67,12 @@ connect_dcs(Clusters) ->
     ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
   end, Clusters),
   Descriptors = descriptors(Clusters),
+  Res = [ok || _ <- Clusters],
   lists:foreach(fun(Cluster) ->
     Node = hd(Cluster),
     lager:info("Making node ~p observe other DCs...", [Node]),
     %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-    [ok, ok, ok] = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+    Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
   end, Clusters),
   lager:info("DC clusters connected!").
 
