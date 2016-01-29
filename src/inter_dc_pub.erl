@@ -29,7 +29,8 @@
 %% API
 -export([
   broadcast/1,
-  get_address/0]).
+  get_address/0,
+  get_address_list/0]).
 
 %% Server methods
 -export([
@@ -53,6 +54,12 @@ get_address() ->
   {Ip, _, _} = hd(List),
   {ok, Port} = application:get_env(antidote, pubsub_port),
   {Ip, Port}.
+
+-spec get_address_list() -> [socket_address()].
+get_address_list() ->
+    {ok, List} = inet:getif(),
+    {ok, Port} = application:get_env(antidote, pubsub_port),
+    [{Ip1, Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}].
 
 -spec broadcast(#interdc_txn{}) -> ok.
 broadcast(Txn) ->
