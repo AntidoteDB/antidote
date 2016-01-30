@@ -36,12 +36,12 @@
 
 %% API
 -export([start_vnode/1,
-	 check_tables_ready/0,
+	       check_tables_ready/0,
          read/7,
-	 get_cache_name/2,
-	 store_ss/3,
+	       get_cache_name/2,
+	       store_ss/3,
          update/2,
-	 belongs_to_snapshot_op/3]).
+	       belongs_to_snapshot_op/3]).
 
 %% Callbacks
 -export([init/1,
@@ -109,7 +109,7 @@ init([Partition]) ->
     SnapshotCache = open_table(Partition, snapshot_cache),
     {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
--spec open_table(partition_id(), atom()) -> term().
+-spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
     case ets:info(get_cache_name(Partition, Name)) of
 	undefined ->
@@ -190,7 +190,7 @@ handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0} ,
                        _Sender,
                        State = #state{ops_cache = OpsCache}) ->
     F = fun(Key, A) ->
-		[Key1|_]=tuple_to_list(Key),
+		[Key1|_] = tuple_to_list(Key),
                 Fun(Key1, Key, A)
         end,
     Acc = ets:foldl(F, Acc0, OpsCache),
