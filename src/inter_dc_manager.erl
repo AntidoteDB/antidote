@@ -97,7 +97,10 @@ start_bg_processes(Name) ->
     Nodes = dc_utilities:get_my_dc_nodes(),
     ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
-    lists:foreach(fun(Node) -> ok = rpc:call(Node, meta_data_sender, start, [Name]) end, Nodes),
+    lists:foreach(fun(Node) -> 
+			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
+			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
+			  ok = rpc:call(Node, meta_data_sender, start, [Name]) end, Nodes),
     %% Start the timers sending the heartbeats
     lager:info("Starting heartbeat sender timers"),
     Responses = dc_utilities:bcast_vnode_sync(inter_dc_log_sender_vnode_master, {start_timer}),
