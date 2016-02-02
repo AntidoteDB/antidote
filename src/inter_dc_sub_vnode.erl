@@ -60,10 +60,10 @@
 %%%% API --------------------------------------------------------------------+
 
 -spec deliver_txn(#interdc_txn{}) -> ok.
-deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
+deliver_txn(Txn) -> call(Txn#interdc_txn.dest_partition, {txn, Txn}).
 
 -spec deliver_log_reader_resp(pdcid(), [#interdc_txn{}]) -> ok.
-deliver_log_reader_resp({DCID, Partition}, Txns) -> call(Partition, {log_reader_resp, DCID, Txns}).
+deliver_log_reader_resp({DCID, Partition}, DestPart, Txns) -> call(DestPart, {log_reader_resp, DCID, Txns}).
 
 %%%% VNode methods ----------------------------------------------------------+
 

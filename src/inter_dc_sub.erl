@@ -88,8 +88,8 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State = #state{OpIdDict = opid_di
     Msg = inter_dc_txn:from_bin(BinaryMsg),
     %% deliver the message to an appropriate vnode
     case inter_dc_txn:is_ping(Msg) of
-	true -> 	    %% Should bcast the ping txn?
-	    ;
+	true -> 	    %% Should bcast the ping txn
+	    dc_utilities:bcast_vnode(inter_dc_sub_vnode_master, {txn, Msg});
 	false ->
 	    ok = inter_dc_sub_vnode:deliver_txn(Msg)
     end,

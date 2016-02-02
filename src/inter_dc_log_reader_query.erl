@@ -58,7 +58,7 @@
 %% Instead of a simple request/response with blocking, the result is delivered
 %% asynchronously to inter_dc_sub_vnode.
 -spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
-query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
+query(PDCID, DestPart, From, To) -> gen_server:call(?MODULE, {query, PDCID, DestPart, From, To}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
@@ -103,12 +103,12 @@ handle_call({del_dc, DCID}, _From, State) ->
     end;
 
 %% Handle an instruction to ask a remote DC.
-handle_call({query, PDCID, From, To}, _From, State) ->
+handle_call({query, PDCID, DestPart, From, To}, _From, State) ->
     {DCID, Partition} = PDCID,
     case dict:find(DCID, State#state.sockets) of
 	%% If socket found
 	{ok, Socket} ->
-	    Request = {read_log, Partition, From, To},
+	    Request = {read_log, Partition, DestPart, From, To},
 	    ok = erlzmq:send(Socket, term_to_binary(Request)),
 	    {reply, ok, req_sent(PDCID, Request, State)};
 	%% If socket not found
@@ -118,8 +118,8 @@ handle_call({query, PDCID, From, To}, _From, State) ->
 %% Handle a response from any of the connected sockets
 %% Possible improvement - disconnect sockets unused for a defined period of time.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
-  {PDCID, Txns} = binary_to_term(BinaryMsg),
-  inter_dc_sub_vnode:deliver_log_reader_resp(PDCID, Txns),
+  {PDCID, DestPart, Txns} = binary_to_term(BinaryMsg),
+  inter_dc_sub_vnode:deliver_log_reader_resp(PDCID, DestPart, Txns),
   {noreply, rsp_rcvd(PDCID, State)}.
 
 terminate(_Reason, State) ->
