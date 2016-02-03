@@ -159,17 +159,19 @@ Perform a write operation (example):
 
 The above rpc calls the function append from the module antidote:
 
-    append(Key, {OpParam, Actor})
+    append(Key, Type, {OpParam, Actor})
 
 where
 
 * `Key` = the key to write to
+* `Type` = the type of the object being updated
 * `OpParam` = the parameters of the update operation
 * `Actor` = the actor of the update
 
 In the particular call we have just used as an example:
 
 * `myKey` = the key to write to.
+* `riak_dt_gcounter` = the CRDT type, a gcounter
 * `{increment,4}` = the parameters of the update
 
 #### Reading
