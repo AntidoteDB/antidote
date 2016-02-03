@@ -154,7 +154,7 @@ Start a node (if you haven't done it yet):
 
 Perform a write operation (example):
 
-    (dev1@127.0.0.1)1> antidote:append(myKey, {increment, 4}).
+    (dev1@127.0.0.1)1> antidote:append(myKey, riak_dt_gcounter, {increment, 4}).
     {ok,{1,'dev1@127.0.0.1'}}
 
 The above rpc calls the function append from the module antidote:
