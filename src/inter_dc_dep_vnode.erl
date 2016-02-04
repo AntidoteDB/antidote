@@ -187,7 +187,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
     true ->
 
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
+      ok = meta_data_sender:put_meta_dict(stableLocal, State#state.partition, NewClock),
 
       Now;
     %% Stable snapshot was recently updated, no need to do so.

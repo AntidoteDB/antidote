@@ -32,7 +32,9 @@ start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
 init(Init) ->
-    Worker = {meta_data_manager,
-              {meta_data_manager, start_link, [Init]},
-              transient, 5000, worker, [meta_data_manager]},
-    {ok, {{one_for_one, 5, 10}, [Worker]}}.
+    Workers = lists:map(fun(Name) ->
+				{Name,
+				 {meta_data_manager, start_link, [Name]},
+				 transient, 5000, worker, [meta_data_manager]}
+			end, Init),
+    {ok, {{one_for_one, 5, 10}, Workers}}.

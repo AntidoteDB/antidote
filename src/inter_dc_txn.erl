@@ -36,8 +36,9 @@
 	 is_ping/1]).
 
 %% Functions
--spec ops_to_dc_transactions([#operation{}]) -> {[#interdc_txn{}], dcid(), dict()}.
-ops_to_dc_transactions([CommitOp | NotCommitOps], Partition, MyDCID, PrevLogIdDict) ->
+-spec ops_to_dc_transactions([#operation{}], partition_id(), non_neg_integer(), dcid(), dict())
+			    -> {[#interdc_txn{}], dcid(), dict()}.
+ops_to_dc_transactions([CommitOp | NotCommitOps], Partition, MyPartitionId, MyDCID, PrevLogIdDict, DCPartDict) ->
     CommitId = Operation#operation.op_number,
     %% Go through the ops checking where they are replicated
     %% For each DC where it is replicated there will be an entry in the dict
@@ -60,8 +61,8 @@ ops_to_dc_transactions([CommitOp | NotCommitOps], Partition, MyDCID, PrevLogIdDi
     %% For each DC that will receive the txn, update the locally stored dict that keeps
     %% track of the last id sent for that DC this is stored, by key containing the id
     %% of this partition and the destination partition
-    dict:fold(fun(DCID1, OpList, {Acc1, NewLogIdDict1}) ->
-		      DestPart = get_dc_partition(Partition, DCID1),
+    dict:fold(fun(DCID1, OpList, {Acc1, NewLogIdDict1, NewDCPartDict}) ->
+		      {DestPart, NewDCPartDict1} = get_dc_partition(Partition, MyPartitionId, DCID1, DCPartDict),
 		      {PrevDCId, DCDict} = case dict:find(DCID1, NewLogIdDict1) of
 					       {ok, DCDictOps} ->
 						   case dict:find({Partition, DestPart}, DCDictOps) of
@@ -86,23 +87,30 @@ ops_to_dc_transactions([CommitOp | NotCommitOps], Partition, MyDCID, PrevLogIdDi
 			       snapshot = SnapshotTime,
 			       timestamp = CommitTime
 			      },
-		      {[Txn | Acc1], NewLogIdDict2}
+		      {[Txn | Acc1], NewLogIdDict2, NewDCPartDict1}
 	      end, {[], NewLogIdDict}, Dict).
 
 %% Check if the destination DC contains the same partition id as the local partition that this txn was created on
 %% If no, just pick a random partition to send it to on the destination DC
--spec get_dc_partition(partition_id(), dcid()) -> partition_id().
-get_dc_partition(Partition, DCID) ->
-    {DestPartDict, DestPartTuple, DestPartSize} = replication_check:get_dc_partitions(DCID),
+-spec get_dc_partition(partition_id(), non_neg_integer(), dcid(), dict()) -> {partition_id(), dict()}.
+get_dc_partition(Partition, MyPartitionId, DCID, DCPartDict) ->
+    {{DestPartDict, DestPartTuple, DestPartSize}, NewDCPartDict} =
+	case dict:find(DCID, DCPartDict) of
+	    {ok, Val} ->
+		{Val, DCPartDict};
+	    error ->
+		Val1 = replication_check:get_dc_partitions(DCID),
+		{Val1, dict:store(DCID, Val1, DCPartDict)}
+	end,
     case dict:find(Partition, DestPartDict) of
 	{ok, Par} ->
-	    Par;
+	    {Par, NewDCPartDict};
 	error ->
-	    element(random:uniform(DestPartSize), DestPartTuple)
+	    {element(MyPartitionId rem DestPartSize, DestPartTuple), NewDCPartDict}
     end.
 
--spec ping(partition_id(), dict(), dict()) -> [#interdc_txn{}].
-ping(Partition, PrevLogIdDict, TimestampDict) ->
+-spec ping(partition_id(), dict(), non_neg_integer()) -> [#interdc_txn{}].
+ping(Partition, PrevLogIdDict, Timestamp) ->
     %% PrevLogIdDict needs to be the size of number of connections
     %% so when it is received the receiver can know if there are
     %% any msgs missing on any connection
@@ -118,10 +126,10 @@ ping(Partition, PrevLogIdDict, TimestampDict) ->
 				       {ok, DCDict} -> DCDict;
 				       error -> dict:new()
 				   end,
-		      Timestamp = case dict:find(DCID, TimestampDict) of
-				      {ok, Timestamp} -> Timestamp;
-				      error -> 0
-				  end,
+		      %% Timestamp = case dict:find(DCID, TimestampDict) of
+		      %% 		      {ok, Timestamp} -> Timestamp;
+		      %% 		      error -> 0
+		      %% 		  end,
 		      #interdc_txn{
 			 dest = DCID,
 			 dcid = MyDCID,

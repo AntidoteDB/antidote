@@ -73,13 +73,21 @@ send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_se
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-  {ok, #state{
-	  partition = Partition,
-	  buffer = log_txn_assembler:new_state(),
-	  last_log_id = dict:new(),
-	  dcid = replication_check:get_my_dcid(),
-	  timer = none
-  }}.
+    PartList = dc_utilities:get_all_partitions(),
+    {ok, #state{
+	    partition = Partition,
+	    partition_index = partition_index(Partition, PartitionList, 1),
+	    buffer = log_txn_assembler:new_state(),
+	    last_log_id = dict:new(),
+	    dcid = replication_check:get_my_dcid(),
+	    dc_part_dict = dict:new(),
+	    timer = none
+	   }}.
+
+partition_index(Partition, [Partition, _], Index) ->
+    Index;
+partition_index(Partition, [_, Rest], Index) ->
+    partition_index(Partition, Rest, Index + 1).
 
 %% Start the timer
 handle_command({start_timer}, _Sender, State) ->
@@ -89,13 +97,14 @@ handle_command({start_timer}, _Sender, State) ->
 handle_command({log_event, Operation}, _Sender, State) ->
     %% Use the txn_assembler to check if the complete transaction was collected.
     {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
-    State1 = State#state{buffer = NewBufState},
+    State1 = State#state{buffer = NewBufState, dc_partitions=DCPartDict},
     State2 = case Result of
 		 %% If the transaction was collected
 		 {ok, Ops} ->
-		     {Txns, NewIdDict} = inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition,
-									     State1#state.dcid, State1#state.last_log_id),
-		     broadcast(State1#state{last_log_id = NewIdDict}, Txns);
+		     {Txns, NewIdDict, NewDCPartDict} =
+			 inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.partition_index,
+							     State1#state.dcid, State1#state.last_log_id, State1#state.dc_part_dict),
+		     broadcast(State1#state{last_log_id = NewIdDict, dc_part_dict = NewDCPartDict}, Txns);
 		 %% If the transaction is not yet complete
 		 none -> State1
 	     end,
@@ -106,7 +115,9 @@ handle_command({hello}, _Sender, State) ->
 
 %% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
-    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, get_stable_time(State#state.partition)),
+    {ok, Snapshot} = vectorclock:get_stable_external_snapshot(),
+    %% ??!!! Does this have to be a DICT????
+    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Snapshot),
     {noreply, set_timer(broadcast(State, PingTxn))}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
@@ -131,7 +142,7 @@ delete(State) ->
     {ok, State}.
 terminate(_Reason, State) ->
     _ = del_timer(State),
-  ok.
+    ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -171,6 +182,9 @@ set_timer(First, State = #state{partition = Partition}) ->
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State, Txns) ->
     inter_dc_pub:broadcast(Txns),
+    Clock = get_stable_time(State#state.partition),
+    %% this needs to be a dict!!!!!!!!!!!!
+    ok = meta_data_sender:put_meta_dict(stableExternal, State#state.partition, NewClock),
     State.
 
 %% @doc Return smallest snapshot time of active transactions.

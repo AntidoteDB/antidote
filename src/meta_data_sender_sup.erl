@@ -26,16 +26,19 @@
 -export([init/1]).
 
 
-start_link(FunsAndInitState) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, FunsAndInitState).
+start_link(FunsAndInitStateList) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, FunsAndInitStateList).
 
 
 start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
 
-init(FunsAndInitState) ->
-    Worker = {meta_data_sender,
-              {meta_data_sender, start_link, FunsAndInitState},
-              transient, 5000, worker, [meta_data_sender]},
-    {ok, {{one_for_one, 5, 10}, [Worker]}}.
+init(FunsAndInitStateList) ->
+    Workers = lists:map(fun(FunsAndInitState) ->
+				[Name | _] = FunsAndInitState,
+				{Name,
+				 {meta_data_sender, start_link, FunsAndInitState},
+				 transient, 5000, worker, [meta_data_sender]}
+			end, FunsAndInitStateList),
+    {ok, {{one_for_one, 5, 10}, Workers}}.

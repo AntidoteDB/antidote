@@ -24,12 +24,12 @@
 
 -export([update_func_min/2,
 	 get_min_time/1,
-	 export_funcs_and_vals/0]).
+	 export_funcs_and_vals/1]).
 
 %% These functions are input to create a meta_data_sender
 %% The functions merge by taking the minimum of all entries per node per DC
-export_funcs_and_vals() ->
-    [stable, fun update_func_min/2, fun get_min_time/1, dict:new(), dict:new()].
+export_funcs_and_vals(Name) ->
+    [Name, fun update_func_min/2, fun get_min_time/1, dict:new(), dict:new()].
 
 update_func_min(Last,Time) ->
     case Last of

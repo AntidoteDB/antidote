@@ -168,14 +168,16 @@ init(_Args) ->
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
     MetaDataManagerSup = {meta_data_manager_sup,
-			  {meta_data_manager_sup, start_link, [stable]},
+			  {meta_data_manager_sup, start_link, [stableLocal, stableExternal]},
 			  permanent, 5000, supervisor,
 			  [meta_data_manager_sup]},
-
+    
     MetaDataSenderSup = {meta_data_sender_sup,
-			  {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
-			  permanent, 5000, supervisor,
-			  [meta_data_sender_sup]},
+			 {meta_data_sender_sup, start_link,
+			  [stable_time_functions:export_funcs_and_vals(stableLocal),
+			   stable_time_functions:export_funcs_and_vals(stableExternal)]},
+			 permanent, 5000, supervisor,
+			 [meta_data_sender_sup]},
     {ok,
      {{one_for_one, 5, 10},
       [LoggingMaster,

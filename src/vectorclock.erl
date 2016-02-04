@@ -34,6 +34,7 @@
 	 %% get_safe_time_dc/1,
          set_clock_of_dc/3,
          get_stable_snapshot/0,
+         get_stable_external_snapshot/0,
 <<<<<<< HEAD
 	 get_partition_snapshot/1,
          from_list/1,
@@ -239,19 +240,30 @@ new() ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable) of
-<<<<<<< HEAD
+    case meta_data_sender:get_merged_data(stableLocal) of
 	undefined ->
-=======
-        undefined ->
->>>>>>> merged-for-partial
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),
 	    get_stable_snapshot();
 	SS ->
-<<<<<<< HEAD
 	    {ok, SS}
     end.
+
+-spec get_stable_external_snapshot() -> {ok, snapshot_time()}.
+get_stable_external_snapshot() ->
+    case meta_data_sender:get_merged_data(stableExternal) of
+	undefined ->
+	    %% The snapshot isn't realy yet, need to wait for startup
+	    timer:sleep(10),
+	    get_stable_snapshot();
+	SS ->
+	    {ok, SS}
+    end.
+
+
+
+<<<<<<< HEAD
+
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
