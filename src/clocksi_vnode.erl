@@ -522,11 +522,13 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 	    end,
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            case logging_vnode:append_commit(Node, LogId, LogRecord, isLocal) of
+	    NewPreparedDict = remove_prep_time(TxId, PreparedDict),
+	    MinPrepTime = get_min_prep(NewPreparedDict),
+            case logging_vnode:append_commit(Node, LogId, LogRecord, MinPrepTime, isLocal) of
                 {ok, _} ->
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
-                            NewPreparedDict = clean_and_notify(TxId, Updates, State),
+                            ok = clean_and_notify(TxId, Updates, State),
                             {ok, committed, NewPreparedDict};
                         error ->
                             {error, materializer_failure}
@@ -537,6 +539,36 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
         _ ->
             {error, no_updates}
     end.
+
+-spec remove_prep_time(txid(),list()) -> list().
+remove_prep_time(TxId,PreparedDict) ->
+    case get_time(PreparedDict, TxId) of
+	error ->
+	    PreparedDict;
+	{ok, Time} ->
+	    orddict:erase(Time, PreparedDict)
+    end.
+
+-spec get_min_prep(list()) -> {ok, non_neg_integer()}.
+get_min_prep(OrdDict) ->
+    case OrdDict of
+	[] ->
+	    {ok, clocksi_vnode:now_microsec(dc_utilities:now())};
+	[{Time,_TxId}|_] ->
+	    {ok, Time}
+    end.
+
+-spec get_time(list(),txid()) -> {ok, non_neg_integer()} | error.
+get_time([],_TxIdCheck) ->
+    error;
+get_time([{Time,TxId} | Rest], TxIdCheck) ->
+    case TxId == TxIdCheck of
+	true ->
+	    {ok, Time};
+	false ->
+	    get_time(Rest, TxIdCheck)
+    end.
+
 
 %% @doc clean_and_notify:
 %%      This function is used for cleanning the state a transaction
@@ -563,13 +595,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %%          either. 
 clean_and_notify(TxId, Updates, #state{
     prepared_tx = PreparedTx, prepared_dict = PreparedDict}) ->
-    ok = clean_prepared(PreparedTx, Updates, TxId),
-    case get_time(PreparedDict, TxId) of
-	error ->
-	    PreparedDict;
-	{ok, Time} ->
-	    orddict:erase(Time, PreparedDict)
-    end.
+    ok = clean_prepared(PreparedTx, Updates, TxId).
 
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
@@ -704,27 +730,6 @@ reverse_and_filter_updates_per_key(Updates, Key) ->
 				Acc
 			end
 		end, [], Updates).
-
-
--spec get_min_prep(list()) -> {ok, non_neg_integer()}.
-get_min_prep(OrdDict) ->
-    case OrdDict of
-	[] ->
-	    {ok, clocksi_vnode:now_microsec(dc_utilities:now())};
-	[{Time,_TxId}|_] ->
-	    {ok, Time}
-    end.
-
--spec get_time(list(),txid()) -> {ok, non_neg_integer()} | error.
-get_time([],_TxIdCheck) ->
-    error;
-get_time([{Time,TxId} | Rest], TxIdCheck) ->
-    case TxId == TxIdCheck of
-	true ->
-	    {ok, Time};
-	false ->
-	    get_time(Rest, TxIdCheck)
-    end.
 
 -ifdef(TEST).
 

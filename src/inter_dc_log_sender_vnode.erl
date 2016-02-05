@@ -65,8 +65,8 @@
 %% The transaction will be buffered until all the operations in a transaction are collected,
 %% and then the transaction will be broadcasted via interDC.
 %% WARNING: only LOCALLY COMMITED operations (not from remote DCs) should be sent to log_sender_vnode.
--spec send(partition_id(), #operation{}) -> ok.
-send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
+-spec send(partition_id(), #operation{}, non_neg_integer() | none) -> ok.
+send(Partition, Operation, PrepTime) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation, PrepTime}).
 
 %%%% VNode methods ----------------------------------------------------------+
 
@@ -94,7 +94,7 @@ handle_command({start_timer}, _Sender, State) ->
     {reply, ok, set_timer(true, State)};
 
 %% Handle the new operation
-handle_command({log_event, Operation}, _Sender, State) ->
+handle_command({log_event, Operation, PrepTime}, _Sender, State) ->
     %% Use the txn_assembler to check if the complete transaction was collected.
     {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
     State1 = State#state{buffer = NewBufState, dc_partitions=DCPartDict},
@@ -104,7 +104,11 @@ handle_command({log_event, Operation}, _Sender, State) ->
 		     {Txns, NewIdDict, NewDCPartDict} =
 			 inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.partition_index,
 							     State1#state.dcid, State1#state.last_log_id, State1#state.dc_part_dict),
-		     broadcast(State1#state{last_log_id = NewIdDict, dc_part_dict = NewDCPartDict}, Txns);
+		     
+		     ok = meta_data_sender:put_meta_dict(externalPing, Partition, NewDCPartDict),
+		     NextState = broadcast(State1#state{last_log_id = NewIdDict, dc_part_dict = NewDCPartDict}, Txns),
+		     ok = store_time_in_meta_data(PrepTime, State1#state.partition),
+		     NextState;
 		 %% If the transaction is not yet complete
 		 none -> State1
 	     end,
@@ -114,11 +118,21 @@ handle_command({hello}, _Sender, State) ->
     {reply, ok, State};
 
 %% Handle the ping request, managed by the timer (1s by default)
-handle_command(ping, _Sender, State) ->
-    {ok, Snapshot} = vectorclock:get_stable_external_snapshot(),
-    %% ??!!! Does this have to be a DICT????
-    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Snapshot),
-    {noreply, set_timer(broadcast(State, PingTxn))}.
+handle_command(ping, _Sender, State#state{partition = Partition}) ->
+    %% THERE IS A CONCURRENCY BUG HERE
+    %% because could get the stable time larger than a transaction that is in
+    %% your message queue to be sent
+    %% can be fixed by not advancing stable time in ClocksiVnode until the "log_event"
+    %% operation has completed here
+    ok = store_time_in_meta_data(get_stable_time(Partition), Partition),
+    case shouldPing() of
+	true ->
+	    {ok, Snapshot} = vectorclock:get_stable_external_snapshot(),
+	    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Snapshot),
+	    {noreply, set_timer(broadcast(State, PingTxn))};
+	false ->
+	    {noreply, set_timer(State)}
+    end.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
     {stop, not_implemented, State}.
@@ -177,18 +191,26 @@ set_timer(First, State = #state{partition = Partition}) ->
 	    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)}
     end.
 		
-
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State, Txns) ->
     inter_dc_pub:broadcast(Txns),
-    Clock = get_stable_time(State#state.partition),
-    %% this needs to be a dict!!!!!!!!!!!!
-    ok = meta_data_sender:put_meta_dict(stableExternal, State#state.partition, NewClock),
     State.
 
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
+-spec get_stable_time(partition_id()) -> non_neg_integer().
 get_stable_time(Partition) ->
     {ok, Time} = clocksi_vnode:get_min_prepared(Partition),
     Time.
+
+-spec store_time_in_meta_data(non_neg_integer(), partition_id()) -> ok.
+store_time_in_meta_data(Time, Partition) ->
+    DCs = replication_check:get_all_dc_ids(),
+    NewClock = lists:foldl(fun(DCID, Acc) ->
+				dict:store(DCID, Time, Acc)
+			end, dict:new(), DCs),
+    ok = meta_data_sender:put_meta_dict(stableExternal, Partition, NewClock).
+
+%% -spec time_to_dc_dict(non_neg_integer()) -> dict().
+%% time_to_dc_dict(Time) ->

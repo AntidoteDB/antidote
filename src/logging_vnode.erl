@@ -34,7 +34,7 @@
          read/2,
          asyn_append/3,
          append/3,
-         append_commit/3,
+         append_commit/4,
          append_group/4,
          asyn_append_group/4,
          asyn_read_from/3,
@@ -116,16 +116,16 @@ asyn_append(Preflist, Log, Payload, IsLocal) ->
 -spec append(index_node(), key(), term(), atom()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, false, IsLocal},
+                                        {append, LogId, Payload, none, false, IsLocal},
                                         ?LOGGING_MASTER,
                                         infinity).
 
 %% @doc synchronous append operation
 %% If enabled in antidote.hrl will ensure item is written to disk
--spec append_commit(index_node(), key(), term(), atom()) -> {ok, op_id()} | {error, term()}.
-append_commit(IndexNode, LogId, Payload, IsLocal) ->
+-spec append_commit(index_node(), key(), term(), non_neg_integer(), atom()) -> {ok, op_id()} | {error, term()}.
+append_commit(IndexNode, LogId, Payload, PrepTime, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, ?SYNC_LOG, IsLocal},
+                                        {append, LogId, Payload, PrepTime, ?SYNC_LOG, IsLocal},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -254,7 +254,7 @@ handle_command({read_from, _LogId, _From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload, Sync, IsLocal}, _Sender,
+handle_command({append, LogId, Payload, Sync, PrepTime, IsLocal}, _Sender,
                #state{log_dict=LogDict,
                       clock=Clock,
                       partition=Partition}=State) ->
@@ -266,7 +266,7 @@ handle_command({append, LogId, Payload, Sync, IsLocal}, _Sender,
     Operation = #operation{op_number = OpId, payload = Payload},
     case insert_operation(Log, LogId, Operation) of
 	{ok, OpId} ->
-	    inter_dc_log_sender_vnode:send(Partition, Operation),
+	    inter_dc_log_sender_vnode:send(Partition, Operation, PrepTime),
 	    case Sync of
 		true ->
 		    case disk_log:sync(Log) of
