@@ -261,6 +261,8 @@ loop_until_started(Partition, Num) ->
     Ret = clocksi_readitem_fsm:start_read_servers(Partition, Num),
     loop_until_started(Partition, Ret).
 
+handle_command({hello}, _Sender, State) ->
+  {reply, ok, State};
 
 handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition}) ->
     Result = case ets:info(get_cache_name(Partition, prepared)) of

@@ -34,6 +34,7 @@
   ensure_all_vnodes_running_master/1,
   get_partitions_num/0,
   check_staleness/0,
+  check_registered/1,
   now/0,
   now_microsec/0,
   now_millisec/0]).
@@ -155,6 +156,7 @@ check_staleness() ->
 		      ok
 	      end, ok, SS).
 
+-spec check_registered(atom()) -> ok.
 check_registered(Name) ->
     case whereis(Name) of
 	undefined ->
