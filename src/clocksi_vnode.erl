@@ -567,7 +567,7 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
     case application:get_env(antidote, txn_cert) of
         {ok, true} -> 
-        io:format("AAAAH"),
+       % io:format("AAAAH"),
         certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
         _  -> true
     end.

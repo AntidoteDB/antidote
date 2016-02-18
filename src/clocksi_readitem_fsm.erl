@@ -197,6 +197,10 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
     case check_clock(Key,Transaction,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+        %_Ignore=gen_server:reply(Coordinator, {error, snapshot_not_ready}),
+        %ok;
+        %return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition);
+            % ToDo: uncomment the following and remove the line above
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
@@ -213,6 +217,7 @@ check_clock(Key,Transaction,PreparedCache,Partition) ->
     Time = clocksi_vnode:now_microsec(dc_utilities:now()),
     case T_TS > Time of
         true ->
+            lager:info("Waiting... Reason: clock skew"),
 	    {not_ready, (T_TS - Time) div 1000 +1};
         false ->
 	    check_prepared(Key,Transaction,PreparedCache,Partition)
@@ -232,6 +237,7 @@ check_prepared_list(_Key,_SnapshotTime,[]) ->
 check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
     case Time =< SnapshotTime of
     true ->
+        %lager:info("Waiting for pending commmit on key ~w",[Key]),
         {not_ready, ?SPIN_WAIT};
     false ->
         check_prepared_list(Key,SnapshotTime,Rest)
