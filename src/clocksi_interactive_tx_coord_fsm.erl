@@ -649,7 +649,7 @@ wait_for_clock(Clock) ->
             {ok, VecSnapshotTime};
         false ->
             %% wait for snapshot time to catch up with Client Clock
-            timer:sleep(10),
+            timer:sleep(3),
             wait_for_clock(Clock)
     end.
 

@@ -195,14 +195,14 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
 
 perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition) ->
     case check_clock(Key,Transaction,PreparedCache,Partition) of
-	{not_ready,Time} ->
+	{not_ready,_Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
         %_Ignore=gen_server:reply(Coordinator, {error, snapshot_not_ready}),
         %ok;
-        %return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition);
+        return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition);
             % ToDo: uncomment the following and remove the line above
-	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
-	    ok;
+%%	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
+%%	    ok;
 	ready ->
 	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
     end.
