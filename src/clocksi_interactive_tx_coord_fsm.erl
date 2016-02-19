@@ -136,11 +136,9 @@ init_state(StayAlive, FullCommit, IsStatic) ->
                 stay_alive = StayAlive,
                 %% The following are needed by the NMSI protocol
                 clock_from_node_min = undefined,
-                dep_from_read_max = undefined,
-                ver_from_read_max = undefined,
-                read_set_with_read_time = []
+                keys_access_time = dict:new()
             };
-        _->
+        _ ->
             #tx_coord_state{
                 transaction = undefined,
                 updated_partitions = [],
@@ -199,9 +197,19 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
                            self()
                    end,
             TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
-            Transaction = #transaction{snapshot_time = LocalClock,
-                vec_snapshot_time = SnapshotTime,
-                txn_id = TransactionId},
+            case application:get_env(antidote, txn_prot) of
+                {ok, nmsi_single_dc} ->
+                    NmsiReadMetadata = #nmsi_single_dc_read_metadata{
+                        dep_from_read_max = undefined,
+                        ver_from_read_max = undefined},
+                    Transaction = #nmsi_transaction{snapshot_time = LocalClock,
+                        nmsi_single_dc_read_metadata = NmsiReadMetadata,
+                        txn_id = TransactionId};
+                _ ->
+                    Transaction = #transaction{snapshot_time = LocalClock,
+                        vec_snapshot_time = SnapshotTime,
+                        txn_id = TransactionId}
+            end,
             {Transaction, TransactionId};
         {error, Reason} ->
             {error, Reason}
@@ -664,7 +672,7 @@ get_snapshot_time() ->
     DcId = ?DC_UTIL:get_my_dc_id(),
     case application:get_env(antidote, txn_prot) of
         {ok, nmsi_single_dc} ->
-            %% in this case, only a VV with one position is used.
+            %% in the nmsi case, only a VV with one position is used.
             %% this alg. does not use the concept of stable snapshot.
             %% I keep the VV for compatibility with the rest of the code.
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, vectorclock:new()),

@@ -97,9 +97,25 @@
     snapshot_time :: snapshot_time(),
     commit_time :: commit_time(),
     txid :: txid()}).
+-record(clock_nmsi_payload, {key :: key(),
+    type :: type(),
+    op_param :: op(),
+    dep_time :: vectorclock(),
+    commit_time :: commit_time(),
+    txid :: txid()}).
 -record(transaction, {snapshot_time :: snapshot_time(),
     server_pid :: pid(),
     vec_snapshot_time,
+    txn_id :: txid()}).
+
+
+-record(nmsi_single_dc_read_metadata, {
+    dep_from_read_max :: clock_value() | undefined,
+    ver_from_read_max :: clock_value() | undefined
+}).
+-record(nmsi_transaction, {snapshot_time :: snapshot_time(),
+    server_pid :: pid(),
+    nmsi_single_dc_read_metadata :: nmsi_single_dc_read_metadata(),
     txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
@@ -122,14 +138,19 @@
 -type bucket() :: term().
 -type snapshot() :: term().
 -type snapshot_time() :: vectorclock:vectorclock().
--type commit_time() :: {dcid(), non_neg_integer()}.
--type clock_value() :: non_neg_integer().
+-type commit_time() :: {dcid(), clock_value()}.
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
+-type clock_nmsi_payload() :: #clock_nmsi_payload{}.
 -type dcid() :: term().
 -type tx() :: #transaction{}.
+-type nmsi_tx() :: #nmsi_transaction{}.
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
+%%NMSI
+-type clock_value() :: non_neg_integer().
+-type key_access_time_tuple() :: {clock_value(), boolean()}.
+-type nmsi_single_dc_read_metadata()::#nmsi_single_dc_read_metadata{}.
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
     log/0, op_id/0, payload/0, operation/0, partition_id/0,
@@ -166,7 +187,5 @@
     %% The following are needed by the NMSI protocol
     %% Should I create a new record?
     clock_from_node_min :: clock_value() | undefined,
-    dep_from_read_max :: clock_value() | undefined,
-    ver_from_read_max :: clock_value() | undefined,
-    read_set_with_read_time :: dict()
+    keys_access_time :: dict()
     }).
