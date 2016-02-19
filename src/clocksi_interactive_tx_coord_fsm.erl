@@ -122,17 +122,38 @@ init([From, ClientClock, UpdateClock, StayAlive]) ->
     {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))}.
 
 init_state(StayAlive, FullCommit, IsStatic) ->
-    #tx_coord_state{
-        transaction = undefined,
-        updated_partitions = [],
-        prepare_time = 0,
-        operations = undefined,
-        from = undefined,
-        full_commit = FullCommit,
-        is_static = IsStatic,
-        read_set = [],
-        stay_alive = StayAlive
-    }.
+    case application:get_env(antidote, txn_prot) of
+        {ok, nmsi_single_dc} ->
+            #tx_coord_state{
+                transaction = undefined,
+                updated_partitions = [],
+                prepare_time = 0,
+                operations = undefined,
+                from = undefined,
+                full_commit = FullCommit,
+                is_static = IsStatic,
+                read_set = [],
+                stay_alive = StayAlive,
+                %% The following are needed by the NMSI protocol
+                clock_from_node_min = undefined,
+                dep_from_read_max = undefined,
+                ver_from_read_max = undefined,
+                read_set_with_read_time = []
+            };
+        _->
+            #tx_coord_state{
+                transaction = undefined,
+                updated_partitions = [],
+                prepare_time = 0,
+                operations = undefined,
+                from = undefined,
+                full_commit = FullCommit,
+                is_static = IsStatic,
+                read_set = [],
+                stay_alive = StayAlive
+            }
+    end.
+
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
