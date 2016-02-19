@@ -101,8 +101,8 @@ commit_transaction(TxId) ->
 read_objects(Objects, TxId) ->
     %%TODO: Transaction co-ordinator handles multiple reads
     %% Executes each read as in a interactive transaction
-    Results = lists:map(fun({Key, Type, _Bucket}) ->
-                                case clocksi_iread(TxId, Key, Type) of
+    Results = lists:map(fun({Key, Type, Bucket}) ->
+                                case clocksi_iread(TxId, {Key, Bucket}, Type) of
                                     {ok, Res} ->
                                         Res;
                                     {error, _Reason} ->
@@ -122,8 +122,8 @@ update_objects(Updates, TxId) ->
     Actor = TxId,
     %% Execute each update as in an interactive transaction
     Results = lists:map(
-                fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-                        case clocksi_iupdate(TxId, Key, Type,
+                fun({{Key, Type, Bucket}, Op, OpParam}) ->
+                        case clocksi_iupdate(TxId, {Key, Bucket}, Type,
                                              {{Op, OpParam}, Actor}) of
                             ok -> ok;
                             {error, _Reason} ->
@@ -144,8 +144,8 @@ update_objects(Clock, Properties, Updates) ->
 update_objects(Clock, _Properties, Updates, StayAlive) ->
     Actor = actor, %% TODO: generate unique actors
     Operations = lists:map(
-                   fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-                           {update, {Key, Type, {{Op,OpParam}, Actor}}}
+                   fun({{Key, Type, Bucket}, Op, OpParam}) ->
+                           {update, {{Key, Bucket}, Type, {{Op,OpParam}, Actor}}}
                    end,
                    Updates),
     SingleKey = case Operations of
@@ -178,8 +178,8 @@ read_objects(Clock, Properties, Objects) ->
 
 read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
-             fun({Key, Type, _Bucket}) ->
-                     {read, {Key, Type}}
+             fun({Key, Type, Bucket}) ->
+                     {read, {{Key,Bucket}, Type}}
              end,
              Objects),
     SingleKey = case Args of
