@@ -49,9 +49,9 @@
 
 %% API
 -export([start_link/2,
-         start_link/1,
-         start_link/3,
-	 start_link/4]).
+    start_link/1,
+    start_link/3,
+    start_link/4]).
 
 %% Callbacks
 -export([init/1,
@@ -93,17 +93,17 @@
 
 start_link(From, Clientclock, UpdateClock, StayAlive) ->
     case StayAlive of
-	true ->
-	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
-	false ->
-	    gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+        true ->
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+        false ->
+            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
     end.
 
 start_link(From, Clientclock) ->
     start_link(From, Clientclock, update_clock).
 
-start_link(From,Clientclock,UpdateClock) ->
-    start_link(From,Clientclock,UpdateClock,false).
+start_link(From, Clientclock, UpdateClock) ->
+    start_link(From, Clientclock, UpdateClock, false).
 
 start_link(From) ->
     start_link(From, ignore, update_clock).
@@ -123,16 +123,16 @@ init([From, ClientClock, UpdateClock, StayAlive]) ->
 
 init_state(StayAlive, FullCommit, IsStatic) ->
     #tx_coord_state{
-       transaction = undefined,
-       updated_partitions=[],
-       prepare_time=0,
-       operations=undefined,
-       from=undefined,
-       full_commit=FullCommit,
-       is_static=IsStatic,
-       read_set=[],
-       stay_alive = StayAlive
-      }.
+        transaction = undefined,
+        updated_partitions = [],
+        prepare_time = 0,
+        operations = undefined,
+        from = undefined,
+        full_commit = FullCommit,
+        is_static = IsStatic,
+        read_set = [],
+        stay_alive = StayAlive
+    }.
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
@@ -144,48 +144,54 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction=Transaction}.
+    SD#tx_coord_state{transaction = Transaction}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-				boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
+  boolean(), pid() | undefined, boolean()) -> {tx(), txid() | {error, term()}}.
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
-    {ok, SnapshotTime} = case ClientClock of
-                             ignore ->
-                                 get_snapshot_time();
-                             _ ->
-                                 case UpdateClock of
-                                     update_clock ->
-                                         get_snapshot_time(ClientClock);
-                                     no_update_clock ->
-                                         {ok, ClientClock}
-                                 end
-                         end,
-    DcId = ?DC_UTIL:get_my_dc_id(),
-    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
-    Name = case StayAlive of
-	       true ->
-		   case IsStatic of
-		       true ->
-			   clocksi_static_tx_coord_fsm:generate_name(From);
-		       false ->
-			   generate_name(From)
-		   end;
-	       false ->
-		   self()
-	   end,
-    TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
-    Transaction = #transaction{snapshot_time = LocalClock,
-        vec_snapshot_time = SnapshotTime,
-        txn_id = TransactionId},
-    {Transaction, TransactionId}.
+    Result = case ClientClock of
+                 ignore ->
+                     get_snapshot_time();
+                 _ ->
+                     case UpdateClock of
+                         update_clock ->
+                             get_snapshot_time(ClientClock);
+                         no_update_clock ->
+                             {ok, ClientClock}
+                     end
+             end,
+    case Result of
+        {ok, SnapshotTime} ->
+            DcId = ?DC_UTIL:get_my_dc_id(),
+            LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
+            Name = case StayAlive of
+                       true ->
+                           case IsStatic of
+                               true ->
+                                   clocksi_static_tx_coord_fsm:generate_name(From);
+                               false ->
+                                   generate_name(From)
+                           end;
+                       false ->
+                           self()
+                   end,
+            TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
+            Transaction = #transaction{snapshot_time = LocalClock,
+                vec_snapshot_time = SnapshotTime,
+                txn_id = TransactionId},
+            {Transaction, TransactionId};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
+-spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()}.
 perform_singleitem_read(Key, Type) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -226,8 +232,8 @@ perform_singleitem_update(Key, Type, Params) ->
                             CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                                 DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                             {ok, {TxId, [], CausalClock}};
-			abort ->
-			    {error, aborted};
+                        abort ->
+                            {error, aborted};
                         {error, Reason} ->
                             {error, Reason}
                     end;
@@ -280,7 +286,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
                                            [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
                                        _ ->
                                            lists:keyreplace(IndexNode, 1, Updated_partitions,
-							    {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
+                                               {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
                                    end,
             case Sender of
                 undefined ->
@@ -303,7 +309,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
                         _ ->
                             _Res = gen_fsm:reply(Sender, {error, Error})
                     end,
-		    {error, Error}
+                    {error, Error}
             end;
         {error, Reason} ->
             case Sender of
@@ -320,9 +326,9 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({OpType, Args}, Sender,
-    SD0 = #tx_coord_state{transaction = Transaction,
-        updated_partitions = Updated_partitions
-    }) ->
+  SD0 = #tx_coord_state{transaction = Transaction,
+      updated_partitions = Updated_partitions
+  }) ->
     case OpType of
         prepare ->
             case Args of
@@ -368,7 +374,7 @@ prepare(SD0 = #tx_coord_state{
             ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
             {next_state, single_committing,
                 SD0#tx_coord_state{state = committing, num_to_ack = 1}};
-        [_|_] ->
+        [_ | _] ->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack = length(Updated_partitions),
             {next_state, receive_prepared,
@@ -391,7 +397,7 @@ prepare_2pc(SD0 = #tx_coord_state{
                 true ->
                     reply_to_client(SD0#tx_coord_state{state = committed_read_only})
             end;
-        [_|_] ->
+        [_ | _] ->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack = length(Updated_partitions),
             {next_state, receive_prepared,
@@ -521,7 +527,7 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the transaction aborts.
 abort(SD0 = #tx_coord_state{transaction = Transaction,
-			    updated_partitions = UpdatedPartitions}) ->
+    updated_partitions = UpdatedPartitions}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
@@ -533,15 +539,15 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
-				   updated_partitions = _UpdatedPartitions}) ->
+    updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort({prepared, _}, SD0 = #tx_coord_state{transaction = _Transaction,
-					   updated_partitions = _UpdatedPartitions}) ->
+    updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
-			       updated_partitions = _UpdatedPartitions}) ->
+    updated_partitions = _UpdatedPartitions}) ->
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
@@ -594,10 +600,10 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
         true -> ok
     end,
     case StayAlive of
-	true ->
-	    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
-	false ->
-	    {stop, normal, SD}
+        true ->
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+        false ->
+            {stop, normal, SD}
     end.
 
 %% =============================================================================
@@ -634,10 +640,23 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
-    {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
     DcId = ?DC_UTIL:get_my_dc_id(),
-    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
-    {ok, SnapshotTime}.
+    case application:get_env(antidote, txn_prot) of
+        {ok, nmsi_single_dc} ->
+            %% in this case, only a VV with one position is used.
+            %% this alg. does not use the concept of stable snapshot.
+            %% I keep the VV for compatibility with the rest of the code.
+            SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, vectorclock:new()),
+            lager:info("SnapshotTime=~w", [SnapshotTime]),
+            {ok, SnapshotTime};
+        _ ->
+            %% the remaining protocols continue to use the same VV mechanism.
+            {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
+            SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
+            {ok, SnapshotTime}
+    end.
+
+
 
 
 -spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.

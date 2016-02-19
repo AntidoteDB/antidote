@@ -12,7 +12,11 @@
                   riak_core
                  ]},
   {mod, { antidote_app, []}},
-  {env, [{txn_cert, true}, {txn_prot, clocksi}]}
+     {env, [{txn_cert, true}, {txn_prot, nmsi_single_dc}]}
+     %% possible values for txn_prot are:
+     %% clocksi: antidote w/ and without certification check.
+     %% gr: gentleRain
+     %% nmsi_single_dc: clock nmsi (single DC implementation)
  ]}.
 
 
