@@ -31,6 +31,7 @@ clean_clusters(Clusters)->
     Clean = rt_config:get(clean_cluster, true),
     case Clean of
         true ->
+	    disconnect_dcs(Clusters),
             Sizes = lists:foldl(fun(Cluster, Acc) ->
                                     rt:clean_cluster(Cluster),
                                     Acc ++ [length(Cluster)]
@@ -50,7 +51,7 @@ clean_clusters(Clusters)->
 %%                      for the configurable clean_cluster parameter.
 setup_dc_manager(Clusters, first_run) -> connect_dcs(Clusters);
 setup_dc_manager(_Clusters, false) -> ok;
-setup_dc_manager(Clusters, true) -> disconnect_dcs(Clusters), connect_dcs(Clusters).
+setup_dc_manager(Clusters, true) -> connect_dcs(Clusters).
 
 connect_dcs(Clusters) ->
   lager:info("Connecting DC clusters..."),
@@ -61,14 +62,17 @@ connect_dcs(Clusters) ->
     rt:wait_until_registered(Node1, inter_dc_log_reader_response),
     rt:wait_until_registered(Node1, inter_dc_log_reader_query),
     rt:wait_until_registered(Node1, inter_dc_sub),
-    rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
+    rt:wait_until_registered(Node1, meta_data_sender_sup),
+    rt:wait_until_registered(Node1, meta_data_manager_sup),
+    ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
   end, Clusters),
   Descriptors = descriptors(Clusters),
+  Res = [ok || _ <- Clusters],
   lists:foreach(fun(Cluster) ->
     Node = hd(Cluster),
     lager:info("Making node ~p observe other DCs...", [Node]),
     %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-    rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+    Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
   end, Clusters),
   lager:info("DC clusters connected!").
 
@@ -78,7 +82,7 @@ disconnect_dcs(Clusters) ->
   lists:foreach(fun(Cluster) ->
     Node = hd(Cluster),
     lager:info("Making node ~p forget other DCs...", [Node]),
-    rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+    ok = rpc:call(Node, inter_dc_manager, forget_dcs, [Descriptors])
   end, Clusters),
   lager:info("DC clusters disconnected!").
 

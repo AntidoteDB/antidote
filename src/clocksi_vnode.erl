@@ -210,11 +210,10 @@ get_cache_name(Partition, Base) ->
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
-    Num = clocksi_readitem_fsm:start_read_servers(Partition, ?READ_CONCURRENCY),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
-        read_servers = Num,
+        read_servers = ?READ_CONCURRENCY,
         prepared_dict = orddict:new()}}.
 
 
@@ -250,7 +249,14 @@ open_table(Partition) ->
 		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
 	_ ->
 	    %% Other vnode hasn't finished closing tables
+	    lager:info("Unable to open ets table in clocksi vnode, retrying"),
 	    timer:sleep(100),
+	    try
+		ets:delete(get_cache_name(Partition, prepared))
+	    catch
+		_:_Reason->
+		    ok
+	    end,
 	    open_table(Partition)
     end.
 
@@ -260,6 +266,8 @@ loop_until_started(Partition, Num) ->
     Ret = clocksi_readitem_fsm:start_read_servers(Partition, Num),
     loop_until_started(Partition, Ret).
 
+handle_command({hello}, _Sender, State) ->
+  {reply, ok, State};
 
 handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition}) ->
     Result = case ets:info(get_cache_name(Partition, prepared)) of
@@ -373,12 +381,6 @@ handle_command({abort, Transaction, Updates}, _Sender,
         _ ->
             {reply, {error, no_tx_record}, State}
     end;
-
-%% handle_command({start_read_servers}, _Sender,
-%%                #state{partition=Partition} = State) ->
-%%     clocksi_readitem_fsm:stop_read_servers(Partition,?READ_CONCURRENCY),
-%%     Num = clocksi_readitem_fsm:start_read_servers(Partition,?READ_CONCURRENCY),
-%%     {reply, ok, State#state{read_servers=Num}};
 
 handle_command({get_active_txns}, _Sender,
     #state{partition = Partition} = State) ->

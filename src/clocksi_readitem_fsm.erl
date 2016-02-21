@@ -150,8 +150,20 @@ check_partition_ready(Node,Partition,Num) ->
 start_read_servers_internal(_Node,_Partition,0) ->
     0;
 start_read_servers_internal(Node, Partition, Num) ->
-    {ok,_Id} = clocksi_readitem_sup:start_fsm(Partition,Num),
-    start_read_servers_internal(Node, Partition, Num-1).
+    case clocksi_readitem_sup:start_fsm(Partition,Num) of
+	{ok,_Id} ->
+	    start_read_servers_internal(Node, Partition, Num-1);
+	Err ->
+	    lager:info("Unable to start clocksi read server for ~w, will retry", [Err]),
+	    try
+		gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
+	    catch
+		_:_Reason->
+		    ok
+	    end,
+	    start_read_servers_internal(Node, Partition, Num)
+    end.
+	    
 
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;

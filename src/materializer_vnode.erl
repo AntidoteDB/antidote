@@ -36,12 +36,12 @@
 
 %% API
 -export([start_vnode/1,
-	 check_tables_ready/0,
+	       check_tables_ready/0,
          read/7,
-	 get_cache_name/2,
-	 store_ss/3,
+	       get_cache_name/2,
+	       store_ss/3,
          update/2,
-	 belongs_to_snapshot_op/3]).
+	       belongs_to_snapshot_op/3]).
 
 %% Callbacks
 -export([init/1,
@@ -105,9 +105,28 @@ store_ss(Key, Snapshot, CommitTime) ->
                                         materializer_vnode_master).
 
 init([Partition]) ->
-    OpsCache = ets:new(get_cache_name(Partition,ops_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
-    SnapshotCache = ets:new(get_cache_name(Partition,snapshot_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
+    OpsCache = open_table(Partition, ops_cache),
+    SnapshotCache = open_table(Partition, snapshot_cache),
     {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+
+-spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
+open_table(Partition, Name) ->
+    case ets:info(get_cache_name(Partition, Name)) of
+	undefined ->
+	    ets:new(get_cache_name(Partition, Name),
+		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
+	_ ->
+	    %% Other vnode hasn't finished closing tables
+	    lager:info("Unable to open ets table in materializer vnode, retrying"),
+	    timer:sleep(100),
+	    try
+		ets:delete(get_cache_name(Partition, Name))
+	    catch
+		_:_Reason->
+		    ok
+	    end,
+	    open_table(Partition, Name)
+    end.
 
 %% @doc The tables holding the updates and snapshots are shared with concurrent
 %%      readers, allowing them to be non-blocking and concurrent.
@@ -171,7 +190,7 @@ handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0} ,
                        _Sender,
                        State = #state{ops_cache = OpsCache}) ->
     F = fun(Key, A) ->
-		[Key1|_]=tuple_to_list(Key),
+		[Key1|_] = tuple_to_list(Key),
                 Fun(Key1, Key, A)
         end,
     Acc = ets:foldl(F, Acc0, OpsCache),
@@ -212,8 +231,13 @@ handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache}) ->
-    ets:delete(OpsCache),
-    ets:delete(SnapshotCache),
+    try
+	ets:delete(OpsCache),
+	ets:delete(SnapshotCache)
+    catch
+	_:_Reason->
+	    ok
+    end,
     ok.
 
 

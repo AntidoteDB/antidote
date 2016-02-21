@@ -62,11 +62,11 @@ query(PDCID, From, To) -> gen_server:call(?MODULE, {query, PDCID, From, To}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
-add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}).
+add_dc(DCID, LogReaders) -> gen_server:call(?MODULE, {add_dc, DCID, LogReaders}, ?COMM_TIMEOUT).
 
 %% Disconnects from the DC.
 -spec del_dc(dcid()) -> ok.
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}).
+del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -75,38 +75,45 @@ init([]) -> {ok, #state{sockets = dict:new(), unanswered_queries = dict:new()}}.
 
 %% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, State) ->
-  %% Create a socket and store it
-  Socket = zmq_utils:create_connect_socket(req, true, hd(LogReaders)),
-  NewState = State#state{sockets = dict:store(DCID, Socket, State#state.sockets)},
-
-  F = fun({{QDCID, _}, Request}) ->
-    %% if there are unanswered queries that were sent to the DC we just connected with, resend them
-    case QDCID == DCID of
-      true -> erlzmq:send(Socket, term_to_binary(Request));
-      false -> ok
-    end
-  end,
-
-  lists:foreach(F, dict:to_list(NewState#state.unanswered_queries)),
-  {reply, ok, NewState};
+    %% Create a socket and store it
+    case connect_to_node(hd(LogReaders)) of
+	{ok, Socket} ->
+	    NewState = State#state{sockets = dict:store(DCID, Socket, State#state.sockets)},
+	    F = fun({{QDCID, _}, Request}) ->
+			%% if there are unanswered queries that were sent to the DC we just connected with, resend them
+			case QDCID == DCID of
+			    true -> erlzmq:send(Socket, term_to_binary(Request));
+			    false -> ok
+			end
+		end,
+	    lists:foreach(F, dict:to_list(NewState#state.unanswered_queries)),
+	    {reply, ok, NewState};
+	connection_error ->
+	    {reply, error, State}
+    end;
 
 %% Remove a DC. Unanswered queries are left untouched.
 handle_call({del_dc, DCID}, _From, State) ->
-  ok = zmq_utils:close_socket(dict:fetch(DCID, State#state.sockets)),
-  {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+    case dict:find(DCID, State#state.sockets) of
+	{ok, Socket} ->
+	    ok = zmq_utils:close_socket(Socket),
+	    {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+	error ->
+	    {reply, ok, State}
+    end;
 
 %% Handle an instruction to ask a remote DC.
 handle_call({query, PDCID, From, To}, _From, State) ->
-  {DCID, Partition} = PDCID,
-  case dict:find(DCID, State#state.sockets) of
-    %% If socket found
-    {ok, Socket} ->
-      Request = {read_log, Partition, From, To},
-      ok = erlzmq:send(Socket, term_to_binary(Request)),
-      {reply, ok, req_sent(PDCID, Request, State)};
-    %% If socket not found
-    _ -> {reply, unknown_dc, State}
-  end.
+    {DCID, Partition} = PDCID,
+    case dict:find(DCID, State#state.sockets) of
+	%% If socket found
+	{ok, Socket} ->
+	    Request = {read_log, Partition, From, To},
+	    ok = erlzmq:send(Socket, term_to_binary(Request)),
+	    {reply, ok, req_sent(PDCID, Request, State)};
+	%% If socket not found
+	_ -> {reply, unknown_dc, State}
+    end.
 
 %% Handle a response from any of the connected sockets
 %% Possible improvement - disconnect sockets unused for a defined period of time.
@@ -128,3 +135,22 @@ req_sent(PDCID, Req, State) -> State#state{unanswered_queries = dict:store(PDCID
 %% Removes the request from the list of unanswered queries.
 rsp_rcvd(PDCID, State) -> State#state{unanswered_queries = dict:erase(PDCID, State#state.unanswered_queries)}.
 
+connect_to_node([]) ->
+    lager:error("Unable to subscribe to DC log reader"),
+    connection_error;
+connect_to_node([Address| Rest]) ->
+    %% Test the connection
+    Socket1 = zmq_utils:create_connect_socket(req, false, Address),
+    ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
+    ok = erlzmq:send(Socket1, term_to_binary({is_up})),
+    Res = erlzmq:recv(Socket1),
+    ok = zmq_utils:close_socket(Socket1),
+    case Res of
+	{ok, _} ->
+	    %% Create a subscriber socket for the specified DC
+	    Socket = zmq_utils:create_connect_socket(req, true, Address),
+	    %% For each partition in the current node:
+	    {ok, Socket};
+	_ ->
+	    connect_to_node(Rest)
+    end.

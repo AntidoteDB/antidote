@@ -27,7 +27,8 @@
 
 %% API
 -export([
-  get_address/0]).
+  get_address/0,
+  get_address_list/0]).
 
 %% Server methods
 -export([
@@ -52,6 +53,12 @@ get_address() ->
   {ok, Port} = application:get_env(antidote, logreader_port),
   {Ip, Port}.
 
+-spec get_address_list() -> [socket_address()].
+get_address_list() ->
+    {ok, List} = inet:getif(),
+    {ok, Port} = application:get_env(antidote, logreader_port),
+    [{Ip1,Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}].
+
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -69,6 +76,7 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   %% Create a response
   Response = case Msg of
     {read_log, Partition, From, To} -> {{dc_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)};
+    {is_up} -> {ok};
     _ -> {error, bad_request}
   end,
   %% Send the response using the same socket .
