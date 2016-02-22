@@ -99,9 +99,9 @@ asyn_read(Preflist, Log) ->
 %% @doc Sends a `get_stable_time' synchronous command to `Node'
 -spec get_stable_time({partition(), node()}) -> {error, term()} | {ok, non_neg_integer()}.
 get_stable_time(Node) ->
-    riak_core_vnode_master:sync_command(Node,
-                                        {get_stable_time},
-                                        ?LOGGING_MASTER).
+    riak_core_vnode_master:command(Node,
+				   {get_stable_time},
+				   ?LOGGING_MASTER).
 
 %% @doc Sends a `read' synchronous command to the Logs in `Node'
 -spec read({partition(), node()}, key()) -> {error, term()} | {ok, [term()]}.
@@ -191,7 +191,8 @@ init([Partition]) ->
 handle_command({get_stable_time}, _Sender,
                #state{partition=Partition}=State) ->
     {ok, Time} = clocksi_vnode:get_min_prepared(Partition),
-    {reply, {ok, Time}, State};
+    ok = inter_dc_log_sender_vnode:send_stable_time(Partition, Time),
+    {noreply, State};
 
 %% @doc Read command: Returns the operations logged for Key
 %%          Input: The id of the log to be read
