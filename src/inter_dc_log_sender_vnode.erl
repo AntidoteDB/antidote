@@ -174,5 +174,5 @@ broadcast(State, Txn) ->
 %% @doc Return smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
 get_stable_time(Partition) ->
-    {ok, Time} = clocksi_vnode:get_min_prepared(Partition),
+    {ok, Time} = logging_vnode:get_stable_time({Partition, node()}),
     Time.
