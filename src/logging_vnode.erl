@@ -97,7 +97,7 @@ asyn_read(Preflist, Log) ->
                                    ?LOGGING_MASTER).
 
 %% @doc Sends a `get_stable_time' synchronous command to `Node'
--spec get_stable_time({partition(), node()}) -> {error, term()} | {ok, non_neg_integer()}.
+-spec get_stable_time({partition(), node()}) -> ok.
 get_stable_time(Node) ->
     riak_core_vnode_master:command(Node,
 				   {get_stable_time},
