@@ -117,27 +117,23 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 					     transaction = Transaction}) ->
     ExecuteOp = fun (Operation, Acc) ->
 			case Acc of 
-			    {error, Reason} ->
-				{error, Reason};
+			    {error, Reason} ->  {error, Reason};
 			    _ ->
-				case Operation of
-				    {update, {Key, Type, OpParams}} ->
-                    %lager:info("Updating ~w ~w ~w", [Key, Type, OpParams]),
-					case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
-					    {error,Reason} ->
-						{error, Reason};
-					    NewUpdatedPartitions ->
-						Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
-					end;
-				    {read, {Key, Type}} ->
+				    case Operation of
+				        {update, {Key, Type, OpParams}} ->
+					        case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
+					            {error,Reason} ->   {error, Reason};
+					            NewUpdatedPartitions ->  Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
+					        end;
+				        {read, {Key, Type}} ->
                     %lager:info("Reading ~w ~w ~w", [Key, Type]),
-                    Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-                    IndexNode = hd(Preflist),
-					clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                    NumToRead = Acc#tx_coord_state.num_to_read+1,
-                    ReadSet = Acc#tx_coord_state.read_set,
-                    Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
-				end
+                            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+                            IndexNode = hd(Preflist),
+					        {ok, _} = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                            NumToRead = Acc#tx_coord_state.num_to_read+1,
+                            ReadSet = Acc#tx_coord_state.read_set,
+                            Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
+				    end
 			end
 		end,    
     NewState = lists:foldl(ExecuteOp, SD, Operations),
