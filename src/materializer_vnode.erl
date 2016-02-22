@@ -24,11 +24,21 @@
 -include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
-
+%% Number of snapshots to trigger GC
 -define(SNAPSHOT_THRESHOLD, 10).
+%% Number of snapshots to keep after GC
 -define(SNAPSHOT_MIN, 3).
+%% Number of ops to keep before GC
 -define(OPS_THRESHOLD, 50).
+%% The first 3 elements in operations list are meta-data
+%% First is the key
+%% Second is a tuple {current op list size, max op list size}
+%% Thrid is a counter that assigns each op 1 larger than the previous
+%% Fourth is where the list of ops start
 -define(FIRST_OP, 4).
+%% If after the op GC there are only this many or less spaces
+%% free in the op list then increase the list size
+-define(RESIZE_THRESHOLD, 5).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -298,7 +308,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 		    [] ->
 			{0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
 		    [Tuple] ->
-			{Key,Length1,_OpId,AllOps} = tuple_to_key(Tuple),
+			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
 			{Length1, AllOps, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
 		end
 	end,
@@ -360,16 +370,34 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
 					     vectorclock:min([CT1, Acc])
 				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
-	    {Length,OpId,OpsDict} = case ets:lookup(OpsCache, Key) of
-					[] ->
-					    {0, 0, []};
-					[Tuple] ->
-					    {Key,Length1,OpId1,Ops} = tuple_to_key(Tuple),
-					    {Length1, OpId1, Ops}
-				    end,
+	    {Key,Length,OpId,ListLen,OpsDict} = case ets:lookup(OpsCache, Key) of
+						    [] ->
+							{Key, 0, 0, 0, []};
+						    [Tuple] ->
+							tuple_to_key(Tuple)
+						end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,NewLength},{3,OpId}|PrunedOps]));
+	    %% Check if the pruned ops are lager or smaller than the minimum list size
+	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
+	    NewListLen = case Length - ?RESIZE_THRESHOLD > ListLen of
+			     true ->
+				 Length * 2;
+			     false ->
+				 case ListLen =< ?OPS_THRESHOLD of
+				     true ->
+					 ?OPS_THRESHOLD;
+				     false ->
+					 HalfListLen = ListLen div 2,
+					 case HalfListLen - ?RESIZE_THRESHOLD > Length of
+					     true ->
+						 HalfListLen;
+					     false ->
+						 ListLen
+					 end
+				 end
+			 end,
+	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
@@ -401,10 +429,10 @@ prune_ops({_Len,OpsDict}, Threshold)->
 -spec tuple_to_key(tuple()) -> {any(),non_neg_integer(),non_neg_integer(),list()}.
 tuple_to_key(Tuple) ->
     Key = element(1, Tuple),
-    Length = element(2, Tuple),
+    {Length,ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
     Ops = tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]),
-    {Key,Length,OpId,Ops}.
+    {Key,Length,OpId,ListLen,Ops}.
 tuple_to_key_int(Next,Next,_Tuple,Acc) ->
     Acc;
 tuple_to_key_int(Next,Last,Tuple,Acc) ->
@@ -434,23 +462,23 @@ reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     case ets:member(OpsCache, Key) of
 	false ->
-	    ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key}]));
+	    ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,{0,?OPS_THRESHOLD}}]));
 	true ->
 	    ok
     end,
     NewId = ets:update_counter(OpsCache, Key,
 			       {3,1}),
-    Length = ets:lookup_element(OpsCache, Key, 2),
-    case (Length)>=?OPS_THRESHOLD of
+    {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
+    case (Length)>=ListLen of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache, true),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    Length1 = ets:lookup_element(OpsCache, Key, 2),
-	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,Length1+1}]);
+	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length1+1,ListLen}}]);
         false ->
-	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,Length+1}])
+	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
     end.
 
 
