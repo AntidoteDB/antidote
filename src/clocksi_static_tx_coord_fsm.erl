@@ -133,7 +133,7 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
                     %lager:info("Reading ~w ~w ~w", [Key, Type]),
                     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                     IndexNode = hd(Preflist),
-					clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+					{ok, _} = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
                     NumToRead = Acc#tx_coord_state.num_to_read+1,
                     ReadSet = Acc#tx_coord_state.read_set,
                     Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
