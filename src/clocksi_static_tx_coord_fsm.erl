@@ -126,7 +126,6 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 					            NewUpdatedPartitions ->  Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
 					        end;
 				        {read, {Key, Type}} ->
-                    %lager:info("Reading ~w ~w ~w", [Key, Type]),
                             Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                             IndexNode = hd(Preflist),
 					        ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
@@ -183,22 +182,18 @@ receive_prepared({ok, {Key, Type, Snapshot}},
                             updated_partitions=UpdatedPartitions,
                             num_to_ack=NumToAck}) ->
     %%TODO: type is hard-coded..
-    lager:info("Got read value!!"),
     Value = Type:value(Snapshot), 
     ReadSet1 = replace(ReadSet, Key, Value),
     case NumToRead of
         1 ->
-            lager:info("Num to read is 1!! Num to ack is ~w", [NumToAck]),
             case NumToAck of
                 0 ->
                     NumToCommit = length(UpdatedPartitions),
                     case NumToCommit of
                         0 ->
-                            lager:info("Trying to reply!!"),
                             clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only, 
                             read_set=lists:reverse(ReadSet1)});
                         _ ->
-                            lager:info("Receiving more reply!!"),
                             ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
                             {next_state, receive_committed,
                                S0#tx_coord_state{num_to_ack=NumToCommit, read_set=lists:reverse(ReadSet1), state=committing}}

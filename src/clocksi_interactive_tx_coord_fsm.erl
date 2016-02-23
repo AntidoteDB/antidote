@@ -363,26 +363,22 @@ prepare(SD0 = #tx_coord_state{
                 0 ->
                     case FullCommit of
                         true ->
-                            %lager:info("Replying"),
                             reply_to_client(SD0#tx_coord_state{state = committed_read_only});
                         false ->
                             gen_fsm:reply(From, {ok, Snapshot_time}),
                             {next_state, committing, SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}}
                     end;
                 _ ->
-                    lager:info("Going to receive_prepared, don't set num to ack"),
                     {next_state, receive_prepared,
                         SD0#tx_coord_state{state = prepared}}
             end;
         [_] ->
             ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
-            %lager:info("Going to single_commit"),
             {next_state, single_committing,
                 SD0#tx_coord_state{state = committing, num_to_ack = 1}};
         [_|_] ->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack = length(Updated_partitions),
-            %lager:info("Going to receive_prepared"),
             {next_state, receive_prepared,
                 SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
