@@ -29,7 +29,7 @@
 %% Number of snapshots to keep after GC
 -define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
--define(OPS_THRESHOLD, 50).
+-define(OPS_THRESHOLD, 25).
 %% The first 3 elements in operations list are meta-data
 %% First is the key
 %% Second is a tuple {current op list size, max op list size}
@@ -262,12 +262,7 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
 		       [{_, SnapshotDictA}] ->
 			   SnapshotDictA
 		   end,
-    SnapshotDict1 = case ShouldGc of
-			true ->
-			    vector_orddict:insert_bigger(CommitTime,Snapshot, vector_orddict:new());
-			false ->
-			    vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict)
-		    end,
+    SnapshotDict1 = vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict),
     snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache,ShouldGc).
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
@@ -291,6 +286,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 		 [{_, SnapshotDict}] ->
 		     case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
 			 {undefined, _IsF} ->
+			     io:format("could not find a smaller ss ~w, ~w~n", [dict:to_list(MinSnapshotTime), SnapshotDict]),
 			     {error, no_snapshot};
 			 {{SCT, LS},IsF}->
 			     {LS,SCT,IsF}
@@ -377,19 +373,20 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 							tuple_to_key(Tuple)
 						end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
-            ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-	    %% Check if the pruned ops are lager or smaller than the minimum list size
+            true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
+	    %% Check if the pruned ops are lager or smaller than the previous list size
 	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
-	    NewListLen = case Length - ?RESIZE_THRESHOLD > ListLen of
+	    %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
+	    NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
 			     true ->
-				 Length * 2;
+				 ListLen * 2;
 			     false ->
-				 case ListLen =< ?OPS_THRESHOLD of
+				 HalfListLen = ListLen div 2,
+				 case HalfListLen =< ?OPS_THRESHOLD of
 				     true ->
 					 ?OPS_THRESHOLD;
 				     false ->
-					 HalfListLen = ListLen div 2,
-					 case HalfListLen - ?RESIZE_THRESHOLD > Length of
+					 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
 					     true ->
 						 HalfListLen;
 					     false ->
@@ -398,7 +395,7 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 				 end
 			 end,
 	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
-        false ->
+	false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
@@ -469,14 +466,15 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     NewId = ets:update_counter(OpsCache, Key,
 			       {3,1}),
     {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
-    case (Length)>=ListLen of
+    %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
+    case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache, true),
 	    %% Have to get the new ops dict because the interal_read can change it
-	    Length1 = ets:lookup_element(OpsCache, Key, 2),
-	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length1+1,ListLen}}]);
+	    {Length1,ListLen1} = ets:lookup_element(OpsCache, Key, 2),
+	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length1+1,ListLen1}}]);
         false ->
 	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
     end.
@@ -507,7 +505,6 @@ belongs_to_snapshot_test()->
 			      vectorclock:from_list([{1, CommitTime3a},{2,CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
 	?assertEqual(false, belongs_to_snapshot_op(
 			      vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
-
 
 %% @doc This tests to make sure when garbage collection happens, no updates are lost
 gc_test() ->
@@ -575,8 +572,31 @@ gc_test() ->
     {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1,142}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(13, Type:value(Res13)).
 
+%% @doc This tests to make sure operation lists can be large and resized
+large_list_test() ->
+        OpsCache = ets:new(ops_cache, [set]),
+    SnapshotCache = ets:new(snapshot_cache, [set]),
+    Key = mycount,
+    DC1 = 1,
+    Type = riak_dt_gcounter,
 
+    %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
+    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1,2}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(0, Type:value(Res0)),
 
+    lists:foreach(fun(Val) ->
+			  op_insert_gc(Key, generate_payload(10,11+Val,Res0,Val), OpsCache, SnapshotCache)
+		  end, lists:seq(1,1000)),
+    
+    {ok, Res1000} = internal_read(Key, Type, vectorclock:from_list([{DC1,2000}]),ignore, OpsCache, SnapshotCache),
+    ?assertEqual(1000, Type:value(Res1000)),
+    
+    %% Now check everything is ok as the list shrinks from generating new snapshots
+    lists:foreach(fun(Val) ->
+    			  op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), OpsCache, SnapshotCache),
+    			  {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1,2000}]),ignore, OpsCache, SnapshotCache),
+    			  ?assertEqual(Val, Type:value(Res))
+    		  end, lists:seq(1001,1100)).
 
 generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
     Key = mycount,
@@ -591,8 +611,6 @@ generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
 		     commit_time = {DC1,CommitTime},
 		     txid = 1
 		    }.
-
-
 
 seq_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
@@ -629,7 +647,6 @@ seq_write_test() ->
     %% Read old version
     {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(ReadOld)).
-
 
 multipledc_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
@@ -721,6 +738,5 @@ read_nonexisting_key_test() ->
     Type = riak_dt_gcounter,
     {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1,1}, {dc2, 0}]), ignore, OpsCache, SnapshotCache),
     ?assertEqual(0, Type:value(ReadResult)).
-
 
 -endif.
