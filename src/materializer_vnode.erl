@@ -29,7 +29,7 @@
 %% Number of snapshots to keep after GC
 -define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
--define(OPS_THRESHOLD, 25).
+-define(OPS_THRESHOLD, 50).
 %% The first 3 elements in operations list are meta-data
 %% First is the key
 %% Second is a tuple {current op list size, max op list size}
@@ -46,12 +46,12 @@
 
 %% API
 -export([start_vnode/1,
-	       check_tables_ready/0,
+	 check_tables_ready/0,
          read/7,
-	       get_cache_name/2,
-	       store_ss/3,
+	 get_cache_name/2,
+	 store_ss/3,
          update/2,
-	       belongs_to_snapshot_op/3]).
+	 belongs_to_snapshot_op/3]).
 
 %% Callbacks
 -export([init/1,
@@ -286,7 +286,6 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 		 [{_, SnapshotDict}] ->
 		     case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
 			 {undefined, _IsF} ->
-			     io:format("could not find a smaller ss ~w, ~w~n", [dict:to_list(MinSnapshotTime), SnapshotDict]),
 			     {error, no_snapshot};
 			 {{SCT, LS},IsF}->
 			     {LS,SCT,IsF}
