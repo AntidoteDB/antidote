@@ -30,7 +30,8 @@
         ]).
 
 -ifdef(TEST).
--export([test_commit_hook/1]).
+-export([test_commit_hook/1,
+         test_increment_hook/1]).
 -endif.
 
 -define(PREFIX_PRE, {commit_hooks, pre}).
@@ -72,6 +73,9 @@ get_hooks(post_commit, Bucket) ->
 -ifdef(TEST).
 test_commit_hook(Object) ->
     lager:info("Executing test commit hook"),
-    Object.
+    {ok, Object}.
+
+test_increment_hook({Key, riak_dt_pncounter, {{increment, 1}, A}}) ->
+    {ok, {Key, riak_dt_pncounter, {{increment, 2}, A}}}.
 
 -endif.

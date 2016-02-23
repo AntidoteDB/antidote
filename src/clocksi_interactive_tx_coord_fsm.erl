@@ -209,7 +209,9 @@ perform_singleitem_update(Key, Type, Params) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
+    %% Execute pre_commit_hook if any
+    {Key, Type, Params1} = execute_pre_commit_hook(Key, Type, Params),
+    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, []) of
         {ok, DownstreamRecord} ->
             Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
             TxId = Transaction#transaction.txn_id,
@@ -273,7 +275,10 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
                    {IndexNode, WS} ->
                        WS
                end,
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
+
+    %% Execute pre_commit_hook if any
+    {Key, Type, Param1} = execute_pre_commit_hook(Key, Type, Param),
+    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet) of
         {ok, DownstreamRecord} ->
             NewUpdatedPartitions = case WriteSet of
                                        [] ->
@@ -653,6 +658,18 @@ wait_for_clock(Clock) ->
             wait_for_clock(Clock)
     end.
 
+execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
+    Hook = antidote_hooks:get_hooks(pre_commit, Bucket),
+    case Hook of
+        undefined ->
+            {{Key, Bucket}, Type, Param};
+        {Module, Function} ->
+            {ok, Res} = Module:Function({{Key, Bucket}, Type, Param}),
+            Res
+    end;
+execute_pre_commit_hook(Key, Type, Param) ->
+    {Key, Type, Param}.
+                
 
 -ifdef(TEST).
 
