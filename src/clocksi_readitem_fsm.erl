@@ -70,6 +70,7 @@
 -spec start_link(partition_id(),non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Partition,Id) ->
     Addr = node(),
+    lager:info("Id is ~w", [Id]),
     gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
 
 -spec start_read_servers(partition_id(),non_neg_integer()) -> non_neg_integer().
@@ -96,15 +97,9 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> {error, term()} | {ok, snapshot()}.
 async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
-    try
+    lager:info("Trying to read for ~w", [Key]),
 	gen_server:cast({global,generate_random_server_name(Node,Partition)},
-            {perform_read_cast, Coordinator, Key, Type, Transaction})
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
-	    check_server_ready([{Partition,Node}]),
-            read_data_item({Partition,Node},Key,Type,Transaction)
-    end.
+            {perform_read_cast, Coordinator, Key, Type, Transaction}).
 
 %% @doc This checks all partitions in the system to see if all read
 %%      servers have been started up.
@@ -153,6 +148,8 @@ start_read_servers_internal(Node, Partition, Num) ->
     case clocksi_readitem_sup:start_fsm(Partition,Num) of
 	{ok,_Id} ->
 	    start_read_servers_internal(Node, Partition, Num-1);
+    {error,{already_started, _}} ->
+	    start_read_servers_internal(Node, Partition, Num-1);
 	Err ->
 	    lager:info("Unable to start clocksi read server for ~w, will retry", [Err]),
 	    try
@@ -184,6 +181,7 @@ generate_random_server_name(Node, Partition) ->
     generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
 
 init([Partition, Id]) ->
+    lager:info("Starting ~w ~w", [Partition, Id]),
     Addr = node(),
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
@@ -203,6 +201,7 @@ handle_call({go_down},_Sender,SD0) ->
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
 	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
+    lager:info("Read cast"),
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
     {noreply,SD0}.
 
@@ -214,6 +213,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Pr
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
+        lager:info("Clock ready"),
 	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
     end.
 
@@ -255,12 +255,13 @@ check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
 %%  - Reads and returns the log of specified Key using replication layer.
 return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    %lager:info("Here is the vector snapshot time we'll be reading from: ~p", [VecSnapshotTime]),
+    lager:info("Here is the vector snapshot time we'll be reading from: ~p", [VecSnapshotTime]),
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
         {ok, Snapshot} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
+                    lager:info("Replying value."),
                     gen_fsm:send_event(Sender, {ok, {Key, Type, Snapshot}});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
@@ -268,6 +269,7 @@ return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
         {error, Reason} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
+                    lager:info("Replying error."),
                     gen_fsm:send_event(Sender, {error, Reason});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {error, Reason})

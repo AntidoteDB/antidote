@@ -210,6 +210,9 @@ get_cache_name(Partition, Base) ->
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
+    loop_until_started(Partition, ?READ_CONCURRENCY),
+    Node = node(),
+    true = clocksi_readitem_fsm:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
@@ -263,6 +266,7 @@ open_table(Partition) ->
 loop_until_started(_Partition, 0) ->
     0;
 loop_until_started(Partition, Num) ->
+    lager:info("Loop until ~w, ~w", [Partition, Num]),
     Ret = clocksi_readitem_fsm:start_read_servers(Partition, Num),
     loop_until_started(Partition, Ret).
 
@@ -283,6 +287,7 @@ handle_command(get_min_prepared, _Sender,
     {reply, get_min_prep(PreparedDict), State};
 
 handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
+    lager:info("Server is ~w", [Serv]),
     loop_until_started(Partition, Serv),
     Node = node(),
     Result = clocksi_readitem_fsm:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),

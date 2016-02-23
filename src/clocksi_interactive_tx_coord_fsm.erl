@@ -126,6 +126,8 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        transaction = undefined,
        updated_partitions=[],
        prepare_time=0,
+       num_to_read=0,
+       num_to_ack=0,
        operations=undefined,
        from=undefined,
        full_commit=FullCommit,
@@ -368,7 +370,7 @@ prepare(SD0 = #tx_coord_state{
                             {next_state, committing, SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}}
                     end;
                 _ ->
-                    %lager:info("Going to receive_prepared"),
+                    lager:info("Going to receive_prepared, don't set num to ack"),
                     {next_state, receive_prepared,
                         SD0#tx_coord_state{state = prepared}}
             end;
