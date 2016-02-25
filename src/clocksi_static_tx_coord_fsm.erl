@@ -60,8 +60,6 @@
 	 receive_prepared/2,
 	 single_committing/2,
 	 committing_single/3,
-	 committing/3,
-	 committing_2pc/3,
 	 receive_committed/2,
 	 receive_aborted/2,
 	 abort/2,
@@ -119,25 +117,22 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 					     transaction = Transaction}) ->
     ExecuteOp = fun (Operation, Acc) ->
 			case Acc of 
-			    {error, Reason} ->
-				{error, Reason};
+			    {error, Reason} ->  {error, Reason};
 			    _ ->
-				case Operation of
-				    {update, {Key, Type, OpParams}} ->
-					case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
-					    {error,Reason} ->
-						{error, Reason};
-					    NewUpdatedPartitions ->
-						Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
-					end;
-				    {read, {Key, Type}} ->
-					case clocksi_interactive_tx_coord_fsm:perform_read({Key,Type},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
-					    {error,Reason} ->
-						{error, Reason};
-					    ReadResult ->
-						Acc#tx_coord_state{read_set=[ReadResult|Acc#tx_coord_state.read_set]}
-					end
-				end
+				    case Operation of
+				        {update, {Key, Type, OpParams}} ->
+					        case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
+					            {error,Reason} ->   {error, Reason};
+					            NewUpdatedPartitions ->  Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
+					        end;
+				        {read, {Key, Type}} ->
+                            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+                            IndexNode = hd(Preflist),
+					        ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                            NumToRead = Acc#tx_coord_state.num_to_read+1,
+                            ReadSet = Acc#tx_coord_state.read_set,
+                            Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
+				    end
 			end
 		end,    
     NewState = lists:foldl(ExecuteOp, SD, Operations),
@@ -151,18 +146,109 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 	   end.
 
 
-receive_prepared({prepared, ReceivedPrepareTime},S0) ->
-    clocksi_interactive_tx_coord_fsm:process_prepared(ReceivedPrepareTime, S0).
+%% @doc in this state, the fsm waits for prepare_time from each updated
+%%      partitions in order to compute the final tx timestamp (the maximum
+%%      of the received prepare_time).
+receive_prepared({prepared, ReceivedPrepareTime},
+                 S0=#tx_coord_state{num_to_ack=NumToAck,
+                           num_to_read=NumToRead,
+                           transaction=Transaction,
+                           updated_partitions=UpdatedPartitions,
+                           prepare_time=PrepareTime}) ->
+    MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
+    case NumToAck of
+        1 ->
+            case NumToRead of
+                0 ->
+                    NumToCommit = length(UpdatedPartitions),
+                    ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
+                    {next_state, receive_committed,
+                    S0#tx_coord_state{num_to_ack=NumToCommit, commit_time=MaxPrepareTime, 
+                        state=committing}};
+                _ ->
+                    {next_state, receive_prepared, S0#tx_coord_state{num_to_ack= NumToAck-1,
+                        commit_time=MaxPrepareTime, prepare_time=MaxPrepareTime}}
+            end;
+        _ ->
+            {next_state, receive_prepared,
+             S0#tx_coord_state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
+    end;
 
+receive_prepared({ok, {Key, Type, Snapshot}},
+                 S0=#tx_coord_state{num_to_read=NumToRead,
+                            read_set=ReadSet,
+                            commit_time=CommitTime,
+                            transaction=Transaction,
+                            updated_partitions=UpdatedPartitions,
+                            num_to_ack=NumToAck}) ->
+    %%TODO: type is hard-coded..
+    Value = Type:value(Snapshot), 
+    ReadSet1 = replace(ReadSet, Key, Value),
+    case NumToRead of
+        1 ->
+            case NumToAck of
+                0 ->
+                    NumToCommit = length(UpdatedPartitions),
+                    case NumToCommit of
+                        0 ->
+                            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only, 
+                            read_set=lists:reverse(ReadSet1)});
+                        _ ->
+                            ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
+                            {next_state, receive_committed,
+                               S0#tx_coord_state{num_to_ack=NumToCommit, read_set=lists:reverse(ReadSet1), state=committing}}
+                    end;
+                _ ->
+                    {next_state, receive_prepared, S0#tx_coord_state{num_to_read= NumToRead-1,
+                            read_set=ReadSet1}}
+            end;
+        _ ->
+            {next_state, receive_prepared,
+             S0#tx_coord_state{read_set=ReadSet1, num_to_read = NumToRead-1}}
+    end;
 
-single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit}) ->
+receive_prepared(abort, S0) ->
+    {next_state, abort, S0, 0};
+
+receive_prepared(timeout, S0) ->
+    {next_state, abort, S0, 0}.
+
+single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
+                            num_to_read=NumToRead,
+                            read_set=ReadSet,
+                            num_to_ack=NumToAck}) ->
+    %%TODO: type is hard-coded..
+    Value = Type:value(Snapshot),
+    ReadSet1 = replace(ReadSet, Key, Value),
+    case NumToRead of
+        1 ->
+            case NumToAck of
+                0 ->
+                    clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed,
+                    read_set=lists:reverse(ReadSet1)});
+                _ ->
+                    {next_state, single_committing, S0#tx_coord_state{num_to_read= NumToRead-1,
+                            read_set=ReadSet1}}
+            end;
+        _ ->
+            {next_state, single_committing,
+             S0#tx_coord_state{read_set=ReadSet1, num_to_read = NumToRead-1}}
+    end;
+
+single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit, num_to_read=NumToRead}) ->
     case FullCommit of
 	false ->
 	    gen_fsm:reply(From, {ok, CommitTime}),
 	    {next_state, committing_single,
 	     S0#tx_coord_state{commit_time=CommitTime, state=committing}};
 	true ->
-	    clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{prepare_time=CommitTime, commit_time=CommitTime, state=committed})
+        case NumToRead of
+            0 ->
+	            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{prepare_time=CommitTime, commit_time=CommitTime, state=committed});
+            _ ->
+                {next_state, single_committing,
+                 S0#tx_coord_state{commit_time=CommitTime, state=committing, num_to_ack=0}}
+        end
     end;
 
 single_committing(abort, S0=#tx_coord_state{from=_From}) ->
@@ -177,40 +263,6 @@ single_committing(timeout, S0=#tx_coord_state{from=_From}) ->
 committing_single(commit, Sender, SD0=#tx_coord_state{transaction = _Transaction,
 					     commit_time=Commit_time}) ->
     clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{prepare_time=Commit_time, from=Sender, commit_time=Commit_time, state=committed}).
-
-%% @doc after receiving all prepare_times, send the commit message to all
-%%      updated partitions, and go to the "receive_committed" state.
-%%      This state expects other process to sen the commit message to 
-%%      start the commit phase.
-committing_2pc(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
-                              updated_partitions=Updated_partitions,
-                              commit_time=Commit_time}) ->
-    NumToAck=length(Updated_partitions),
-    case NumToAck of
-        0 ->
-            clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
-        _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
-            {next_state, receive_committed,
-             SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
-    end.
-
-%% @doc after receiving all prepare_times, send the commit message to all
-%%      updated partitions, and go to the "receive_committed" state.
-%%      This state is used when no commit message from the client is
-%%      expected 
-committing(commit, Sender, SD0=#tx_coord_state{transaction = Transaction,
-                              updated_partitions=Updated_partitions,
-                              commit_time=Commit_time}) ->
-    NumToAck=length(Updated_partitions),
-    case NumToAck of
-        0 ->
-            clocksi_interactive_tx_coord_fsm:reply_to_client(SD0#tx_coord_state{state=committed_read_only, from=Sender});
-        _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
-            {next_state, receive_committed,
-             SD0#tx_coord_state{num_to_ack=NumToAck, from=Sender, state=committing}}
-    end.
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
 %%	committed the tx and finishes operation.
@@ -269,3 +321,17 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) ->
     ok.
+
+replace([], _, _) ->
+    error;
+replace([Key|Rest], Key, NewKey) ->
+    [NewKey|Rest];
+replace([NotMyKey|Rest], Key, NewKey) ->
+    [NotMyKey|replace(Rest, Key, NewKey)].
+    
+%find([], _, _) ->
+%    error;
+%find([{Key, Value}|_], Key, Index) ->
+%    {Key, Value, Index};
+%find([_|Rest], Key, Index) ->
+%    find(Rest, Key, Index+1).

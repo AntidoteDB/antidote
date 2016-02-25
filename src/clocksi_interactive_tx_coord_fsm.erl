@@ -126,6 +126,8 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        transaction = undefined,
        updated_partitions=[],
        prepare_time=0,
+       num_to_read=0,
+       num_to_ack=0,
        operations=undefined,
        from=undefined,
        full_commit=FullCommit,
@@ -144,7 +146,7 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction=Transaction}.
+    SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
 				boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
@@ -352,17 +354,23 @@ execute_op({OpType, Args}, Sender,
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
-    transaction = Transaction,
+    transaction = Transaction, num_to_read=NumToRead,
     updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
     case Updated_partitions of
         [] ->
             Snapshot_time = Transaction#transaction.snapshot_time,
-            case FullCommit of
-                false ->
-                    gen_fsm:reply(From, {ok, Snapshot_time}),
-                    {next_state, committing, SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}};
-                true ->
-                    reply_to_client(SD0#tx_coord_state{state = committed_read_only})
+            case NumToRead of
+                0 ->
+                    case FullCommit of
+                        true ->
+                            reply_to_client(SD0#tx_coord_state{state = committed_read_only});
+                        false ->
+                            gen_fsm:reply(From, {ok, Snapshot_time}),
+                            {next_state, committing, SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}}
+                    end;
+                _ ->
+                    {next_state, receive_prepared,
+                        SD0#tx_coord_state{state = prepared}}
             end;
         [_] ->
             ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
