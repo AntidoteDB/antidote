@@ -85,15 +85,15 @@ clocksi_test1(Nodes) ->
 
     Key1 = clocksi_test1_pncounter1,
     Key2 = clocksi_test1_pncounter2,
-    Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result0=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [[]]),
     ?assertMatch({ok, _}, Result0),
-    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result1=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [[]]),
     ?assertMatch({ok, _}, Result1),
 
     % A simple read returns empty
-    Result11=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result11=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [
                      [{read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result11),
@@ -101,7 +101,7 @@ clocksi_test1(Nodes) ->
     ?assertMatch([0], ReadSet11),
 
     %% Read what you wrote
-    Result2=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result2=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [
                       [{read, {Key1, Type}},
                       {update, {Key1, Type, {increment, a}}},
@@ -112,7 +112,7 @@ clocksi_test1(Nodes) ->
     ?assertMatch([0,1], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
-    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result3=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [
                      [{read, {Key1, Type}},
                       {read, {Key2, Type}}]]),
@@ -121,13 +121,13 @@ clocksi_test1(Nodes) ->
     ?assertEqual([1,1], ReadSet3),
 
     %% Multiple updates to a key in a transaction works
-    Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result5=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [
                      [{update, {Key1, Type, {increment, a}}},
                       {update, {Key1, Type, {increment, a}}}]]),
     ?assertMatch({ok,_}, Result5),
 
-    Result6=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result6=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [
                      [{read, {Key1, Type}}]]),
     {ok, {_, ReadSet6, _}}=Result6,
