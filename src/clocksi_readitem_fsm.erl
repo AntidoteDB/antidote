@@ -94,7 +94,7 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
             read_data_item({Partition,Node},Key,Type,Transaction)
     end.
 
--spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> {error, term()} | {ok, snapshot()}.
+-spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> ok.
 async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
 	gen_server:cast({global,generate_random_server_name(Node,Partition)},
             {perform_read_cast, Coordinator, Key, Type, Transaction}).
