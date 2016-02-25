@@ -422,7 +422,7 @@ prune_ops({_Len,OpsDict}, Threshold)->
 
 %% This is an internal function used to convert the tuple stored in ets
 %% to a tuple and list usable by the materializer
--spec tuple_to_key(tuple()) -> {any(),non_neg_integer(),non_neg_integer(),list()}.
+-spec tuple_to_key(tuple()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),list()}.
 tuple_to_key(Tuple) ->
     Key = element(1, Tuple),
     {Length,ListLen} = element(2, Tuple),
