@@ -26,12 +26,15 @@
 -export([register_pre_hook/3,
          register_post_hook/3,
          get_hooks/2,
-         unregister_hook/2
+         unregister_hook/2,
+         execute_pre_commit_hook/3,
+         execute_post_commit_hook/3
         ]).
 
 -ifdef(TEST).
 -export([test_commit_hook/1,
-         test_increment_hook/1]).
+         test_increment_hook/1,
+         test_post_hook/1]).
 -endif.
 
 -define(PREFIX_PRE, {commit_hooks, pre}).
@@ -57,7 +60,8 @@ register_hook(Prefix, Bucket, Module, Function) ->
         false ->
             {error, function_not_exported}
     end.
-            
+        
+-spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.    
 unregister_hook(pre_commit, Bucket) ->
     riak_core_metadata:delete(?PREFIX_PRE, Bucket);
 
@@ -70,6 +74,39 @@ get_hooks(pre_commit, Bucket) ->
 get_hooks(post_commit, Bucket) ->
     riak_core_metadata:get(?PREFIX_POST, Bucket).
 
+execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
+    Hook = get_hooks(pre_commit, Bucket),
+    case Hook of
+        undefined ->
+            {{Key, Bucket}, Type, Param};
+        {Module, Function} ->
+            try Module:Function({{Key, Bucket}, Type, Param}) of
+                {ok, Res} -> Res
+            catch
+                _:Reason -> {error, Reason}
+            end
+    end;
+%% The following is kept to be backward compatible with the old
+%% interface where buckets are not used
+execute_pre_commit_hook(Key, Type, Param) ->
+    {Key, Type, Param}.
+
+execute_post_commit_hook({Key, Bucket}, Type, Param) ->
+    Hook = get_hooks(post_commit, Bucket),
+    case Hook of
+        undefined ->
+            {{Key, Bucket}, Type, Param};
+        {Module, Function} ->
+            try Module:Function({{Key, Bucket}, Type, Param}) of
+                {ok, Res} -> Res
+            catch
+                _:Reason -> {error, Reason}
+            end
+    end;
+execute_post_commit_hook(Key, Type, Param) ->
+    {Key, Type, Param}.
+
+
 -ifdef(TEST).
 test_commit_hook(Object) ->
     lager:info("Executing test commit hook"),
@@ -77,5 +114,8 @@ test_commit_hook(Object) ->
 
 test_increment_hook({Key, riak_dt_pncounter, {{increment, 1}, A}}) ->
     {ok, {Key, riak_dt_pncounter, {{increment, 2}, A}}}.
+
+test_post_hook({{Key, _Bucket}, _Type, _OP}) ->
+    {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, riak_dt_pncounter, commitcount}, increment, 1}]).
 
 -endif.

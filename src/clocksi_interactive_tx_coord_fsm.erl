@@ -210,36 +210,39 @@ perform_singleitem_update(Key, Type, Params) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     %% Execute pre_commit_hook if any
-    {Key, Type, Params1} = execute_pre_commit_hook(Key, Type, Params),
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, []) of
-        {ok, DownstreamRecord} ->
-            Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
-            TxId = Transaction#transaction.txn_id,
-            LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
-            LogId = ?LOG_UTIL:get_logid_from_key(Key),
-            [Node] = Preflist,
-            case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                {ok, _} ->
-                    case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
-                        {committed, CommitTime} ->
-                            TxId = Transaction#transaction.txn_id,
-                            DcId = ?DC_UTIL:get_my_dc_id(),
-                            CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
-                            {ok, {TxId, [], CausalClock}};
-			abort ->
-			    {error, aborted};
-                        {error, Reason} ->
-                            {error, Reason}
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
+        {Key, Type, Params1} ->
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, []) of
+                {ok, DownstreamRecord} ->
+                    Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
+                    TxId = Transaction#transaction.txn_id,
+                    LogRecord = #log_record{tx_id = TxId, op_type = update,
+                                            op_payload = {Key, Type, DownstreamRecord}},
+                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+                    [Node] = Preflist,
+                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
+                        {ok, _} ->
+                            case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
+                                {committed, CommitTime} ->
+                                    TxId = Transaction#transaction.txn_id,
+                                    DcId = ?DC_UTIL:get_my_dc_id(),
+                                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                                     DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                                    {ok, {TxId, [], CausalClock}};
+                                abort ->
+                                    {error, aborted};
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end;
+                        Error ->
+                            {error, Error}
                     end;
-                Error ->
-                    {error, Error}
+                {error, Reason} ->
+                    {error, Reason}
             end;
         {error, Reason} ->
             {error, Reason}
     end.
-
 
 perform_read(Args, Updated_partitions, Transaction, Sender) ->
     {Key, Type} = Args,
@@ -277,49 +280,53 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
                end,
 
     %% Execute pre_commit_hook if any
-    {Key, Type, Param1} = execute_pre_commit_hook(Key, Type, Param),
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet) of
-        {ok, DownstreamRecord} ->
-            NewUpdatedPartitions = case WriteSet of
-                                       [] ->
-                                           [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
-                                       _ ->
-                                           lists:keyreplace(IndexNode, 1, Updated_partitions,
-							    {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
-                                   end,
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    gen_fsm:reply(Sender, ok)
-            end,
-            TxId = Transaction#transaction.txn_id,
-            LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
-            LogId = ?LOG_UTIL:get_logid_from_key(Key),
-            [Node] = Preflist,
-            case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                {ok, _} ->
-                    NewUpdatedPartitions;
-                Error ->
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
+        {Key, Type, Param1} ->
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet) of
+                {ok, DownstreamRecord} ->
+                    NewUpdatedPartitions =
+                        case WriteSet of
+                            [] ->
+                                [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
+                            _ ->
+                                lists:keyreplace(IndexNode, 1, Updated_partitions,
+                                                 {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
+                        end,
                     case Sender of
                         undefined ->
                             ok;
                         _ ->
-                            _Res = gen_fsm:reply(Sender, {error, Error})
+                            gen_fsm:reply(Sender, ok)
                     end,
-		    {error, Error}
+                    TxId = Transaction#transaction.txn_id,
+                    LogRecord = #log_record{tx_id = TxId, op_type = update,
+                                            op_payload = {Key, Type, DownstreamRecord}},
+                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+                    [Node] = Preflist,
+                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
+                        {ok, _} ->
+                            NewUpdatedPartitions;
+                        Error ->
+                            case Sender of
+                                undefined ->
+                                    ok;
+                                _ ->
+                                    _Res = gen_fsm:reply(Sender, {error, Error})
+                            end,
+                            {error, Error}
+                    end;
+                {error, Reason} ->
+                    case Sender of
+                        undefined ->
+                            ok;
+                        _ ->
+                            _Res = gen_fsm:reply(Sender, {error, Reason})
+                    end,
+                    {error, Reason}
             end;
         {error, Reason} ->
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    _Res = gen_fsm:reply(Sender, {error, Reason})
-            end,
             {error, Reason}
     end.
-
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
@@ -569,7 +576,8 @@ receive_aborted(_, S0) ->
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, read_set = ReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit,
-    is_static = IsStatic, stay_alive = StayAlive}) ->
+    is_static = IsStatic, stay_alive = StayAlive,
+                                    updated_partitions = UpdatedPartitions}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case TxState of
@@ -581,6 +589,16 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                 {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.vec_snapshot_time}}
                         end;
                     committed ->
+                        %% Execute post_commit_hooks
+                        lists:map(fun ({_IndexNode, Updates}) ->
+                                          lists:map( fun({Key, Type, Update}) ->
+                                                             case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
+                                                                 {error, Reason} ->
+                                                                     lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                                                                 _ -> ok
+                                                             end
+                                                     end, Updates)
+                                  end, UpdatedPartitions), %% TODO: What happens if commit hook fails?
                         DcId = ?DC_UTIL:get_my_dc_id(),
                         CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                             DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
@@ -656,20 +674,7 @@ wait_for_clock(Clock) ->
             %% wait for snapshot time to catch up with Client Clock
             timer:sleep(10),
             wait_for_clock(Clock)
-    end.
-
-execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
-    Hook = antidote_hooks:get_hooks(pre_commit, Bucket),
-    case Hook of
-        undefined ->
-            {{Key, Bucket}, Type, Param};
-        {Module, Function} ->
-            {ok, Res} = Module:Function({{Key, Bucket}, Type, Param}),
-            Res
-    end;
-execute_pre_commit_hook(Key, Type, Param) ->
-    {Key, Type, Param}.
-                
+    end.         
 
 -ifdef(TEST).
 
