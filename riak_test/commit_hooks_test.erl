@@ -45,6 +45,7 @@ confirm() ->
 
     register_hook_test(Nodes),
     execute_hook_test(Nodes),
+    execute_post_hook_test(Nodes),
     pass.
 
 register_hook_test(Nodes) ->
@@ -76,3 +77,20 @@ execute_hook_test(Nodes) ->
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
     ?assertMatch({ok, [2]}, Res).
 
+execute_post_hook_test(Nodes) ->
+    Node = hd(Nodes),
+    Bucket = test_bucket2,
+    ok = rpc:call(Node, antidote_hooks, register_post_hook,
+                  [Bucket, antidote_hooks, test_post_hook]),
+    
+    Bound_object = {key1, riak_dt_pncounter, Bucket},
+    {ok, TxId} =  rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
+    {ok, CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+
+    CommitCount = {key1, riak_dt_pncounter, commitcount},
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
+    Res = rpc:call(Node, antidote, read_objects, [[CommitCount], TxId2]),
+    rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    ?assertMatch({ok, [1]}, Res).
+    
