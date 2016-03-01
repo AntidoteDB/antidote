@@ -590,7 +590,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                         end;
                     committed ->
                         %% Execute post_commit_hooks
-                        lists:map(fun ({_IndexNode, Updates}) ->
+                        _Result = lists:map(fun ({_IndexNode, Updates}) ->
                                           lists:map( fun({Key, Type, Update}) ->
                                                              case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
                                                                  {error, Reason} ->

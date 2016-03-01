@@ -130,10 +130,24 @@
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
+
+-type txn_properties() :: term(). %% TODO: Define
+-type op_name() :: atom().
+-type op_param() :: term(). %% TODO: Define
+-type bound_object() :: {key(), type(), bucket()}.
+
+-type module_name() :: atom().
+-type function_name() :: atom().
+
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
               log/0, op_id/0, payload/0, operation/0, partition_id/0,
               type/0, snapshot/0, txid/0, tx/0,
-              bucket/0]).
+              bucket/0,
+              txn_properties/0,
+              op_param/0, op_name/0,
+              bound_object/0,
+              module_name/0,
+              function_name/0]).
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:

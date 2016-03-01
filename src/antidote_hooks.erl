@@ -40,9 +40,6 @@
 -define(PREFIX_PRE, {commit_hooks, pre}).
 -define(PREFIX_POST, {commit_hooks, post}).
 
--type module_name() :: atom().
--type function_name() :: atom().
-
 -spec register_post_hook(bucket(), module_name(), function_name()) -> ok | {error, reason()}.
 register_post_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_POST, Bucket, Module, Function).
@@ -112,10 +109,11 @@ test_commit_hook(Object) ->
     lager:info("Executing test commit hook"),
     {ok, Object}.
 
-test_increment_hook({Key, riak_dt_pncounter, {{increment, 1}, A}}) ->
-    {ok, {Key, riak_dt_pncounter, {{increment, 2}, A}}}.
+test_increment_hook({{Key, Bucket}, riak_dt_pncounter, {{increment, 1}, A}}) ->
+    {ok, {{Key, Bucket}, riak_dt_pncounter, {{increment, 2}, A}}}.
 
-test_post_hook({{Key, _Bucket}, _Type, _OP}) ->
-    {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, riak_dt_pncounter, commitcount}, increment, 1}]).
+test_post_hook({{Key, Bucket}, Type, OP}) ->
+    _Result = antidote:update_objects(ignore, [], [{{Key, riak_dt_pncounter, commitcount}, increment, 1}]),
+    {ok, {{Key, Bucket}, Type, OP}}.
 
 -endif.
