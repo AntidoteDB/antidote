@@ -25,6 +25,7 @@
 
 -export([start_vnode/1,
     read_data_item/5,
+    async_read_data_item/4,
     get_cache_name/2,
     get_min_prepared/1,
     get_active_txns_key/3,
@@ -35,6 +36,7 @@
     single_commit_sync/2,
     abort/2,
     now_microsec/1,
+    reverse_and_filter_updates_per_key/2,
     init/1,
     terminate/2,
     handle_command/3,
@@ -92,6 +94,9 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+async_read_data_item(Node, TxId, Key, Type) ->
+    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}). 
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -205,6 +210,9 @@ get_cache_name(Partition, Base) ->
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
+    loop_until_started(Partition, ?READ_CONCURRENCY),
+    Node = node(),
+    true = clocksi_readitem_fsm:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
@@ -289,6 +297,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
+    %lager:info("Trying to prepare ~w,WS ~w", [Transaction, WriteSet]),
     PrepareTime = now_microsec(dc_utilities:now()),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of
@@ -567,7 +576,7 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
     case application:get_env(antidote, txn_cert) of
         {ok, true} -> 
-        io:format("AAAAH"),
+        %io:format("AAAAH"),
         certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
         _  -> true
     end.

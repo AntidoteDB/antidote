@@ -81,7 +81,7 @@ increment_test(Nodes) ->
     ?assertEqual(10, crdt_bcounter:localPermissions(r1,Counter1)),
     ?assertEqual(0, crdt_bcounter:localPermissions(r2,Counter1)),
     %% Test bulk transaction with read and write operations.
-    Result2 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result2 = rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
         [[{update, {Key, Type, {{increment, 7}, r1}}}, {update, {Key, Type, {{increment, 5}, r2}}}, {read, {Key, Type}}]]),
     ?assertMatch({ok, _}, Result2),
     {ok, {_, [Counter2], _}} = Result2,
@@ -96,7 +96,7 @@ decrement_test(Nodes) ->
     Type = crdt_bcounter,
     Key = bcounter3,
     %% Test an allowed chain of operations.
-    Result0 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result0 = rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
         [[{update, {Key, Type, {{increment, 7}, r1}}}, {update, {Key, Type, {{increment, 5}, r2}}},
             {update, {Key, Type, {{decrement, 3}, r2}}}, {update, {Key, Type, {{decrement, 2}, r1}}},
             {read, {Key, Type}}]]),
@@ -106,7 +106,7 @@ decrement_test(Nodes) ->
     ?assertEqual(5, crdt_bcounter:localPermissions(r1,Counter0)),
     ?assertEqual(2, crdt_bcounter:localPermissions(r2,Counter0)),
     %% Test a forbidden chain of operations.
-    Result1 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result1 = rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
         [[{update, {Key, Type, {{decrement, 3}, r2}}}, {read, {Key, Type}}]]),
     ?assertEqual({error, no_permissions}, Result1).
 
@@ -117,7 +117,7 @@ transfer_test(Nodes) ->
     Type = crdt_bcounter,
     Key = bcounter4,
     %% Initialize the `bcounter()' with some increment and decrement operations.
-    Result0 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result0 = rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
         [[{update, {Key, Type, {{increment, 7}, r1}}}, {update, {Key, Type, {{increment, 5}, r2}}},
         {update, {Key, Type, {{decrement, 3}, r2}}}, {read, {Key, Type}}]]),
     ?assertMatch({ok, _}, Result0),
@@ -130,7 +130,7 @@ transfer_test(Nodes) ->
         [Key, Type, {{transfer, 3, r1}, r2}]),
     ?assertEqual({error, no_permissions}, Result1),
     %% Test transfered permissions enable the previous operation.
-    Result2 = rpc:call(FirstNode, antidote, clocksi_execute_tx,
+    Result2 = rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
         [[{update, {Key, Type, {{transfer, 2, r2}, r1}}}, 
         {update, {Key, Type, {{transfer, 3, r1}, r2}}}, {read, {Key, Type}}]]),
     ?assertMatch({ok, _}, Result2),
