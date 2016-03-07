@@ -46,6 +46,8 @@ confirm() ->
     register_hook_test(Nodes),
     execute_hook_test(Nodes),
     execute_post_hook_test(Nodes),
+    execute_prehooks_static_txn_test(Nodes),
+    execute_posthooks_static_txn_test(Nodes),
     pass.
 
 register_hook_test(Nodes) ->
@@ -100,4 +102,32 @@ execute_post_hook_test(Nodes) ->
     Res = rpc:call(Node, antidote, read_objects, [[CommitCount], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
     ?assertMatch({ok, [1]}, Res).
+
+execute_prehooks_static_txn_test(Nodes) ->    
+    Node = hd(Nodes),
+    Bucket = test_bucket3,
+    ok = rpc:call(Node, antidote, register_pre_hook,
+                  [Bucket, antidote_hooks, test_increment_hook]),
     
+    Bound_object = {key3, riak_dt_pncounter, Bucket},
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
+    
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
+    Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId2]),
+    rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    ?assertMatch({ok, [2]}, Res).
+
+execute_posthooks_static_txn_test(Nodes) ->
+    Node = hd(Nodes),
+    Bucket = test_bucket4,
+    ok = rpc:call(Node, antidote, register_post_hook,
+                  [Bucket, antidote_hooks, test_post_hook]),
+    
+    Bound_object = {key4, riak_dt_pncounter, Bucket},
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
+   
+    CommitCount = {key4, riak_dt_pncounter, commitcount},
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
+    Res = rpc:call(Node, antidote, read_objects, [[CommitCount], TxId2]),
+    rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    ?assertMatch({ok, [1]}, Res).
