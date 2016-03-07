@@ -66,7 +66,7 @@
 -export([create_transaction_record/5,
     start_tx/2,
     init_state/3,
-    perform_update/4,
+    perform_update/5,
     perform_read/4,
     execute_op/3,
     finish_op/3,
@@ -125,6 +125,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
     #tx_coord_state{
        transaction = undefined,
        updated_partitions=[],
+       client_ops=[],
        prepare_time=0,
        num_to_read=0,
        num_to_ack=0,
@@ -226,6 +227,12 @@ perform_singleitem_update(Key, Type, Params) ->
                         {ok, _} ->
                             case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
                                 {committed, CommitTime} ->
+                                    %% Execute post commit hook
+                                    _Res = case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+                                               {error, Reason} ->
+                                                   lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                                               _ -> ok
+                                           end,
                                     TxId = Transaction#transaction.txn_id,
                                     DcId = ?DC_UTIL:get_my_dc_id(),
                                     CausalClock = ?VECTORCLOCK:set_clock_of_dc(
@@ -270,7 +277,7 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
     end.
 
 
-perform_update(Args, Updated_partitions, Transaction, Sender) ->
+perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
     {Key, Type, Param} = Args,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -307,7 +314,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
                     [Node] = Preflist,
                     case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                         {ok, _} ->
-                            NewUpdatedPartitions;
+                            {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
                         Error ->
                             case Sender of
                                 undefined ->
@@ -335,8 +342,9 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
 %%       to execute the next operation.
 execute_op({OpType, Args}, Sender,
     SD0 = #tx_coord_state{transaction = Transaction,
-        updated_partitions = Updated_partitions
-    }) ->
+                          updated_partitions = Updated_partitions,
+                          client_ops = ClientOps
+                         }) ->
     case OpType of
         prepare ->
             case Args of
@@ -353,12 +361,13 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, ReadResult}, execute_op, SD0}
             end;
         update ->
-            case perform_update(Args, Updated_partitions, Transaction, Sender) of
+            case perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) of
                 {error, _Reason} ->
                     abort(SD0);
-                NewUpdatedPartitions ->
+                {NewUpdatedPartitions, NewClientOps} ->
                     {next_state, execute_op,
-                        SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions}}
+                        SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions,
+                                          client_ops = NewClientOps}}
             end
     end.
 
@@ -585,7 +594,7 @@ receive_aborted(_, S0) ->
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, read_set = ReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit,
     is_static = IsStatic, stay_alive = StayAlive,
-                                    updated_partitions = UpdatedPartitions}) ->
+                                     client_ops = ClientOps}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case TxState of
@@ -598,15 +607,16 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                         end;
                     committed ->
                         %% Execute post_commit_hooks
-                        _Result = lists:map(fun ({_IndexNode, Updates}) ->
-                                          lists:map( fun({Key, Type, Update}) ->
+                        _Result = %lists:map(fun (Updates) ->
+                                          lists:foreach( fun({Key, Type, Update}) ->
                                                              case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
                                                                  {error, Reason} ->
                                                                      lager:info("Post commit hook failed. Reason ~p", [Reason]);
                                                                  _ -> ok
                                                              end
-                                                     end, Updates)
-                                  end, UpdatedPartitions), %% TODO: What happens if commit hook fails?
+                                                     end, lists:reverse(ClientOps)),
+                        
+                        %          end, UpdatedPartitions), %% TODO: What happens if commit hook fails?
                         DcId = ?DC_UTIL:get_my_dc_id(),
                         CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                             DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
