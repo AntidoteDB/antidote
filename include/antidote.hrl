@@ -165,6 +165,7 @@
           from :: {pid(), term()},
           transaction :: tx(),
           updated_partitions :: list(),
+          client_ops :: list(), % list of upstream updates, used for post commit hooks
           num_to_ack :: non_neg_integer(),
           num_to_read :: non_neg_integer(),
           prepare_time :: non_neg_integer(),
