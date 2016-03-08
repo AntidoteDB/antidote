@@ -1,0 +1,11 @@
+%Configuration script for generating the devs for riak-test
+
+case os:getenv("RT_DEVS") of
+    false -> CONFIG; % env var not defined
+    []    -> CONFIG; % env var set to empty string
+    I   -> 
+      DevConfig = "rel/vars/dev" ++ I ++ "_vars.config",
+      {Key,Relx} = lists:keyfind(relx, 1, CONFIG),
+      Relx1 = lists:keystore(overlay_vars, 1, Relx, {overlay_vars, DevConfig}),
+      lists:keystore(relx, 1, CONFIG, {relx, Relx1})
+end.
