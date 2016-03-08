@@ -40,7 +40,8 @@ $(eval devrel : $(foreach n,$(SEQ),dev$(n)))
 dev% : all
 	mkdir -p dev
 	rel/gen_dev $@ rel/vars/dev_vars.config.src rel/vars/$@_vars.config
-	$(REBAR) release --output-dir dev/$@ --overlay_vars rel/vars/$@_vars.config
+	$(REBAR) release --output-dir dev --overlay_vars rel/vars/$@_vars.config
+	mv dev/antidote dev/$@
 
 stagedev% : dev%
 	  $(foreach dep,$(wildcard deps/*), rm -rf dev/$^/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) dev/$^/lib;)
