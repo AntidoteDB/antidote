@@ -104,9 +104,13 @@ handle_command({log_event, Operation, PrepTime}, _Sender, State) ->
 		     {Txns, NewIdDict, NewDCPartDict} =
 			 inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.partition_index,
 							     State1#state.dcid, State1#state.last_log_id, State1#state.dc_part_dict),
-		     
-		     ok = meta_data_sender:put_meta_dict(externalPing, Partition, NewDCPartDict),
+		     %% Store the ids for each partition
+		     %% Note for safetly this should probably be done at the same time as the safetime update below
+		     ok = meta_data_sender:put_meta_dict(safeTime, Partition, NewIdDict),
+
 		     NextState = broadcast(State1#state{last_log_id = NewIdDict, dc_part_dict = NewDCPartDict}, Txns),
+
+		     %% Store the same safe sent time for all partitions
 		     ok = store_time_in_meta_data(PrepTime, State1#state.partition),
 		     NextState;
 		 %% If the transaction is not yet complete

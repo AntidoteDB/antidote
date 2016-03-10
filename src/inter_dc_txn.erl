@@ -32,6 +32,7 @@
 	 to_bin/1,
 	 from_bin/1,
 	 partition_to_bin/1,
+	 dcid_to_bin/2,
 	 last_log_opid/1,
 	 is_ping/1]).
 

@@ -22,43 +22,27 @@
 
 -include("antidote.hrl").
 
--export([update_func_min/2,
-	 get_max_time/1,
-	 export_funcs_and_vals/0]).
+-export([update_func/2,
+	 merge_entries/1,
+	 export_funcs_and_vals/1]).
 
 %% These functions are input to create a meta_data_sender
 %% The functions merge by taking the minimum of all entries per node per DC
-export_funcs_and_vals() ->
-    [safe, fun update_func_min/2, fun get_max_time/1, dict:new(), dict:new()].
+export_funcs_and_vals(Name) ->
+    [Name, fun update_func/2, fun merge_entries/1, dict:new(), dict:new()].
 
-update_func_min(Last,Time) ->
+%% Update fun is called on each entry of the dict after merging
+%% Here just always take the new dict
+update_func(Last,Time) ->
     case Last of
 	undefined ->
 	    true;
 	_ ->
-	    Time > Last
+	    true
     end.
 
 %% This assumes the dicts being sent have all DCs
-get_max_time(Dict) ->
-    dict:fold(fun(_NodeId, NodeDict, Acc1) ->
-		      case NodeDict of
-			  undefined ->
-			      Acc1;
-			  _ ->
-			      dict:fold(fun(DcId, Time, Acc2) ->
-						PrevTime = case dict:find(DcId, Acc2) of
-							       {ok, Val} ->
-								   Val;
-							       error ->
-								   Time
-							   end,
-						case Time >= PrevTime of
-						    true ->
-							dict:store(DcId, Time, Acc2);
-						    false ->
-							Acc2
-						end
-					end, Acc1, NodeDict)
-		      end
-	      end, dict:new(), Dict).
+merge_entries(Dict) ->
+    %% This has an entry per partition, just keep everything
+    Dict.
+
