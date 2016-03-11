@@ -250,8 +250,8 @@ get_stable_snapshot() ->
     end.
 
 -spec get_stable_external_snapshot() -> {ok, snapshot_time()}.
-get_stable_external_snapshot() ->
-    case meta_data_sender:get_merged_data(stableExternal) of
+get_stable_external_ids() ->
+    case meta_data_sender:get_merged_data(stableIds) of
 	undefined ->
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),

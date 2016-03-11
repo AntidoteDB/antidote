@@ -110,8 +110,8 @@ get_dc_partition(Partition, MyPartitionId, DCID, DCPartDict) ->
 	    {element(MyPartitionId rem DestPartSize, DestPartTuple), NewDCPartDict}
     end.
 
--spec ping(partition_id(), dict(), non_neg_integer()) -> [#interdc_txn{}].
-ping(Partition, PrevLogIdDict, Timestamp) ->
+-spec ping(partition_id(), dict(), dict()) -> [#interdc_txn{}].
+ping(Partition, PrevLogIdDict, Ids) ->
     %% PrevLogIdDict needs to be the size of number of connections
     %% so when it is received the receiver can know if there are
     %% any msgs missing on any connection
@@ -141,7 +141,7 @@ ping(Partition, PrevLogIdDict, Timestamp) ->
 			 pre_log_total_opid = PreTotalId,
 			 operations = [],
 			 snapshot = dict:new(),
-			 timestamp = Timestamp
+			 timestamp = Ids
 			}
 	      end, [], DCs).
 

@@ -104,14 +104,12 @@ handle_command({log_event, Operation, PrepTime}, _Sender, State) ->
 		     {Txns, NewIdDict, NewDCPartDict} =
 			 inter_dc_txn:ops_to_dc_transactions(Ops, State1#state.partition, State1#state.partition_index,
 							     State1#state.dcid, State1#state.last_log_id, State1#state.dc_part_dict),
-		     %% Store the ids for each partition
-		     %% Note for safetly this should probably be done at the same time as the safetime update below
-		     ok = meta_data_sender:put_meta_dict(safeTime, Partition, NewIdDict),
-
 		     NextState = broadcast(State1#state{last_log_id = NewIdDict, dc_part_dict = NewDCPartDict}, Txns),
 
 		     %% Store the same safe sent time for all partitions
-		     ok = store_time_in_meta_data(PrepTime, State1#state.partition),
+		     %% Store the ids for each partition
+		     ok = meta_data_sender:put_meta_dict(safeTime, Partition, {PrepTime, NewIdDict}),
+		     %% ok = store_time_in_meta_data(PrepTime, State1#state.partition),
 		     NextState;
 		 %% If the transaction is not yet complete
 		 none -> State1
@@ -131,8 +129,8 @@ handle_command(ping, _Sender, State#state{partition = Partition}) ->
     ok = store_time_in_meta_data(get_stable_time(Partition), Partition),
     case shouldPing() of
 	true ->
-	    {ok, Snapshot} = vectorclock:get_stable_external_snapshot(),
-	    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Snapshot),
+	    {ok, Ids} = vectorclock:get_stable_external_ids(),
+	    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Ids),
 	    {noreply, set_timer(broadcast(State, PingTxn))};
 	false ->
 	    {noreply, set_timer(State)}
