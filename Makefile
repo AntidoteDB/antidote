@@ -28,5 +28,3 @@ stage :
 	$(REBAR) release -d
 
 include tools.mk
-
-include riak-test.mk
