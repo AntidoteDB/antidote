@@ -25,7 +25,7 @@
 -include("antidote.hrl").
 
 %% API for applications
--export([
+-export([ start/0, stop/0,
          start_transaction/2,
          start_transaction/3,
          read_objects/2,
@@ -69,6 +69,15 @@
 -type bound_object() :: {key(), type(), bucket()}.
 
 %% Public API
+
+-spec start() -> {ok, _} | {error, term()}.
+start() ->
+  application:ensure_all_started(antidote).
+
+-spec stop() -> ok.
+stop() ->
+  application:stop(antidote).
+
 
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties(), boolean())
                        -> {ok, txid()} | {error, reason()}.

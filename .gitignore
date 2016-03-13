@@ -3,7 +3,7 @@ _build/
 .eunit
 rel/antidote
 dev
-apps/antidote/src/*
+apps/antidote/*
 *.swp
 *.swo
 src/*.swo
