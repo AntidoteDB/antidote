@@ -109,12 +109,20 @@ start_node(Name, Config, Case) ->
             PrivDir = proplists:get_value(priv_dir, Config),
             NodeDir = filename:join([PrivDir, Node, Case]),
             
+            ct:print("Node dir: ~p",[NodeDir]),
+
             ok = rpc:call(Node, application, load, [lager]),
             ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir]),
             
             ok = rpc:call(Node, application, load, [riak_core]),
-            ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, "/Users/annettebieniusa/syncfree/antidote/data/ring"]),
-            ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, "/Users/annettebieniusa/syncfree/antidote/data"]),
+
+            PlatformDir = NodeDir ++ "/data/",
+            RingDir = PlatformDir ++ "/ring/",
+            filelib:ensure_dir(PlatformDir),
+            filelib:ensure_dir(RingDir),
+            
+            ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
+            ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, 8099]),
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, ["/Users/annettebieniusa/syncfree/antidote/dev/dev1/lib"]]),
 
@@ -124,8 +132,6 @@ start_node(Name, Config, Case) ->
             ok = rpc:call(Node, application, load, [antidote]),
             ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, 8086]),
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, 8085]),
-%           ok = rpc:call(Node, application, set_env, [antidote, txn_cert, true]),
-%           ok = rpc:call(Node, application, set_env, [antidote, txn_prot, clocksi]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             %ok = wait_until(fun() ->
