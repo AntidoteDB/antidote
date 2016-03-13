@@ -36,12 +36,12 @@ end_per_suite(Config) ->
 init_per_testcase(Case, Config) ->
     %% have the slave nodes monitor the runner node, so they can't outlive it
     ct:pal("Hello"),
-    %Nodes = test_utils:pmap(fun(N) ->
-     %               test_utils:start_node(N, Config, Case)
-     %       end, [testserver2]),
+    Nodes = test_utils:pmap(fun(N) ->
+                    test_utils:start_node(N, Config, Case)
+            end, [dev1, dev2]),
 
-    Node = test_utils:start_node(testserver2, Config, Case),
-    [{nodes, [Node]}|Config].
+    test_utils:connect_dcs(Nodes),
+    [{nodes, Nodes}|Config].
 
 end_per_testcase(_, _) ->
     ok.
@@ -53,13 +53,15 @@ all() ->
 
 
 dummy_test(Config) ->
-  [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+  [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
   ct:print("Test on ~p!",[Node1]),
   %timer:sleep(10000),
   %application:set_env(antidote, txn_cert, true),
   %application:set_env(antidote, txn_prot, clocksi),
 
-  {ok,_} = rpc:call(Node1, antidote, append, [myKey, riak_dt_gcounter, {increment, 4}]),
+  {ok,_} = rpc:call(Node1, antidote, append, [myKey1, riak_dt_gcounter, {increment, 4}]),
+  {ok,_} = rpc:call(Node2, antidote, append, [myKey2, riak_dt_gcounter, {increment, 4}]),
+
   ok.
 
 

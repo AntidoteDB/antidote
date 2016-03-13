@@ -19,6 +19,7 @@
 %% -------------------------------------------------------------------
 
 -module(test_utils).
+-author("Annette Bieniusa <bieniusa@cs.uni-kl.de>").
 
 -export([%get_cluster_members/1,
          pmap/2,
@@ -28,7 +29,9 @@
          wait_until_offline/1,
          wait_until_disconnected/2,
          wait_until_connected/2,
+         wait_until_registered/2,
          start_node/3,
+         connect_dcs/1,
          partition_cluster/2,
          heal_cluster/2]).
 
@@ -123,15 +126,16 @@ start_node(Name, Config, Case) ->
             
             ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
-            ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, 8099]),
+            ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, web_ports(Name) + 3]),
+            
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, ["/Users/annettebieniusa/syncfree/antidote/dev/dev1/lib"]]),
 
-            ok = rpc:call(Node, application, set_env, [riak_api, pb_port, 8087]),
+            ok = rpc:call(Node, application, set_env, [riak_api, pb_port, web_ports(Name) + 2]),
             ok = rpc:call(Node, application, set_env, [riak_api, pb_ip, "127.0.0.1"]),
 
             ok = rpc:call(Node, application, load, [antidote]),
-            ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, 8086]),
-            ok = rpc:call(Node, application, set_env, [antidote, logreader_port, 8085]),
+            ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
+            ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             %ok = wait_until(fun() ->
@@ -164,3 +168,55 @@ heal_cluster(ANodes, BNodes) ->
         end,
          [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
     ok.
+
+connect_dcs(Nodes) ->
+  Clusters = [Nodes],
+  ct:pal("Connecting DC clusters..."),
+  lists:foreach(fun(Cluster) ->
+    Node1 = hd(Cluster),
+    ct:print("Waiting until vnodes start on node ~p", [Node1]),
+    wait_until_registered(Node1, inter_dc_pub),
+    wait_until_registered(Node1, inter_dc_log_reader_response),
+    wait_until_registered(Node1, inter_dc_log_reader_query),
+    wait_until_registered(Node1, inter_dc_sub),
+    wait_until_registered(Node1, meta_data_sender_sup),
+    wait_until_registered(Node1, meta_data_manager_sup),
+    ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
+  end, Clusters),
+  Descriptors = descriptors(Clusters),
+  Res = [ok || _ <- Clusters],
+  lists:foreach(fun(Cluster) ->
+    Node = hd(Cluster),
+    ct:print("Making node ~p observe other DCs...", [Node]),
+    %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
+    Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+  end, Clusters),
+  ct:pal("DC clusters connected!").
+
+
+% Waits until a certain registered name pops up on the remote node.
+wait_until_registered(Node, _Name) ->
+    ct:print("Wait until the ring manager is up on ~p", [Node]),
+
+    F = fun() ->
+                Registered = rpc:call(Node, erlang, registered, []),
+                lists:member(riak_core_ring_manager, Registered)
+        end,
+    Delay = rt_retry_delay(),
+    Retry = 360000 div Delay,
+    ok = wait_until(F, Retry, Delay),
+    ok.
+
+descriptors(Clusters) ->
+  lists:map(fun(Cluster) ->
+    {ok, Descriptor} = rpc:call(hd(Cluster), inter_dc_manager, get_descriptor, []),
+    Descriptor
+  end, Clusters).
+
+%TODO Move to config
+rt_retry_delay() -> 500.
+
+web_ports(dev1) ->
+    10015;
+web_ports(dev2) ->
+    10025.

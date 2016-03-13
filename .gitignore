@@ -12,7 +12,7 @@ dialyzer_unhandled_warnings
 dialyzer_warnings
 doc/
 .DS_Store
-log/
+logs/
 tags
 rel/vars/*.config
 
