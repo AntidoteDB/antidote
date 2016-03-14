@@ -49,9 +49,9 @@
 
 %% API
 -export([start_link/2,
-    start_link/1,
-    start_link/3,
-    start_link/4]).
+         start_link/1,
+         start_link/3,
+	 start_link/4]).
 
 %% Callbacks
 -export([init/1,
@@ -93,17 +93,17 @@
 
 start_link(From, Clientclock, UpdateClock, StayAlive) ->
     case StayAlive of
-        true ->
-            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
-        false ->
-            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+	true ->
+	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+	false ->
+	    gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
     end.
 
 start_link(From, Clientclock) ->
     start_link(From, Clientclock, update_clock).
 
-start_link(From, Clientclock, UpdateClock) ->
-    start_link(From, Clientclock, UpdateClock, false).
+start_link(From,Clientclock,UpdateClock) ->
+    start_link(From,Clientclock,UpdateClock,false).
 
 start_link(From) ->
     start_link(From, ignore, update_clock).
@@ -126,13 +126,15 @@ init_state(StayAlive, FullCommit, IsStatic) ->
         {ok, nmsi_single_dc} ->
             #tx_coord_state{
                 transaction = undefined,
-                updated_partitions = [],
-                prepare_time = 0,
-                operations = undefined,
-                from = undefined,
-                full_commit = FullCommit,
-                is_static = IsStatic,
-                read_set = [],
+                updated_partitions=[],
+                prepare_time=0,
+                num_to_read=0,
+                num_to_ack=0,
+                operations=undefined,
+                from=undefined,
+                full_commit=FullCommit,
+                is_static=IsStatic,
+                read_set=[],
                 stay_alive = StayAlive,
                 %% The following are needed by the NMSI protocol
                 clock_from_node_min = undefined,
@@ -141,17 +143,18 @@ init_state(StayAlive, FullCommit, IsStatic) ->
         _ ->
             #tx_coord_state{
                 transaction = undefined,
-                updated_partitions = [],
-                prepare_time = 0,
-                operations = undefined,
-                from = undefined,
-                full_commit = FullCommit,
-                is_static = IsStatic,
-                read_set = [],
+                updated_partitions=[],
+                prepare_time=0,
+                num_to_read=0,
+                num_to_ack=0,
+                operations=undefined,
+                from=undefined,
+                full_commit=FullCommit,
+                is_static=IsStatic,
+                read_set=[],
                 stay_alive = StayAlive
             }
     end.
-
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
@@ -163,7 +166,7 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction = Transaction}.
+    SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
   boolean(), pid() | undefined, boolean()) -> {tx(), txid() | {error, term()}}.
@@ -387,17 +390,23 @@ execute_op({OpType, Args}, Sender,
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
-    transaction = Transaction,
+    transaction = Transaction, num_to_read=NumToRead,
     updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
     case Updated_partitions of
         [] ->
             Snapshot_time = Transaction#transaction.snapshot_time,
-            case FullCommit of
-                false ->
-                    gen_fsm:reply(From, {ok, Snapshot_time}),
-                    {next_state, committing, SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}};
-                true ->
-                    reply_to_client(SD0#tx_coord_state{state = committed_read_only})
+            case NumToRead of
+                0 ->
+                    case FullCommit of
+                        true ->
+                            reply_to_client(SD0#tx_coord_state{state = committed_read_only});
+                        false ->
+                            gen_fsm:reply(From, {ok, Snapshot_time}),
+                            {next_state, committing, SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}}
+                    end;
+                _ ->
+                    {next_state, receive_prepared,
+                        SD0#tx_coord_state{state = prepared}}
             end;
         [_] ->
             ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
@@ -556,7 +565,7 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the transaction aborts.
 abort(SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
+			    updated_partitions = UpdatedPartitions}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
@@ -568,15 +577,15 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
-    updated_partitions = _UpdatedPartitions}) ->
+				   updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort({prepared, _}, SD0 = #tx_coord_state{transaction = _Transaction,
-    updated_partitions = _UpdatedPartitions}) ->
+					   updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
-    updated_partitions = _UpdatedPartitions}) ->
+			       updated_partitions = _UpdatedPartitions}) ->
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
@@ -629,10 +638,10 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
         true -> ok
     end,
     case StayAlive of
-        true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
-        false ->
-            {stop, normal, SD}
+	true ->
+	    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+	false ->
+	    {stop, normal, SD}
     end.
 
 %% =============================================================================
