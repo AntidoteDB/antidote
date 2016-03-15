@@ -84,7 +84,7 @@ handle_call({del_dc, DCID}, _From, State) ->
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State = #state{OpIdDict = opid_dict}) ->
-  %% decode the message
+    %% decode the message
     Msg = inter_dc_txn:from_bin(BinaryMsg),
     %% deliver the message to an appropriate vnode
     case inter_dc_txn:is_ping(Msg) of

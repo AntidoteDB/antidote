@@ -1,6 +1,8 @@
 -module(replication_check).
 
--export([get_dc_replicas_read/2,
+-export([get_dc_partitions_detailed/1,
+	 get_dc_partitions_dict/1,
+	 get_dc_replicas_read/2,
 	 get_dc_replicas_update/2,
 	 is_replicated_here/1,
 	 set_replication_list/1,
@@ -13,6 +15,16 @@
 -define(META_PREFIX_REPLI_DCNUM, {dcidnum,replication}).
 
 
+%% Returns a tuple of three elements
+%% The first is a dict with all partitions for DCID, with key and value being the partition id
+%% The second is a tuple with all partitions for DCID
+%% The third is an integer telling the number of partitions
+get_dc_partitions_detailed(DCID) ->
+    .
+
+%% Returns a dict with all partitions for DCID, with key and value being the partition id
+get_dc_partitions_dict(DCID) ->
+    .
 
 %% get_dc_replicas_update(Key,WithSelf) ->
 %%     DcList = case riak_core_metadata:get(?META_PREFIX_REPLI_FUNC,function,[{default,[]}]) of

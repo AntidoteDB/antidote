@@ -103,7 +103,6 @@
 %% stored in memory.  Do not use this if you want to persist data safely, it
 %% was designed with light heart-beat type meta-data in mind.
 
-
 -spec start_link(atom(),fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()) -> {ok,pid()} | ignore | {error,term()}.
 start_link(Name,UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
@@ -226,6 +225,8 @@ send_meta_data(timeout, State = #state{last_result = LastResult,
 				       merge_function = MergeFunction,
 				       name = Name,
 				       should_check_nodes = CheckNodes}) ->
+    %% Merges and get the local partition's data, as the entry at "local_merged" in Dict
+    %% The rest of the dict contains the remote nodes data
     {WillChange,Dict} = get_meta_data(Name, MergeFunction, CheckNodes),
     NodeList = ?GET_NODE_LIST(),
     LocalMerged = dict:fetch(local_merged,Dict),

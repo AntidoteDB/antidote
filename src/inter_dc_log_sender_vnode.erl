@@ -108,8 +108,10 @@ handle_command({log_event, Operation, PrepTime}, _Sender, State) ->
 
 		     %% Store the same safe sent time for all partitions
 		     %% Store the ids for each partition
-		     ok = meta_data_sender:put_meta_dict(safeTime, Partition, {PrepTime, NewIdDict}),
-		     %% ok = store_time_in_meta_data(PrepTime, State1#state.partition),
+		     %% The ids are the number of messages sent on each connection,
+		     %% These are used when sending the safe time so that it is sure that
+		     %% no message was lost
+		     ok = safe_time_functions:put_in_meta_data(PrepTime, NewIdDict),
 		     NextState;
 		 %% If the transaction is not yet complete
 		 none -> State1
@@ -120,16 +122,16 @@ handle_command({hello}, _Sender, State) ->
     {reply, ok, State};
 
 %% Handle the ping request, managed by the timer (1s by default)
-handle_command(ping, _Sender, State#state{partition = Partition}) ->
+handle_command(ping, _Sender, State#state{partition = Partition, last_log_id = NewIdDict}) ->
     %% THERE IS A CONCURRENCY BUG HERE
     %% because could get the stable time larger than a transaction that is in
     %% your message queue to be sent
     %% can be fixed by not advancing stable time in ClocksiVnode until the "log_event"
     %% operation has completed here
-    ok = store_time_in_meta_data(get_stable_time(Partition), Partition),
+    ok = safe_time_functions:put_in_meta_data(get_stable_time(Partition), NewIdDict),
     case shouldPing() of
 	true ->
-	    {ok, Ids} = vectorclock:get_stable_external_ids(),
+	    {ok, Ids} = safe_time_functions:get_stable_external_ids(),
 	    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Ids),
 	    {noreply, set_timer(broadcast(State, PingTxn))};
 	false ->

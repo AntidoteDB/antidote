@@ -25,17 +25,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
-<<<<<<< HEAD
--export([is_greater_than/2,
-=======
 -export([
->>>>>>> merged-for-partial
          get_clock_of_dc/2,
 	 %% get_safe_time_dc/1,
          set_clock_of_dc/3,
          get_stable_snapshot/0,
-         get_stable_external_snapshot/0,
-<<<<<<< HEAD
 	 get_partition_snapshot/1,
          from_list/1,
 	 wait_for_clock/1,
@@ -47,8 +41,8 @@
 	 now_microsec/1,
 	 now_microsec_behind/4,
 	 new/0,
-	 keep_max/2,
-	 keep_min/2,
+	 max/1,
+	 min/1,
          eq/2,lt/2,gt/2,le/2,ge/2, strict_ge/2, strict_le/2]).
 
 -export_type([vectorclock/0]).
@@ -209,32 +203,10 @@ wait_helper(WaitForTime) ->
     end.
 
 
-
-new() ->
-    dict:new().
-
-=======
-         get_scalar_stable_time/0,
-         get_partition_snapshot/1,
-         from_list/1,
-         new/0,
-         eq/2,
-         lt/2,
-         gt/2,
-         le/2,
-         ge/2,
-         strict_ge/2,
-         strict_le/2,
-         max/1,
-         min/1]).
-
--export_type([vectorclock/0]).
-
 -spec new() -> vectorclock().
 new() ->
     dict:new().
 
->>>>>>> merged-for-partial
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
@@ -249,22 +221,6 @@ get_stable_snapshot() ->
 	    {ok, SS}
     end.
 
--spec get_stable_external_snapshot() -> {ok, snapshot_time()}.
-get_stable_external_ids() ->
-    case meta_data_sender:get_merged_data(stableIds) of
-	undefined ->
-	    %% The snapshot isn't realy yet, need to wait for startup
-	    timer:sleep(10),
-	    get_stable_snapshot();
-	SS ->
-	    {ok, SS}
-    end.
-
-
-
-<<<<<<< HEAD
-
-
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
     case meta_data_sender:get_meta_dict(stable,Partition) of
@@ -276,33 +232,12 @@ get_partition_snapshot(Partition) ->
 	    SS
     end.
 
-
-%% @doc Return true if Clock1 > Clock2
--spec is_greater_than(Clock1 :: vectorclock(), Clock2 :: vectorclock())
-                     -> boolean().
-is_greater_than(Clock1, Clock2) ->
-    dict:fold( fun(Dcid, Time2, Result) ->
-                       case dict:find(Dcid, Clock1) of
-                           {ok, Time1} ->
-                               case Time1 > Time2 of
-                                   true ->
-                                       Result;
-                                   false ->
-                                       false
-                               end;
-                           error -> %%Localclock has not observered some dcid
-                               false
-                       end
-               end,
-               true, Clock2).
-
 get_clock_of_dc(Dcid, VectorClock) ->
     case dict:find(Dcid, VectorClock) of
         {ok, Value} ->
             {ok, Value};
         error ->
             {ok, 0}
-=======
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} -> 
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
@@ -332,15 +267,14 @@ get_clock_of_dc(Dcid, VectorClock) ->
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
-  case meta_data_sender:get_meta_dict(stable,Partition) of
+    case meta_data_sender:get_meta_dict(stable,Partition) of
 	  undefined ->
-	    %% The partition isn't ready yet, wait for startup
-	    timer:sleep(10),
-	    get_partition_snapshot(Partition);
-	SS ->
-	    SS
->>>>>>> merged-for-partial
-    end.
+	  %% The partition isn't ready yet, wait for startup
+	  timer:sleep(10),
+	  get_partition_snapshot(Partition);
+      SS ->
+	  SS
+  end.
 
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.

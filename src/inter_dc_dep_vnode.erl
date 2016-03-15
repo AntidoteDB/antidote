@@ -102,7 +102,7 @@ process_queue(DCID, {State, Acc}) ->
 %% Store the heartbeat message.
 %% This is not a true transaction, so its dependencies are always satisfied.
 -spec try_store(#state{}, #interdc_txn{}) -> {#state{}, boolean()}.
-try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, operations = []}) ->
+try_store(State, #interdc_txn{dcid = DCID, timestamp = {Timestamp, _DCOpIds}, operations = []}) ->
   {update_clock(State, DCID, Timestamp), true};
 
 %% Store the normal transaction

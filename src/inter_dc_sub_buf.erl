@@ -84,7 +84,7 @@ process_queue(State = #state{queue = Queue, last_observed_opid = LastDict, pdcid
 		    process_queue(State#state{queue = queue:drop(Queue),
 					      last_observed_opid = dict:store(DestPartition, dict:store(FromPartition, Max, LastOpDict), LastDict)});
 		%% If the transaction has an old value, drop it.
-		lt ->
+		{lt, _} ->
 		    lager:warning("Dropping duplicate message"),
 		    process_queue(State#state{queue = queue:drop(Queue)});
 		%% If the transaction seems to come after an unknown transaction, ask the remote log
@@ -112,18 +112,27 @@ deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 -spec push(#interdc_txn{}, #state{}) -> #state{}.
 push(Txn, State) -> State#state{queue = queue:in(Txn, State#state.queue)}.
 
-check_missing(Txn = #interdc_txn{operations=[], dest_partition = DestPart, partition = FromPartition, opid_dict = OpIdDict}, LastOpDict) ->
+check_missing(Txn = #interdc_txn{operations=[], dcid = DCID, dest_partition = DestPart,
+				 partition = FromPartition, timestamp = {Timestamp, DCOpIds}}, LastOpDict) ->
     %% This is a heartbeat
-    TxnOpDict = case dict:find(DestPartition, OpIdDict) of
-		    {ok, Dict} ->
-			Dict;
-		    error ->
-			dict:new()
-		end,
-    dict:fold(fun(Partition, OpId, Acc) ->
-		      get_missing(OpId, Partition, DestPart, LastOpDict, Acc)
-	      end, [], TxnOpDict);
+    %% Need to check that we have received all messages from all sender partitions
+    %% with this node as the destination
+    %% The DCIds in the Txn is a dict with key {senderPartition, destinationPartition} and value Id
+    SenderPartitions = replication_check:get_dc_partitions_dict(DCID),
+    %% Heartbeat, be sure you have all messages from all partitions from the sending DC
+    dict:fold(fun(SenderPartition, _, Acc) ->
+		      LastOpId = dict:fetch({SenderPartition,DestPart},DCOpIds),
+		      case get_missing(LastOpId, Partition, DestPart, LastOpDict, Acc) of
+			  {lt, _} ->
+			      %% Could have already got more up to date messages than the heartbeat
+			      %% so just continue
+			      Acc;
+			  NewAcc ->
+			      NewAcc
+		      end
+	      end, [], SenderPartitions);
 check_missing(Txn = #interdc_txn{prev_log_opid = TxnLast, dest_partition = DestPart, partition = Partition}, LastOpDict) ->
+    %% Normal Txn, be sure you have all messages from the sending partition
     get_missing(TxnLast, Partition, DestPart, LastOpDict, []).
 
 get_missing(TxnLast, Partition, DestPart, LastOpDict, Acc) ->
@@ -139,12 +148,7 @@ get_missing(TxnLast, Partition, DestPart, LastOpDict, Acc) ->
 	gt ->
 	    [{gt, {Partition, DestPart}, LastOp + 1, TxnLast} | Acc];
 	lt ->
-	    case Acc of
-		[] ->
-		    lt;
-		_ ->
-		    Acc
-	    end
+	    {lt, Acc}
     end.
 
 cmp(A, B) when A > B -> gt;

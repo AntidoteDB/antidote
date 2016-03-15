@@ -100,7 +100,7 @@ get_dc_partition(Partition, MyPartitionId, DCID, DCPartDict) ->
 	    {ok, Val} ->
 		{Val, DCPartDict};
 	    error ->
-		Val1 = replication_check:get_dc_partitions(DCID),
+		Val1 = replication_check:get_dc_partitions_detailed(DCID),
 		{Val1, dict:store(DCID, Val1, DCPartDict)}
 	end,
     case dict:find(Partition, DestPartDict) of
@@ -117,6 +117,9 @@ ping(Partition, PrevLogIdDict, Ids) ->
     %% any msgs missing on any connection
     DCs = replication_check:get_all_dc_ids(),
     MyDCID = dc_utilities:get_my_dc_id(),
+    %% The merged Id dict stores the minimum timestamp that has been sent
+    %% by all partitions
+    Timestamp = dict:fetch(internal_time, Ids),
     PrevTotalId = case dict:find(total_count, PrevLogIdDict) of
 		      {ok, OpId} -> OpId;
 		      error -> 0
@@ -127,6 +130,7 @@ ping(Partition, PrevLogIdDict, Ids) ->
 				       {ok, DCDict} -> DCDict;
 				       error -> dict:new()
 				   end,
+		      DCMergedIds = dict:fetch(DCID, Ids),
 		      %% Timestamp = case dict:find(DCID, TimestampDict) of
 		      %% 		      {ok, Timestamp} -> Timestamp;
 		      %% 		      error -> 0
@@ -140,8 +144,7 @@ ping(Partition, PrevLogIdDict, Ids) ->
 			 %% prev_log_opid = ,
 			 pre_log_total_opid = PreTotalId,
 			 operations = [],
-			 snapshot = dict:new(),
-			 timestamp = Ids
+			 timestamp = {Timestamp, DCMergedIds}
 			}
 	      end, [], DCs).
 
