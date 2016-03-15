@@ -24,8 +24,11 @@
 -behaviour(gen_server).
 -include("antidote.hrl").
 
+-define(TABLE_NAME, a_stable_meta_data_table).
+
 %% API
 -export([
+	 sync_meta_data/0,
 	 broadcast_meta_data/2,
 	 read_meta_data/1]).
 	 
@@ -39,18 +42,76 @@
 	 terminate/2,
 	 code_change/3]).
 
--record(state, {table}).
-
-broadcast_meta_data(Key, Value) ->
-    .
-
-
-
+-record(state, {table, dets_table}).
 
 %%% --------------------------------------------------------------+
 
+-spec start_link() -> {ok,pid()} | ignore | {error,term()}.
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
 
 init([]) ->
-    
+    DetsTable = dets:open_file(?TABLE_NAME,[{type,set}]),
+    Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
+    Table = dets:to_ets(DetsTable,Table),
+    {ok, #state{table = Table, dets_table = DetsTable}}.
+
+read_meta_data(Key) ->
+    case ets:lookup(?TABLE_NAME, Key) of
+	[] ->
+	    error;
+	[{Key, Value}]->
+	    Value
+    end.
+
+sync_meta_data() ->
+    NodeList = dc_utilities:get_my_dc_nodes(),
+    ok = lists:foreach(fun(Node) ->
+			       ok = gen_server:call({global,generate_server_name(Node)}, {broadcast_meta_data})
+		       end, NodeList).
+
+broadcast_meta_data(Key, Value) ->
+    NodeList = dc_utilities:get_my_dc_nodes(),
+    ok = lists:foreach(fun(Node) ->
+			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, Key, Value})
+		       end, NodeList).
+
+%% -------------------------------------------------------------------+
+
+handle_cast(_Info, State) ->
+    {noreply, State}.
+
+handle_call({update_meta_data, Key,Value}, Sender, State = #state{table = Table, dets_table = DetsTable}) ->
+    true = ets:insert(Table, {Key,Value}),
+    ok = dets:insert(DetsTable, {Key,Value}),
+    {reply, ok, State};
+
+handle_call({sync_meta_data, NewList}, Sender, State = #state{table = Table, dets_table = DetsTable}) ->
+    true = ets:insert(Table, NewList),
+    ok = dets:insert(DetsTable, NewList),
+    {reply, ok, State};
+
+handle_call({broadcast_meta_data}, Sender, State = #state{table = Table}) ->
+    NodeList = dc_utilities:get_my_dc_nodes(),
+    List = ets:tab2list(Table),
+    ok = lists:foreach(fun(Node) ->
+			       ok = gen_server:call({global,generate_server_name(Node)}, {sync_meta_data, List})
+		       end, NodeList),
+    {reply, ok, State};
+
+handle_call(_Info, _From, State) ->
+    {reply, error, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @private
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+generate_server_name(Node) ->
+    list_to_atom("stable_meta_data" ++ atom_to_list(Node)).
