@@ -127,7 +127,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
-      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
+      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#operation_payload.key, Op) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.
 
@@ -203,11 +203,11 @@ get_partition_clock(State) ->
   vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
--spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#clocksi_payload{}).
+-spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#operation_payload{}).
 updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, snapshot = SnapshotTime}) ->
   lists:map(fun(#operation{payload = LogRecord}) ->
     {Key, Type, Op} = LogRecord#log_record.op_payload,
-    #clocksi_payload{
+    #operation_payload{
       key = Key,
       type = Type,
       op_param = Op,

@@ -84,15 +84,28 @@ start_vnode(I) ->
 %% @doc Sends a read request to the Node that is responsible for the Key
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
-read_data_item(Node, TxId, Key, Type, Updates) ->
-    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId) of
-        {ok, Snapshot} ->
-            Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-            Snapshot2 = clocksi_materializer:materialize_eager
-            (Type, Snapshot, Updates2),
-            {ok, Snapshot2};
-        {error, Reason} ->
-            {error, Reason}
+read_data_item(Node, Transaction, Key, Type, Updates) ->
+    case application:get_env(antidote, txn_prot) of
+        {ok, nmsi} ->
+            case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
+                {ok, {Snapshot, Version, Dep, ReadTime}} ->
+                    Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+                    Snapshot2 = clocksi_materializer:materialize_eager
+                    (Type, Snapshot, Updates2),
+                    {ok, {Snapshot2, Version, Dep, ReadTime}};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        _ ->
+            case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
+                {ok, Snapshot} ->
+                    Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+                    Snapshot2 = clocksi_materializer:materialize_eager
+                    (Type, Snapshot, Updates2),
+                    {ok, Snapshot2};
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
@@ -145,16 +158,16 @@ get_active_txns_internal(TableName) ->
                                 _ ->
                                     List ++ Acc
                             end
-                        end,
+                                    end,
                             [], [{Key1, List1} | Rest1])
                 end,
     {ok, ActiveTxs}.
 
 get_min_prepared(Partition) ->
     riak_core_vnode_master:sync_command({Partition, node()},
-					get_min_prepared,
-					clocksi_vnode_master,
-					infinity).
+        get_min_prepared,
+        clocksi_vnode_master,
+        infinity).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, TxId) ->
@@ -163,7 +176,7 @@ prepare(ListofNodes, TxId) ->
             {prepare, TxId, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+                end, ok, ListofNodes).
 
 
 %% @doc Sends prepare+commit to a single partition
@@ -189,7 +202,7 @@ commit(ListofNodes, TxId, CommitTime) ->
             {commit, TxId, CommitTime, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+                end, ok, ListofNodes).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
@@ -198,7 +211,7 @@ abort(ListofNodes, TxId) ->
             {abort, TxId, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+                end, ok, ListofNodes).
 
 
 get_cache_name(Partition, Base) ->
@@ -247,20 +260,20 @@ check_table_ready([{Partition, Node} | Rest]) ->
 
 open_table(Partition) ->
     case ets:info(get_cache_name(Partition, prepared)) of
-	undefined ->
-	    ets:new(get_cache_name(Partition, prepared),
-		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
-	_ ->
-	    %% Other vnode hasn't finished closing tables
-	    lager:info("Unable to open ets table in clocksi vnode, retrying"),
-	    timer:sleep(100),
-	    try
-		ets:delete(get_cache_name(Partition, prepared))
-	    catch
-		_:_Reason->
-		    ok
-	    end,
-	    open_table(Partition)
+        undefined ->
+            ets:new(get_cache_name(Partition, prepared),
+                [set, protected, named_table, ?TABLE_CONCURRENCY]);
+        _ ->
+            %% Other vnode hasn't finished closing tables
+            lager:info("Unable to open ets table in clocksi vnode, retrying"),
+            timer:sleep(100),
+            try
+                ets:delete(get_cache_name(Partition, prepared))
+            catch
+                _:_Reason ->
+                    ok
+            end,
+            open_table(Partition)
     end.
 
 loop_until_started(_Partition, 0) ->
@@ -270,7 +283,7 @@ loop_until_started(Partition, Num) ->
     loop_until_started(Partition, Ret).
 
 handle_command({hello}, _Sender, State) ->
-  {reply, ok, State};
+    {reply, ok, State};
 
 handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition}) ->
     Result = case ets:info(get_cache_name(Partition, prepared)) of
@@ -282,7 +295,7 @@ handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition
     {reply, Result, SD0};
 
 handle_command(get_min_prepared, _Sender,
-	       State = #state{prepared_dict = PreparedDict}) ->
+  State = #state{prepared_dict = PreparedDict}) ->
     {reply, get_min_prep(PreparedDict), State};
 
 handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
@@ -292,11 +305,11 @@ handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partitio
     {reply, Result, SD0};
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
-    State = #state{partition = _Partition,
-        committed_tx = CommittedTx,
-        prepared_tx = PreparedTx,
-	prepared_dict = PreparedDict
-    }) ->
+  State = #state{partition = _Partition,
+      committed_tx = CommittedTx,
+      prepared_tx = PreparedTx,
+      prepared_dict = PreparedDict
+  }) ->
     %lager:info("Trying to prepare ~w,WS ~w", [Transaction, WriteSet]),
     PrepareTime = now_microsec(dc_utilities:now()),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
@@ -315,11 +328,11 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
 %%      thus this function performs both the prepare and commit for the
 %%      coordinator that sent the request.
 handle_command({single_commit, Transaction, WriteSet}, _Sender,
-    State = #state{partition = _Partition,
-        committed_tx = CommittedTx,
-        prepared_tx = PreparedTx,
-	prepared_dict = PreparedDict
-    }) ->
+  State = #state{partition = _Partition,
+      committed_tx = CommittedTx,
+      prepared_tx = PreparedTx,
+      prepared_dict = PreparedDict
+  }) ->
     PrepareTime = now_microsec(dc_utilities:now()),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
@@ -349,9 +362,9 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
 %% Just a workaround, need to delete downstream_generator_vnode
 %% eventually.
 handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
-    #state{partition = _Partition,
-        committed_tx = CommittedTx
-    } = State) ->
+  #state{partition = _Partition,
+      committed_tx = CommittedTx
+  } = State) ->
     Result = commit(Transaction, TxCommitTime, Updates, CommittedTx, State),
     case Result of
         {ok, committed, NewPreparedDict} ->
@@ -365,28 +378,28 @@ handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
     end;
 
 handle_command({abort, Transaction, Updates}, _Sender,
-    #state{partition = _Partition} = State) ->
+  #state{partition = _Partition} = State) ->
     TxId = Transaction#transaction.txn_id,
     case Updates of
         [{Key, _Type, {_Op, _Actor}} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
-            Result = logging_vnode:append(Node,LogId, LogRecord),
+            Result = logging_vnode:append(Node, LogId, LogRecord),
             %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
-				  {ok, _} ->
-				      clean_and_notify(TxId, Updates, State);
-				  {error, timeout} ->
-				      clean_and_notify(TxId, Updates, State)
-			      end,
+                                  {ok, _} ->
+                                      clean_and_notify(TxId, Updates, State);
+                                  {error, timeout} ->
+                                      clean_and_notify(TxId, Updates, State)
+                              end,
             {reply, ack_abort, State#state{prepared_dict = NewPreparedDict}};
         _ ->
             {reply, {error, no_tx_record}, State}
     end;
 
 handle_command({get_active_txns}, _Sender,
-    #state{partition = Partition} = State) ->
+  #state{partition = Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
 
 handle_command(_Message, _Sender, State) ->
@@ -445,7 +458,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
-		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
+                    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
                     LogRecord = #log_record{tx_id = TxId,
                         op_type = prepare,
                         op_payload = NewPrepare},
@@ -493,13 +506,13 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
             Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
-	    case application:get_env(antidote,txn_cert) of
-		{ok, true} ->
-		    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
-				  Updates);
-		_ ->
-		    ok
-	    end,
+            case application:get_env(antidote, txn_cert) of
+                {ok, true} ->
+                    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
+                        Updates);
+                _ ->
+                    ok
+            end,
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
@@ -545,10 +558,10 @@ clean_and_notify(TxId, Updates, #state{
     prepared_tx = PreparedTx, prepared_dict = PreparedDict}) ->
     ok = clean_prepared(PreparedTx, Updates, TxId),
     case get_time(PreparedDict, TxId) of
-	error ->
-	    PreparedDict;
-	{ok, Time} ->
-	    orddict:erase(Time, PreparedDict)
+        error ->
+            PreparedDict;
+        {ok, Time} ->
+            orddict:erase(Time, PreparedDict)
     end.
 
 clean_prepared(_PreparedTx, [], _TxId) ->
@@ -575,10 +588,10 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
     case application:get_env(antidote, txn_cert) of
-        {ok, true} -> 
-        %io:format("AAAAH"),
-        certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
-        _  -> true
+        {ok, true} ->
+            %io:format("AAAAH"),
+            certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
+        _ -> true
     end.
 
 %% @doc Performs a certification check when a transaction wants to move
@@ -620,22 +633,22 @@ check_prepared(TxId, PreparedTx, Key) ->
     end.
 
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
-    Transaction :: tx(), TxCommitTime :: {term(), term()}) ->
+  Transaction :: tx(), TxCommitTime :: {term(), term()}) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_utilities:get_my_dc_id(),
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun({Key, Type, Op}, AccIn) ->
-			     CommittedDownstreamOp =
-				 #clocksi_payload{
-				    key = Key,
-				    type = Type,
-				    op_param = Op,
-				    snapshot_time = Transaction#transaction.vec_snapshot_time,
-				    commit_time = {DcId, TxCommitTime},
-				    txid = Transaction#transaction.txn_id},
-			     [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
-		     end,
+        CommittedDownstreamOp =
+            #operation_payload{
+                key = Key,
+                type = Type,
+                op_param = Op,
+                snapshot_time = Transaction#transaction.vec_snapshot_time,
+                commit_time = {DcId, TxCommitTime},
+                txid = Transaction#transaction.txn_id},
+        [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
+                     end,
     Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
     case Failures of
@@ -648,33 +661,33 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
 %% Internal functions
 reverse_and_filter_updates_per_key(Updates, Key) ->
     lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
-			case KeyPrime == Key of
-			    true ->
-				[Op | Acc];
-			    false ->
-				Acc
-			end
-		end, [], Updates).
+        case KeyPrime == Key of
+            true ->
+                [Op | Acc];
+            false ->
+                Acc
+        end
+                end, [], Updates).
 
 
 -spec get_min_prep(list()) -> {ok, non_neg_integer()}.
 get_min_prep(OrdDict) ->
     case OrdDict of
-	[] ->
-	    {ok, clocksi_vnode:now_microsec(dc_utilities:now())};
-	[{Time,_TxId}|_] ->
-	    {ok, Time}
+        [] ->
+            {ok, clocksi_vnode:now_microsec(dc_utilities:now())};
+        [{Time, _TxId} | _] ->
+            {ok, Time}
     end.
 
--spec get_time(list(),txid()) -> {ok, non_neg_integer()} | error.
-get_time([],_TxIdCheck) ->
+-spec get_time(list(), txid()) -> {ok, non_neg_integer()} | error.
+get_time([], _TxIdCheck) ->
     error;
-get_time([{Time,TxId} | Rest], TxIdCheck) ->
+get_time([{Time, TxId} | Rest], TxIdCheck) ->
     case TxId == TxIdCheck of
-	true ->
-	    {ok, Time};
-	false ->
-	    get_time(Rest, TxIdCheck)
+        true ->
+            {ok, Time};
+        false ->
+            get_time(Rest, TxIdCheck)
     end.
 
 -ifdef(TEST).

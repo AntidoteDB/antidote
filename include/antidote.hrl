@@ -3,7 +3,7 @@
 -define(LOGGING_MASTER, logging_vnode_master).
 -define(CLOCKSI_MASTER, clocksi_vnode_master).
 -define(CLOCKSI_GENERATOR_MASTER,
-        clocksi_downstream_generator_vnode_master).
+    clocksi_downstream_generator_vnode_master).
 -define(CLOCKSI, clocksi).
 -define(REPMASTER, antidote_rep_vnode_master).
 -define(N, 1).
@@ -18,7 +18,7 @@
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption
 %% is there will be several more reads than writes
--define(TABLE_CONCURRENCY, {read_concurrency,true}).
+-define(TABLE_CONCURRENCY, {read_concurrency, true}).
 %% The read concurrency is the maximum number of concurrent
 %% readers per vnode.  This is so shared memory can be used
 %% in the case of keys that are read frequently.  There is
@@ -35,7 +35,7 @@
 %% This can be used for testing, so that transactions start with
 %% old snapshots to avoid clock-skew.
 %% This can break the tests is not set to 0
--define(OLD_SS_MICROSEC,0).
+-define(OLD_SS_MICROSEC, 0).
 %% The number of supervisors that are responsible for
 %% supervising transaction coorinator fsms
 -define(NUM_SUP, 100).
@@ -63,7 +63,7 @@
 %% which is unsafe for clock-si
 -define(SAFE_TIME, true).
 
--record (payload, {key:: key(), type :: type(), op_param, actor}).
+-record(payload, {key :: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
@@ -73,8 +73,8 @@
 
 %% The way records are stored in the log.
 -record(log_record, {tx_id :: txid(),
-                     op_type:: update | prepare | commit | abort | noop,
-                     op_payload}).
+    op_type :: update | prepare | commit | abort | noop,
+    op_payload}).
 
 %% Clock SI
 
@@ -89,39 +89,36 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time :: snapshot_time(), 
-                server_pid :: pid()}).
--record(clocksi_payload, {key :: key(),
+-record(tx_id, {snapshot_time :: snapshot_time(),
+    server_pid :: pid()}).
+-record(operation_payload, {key :: key(),
     type :: type(),
     op_param :: op(),
     snapshot_time :: snapshot_time(),
-    commit_time :: commit_time(),
-    txid :: txid()}).
--record(clock_nmsi_payload, {key :: key(),
-    type :: type(),
-    op_param :: op(),
     dep_time :: vectorclock(),
     commit_time :: commit_time(),
     txid :: txid()}).
 -record(transaction, {snapshot_time :: snapshot_time(),
-                      server_pid :: pid(),
-                      vec_snapshot_time,
-                      txn_id :: txid()}).
-
-
--record(nmsi_single_dc_read_metadata, {
-    dep_from_read_max :: clock_value() | undefined,
-    ver_from_read_max :: clock_value() | undefined
-}).
--record(nmsi_transaction, {snapshot_time :: snapshot_time(),
+    transactional_protocol :: atom(),
     server_pid :: pid(),
-    nmsi_single_dc_read_metadata :: nmsi_single_dc_read_metadata(),
-    txn_id :: txid()}).
+    vec_snapshot_time,
+    txn_id :: txid(),
+    nmsi_read_metadata :: nmsi_read_metadata()}).
+
+
+-record(nmsi_read_metadata, {
+    dep_upbound :: clock_value() | undefined,
+    commit_time_lowbound :: clock_value() | undefined
+}).
+%%-record(nmsi_transaction, {snapshot_time :: snapshot_time(),
+%%    server_pid :: pid(),
+%%    nmsi_read_metadata :: nmsi_read_metadata(),
+%%    txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
 -type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
 -type key() :: term().
--type op()  :: {term(), term()}.
+-type op() :: {term(), term()}.
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
@@ -132,30 +129,31 @@
 -type log() :: term().
 -type op_id() :: {non_neg_integer(), node()}.
 -type payload() :: term().
--type partition_id()  :: non_neg_integer().
+-type partition_id() :: non_neg_integer().
 -type log_id() :: [partition_id()].
 -type type() :: atom().
 -type bucket() :: term().
 -type snapshot() :: term().
--type snapshot_time() ::  vectorclock:vectorclock().
--type commit_time() ::  {dcid(), non_neg_integer()}.
+-type snapshot_time() :: vectorclock:vectorclock().
+-type commit_time() :: {dcid(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
--type clocksi_payload() :: #clocksi_payload{}.
+-type clocksi_payload() :: #operation_payload{}.
 -type clock_nmsi_payload() :: #clock_nmsi_payload{}.
 -type dcid() :: term().
 -type tx() :: #transaction{}.
--type nmsi_tx() :: #nmsi_transaction{}.
+%-type nmsi_tx() :: #nmsi_transaction{}.
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
+
 %%NMSI
 -type clock_value() :: non_neg_integer().
 -type key_access_time_tuple() :: {clock_value(), boolean()}.
--type nmsi_single_dc_read_metadata()::#nmsi_single_dc_read_metadata{}.
+-type nmsi_read_metadata() :: #nmsi_read_metadata{}.
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
-              log/0, op_id/0, payload/0, operation/0, partition_id/0,
-              type/0, snapshot/0, txid/0, tx/0,
-              bucket/0]).
+    log/0, op_id/0, payload/0, operation/0, partition_id/0,
+    type/0, snapshot/0, txid/0, tx/0,
+    bucket/0]).
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:
@@ -184,10 +182,10 @@
     read_set :: list(),
     is_static :: boolean(),
     full_commit :: boolean(),
-    stay_alive :: boolean()}).
+    stay_alive :: boolean(),
     %% The following are needed by the NMSI protocol
     %% Should I create a new tx_coord_record?
-    clock_from_node_min :: clock_value() | undefined,
+    version_min :: clock_value() | undefined,
     keys_access_time :: dict()
-    }).
+}).
 

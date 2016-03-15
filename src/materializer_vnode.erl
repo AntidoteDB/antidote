@@ -48,10 +48,11 @@
 -export([start_vnode/1,
 	 check_tables_ready/0,
          read/7,
+    read_causal/8,
 	 get_cache_name/2,
 	 store_ss/3,
          update/2,
-	 belongs_to_snapshot_op/3]).
+	 op_not_already_in_snapshot/3]).
 
 %% Callbacks
 -export([init/1,
@@ -80,16 +81,32 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
 %%      are in shared memory, allowing concurrent reads.
--spec read(key(), type(), snapshot_time(), txid(),cache_id(), cache_id(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
-read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition) ->
+-spec read(key(), type(), transaction(),cache_id(), cache_id(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
+read(Key, Type, Transaction,OpsCache,SnapshotCache,Partition) ->
     case ets:info(OpsCache) of
-	undefined ->
-	    riak_core_vnode_master:sync_command({Partition,node()},
-						{read,Key,Type,SnapshotTime,TxId},
-						materializer_vnode_master,
-						infinity);
-	_ ->
-	    internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache)
+        undefined ->
+            riak_core_vnode_master:sync_command({Partition,node()},
+                {read,Key,Type,Transaction},
+                materializer_vnode_master,
+                infinity);
+        _ ->
+            internal_read(Key, Type, Transaction, OpsCache, SnapshotCache)
+    end.
+
+
+%% @doc Read state of key at given snapshot time, this does not touch the vnode process
+%%      directly, instead it just reads from the operations and snapshot tables that
+%%      are in shared memory, allowing concurrent reads.
+-spec read_causal(key(), type(), snapshot_time(), txid(),cache_id(), cache_id(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
+read_causal(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition) ->
+    case ets:info(OpsCache) of
+        undefined ->
+            riak_core_vnode_master:sync_command({Partition,node()},
+                {read,Key,Type,SnapshotTime,TxId},
+                materializer_vnode_master,
+                infinity);
+        _ ->
+            internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache)
     end.
 
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
@@ -107,11 +124,11 @@ update(Key, DownstreamOp) ->
 
 %%@doc write snapshot to cache for future read, snapshots are stored
 %%     one at a time into the ets table
--spec store_ss(key(), snapshot(), snapshot_time()) -> ok.
-store_ss(Key, Snapshot, CommitTime) ->
+-spec store_ss(key(), snapshot(), snapshot_time() | {snapshot_time(), snapshot_time()}) -> ok.
+store_ss(Key, Snapshot, Params) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    riak_core_vnode_master:command(IndexNode, {store_ss,Key, Snapshot, CommitTime},
+    riak_core_vnode_master:command(IndexNode, {store_ss,Key, Snapshot, Params},
                                         materializer_vnode_master).
 
 init([Partition]) ->
@@ -187,9 +204,9 @@ handle_command({update, Key, DownstreamOp}, _Sender,
     {reply, ok, State};
 
 
-handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender,
+handle_command({store_ss, Key, Snapshot, Params}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
-    internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,false),
+    internal_store_ss(Key,Snapshot,Params,OpsCache,SnapshotCache,false),
     {noreply, State};
 
 
@@ -254,99 +271,158 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_store_ss(key(), snapshot(), snapshot_time(), cache_id(), cache_id(),boolean()) -> true.
-internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
+-spec internal_store_ss(key(), snapshot(), snapshot_time() | {snapshot_time(), snapshot_time()}, cache_id(), cache_id(), boolean()) -> true.
+internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, ShouldGc) ->
+    NewSnapshotParams = case SnapshotParams of
+                            empty ->
+                                case application:get_env(antidote, txn_prot) of
+                                    {ok, nmsi} ->
+                                        {vectorclock:new(), vectorclock:new()};
+                                    _ ->
+                                        {vectorclock:new()}
+                                end;
+                            _ ->
+                                SnapshotParams
+                        end,
+
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
-		       [] ->
-			   vector_orddict:new();
-		       [{_, SnapshotDictA}] ->
-			   SnapshotDictA
-		   end,
-    SnapshotDict1 = vector_orddict:insert_bigger(CommitTime,Snapshot, SnapshotDict),
-    snapshot_insert_gc(Key,SnapshotDict1, SnapshotCache, OpsCache,ShouldGc).
+                       [] ->
+                           vector_orddict:new();
+                       [{_, SnapshotDictA}] ->
+                           SnapshotDictA
+                   end,
+    SnapshotDict1 = vector_orddict:insert_bigger(NewSnapshotParams, Snapshot, SnapshotDict),
+    snapshot_insert_gc(Key, SnapshotDict1, SnapshotCache, OpsCache, ShouldGc).
+
+
+%% @doc This fuction returns the latest compatible snapshot
+%% stored in the SnapshotDict, given a transactional protocol
+get_latest_compatible_snapshot(Transaction, SnapshotDict) ->
+    case application:get_env(antidote, txn_prot) of
+        {ok, nmsi} ->
+            vector_orddict:get_causally_compatible(Transaction, SnapshotDict);
+        _ ->
+            SnapshotTime = Transaction#transaction.vec_snapshot_time,
+            vector_orddict:get_smaller(SnapshotTime, SnapshotDict)
+    end.
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(key(), type(), snapshot_time(), txid() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
-internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
-    internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,false).
+-spec internal_read(key(), type(), tx() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
+internal_read(Key, Type, Transaction, OpsCache, SnapshotCache) ->
+    internal_read(Key, Type, Transaction, OpsCache, SnapshotCache,false).
 
-internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc) ->
+internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
+    TxId = Transaction#transaction.txn_id,
+
     Result = case ets:lookup(SnapshotCache, Key) of
-		 [] ->
-		     %% First time reading this key, store an empty snapshot in the cache
-		     BlankSS = {0,clocksi_materializer:new(Type)},
-		     case TxId of
-			 ignore ->
-			     internal_store_ss(Key,BlankSS,vectorclock:new(),OpsCache,SnapshotCache,false);
-			 _ ->
-			     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
-		     end,
-		     {BlankSS,ignore,true};
-		 [{_, SnapshotDict}] ->
-		     case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
-			 {undefined, _IsF} ->
-			     {error, no_snapshot};
-			 {{SCT, LS},IsF}->
-			     {LS,SCT,IsF}
-		     end
-	     end,
-    {Length,Ops,{LastOp,LatestSnapshot},SnapshotCommitTime,IsFirst} =
-	case Result of
-	    {error, no_snapshot} ->
-		LogId = log_utilities:get_logid_from_key(Key),
-		[Node] = log_utilities:get_preflist_from_key(Key),
-		Res = logging_vnode:get(Node, {get, LogId, MinSnapshotTime, Type, Key}),
-		Res;
-	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
-		case ets:lookup(OpsCache, Key) of
-		    [] ->
-			{0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
-		    [Tuple] ->
-			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
-			{Length1, AllOps, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
-		end
-	end,
+                 [] ->
+                     %% First time reading this key, store an empty snapshot in the cache
+                     BlankSS = {0, clocksi_materializer:new(Type)},
+                     case TxId of
+                         ignore ->
+                             internal_store_ss(Key, BlankSS, empty, OpsCache, SnapshotCache, false);
+                         _ ->
+                             materializer_vnode:store_ss(Key, BlankSS, empty)
+                     end,
+                     {BlankSS, ignore, true};
+                 [{_, SnapshotDict}] ->
+                     %% This following function helps making the code more modular
+                     %% when implementing different protocols
+                     case get_latest_compatible_snapshot(Transaction, SnapshotDict) of
+                         {undefined, _IsF} ->
+                             {error, no_snapshot};
+                         {{CommitParams, LatestCompatSnapshot}, IsF} ->
+                             {LatestCompatSnapshot, CommitParams, IsF}
+                     end
+             end,
+    {Length, Ops, {LastOp, CompatSnapshot}, CommitParams, IsFirst} =
+        case Result of
+            {error, no_snapshot} ->
+                LogId = log_utilities:get_logid_from_key(Key),
+                [Node] = log_utilities:get_preflist_from_key(Key),
+                %% Todo: Implement the following function for a causal snapshot
+                logging_vnode:get(Node, {get, LogId, Transaction, Type, Key});
+            {LatestCompatSnapshot, CommitParams, IsF} ->
+                case ets:lookup(OpsCache, Key) of
+                    [] ->
+                        {0, [],  LatestCompatSnapshot, CommitParams, IsF};
+                    [Tuple] ->
+                        {Key, Length1, _OpId, _ListLen, AllOps} = tuple_to_key(Tuple),
+                        {Length1, AllOps, LatestCompatSnapshot, CommitParams, IsF}
+                end
+        end,
     case Length of
-	0 ->
-	    {ok, LatestSnapshot};
-	_Len ->
-	    case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
-		{ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
-		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-		    %% for the given snapshot_time
-		    %% But is the snapshot not safe?
-		    case CommitTime of
-			ignore ->
-			    {ok, Snapshot};
-			_ ->
-			    case (NewSS and IsFirst) orelse ShouldGc of
-				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
-				%% previous snapshot
-				true ->
-				    case TxId of
-					ignore ->
-					    internal_store_ss(Key,{NewLastOp,Snapshot},CommitTime,OpsCache,SnapshotCache,ShouldGc);
-					_ ->
-					    materializer_vnode:store_ss(Key,{NewLastOp,Snapshot},CommitTime)
-				    end;
-				_ ->
-				    ok
-			    end,
-			    {ok, Snapshot}
-		    end;
-		{error, Reason} ->
-		    {error, Reason}
-	    end
+        0 ->
+            {ok, {CompatSnapshot, CommitParams}};
+        _ ->
+            case application:get_env(antidote, txn_prot) of
+                {ok, nmsi} ->
+                    case causal_materializer:materialize(Type, CompatSnapshot, LastOp, CommitParams, Transaction, Ops, TxId) of
+                        {ok, Snapshot, NewLastOp, NewCommitParams, NewSS} ->
+                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+                            %% for the given snapshot_time
+                            %% But is the snapshot not safe?
+                            case CommitTime of
+                                ignore ->
+                                    {ok, Snapshot};
+                                _ ->
+                                    case (NewSS and IsFirst) orelse ShouldGc of
+                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
+                                        %% previous snapshot
+                                        true ->
+                                            case TxId of
+                                                ignore ->
+                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
+                                                _ ->
+                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
+                                            end;
+                                        _ ->
+                                            ok
+                                    end,
+                                    {ok, Snapshot}
+                            end;
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
+                _ ->
+                    MinSnapshotTime = Transaction#transaction.vec_snapshot_time,
+                    case clocksi_materializer:materialize(Type, Snapshot, LastOp, CommitParams, MinSnapshotTime, Ops, TxId) of
+                        {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
+                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+                            %% for the given snapshot_time
+                            %% But is the snapshot not safe?
+                            case CommitTime of
+                                ignore ->
+                                    {ok, Snapshot};
+                                _ ->
+                                    case (NewSS and IsFirst) orelse ShouldGc of
+                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
+                                        %% previous snapshot
+                                        true ->
+                                            case TxId of
+                                                ignore ->
+                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
+                                                _ ->
+                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
+                                            end;
+                                        _ ->
+                                            ok
+                                    end,
+                                    {ok, Snapshot}
+                            end;
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
+            end
     end.
 
-%% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
--spec belongs_to_snapshot_op(snapshot_time() | ignore, commit_time(), snapshot_time()) -> boolean().
-belongs_to_snapshot_op(ignore, {_OpDc,_OpCommitTime}, _OpSs) ->
+-spec op_not_already_in_snapshot(snapshot_time() | ignore, commit_time(), snapshot_time()) -> boolean().
+op_not_already_in_snapshot(ignore, _, _) ->
     true;
-belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
+op_not_already_in_snapshot(SSTime, {OpDc,OpCommitTime}, OpSs) ->
     OpSs1 = dict:store(OpDc,OpCommitTime,OpSs),
     not vectorclock:le(OpSs1,SSTime).
 
@@ -354,53 +430,67 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
                          cache_id(),cache_id(),boolean()) -> true.
-snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
+snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc) ->
     %% Should check op size here also, when run from op gc
-    case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) orelse ShouldGc of
+    case ((vector_orddict:size(SnapshotDict)) >= ?SNAPSHOT_THRESHOLD) orelse ShouldGc of
         true ->
-	    %% snapshots are no longer totally ordered
-	    PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
-            FirstOp=vector_orddict:last(PrunedSnapshots),
-            {CT, _S} = FirstOp,
-	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
-					     vectorclock:min([CT1, Acc])
-				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
-	    {Key,Length,OpId,ListLen,OpsDict} = case ets:lookup(OpsCache, Key) of
-						    [] ->
-							{Key, 0, 0, 0, []};
-						    [Tuple] ->
-							tuple_to_key(Tuple)
-						end,
-            {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
+            %% snapshots are no longer totally ordered
+            PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
+            FirstOp = vector_orddict:last(PrunedSnapshots),
+
+            case application:get_env(antidote, txn_prot) of
+                {ok, nmsi} ->
+                    %% here we must consider that the operation's commit
+                    %% time is a tuple {CommitTime, DependencyTime}
+                    %% instead of just CommitTime in Cure.
+                    {{CT, _DT}, _S} = FirstOp,
+                    CommitTime = lists:foldl(fun({{CT1, _DT1}, _S1}, Acc) ->
+                        vectorclock:min([CT1, Acc])
+                                             end, CT, vector_orddict:to_list(PrunedSnapshots));
+
+                _ ->
+                    {CT, _S} = FirstOp,
+                    CommitTime = lists:foldl(fun({CT1, _ST}, Acc) ->
+                        vectorclock:min([CT1, Acc])
+                                             end, CT, vector_orddict:to_list(PrunedSnapshots))
+
+            end,
+            {Key, Length, OpId, ListLen, OpsDict} = case ets:lookup(OpsCache, Key) of
+                                                        [] ->
+                                                            {Key, 0, 0, 0, []};
+                                                        [Tuple] ->
+                                                            tuple_to_key(Tuple)
+                                                    end,
+            {NewLength, PrunedOps} = prune_ops({Length, OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-	    %% Check if the pruned ops are lager or smaller than the previous list size
-	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
-	    %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
-	    NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
-			     true ->
-				 ListLen * 2;
-			     false ->
-				 HalfListLen = ListLen div 2,
-				 case HalfListLen =< ?OPS_THRESHOLD of
-				     true ->
-					 ?OPS_THRESHOLD;
-				     false ->
-					 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
-					     true ->
-						 HalfListLen;
-					     false ->
-						 ListLen
-					 end
-				 end
-			 end,
-	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
-	false ->
+            %% Check if the pruned ops are lager or smaller than the previous list size
+            %% if so create a larger or smaller list (by dividing or multiplying by 2)
+            %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
+            NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
+                             true ->
+                                 ListLen * 2;
+                             false ->
+                                 HalfListLen = ListLen div 2,
+                                 case HalfListLen =< ?OPS_THRESHOLD of
+                                     true ->
+                                         ?OPS_THRESHOLD;
+                                     false ->
+                                         case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
+                                             true ->
+                                                 HalfListLen;
+                                             false ->
+                                                 ListLen
+                                         end
+                                 end
+                         end,
+            true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP + NewListLen, 0, [{1, Key}, {2, {NewLength, NewListLen}}, {3, OpId} | PrunedOps]));
+        false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops({non_neg_integer(),[any(),...]}, snapshot_time())-> {non_neg_integer(),[any(),...]}.
-prune_ops({_Len,OpsDict}, Threshold)->
+-spec prune_ops({non_neg_integer(), [any(), ...]}, snapshot_time()) -> {non_neg_integer(), [any(), ...]}.
+prune_ops({_Len, OpsDict}, Threshold) ->
 %% should write custom function for this in the vector_orddict
 %% or have to just traverse the entire list?
 %% since the list is ordered, can just stop when all values of
@@ -408,31 +498,31 @@ prune_ops({_Len,OpsDict}, Threshold)->
 %% So can add a stop function to ordered_filter
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
-    Res = reverse_and_filter(fun({_OpId,Op}) ->
-				     OpCommitTime=Op#clocksi_payload.commit_time,
-				     (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
-			     end, OpsDict, ?FIRST_OP, []),
+    Res = reverse_and_filter(fun({_OpId, Op}) ->
+        OpCommitTime = Op#operation_payload.commit_time,
+        (op_not_already_in_snapshot(Threshold, OpCommitTime, Op#operation_payload.snapshot_time))
+                             end, OpsDict, ?FIRST_OP, []),
     case Res of
-	{_,[]} ->
-	    [First|_Rest] = OpsDict,
-	    {1,[{?FIRST_OP,First}]};
-	_ ->
-	    Res
+        {_, []} ->
+            [First | _Rest] = OpsDict,
+            {1, [{?FIRST_OP, First}]};
+        _ ->
+            Res
     end.
 
 %% This is an internal function used to convert the tuple stored in ets
 %% to a tuple and list usable by the materializer
--spec tuple_to_key(tuple()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),list()}.
+-spec tuple_to_key(tuple()) -> {any(), integer(), non_neg_integer(), non_neg_integer(), list()}.
 tuple_to_key(Tuple) ->
     Key = element(1, Tuple),
-    {Length,ListLen} = element(2, Tuple),
+    {Length, ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
-    Ops = tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]),
-    {Key,Length,OpId,ListLen,Ops}.
-tuple_to_key_int(Next,Next,_Tuple,Acc) ->
+    Ops = tuple_to_key_int(?FIRST_OP, Length + ?FIRST_OP, Tuple, []),
+    {Key, Length, OpId, ListLen, Ops}.
+tuple_to_key_int(Next, Next, _Tuple, Acc) ->
     Acc;
-tuple_to_key_int(Next,Last,Tuple,Acc) ->
-    tuple_to_key_int(Next+1,Last,Tuple,[element(Next,Tuple)|Acc]).
+tuple_to_key_int(Next, Last, Tuple, Acc) ->
+    tuple_to_key_int(Next + 1, Last, Tuple, [element(Next, Tuple) | Acc]).
 
 %% This is an internal function used to filter ops and reverse the list
 %% It returns a tuple where the first element is the lenght of the list returned
@@ -468,8 +558,8 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
     case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
-            Type=DownstreamOp#clocksi_payload.type,
-            SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
+            Type=DownstreamOp#operation_payload.type,
+            SnapshotTime=DownstreamOp#operation_payload.snapshot_time,
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache, true),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    {Length1,ListLen1} = ets:lookup_element(OpsCache, Key, 2),
@@ -496,13 +586,13 @@ belongs_to_snapshot_test()->
 	CommitTime4b= 10,
 
 	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-	?assertEqual(true, belongs_to_snapshot_op(
+	?assertEqual(true, op_not_already_in_snapshot(
 			     vectorclock:from_list([{1, CommitTime1a},{2,CommitTime1b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-	?assertEqual(true, belongs_to_snapshot_op(
+	?assertEqual(true, op_not_already_in_snapshot(
 			     vectorclock:from_list([{1, CommitTime2a},{2,CommitTime2b}]), {2, SnapshotClockDC2}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot_op(
+	?assertEqual(false, op_not_already_in_snapshot(
 			      vectorclock:from_list([{1, CommitTime3a},{2,CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot_op(
+	?assertEqual(false, op_not_already_in_snapshot(
 			      vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 
 %% @doc This tests to make sure when garbage collection happens, no updates are lost
@@ -603,7 +693,7 @@ generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
     DC1 = 1,
 
     {ok,Op1} = Type:update(increment, Name, Prev),
-    #clocksi_payload{key = Key,
+    #operation_payload{key = Key,
 		     type = Type,
 		     op_param = {merge, Op1},
 		     snapshot_time = vectorclock:from_list([{DC1,SnapshotTime}]),
@@ -621,7 +711,7 @@ seq_write_test() ->
 
     %% Insert one increment
     {ok,Op1} = Type:update(increment, a, S1),
-    DownstreamOp1 = #clocksi_payload{key = Key,
+    DownstreamOp1 = #operation_payload{key = Key,
                                      type = Type,
                                      op_param = {merge, Op1},
                                      snapshot_time = vectorclock:from_list([{DC1,10}]),
@@ -633,7 +723,7 @@ seq_write_test() ->
     ?assertEqual(1, Type:value(Res1)),
     %% Insert second increment
     {ok,Op2} = Type:update(increment, a, Res1),
-    DownstreamOp2 = DownstreamOp1#clocksi_payload{
+    DownstreamOp2 = DownstreamOp1#operation_payload{
                       op_param = {merge, Op2},
                       snapshot_time=vectorclock:from_list([{DC1,16}]),
                       commit_time = {DC1,20},
@@ -658,7 +748,7 @@ multipledc_write_test() ->
 
     %% Insert one increment in DC1
     {ok,Op1} = Type:update(increment, a, S1),
-    DownstreamOp1 = #clocksi_payload{key = Key,
+    DownstreamOp1 = #operation_payload{key = Key,
                                      type = Type,
                                      op_param = {merge, Op1},
                                      snapshot_time = vectorclock:from_list([{DC2,0}, {DC1,10}]),
@@ -671,7 +761,7 @@ multipledc_write_test() ->
 
     %% Insert second increment in other DC
     {ok,Op2} = Type:update(increment, b, Res1),
-    DownstreamOp2 = DownstreamOp1#clocksi_payload{
+    DownstreamOp2 = DownstreamOp1#operation_payload{
                       op_param = {merge, Op2},
                       snapshot_time=vectorclock:from_list([{DC2,16}, {DC1,16}]),
                       commit_time = {DC2,20},
@@ -696,7 +786,7 @@ concurrent_write_test() ->
 
     %% Insert one increment in DC1
     {ok,Op1} = Type:update(increment, a, S1),
-    DownstreamOp1 = #clocksi_payload{key = Key,
+    DownstreamOp1 = #operation_payload{key = Key,
                                      type = Type,
                                      op_param = {merge, Op1},
                                      snapshot_time = vectorclock:from_list([{DC1,0}, {DC2,0}]),
@@ -709,7 +799,7 @@ concurrent_write_test() ->
 
     %% Another concurrent increment in other DC
     {ok, Op2} = Type:update(increment, b, S1),
-    DownstreamOp2 = #clocksi_payload{ key = Key,
+    DownstreamOp2 = #operation_payload{ key = Key,
 				      type = Type,
 				      op_param = {merge, Op2},
 				      snapshot_time=vectorclock:from_list([{DC1,0}, {DC2,0}]),

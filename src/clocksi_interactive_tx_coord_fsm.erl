@@ -49,9 +49,9 @@
 
 %% API
 -export([start_link/2,
-         start_link/1,
-         start_link/3,
-	 start_link/4]).
+    start_link/1,
+    start_link/3,
+    start_link/4]).
 
 %% Callbacks
 -export([init/1,
@@ -63,7 +63,7 @@
     stop/1]).
 
 %% States
--export([create_transaction_record/5,
+-export([create_transaction_record/6,
     start_tx/2,
     init_state/3,
     perform_update/4,
@@ -93,17 +93,17 @@
 
 start_link(From, Clientclock, UpdateClock, StayAlive) ->
     case StayAlive of
-	true ->
-	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
-	false ->
-	    gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+        true ->
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+        false ->
+            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
     end.
 
 start_link(From, Clientclock) ->
     start_link(From, Clientclock, update_clock).
 
-start_link(From,Clientclock,UpdateClock) ->
-    start_link(From,Clientclock,UpdateClock,false).
+start_link(From, Clientclock, UpdateClock) ->
+    start_link(From, Clientclock, UpdateClock, false).
 
 start_link(From) ->
     start_link(From, ignore, update_clock).
@@ -119,42 +119,26 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 
 %% @doc Initialize the state.
 init([From, ClientClock, UpdateClock, StayAlive]) ->
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))}.
+    {ok, Protocol} = application:get_env(antidote, txn_prot),
+    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false), Protocol)}.
 
 init_state(StayAlive, FullCommit, IsStatic) ->
-    case application:get_env(antidote, txn_prot) of
-        {ok, nmsi_single_dc} ->
-            #tx_coord_state{
-                transaction = undefined,
-                updated_partitions=[],
-                prepare_time=0,
-                num_to_read=0,
-                num_to_ack=0,
-                operations=undefined,
-                from=undefined,
-                full_commit=FullCommit,
-                is_static=IsStatic,
-                read_set=[],
-                stay_alive = StayAlive,
-                %% The following are needed by the NMSI protocol
-                clock_from_node_min = undefined,
-                keys_access_time = dict:new()
-            };
-        _ ->
-            #tx_coord_state{
-                transaction = undefined,
-                updated_partitions=[],
-                prepare_time=0,
-                num_to_read=0,
-                num_to_ack=0,
-                operations=undefined,
-                from=undefined,
-                full_commit=FullCommit,
-                is_static=IsStatic,
-                read_set=[],
-                stay_alive = StayAlive
-            }
-    end.
+    #tx_coord_state{
+        transaction = undefined,
+        updated_partitions = [],
+        prepare_time = 0,
+        num_to_read = 0,
+        num_to_ack = 0,
+        operations = undefined,
+        from = undefined,
+        full_commit = FullCommit,
+        is_static = IsStatic,
+        read_set = [],
+        stay_alive = StayAlive,
+        %% The following are needed by the NMSI protocol
+        version_min = undefined,
+        keys_access_time = dict:new()
+    }.
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
@@ -163,59 +147,65 @@ generate_name(From) ->
 start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
-    {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
+start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}, Protocol) ->
+    {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
+    SD#tx_coord_state{transaction = Transaction, num_to_read = 0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-  boolean(), pid() | undefined, boolean()) -> {tx(), txid() | {error, term()}}.
-create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
+  boolean(), pid() | undefined, boolean(), atom()) -> {tx(), txid() | {error, term()}}.
+create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
-    Result = case ClientClock of
-                 ignore ->
-                     get_snapshot_time();
-                 _ ->
-                     case UpdateClock of
-                         update_clock ->
-                             get_snapshot_time(ClientClock);
-                         no_update_clock ->
-                             {ok, ClientClock}
-                     end
-             end,
-    case Result of
-        {ok, SnapshotTime} ->
-            DcId = ?DC_UTIL:get_my_dc_id(),
-            LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
-            Name = case StayAlive of
+    Name = case StayAlive of
+               true ->
+                   case IsStatic of
                        true ->
-                           case IsStatic of
-                               true ->
-                                   clocksi_static_tx_coord_fsm:generate_name(From);
-                               false ->
-                                   generate_name(From)
-                           end;
+                           clocksi_static_tx_coord_fsm:generate_name(From);
                        false ->
-                           self()
-                   end,
-            TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
-            case application:get_env(antidote, txn_prot) of
-                {ok, nmsi_single_dc} ->
-                    NmsiReadMetadata = #nmsi_single_dc_read_metadata{
-                        dep_from_read_max = undefined,
-                        ver_from_read_max = undefined},
-                    Transaction = #nmsi_transaction{snapshot_time = LocalClock,
-                        nmsi_single_dc_read_metadata = NmsiReadMetadata,
-                        txn_id = TransactionId};
-                _ ->
+                           generate_name(From)
+                   end;
+               false ->
+                   self()
+           end,
+    case Protocol of
+        nmsi ->
+            NmsiReadMetadata = #nmsi_read_metadata{
+                dep_upbound = undefined,
+                commit_time_lowbound = undefined},
+            Now = clocksi_vnode:now_microsec(dc_utilities:now()),
+            TransactionId = #tx_id{snapshot_time = Now, server_pid = Name},
+            Transaction = #transaction{
+                transactional_protocol = Protocol,
+                nmsi_read_metadata = NmsiReadMetadata,
+                txn_id = TransactionId},
+                {Transaction, TransactionId};
+        _ ->
+            Result = case ClientClock of
+                         ignore ->
+                             get_snapshot_time();
+                         _ ->
+                             case UpdateClock of
+                                 update_clock ->
+                                     get_snapshot_time(ClientClock);
+                                 no_update_clock ->
+                                     {ok, ClientClock}
+                             end
+                     end,
+            case Result of
+                {ok, SnapshotTime} ->
+                    DcId = ?DC_UTIL:get_my_dc_id(),
+                    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
+                    TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
+
                     Transaction = #transaction{snapshot_time = LocalClock,
+                        transactional_protocol = Protocol,
                         vec_snapshot_time = SnapshotTime,
-                        txn_id = TransactionId}
-            end,
-            {Transaction, TransactionId};
-        {error, Reason} ->
-            {error, Reason}
+                        txn_id = TransactionId},
+                    {Transaction, TransactionId};
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 
@@ -277,8 +267,7 @@ perform_singleitem_update(Key, Type, Params) ->
     end.
 
 
-perform_read(Args, Updated_partitions, Transaction, Sender) ->
-    {Key, Type} = Args,
+perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
@@ -296,8 +285,8 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
                     _Res = gen_fsm:reply(Sender, {error, Reason})
             end,
             {error, Reason};
-        {ok, Snapshot} ->
-            Type:value(Snapshot)
+        {ok, ReadResult} ->
+            ReadResult
     end.
 
 
@@ -370,11 +359,19 @@ execute_op({OpType, Args}, Sender,
                     prepare(SD0#tx_coord_state{from = Sender, commit_protocol = Args})
             end;
         read ->
-            case perform_read(Args, Updated_partitions, Transaction, Sender) of
+            {Key, Type} = Args,
+            case perform_read({Key, Type}, Updated_partitions, Transaction, Sender) of
                 {error, _Reason} ->
                     abort(SD0);
                 ReadResult ->
-                    {reply, {ok, ReadResult}, execute_op, SD0}
+                    case application:get_env(antidote, txn_prot) of
+                        {ok, nmsi} ->
+                            SD1 = update_causal_snapshot_state(SD0, ReadResult, Key),
+                            {Result, _, _, _} = ReadResult,
+                            {reply, {ok, Type:value(Result)}, execute_op, SD1};
+                        _ ->
+                            {reply, {ok, Type:value(ReadResult)}, execute_op, SD0}
+                    end
             end;
         update ->
             case perform_update(Args, Updated_partitions, Transaction, Sender) of
@@ -386,11 +383,30 @@ execute_op({OpType, Args}, Sender,
             end
     end.
 
+%% @doc Used by the causal snapshot for NMSI
+%%      Updates the state of a transaction coordinator
+%%      for maintaining the causal snapshot metadata
+update_causal_snapshot_state(State, ReadResult, Key) ->
+    Transaction = State#tx_coord_state.transaction,
+    {_Result, Version, Dep, ReadTime} = ReadResult,
+    KeysAccessTime = State#tx_coord_state.keys_access_time,
+    VersionMin = State#tx_coord_state.version_min,
+    NewKeysAccessTime = dict:append(Key, Version, KeysAccessTime),
+    NewVersionMin = min(VersionMin, Version),
+    CommitTimeLowbound = State#tx_coord_state.transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+    DepUpbound = State#tx_coord_state.transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+    NewTransaction = Transaction#transaction{
+        nmsi_read_metadata = #nmsi_read_metadata{
+            dep_upbound = max(DepUpbound, Dep),
+            commit_time_lowbound = min(CommitTimeLowbound, ReadTime)}},
+    State#tx_coord_state{keys_access_time = NewKeysAccessTime,
+        version_min = NewVersionMin, transaction = NewTransaction}.
+
 
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
-    transaction = Transaction, num_to_read=NumToRead,
+    transaction = Transaction, num_to_read = NumToRead,
     updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
     case Updated_partitions of
         [] ->
@@ -565,7 +581,7 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
 %% @doc when an error occurs or an updated partition 
 %% does not pass the certification check, the transaction aborts.
 abort(SD0 = #tx_coord_state{transaction = Transaction,
-			    updated_partitions = UpdatedPartitions}) ->
+    updated_partitions = UpdatedPartitions}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
@@ -577,15 +593,15 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
-				   updated_partitions = _UpdatedPartitions}) ->
+    updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort({prepared, _}, SD0 = #tx_coord_state{transaction = _Transaction,
-					   updated_partitions = _UpdatedPartitions}) ->
+    updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
-			       updated_partitions = _UpdatedPartitions}) ->
+    updated_partitions = _UpdatedPartitions}) ->
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
@@ -638,10 +654,10 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
         true -> ok
     end,
     case StayAlive of
-	true ->
-	    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
-	false ->
-	    {stop, normal, SD}
+        true ->
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+        false ->
+            {stop, normal, SD}
     end.
 
 %% =============================================================================
@@ -680,7 +696,7 @@ get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
     DcId = ?DC_UTIL:get_my_dc_id(),
     case application:get_env(antidote, txn_prot) of
-        {ok, nmsi_single_dc} ->
+        {ok, nmsi} ->
             %% in the nmsi case, only a VV with one position is used.
             %% this alg. does not use the concept of stable snapshot.
             %% I keep the VV for compatibility with the rest of the code.
