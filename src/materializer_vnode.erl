@@ -41,6 +41,7 @@
 	 get_cache_name/2,
 	 store_ss/3,
          update/2,
+	 get_non_replicated_updates/4,
 	 belongs_to_snapshot_op/3]).
 
 %% Callbacks
@@ -67,16 +68,16 @@ start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 %% @doc Read state of key at given snapshot time
--spec read(key(), type(), snapshot_time(), txid(), cache_id(), cache_id(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
-read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache, Partition) ->
+-spec read(key(), type(), snapshot_time(), txid(), dict(), cache_id(), cache_id(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
+read(Key, Type, SnapshotTime, TxId, ExternalOps, OpsCache, SnapshotCache, Partition) ->
     case ets:info(OpsCache) of
 	undefined ->
 	    riak_core_vnode_master:sync_command({Partition,node()},
-						{read,Key,Type,SnapshotTime,TxId},
+						{read,Key,Type,SnapshotTime,TxId,ExternalOps},
 						materializer_vnode_master,
 						infinity);
 	_ ->
-	    internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache)
+	    internal_read(Key, Type, SnapshotTime, TxId, ExternalOps, OpsCache, SnapshotCache)
     end.
 
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
@@ -100,6 +101,29 @@ store_ss(Key, Snapshot, CommitTime) ->
     IndexNode = hd(Preflist),
     riak_core_vnode_master:command(IndexNode, {store_ss,Key, Snapshot, CommitTime},
                                         materializer_vnode_master).
+
+%% This will get updates for a key commited within a certain time range
+%% It is used for non-replicated keys to get locally commited updates before
+%% they are propagated
+-spec get_non_replicated_updates(key(), snapshot_time(), snapshot_time(), cache_id(), partition_id()) -> {ok, dict()} | {error, reason()}.
+get_non_replicated_updates(Key,MaxCommitTime,MinCommitTime,OpsCache,Partition) ->
+    case ets:info(OpsCache) of
+	undefined ->
+	    riak_core_vnode_master:sync_command({Partition,node()},
+						{get_non_rep_updates,Key,MaxCommitTime,MinCommitTime},
+						materializer_vnode_master,
+						infinity);
+	_ ->
+	    Ops = 
+		case ets:lookup(OpsCache, Key) of
+		    [] ->
+			[];
+		    [Tuple] ->
+			{_Key,_Length1,_OpId,AllOps} = tuple_to_key(Tuple),
+			AllOps
+		end,
+	    {ok, get_smaller_commit(Ops,MaxCommitTime,MinCommitTime,dict:new())}
+    end.
 
 init([Partition]) ->
     OpsCache = ets:new(get_cache_name(Partition,ops_cache), [set,protected,named_table,?TABLE_CONCURRENCY]),
@@ -145,9 +169,9 @@ handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
     {reply, Result, State};
 
 
-handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender,
+handle_command({read, Key, Type, SnapshotTime, TxId, ExternalOps}, _Sender,
                State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition}) ->
-    {reply, read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition), State};
+    {reply, read(Key, Type, SnapshotTime, TxId, ExternalOps, OpsCache, SnapshotCache, Partition), State};
 
 
 handle_command({update, Key, DownstreamOp}, _Sender,
@@ -161,6 +185,9 @@ handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender,
     internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,false),
     {noreply, State};
 
+handle_command({get_non_rep_updates, Key, MaxCommitTime, MinCommitTime}, _Sender,
+               State = #state{ops_cache=OpsCache partition=Partition}) ->
+    {reply, get_non_replicated_updates(Key,MaxCommitTime,MinCommitTime,OpsCache,Partition), State};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -223,6 +250,23 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 
 %%---------------- Internal Functions -------------------%%
 
+-spec get_smaller_commit([clocksi_payload()], snapshot_time(), snapshot_time(), dict())
+			-> dict().
+get_smaller_commit([],_MaxCommitTime,MinCommitTime,Acc) ->
+    Acc;
+get_smaller_commit([Op = #clocksi_payload{Txid = txid, CommitTimeOp = commit_time}|Rest],MaxCommitTime,MinCommitTime,Acc) ->
+    case CommitTimeOp > MaxCommitTime of
+	true ->
+	    get_smaller_commit(Rest,MaxCommitTime,MinCommitTime,Acc);
+	false ->
+	    case CommitTimeOp >= MinCommitTime of
+		true ->
+		    get_smaller_commit(Rest,MaxCommitTime,MinCommitTime,dict:store(Txid, Op, Acc));
+		false ->
+		    Acc
+	    end
+    end.
+
 -spec internal_store_ss(key(), snapshot(), snapshot_time(), cache_id(), cache_id(),boolean()) -> true.
 internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
@@ -241,11 +285,11 @@ internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(key(), type(), snapshot_time(), txid() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
-internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache) ->
-    internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,false).
+-spec internal_read(key(), type(), snapshot_time(), txid() | ignore, dict(), cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
+internal_read(Key, Type, MinSnapshotTime, TxId, ExternalOps, OpsCache, SnapshotCache) ->
+    internal_read(Key, Type, MinSnapshotTime, TxId, ExternalOps, OpsCache, SnapshotCache,false).
 
-internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc) ->
+internal_read(Key, Type, MinSnapshotTime, TxId, ExternalOps, OpsCache, SnapshotCache,ShouldGc) ->
     Result = case ets:lookup(SnapshotCache, Key) of
 		 [] ->
 		     %% First time reading this key, store an empty snapshot in the cache
