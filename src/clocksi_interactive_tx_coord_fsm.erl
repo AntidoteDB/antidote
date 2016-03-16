@@ -64,7 +64,6 @@
 
 %% States
 -export([create_transaction_record/6,
-    start_tx/2,
     init_state/3,
     perform_update/4,
     perform_read/4,
@@ -144,8 +143,9 @@ init_state(StayAlive, FullCommit, IsStatic) ->
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
-start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
+%% This function is not being used.
+%%start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
+%%    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0, Protocol)}.
 
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}, Protocol) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
@@ -153,7 +153,7 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
     SD#tx_coord_state{transaction = Transaction, num_to_read = 0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-  boolean(), pid() | undefined, boolean(), atom()) -> {tx(), txid() | {error, term()}}.
+  boolean(), pid() | undefined, boolean(), atom()) -> {transaction(), txid() | {error, term()}}.
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
@@ -215,7 +215,9 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
 %%      transaction fsm and directly in the calling thread.
 -spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()}.
 perform_singleitem_read(Key, Type) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+%%    todo: there should be a better way to get the Protocol.
+    {ok, Protocol} = application:get_env(antidote, txn_prot),
+    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
@@ -234,7 +236,8 @@ perform_singleitem_read(Key, Type) ->
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+    {ok, Protocol} = application:get_env(antidote, txn_prot),
+    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of

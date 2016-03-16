@@ -31,6 +31,7 @@
     get_stable_snapshot/0,
     get_scalar_stable_time/0,
     get_partition_snapshot/1,
+    create_commit_vector_clock/3,
     from_list/1,
     new/0,
     eq/2,
@@ -135,6 +136,10 @@ get_clock_of_dc(Key, VectorClock) ->
 -spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> vectorclock().
 set_clock_of_dc(Key, Value, VectorClock) ->
     dict:store(Key, Value, VectorClock).
+
+-spec create_commit_vector_clock(any(), non_neg_integer(), vectorclock()) -> vectorclock().
+create_commit_vector_clock(Key, Value, VectorClock)->
+set_clock_of_dc(Key, Value, VectorClock).
 
 -spec from_list([{any(), non_neg_integer()}]) -> vectorclock().
 from_list(List) ->

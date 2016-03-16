@@ -47,12 +47,12 @@
 %% API
 -export([start_vnode/1,
 	 check_tables_ready/0,
-         read/7,
-    read_causal/8,
+         read/6,
+    read_causal/7,
 	 get_cache_name/2,
 	 store_ss/3,
          update/2,
-	 op_not_already_in_snapshot/3]).
+	 op_not_already_in_snapshot/2]).
 
 %% Callbacks
 -export([init/1,
@@ -90,7 +90,7 @@ read(Key, Type, Transaction,OpsCache,SnapshotCache,Partition) ->
                 materializer_vnode_master,
                 infinity);
         _ ->
-            internal_read(Key, Type, Transaction, OpsCache, SnapshotCache)
+            internal_read(Key, Type, Transaction, false, OpsCache, SnapshotCache)
     end.
 
 
@@ -194,9 +194,9 @@ handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
     {reply, Result, State};
 
 
-handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender,
+handle_command({read, Key, Type, Transaction}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache,partition=Partition})->
-    {reply, read(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition), State};
+    {reply, read(Key, Type, Transaction,OpsCache,SnapshotCache,Partition), State};
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
@@ -213,9 +213,9 @@ handle_command({store_ss, Key, Snapshot, Params}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0} ,
-                       _Sender,
-                       State = #state{ops_cache = OpsCache}) ->
+handle_handoff_command(?FOLD_REQ{foldfun = Fun, acc0 = Acc0},
+  _Sender,
+  State = #state{ops_cache = OpsCache}) ->
     F = fun(Key, A) ->
 		[Key1|_] = tuple_to_list(Key),
                 Fun(Key1, Key, A)
@@ -297,134 +297,109 @@ internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, Should
 
 %% @doc This fuction returns the latest compatible snapshot
 %% stored in the SnapshotDict, given a transactional protocol
-get_latest_compatible_snapshot(Transaction, SnapshotDict) ->
-    case application:get_env(antidote, txn_prot) of
-        {ok, nmsi} ->
-            vector_orddict:get_causally_compatible(Transaction, SnapshotDict);
-        _ ->
-            SnapshotTime = Transaction#transaction.vec_snapshot_time,
-            vector_orddict:get_smaller(SnapshotTime, SnapshotDict)
+get_latest_cached_compatible_snapshot(Key, Type, Transaction, IsLocal, SnapshotCache, OpsCache) ->
+    case ets:lookup(SnapshotCache, Key) of
+        [] ->
+            %% First time reading this key, store an empty snapshot in the cache
+            BlankSS = {0, clocksi_materializer:new(Type)},
+            case IsLocal of
+                true ->
+                    internal_store_ss(Key, BlankSS, empty, OpsCache, SnapshotCache, false);
+                false ->
+                    materializer_vnode:store_ss(Key, BlankSS, empty)
+            end,
+            {BlankSS, ignore, true};
+        [{_, SnapshotDict}] ->
+            Result = case application:get_env(antidote, txn_prot) of
+                {ok, nmsi} ->
+                    vector_orddict:get_causally_compatible(Transaction, SnapshotDict);
+                _ ->
+                    SnapshotTime = Transaction#transaction.vec_snapshot_time,
+                    vector_orddict:get_smaller(SnapshotTime, SnapshotDict)
+            end,
+            case Result of
+                {undefined, _} ->
+                    {error, no_snapshot};
+                _->
+                    Result
+            end
     end.
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(key(), type(), tx() | ignore, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
-internal_read(Key, Type, Transaction, OpsCache, SnapshotCache) ->
-    internal_read(Key, Type, Transaction, OpsCache, SnapshotCache,false).
+-spec internal_read(key(), type(), transaction(), boolean, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
+internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache) ->
+    internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache,false).
 
-internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
-    TxId = Transaction#transaction.txn_id,
-
-    Result = case ets:lookup(SnapshotCache, Key) of
-                 [] ->
-                     %% First time reading this key, store an empty snapshot in the cache
-                     BlankSS = {0, clocksi_materializer:new(Type)},
-                     case TxId of
-                         ignore ->
-                             internal_store_ss(Key, BlankSS, empty, OpsCache, SnapshotCache, false);
-                         _ ->
-                             materializer_vnode:store_ss(Key, BlankSS, empty)
-                     end,
-                     {BlankSS, ignore, true};
-                 [{_, SnapshotDict}] ->
-                     %% This following function helps making the code more modular
-                     %% when implementing different protocols
-                     case get_latest_compatible_snapshot(Transaction, SnapshotDict) of
-                         {undefined, _IsF} ->
-                             {error, no_snapshot};
-                         {{CommitParams, LatestCompatSnapshot}, IsF} ->
-                             {LatestCompatSnapshot, CommitParams, IsF}
-                     end
-             end,
-    {Length, Ops, {LastOp, CompatSnapshot}, CommitParams, IsFirst} =
-        case Result of
+internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc) ->
+    %% First, get the latest available snapshot from the cache or the log.
+    {Length, Ops, {LastOp, LatestCompatSnapshot}, SnapshotCommitParams, IsFirst} =
+        case get_latest_cached_compatible_snapshot(Key, Type, Transaction, IsLocal, SnapshotCache, OpsCache) of
             {error, no_snapshot} ->
-                LogId = log_utilities:get_logid_from_key(Key),
-                [Node] = log_utilities:get_preflist_from_key(Key),
-                %% Todo: Implement the following function for a causal snapshot
-                logging_vnode:get(Node, {get, LogId, Transaction, Type, Key});
-            {LatestCompatSnapshot, CommitParams, IsF} ->
+                %% No snapshot in the cache, get ops from the log
+                get_all_operations_for_key_from_log(Key, Type, Transaction);
+            {LCS, SCP, IsF} ->
+                %% There was a snapshot in the cache. Now check if there are ops too.
                 case ets:lookup(OpsCache, Key) of
                     [] ->
-                        {0, [],  LatestCompatSnapshot, CommitParams, IsF};
+                        {0, [], LCS, SCP, IsF};
                     [Tuple] ->
                         {Key, Length1, _OpId, _ListLen, AllOps} = tuple_to_key(Tuple),
-                        {Length1, AllOps, LatestCompatSnapshot, CommitParams, IsF}
+                        {Length1, AllOps, LCS, SCP, IsF}
                 end
         end,
     case Length of
         0 ->
-            {ok, {CompatSnapshot, CommitParams}};
+            %% No operations, return the snapshot found at the beginning.
+            {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
         _ ->
-            case application:get_env(antidote, txn_prot) of
-                {ok, nmsi} ->
-                    case causal_materializer:materialize(Type, CompatSnapshot, LastOp, CommitParams, Transaction, Ops, TxId) of
-                        {ok, Snapshot, NewLastOp, NewCommitParams, NewSS} ->
-                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-                            %% for the given snapshot_time
-                            %% But is the snapshot not safe?
-                            case CommitTime of
-                                ignore ->
-                                    {ok, Snapshot};
-                                _ ->
-                                    case (NewSS and IsFirst) orelse ShouldGc of
-                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
-                                        %% previous snapshot
-                                        true ->
-                                            case TxId of
-                                                ignore ->
-                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
-                                                _ ->
-                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
-                                            end;
+            %% we got the available operations from the log or the cache, now
+            %% we must materialize the ones needed.
+            case clocksi_materializer:materialize(Type, LatestCompatSnapshot, LastOp, SnapshotCommitParams, Transaction, Ops) of
+                {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
+                    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+                    %% for the given snapshot_time
+                    %% todo: remove the following case? I believe now we read from the log this can't happen
+                    case CommitTime of
+                        ignore ->
+                            {ok, Snapshot};
+                        _ ->
+                            case (NewSS and IsFirst) orelse ShouldGc of
+                                %% Only store the snapshot if it would be at the end of the list and has new operations added to the
+                                %% previous snapshot
+                                true ->
+                                    TxId = Transaction#transaction.txn_id,
+                                    case TxId of
+                                        ignore ->
+                                            internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
                                         _ ->
-                                            ok
-                                    end,
-                                    {ok, Snapshot}
-                            end;
-                        {error, Reason} ->
-                            {error, Reason}
+                                            materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
+                                    end;
+                                _ ->
+                                    ok
+                            end,
+                            {ok, Snapshot}
                     end;
-                _ ->
-                    MinSnapshotTime = Transaction#transaction.vec_snapshot_time,
-                    case clocksi_materializer:materialize(Type, Snapshot, LastOp, CommitParams, MinSnapshotTime, Ops, TxId) of
-                        {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
-                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-                            %% for the given snapshot_time
-                            %% But is the snapshot not safe?
-                            case CommitTime of
-                                ignore ->
-                                    {ok, Snapshot};
-                                _ ->
-                                    case (NewSS and IsFirst) orelse ShouldGc of
-                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
-                                        %% previous snapshot
-                                        true ->
-                                            case TxId of
-                                                ignore ->
-                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
-                                                _ ->
-                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
-                                            end;
-                                        _ ->
-                                            ok
-                                    end,
-                                    {ok, Snapshot}
-                            end;
-                        {error, Reason} ->
-                            {error, Reason}
-                    end
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
+%% Todo: Future: Implement the following function for a causal snapshot
+get_all_operations_for_key_from_log(Key, Type, Transaction) ->
+LogId = log_utilities:get_logid_from_key(Key),
+[Node] = log_utilities:get_preflist_from_key(Key),
+logging_vnode:get(Node, {get, LogId, Transaction, Type, Key}).
+
+
+
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
--spec op_not_already_in_snapshot(snapshot_time() | ignore, commit_time(), snapshot_time()) -> boolean().
-op_not_already_in_snapshot(ignore, _, _) ->
+-spec op_not_already_in_snapshot(snapshot_time() | ignore, vectorclock()) -> boolean().
+op_not_already_in_snapshot(ignore, _) ->
     true;
-op_not_already_in_snapshot(SSTime, {OpDc,OpCommitTime}, OpSs) ->
-    OpSs1 = dict:store(OpDc,OpCommitTime,OpSs),
-    not vectorclock:le(OpSs1,SSTime).
+op_not_already_in_snapshot(SSTime, CommitVC) ->
+    not vectorclock:le(CommitVC,SSTime).
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
@@ -499,8 +474,9 @@ prune_ops({_Len, OpsDict}, Threshold) ->
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
     Res = reverse_and_filter(fun({_OpId, Op}) ->
-        OpCommitTime = Op#operation_payload.commit_time,
-        (op_not_already_in_snapshot(Threshold, OpCommitTime, Op#operation_payload.snapshot_time))
+        {OpDc, OpCommitTimestamp} = Op#operation_payload.commit_time,
+        OpCommitVC = vectorclock:create_commit_vector_clock(OpDc, OpCommitTimestamp, Op#operation_payload.snapshot_time),
+        (op_not_already_in_snapshot(Threshold, OpCommitVC))
                              end, OpsDict, ?FIRST_OP, []),
     case Res of
         {_, []} ->
@@ -555,12 +531,12 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
     NewId = ets:update_counter(OpsCache, Key,
 			       {3,1}),
     {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
-    %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
+    %% Perform the GC in case the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
     case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
             Type=DownstreamOp#operation_payload.type,
             SnapshotTime=DownstreamOp#operation_payload.snapshot_time,
-            {_, _} = internal_read(Key, Type, SnapshotTime, ignore, OpsCache, SnapshotCache, true),
+            {_, _} = internal_read(Key, Type, SnapshotTime, false, OpsCache, SnapshotCache, true),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    {Length1,ListLen1} = ets:lookup_element(OpsCache, Key, 2),
 	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length1+1,ListLen1}}]);

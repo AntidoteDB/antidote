@@ -82,7 +82,7 @@ stop_read_servers(Partition, Count) ->
     Addr = node(),
     stop_read_servers_internal(Addr, Partition, Count).
 
--spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
+-spec read_data_item(index_node(), key(), type(), transaction()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition, Node}, Key, Type, Transaction) ->
     try
         gen_server:call({global, generate_random_server_name(Node, Partition)},
@@ -94,7 +94,7 @@ read_data_item({Partition, Node}, Key, Type, Transaction) ->
             read_data_item({Partition, Node}, Key, Type, Transaction)
     end.
 
--spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> ok.
+-spec async_read_data_item(index_node(), key(), type(), transaction(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, Coordinator) ->
     gen_server:cast({global, generate_random_server_name(Node, Partition)},
         {perform_read_cast, Coordinator, Key, Type, Transaction}).

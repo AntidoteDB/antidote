@@ -33,6 +33,7 @@
 -export([new/0,
 	 get_smaller/2,
      get_causally_compatible/2,
+     is_causally_compatible/4,
 	 insert/3,
 	 insert_bigger/3,
 	 sublist/3,
@@ -70,7 +71,7 @@ get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, [{{CommitClock,
     end.
 
 is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
-vectorclock:ge(CommitClock, CommitTimeLowbound) and vectorclock:le(DepClock, DepUpbound.
+vectorclock:ge(CommitClock, CommitTimeLowbound) and vectorclock:le(DepClock, DepUpbound).
 
 -spec get_smaller(vectorclock(),vector_orddict()) -> {undefined | {vectorclock(),term()},boolean()}.
 get_smaller(Vector,{List,_Size}) ->
