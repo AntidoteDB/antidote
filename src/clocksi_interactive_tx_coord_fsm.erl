@@ -30,6 +30,7 @@
 -include("antidote.hrl").
 
 -ifdef(TEST).
+-define(APPLICATION, mock_partition_fsm).
 -include_lib("eunit/include/eunit.hrl").
 -define(DC_UTIL, mock_partition_fsm).
 -define(VECTORCLOCK, mock_partition_fsm).
@@ -38,6 +39,7 @@
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
 -define(LOGGING_VNODE, mock_partition_fsm).
 -else.
+-define(APPLICATION, application).
 -define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
@@ -49,6 +51,7 @@
 
 %% API
 -export([start_link/2,
+    start_tx/2,
     start_link/1,
     start_link/3,
     start_link/4]).
@@ -118,7 +121,7 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 
 %% @doc Initialize the state.
 init([From, ClientClock, UpdateClock, StayAlive]) ->
-    Protocol = application:get_env(antidote, txn_prot),
+    {ok, Protocol} = ?APPLICATION:get_env(antidote, txn_prot),
     {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false), Protocol)}.
 
 init_state(StayAlive, FullCommit, IsStatic) ->
@@ -143,9 +146,9 @@ init_state(StayAlive, FullCommit, IsStatic) ->
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
-%% This function is not being used.
-%%start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
-%%    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0, Protocol)}.
+start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
+    Protocol = SD0#tx_coord_state.transaction#transaction.transactional_protocol,
+    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0, Protocol)}.
 
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}, Protocol) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
@@ -169,7 +172,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                    self()
            end,
     case Protocol of
-        {ok, nmsi} ->
+        nmsi ->
             NmsiReadMetadata = #nmsi_read_metadata{
                 dep_upbound = undefined,
                 commit_time_lowbound = undefined},
@@ -222,7 +225,7 @@ perform_singleitem_read(Key, Type) ->
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
         {error, Reason} ->
             {error, Reason};
-        {ok, Snapshot} ->
+        {ok, {Snapshot, _SnapshotCommitTime}} ->
             ReadResult = Type:value(Snapshot),
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.snapshot_vc,
@@ -364,12 +367,13 @@ execute_op({OpType, Args}, Sender,
                     abort(SD0);
                 ReadResult ->
                     case Transaction#transaction.transactional_protocol of
-                        {ok, nmsi} ->
+                        nmsi ->
                             SD1 = update_causal_snapshot_state(SD0, ReadResult, Key),
                             {Result, _, _, _} = ReadResult,
                             {reply, {ok, Type:value(Result)}, execute_op, SD1};
-                        _ ->
-                            {reply, {ok, Type:value(ReadResult)}, execute_op, SD0}
+                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                            {Snapshot, _CommitParams} = ReadResult,
+                            {reply, {ok, Type:value(Snapshot)}, execute_op, SD0}
                     end
             end;
         update ->

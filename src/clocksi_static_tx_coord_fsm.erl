@@ -98,16 +98,18 @@ start_link(From, Operations) ->
 %%%===================================================================
 
 init([From, ClientClock, Operations, UpdateClock, StayAlive]) ->
-    {ok, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, clocksi_interactive_tx_coord_fsm:init_state(StayAlive, true, true))}.
+    {ok, Protocol} = application:get_env(antidote, txn_prot),
+    {ok, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, clocksi_interactive_tx_coord_fsm:init_state(StayAlive, true, true), Protocol)}.
 
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "static_cord").
 
 start_tx({start_tx, From, ClientClock, Operations, UpdateClock}, SD0) ->
-    {next_state, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, SD0)}.
+    Protocol = SD0#tx_coord_state.transaction#transaction.transactional_protocol,
+    {next_state, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, SD0, Protocol)}.
 
-start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
-    {Transaction, _TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock, StayAlive, From, true),
+start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}, Protocol) ->
+    {Transaction, _TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock, StayAlive, From, true, Protocol),
     SD#tx_coord_state{transaction=Transaction, operations=Operations}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
@@ -122,8 +124,10 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 				    case Operation of
 				        {update, {Key, Type, OpParams}} ->
 					        case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
-					            {error,Reason} ->   {error, Reason};
-					            NewUpdatedPartitions ->  Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
+					            {error,Reason} ->
+                                    {error, Reason};
+					            NewUpdatedPartitions ->
+                                    Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
 					        end;
 				        {read, {Key, Type}} ->
                             Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
@@ -174,7 +178,7 @@ receive_prepared({prepared, ReceivedPrepareTime},
              S0#tx_coord_state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 
-receive_prepared({ok, {Key, Type, Snapshot}},
+receive_prepared({ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}},
                  S0=#tx_coord_state{num_to_read=NumToRead,
                             read_set=ReadSet,
                             commit_time=CommitTime,

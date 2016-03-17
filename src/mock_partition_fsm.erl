@@ -43,6 +43,7 @@
          terminate/3]).
 
 -export([get_my_dc_id/0,
+     get_env/2,
 	 get_clock_of_dc/2, 
 	 get_preflist_from_key/1,
 	 read_data_item/5,
@@ -71,6 +72,9 @@ start_link() ->
 %% @doc Initialize the state.
 init([]) ->
     {ok, execute_op, #state{}}.
+
+get_env(_, _) ->
+    {ok, clocksi}.
 
 %% Functions that always return the same value no matter the input.
 get_my_dc_id() ->
@@ -115,13 +119,13 @@ read_data_item(_IndexNode, _Transaction, Key, _Type, _Ws) ->
             Counter = riak_dt_gcounter:new(),
             {ok, Counter1} = riak_dt_gcounter:update(increment, haha, Counter),
             {ok, Counter2} = riak_dt_gcounter:update(increment, nono, Counter1),
-            {ok, Counter2};
+            {ok, {Counter2, ignore}};
         set ->
             Set = riak_dt_gset:new(),
             {ok, Set1} = riak_dt_gset:update({add, a}, haha, Set),
-            {ok, Set1}; 
+            {ok, {Set1, ignore}};
         _ ->
-            {ok, mock_value}
+            {ok, {mock_value, ignore}}
     end.
 
 generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->

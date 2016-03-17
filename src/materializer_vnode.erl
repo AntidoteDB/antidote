@@ -276,7 +276,7 @@ internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, Should
     NewSnapshotParams = case SnapshotParams of
                             empty ->
                                 case application:get_env(antidote, txn_prot) of
-                                    {ok, nmsi} ->
+                                    nmsi ->
                                         {vectorclock:new(), vectorclock:new()};
                                     _ ->
                                         vectorclock:new()
@@ -327,7 +327,7 @@ get_latest_cached_compatible_snapshot(Key, Type, Transaction, IsLocal, SnapshotC
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
--spec internal_read(key(), type(), transaction(), boolean, cache_id(), cache_id()) -> {ok, snapshot()} | {error, no_snapshot}.
+-spec internal_read(key(), type(), transaction(), boolean, cache_id(), cache_id()) -> {ok, snapshot()} | {ok, snapshot(), any()}| {error, no_snapshot}.
 internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache) ->
     internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache,false).
 
@@ -413,10 +413,10 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc) ->
             FirstOp = vector_orddict:last(PrunedSnapshots),
 
             case application:get_env(antidote, txn_prot) of
-                {ok, nmsi} ->
+                nmsi ->
                     %% here we must consider that the operation's commit
                     %% time is a tuple {CommitTime, DependencyTime}
-                    %% instead of just CommitTime in Cure.
+                    %% instead of just CommitTime in Cure.s
                     {{CT, _DT}, _S} = FirstOp,
                     CommitTime = lists:foldl(fun({{CT1, _DT1}, _S1}, Acc) ->
                         vectorclock:min([CT1, Acc])

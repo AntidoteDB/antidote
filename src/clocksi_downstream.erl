@@ -36,7 +36,7 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
         Key,
         Type,
         WriteSet) of
-        {ok, Snapshot} ->
+        {ok, {Snapshot, _}} ->
             TypeString = lists:flatten(io_lib:format("~p", [Type])),
             case string:str(TypeString, "riak_dt") of
                 0 -> %% dealing with an op_based crdt
