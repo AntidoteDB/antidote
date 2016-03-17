@@ -79,7 +79,7 @@ init([Partition]) ->
 	    partition_index = partition_index(Partition, PartitionList, 1),
 	    buffer = log_txn_assembler:new_state(),
 	    last_log_id = dict:new(),
-	    dcid = replication_check:get_my_dcid(),
+	    dcid = dc_utilities:get_my_dcid(),
 	    dc_part_dict = dict:new(),
 	    timer = none
 	   }}.
@@ -210,7 +210,7 @@ get_stable_time(Partition) ->
 
 -spec store_time_in_meta_data(non_neg_integer(), partition_id()) -> ok.
 store_time_in_meta_data(Time, Partition) ->
-    DCs = replication_check:get_all_dc_ids(),
+    DCs = replication_check:get_dc_ids(false),
     NewClock = lists:foldl(fun(DCID, Acc) ->
 				dict:store(DCID, Time, Acc)
 			end, dict:new(), DCs),

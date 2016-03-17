@@ -45,7 +45,7 @@ ops_to_dc_transactions([CommitOp | NotCommitOps], Partition, MyPartitionId, MyDC
     %% For each DC where it is replicated there will be an entry in the dict
     %% The key is the DCID and the value is the list of ops replicated there
     Dict = lists:foldl(fun(Op, Acc) ->
-			       DCs = replication_check:get_dc_ids((Op#operation.payload)#payload.key),			       
+			       DCs = replication_check:get_dc_replicas_read((Op#operation.payload)#payload.key,false),
 			       lists:foldl(fun(DCID, Acc2) ->
 						   dict:update(DCID, fun(Trans) ->
 									     [Op|Trans]
@@ -115,7 +115,7 @@ ping(Partition, PrevLogIdDict, Ids) ->
     %% PrevLogIdDict needs to be the size of number of connections
     %% so when it is received the receiver can know if there are
     %% any msgs missing on any connection
-    DCs = replication_check:get_all_dc_ids(),
+    DCs = replication_check:get_dc_ids(false),
     MyDCID = dc_utilities:get_my_dc_id(),
     %% The merged Id dict stores the minimum timestamp that has been sent
     %% by all partitions

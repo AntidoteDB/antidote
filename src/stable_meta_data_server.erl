@@ -19,6 +19,10 @@
 %% -------------------------------------------------------------------
 
 %% This is for storing meta-data that rarely changes
+%% It all updates are broadcast to all nodes in the DC and stored locally
+%% at each node so that reading is just looking in an ets table
+%% Updates are synchronous and should be one at a time for the whole DC
+%% otherwise concurrent updates could overwrite eachother
 
 -module(stable_meta_data_server).
 -behaviour(gen_server).
@@ -50,39 +54,61 @@
 start_link() ->
     gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
 
-init([]) ->
-    DetsTable = dets:open_file(?TABLE_NAME,[{type,set}]),
-    Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
-    Table = dets:to_ets(DetsTable,Table),
-    {ok, #state{table = Table, dets_table = DetsTable}}.
-
+-spec read_meta_data(term()) -> {ok, term()} | error.
 read_meta_data(Key) ->
     case ets:lookup(?TABLE_NAME, Key) of
 	[] ->
 	    error;
 	[{Key, Value}]->
-	    Value
+	    {ok, Value}
     end.
 
+-spec sync_meta_data() -> ok.
 sync_meta_data() ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
 			       ok = gen_server:call({global,generate_server_name(Node)}, {broadcast_meta_data})
 		       end, NodeList).
 
+-spec broadcast_meta_data(term(), term()) -> ok.
 broadcast_meta_data(Key, Value) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
 			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, Key, Value})
-		       end, NodeList).
+		       end, NodeList).    
+
+-spec broadcast_meta_data(term(), term(), function(), function()) -> ok.
+broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
+    NodeList = dc_utilities:get_my_dc_nodes(),
+    ok = lists:foreach(fun(Node) ->
+			       ok = gen_server:call({global,generate_server_name(Node)}, {merge_meta_data, Key, Value, MergeFunc, InitFunc})
+		       end, NodeList).    
+
 
 %% -------------------------------------------------------------------+
+
+init([]) ->
+    DetsTable = dets:open_file(?TABLE_NAME,[{type,set}]),
+    Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
+    Table = dets:to_ets(DetsTable,Table),
+    {ok, #state{table = Table, dets_table = DetsTable}}.
 
 handle_cast(_Info, State) ->
     {noreply, State}.
 
 handle_call({update_meta_data, Key,Value}, Sender, State = #state{table = Table, dets_table = DetsTable}) ->
     true = ets:insert(Table, {Key,Value}),
+    ok = dets:insert(DetsTable, {Key,Value}),
+    {reply, ok, State};
+
+handle_call({merge_meta_data,Key,Value,MergeFunc,InitFunc}, Sender, State = #state{table = Table, dets_table = DetsTable}) ->
+    Prev = case ets:lookup(?TABLE_NAME, Key) of
+	       [] ->
+		   InitFunc();
+	       [{Key, Value}]->
+		   Value
+	   end,
+    true = ets:insert(Table, {Key,MergeFunc(Value,Prev)}),
     ok = dets:insert(DetsTable, {Key,Value}),
     {reply, ok, State};
 

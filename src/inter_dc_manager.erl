@@ -22,27 +22,6 @@
 -include("antidote.hrl").
 
 -export([
-	 %% get_my_dc/0,
-	 %% get_my_dc_wid/0,
-         %% start_receiver/1,
-         get_dcs/0,
-	 get_dcs_wids/0,
-         %% add_dc/1,
-         %% add_list_dcs/1,
-	 %% get_my_read_dc/0,
-	 %% get_my_read_dc_wid/0,
-         %% start_read_receiver/1,
-         %% get_read_dcs/0,
-	 %% get_read_dcs_wids/0,
-         %% add_read_dc/1,
-         %% add_list_read_dcs/1,
-	 set_replication_fun/4,
-	 set_replication_list/1
-	 %% simulate_partitions/1,
-         %% stop_receiver/0]
-	).
-
--export([
 	 get_descriptor/0,
 	 start_bg_processes/1,
 	 observe_dc/1,
@@ -55,98 +34,12 @@
 	 forget_dc/1,
 	 forget_dcs/1]).
 
-%% -define(META_PREFIX_DC, {dcid,port}).
-%% -define(META_PREFIX_MY_DC, {mydcid,port}).
-%% -define(META_PREFIX_READ_DC, {dcidread,port}).
-%% -define(META_PREFIX_MY_READ_DC, {mydcidread,port}).
-
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
-
-%% get_my_dc_wid() ->
-%%     riak_core_metadata:get(?META_PREFIX_MY_DC,mydc).
-
-%% get_my_dc() ->
-%%     {_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_DC,mydc),
-%%     Dc.
-
-%% start_receiver({Id,{DcIp, Port}}) ->
-%%     riak_core_metadata:put(?META_PREFIX_MY_DC,mydc,{Id,{DcIp,Port}}),
-%%     ok.
-
-%% stop_receiver() ->
-%%     antidote_sup:stop_rep().
-
-%% Returns all DCs known to this DC.
--spec get_dcs() ->[dc_address()].
-get_dcs() ->
-    DcList = riak_core_metadata:to_list(?META_PREFIX_DC),
-    lists:foldl(fun({{_Id,DC},[0|_T]},NewAcc) ->
-			lists:append([DC],NewAcc) end,
-		[], DcList).
-
-get_dcs_wids() ->
-    DcList = riak_core_metadata:to_list(?META_PREFIX_DC),
-    lists:foldl(fun({{Id,DC},[0|_T]},NewAcc) ->
-			lists:append([{Id,DC}],NewAcc) end,
-		[], DcList).
-
-
-%% %% Add info about a new DC. This info could be
-%% %% used by other modules to communicate to other DC
-%% -spec add_dc(dc_address()) -> ok.
-%% add_dc({Id,{Ip,Port}}) ->
-%%     riak_core_metadata:put(?META_PREFIX_DC,{Id,{Ip,Port}},0),
-%%     ok.
-
-%% %% Add a list of DCs to this DC
-%% -spec add_list_dcs([dc_address()]) -> ok.
-%% add_list_dcs(DCs) ->
-%%     lists:foldl(fun({Id,{Ip,Port}},_Acc) ->
-%% 			riak_core_metadata:put(?META_PREFIX_DC,{Id,{Ip,Port}},0)
-%% 		end, 0, DCs),
-%%     ok.
-
-%% simulate_partitions(Partition) ->
-%%     dc_utilities:bcast_vnode(inter_dc_repl_vnode_master,{pause,Partition}).
-
-%% get_my_read_dc() ->
-%%     {_Id,Dc} = riak_core_metadata:get(?META_PREFIX_MY_READ_DC,mydc),
-%%     Dc.
-    
-%% get_my_read_dc_wid() ->
-%%     riak_core_metadata:get(?META_PREFIX_MY_READ_DC,mydc).
-
-%% start_read_receiver({Id,{DcIp,Port}}) ->
-%%     riak_core_metadata:put(?META_PREFIX_MY_READ_DC,mydc,{Id,{DcIp,Port}}),
-%%     ok.
-
-%% get_read_dcs() ->
-%%     DcList = riak_core_metadata:to_list(?META_PREFIX_READ_DC),
-%%     lists:foldl(fun({{_Id,DC},[0|_T]},NewAcc) ->
-%% 			lists:append([DC],NewAcc) end,
-%% 		[], DcList).
-
-%% get_read_dcs_wids() ->
-%%     DcList = riak_core_metadata:to_list(?META_PREFIX_READ_DC),
-%%     lists:foldl(fun({{Id,DC},[0|_T]},NewAcc) ->
-%% 			lists:append([{Id,DC}],NewAcc) end,
-%% 		[], DcList).
-
-
-%% add_read_dc({Id,{Ip,Port}}) ->
-%%     riak_core_metadata:put(?META_PREFIX_READ_DC,{Id,{Ip,Port}},0),
-%%     ok.
-
-%% add_list_read_dcs(DCs) ->
-%%     lists:foldl(fun({Id,{Ip,Port}},_Acc) ->
-%% 			riak_core_metadata:put(?META_PREFIX_READ_DC,{Id,{Ip,Port}},0)
-%% 		end, 0, DCs),
-%%     ok.
 
 set_replication_fun(KeyDescription,Id,RepFactor,NumDcs) ->
     replication_check:set_replication_fun(KeyDescription,Id,RepFactor,NumDcs).
@@ -170,26 +63,25 @@ get_descriptor() ->
 	    partitions = Partitions
 	   }}.
 
-
 -spec observe_dc(#descriptor{}) -> ok | inter_dc_conn_err().
-observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
-    PartitionsNumLocal = dc_utilities:get_partitions_num(),
-    case PartitionsNumRemote == PartitionsNumLocal of
+observe_dc(Desc = #descriptor{dcid = DCID, partitions = Partitions, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
+    case DCID == dc_utilities:get_my_dc_id() of
+	true -> ok;
 	false ->
-	    lager:error("Cannot observe remote DC: partition number mismatch"),
-	    {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
-	true ->
-	    case DCID == dc_utilities:get_my_dc_id() of
-		true -> ok;
-		false ->
-		    lager:info("Observing DC ~p", [DCID]),
-		    dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
-		    %% Announce the new publisher addresses to all subscribers in this DC.
-		    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
-		    %% But we want to balance the work, so all nodes take part in subscribing.
-		    Nodes = dc_utilities:get_my_dc_nodes(),
-		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc)
-	    end
+	    lager:info("Observing DC ~p", [DCID]),
+	    dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
+	    %% Announce the new publisher addresses to all subscribers in this DC.
+	    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
+	    %% But we want to balance the work, so all nodes take part in subscribing.
+	    Nodes = dc_utilities:get_my_dc_nodes(),
+	    Status = connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc),
+	    case Status of
+		ok ->
+		    ok = replication_check:set_dc_partitions(Partitions,DCID);
+		_ ->
+		    ok
+	    end,
+	    Status
     end.
 
 -spec start_bg_processes(list()) -> ok.
@@ -204,7 +96,6 @@ start_bg_processes(Name) ->
 
 -spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
 connect_nodes([], DCID, _LogReaders, _Publishers, _Desc) ->
-    riak_core_metadata:put(?META_PREFIX_DC,{DCID,DCID},0),
     ok;
 connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc) ->
     case rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
