@@ -216,23 +216,37 @@ perform_read_internal(Coordinator, Key, Type, Transaction, OpsCache, SnapshotCac
 %%      catches up. CLOCK-SI: clock skew.
 %%
 check_clock(Key, Transaction, PreparedCache, Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    T_TS = TxId#tx_id.snapshot_time,
     Time = clocksi_vnode:now_microsec(dc_utilities:now()),
-    case T_TS > Time of
-        true ->
-            % lager:info("Waiting... Reason: clock skew"),
-            {not_ready, (T_TS - Time) div 1000 + 1};
-        false ->
-            check_prepared(Key, Transaction, PreparedCache, Partition)
+    case Transaction#transaction.transactional_protocol of
+        nmsi ->
+            DepUpbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+            case DepUpbound > Time of
+                true ->
+                    % lager:info("Waiting... Reason: clock skew"),
+                    {not_ready, (DepUpbound - Time) div 1000 + 1};
+                false ->
+                    ready
+            end;
+            Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
+            T_TS = Transaction#transaction.snapshot_clock,
+            case T_TS > Time of
+                true ->
+                    % lager:info("Waiting... Reason: clock skew"),
+                    {not_ready, (T_TS - Time) div 1000 + 1};
+                false ->
+                    check_prepared(Key, Transaction, PreparedCache, Partition)
+            end
     end.
+
+
+
+
 
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
 check_prepared(Key, Transaction, PreparedCache, Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
+    SnapshotTime = Transaction#transaction.snapshot_clock,
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key, Partition, PreparedCache),
     check_prepared_list(Key, SnapshotTime, ActiveTxs).
 

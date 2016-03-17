@@ -85,26 +85,21 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, Transaction, Key, Type, Updates) ->
-    case Transaction#transaction.transactional_protocol of
-        nmsi ->
-            case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
-                {ok, {Snapshot, Version, Dep, ReadTime}} ->
-                    Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-                    Snapshot2 = clocksi_materializer:materialize_eager
-                    (Type, Snapshot, Updates2),
-                    {ok, {Snapshot2, Version, Dep, ReadTime}};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
-                {ok, {Snapshot, CommitTime}} ->
-                    Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-                    Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
-                    {ok, {Snapshot2, CommitTime}};
-                {error, Reason} ->
-                    {error, Reason}
-            end
+    UpdatedTransaction = case Transaction#transaction.transactional_protocol of
+            nmsi ->
+                Transaction#transaction{
+                    nmsi_read_metadata =
+                    nmsi_read_metadata#nmsi_read_metadata{key_read_time = now_microsec(now())}};
+            Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                Transaction
+        end,
+    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, UpdatedTransaction) of
+        {ok, {Snapshot, CommitParameters}} ->
+            Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+            {ok, {Snapshot2, CommitParameters}};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->

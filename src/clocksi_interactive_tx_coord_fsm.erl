@@ -175,6 +175,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
     case Protocol of
         nmsi ->
             NmsiReadMetadata = #nmsi_read_metadata{
+                key_read_time = undefined,
                 dep_upbound = undefined,
                 commit_time_lowbound = undefined},
             Now = clocksi_vnode:now_microsec(dc_utilities:now()),
