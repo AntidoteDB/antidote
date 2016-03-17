@@ -167,6 +167,7 @@
 %%----------------------------------------------------------------------
 
 -record(tx_coord_state, {
+    transactional_protocol :: atom(),
     from :: {pid(), term()},
     transaction :: transaction(),
     updated_partitions :: list(),

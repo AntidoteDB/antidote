@@ -67,7 +67,7 @@
 
 %% States
 -export([create_transaction_record/6,
-    init_state/3,
+    init_state/4,
     perform_update/4,
     perform_read/4,
     execute_op/3,
@@ -122,10 +122,12 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 %% @doc Initialize the state.
 init([From, ClientClock, UpdateClock, StayAlive]) ->
     {ok, Protocol} = ?APPLICATION:get_env(antidote, txn_prot),
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false), Protocol)}.
+    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false, Protocol))}.
 
-init_state(StayAlive, FullCommit, IsStatic) ->
+
+init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
     #tx_coord_state{
+       transactional_protocol = Protocol,
         transaction = undefined,
         updated_partitions = [],
         prepare_time = 0,
@@ -147,10 +149,9 @@ generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
 start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
-    Protocol = SD0#tx_coord_state.transaction#transaction.transactional_protocol,
-    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0, Protocol)}.
+    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}, Protocol) ->
+start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
     From ! {ok, TransactionId},
     SD#tx_coord_state{transaction = Transaction, num_to_read = 0}.
@@ -183,7 +184,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                 nmsi_read_metadata = NmsiReadMetadata,
                 txn_id = TransactionId},
                 {Transaction, TransactionId};
-        _ ->
+        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             Result = case ClientClock of
                          ignore ->
                              get_snapshot_time();
@@ -626,7 +627,7 @@ receive_aborted(_, S0) ->
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, read_set = ReadSet,
-    state = TxState, commit_time = CommitTime, full_commit = FullCommit,
+    state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
     is_static = IsStatic, stay_alive = StayAlive}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
@@ -658,7 +659,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
     end,
     case StayAlive of
         true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol)};
         false ->
             {stop, normal, SD}
     end.
