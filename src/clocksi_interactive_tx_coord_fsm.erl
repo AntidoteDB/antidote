@@ -169,7 +169,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                    self()
            end,
     case Protocol of
-        nmsi ->
+        {ok, nmsi} ->
             NmsiReadMetadata = #nmsi_read_metadata{
                 dep_upbound = undefined,
                 commit_time_lowbound = undefined},
