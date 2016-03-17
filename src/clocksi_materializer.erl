@@ -246,7 +246,7 @@ compat(OpCommitVC, OpBaseSnapshot, Transaction) ->
             vector_orddict:is_causally_compatible(
                 OpCommitVC, CommitTimeLowbound, OpBaseSnapshot, DepUpbound);
         Protocol  when ((Protocol == clocksi) or (Protocol == gr)) ->
-            SnapshotTime = Transaction#transaction.vec_snapshot_time,
+            SnapshotTime = Transaction#transaction.snapshot_vc,
             vectorclock:le(OpCommitVC,SnapshotTime);
         Other ->
             {error, {unknown_transactional_protocol, Other}}
@@ -279,15 +279,20 @@ materializer_clocksi_test()->
                            commit_time = {1, 4}, txid = 4, snapshot_time=vectorclock:from_list([{1,4}])},
 
     Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
+%%    materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, Ops)
+%%    materialize(Type, Snapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
     {ok, PNCounter2, 3, CommitTime2, _SsSave} = materialize(crdt_pncounter,
-						PNCounter, 0, ignore, vectorclock:from_list([{1,3}]),
-						Ops, ignore),
+						PNCounter, 0, ignore,
+        #transaction{snapshot_vc = vectorclock:from_list([{1, 3}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({4, vectorclock:from_list([{1,3}])}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     {ok, PNcounter3, 4, CommitTime3, _SsSave1} = materialize(crdt_pncounter, PNCounter, 0, ignore,
-                                   vectorclock:from_list([{1,4}]), Ops, ignore),
+        #transaction{snapshot_vc = vectorclock:from_list([{1, 4}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({6, vectorclock:from_list([{1,4}])}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
     {ok, PNcounter4, 4,CommitTime4, _SsSave2} = materialize(crdt_pncounter, PNCounter, 0, ignore,
-                                   vectorclock:from_list([{1,7}]), Ops, ignore),
+        #transaction{snapshot_vc = vectorclock:from_list([{1, 7}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({6, vectorclock:from_list([{1,4}])}, {crdt_pncounter:value(PNcounter4), CommitTime4}).
 
 %% This test tests when a a snapshot is generated that does not include all of the updates in the
@@ -311,12 +316,14 @@ materializer_missing_op_test() ->
                            commit_time = {1, 3}, txid = 2, snapshot_time=vectorclock:from_list([{1,2},{2,1}])},
     Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave} = materialize(crdt_pncounter,
-							    PNCounter, 0, ignore, vectorclock:from_list([{1,3},{2,1}]),
-							    Ops, ignore),
+							    PNCounter, 0, ignore,
+        #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({3, vectorclock:from_list([{1,3},{2,1}])}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     {ok, PNCounter3, 4, CommitTime3, _SsSave} = materialize(crdt_pncounter,
-							    PNCounter2, LastOp, CommitTime2, vectorclock:from_list([{1,3},{2,2}]),
-							    Ops, ignore),
+							    PNCounter2, LastOp, CommitTime2,
+        #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {crdt_pncounter:value(PNCounter3), CommitTime3}).
 
 %% This test tests the case when there are updates that only snapshots that contain entries from one of the DCs.
@@ -340,21 +347,25 @@ materializer_missing_dc_test() ->
     Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
     
     {ok, PNCounterA, LastOpA, CommitTimeA, _SsSave} = materialize(crdt_pncounter,
-								  PNCounter, 0, ignore, vectorclock:from_list([{1,3}]),
-								  Ops, ignore),
+								  PNCounter, 0, ignore,
+        #transaction{snapshot_vc = vectorclock:from_list([{1,3}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({3, vectorclock:from_list([{1,3}])}, {crdt_pncounter:value(PNCounterA), CommitTimeA}),
     {ok, PNCounterB, 4, CommitTimeB, _SsSave} = materialize(crdt_pncounter,
-							    PNCounterA, LastOpA, CommitTimeA, vectorclock:from_list([{1,3},{2,2}]),
-							    Ops, ignore),
+							    PNCounterA, LastOpA, CommitTimeA,
+        #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {crdt_pncounter:value(PNCounterB), CommitTimeB}),
     
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave} = materialize(crdt_pncounter,
-								 PNCounter, 0, ignore, vectorclock:from_list([{1,3},{2,1}]),
-								 Ops, ignore),
+								 PNCounter, 0, ignore,
+        #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({3, vectorclock:from_list([{1,3}])}, {crdt_pncounter:value(PNCounter2), CommitTime2}),
     {ok, PNCounter3, 4, CommitTime3, _SsSave} = materialize(crdt_pncounter,
-							    PNCounter2, LastOp, CommitTime2, vectorclock:from_list([{1,3},{2,2}]),
-							    Ops, ignore),
+							    PNCounter2, LastOp, CommitTime2,
+        #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {crdt_pncounter:value(PNCounter3), CommitTime3}).
     
 materializer_clocksi_concurrent_test() ->
@@ -373,22 +384,25 @@ materializer_clocksi_concurrent_test() ->
     Ops = [{3,Op2},{2,Op3},{1,Op1}],
     {ok, PNCounter2, 3, CommitTime2, _Keep} = materialize_intern(crdt_pncounter,
                                       [], 0, 3, ignore,
-                                      vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore, ignore, false),
+        #transaction{snapshot_vc = vectorclock:from_list([{2,2},{1,2}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops, ignore, false),
     {ok, PNCounter3} = apply_operations(crdt_pncounter, PNCounter, PNCounter2),
     ?assertEqual({4, vectorclock:from_list([{1,2},{2,2}])}, {crdt_pncounter:value(PNCounter3), CommitTime2}),
     
     Snapshot=new(crdt_pncounter),
     {ok, PNcounter3, 1, CommitTime3, _SsSave1} = materialize(crdt_pncounter, Snapshot, 0, ignore,
-                                   vectorclock:from_list([{1,2},{2,1}]), Ops, ignore),
+        #transaction{snapshot_vc = vectorclock:from_list([{1,2},{2,1}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({3, vectorclock:from_list([{1,2},{2,1}])}, {crdt_pncounter:value(PNcounter3), CommitTime3}),
     
     {ok, PNcounter4, 2, CommitTime4, _SsSave2} = materialize(crdt_pncounter, Snapshot, 0, ignore,
-                                   vectorclock:from_list([{1,1},{2,2}]),Ops, ignore),
+        #transaction{snapshot_vc = vectorclock:from_list([{1,1},{2,2}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({3, vectorclock:from_list([{1,1},{2,2}])}, {crdt_pncounter:value(PNcounter4), CommitTime4}),
     
     {ok, PNcounter5, 1, CommitTime5, _SsSave3} = materialize(crdt_pncounter, Snapshot, 0, ignore,
-                                   vectorclock:from_list([{1,1},{2,1}]),Ops, ignore),
+        #transaction{snapshot_vc = vectorclock:from_list([{1,1},{2,1}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops),
     ?assertEqual({2, vectorclock:from_list([{1,1},{2,1}])}, {crdt_pncounter:value(PNcounter5), CommitTime5}).
 
 %% @doc Testing gcounter with empty update log
@@ -397,8 +411,8 @@ materializer_clocksi_noop_test() ->
     ?assertEqual(0,crdt_pncounter:value(PNCounter)),
     Ops = [],
     {ok, PNCounter2, 0, ignore, _SsSave} = materialize_intern(crdt_pncounter, [], 0, 0,ignore,
-						    vectorclock:from_list([{1,1}]),
-						    Ops, ignore, ignore, false),
+        #transaction{snapshot_vc = vectorclock:from_list([{1,1}]),
+            txn_id = ignore, transactional_protocol = clocksi}, Ops, ignore, false),
     {ok, PNCounter3} = apply_operations(crdt_pncounter, PNCounter, PNCounter2),
     ?assertEqual(0,crdt_pncounter:value(PNCounter3)).
 
@@ -425,8 +439,9 @@ is_op_in_snapshot_test()->
     OpCT1SS = vectorclock:from_list([OpCT1]),
     ST1 = vectorclock:from_list([{dc1, 2}]),
     ST2 = vectorclock:from_list([{dc1, 0}]),
-    ?assertEqual({true,false,OpCT1SS}, is_op_in_snapshot(2,Op1,OpCT1, OpCT1SS, ST1, ignore,ignore)),
-    ?assertEqual({false,false,ignore}, is_op_in_snapshot(2,Op1,OpCT1, OpCT1SS, ST2, ignore,ignore)).
-    
-  
+    Tx1 = #transaction{snapshot_vc = ST1, transactional_protocol = clocksi, txn_id = 2},
+    Tx2 = #transaction{snapshot_vc = ST2, transactional_protocol = clocksi, txn_id = 2},
+    ?assertEqual({true,false,OpCT1SS}, is_op_in_snapshot(Op1, OpCT1, OpCT1SS, Tx1, ignore,ignore)),
+    ?assertEqual({false,false,ignore}, is_op_in_snapshot(Op1,OpCT1, OpCT1SS, Tx2, ignore,ignore)).
+
 -endif.

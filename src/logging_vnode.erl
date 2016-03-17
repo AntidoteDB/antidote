@@ -391,7 +391,7 @@ handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommitedOps) ->
     {{DcId, TxCommitTime}, SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, [{Key, Type, Op}]} ->
-            MinSnapshotTime = Transaction#transaction.vec_snapshot_time,
+            MinSnapshotTime = Transaction#transaction.snapshot_vc,
             case not vectorclock:gt(SnapshotTime, MinSnapshotTime) of
                 true ->
                     CommittedDownstreamOp =

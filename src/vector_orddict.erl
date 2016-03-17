@@ -83,7 +83,7 @@ get_smaller_internal(_Vector,[],IsFirst) ->
 get_smaller_internal(Vector,[{FirstClock,FirstVal}|Rest],IsFirst) ->
     case vectorclock:le(FirstClock,Vector) of
 	true ->
-	    {{FirstClock,FirstVal},IsFirst};
+	    {{FirstVal, FirstClock},IsFirst};
 	false ->
 	    get_smaller_internal(Vector,Rest,false)
     end.
@@ -180,9 +180,9 @@ vector_orddict_get_smaller_test() ->
     %% Check you get the correct smaller snapshot
     ?assertEqual({undefined,false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,0},{dc2,0}]),Vdict3)),
     ?assertEqual({undefined,false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,1},{dc2,6}]),Vdict3)),
-    ?assertEqual({{CT1,1},false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,5},{dc2,5}]),Vdict3)),
-    ?assertEqual({{CT2,2},true}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,9},{dc2,9}]),Vdict3)),
-    ?assertEqual({{CT3,3},false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,3},{dc2,11}]),Vdict3)).
+    ?assertEqual({{1, CT1},false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,5},{dc2,5}]),Vdict3)),
+    ?assertEqual({{2, CT2},true}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,9},{dc2,9}]),Vdict3)),
+    ?assertEqual({{3,CT3},false}, vector_orddict:get_smaller(vectorclock:from_list([{dc1,3},{dc2,11}]),Vdict3)).
     
 
 

@@ -503,7 +503,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     LogRecord = #log_record{tx_id = TxId,
         op_type = commit,
         op_payload = {{DcId, TxCommitTime},
-            Transaction#transaction.vec_snapshot_time}},
+            Transaction#transaction.snapshot_vc}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
             case application:get_env(antidote, txn_cert) of
@@ -644,7 +644,7 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
                 key = Key,
                 type = Type,
                 op_param = Op,
-                snapshot_time = Transaction#transaction.vec_snapshot_time,
+                snapshot_time = Transaction#transaction.snapshot_vc,
                 commit_time = {DcId, TxCommitTime},
                 txid = Transaction#transaction.txn_id},
         [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]

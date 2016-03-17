@@ -12,7 +12,7 @@
                   riak_core
                  ]},
   {mod, { antidote_app, []}},
-     {env, [{txn_cert, true}, {txn_prot, nmsi}]}
+     {env, [{txn_cert, true}, {txn_prot, clocksi}]}
      %% possible values for txn_prot are:
      %% clocksi: antidote w/ and without certification check.
      %% gr: gentleRain

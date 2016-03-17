@@ -98,10 +98,10 @@
     dep_time :: vectorclock(),
     commit_time :: commit_time(),
     txid :: txid()}).
--record(transaction, {snapshot_time :: snapshot_time(),
+-record(transaction, {snapshot_clock :: snapshot_time(),
     transactional_protocol :: atom(),
     server_pid :: pid(),
-    vec_snapshot_time,
+    snapshot_vc :: vectorclock(),
     txn_id :: txid(),
     nmsi_read_metadata :: nmsi_read_metadata()}).
 
