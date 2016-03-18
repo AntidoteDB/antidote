@@ -34,6 +34,7 @@
 -export([
 	 sync_meta_data/0,
 	 broadcast_meta_data/2,
+	 broadcast_meta_data_list/2,
 	 read_meta_data/1]).
 	 
 %% Internal API
@@ -70,11 +71,18 @@ sync_meta_data() ->
 			       ok = gen_server:call({global,generate_server_name(Node)}, {broadcast_meta_data})
 		       end, NodeList).
 
+-spec broadcast_meta_data_list([{term(),term()}] -> ok.
+broadcast_meta_data_list(KeyValueList) ->
+    NodeList = dc_utilities:get_my_dc_nodes(),
+    ok = lists:foreach(fun(Node) ->
+			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, KeyValueList})
+		       end, NodeList).    
+
 -spec broadcast_meta_data(term(), term()) -> ok.
 broadcast_meta_data(Key, Value) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, Key, Value})
+			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, [{Key, Value}]})
 		       end, NodeList).    
 
 -spec broadcast_meta_data(term(), term(), function(), function()) -> ok.
@@ -90,15 +98,24 @@ broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
 init([]) ->
     DetsTable = dets:open_file(?TABLE_NAME,[{type,set}]),
     Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
-    Table = dets:to_ets(DetsTable,Table),
+
+    %% Dont load from disk for now
+    LoadFromDisk = false,
+    case LoadFromDisk of
+	true ->
+	    Table = dets:to_ets(DetsTable,Table);
+	false ->
+	    ok = dets:deletes_all_objects(DetsTable),
+	    Table
+    end,
     {ok, #state{table = Table, dets_table = DetsTable}}.
 
 handle_cast(_Info, State) ->
     {noreply, State}.
 
-handle_call({update_meta_data, Key,Value}, Sender, State = #state{table = Table, dets_table = DetsTable}) ->
-    true = ets:insert(Table, {Key,Value}),
-    ok = dets:insert(DetsTable, {Key,Value}),
+handle_call({update_meta_data, KeyValueList}, Sender, State = #state{table = Table, dets_table = DetsTable}) ->
+    true = ets:insert(Table, KeyValueList),
+    ok = dets:insert(DetsTable, KeyValueList),
     {reply, ok, State};
 
 handle_call({merge_meta_data,Key,Value,MergeFunc,InitFunc}, Sender, State = #state{table = Table, dets_table = DetsTable}) ->
