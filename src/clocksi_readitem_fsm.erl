@@ -228,8 +228,9 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
                     ready
             end;
             Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
-            T_TS = Transaction#transaction.snapshot_clock,
-            case T_TS > Time of
+                TxId = Transaction#transaction.txn_id,
+                T_TS = TxId#tx_id.snapshot_time,
+                case T_TS > Time of
                 true ->
                     % lager:info("Waiting... Reason: clock skew"),
                     {not_ready, (T_TS - Time) div 1000 + 1};

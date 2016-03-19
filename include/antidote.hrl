@@ -94,9 +94,9 @@
 -record(operation_payload, {key :: key(),
     type :: type(),
     op_param :: op(),
-    snapshot_time :: snapshot_time(),
-    dep_time :: vectorclock(),
-    commit_time :: commit_time(),
+    snapshot_vc :: snapshot_time(),
+    dependency_vc :: vectorclock(),
+    dc_and_commit_time :: commit_time(),
     txid :: txid()}).
 -record(transaction, {snapshot_clock :: snapshot_time(),
     transactional_protocol :: atom(),

@@ -133,7 +133,7 @@ generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->
         downstream_fail ->
             {error, mock_downstream_fail};
         _ ->
-            {ok, mock_downsteam}
+            {ok, mock_downsteam, mock_metadata}
     end.
 
 append(_Node,_LogId,_LogRecord) ->

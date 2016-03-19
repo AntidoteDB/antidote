@@ -211,8 +211,8 @@ updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTi
       key = Key,
       type = Type,
       op_param = Op,
-      snapshot_time = SnapshotTime,
-      commit_time = {DCID, CommitTime},
+      snapshot_vc = SnapshotTime,
+      dc_and_commit_time = {DCID, CommitTime},
       txid =  LogRecord#log_record.tx_id
     }
   end, inter_dc_txn:ops_by_type(Txn, update)).

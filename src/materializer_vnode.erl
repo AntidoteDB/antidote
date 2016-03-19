@@ -48,10 +48,9 @@
 -export([start_vnode/1,
 	 check_tables_ready/0,
          read/6,
-    read_causal/7,
 	 get_cache_name/2,
 	 store_ss/3,
-         update/2,
+         update/3,
 	 op_not_already_in_snapshot/2]).
 
 %% Callbacks
@@ -93,33 +92,17 @@ read(Key, Type, Transaction,OpsCache,SnapshotCache,Partition) ->
             internal_read(Key, Type, Transaction, false, OpsCache, SnapshotCache)
     end.
 
-
-%% @doc Read state of key at given snapshot time, this does not touch the vnode process
-%%      directly, instead it just reads from the operations and snapshot tables that
-%%      are in shared memory, allowing concurrent reads.
--spec read_causal(key(), type(), snapshot_time(), txid(),cache_id(), cache_id(), partition_id()) -> {ok, snapshot()} | {error, reason()}.
-read_causal(Key, Type, SnapshotTime, TxId,OpsCache,SnapshotCache,Partition) ->
-    case ets:info(OpsCache) of
-        undefined ->
-            riak_core_vnode_master:sync_command({Partition,node()},
-                {read,Key,Type,SnapshotTime,TxId},
-                materializer_vnode_master,
-                infinity);
-        _ ->
-            internal_read(Key, Type, SnapshotTime, TxId, OpsCache, SnapshotCache)
-    end.
-
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
 get_cache_name(Partition,Base) ->
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 %%@doc write operation to cache for future read, updates are stored
 %%     one at a time into the ets tables
--spec update(key(), clocksi_payload()) -> ok | {error, reason()}.
-update(Key, DownstreamOp) ->
+-spec update(key(), clocksi_payload(), transaction()) -> ok | {error, reason()}.
+update(Key, DownstreamOp, Transaction) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
+    riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp, Transaction},
                                         materializer_vnode_master).
 
 %%@doc write snapshot to cache for future read, snapshots are stored
@@ -198,9 +181,9 @@ handle_command({read, Key, Type, Transaction}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache,partition=Partition})->
     {reply, read(Key, Type, Transaction,OpsCache,SnapshotCache,Partition), State};
 
-handle_command({update, Key, DownstreamOp}, _Sender,
+handle_command({update, Key, DownstreamOp, Transaction}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
-    true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),
+    true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache, Transaction),
     {reply, ok, State};
 
 
@@ -473,8 +456,8 @@ prune_ops({_Len, OpsDict}, Threshold) ->
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
     Res = reverse_and_filter(fun({_OpId, Op}) ->
-        {OpDc, OpCommitTimestamp} = Op#operation_payload.commit_time,
-        OpCommitVC = vectorclock:create_commit_vector_clock(OpDc, OpCommitTimestamp, Op#operation_payload.snapshot_time),
+        {OpDc, OpCommitTimestamp} = Op#operation_payload.dc_and_commit_time,
+        OpCommitVC = vectorclock:create_commit_vector_clock(OpDc, OpCommitTimestamp, Op#operation_payload.snapshot_vc),
         (op_not_already_in_snapshot(Threshold, OpCommitVC))
                              end, OpsDict, ?FIRST_OP, []),
     case Res of
@@ -519,24 +502,20 @@ reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), clocksi_payload(), cache_id(), cache_id()) -> true.
-op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache) ->
+-spec op_insert_gc(key(), clocksi_payload(), cache_id(), cache_id(), transaction()) -> true.
+op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
     case ets:member(OpsCache, Key) of
         false ->
             ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP + ?OPS_THRESHOLD, 0, [{1, Key}, {2, {0, ?OPS_THRESHOLD}}]));
         true ->
             ok
     end,
-    NewId = ets:update_counter(OpsCache, Key,
-        {3, 1}),
+    NewId = ets:update_counter(OpsCache, Key, {3, 1}),
     {Length, ListLen} = ets:lookup_element(OpsCache, Key, 2),
     %% Perform the GC in case the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
     case ((Length) >= ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
             Type = DownstreamOp#operation_payload.type,
-            SnapshotTime = DownstreamOp#operation_payload.snapshot_time,
-            Transaction = #transaction{transactional_protocol = clocksi,
-                snapshot_vc = SnapshotTime},
             {_, _} = internal_read(Key, Type, Transaction, true, OpsCache, SnapshotCache, true),
             %% Have to get the new ops dict because the interal_read can change it
             {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
@@ -593,64 +572,67 @@ gc_test() ->
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])},true, OpsCache, SnapshotCache),
     ?assertEqual(0, Type:value(Res0)),
 
-    op_insert_gc(Key, generate_payload(10,11,Res0,a1), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(10,11,Res0,a1), OpsCache, SnapshotCache, transaction),
     {ok, {Res1, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,12}])},true, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
 
-    op_insert_gc(Key, generate_payload(20,21,Res1,a2), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(20,21,Res1,a2), OpsCache, SnapshotCache, transaction),
     {ok, {Res2, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,22}])},true, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
 
-    op_insert_gc(Key, generate_payload(30,31,Res2,a3), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(30,31,Res2,a3), OpsCache, SnapshotCache, transaction),
     {ok, {Res3, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,32}])},true, OpsCache, SnapshotCache),
     ?assertEqual(3, Type:value(Res3)),
 
-    op_insert_gc(Key, generate_payload(40,41,Res3,a4), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(40,41,Res3,a4), OpsCache, SnapshotCache, transaction),
     {ok, {Res4, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,42}])},true, OpsCache, SnapshotCache),
     ?assertEqual(4, Type:value(Res4)),
 
-    op_insert_gc(Key, generate_payload(50,51,Res4,a5), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(50,51,Res4,a5), OpsCache, SnapshotCache, transaction),
     {ok, {Res5, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,52}])},true, OpsCache, SnapshotCache),
     ?assertEqual(5, Type:value(Res5)),
 
-    op_insert_gc(Key, generate_payload(60,61,Res5,a6), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(60,61,Res5,a6), OpsCache, SnapshotCache, transaction),
     {ok, {Res6, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,62}])},true, OpsCache, SnapshotCache),
     ?assertEqual(6, Type:value(Res6)),
 
-    op_insert_gc(Key, generate_payload(70,71,Res6,a7), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(70,71,Res6,a7), OpsCache, SnapshotCache, transaction),
     {ok, {Res7, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,72}])},true, OpsCache, SnapshotCache),
     ?assertEqual(7, Type:value(Res7)),
 
-    op_insert_gc(Key, generate_payload(80,81,Res7,a8), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(80,81,Res7,a8), OpsCache, SnapshotCache, transaction),
     {ok, {Res8, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,82}])},true, OpsCache, SnapshotCache),
     ?assertEqual(8, Type:value(Res8)),
 
-    op_insert_gc(Key, generate_payload(90,91,Res8,a9), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(90,91,Res8,a9), OpsCache, SnapshotCache, transaction),
     {ok, {Res9, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,92}])},true, OpsCache, SnapshotCache),
     ?assertEqual(9, Type:value(Res9)),
 
-    op_insert_gc(Key, generate_payload(100,101,Res9,a10), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(100,101,Res9,a10), OpsCache, SnapshotCache, transaction),
 
     %% Insert some new values
 
-    op_insert_gc(Key, generate_payload(15,111,Res1,a11), OpsCache, SnapshotCache),
-    op_insert_gc(Key, generate_payload(16,121,Res1,a12), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(15,111,Res1,a11), OpsCache, SnapshotCache, transaction),
+    op_insert_gc(Key, generate_payload(16,121,Res1,a12), OpsCache, SnapshotCache, transaction),
 
     %% Trigger the clean
+
+    Tx = #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,102}])},
+
     {ok, {Res10, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,102}])},true, OpsCache, SnapshotCache),
+        Tx ,true, OpsCache, SnapshotCache),
     ?assertEqual(10, Type:value(Res10)),
 
-    op_insert_gc(Key, generate_payload(102,131,Res9,a13), OpsCache, SnapshotCache),
+    op_insert_gc(Key, generate_payload(102,131,Res9,a13), OpsCache, SnapshotCache, Tx),
 
     %% Be sure you didn't loose any updates
     {ok, {Res13, _}} = internal_read(Key, Type,
@@ -671,7 +653,8 @@ large_list_test() ->
     ?assertEqual(0, Type:value(Res0)),
 
     lists:foreach(fun(Val) ->
-			  op_insert_gc(Key, generate_payload(10,11+Val,Res0,Val), OpsCache, SnapshotCache)
+			  op_insert_gc(Key, generate_payload(10,11+Val,Res0,Val), OpsCache, SnapshotCache,
+                  #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{1,11+Val}])} )
 		  end, lists:seq(1,1000)),
     
     {ok, {Res1000, _}} = internal_read(Key, Type,
@@ -680,9 +663,12 @@ large_list_test() ->
     
     %% Now check everything is ok as the list shrinks from generating new snapshots
     lists:foreach(fun(Val) ->
-    			  op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), OpsCache, SnapshotCache),
+    			  op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), OpsCache, SnapshotCache,
+                      #transaction{transactional_protocol = clocksi,
+                          snapshot_vc = vectorclock:from_list([{DC1,2000}])}),
     			  {ok, {Res, _}} = internal_read(Key, Type,
-                      #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2000}])},true, OpsCache, SnapshotCache),
+                      #transaction{transactional_protocol = clocksi,
+                          snapshot_vc = vectorclock:from_list([{DC1,2000}])},true, OpsCache, SnapshotCache),
     			  ?assertEqual(Val, Type:value(Res))
     		  end, lists:seq(1001,1100)).
 
@@ -695,8 +681,8 @@ generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
     #operation_payload{key = Key,
 		     type = Type,
 		     op_param = {merge, Op1},
-		     snapshot_time = vectorclock:from_list([{DC1,SnapshotTime}]),
-		     commit_time = {DC1,CommitTime},
+		     snapshot_vc = vectorclock:from_list([{DC1,SnapshotTime}]),
+		     dc_and_commit_time = {DC1,CommitTime},
 		     txid = 1
 		    }.
 
@@ -713,11 +699,11 @@ seq_write_test() ->
     DownstreamOp1 = #operation_payload{key = Key,
                                      type = Type,
                                      op_param = {merge, Op1},
-                                     snapshot_time = vectorclock:from_list([{DC1,10}]),
-                                     commit_time = {DC1, 15},
+                                     snapshot_vc = vectorclock:from_list([{DC1,10}]),
+                                     dc_and_commit_time = {DC1, 15},
                                      txid = 1
                                     },
-    op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache),
+    op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache, transaction),
     {ok, {Res1, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}])},true, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
@@ -725,11 +711,11 @@ seq_write_test() ->
     {ok,Op2} = Type:update(increment, a, Res1),
     DownstreamOp2 = DownstreamOp1#operation_payload{
                       op_param = {merge, Op2},
-                      snapshot_time=vectorclock:from_list([{DC1,16}]),
-                      commit_time = {DC1,20},
+                      snapshot_vc =vectorclock:from_list([{DC1,16}]),
+                      dc_and_commit_time = {DC1,20},
                       txid=2},
 
-    op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache),
+    op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache, transaction),
     {ok, {Res2, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 21}])},true, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
@@ -753,11 +739,11 @@ multipledc_write_test() ->
     DownstreamOp1 = #operation_payload{key = Key,
                                      type = Type,
                                      op_param = {merge, Op1},
-                                     snapshot_time = vectorclock:from_list([{DC2,0}, {DC1,10}]),
-                                     commit_time = {DC1, 15},
+                                     snapshot_vc = vectorclock:from_list([{DC2,0}, {DC1,10}]),
+                                     dc_and_commit_time = {DC1, 15},
                                      txid = 1
                                     },
-    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache),
+    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache, transaction),
     {ok, {Res1, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}, {DC2, 0}])},true, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
@@ -766,11 +752,11 @@ multipledc_write_test() ->
     {ok,Op2} = Type:update(increment, b, Res1),
     DownstreamOp2 = DownstreamOp1#operation_payload{
                       op_param = {merge, Op2},
-                      snapshot_time=vectorclock:from_list([{DC2,16}, {DC1,16}]),
-                      commit_time = {DC2,20},
+                      snapshot_vc =vectorclock:from_list([{DC2,16}, {DC1,16}]),
+                      dc_and_commit_time = {DC2,20},
                       txid=2},
 
-    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache),
+    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache, transaction),
     {ok, {Res2, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,16}, {DC2,21}])},true, OpsCache, SnapshotCache),
     ?assertEqual(2, Type:value(Res2)),
@@ -794,11 +780,11 @@ concurrent_write_test() ->
     DownstreamOp1 = #operation_payload{key = Key,
                                      type = Type,
                                      op_param = {merge, Op1},
-                                     snapshot_time = vectorclock:from_list([{DC1,0}, {DC2,0}]),
-                                     commit_time = {DC2, 1},
+                                     snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,0}]),
+                                     dc_and_commit_time = {DC2, 1},
                                      txid = 1
                                     },
-    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache),
+    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache, transaction),
     {ok, {Res1, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,1}])},true, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
@@ -808,10 +794,10 @@ concurrent_write_test() ->
     DownstreamOp2 = #operation_payload{ key = Key,
 				      type = Type,
 				      op_param = {merge, Op2},
-				      snapshot_time=vectorclock:from_list([{DC1,0}, {DC2,0}]),
-				      commit_time = {DC1, 1},
+				      snapshot_vc =vectorclock:from_list([{DC1,0}, {DC2,0}]),
+				      dc_and_commit_time = {DC1, 1},
 				      txid=2},
-    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache),
+    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache, transaction),
 
     %% Read different snapshots
     {ok, {ReadDC1, _}} = internal_read(Key, Type,

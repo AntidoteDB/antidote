@@ -36,20 +36,20 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
         Key,
         Type,
         WriteSet) of
-        {ok, {Snapshot, _}} ->
+        {ok, {Snapshot, _SnapshotCommitParams}} ->
             TypeString = lists:flatten(io_lib:format("~p", [Type])),
             case string:str(TypeString, "riak_dt") of
                 0 -> %% dealing with an op_based crdt
                     case Type:generate_downstream(Op, Actor, Snapshot) of
                         {ok, OpParam} ->
-                            {ok, {update, OpParam}};
+                            {ok, {update, OpParam}, _SnapshotCommitParams};
                         {error, Reason} ->
                             {error, Reason}
                     end;
                 1 -> %% dealing with a state_based crdt
                     case Type:update(Op, Actor, Snapshot) of
                         {ok, NewState} ->
-                            {ok, {merge, NewState}};
+                            {ok, {merge, NewState}, _SnapshotCommitParams};
                         {error, Reason} ->
                             {error, Reason}
                     end

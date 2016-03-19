@@ -399,8 +399,8 @@ handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommitedOps) ->
                             key = Key,
                             type = Type,
                             op_param = Op,
-                            snapshot_time = SnapshotTime,
-                            commit_time = {DcId, TxCommitTime},
+                            snapshot_vc = SnapshotTime,
+                            dc_and_commit_time = {DcId, TxCommitTime},
                             txid = TxId},
                     filter_terms_for_key(T, Key, Transaction, Ops,
                         lists:append(CommitedOps, [CommittedDownstreamOp]));

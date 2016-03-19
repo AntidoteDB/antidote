@@ -68,7 +68,7 @@
 %% States
 -export([create_transaction_record/6,
     init_state/4,
-    perform_update/4,
+    perform_update/5,
     perform_read/4,
     execute_op/3,
     finish_op/3,
@@ -243,9 +243,17 @@ perform_singleitem_update(Key, Type, Params) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
+    %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
+    %% todo: another for logging, and finally one for single commit.
+    %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
-        {ok, DownstreamRecord} ->
-            Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
+        {ok, DownstreamRecord, Parameters} ->
+            Updated_partition = case Transaction#transaction.transactional_protocol of
+                                    nmsi ->
+                                        [{IndexNode, [{Key, Type, {DownstreamRecord, Parameters}}]}];
+                                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                        [{IndexNode, [{Key, Type, DownstreamRecord}]}]
+                                end,
             TxId = Transaction#transaction.txn_id,
             LogRecord = #log_record{tx_id = TxId, op_type = update,
                 op_payload = {Key, Type, DownstreamRecord}},
@@ -253,7 +261,7 @@ perform_singleitem_update(Key, Type, Params) ->
             [Node] = Preflist,
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                 {ok, _} ->
-                    case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
+                    case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
                         {committed, CommitTime} ->
                             TxId = Transaction#transaction.txn_id,
                             DcId = ?DC_UTIL:get_my_dc_id(),
@@ -294,18 +302,22 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
             ReadResult
     end.
 
-perform_update(Args, Updated_partitions, Transaction, Sender) ->
-    {Key, Type, Param} = Args,
+perform_update(UpdateArgs, Updated_partitions, Transaction, Sender, CoordState) ->
+    {Key, Type, Param} = UpdateArgs,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
+%%    Add the vnode to the updated partitions, if not already there.
     WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
                    false ->
                        [];
                    {IndexNode, WS} ->
                        WS
                end,
+    %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
+    %% todo: another for logging, and finally one for single commit.
+    %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
-        {ok, DownstreamRecord} ->
+        {ok, DownstreamRecord, _SnapshotParameters} ->
             NewUpdatedPartitions = case WriteSet of
                                        [] ->
                                            [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
@@ -326,7 +338,13 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
             [Node] = Preflist,
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                 {ok, _} ->
-                    NewUpdatedPartitions;
+                    State1 = case Transaction#transaction.transactional_protocol of
+                        nmsi->
+                            update_causal_snapshot_state(CoordState, _SnapshotParameters, Key);
+                        Protocol when ((Protocol == gr) or (Protocol == clocksi))->
+                            CoordState
+                    end,
+                    State1#tx_coord_state{updated_partitions = NewUpdatedPartitions};
                 Error ->
                     case Sender of
                         undefined ->
@@ -371,7 +389,7 @@ execute_op({OpType, Args}, Sender,
                     case Transaction#transaction.transactional_protocol of
                         nmsi ->
                             SD1 = update_causal_snapshot_state(SD0, ReadResult, Key),
-                            {Result, _, _, _} = ReadResult,
+                            {Result, _} = ReadResult,
                             {reply, {ok, Type:value(Result)}, execute_op, SD1};
                         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                             {Snapshot, _CommitParams} = ReadResult,
@@ -379,21 +397,20 @@ execute_op({OpType, Args}, Sender,
                     end
             end;
         update ->
-            case perform_update(Args, Updated_partitions, Transaction, Sender) of
+            case perform_update(Args, Updated_partitions, Transaction, Sender, SD0) of
                 {error, _Reason} ->
                     abort(SD0);
-                NewUpdatedPartitions ->
-                    {next_state, execute_op,
-                        SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions}}
+                NewCoordinatorState ->
+                    {next_state, execute_op, NewCoordinatorState}
             end
     end.
 
 %% @doc Used by the causal snapshot for NMSI
 %%      Updates the state of a transaction coordinator
 %%      for maintaining the causal snapshot metadata
-update_causal_snapshot_state(State, ReadResult, Key) ->
+update_causal_snapshot_state(State, ReadMetadata, Key) ->
     Transaction = State#tx_coord_state.transaction,
-    {_Result, Version, Dep, ReadTime} = ReadResult,
+    {Version, Dep, ReadTime} = ReadMetadata,
     KeysAccessTime = State#tx_coord_state.keys_access_time,
     VersionMin = State#tx_coord_state.version_min,
     NewKeysAccessTime = dict:append(Key, Version, KeysAccessTime),
