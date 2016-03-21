@@ -127,7 +127,10 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
-      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#operation_payload.key, Op) end, ClockSiOps),
+%%      Todo: fix this dirty patch
+      Transaction = #transaction{
+        transactional_protocol = application:get_env(antidote, txn_prot)},
+      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#operation_payload.key, Op, Transaction) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.
 

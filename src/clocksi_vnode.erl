@@ -341,10 +341,17 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
         {ok, _} ->
-            ResultCommit = commit(Transaction, NewPrepare, WriteSet, CommittedTx, NewState),
+            CommitParams = case Transaction#transaction.transactional_protocol of
+                               nmsi ->
+                                   [{_Key, _Type, {_Snapshot, {_SnapshotCommitVC, SnapshotDepVC}}}] = WriteSet,
+                                   {NewPrepare, SnapshotDepVC};
+                               Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
+                                   NewPrepare
+                           end,
+            ResultCommit = commit(Transaction, CommitParams, WriteSet, CommittedTx, NewState),
             case ResultCommit of
                 {ok, committed, NewPreparedDict2} ->
-                    {reply, {committed, NewPrepare}, NewState#state{prepared_dict = NewPreparedDict2}};
+                    {reply, {committed, CommitParams}, NewState#state{prepared_dict = NewPreparedDict2}};
                 {error, materializer_failure} ->
                     {reply, {error, materializer_failure}, NewState};
                 {error, timeout} ->
@@ -478,31 +485,30 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
-set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], Transaction, PrepareTime, Acc) ->
+set_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, PrepareTime, Acc) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
                     [{Key, List}] ->
                         List
                 end,
-    TxId = Transaction#transaction.txn_id,
+%%    TxId = Transaction#transaction.txn_id,
     case lists:keymember(TxId, 1, ActiveTxs) of
         true ->
-            set_prepared(PreparedTx, Rest, Transaction, PrepareTime, Acc);
+            set_prepared(PreparedTx, Rest, TxId, PrepareTime, Acc);
         false ->
             true = ets:insert(PreparedTx, {Key, [{TxId, PrepareTime} | ActiveTxs]}),
-            set_prepared(PreparedTx, Rest, Transaction, PrepareTime, dict:append_list(Key, ActiveTxs, Acc))
+            set_prepared(PreparedTx, Rest, TxId, PrepareTime, dict:append_list(Key, ActiveTxs, Acc))
     end.
 
 reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
-reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
+reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
-commit(Transaction, PrepareTime, Updates, CommittedTx, State) ->
-    Updates = [{Key, _Type, Operation} | _Rest],
+commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
         TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
     Protocol = Transaction#transaction.transactional_protocol,
@@ -511,15 +517,13 @@ commit(Transaction, PrepareTime, Updates, CommittedTx, State) ->
         op_type = commit,
         op_payload = {{DcId, CommitTime}, Parameter} =
             case Protocol of
-                         nmsi ->
-                             {CT, DepVC} = InputCommitParameters,
-                             {{DcId, CT}, DepVC};
+                         nmsi -> %%
+                             {CT, SnapshotDepVC} = CommitParameters,
+                             {{DcId, CT}, SnapshotDepVC};
                          Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                             CT = InputCommitParameters,
+                             CT = CommitParameters,
                              {{DcId, CT}, Transaction#transaction.snapshot_vc}
-                     end
-    },
-
+                     end},
             case application:get_env(antidote, txn_cert) of
                 {ok, true} ->
                     lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, CommitTime}) end,
@@ -527,13 +531,15 @@ commit(Transaction, PrepareTime, Updates, CommittedTx, State) ->
                 _ ->
                     ok
             end,
+            [{Key, _Type, _Op} | _Rest] = Updates,
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
                 {ok, _} ->
                     FinalCommitParams = case Protocol of
                                             nmsi ->
-                                                {{DcId, CommitTime}, Parameter};
+                                                DependencyVC = Parameter,
+                                                {{DcId, CommitTime}, DependencyVC};
                                             Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                                                 {DcId, CommitTime}
                                         end,
@@ -583,7 +589,7 @@ clean_and_notify(TxId, Updates, #state{
 
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
-clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
+clean_prepared(PreparedTx, [{Key, _Type, _Op} | Rest], TxId) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
@@ -659,11 +665,12 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
         nmsi ->
             {{DcId, CommitTime}, DependencyVC} = CommitParams,
             UpdateFunction = fun({Key, Type, Op}, AccIn) ->
+                {OpParam, _} = Op,
                 CommittedDownstreamOp =
                     #operation_payload{
                         key = Key,
                         type = Type,
-                        op_param = Op,
+                        op_param = OpParam,
                         dependency_vc = DependencyVC,
                         dc_and_commit_time = {DcId, CommitTime},
                         txid = Transaction#transaction.txn_id},

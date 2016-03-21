@@ -91,14 +91,16 @@
 
 -record(tx_id, {snapshot_time :: snapshot_time(),
     server_pid :: pid()}).
--record(operation_payload, {key :: key(),
+-record(operation_payload, {
+    key :: key(),
     type :: type(),
     op_param :: op(),
     snapshot_vc :: snapshot_time(),
     dependency_vc :: vectorclock(),
     dc_and_commit_time :: commit_time(),
     txid :: txid()}).
--record(transaction, {snapshot_clock :: snapshot_time(),
+-record(transaction, {
+    snapshot_clock :: snapshot_time(),
     transactional_protocol :: atom(),
     server_pid :: pid(),
     snapshot_vc :: vectorclock(),

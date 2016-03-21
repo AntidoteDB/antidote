@@ -68,7 +68,7 @@
 %% States
 -export([create_transaction_record/6,
     init_state/4,
-    perform_update/5,
+    perform_update/3,
     perform_read/4,
     execute_op/3,
     finish_op/3,
@@ -240,7 +240,7 @@ perform_singleitem_read(Key, Type) ->
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
     {ok, Protocol} = application:get_env(antidote, txn_prot),
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
+    {Transaction, TxId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
@@ -254,7 +254,6 @@ perform_singleitem_update(Key, Type, Params) ->
                                     Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                                         [{IndexNode, [{Key, Type, DownstreamRecord}]}]
                                 end,
-            TxId = Transaction#transaction.txn_id,
             LogRecord = #log_record{tx_id = TxId, op_type = update,
                 op_payload = {Key, Type, DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
@@ -262,11 +261,18 @@ perform_singleitem_update(Key, Type, Params) ->
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                 {ok, _} ->
                     case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
-                        {committed, CommitTime} ->
-                            TxId = Transaction#transaction.txn_id,
+                        {committed, CommitParameters} ->
                             DcId = ?DC_UTIL:get_my_dc_id(),
-                            CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                DcId, CommitTime, Transaction#transaction.snapshot_vc),
+                            CausalClock = case Transaction#transaction.transactional_protocol of
+                                              nmsi ->
+                                                  {CommitTime, DepVC} = CommitParameters,
+                                                  ?VECTORCLOCK:set_clock_of_dc(
+                                                      DcId, CommitTime, DepVC);
+                                              Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+                                                  CommitTime = CommitParameters,
+                                                  ?VECTORCLOCK:set_clock_of_dc(
+                                                      DcId, CommitTime, Transaction#transaction.snapshot_vc)
+                                          end,
                             {ok, {TxId, [], CausalClock}};
                         abort ->
                             {error, aborted};
@@ -301,28 +307,29 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
         {ok, ReadResult} ->
             ReadResult
     end.
-
-perform_update(UpdateArgs, Updated_partitions, Transaction, Sender, CoordState) ->
+perform_update(UpdateArgs, Sender, CoordState) ->
     {Key, Type, Param} = UpdateArgs,
+    UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
+    Transaction = CoordState#tx_coord_state.transaction,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
 %%    Add the vnode to the updated partitions, if not already there.
-    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
+    WriteSet = case lists:keyfind(IndexNode, 1, UpdatedPartitions) of
                    false ->
                        [];
                    {IndexNode, WS} ->
                        WS
                end,
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
-    %% todo: another for logging, and finally one for single commit.
+    %% todo: another for logging, and finally one (or two) for  commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
         {ok, DownstreamRecord, _SnapshotParameters} ->
             NewUpdatedPartitions = case WriteSet of
                                        [] ->
-                                           [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
+                                           [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
                                        _ ->
-                                           lists:keyreplace(IndexNode, 1, Updated_partitions,
+                                           lists:keyreplace(IndexNode, 1, UpdatedPartitions,
                                                {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
                                    end,
             case Sender of
@@ -397,7 +404,7 @@ execute_op({OpType, Args}, Sender,
                     end
             end;
         update ->
-            case perform_update(Args, Updated_partitions, Transaction, Sender, SD0) of
+            case perform_update(Args, Sender, SD0) of
                 {error, _Reason} ->
                     abort(SD0);
                 NewCoordinatorState ->
