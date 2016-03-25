@@ -319,7 +319,7 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
     #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case get_ops_from_log(Log, Key, start, MinSnapshotTime, dict:new(), []) of
+            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), []) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommitedOpsForKey ->
@@ -339,6 +339,8 @@ reverse_and_add_op_id([],_Id,Acc) ->
 reverse_and_add_op_id([Next|Rest],Id,Acc) ->
     reverse_and_add_op_id(Rest,Id+1,[{Id,Next}|Acc]).
 
+get_all_ops_from_log(Log, Continuation, Ops, CommitedOps) ->
+    get_ops_from_log(Log, undefined, Continuation, undefined, Ops, CommitedOps).
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
@@ -362,22 +364,22 @@ get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommitedOps) ->
 %% @doc Given a list of log_records, this method filters the ones corresponding to Key.
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
-filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommitedOps) ->
+filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommitedOpsDict) ->
     {Ops, CommitedOps};
-filter_terms_for_key([H|T], Key, MinSnapshotTime, Ops, CommitedOps) ->
+filter_terms_for_key([H|T], Key, MinSnapshotTime, Ops, CommitedOpsDict) ->
     {_, {operation, _, #log_record{tx_id = TxId, op_type = OpType, op_payload = OpPayload}}} = H,
     case OpType of
         update ->
-            handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommitedOps);
+            handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommitedOpsDict);
         commit ->
-            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommitedOps);
+            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommitedOpsDict);
         _ ->
-            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOps)
+            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommitedOpsDict)
     end.
 
-handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommitedOps) ->
+handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommitedOpsDict) ->
     {Key1, _, _} = OpPayload,
-    case Key == Key1 of
+    case Key == {key, Key1} or Key == undefined of
         true ->
             filter_terms_for_key(T, Key, MinSnapshotTime,
                 dict:append(TxId, OpPayload, Ops), CommitedOps);
