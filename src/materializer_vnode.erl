@@ -117,7 +117,37 @@ store_ss(Key, Snapshot, CommitTime) ->
 init([Partition]) ->
     OpsCache = open_table(Partition, ops_cache),
     SnapshotCache = open_table(Partition, snapshot_cache),
+    case application:get_env(antidote,recover_from_log) of
+	{ok, true} ->
+	    case load_from_log_to_tables(Partition, OpsCache, SnapshotCache) of
+		ok ->
+		    ok;
+		{error, Reason} ->
+		    lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+		    ok
+	    end;
+	_ ->
+	    ok
+    end,
     {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+
+-spec load_from_log_to_tables(partition_id(), ets:tid(), ets:tid()) -> ok | {error, term()}.
+load_from_log_to_tables(Partition, OpsCache, SnapshotCache) ->
+    LogId = [Partition],
+    Node = log_utilities:get_my_node(Partition),
+    case logging_vnode:get(Node, {get_all, LogId}) of
+	{error, Reason} ->
+	    {error, Reason};
+	OpsDict ->
+	    dict:foreach(fun(Key, CommittedOps) ->
+				 lists:foreach(fun(Op) ->
+						       #clocksi_payload{key = Key} = Op,
+						       op_insert_gc(Key, Op, OpsCache, SnapshotCache)
+					       end, CommittedOps)
+			 end, OpsDict),
+	    ok
+    end.
+				     
 
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
