@@ -135,7 +135,6 @@ append_commit(IndexNode, LogId, Payload) ->
                                         ?LOGGING_MASTER,
                                         infinity).
 
-
 %% @doc synchronous append list of operations
 %% The IsLocal flag indicates if the operations in the transaction were handled by the local or remote DC.
 -spec append_group(index_node(), key(), [term()], boolean()) -> {ok, op_id()} | {error, term()}.
@@ -184,6 +183,9 @@ init([Partition]) ->
                         senders_awaiting_ack=dict:new(),
                         last_read=start}}
     end.
+
+handle_command({hello}, _Sender, State) ->
+  {reply, ok, State};
 
 %% @doc Read command: Returns the phyiscal time of the 
 %%      clocksi vnode for which no transactions will commit with smaller time
@@ -323,7 +325,14 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommittedOpsForKeyDict ->
-		    CommittedOpsForKey = dict:fetch(Key, CommittedOpsForKeyDict),
+		    CommittedOpsForKey =
+			case dict:find(Key, CommittedOpsForKeyDict) of
+			    {ok, Val} ->
+				Val;
+			    error ->
+				[]
+			end,
+		    lager:info("The committed ops are ~w", [CommittedOpsForKey]),
                     {reply, {length(CommittedOpsForKey), CommittedOpsForKey, {0,clocksi_materializer:new(Type)},
 			     vectorclock:new(), false}, State}
             end;
@@ -347,7 +356,6 @@ handle_command({get_all, LogId}, _Sender,
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
-
 
 reverse_and_add_op_id([],_Id,Acc) ->
     Acc;
@@ -406,7 +414,7 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) -
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
 	    NewCommittedOpsDict = 
-		lists:foreach(fun({KeyInternal, Type, Op}, Acc) ->
+		lists:foldl(fun({KeyInternal, Type, Op}, Acc) ->
 				      case not vectorclock:gt(SnapshotTime, MinSnapshotTime) of
 					  true ->
 					      CommittedDownstreamOp =
