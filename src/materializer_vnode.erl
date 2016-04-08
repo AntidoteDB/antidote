@@ -71,9 +71,10 @@
          handle_exit/3]).
 
 -record(state, {
-  partition :: partition_id(),
-  ops_cache :: cache_id(),
-  snapshot_cache :: cache_id()}).
+	  partition :: partition_id(),
+	  ops_cache :: cache_id(),
+	  snapshot_cache :: cache_id(),
+	  is_ready :: boolean()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -118,14 +119,15 @@ store_ss(Key, Snapshot, CommitTime) ->
 init([Partition]) ->
     OpsCache = open_table(Partition, ops_cache),
     SnapshotCache = open_table(Partition, snapshot_cache),
-    case application:get_env(antidote,recover_from_log) of
-	{ok, true} ->
-	    lager:info("Checking for logs to init materializer ~p", [Partition]),
-	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log);
-	_ ->
-	    ok
-    end,
-    {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+    IsReady = case application:get_env(antidote,recover_from_log) of
+		  {ok, true} ->
+		      lager:info("Checking for logs to init materializer ~p", [Partition]),
+		      riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+		      false;
+		  _ ->
+		      true
+	      end,
+    {ok, #state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
 -spec load_from_log_to_tables(partition_id(), ets:tid(), ets:tid()) -> ok | {error, term()}.
 load_from_log_to_tables(Partition, OpsCache, SnapshotCache) ->
@@ -136,7 +138,7 @@ load_from_log_to_tables(Partition, OpsCache, SnapshotCache) ->
 	    {error, Reason};
 	OpsDict ->
 	    dict:fold(fun(Key, CommittedOps, _Acc) ->
-				 lists:foreach(fun(Op) ->
+				 lists:foreach(fun({_OpId,Op}) ->
 						       #clocksi_payload{key = Key} = Op,
 						       op_insert_gc(Key, Op, OpsCache, SnapshotCache)
 					       end, CommittedOps)
@@ -172,7 +174,6 @@ check_tables_ready() ->
     PartitionList = chashbin:to_list(CHBin),
     check_table_ready(PartitionList).
 
-
 check_table_ready([]) ->
     true;
 check_table_ready([{Partition,Node}|Rest]) ->
@@ -190,7 +191,7 @@ check_table_ready([{Partition,Node}|Rest]) ->
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
-handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
+handle_command({check_ready},_Sender,State = #state{partition=Partition, is_ready=IsReady}) ->
     Result = case ets:info(get_cache_name(Partition,ops_cache)) of
 		 undefined ->
 		     false;
@@ -202,7 +203,8 @@ handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
 			     true
 		     end
 	     end,
-    {reply, Result, State};
+    Result2 = Result and IsReady,
+    {reply, Result2, State};
 
 handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache,partition=Partition})->
@@ -221,26 +223,27 @@ handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender,
 handle_command(load_from_log, _Sender, State=#state{partition=Partition,
 						    ops_cache=OpsCache,
 						    snapshot_cache=SnapshotCache}) ->
-    try
-	case load_from_log_to_tables(Partition, OpsCache, SnapshotCache) of
-	    ok ->
-		lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
-		ok;
-	    {error, Reason} ->
-		lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
-		ok
-	end
-    catch
-    	_:Reason1 ->
-    	    lager:info("Error loading from log ~w, will retry", [Reason1]),
-    	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log)
-    end,
-    {noreply, State};
+    IsReady = try
+		  case load_from_log_to_tables(Partition, OpsCache, SnapshotCache) of
+		      ok ->
+			  lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
+			  true;
+		      {error, Reason} ->
+			  lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+			  true
+		  end
+	      catch
+		  _:Reason1 ->
+		      lager:info("Error loading from log ~w, will retry", [Reason1]),
+		      riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+		      false
+	      end,
+    {noreply, State#state{is_ready=IsReady}};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0} ,
+handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
                        _Sender,
                        State = #state{ops_cache = OpsCache}) ->
     F = fun(Key, A) ->

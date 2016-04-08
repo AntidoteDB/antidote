@@ -332,7 +332,6 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 			    error ->
 				[]
 			end,
-		    lager:info("The committed ops are ~w", [CommittedOpsForKey]),
                     {reply, {length(CommittedOpsForKey), CommittedOpsForKey, {0,clocksi_materializer:new(Type)},
 			     vectorclock:new(), false}, State}
             end;
@@ -340,6 +339,9 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
+%% This will reply with all downstream operations that have
+%% been stored in the log given by LogId
+%% The resut is a dict, with a list of ops per key
 handle_command({get_all, LogId}, _Sender,
 	       #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
@@ -384,6 +386,7 @@ get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict)
     end.
 
 %% @doc Given a list of log_records, this method filters the ones corresponding to Key.
+%% If key is undefined then is returns all records for all keys
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
 filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommittedOpsDict) ->
@@ -415,21 +418,22 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) -
         {ok, OpsList} ->
 	    NewCommittedOpsDict = 
 		lists:foldl(fun({KeyInternal, Type, Op}, Acc) ->
-				      case not vectorclock:gt(SnapshotTime, MinSnapshotTime) of
-					  true ->
-					      CommittedDownstreamOp =
-						  #clocksi_payload{
-						     key = KeyInternal,
-						     type = Type,
-						     op_param = Op,
-						     snapshot_time = SnapshotTime,
-						     commit_time = {DcId, TxCommitTime},
-						     txid = TxId},
-					      dict:append(KeyInternal, CommittedDownstreamOp, Acc);
-					  false ->
-					      Acc
-				      end
-			      end, CommittedOpsDict, OpsList),
+				    case ((MinSnapshotTime == undefined) orelse
+									   (not vectorclock:gt(SnapshotTime, MinSnapshotTime))) of
+					true ->
+					    CommittedDownstreamOp =
+						#clocksi_payload{
+						   key = KeyInternal,
+						   type = Type,
+						   op_param = Op,
+						   snapshot_time = SnapshotTime,
+						   commit_time = {DcId, TxCommitTime},
+						   txid = TxId},
+					    dict:append(KeyInternal, CommittedDownstreamOp, Acc);
+					false ->
+					    Acc
+				    end
+			    end, CommittedOpsDict, OpsList),
 	    filter_terms_for_key(T, Key, MinSnapshotTime, Ops,
 				 NewCommittedOpsDict);
 	false ->
