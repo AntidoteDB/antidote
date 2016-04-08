@@ -20,8 +20,6 @@ confirm() ->
 
     lager:info("Nodes: ~p", [Nodes]),
     
-    timer:sleep(15000),
-
     read_pncounter_log_recovery_test(Nodes),
 
     pass.
@@ -58,8 +56,7 @@ read_pncounter_log_recovery_test(Nodes) ->
     rt:wait_until(hd(Nodes), fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
     lager:info("Nodes: ~p", [Nodes]),
-    %% Sleep some time to allow recovery from log
-    timer:sleep(15000),
+
     %% Read the value again
     {ok, {_, [ReadResult3], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
 					   [[{read, {Key, Type}}]]),
