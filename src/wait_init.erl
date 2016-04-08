@@ -20,6 +20,7 @@
 -module(wait_init).
 
 -export([wait_ready_nodes/1,
+	 wait_ready/1,
 	 check_ready/1
         ]).
 
@@ -37,6 +38,17 @@ wait_ready_nodes([Node|Rest]) ->
 	    wait_ready_nodes(Rest);
 	false ->
 	    false
+    end.
+
+%% @doc This calls the check_ready function repatabliy
+%% until it returns true
+wait_ready(Node) ->
+    case check_ready(Node) of
+	true ->
+	    true;
+	false ->
+	    timer:sleep(1000),
+	    check_ready(Node)
     end.
 
 %% @doc This function provides the same functionality as wait_ready_nodes
