@@ -177,10 +177,16 @@ check_tables_ready() ->
 check_table_ready([]) ->
     true;
 check_table_ready([{Partition,Node}|Rest]) ->
-    Result = riak_core_vnode_master:sync_command({Partition,Node},
-						 {check_ready},
-						 materializer_vnode_master,
-						 infinity),
+    Result =
+	try
+	    riak_core_vnode_master:sync_command({Partition,Node},
+						{check_ready},
+						materializer_vnode_master,
+						infinity)
+	catch
+	    _:_Reason ->
+		false
+	end,
     case Result of
 	true ->
 	    check_table_ready(Rest);
@@ -228,6 +234,8 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition,
 		      ok ->
 			  lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
 			  true;
+		      {error, not_ready} ->
+			  false;
 		      {error, Reason} ->
 			  lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
 			  true
@@ -235,9 +243,14 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition,
 	      catch
 		  _:Reason1 ->
 		      lager:info("Error loading from log ~w, will retry", [Reason1]),
-		      riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
 		      false
 	      end,
+    case IsReady of
+	false ->
+	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log);
+	true ->
+	    ok
+    end,
     {noreply, State#state{is_ready=IsReady}};
 
 handle_command(_Message, _Sender, State) ->

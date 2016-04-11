@@ -444,7 +444,10 @@ handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
     F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
     Acc = join_logs(dict:to_list(Map), F, Acc0),
-    {reply, Acc, State}.
+    {reply, Acc, State};
+
+handle_handoff_command({get_all, _logId}, _Sender, State) ->
+    {reply, {error, not_ready}, State}.
 
 handoff_starting(_TargetNode, State) ->
     {true, State}.

@@ -230,10 +230,16 @@ check_tables_ready() ->
 check_table_ready([]) ->
     true;
 check_table_ready([{Partition, Node} | Rest]) ->
-    Result = riak_core_vnode_master:sync_command({Partition, Node},
-        {check_tables_ready},
-        ?CLOCKSI_MASTER,
-        infinity),
+    Result =
+	try
+	    riak_core_vnode_master:sync_command({Partition, Node},
+						{check_tables_ready},
+						?CLOCKSI_MASTER,
+						infinity)
+	catch
+	    _:_Reason ->
+		false
+	end,
     case Result of
         true ->
             check_table_ready(Rest);
