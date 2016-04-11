@@ -45,6 +45,8 @@ read_pncounter_log_recovery_test(Nodes) ->
     ?assertEqual(15, ReadResult2),
     lager:info("Killing and restarting the nodes"),
     %% Shut down the nodes
+    %% Sleep a few seconds to let the log be written to disk
+    timer:sleep(5000),
     lists:foreach(fun(ANode) ->
 			  rt:brutal_kill(ANode)
 		  end, Nodes),
