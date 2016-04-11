@@ -133,18 +133,27 @@ init([Partition]) ->
 load_from_log_to_tables(Partition, OpsCache, SnapshotCache) ->
     LogId = [Partition],
     Node = {Partition, log_utilities:get_my_node(Partition)},
-    case logging_vnode:get(Node, {get_all, LogId}) of
+    loop_until_loaded(Node, LogId, start, dict:new(), OpsCache, SnapshotCache).
+	
+loop_until_loaded(Node, LogId, Continuation, Ops, OpsCache, SnapshotCache) ->
+    case logging_vnode:get(Node, {get_all, LogId, Continuation, Ops}) of
 	{error, Reason} ->
 	    {error, Reason};
-	OpsDict ->
-	    dict:fold(fun(Key, CommittedOps, _Acc) ->
-				 lists:foreach(fun({_OpId,Op}) ->
-						       #clocksi_payload{key = Key} = Op,
-						       op_insert_gc(Key, Op, OpsCache, SnapshotCache)
-					       end, CommittedOps)
-			 end, ok, OpsDict),
+	{NewContinuation, NewOps, OpsDict} ->
+	    load_ops(OpsDict, OpsCache, SnapshotCache),
+	    loop_until_loaded(Node, LogId, NewContinuation, NewOps, OpsCache, SnapshotCache);
+	{eof, OpsDict} ->
+	    load_ops(OpsDict, OpsCache, SnapshotCache),
 	    ok
     end.
+
+load_ops(OpsDict, OpsCache, SnapshotCache) ->
+    dict:fold(fun(Key, CommittedOps, _Acc) ->
+		      lists:foreach(fun({_OpId,Op}) ->
+					    #clocksi_payload{key = Key} = Op,
+					    op_insert_gc(Key, Op, OpsCache, SnapshotCache)
+				    end, CommittedOps)
+	      end, ok, OpsDict).
 				     
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->

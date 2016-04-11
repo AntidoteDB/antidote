@@ -321,10 +321,10 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
     #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new()) of
+            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
-                CommittedOpsForKeyDict ->
+                {eof, CommittedOpsForKeyDict} ->
 		    CommittedOpsForKey =
 			case dict:find(Key, CommittedOpsForKeyDict) of
 			    {ok, Val} ->
@@ -342,11 +342,11 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 %% This will reply with all downstream operations that have
 %% been stored in the log given by LogId
 %% The resut is a dict, with a list of ops per key
-handle_command({get_all, LogId}, _Sender,
+handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 	       #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-	    case get_ops_from_log(Log, undefined, start, undefined, dict:new(), dict:new()) of
+	    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommittedOpsForKeyDict ->
@@ -366,24 +366,38 @@ reverse_and_add_op_id([Next|Rest],Id,Acc) ->
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
-get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict) ->
+get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
-	    dict:fold(fun(Key1, CommittedOps, Acc) ->
-			      dict:store(Key1, reverse_and_add_op_id(CommittedOps,0,[]), Acc)
-		      end, dict:new(), CommittedOpsDict);
+	    {eof, finish_op_load(CommittedOpsDict)};
         {error, Reason} ->
             {error, Reason};
         {NewContinuation, NewTerms} ->
             {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
-            get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps);
+	    case LoadAll of
+		load_all ->
+		    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+		load_per_chunk ->
+		    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
+	    end;
         {NewContinuation, NewTerms, BadBytes} ->
             case BadBytes > 0 of
                 true -> {error, bad_bytes};
-                false -> {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
-                    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps)
+                false ->
+		    {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
+		    case LoadAll of
+			load_all ->
+			    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+			load_per_chunk ->
+			    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
+		    end
             end
     end.
+
+finish_op_load(CommittedOpsDict) ->
+    dict:fold(fun(Key1, CommittedOps, Acc) ->
+		      dict:store(Key1, reverse_and_add_op_id(CommittedOps,0,[]), Acc)
+	      end, dict:new(), CommittedOpsDict).
 
 %% @doc Given a list of log_records, this method filters the ones corresponding to Key.
 %% If key is undefined then is returns all records for all keys
@@ -434,9 +448,9 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) -
 					    Acc
 				    end
 			    end, CommittedOpsDict, OpsList),
-	    filter_terms_for_key(T, Key, MinSnapshotTime, Ops,
+	    filter_terms_for_key(T, Key, MinSnapshotTime, dict:erase(TxId,Ops),
 				 NewCommittedOpsDict);
-	false ->
+	error ->
 	    filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
     end.
 
