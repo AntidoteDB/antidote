@@ -40,7 +40,8 @@
          asyn_append_group/4,
          asyn_read_from/3,
          read_from/3,
-         get/2]).
+         get/5,
+	 get_all/4]).
 
 -export([init/1,
          terminate/2,
@@ -154,13 +155,29 @@ asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
 
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
--spec get(index_node(), {get, key(), vectorclock(), term(), term()}) ->
-    {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
-get(IndexNode, Command) ->
+-spec get(index_node(), key(), vectorclock(), term(), key()) ->
+		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
+get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
-        Command,
-        ?LOGGING_MASTER,
-        infinity).
+					{get, LogId, MinSnapshotTime, Type, Key},
+					?LOGGING_MASTER,
+					infinity).
+
+%% @doc Given the logid and position in the log (given by continuation) and a dict
+%% of non_commited operations up to this position returns
+%% a tuple with three elements
+%% the first is a dict with all operations that had been committed until the next chunk in the log
+%% the second contains those without commit operations
+%% the third is the location of the next chunk
+%% Otherwise if the end of the file is reached it returns a tuple
+%% where the first elelment is 'eof' and the second is a dict of commited operations
+-spec get_all(index_node(), log_id(), start | disk_log:continuation(), dict()) ->
+		     {disk_log:continuation(), dict(), dict()} | {eof, dict()} | {error, term()}.
+get_all(IndexNode, LogId, Continuation, PrevOps) ->
+    riak_core_vnode_master:sync_command(IndexNode, {get_all, LogId, Continuation, PrevOps},
+					?LOGGING_MASTER,
+					infinity).
+
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word

@@ -129,14 +129,15 @@ init([Partition]) ->
 	      end,
     {ok, #state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
--spec load_from_log_to_tables(partition_id(), ets:tid(), ets:tid()) -> ok | {error, term()}.
+-spec load_from_log_to_tables(partition_id(), ets:tid(), ets:tid()) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, OpsCache, SnapshotCache) ->
     LogId = [Partition],
     Node = {Partition, log_utilities:get_my_node(Partition)},
     loop_until_loaded(Node, LogId, start, dict:new(), OpsCache, SnapshotCache).
-	
+
+-spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict(), ets:tid(), ets:tid()) -> ok | {error, reason()}.
 loop_until_loaded(Node, LogId, Continuation, Ops, OpsCache, SnapshotCache) ->
-    case logging_vnode:get(Node, {get_all, LogId, Continuation, Ops}) of
+    case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
 	{error, Reason} ->
 	    {error, Reason};
 	{NewContinuation, NewOps, OpsDict} ->
@@ -147,13 +148,14 @@ loop_until_loaded(Node, LogId, Continuation, Ops, OpsCache, SnapshotCache) ->
 	    ok
     end.
 
+-spec load_ops(dict(), ets:tid(), ets:tid()) -> true.
 load_ops(OpsDict, OpsCache, SnapshotCache) ->
     dict:fold(fun(Key, CommittedOps, _Acc) ->
 		      lists:foreach(fun({_OpId,Op}) ->
 					    #clocksi_payload{key = Key} = Op,
 					    op_insert_gc(Key, Op, OpsCache, SnapshotCache)
 				    end, CommittedOps)
-	      end, ok, OpsDict).
+	      end, true, OpsDict).
 				     
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
@@ -178,11 +180,13 @@ open_table(Partition, Name) ->
 %%      readers, allowing them to be non-blocking and concurrent.
 %%      This function checks whether or not all tables have been intialized or not yet.
 %%      Returns true if the have, false otherwise.
+-spec check_tables_ready() -> boolean().
 check_tables_ready() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),
     check_table_ready(PartitionList).
 
+-spec check_table_ready([{partition_id(),node()}]) -> boolean().
 check_table_ready([]) ->
     true;
 check_table_ready([{Partition,Node}|Rest]) ->
@@ -254,12 +258,13 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition,
 		      lager:info("Error loading from log ~w, will retry", [Reason1]),
 		      false
 	      end,
-    case IsReady of
-	false ->
-	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log);
-	true ->
-	    ok
-    end,
+    ok = case IsReady of
+	     false ->
+		 riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+		 ok;
+	     true ->
+		 ok
+	 end,
     {noreply, State#state{is_ready=IsReady}};
 
 handle_command(_Message, _Sender, State) ->
@@ -365,7 +370,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 	    {error, no_snapshot} ->
 		LogId = log_utilities:get_logid_from_key(Key),
 		[Node] = log_utilities:get_preflist_from_key(Key),
-		Res = logging_vnode:get(Node, {get, LogId, MinSnapshotTime, Type, Key}),
+		Res = logging_vnode:get(Node, LogId, MinSnapshotTime, Type, Key),
 		Res;
 	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
 		case ets:lookup(OpsCache, Key) of
