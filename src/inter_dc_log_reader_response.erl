@@ -75,7 +75,7 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
   Msg = binary_to_term(BinaryMsg),
   %% Create a response
   Response = case Msg of
-    {read_log, Partition, From, To} -> {{dc_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)};
+    {read_log, Partition, From, To} -> {{dc_meta_data_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)};
     {is_up} -> {ok};
     _ -> {error, bad_request}
   end,

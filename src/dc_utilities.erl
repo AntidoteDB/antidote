@@ -36,6 +36,7 @@
   get_partitions_num/0,
   check_staleness/0,
   check_registered/1,
+  check_registered_global/1,	 
   now/0,
   now_microsec/0,
   now_millisec/0]).
@@ -169,6 +170,16 @@ check_registered(Name) ->
 	undefined ->
 	    timer:sleep(100),
 	    check_registered(Name);
+	_ ->
+	    ok
+    end.
+
+-spec check_registered_global(atom()) -> ok.
+check_registered_global(Name) ->
+    case global:whereis_name(Name) of
+	undefined ->
+	    timer:sleep(100),
+	    check_registered_global(Name);
 	_ ->
 	    ok
     end.
