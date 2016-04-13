@@ -1,8 +1,14 @@
 -module(dc_meta_data_utilities).
 
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
--export([get_dc_partitions_detailed/1,
+-export([
+	 dc_start_success/0,
+	 is_restart/0,
+	 store_meta_data_name/1,
+	 get_meta_data_name/0,
+	 get_dc_partitions_detailed/1,
 	 get_dc_partitions_dict/1,
 	 get_my_dc_id/0,
 	 reset_my_dc_id/0,
@@ -10,10 +16,37 @@
 	 get_dc_ids/1,
 	 get_key/1,
 	 key_as_integer/1,
+	 store_dc_descriptors/1,
+	 get_dc_descriptors/0,
 	 load_partition_meta_data/0,
 	 get_num_partitions/0,
 	 get_partition_at_index/1]).
 
+
+%% Should be called once a DC has successfully started
+%% Once this is set, when the nodes in the DC are restarted
+%% they will load their config from disk
+-spec dc_start_success() -> ok.
+dc_start_success() ->
+    stable_meta_data_server:broadcast_meta_data(has_started,true).
+
+%% This is to check if the DC had been previously started
+-spec is_restart() -> boolean().
+is_restart() ->
+    case stable_meta_data_server:read_meta_data(has_started) of
+	{ok, Value} ->
+	    Value;
+	error ->
+	    false
+    end.
+
+-spec store_meta_data_name(atom()) -> ok.
+store_meta_data_name(MetaDataName) ->
+    stable_meta_data_server:broadcast_meta_data(meta_data_name, MetaDataName).
+
+-spec get_meta_data_name() -> {ok, atom()} | error.
+get_meta_data_name() ->
+    stable_meta_data_server:read_meta_data(meta_data_name).
 
 %% Returns a tuple of three elements
 %% The first is a dict with all partitions for DCID, with key and value being the partition id
@@ -94,6 +127,28 @@ get_partition_at_index(Index) ->
 	    get_partition_at_index(Index)
     end.
 	
+%% Store an external dc descriptor
+-spec store_dc_descriptors([#descriptor{}]) -> ok.
+store_dc_descriptors(Descriptors) ->
+    MergeFunc = fun(DescList, PrevDict) ->
+			lists:foldl(fun(Desc = #descriptor{dcid = DCID}, Acc) ->
+					    dict:store(DCID, Desc, Acc)
+				    end, PrevDict, DescList)
+		end,
+    stable_meta_data_server:broadcast_meta_data_merge(external_descriptors, Descriptors, MergeFunc, fun dict:new/0).
+
+%% Gets the list of external dc descriptors
+-spec get_dc_descriptors() -> [#descriptor{}].
+get_dc_descriptors() ->
+    case stable_meta_data_server:read_meta_data(external_descriptors) of
+	{ok, Dict} ->
+	    dict:fold(fun(_DCID, Desc, Acc) ->
+			      [Desc | Acc]
+		      end, [], Dict);
+	error ->
+	    []
+    end.
+
 %% Add information about a DC to the meta_data
 -spec set_dc_partitions([partition_id()],dcid()) -> ok.
 set_dc_partitions(PartitionList, DCID) ->

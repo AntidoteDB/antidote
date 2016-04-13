@@ -133,7 +133,7 @@ handle_call({merge_meta_data,Key,Value,MergeFunc,InitFunc}, _Sender, State = #st
 		   PrevVal
 	   end,
     true = ets:insert(Table, {Key,MergeFunc(Value,Prev)}),
-    ok = dets:insert(DetsTable, {Key,Value}),
+    ok = dets:insert(DetsTable, {Key,MergeFunc(Value,Prev)}),
     {reply, ok, State};
 
 handle_call({sync_meta_data, NewList}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->

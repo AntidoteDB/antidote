@@ -90,8 +90,8 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
 
       %% If the transaction has an old value, drop it.
         lt ->
-          lager:warning("Dropping duplicate message"),
-          process_queue(State#state{queue = queue:drop(Queue)})
+	      lager:warning("Dropping duplicate message ~w", [Txn]),
+	      process_queue(State#state{queue = queue:drop(Queue)})
       end
   end.
 

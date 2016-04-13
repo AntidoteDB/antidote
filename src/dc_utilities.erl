@@ -25,6 +25,7 @@
   get_my_dc_nodes/0,
   call_vnode_sync/3,
   bcast_vnode_sync/2,
+  bcast_my_vnode_sync/2,	 
   partition_to_indexnode/1,
   call_vnode/3,
   call_local_vnode/3,
@@ -32,6 +33,7 @@
   bcast_vnode/2,
   get_my_partitions/0,
   ensure_all_vnodes_running/1,
+  ensure_local_vnodes_running_master/1,
   ensure_all_vnodes_running_master/1,
   get_partitions_num/0,
   check_staleness/0,
@@ -106,6 +108,11 @@ bcast_vnode_sync(VMaster, Request) ->
     %% TODO: a parallel map function would be nice here
     lists:map(fun(P) -> {P, call_vnode_sync(P, VMaster, Request)} end, get_all_partitions()).
 
+-spec bcast_my_vnode_sync(atom(), any()) -> any().
+bcast_my_vnode_sync(VMaster, Request) ->
+    %% TODO: a parallel map function would be nice here
+    lists:map(fun(P) -> {P, call_vnode_sync(P, VMaster, Request)} end, get_my_partitions()).
+
 %% Sends the same (asynchronous) command to all vnodes of a given type.
 -spec bcast_vnode(atom(), any()) -> any().
 bcast_vnode(VMaster, Request) ->
@@ -150,6 +157,9 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
 	    bcast_vnode_check_up(VMaster,Request,Rest)
     end.
     
+ensure_local_vnodes_running_master(VnodeType) ->
+    check_registered(VnodeType),
+    bcast_vnode_check_up(VnodeType,{hello},get_my_partitions()).
 
 ensure_all_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),

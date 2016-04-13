@@ -54,27 +54,31 @@ setup_dc_manager(_Clusters, false) -> ok;
 setup_dc_manager(Clusters, true) -> connect_dcs(Clusters).
 
 connect_dcs(Clusters) ->
-  lager:info("Connecting DC clusters..."),
-  lists:foreach(fun(Cluster) ->
-    Node1 = hd(Cluster),
-    lager:info("Waiting until vnodes start on node ~p", [Node1]),
-    rt:wait_until_registered(Node1, inter_dc_pub),
-    rt:wait_until_registered(Node1, inter_dc_log_reader_response),
-    rt:wait_until_registered(Node1, inter_dc_log_reader_query),
-    rt:wait_until_registered(Node1, inter_dc_sub),
-    rt:wait_until_registered(Node1, meta_data_sender_sup),
-    rt:wait_until_registered(Node1, meta_data_manager_sup),
-    ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
-  end, Clusters),
-  Descriptors = descriptors(Clusters),
-  Res = [ok || _ <- Clusters],
-  lists:foreach(fun(Cluster) ->
-    Node = hd(Cluster),
-    lager:info("Making node ~p observe other DCs...", [Node]),
-    %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-    Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
-  end, Clusters),
-  lager:info("DC clusters connected!").
+    lager:info("Connecting DC clusters..."),
+    lists:foreach(fun(Cluster) ->
+			  Node1 = hd(Cluster),
+			  lager:info("Waiting until vnodes start on node ~p", [Node1]),
+			  rt:wait_until_registered(Node1, inter_dc_pub),
+			  rt:wait_until_registered(Node1, inter_dc_log_reader_response),
+			  rt:wait_until_registered(Node1, inter_dc_log_reader_query),
+			  rt:wait_until_registered(Node1, inter_dc_sub),
+			  rt:wait_until_registered(Node1, meta_data_sender_sup),
+			  rt:wait_until_registered(Node1, meta_data_manager_sup),
+			  ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
+		  end, Clusters),
+    Descriptors = descriptors(Clusters),
+    Res = [ok || _ <- Clusters],
+    lists:foreach(fun(Cluster) ->
+			  Node = hd(Cluster),
+			  lager:info("Making node ~p observe other DCs...", [Node]),
+			  %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
+			  Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+		  end, Clusters),
+    lists:foreach(fun(Cluster) ->
+			  Node = hd(Cluster),
+			  ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
+		  end, Clusters),
+    lager:info("DC clusters connected!").
 
 disconnect_dcs(Clusters) ->
   lager:info("Disconnecting DC clusters..."),
