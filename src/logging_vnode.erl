@@ -62,7 +62,7 @@
 
 -record(state, {partition :: partition_id(),
 		logs_map :: dict(),
-		clock :: non_neg_integer(),
+		clock :: dict(),
 		senders_awaiting_ack :: dict(),
 		last_read :: term()}).
 
@@ -188,15 +188,15 @@ init([Partition]) ->
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
     lager:info("Opening logs for partition ~w", [Partition]),
-    case open_logs(LogFile, Preflists, dict:new()) of
+    case open_logs(LogFile, Preflists, dict:new(), dict:new()) of
         {error, Reason} ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
-        Map ->
+        {Map,Clock} ->
 	    lager:info("Done opening logs for partition ~w", [Partition]),
             {ok, #state{partition=Partition,
                         logs_map=Map,
-                        clock=0,
+                        clock=Clock,
                         senders_awaiting_ack=dict:new(),
                         last_read=start}}
     end.
@@ -271,26 +271,26 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%
 handle_command({append, LogId, Payload, Sync}, _Sender,
                #state{logs_map=Map,
-                      clock=Clock,
+                      clock=ClockDict,
                       partition=Partition}=State) ->
-    OpId = generate_op_id(Clock),
-    {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
+	    OpId = generate_op_id(ClockDict, LogId, local),
+	    NewClockDict = dict:store(LogId,OpId,ClockDict),
             Operation = #operation{op_number = OpId, payload = Payload},
             case insert_operation(Log, LogId, Operation) of
                 {ok, OpId} ->
-                  inter_dc_log_sender_vnode:send(Partition, Operation),
+		    inter_dc_log_sender_vnode:send(Partition, Operation),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of
 				ok ->
-				    {reply, {ok, OpId}, State#state{clock=NewClock}};
+				    {reply, {ok, OpId}, State#state{clock=NewClockDict}};
 				{error, Reason} ->
 				    {reply, {error, Reason}, State}
 			    end;
 			false ->
-			    {reply, {ok, OpId}, State#state{clock=NewClock}}
+			    {reply, {ok, OpId}, State#state{clock=NewClockDict}}
 		    end;
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
@@ -302,33 +302,38 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 
 handle_command({append_group, LogId, PayloadList, IsLocal}, _Sender,
                #state{logs_map=Map,
-                      clock=Clock,
+                      clock=ClockDict,
                       partition=Partition}=State) ->
-    {ErrorList, SuccList, _NNC} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock}) ->
-						      OpId = generate_op_id(NewClock),
-						      {NewNewClock, _Node} = OpId,
-						      case get_log_from_map(Map, Partition, LogId) of
-							  {ok, Log} ->
-                    Operation = #operation{op_number = OpId, payload = Payload},
-							      case insert_operation(Log, LogId, Operation) of
-								  {ok, OpId} ->
-                      case IsLocal of
-                        true -> inter_dc_log_sender_vnode:send(Partition, Operation);
-                        false -> ok
-                      end,
-								      {AccErr, AccSucc ++ [OpId], NewNewClock};
-								  {error, Reason} ->
-								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
-							      end;
-							  {error, Reason} ->
-							      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
-						      end
-					      end, {[],[],Clock}, PayloadList),
+    {ErrorList, SuccList, NNC} =
+	lists:foldl(fun(Payload, {AccErr, AccSucc,NewClockDict}) ->
+			    case get_log_from_map(Map, Partition, LogId) of
+				{ok, Log} ->
+				    OpId = case IsLocal of
+					       true ->
+						   generate_op_id(NewClockDict,LogId,local);
+					       false ->
+						   generate_op_id(NewClockDict,LogId,global)
+					   end,
+				    NewNewClockDict = dict:store(LogId,OpId,NewClockDict),
+				    Operation = #operation{op_number = OpId, payload = Payload},
+				    case insert_operation(Log, LogId, Operation) of
+					{ok, OpId} ->
+					    case IsLocal of
+						true -> inter_dc_log_sender_vnode:send(Partition, Operation);
+						false -> ok
+					    end,
+					    {AccErr, AccSucc ++ [OpId], NewNewClockDict};
+					{error, Reason} ->
+					    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClockDict}
+				    end;
+				{error, Reason} ->
+				    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewClockDict}
+			    end
+		    end, {[],[],ClockDict}, PayloadList),
     case ErrorList of
 	[] ->
 	    [SuccId|_T] = SuccList,
-	    {NewC, _Node} = lists:last(SuccList),
-	    {reply, {ok, SuccId}, State#state{clock=NewC}};
+	    {reply, {ok, SuccId}, State#state{clock=NNC}};
 	[Error|_T] ->
 	    %%Error
 	    {reply, Error, State}
@@ -380,6 +385,24 @@ reverse_and_add_op_id([],_Id,Acc) ->
     Acc;
 reverse_and_add_op_id([Next|Rest],Id,Acc) ->
     reverse_and_add_op_id(Rest,Id+1,[{Id,Next}|Acc]).
+
+get_last_op_from_log(Log, Continuation, PrevLast) ->
+    case disk_log:chunk(Log, Continuation) of
+	eof ->
+	    {eof, PrevLast};
+	{error, Reason} ->
+	    {error, Reason};
+	{NewContinuation, NewTerms} ->
+	    {_,LastOp} = lists:last(NewTerms),
+	    get_last_op_from_log(Log, NewContinuation, LastOp);
+	 {NewContinuation, NewTerms, BadBytes} ->
+            case BadBytes > 0 of
+                true -> {error, bad_bytes};
+                false ->
+		    {_, LastOp} = lists:last(NewTerms),
+		    get_last_op_from_log(Log, NewContinuation, LastOp)
+	    end
+    end.
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
@@ -580,10 +603,10 @@ no_elements([LogId|Rest], Map) ->
 %%      Return:         LogsMap: Maps the  preflist and actual name of
 %%                               the log in the system. dict() type.
 %%
--spec open_logs(string(), [preflist()], dict()) -> dict() | {error, reason()}.
-open_logs(_LogFile, [], Map) ->
-    Map;
-open_logs(LogFile, [Next|Rest], Map)->
+-spec open_logs(string(), [preflist()], dict(), dict()) -> dict() | {error, reason()}.
+open_logs(_LogFile, [], Map, Clock) ->
+    {Map,Clock};
+open_logs(LogFile, [Next|Rest], Map, Clock)->
     PartitionList = log_utilities:remove_node_from_preflist(Next),
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
@@ -593,11 +616,18 @@ open_logs(LogFile, [Next|Rest], Map)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2);
+            open_logs(LogFile, Rest, Map2, Clock);
         {repaired, Log, _, _} ->
-            lager:info("Repaired log ~p", [Log]),
+	    LastOpNumber = case get_last_op_from_log(Log, start, none) of
+			       {eof, none} ->
+				   #op_number{node = node(), global = 0, local = 0};
+			       {eof, #operation{op_number = OpNumber}} ->
+				   OpNumber
+			   end,
+	    NewClock = dict:store(LogId,LastOpNumber,Clock),
+            lager:info("Repaired log ~p, last op id is ~p", [Log, LastOpNumber]),
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2);
+            open_logs(LogFile, Rest, Map2, NewClock);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -671,8 +701,21 @@ insert_operation(Log, LogId, Operation) ->
 preflist_member(Partition,Preflist) ->
     lists:any(fun({P, _}) -> P =:= Partition end, Preflist).
 
-generate_op_id(Current) ->
-    {Current + 1, node()}.
+-spec generate_op_id(dict(), log_id(), local | global) -> #op_number{}.
+generate_op_id(Current,LogId,IsLocal) ->
+    #op_number{global = Global, local = Local}
+	= case dict:find(LogId,Current) of
+	      {ok, Val} ->
+		  Val;
+	      error ->
+		  #op_number{node = node(), global = 0, local = 0}
+	  end,
+    case IsLocal of
+	global ->
+	    #op_number{node = node(), global = Global + 1, local = Local};
+	local ->
+	    #op_number{node = node(), global = Global + 1, local = Local + 1}
+    end.
 
 -ifdef(TEST).
 

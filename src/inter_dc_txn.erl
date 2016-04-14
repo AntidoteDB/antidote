@@ -65,7 +65,7 @@ last_log_opid(Txn = #interdc_txn{operations = Ops, prev_log_opid = LogOpId}) ->
       LastOp = lists:last(Ops),
       CommitPld = LastOp#operation.payload,
       commit = CommitPld#log_record.op_type, %% sanity check
-      {Max, _} = LastOp#operation.op_number,
+      Max = LastOp#operation.op_number#op_number.local,
       Max
   end.
 

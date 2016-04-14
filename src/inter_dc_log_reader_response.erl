@@ -113,7 +113,7 @@ log_read_range(Partition, Node, From, To) ->
 -spec filter_operations([#operation{}], log_opid(), log_opid()) -> [#operation{}].
 filter_operations(Ops, Min, Max) ->
   F = fun(Op) ->
-    {Num, _Node} = Op#operation.op_number,
+    Num = Op#operation.op_number#op_number.local,
     (Num >= Min) and (Max >= Num)
   end,
   lists:filter(F, Ops).
