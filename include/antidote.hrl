@@ -66,7 +66,7 @@
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
--record(op_number, {node :: node(), global :: non_neg_integer(), local :: non_neg_integer()}).
+-record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
 -record(operation, {op_number :: #op_number{}, payload :: payload()}).
 -type operation() :: #operation{}.
 -type vectorclock() :: vectorclock:vectorclock().

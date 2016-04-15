@@ -57,7 +57,7 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   timestamp = Timestamp
 }.
 
--spec last_log_opid(#interdc_txn{}) -> log_opid().
+-spec last_log_opid(#interdc_txn{}) -> #op_number{}.
 last_log_opid(Txn = #interdc_txn{operations = Ops, prev_log_opid = LogOpId}) ->
   case is_ping(Txn) of
     true -> LogOpId;
@@ -65,7 +65,7 @@ last_log_opid(Txn = #interdc_txn{operations = Ops, prev_log_opid = LogOpId}) ->
       LastOp = lists:last(Ops),
       CommitPld = LastOp#operation.payload,
       commit = CommitPld#log_record.op_type, %% sanity check
-      Max = LastOp#operation.op_number#op_number.local,
+      Max = LastOp#operation.op_number,
       Max
   end.
 

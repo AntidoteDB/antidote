@@ -121,8 +121,9 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% If so, store the transaction
     true ->
       %% Put the operations in the log
-      Payloads = [Op#operation.payload || Op <- Ops],
-      {ok, _} = logging_vnode:append_group(dc_utilities:partition_to_indexnode(Partition), [Partition], Payloads, false),
+	  %{Payloads,MaxOpNumber} = operations_to_payloads(Ops,[],#op_number{local = 0, global = 0}),
+      {ok, _} = logging_vnode:append_group(dc_utilities:partition_to_indexnode(Partition),
+					   [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
@@ -131,6 +132,20 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       {update_clock(State, DCID, Timestamp), true}
   end.
 
+%% %% From a list of operations, take their payloads and the max operation number
+%% -spec operations_to_payloads([#operation{}], [payload()], #op_number{}) -> {[payload()],#op_number{}}.
+%% operations_to_payloads([], Payloads, MaxOpNumber) ->
+%%     {Payloads,MaxOpNumber};
+%% operations_to_payloads([Op = #operation{payload = Payload, op_number = OpNumber}|Rest], Payloads, MaxOpNumber) ->
+%%     NewMaxOpNumber = 
+%% 	case OpNumber#op_number.local >= MaxOpNumber#op_number.local of
+%% 	    true ->
+%% 		OpNumber;
+%% 	    false ->
+%% 		MaxOpNumber
+%% 	end,
+%%     operations_to_payloads(Rest,[Payload|Payloads],NewMaxOpNumber).
+    
 handle_command({txn, Txn}, _Sender, State) ->
   NewState = process_all_queues(push_txn(State, Txn)),
   {reply, ok, NewState}.

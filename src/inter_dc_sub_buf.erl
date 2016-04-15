@@ -58,7 +58,7 @@ process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buff
   ok = lists:foreach(fun deliver/1, Txns),
   NewLast = case queue:peek(Queue) of
     empty -> State#state.last_observed_opid;
-    {value, Txn} -> Txn#interdc_txn.prev_log_opid
+    {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
   end,
   NewState = State#state{last_observed_opid = NewLast},
   process_queue(NewState).
@@ -68,18 +68,19 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
-      TxnLast = Txn#interdc_txn.prev_log_opid,
+      TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
       case cmp(TxnLast, Last) of
 
       %% If the received transaction is immediately after the last observed one
         eq ->
           deliver(Txn),
-          Max = inter_dc_txn:last_log_opid(Txn),
+          Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
           process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
 
       %% If the transaction seems to come after an unknown transaction, ask the remote log
         gt ->
-          lager:info("Whoops, lost message. Asking the remote DC ~p", [State#state.pdcid]),
+          lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
+		     [TxnLast, Last, State#state.pdcid]),
           case inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
             ok ->
               State#state{state_name = buffering};
@@ -90,7 +91,7 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
 
       %% If the transaction has an old value, drop it.
         lt ->
-	      lager:warning("Dropping duplicate message ~w", [Txn]),
+	      lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
 	      process_queue(State#state{queue = queue:drop(Queue)})
       end
   end.
