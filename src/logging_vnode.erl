@@ -188,9 +188,8 @@ init([Partition]) ->
 %% @doc Read command: Returns the phyiscal time of the 
 %%      clocksi vnode for which no transactions will commit with smaller time
 %%      Output: {ok, Time}
-handle_command({get_stable_time}, _Sender,
+handle_command({send_min_prepared, Time}, _Sender,
                #state{partition=Partition}=State) ->
-    {ok, Time} = clocksi_vnode:get_min_prepared(Partition),
     ok = inter_dc_log_sender_vnode:send_stable_time(Partition, Time),
     {noreply, State};
 

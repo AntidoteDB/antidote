@@ -27,6 +27,7 @@
   bcast_vnode_sync/2,
   partition_to_indexnode/1,
   call_vnode/3,
+  call_local_vnode/3,
   get_all_partitions/0,
   bcast_vnode/2,
   get_my_partitions/0,
@@ -91,6 +92,12 @@ call_vnode_sync(Partition, VMaster, Request) ->
 -spec call_vnode(partition_id(), atom(), any()) -> ok.
 call_vnode(Partition, VMaster, Request) ->
     riak_core_vnode_master:command(partition_to_indexnode(Partition), Request, VMaster).
+
+%% Sends the asynchronous command to a vnode of a specified type and responsible for a specified partition number,
+%% the partition must be on the same node that the command is run on
+-spec call_local_vnode(partition_id(), atom(), any()) -> ok.
+call_local_vnode(Partition, VMaster, Request) ->
+    riak_core_vnode_master:command({Partition, node()}, Request, VMaster).
 
 %% Sends the same (synchronous) command to all vnodes of a given type.
 -spec bcast_vnode_sync(atom(), any()) -> any().

@@ -383,8 +383,10 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 				 HalfListLen = ListLen div 2,
 				 case HalfListLen =< ?OPS_THRESHOLD of
 				     true ->
-					 ?OPS_THRESHOLD;
+					 %% Don't shrink list, already minimun size
+					 ListLen;
 				     false ->
+					 %% Only shrink if shrinking would leave some space for new ops
 					 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
 					     true ->
 						 HalfListLen;
