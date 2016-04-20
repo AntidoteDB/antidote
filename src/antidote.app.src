@@ -12,5 +12,5 @@
                   riak_core
                  ]},
   {mod, { antidote_app, []}},
-  {env, [{txn_cert, true}, {txn_prot, clocksi}]}
+  {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true}]}
  ]}.

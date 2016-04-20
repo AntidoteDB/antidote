@@ -183,5 +183,6 @@ broadcast(State, Txn) ->
 
 %% @doc Sends an async request to get the smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
+-spec get_stable_time(partition_id()) -> ok.
 get_stable_time(Partition) ->
     ok = clocksi_vnode:send_min_prepared(Partition).
