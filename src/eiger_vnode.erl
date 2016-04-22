@@ -59,9 +59,11 @@
                 min_pendings=dict:new() :: dict(),
                 buffered_reads=dict:new() :: dict(),
                 pending=dict:new() :: dict(),
-                prop_txs=dict:new() :: dict(),
+                prop_txs,
                 fsm_deps=dict:new() :: dict(),
                 deps_keys=dict:new() :: dict(),
+                available_fsms=100 :: integer(),
+                queue_fsm=queue:new() :: queue(),
                 clock=0 :: integer()}).
 
 %%%===================================================================
@@ -147,7 +149,9 @@ update_clock(Node, Clock) ->
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
 init([Partition]) ->
-    {ok, #state{partition=Partition}}.
+    Name = list_to_atom(integer_to_list(Partition) ++ atom_to_list(prop_txs)),
+    PropTxs0 = ets:new(Name, [set, named_table]),
+    {ok, #state{partition=Partition, prop_txs=PropTxs0}}.
 
 handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_keys=DepsKeys0, partition=_Partition}) ->
     RestDeps = lists:foldl(fun({Key, TimeStamp}=Dep, Acc) ->
@@ -170,20 +174,41 @@ handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_key
             {noreply, S0#state{fsm_deps=FsmDeps1, deps_keys=DepsKeys1}}
     end;
 
-handle_command({clean_propagated_tx_fsm, TxId}, _Sender, S0=#state{prop_txs=PropTxs0}) ->
-    PropTxs1 = dict:erase(TxId, PropTxs0),
-    {noreply, S0#state{prop_txs=PropTxs1}};
+handle_command({clean_propagated_tx_fsm, TxId}, _Sender, S0=#state{prop_txs=PropTxs, partition=Partition, queue_fsm=Queue0, available_fsms=AvailableFsms0}) ->
+    true = ets:delete(PropTxs, TxId),
+    case queue:out(Queue0) of
+        {{value, {TxIdPending, CommitTime, Deps}}, Queue1} ->
+            [{TxIdPending, {queue, [H|ListOps]}}] = ets:lookup(PropTxs, TxIdPending),
+            {ok, FsmRef} = eiger_propagatedtx_coord_fsm:start_link({Partition, node()}, TxIdPending, CommitTime, Deps, H),
+            lists:foreach(fun(Ops) ->
+                            gen_fsm:send_event(FsmRef, {notify, Ops, {Partition, node()}})
+                          end, ListOps),
+            true = ets:insert(PropTxs, {TxId, {running, FsmRef}}),
+            {noreply, S0#state{queue_fsm=Queue1}};
+        {empty, _Queue1} ->
+            {noreply, S0#state{available_fsms=AvailableFsms0+1}}
+    end;
 
-handle_command({notify_tx, Transaction}, _Sender, State0=#state{prop_txs=PropTxs0, partition=Partition}) ->
+handle_command({notify_tx, Transaction}, _Sender, State0=#state{prop_txs=PropTxs, partition=Partition, queue_fsm=Queue0, available_fsms=AvailableFsms0}) ->
     {TxId, CommitTime, _ST, Deps, Ops, _TOps} = Transaction,
-    case dict:find(TxId, PropTxs0) of
-        {ok, FsmRef} ->
+    case ets:lookup(PropTxs, TxId) of
+        [{TxId, {running, FsmRef}}] ->
             gen_fsm:send_event(FsmRef, {notify, Ops, {Partition, node()}}),
             {noreply, State0};
-        error ->
-            {ok, FsmRef} = eiger_propagatedtx_coord_fsm:start_link({Partition, node()}, TxId, CommitTime, Deps, Ops),
-            PropTxs1 = dict:store(TxId, FsmRef, PropTxs0),
-            {noreply, State0#state{prop_txs=PropTxs1}}
+        [{TxId, {queue, OpsList}}] ->
+            true = ets:insert(PropTxs, {TxId, {queue, [Ops|OpsList]}}),
+            {noreply, State0};
+        [] ->
+            case (AvailableFsms0 > 0) of
+                true ->
+                    {ok, FsmRef} = eiger_propagatedtx_coord_fsm:start_link({Partition, node()}, TxId, CommitTime, Deps, Ops),
+                    true = ets:insert(PropTxs, {TxId, {running, FsmRef}}),
+                    {noreply, State0#state{available_fsms=AvailableFsms0-1}};
+                false ->
+                    Queue1 = queue:in({TxId, CommitTime, Deps}, Queue0),
+                    true = ets:insert(PropTxs, {TxId, {queue, [Ops]}}),
+                    {noreply, State0#state{queue_fsm=Queue1}}
+            end
     end;
 
 %% @doc starts a read_fsm to handle a read operation.
