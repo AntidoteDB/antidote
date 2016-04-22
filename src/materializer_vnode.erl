@@ -376,7 +376,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 		    [] ->
 			{0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
 		    [Tuple] ->
-			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
+			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,false),
 			{Length1, AllOps, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
 		end
 	end,
@@ -442,7 +442,7 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 						    [] ->
 							{Key, 0, 0, 0, []};
 						    [Tuple] ->
-							tuple_to_key(Tuple)
+							tuple_to_key(Tuple,true)
 						end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
@@ -497,12 +497,20 @@ prune_ops({_Len,OpsDict}, Threshold)->
 
 %% This is an internal function used to convert the tuple stored in ets
 %% to a tuple and list usable by the materializer
--spec tuple_to_key(tuple()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),list()}.
-tuple_to_key(Tuple) ->
+%% The second argument if true will convert the ops tuple to a list of ops
+%% Otherwise it will be kept as a tuple
+-spec tuple_to_key(tuple(),boolean()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),list()}.
+tuple_to_key(Tuple,ToList) ->
     Key = element(1, Tuple),
     {Length,ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
-    Ops = tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]),
+    Ops = 
+	case ToList of
+	    true ->
+		tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]);
+	    false ->
+		Tuple
+	end,
     {Key,Length,OpId,ListLen,Ops}.
 tuple_to_key_int(Next,Next,_Tuple,Acc) ->
     Acc;

@@ -20,6 +20,15 @@
 -module(clocksi_materializer).
 -include("antidote.hrl").
 
+%% The first 3 elements in operations list are meta-data
+%% First is the key
+%% Second is a tuple {current op list size, max op list size}
+%% Thrid is a counter that assigns each op 1 larger than the previous
+%% Fourth is where the list of ops start
+%% TODO FIX HERE
+-define(FIRST_OP, 4).
+
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -33,6 +42,19 @@
 new(Type) ->
     materializer:create_snapshot(Type).
 
+get_first_id([]) ->
+    0;
+get_first_id([{Id,_Op}|_]) ->
+    Id;
+get_first_id(Tuple) ->
+    {Length,_ListLen} = element(2,Tuple),
+    case Length of
+	0 ->
+	    0;
+	Length ->
+	    {Id,_Op} = element(?FIRST_OP+(Length-1),Tuple),
+	    Id
+    end.
 
 %% @doc Applies the operation of a list to a previously created CRDT snapshot. Only the
 %%      operations that are not already in the previous snapshot and
@@ -59,15 +81,10 @@ new(Type) ->
 		  txid() | ignore) ->
 			 {ok, snapshot(), integer(), snapshot_time() | ignore, boolean()} | {error, reason()}.
 materialize(Type, Snapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
-    FirstId = case Ops of
-		  [] ->
-		      0;
-		  [{Id,_Op}|_] ->
-		      Id
-	      end,
+    FirstId = get_first_id(Ops),
     {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
 	materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, MinSnapshotTime,
-			   Ops, TxId, SnapshotCommitTime,false),
+			   Ops, TxId, SnapshotCommitTime,false,0),
     case apply_operations(Type, Snapshot, OpList) of
 	{ok, NewSS} ->
 	    {ok, NewSS, NewLastOp, LastOpCt, IsNewSS};
@@ -121,15 +138,29 @@ apply_operations(Type,Snapshot,[Op | Rest]) ->
 			 integer(),
 			 snapshot_time() | ignore,
 			 snapshot_time(),
-			 [{integer(),clocksi_payload()}],
+			 [{integer(),clocksi_payload()}], %% fix here to also be tuple
 			 txid() | ignore, 
 			 snapshot_time() | ignore,
-			 boolean()) ->
+			 boolean(),
+			 non_neg_integer()) ->
 				{ok,[clocksi_payload()],integer(),snapshot_time()|ignore,boolean()}.
-materialize_intern(_Type, OpList, _LastOp, FirstHole, _SnapshotCommitTime, _MinSnapshotTime, [], _TxId, LastOpCt, NewSS) ->
+materialize_intern(_Type, OpList, _LastOp, FirstHole, _SnapshotCommitTime, _MinSnapshotTime, [], _TxId, LastOpCt, NewSS, _Location) ->
     {ok, OpList, FirstHole, LastOpCt, NewSS};
 
-materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, [{OpId,Op}|Rest], TxId, LastOpCt, NewSS) ->
+materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, [{OpId,Op}|Rest], TxId, LastOpCt, NewSS, Location) ->
+    materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, {OpId,Op}, Rest, TxId, LastOpCt, NewSS, Location + 1);
+
+materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, TupleOps, TxId, LastOpCt, NewSS, Location) ->
+    {Length,_ListLen} = element(2, TupleOps),
+    case Length == Location of
+	true ->
+	    {ok, OpList, FirstHole, LastOpCt, NewSS};
+	false ->
+	    materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime,
+				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, TxId, LastOpCt, NewSS, Location + 1)
+    end.
+	    
+materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnapshotTime, {OpId,Op}, Rest, TxId, LastOpCt, NewSS, Location) ->
     Result = case Type == Op#clocksi_payload.type of
 		 true ->
 		     OpCom=Op#clocksi_payload.commit_time,
@@ -153,16 +184,16 @@ materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnaps
     case Result of
 	{ok, NewOpList1, NewLastOpCt, false, NewSS1, NewHole} ->
 	    materialize_intern(Type,NewOpList1,LastOp,NewHole,SnapshotCommitTime,
-			       MinSnapshotTime,Rest,TxId,NewLastOpCt,NewSS1);
+			       MinSnapshotTime,Rest,TxId,NewLastOpCt,NewSS1, Location);
 	{ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole} ->
 	    case OpId - 1 =< LastOp of
 		true ->
 		    %% can skip the rest of the ops because they are already included in the SS
 		    materialize_intern(Type,NewOpList1,LastOp,NewHole,SnapshotCommitTime,
-				       MinSnapshotTime,[],TxId,NewLastOpCt,NewSS1);
+				       MinSnapshotTime,[],TxId,NewLastOpCt,NewSS1, Location);
 		false ->
 		    materialize_intern(Type,NewOpList1,LastOp,NewHole,SnapshotCommitTime,
-				       MinSnapshotTime,Rest,TxId,NewLastOpCt,NewSS1)    
+				       MinSnapshotTime,Rest,TxId,NewLastOpCt,NewSS1, Location)    
 	    end
     end.
 
@@ -359,7 +390,7 @@ materializer_clocksi_concurrent_test() ->
     {ok, PNCounter2, 3, CommitTime2, _Keep} = materialize_intern(crdt_pncounter,
                                       [], 0, 3, ignore,
                                       vectorclock:from_list([{2,2},{1,2}]),
-                                      Ops, ignore, ignore, false),
+                                      Ops, ignore, ignore, false, 0),
     {ok, PNCounter3} = apply_operations(crdt_pncounter, PNCounter, PNCounter2),
     ?assertEqual({4, vectorclock:from_list([{1,2},{2,2}])}, {crdt_pncounter:value(PNCounter3), CommitTime2}),
     
@@ -383,7 +414,7 @@ materializer_clocksi_noop_test() ->
     Ops = [],
     {ok, PNCounter2, 0, ignore, _SsSave} = materialize_intern(crdt_pncounter, [], 0, 0,ignore,
 						    vectorclock:from_list([{1,1}]),
-						    Ops, ignore, ignore, false),
+						    Ops, ignore, ignore, false, 0),
     {ok, PNCounter3} = apply_operations(crdt_pncounter, PNCounter, PNCounter2),
     ?assertEqual(0,crdt_pncounter:value(PNCounter3)).
 
