@@ -163,3 +163,4 @@
 
 %EIGER
 -define(EIGER_DATATYPE, riak_dt_lwwreg).
+-define(NPROP_FSMS, 100).
