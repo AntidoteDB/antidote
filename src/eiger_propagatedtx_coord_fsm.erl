@@ -23,7 +23,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/5]).
+-export([start_link/1]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -31,6 +31,7 @@
 
 %% States
 -export([gather/2,
+         idle/2,
          prepare/2,
          gather_prepare/2,
          send_commit/2,
@@ -53,15 +54,18 @@
 %%% API
 %%%===================================================================
 
-start_link(Vnode, TxId, TimeStamp, Deps, Ops) ->
-    gen_fsm:start_link(?MODULE, [Vnode, TxId, TimeStamp, Deps, Ops], []).
+start_link(Vnode) ->
+    gen_fsm:start_link(?MODULE, [Vnode], []).
 
 %%%===================================================================
 %%% States
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([Vnode, TxId, TimeStamp, Deps, Ops]) ->
+init([Vnode]) ->
+    {ok, idle, #state{vnode=Vnode}}.
+
+idle({new_tx, TxId, TimeStamp, Deps, Ops}, S0) ->
     {ListDeps, NPartitions} = Deps,
     NewList = case ListDeps of
                 [_H|_T] ->
@@ -69,6 +73,8 @@ init([Vnode, TxId, TimeStamp, Deps, Ops]) ->
                 _ ->
                     []
               end,
+    Aggregate = length(Ops),
+    MergedOps = lists:flatten(Ops),
     DepsPartition = lists:foldl(fun(Dependency, Dict)->
                                     %lager:info("Dependency: ~p", [Dependency]),
                                     {Key, _TimeStamp} = Dependency,
@@ -90,34 +96,33 @@ init([Vnode, TxId, TimeStamp, Deps, Ops]) ->
                                         _ ->
                                             Acc
                                     end
-                                   end, dict:new(), Ops),
-                                    
-    SD = #state{    
-            tx_id=TxId,
-            vnode=Vnode,
-            n_partitions=NPartitions,
-            scattered_updates=ScatteredUpdates,
-            n_partitions_deps=length(dict:fetch_keys(DepsPartition)),
-            notifies=1,
-            deps_ack=0,
-            timestamp=TimeStamp
-           },
+                                   end, dict:new(), MergedOps),
+
+    S1 = S0#state{tx_id=TxId,
+                  n_partitions=NPartitions,
+                  scattered_updates=ScatteredUpdates,
+                  n_partitions_deps=length(dict:fetch_keys(DepsPartition)),
+                  notifies=Aggregate,
+                  deps_ack=0,
+                  timestamp=TimeStamp
+                 },
+
     case NPartitions of
-        1 ->
+        Aggregate ->
             case ListDeps of
                 [] ->
-                    {ok, prepare, SD, 0};
+                    {next_state, prepare, S1, 0};
                 _ ->
-                    {ok, gather, SD}
+                    {next_state, gather, S1}
             end;
         _ ->
-            {ok, gather, SD}
+            {next_state, gather, S1}
     end.
 
 gather(timeout, SD0) ->
     {next_state, gather, SD0};
 
-gather({notify, Ops, _Partition}, SD0=#state{scattered_updates=ScatteredUpdates0, notifies=Notifies0, n_partitions=NPartitions, deps_ack=DepsAck, vnode=Vnode, tx_id=TxId, n_partitions_deps=NPDeps}) ->
+gather({notify, Ops, _Partition}, SD0=#state{scattered_updates=ScatteredUpdates0, notifies=Notifies0, n_partitions=NPartitions, deps_ack=DepsAck, n_partitions_deps=NPDeps}) ->
     Notifies1 = Notifies0 + 1,
     %lager:info("Received a notify. Received: ~p, total: ~p. Deps total: ~p, received: ~p", [Notifies1, NPartitions, NPDeps, DepsAck]),
     ScatteredUpdates1 = lists:foldl(fun(Operation, Acc) ->
@@ -137,7 +142,6 @@ gather({notify, Ops, _Partition}, SD0=#state{scattered_updates=ScatteredUpdates0
             case DepsAck of
                 NPDeps ->
                     %lager:info("Lets prepare"),
-                    eiger_vnode:clean_propagated_tx_fsm(Vnode, TxId),
                     {next_state, prepare, SD0#state{scattered_updates=ScatteredUpdates1, notifies=Notifies1}, 0};
                 _ ->
                     {next_state, gather, SD0#state{scattered_updates=ScatteredUpdates1, notifies=Notifies1}, 0}
@@ -146,14 +150,13 @@ gather({notify, Ops, _Partition}, SD0=#state{scattered_updates=ScatteredUpdates0
             {next_state, gather, SD0#state{scattered_updates=ScatteredUpdates1, notifies=Notifies1}, 0}
     end;
 
-gather(deps_checked, SD0=#state{notifies=Notifies, n_partitions=NPartitions, deps_ack=DepsAck0, tx_id=TxId, vnode=Vnode, n_partitions_deps=NPDeps}) ->
+gather(deps_checked, SD0=#state{notifies=Notifies, n_partitions=NPartitions, deps_ack=DepsAck0, n_partitions_deps=NPDeps}) ->
     %lager:info("Received deps_checked"),
     DepsAck1 = DepsAck0 + 1,
     case Notifies of
         NPartitions ->
             case DepsAck1 of
                 NPDeps ->
-                    eiger_vnode:clean_propagated_tx_fsm(Vnode, TxId),
                     {next_state, prepare, SD0#state{deps_ack=DepsAck1}, 0};
                 _ ->
                     {next_state, gather, SD0#state{deps_ack=DepsAck1}, 0}
@@ -208,13 +211,14 @@ send_commit(timeout, SD0=#state{scattered_updates=ScatteredUpdates, tx_id=TxId, 
                   end, dict:to_list(ScatteredUpdates)),
     {next_state, gather_commit, SD0}.
 
-gather_commit({committed, Clock}, SD0=#state{vnode=Vnode, n_partitions=NPartitions, ack=Ack0}) ->
+gather_commit({committed, Clock}, SD0=#state{vnode=Vnode, n_partitions=NPartitions, ack=Ack0, tx_id=TxId}) ->
     %lager:info("Committed: received= ~p, total= ~p", [Ack0+1, NPartitions]),
     ok = eiger_vnode:update_clock(Vnode, Clock),
     Ack1 = Ack0 + 1,
     case Ack1 of
         NPartitions ->
-            {stop, normal, SD0#state{ack=Ack1}};
+            eiger_vnode:clean_propagated_tx_fsm(Vnode, TxId, self()),
+            {next_state, idle, SD0#state{ack=Ack1}};
         _ ->
             {next_state, gather_commit, SD0#state{ack=Ack1}}
     end. 

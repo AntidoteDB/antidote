@@ -35,7 +35,7 @@
          check_deps/2,
          notify_tx/2,
          propagated_group_txs/1,
-         clean_propagated_tx_fsm/2,
+         clean_propagated_tx_fsm/3,
          get_clock/1,
          update_clock/2,
          init/1,
@@ -60,9 +60,9 @@
                 buffered_reads=dict:new() :: dict(),
                 pending=dict:new() :: dict(),
                 prop_txs,
+                idle_fsms=queue:new() :: queue(),
                 fsm_deps=dict:new() :: dict(),
                 deps_keys=dict:new() :: dict(),
-                available_fsms=100 :: integer(),
                 queue_fsm=queue:new() :: queue(),
                 clock=0 :: integer()}).
 
@@ -94,9 +94,9 @@ notify_tx(Node, Transaction)->
                                    {notify_tx, Transaction},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER). 
-clean_propagated_tx_fsm(Node, TxId)->
+clean_propagated_tx_fsm(Node, TxId, FsmRef)->
     riak_core_vnode_master:command(Node,
-                                   {clean_propagated_tx_fsm, TxId},
+                                   {clean_propagated_tx_fsm, TxId, FsmRef},
                                    {fsm, undefined, self()},
                                    ?EIGER_MASTER). 
 
@@ -151,7 +151,17 @@ update_clock(Node, Clock) ->
 init([Partition]) ->
     Name = list_to_atom(integer_to_list(Partition) ++ atom_to_list(prop_txs)),
     PropTxs0 = ets:new(Name, [set, named_table]),
-    {ok, #state{partition=Partition, prop_txs=PropTxs0}}.
+    {ok, Queue} = init_prop_fsms({Partition, node()}, queue:new(), ?NPROP_FSMS), 
+    {ok, #state{partition=Partition, prop_txs=PropTxs0, idle_fsms=Queue}}.
+
+init_prop_fsms(_Vnode, Queue0, 0) ->
+    {ok, Queue0};
+
+init_prop_fsms(Vnode, Queue0, Rest) ->
+    {ok, FsmRef} = eiger_propagatedtx_coord_fsm:start_link(Vnode),
+    Queue1 = queue:in(FsmRef, Queue0),
+    init_prop_fsms(Vnode, Queue1, Rest-1).
+    
 
 handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_keys=DepsKeys0, partition=_Partition}) ->
     RestDeps = lists:foldl(fun({Key, TimeStamp}=Dep, Acc) ->
@@ -174,22 +184,20 @@ handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_key
             {noreply, S0#state{fsm_deps=FsmDeps1, deps_keys=DepsKeys1}}
     end;
 
-handle_command({clean_propagated_tx_fsm, TxId}, _Sender, S0=#state{prop_txs=PropTxs, partition=Partition, queue_fsm=Queue0, available_fsms=AvailableFsms0}) ->
+handle_command({clean_propagated_tx_fsm, TxId, FsmRef}, _Sender, S0=#state{prop_txs=PropTxs, queue_fsm=Queue0, idle_fsms=IdleFsms0}) ->
     true = ets:delete(PropTxs, TxId),
     case queue:out(Queue0) of
         {{value, {TxIdPending, CommitTime, Deps}}, Queue1} ->
-            [{TxIdPending, {queue, [H|ListOps]}}] = ets:lookup(PropTxs, TxIdPending),
-            {ok, FsmRef} = eiger_propagatedtx_coord_fsm:start_link({Partition, node()}, TxIdPending, CommitTime, Deps, H),
-            lists:foreach(fun(Ops) ->
-                            gen_fsm:send_event(FsmRef, {notify, Ops, {Partition, node()}})
-                          end, ListOps),
+            [{TxIdPending, {queue, ListOps}}] = ets:lookup(PropTxs, TxIdPending),
+            gen_fsm:send_event(FsmRef, {new_tx, TxId, CommitTime, Deps, ListOps}),
             true = ets:insert(PropTxs, {TxId, {running, FsmRef}}),
             {noreply, S0#state{queue_fsm=Queue1}};
         {empty, _Queue1} ->
-            {noreply, S0#state{available_fsms=AvailableFsms0+1}}
+            IdleFsms1 = queue:in(FsmRef, IdleFsms0),
+            {noreply, S0#state{idle_fsms=IdleFsms1}}
     end;
 
-handle_command({notify_tx, Transaction}, _Sender, State0=#state{prop_txs=PropTxs, partition=Partition, queue_fsm=Queue0, available_fsms=AvailableFsms0}) ->
+handle_command({notify_tx, Transaction}, _Sender, State0=#state{prop_txs=PropTxs, partition=Partition, queue_fsm=Queue0, idle_fsms=IdleFsms0}) ->
     {TxId, CommitTime, _ST, Deps, Ops, _TOps} = Transaction,
     case ets:lookup(PropTxs, TxId) of
         [{TxId, {running, FsmRef}}] ->
@@ -199,12 +207,12 @@ handle_command({notify_tx, Transaction}, _Sender, State0=#state{prop_txs=PropTxs
             true = ets:insert(PropTxs, {TxId, {queue, [Ops|OpsList]}}),
             {noreply, State0};
         [] ->
-            case (AvailableFsms0 > 0) of
-                true ->
-                    {ok, FsmRef} = eiger_propagatedtx_coord_fsm:start_link({Partition, node()}, TxId, CommitTime, Deps, Ops),
+            case queue:out(IdleFsms0) of
+                {{value, FsmRef}, IdleFsms1} ->
+                    gen_fsm:send_event(FsmRef, {new_tx, TxId, CommitTime, Deps, [Ops]}),
                     true = ets:insert(PropTxs, {TxId, {running, FsmRef}}),
-                    {noreply, State0#state{available_fsms=AvailableFsms0-1}};
-                false ->
+                    {noreply, State0#state{idle_fsms=IdleFsms1}};
+                true ->
                     Queue1 = queue:in({TxId, CommitTime, Deps}, Queue0),
                     true = ets:insert(PropTxs, {TxId, {queue, [Ops]}}),
                     {noreply, State0#state{queue_fsm=Queue1}}
