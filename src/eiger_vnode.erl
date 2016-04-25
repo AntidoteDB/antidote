@@ -56,12 +56,12 @@
 -ignore_xref([start_vnode/1]).
 
 -record(state, {partition,
-                min_pendings=dict:new() :: dict(),
-                buffered_reads=dict:new() :: dict(),
-                pending=dict:new() :: dict(),
+                min_pendings :: cache_id(),
+                buffered_reads :: cache_id(),
+                pending :: cache_id(),
                 prop_txs=dict:new() :: dict(),
-                fsm_deps=dict:new() :: dict(),
-                deps_keys=dict:new() :: dict(),
+                fsm_deps :: cache_id(),
+                deps_keys :: cache_id(),
                 clock=0 :: integer()}).
 
 %%%===================================================================
@@ -147,9 +147,16 @@ update_clock(Node, Clock) ->
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
 init([Partition]) ->
-    {ok, #state{partition=Partition}}.
+    %% Contains min_pendings and pendings
+    MinPendings = open_table(min_pendings, Partition),
+    BufferedReads = open_table(buffered_reads, Partition),
+    Pending = open_table(pending, Partition),
+    FsmDeps = open_table(fsm_deps, Partition),
+    DepsKeys = open_table(deps_keys, Partition),
 
-handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_keys=DepsKeys0, partition=_Partition}) ->
+    {ok, #state{partition=Partition, min_pendings=MinPendings, buffered_reads=BufferedReads, pending=Pending, fsm_deps=FsmDeps, deps_keys=DepsKeys}}.
+
+handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps, deps_keys=DepsKeys, partition=_Partition}) ->
     RestDeps = lists:foldl(fun({Key, TimeStamp}=Dep, Acc) ->
                             {Key, _Value, _EVT, _Clock, TS2} = do_read(Key, ?EIGER_DATATYPE, latest, latest, S0),
                             case eiger_ts_lt(TS2, TimeStamp) of
@@ -163,11 +170,14 @@ handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps0, deps_key
         0 ->
             {reply, deps_checked, S0};
         Other ->
-            FsmDeps1 = dict:store(Sender, Other, FsmDeps0),
-            DepsKeys1 = lists:foldl(fun({Key, TimeStamp}=_Dep, Acc) ->
-                                        dict:append(Key, {TimeStamp, Sender}, Acc)
-                                    end, DepsKeys0, RestDeps),
-            {noreply, S0#state{fsm_deps=FsmDeps1, deps_keys=DepsKeys1}}
+            ets:insert(FsmDeps, {Sender, Other}),
+            lists:foreach(fun({Key, TimeStamp}=_Dep) ->
+                        %dict:append(Key, {TimeStamp, Sender}, Acc)
+                        case ets:lookup(DepsKeys, Key) of
+                            [] ->  ets:insert(DepsKeys, {Key, [TimeStamp, Sender]});
+                            [{Key, L}] -> ets:insert(DepsKeys, {Key, [{TimeStamp, Sender}|L]})
+                        end end, RestDeps),
+            {noreply, S0}
     end;
 
 handle_command({clean_propagated_tx_fsm, TxId}, _Sender, S0=#state{prop_txs=PropTxs0}) ->
@@ -189,35 +199,35 @@ handle_command({notify_tx, Transaction}, _Sender, State0=#state{prop_txs=PropTxs
 %% @doc starts a read_fsm to handle a read operation.
 handle_command({read_key, Key, Type, TxId}, _Sender,
                #state{clock=Clock, min_pendings=MinPendings}=State) ->
-    case dict:find(Key, MinPendings) of
-        {ok, _Min} ->
+    case ets:lookup(MinPendings, Key) of
+        [{Key, _Min}] ->
             {reply, {Key, empty, empty, Clock, empty}, State};
-        error ->
+        [] ->
             Reply = do_read(Key, Type, TxId, latest, State),
             {reply, Reply, State}
     end;
 
 handle_command({read_key_time, Key, Type, TxId, Time}, Sender,
-               #state{clock=Clock0, buffered_reads=BufferedReads0, min_pendings=MinPendings}=State) ->
+               #state{clock=Clock0, buffered_reads=BufferedReads, min_pendings=MinPendings}=State) ->
     Clock = max(Clock0, Time),
-    case dict:find(Key, MinPendings) of
-        {ok, Min} ->
+    case ets:lookup(MinPendings, Key) of
+        [{Key, Min}] ->
             case Min =< Time of
                 true ->
-                    Orddict = case dict:find(Key, BufferedReads0) of
-                                {ok, Orddict0} ->
+                    Orddict = case ets:lookup(BufferedReads, Key) of
+                                [{Key, Orddict0}] ->
                                     orddict:store(Time, {Sender, Type, TxId}, Orddict0);
                                 error ->
                                     Orddict0 = orddict:new(),
                                     orddict:store(Time, {Sender, Type, TxId}, Orddict0)
                               end,
-                    BufferedReads = dict:store(Key, Orddict, BufferedReads0),
+                    ets:insert(BufferedReads, {Key, Orddict}),
                     {noreply, State#state{clock=Clock, buffered_reads=BufferedReads}};
                 false ->
                     Reply = do_read(Key, Type, TxId, Time, State#state{clock=Clock}),
                     {reply, Reply, State#state{clock=Clock}} 
             end;
-        error ->
+        [] ->
             Reply = do_read(Key, Type, TxId, Time, State#state{clock=Clock}),
             {reply, Reply, State#state{clock=Clock}} 
     end;
@@ -359,68 +369,69 @@ update_keys(Ups, Deps, Transaction, {_DcId, _TimeStampClock}=TimeStamp, CommitTi
             error
     end.
     
-post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending0, min_pendings=MinPendings0, buffered_reads=BufferedReads0, clock=Clock}) ->
+post_commit_update(Key, TxId, CommitTime, State0=#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads, clock=Clock}) ->
     %lager:info("Key to post commit : ~p", [Key]),
-    List0 = dict:fetch(Key, Pending0),
+    [{Key, List0}] = ets:lookup(Pending, Key),
     {List, PrepareTime} = delete_pending_entry(List0, TxId, []),
     case List of
         [] ->
-            Pending = dict:erase(Key, Pending0),
-            MinPendings = dict:erase(Key, MinPendings0),
-            case dict:find(Key, BufferedReads0) of
-                {ok, Orddict0} ->
+            ets:delete(Pending, Key),
+            ets:delete(MinPendings, Key),
+            case ets:lookup(BufferedReads, Key) of
+                [{Key, Orddict0}] ->
                     lists:foreach(fun({Time, {Client, TypeB, TxIdB}}) ->
                                     Reply = do_read(Key, TypeB, TxIdB, Time, State0),
                                     riak_core_vnode:reply(Client, Reply)
                                   end, Orddict0),
-                    BufferedReads=dict:erase(Key, BufferedReads0),
-                    State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
-                error ->
-                    State0#state{pending=Pending, min_pendings=MinPendings}
+                    ets:delete(BufferedReads, Key),
+                    State0;
+                [] ->
+                    State0
             end;
         _ ->
-            Pending = dict:store(Key, List, Pending0),
-            case dict:fetch(Key, MinPendings0) < PrepareTime of
+            ets:insert(Pending, {Key, List}),
+            case ets:lookup(MinPendings, Key) < PrepareTime of
                 true ->
                     State0#state{pending=Pending};
                 false ->
                     Times = [PT || {_TxId, PT} <- List],
                     Min = lists:min(Times),
-                    MinPendings =  dict:store(Key, Min, MinPendings0),
-                    case dict:find(Key, BufferedReads0) of
-                        {ok, Orddict0} ->
+                    ets:insert(MinPendings, {Key, Min}),
+                    case ets:lookup(BufferedReads, Key) of
+                        [{Key, Orddict0}] ->
                             BufferedReads = case handle_pending_reads(Orddict0, CommitTime, Key, Clock) of
                                                 [] ->
-                                                    dict:erase(Key, BufferedReads0);
+                                                    ets:delete(BufferedReads, Key);
                                                 Orddict ->
-                                                    dict:store(Key, Orddict, BufferedReads0)
+                                                    ets:store(BufferedReads, {Key, Orddict})
                                             end,
-                            State0#state{pending=Pending, min_pendings=MinPendings, buffered_reads=BufferedReads};
-                        error ->
-                            State0#state{pending=Pending, min_pendings=MinPendings}
+                            State0;
+                        [] ->
+                            State0
                     end
             end
     end.
 
-post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys0, fsm_deps=FsmDeps, partition=_Partition}) ->
-    case dict:find(Key, DepsKeys0) of
-        {ok, List0} ->
-            {List1, FsmDeps1} = lists:foldl(fun({TS2, Fsm}, {Acc, Dict0}) ->
+post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys, fsm_deps=FsmDeps, partition=_Partition}) ->
+    case ets:lookup(DepsKeys, Key) of
+        [{Key, List0}] ->
+            List1 = lists:foldl(fun({TS2, Fsm}, Acc) ->
                                                 case eiger_ts_lt(TimeStamp, TS2) of
                                                     true ->
-                                                        {Acc ++ [{TS2, Fsm}], Dict0};
+                                                        Acc ++ [{TS2, Fsm}];
                                                     false ->
-                                                        case dict:fetch(Fsm, Dict0) of
-                                                            1 ->
+                                                        case ets:lookup(Fsm, FsmDeps) of
+                                                            [{Fsm, 1}] ->
                                                                 riak_core_vnode:reply(Fsm, deps_checked),
-                                                                {Acc, dict:erase(Fsm, Dict0)};
-                                                            Rest ->
-                                                                {Acc, dict:store(Fsm, Rest - 1, Dict0)} 
+                                                                {Acc, ets:delete(FsmDeps, Fsm)};
+                                                            [{Fsm, Rest}] ->
+                                                                {Acc, ets:insert(FsmDeps, {Fsm, Rest - 1})} 
                                                         end
                                                 end
-                                            end, {[], FsmDeps}, List0),
-            S0#state{deps_keys=dict:store(Key, List1, DepsKeys0), fsm_deps=FsmDeps1};
-        error ->
+                                            end, [], List0),
+            ets:insert(DepsKeys, {Key, List1}),
+            S0;
+        [] ->
             S0
     end.
 
@@ -465,18 +476,18 @@ do_read(Key, Type, TxId, Time, #state{clock=Clock}) ->
             {error, Reason}
     end.
 
-do_prepare(TxId, Clock, Keys, S0=#state{pending=Pending0, min_pendings=MinPendings0}) ->
-    {Pending, MinPendings} = lists:foldl(fun(Key, {P0, MP0}) ->
-                                            P = dict:append(Key, {Clock, TxId}, P0),
-                                            MP = case dict:find(Key, MP0) of
-                                                    {ok, _Min} ->
-                                                        MP0;
-                                                    _ ->
-                                                        dict:store(Key, Clock, MP0)
-                                                 end,
-                                            {P, MP}
-                                         end, {Pending0, MinPendings0}, Keys),
-    S0#state{pending=Pending, min_pendings=MinPendings}.
+do_prepare(TxId, Clock, Keys, S0=#state{pending=Pending, min_pendings=MinPendings}) ->
+    lists:foreach(fun(Key) ->
+        case ets:lookup(Pending, Key) of
+            [] -> ets:insert(Pending, {Key, [{Clock, TxId}]});
+            [{Key, L}] -> ets:insert(Pending, {Key, L++[{Clock, TxId}]})
+        end,
+        case ets:lookup(MinPendings, Key) of
+            [] -> ets:insert(MinPendings, {Key, Clock});
+            _ -> ok
+        end
+    end, Keys),
+    S0.
 
 eiger_ts_lt(TS1, TS2) ->
    %lager:info("ts1: ~p, ts2: ~p",[TS1, TS2]),
@@ -491,3 +502,17 @@ eiger_ts_lt(TS1, TS2) ->
                 false -> false
             end
     end.
+
+open_table(Name, Partition) ->
+    case ets:info(get_cache_name(Partition, Name)) of
+    undefined ->
+        ets:new(get_cache_name(Partition, Name),
+            [set, protected, named_table, ?TABLE_CONCURRENCY]);
+    _ ->
+        %% Other vnode hasn't finished closing tables
+        timer:sleep(100),
+        open_table(Name, Partition)
+    end.
+
+get_cache_name(Partition, Base) ->
+    list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
