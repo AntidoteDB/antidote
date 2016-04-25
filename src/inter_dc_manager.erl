@@ -32,6 +32,8 @@
   observe/1,
   observe_dcs/1,
   observe_dcs_sync/1,
+  add_network_delay/1,
+  add_network_delays/1,
   forget_dc/1,
   start_bg_processes/1,
   forget_dcs/1]).
@@ -104,6 +106,15 @@ forget_dc(#descriptor{dcid = DCID}) ->
 
 -spec forget_dcs([#descriptor{}]) -> ok.
 forget_dcs(Descriptors) -> lists:foreach(fun forget_dc/1, Descriptors).
+
+-spec add_network_delays([{#descriptor{}, non_neg_integer()}]) -> ok.
+add_network_delays(Descriptors) ->
+    lists:foreach(fun add_network_delay/1, Descriptors).
+
+-spec add_network_delay({#descriptor{}, non_neg_integer()}) -> ok.
+add_network_delay({#descriptor{dcid = DCID}, Delay}) ->
+    lager:info("Adding network delay ~p ms to DC ~p", [Delay, DCID]),
+    dc_utilities:bcast_vnode_sync(inter_dc_sub_vnode_master, {add_delay, DCID, Delay}).
 
 %%%%%%%%%%%%%
 %% Utils
