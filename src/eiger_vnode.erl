@@ -185,8 +185,8 @@ handle_command({check_deps, Deps}, Sender, S0=#state{fsm_deps=FsmDeps, deps_keys
             lists:foreach(fun({Key, TimeStamp}=_Dep) ->
                         %dict:append(Key, {TimeStamp, Sender}, Acc)
                         case ets:lookup(DepsKeys, Key) of
-                            [] ->  ets:insert(DepsKeys, {Key, [TimeStamp, Sender]});
-                            [{Key, L}] -> ets:insert(DepsKeys, {Key, [{TimeStamp, Sender}|L]})
+                            [] ->  ets:insert(DepsKeys, {Key, [{TimeStamp, Sender}]});
+                            [{Key, L}] -> ets:insert(DepsKeys, {Key, L ++ [{TimeStamp, Sender}]})
                         end end, RestDeps),
             {noreply, S0}
     end;
@@ -450,7 +450,7 @@ post_commit_dependencies(Key, TimeStamp, S0=#state{deps_keys=DepsKeys, fsm_deps=
                                                     true ->
                                                         Acc ++ [{TS2, Fsm}];
                                                     false ->
-                                                        case ets:lookup(Fsm, FsmDeps) of
+                                                        case ets:lookup(FsmDeps, Fsm) of
                                                             [{Fsm, 1}] ->
                                                                 riak_core_vnode:reply(Fsm, deps_checked),
                                                                 ets:delete(FsmDeps, Fsm),
