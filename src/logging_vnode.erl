@@ -44,7 +44,8 @@
          asyn_read_from/3,
          read_from/3,
          get/5,
-	 get_all/4]).
+	 get_all/4,
+	 request_op_id/3]).
 
 -export([init/1,
          terminate/2,
@@ -66,6 +67,7 @@
 -record(state, {partition :: partition_id(),
 		logs_map :: dict(),
 		clock :: dict(),
+		recovered_vector :: vectorclock(),
 		senders_awaiting_ack :: dict(),
 		last_read :: term()}).
 
@@ -181,6 +183,12 @@ get_all(IndexNode, LogId, Continuation, PrevOps) ->
 					?LOGGING_MASTER,
 					infinity).
 
+%% @doc Gets the last id of operations stored in the log for the given DCID
+-spec request_op_id(index_node(), dcid(), partition()) -> {ok, non_neg_integer()}.
+request_op_id(IndexNode, DCID, Partition) ->
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, DCID, Partition},
+					?LOGGING_MASTER,
+					infinity).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -191,15 +199,16 @@ init([Partition]) ->
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
     lager:info("Opening logs for partition ~w", [Partition]),
-    case open_logs(LogFile, Preflists, dict:new(), dict:new()) of
+    case open_logs(LogFile, Preflists, dict:new(), dict:new(), vectorclock:new()) of
         {error, Reason} ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
-        {Map,Clock} ->
+        {Map,Clock,MaxVector} ->
 	    lager:info("Done opening logs for partition ~w", [Partition]),
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         clock=Clock,
+			recovered_vector=MaxVector,
                         senders_awaiting_ack=dict:new(),
                         last_read=start}}
     end.
@@ -207,15 +216,21 @@ init([Partition]) ->
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
+handle_command({get_op_id, DCID, Partition}, _Sender, State=#state{clock=ClockDict}) ->
+    {OpId,_} = get_op_id(ClockDict,[Partition],DCID),
+    #op_number{local = Local, global = _Global} = OpId,
+    {reply, {ok, Local}, State};
+
 %% Let the log sender know the last log id that was sent so the receiving DCs
 %% don't think they are getting old messages
 handle_command({start_timer, undefined}, Sender, State) ->
     handle_command({start_timer, Sender}, Sender, State);
-handle_command({start_timer, Sender}, _, State = #state{partition = Partition, clock=ClockDict}) ->
+handle_command({start_timer, Sender}, _, State = #state{partition=Partition, clock=ClockDict, recovered_vector=MaxVector}) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
     {OpId,_} = get_op_id(ClockDict,[Partition],MyDCID),
     IsReady = try
 		  lager:info("The op Id ~w, partition ~w", [OpId, Partition]),
+		  ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
 		  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId),
 		  ok = inter_dc_log_sender_vnode:start_timer(Partition),
 		  true
@@ -427,29 +442,43 @@ reverse_and_add_op_id([],_Id,Acc) ->
 reverse_and_add_op_id([Next|Rest],Id,Acc) ->
     reverse_and_add_op_id(Rest,Id+1,[{Id,Next}|Acc]).
 
-get_last_op_from_log(Log, Continuation, PrevMaxOpDict) ->
+%% Gets the id of the last operation that was put in the log
+%% and the maximum vectorclock of the commited transactions stored in the log
+-spec get_last_op_from_log(log_id(), disk_log:continuation(), dict(), vectorclock()) -> {eof, dict(), vectorclock()} | {error, term()}.
+get_last_op_from_log(Log, Continuation, PrevMaxOpDict, PrevMaxVector) ->
     case disk_log:chunk(Log, Continuation) of
 	eof ->
-	    {eof, PrevMaxOpDict};
+	    {eof, PrevMaxOpDict, PrevMaxVector};
 	{error, Reason} ->
 	    {error, Reason};
 	{NewContinuation, NewTerms} ->
-	    NewMaxOpDict = get_max_op_numbers(NewTerms,PrevMaxOpDict),
-	    get_last_op_from_log(Log, NewContinuation, NewMaxOpDict);
+	    {NewMaxOpDict, NewMaxVector} = get_max_op_numbers(NewTerms,PrevMaxOpDict,PrevMaxVector),
+	    get_last_op_from_log(Log, NewContinuation, NewMaxOpDict, NewMaxVector);
 	 {NewContinuation, NewTerms, BadBytes} ->
             case BadBytes > 0 of
                 true -> {error, bad_bytes};
                 false ->
-		    NewMaxOpDict = get_max_op_numbers(NewTerms,PrevMaxOpDict),
-		    get_last_op_from_log(Log, NewContinuation, NewMaxOpDict)
+		    {NewMaxOpDict,NewMaxVector} = get_max_op_numbers(NewTerms,PrevMaxOpDict,PrevMaxVector),
+		    get_last_op_from_log(Log, NewContinuation, NewMaxOpDict, NewMaxVector)
 	    end
     end.
 
--spec get_max_op_numbers([{log_id(),#operation{}}],dict()) -> dict().
-get_max_op_numbers([],MaxOpDict) ->
-    MaxOpDict;
-get_max_op_numbers([{_, #operation{op_number = NewOp}}|Rest],PrevMaxOpDict) ->
+-spec get_max_op_numbers([{log_id(),#operation{}}],dict(), vectorclock()) -> {dict(), vectorclock()}.
+get_max_op_numbers([],MaxOpDict,MaxVector) ->
+    {MaxOpDict,MaxVector};
+get_max_op_numbers([{_, #operation{op_number = NewOp, payload = Payload}}|Rest],PrevMaxOpDict,PrevMaxVector) ->
     #op_number{local = Num, node = {_,DCID}} = NewOp,
+    #log_record{op_type = OpType,
+		op_payload = OpPayload
+	       } = Payload,
+    NewMaxVector =
+	case OpType of
+	    commit ->
+		{{DcId, TxCommitTime}, _} = OpPayload,
+		vectorclock:set_clock_of_dc(DcId, TxCommitTime, PrevMaxVector);
+	    _ ->
+		PrevMaxVector
+	end,
     NewMaxOpDict = 
 	dict:update(DCID,fun(OldOp = #op_number{local = OldNum}) ->
 				 case Num >= OldNum of
@@ -459,7 +488,7 @@ get_max_op_numbers([{_, #operation{op_number = NewOp}}|Rest],PrevMaxOpDict) ->
 					 OldOp
 				 end
 			 end, NewOp, PrevMaxOpDict),
-    get_max_op_numbers(Rest,NewMaxOpDict).
+    get_max_op_numbers(Rest,NewMaxOpDict,NewMaxVector).
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
@@ -660,10 +689,10 @@ no_elements([LogId|Rest], Map) ->
 %%      Return:         LogsMap: Maps the  preflist and actual name of
 %%                               the log in the system. dict() type.
 %%
--spec open_logs(string(), [preflist()], dict(), dict()) -> dict() | {error, reason()}.
-open_logs(_LogFile, [], Map, Clock) ->
-    {Map,Clock};
-open_logs(LogFile, [Next|Rest], Map, Clock)->
+-spec open_logs(string(), [preflist()], dict(), dict(), vectorclock()) -> dict() | {error, reason()}.
+open_logs(_LogFile, [], Map, Clock, MaxVector) ->
+    {Map,Clock, MaxVector};
+open_logs(LogFile, [Next|Rest], Map, Clock, MaxVector)->
     PartitionList = log_utilities:remove_node_from_preflist(Next),
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
@@ -673,13 +702,13 @@ open_logs(LogFile, [Next|Rest], Map, Clock)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2, Clock);
+            open_logs(LogFile, Rest, Map2, Clock, MaxVector);
         {repaired, Log, _, _} ->
-	    {eof, LastOpDict} = get_last_op_from_log(Log, start, dict:new()),
+	    {eof, LastOpDict, NewMaxVector} = get_last_op_from_log(Log, start, dict:new(), MaxVector),
 	    NewClock = dict:store(PartitionList,LastOpDict,Clock),
-            lager:info("Repaired log ~p, last op ids are ~p", [Log, dict:to_list(LastOpDict)]),
+            lager:info("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, dict:to_list(LastOpDict), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2, NewClock);
+            open_logs(LogFile, Rest, Map2, NewClock, NewMaxVector);
         {error, Reason} ->
             {error, Reason}
     end.

@@ -31,7 +31,8 @@
 
 %% API
 -export([
-  handle_transaction/1]).
+  handle_transaction/1,
+  set_dependency_clock/2]).
 
 %% VNode methods
 -export([
@@ -64,6 +65,11 @@
 %% At this point no message can be lost (the transport layer must ensure all transactions are delivered reliably).
 -spec handle_transaction(#interdc_txn{}) -> ok.
 handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
+
+%% After restarting from failure, load the vectorclock of the max times of all the updates received from other DCs
+%% Otherwise new updates from other DCs will be blocked
+-spec set_dependency_clock(partition_id(), vectorclock()) -> ok.
+set_dependency_clock(Partition, Vector) -> dc_utilities:call_vnode_sync(Partition, inter_dc_dep_vnode_master, {set_dependency_clock, Vector}).
 
 %%%% VNode methods ----------------------------------------------------------+
 
@@ -148,6 +154,9 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
 %% 		MaxOpNumber
 %% 	end,
 %%     operations_to_payloads(Rest,[Payload|Payloads],NewMaxOpNumber).
+
+handle_command({set_dependency_clock, Vector}, _Sender, State) ->
+    {reply, ok, State#state{vectorclock = Vector}};
     
 handle_command({txn, Txn}, _Sender, State) ->
   NewState = process_all_queues(push_txn(State, Txn)),

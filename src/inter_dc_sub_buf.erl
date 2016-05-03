@@ -24,6 +24,9 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
+%% Expected time to wait until the logging_vnode is started
+-define(LOG_STARTUP_WAIT, 1000).
+
 %% API
 -export([
   new_state/1,
@@ -44,11 +47,27 @@
 new_state(PDCID) -> #state{
   state_name = normal,
   pdcid = PDCID,
-  last_observed_opid = 0,
+  last_observed_opid = init,
   queue = queue:new()
 }.
 
 -spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #state{}) -> #state{}.
+process({txn, Txn}, State = #state{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
+    Result = try
+		 logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
+					 DCID, Partition)
+	     catch
+		 _:Reason ->
+		     lager:info("Error loading last opid from log: ~w, will retry", [Reason])
+	     end,
+    case Result of
+	{ok, OpId} ->
+	    lager:info("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
+	    process({txn, Txn}, State#state{last_observed_opid=OpId});
+	_ ->
+	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
+	    State
+    end;
 process({txn, Txn}, State = #state{state_name = normal}) -> process_queue(push(Txn, State));
 process({txn, Txn}, State = #state{state_name = buffering}) ->
   lager:info("Buffering txn in ~p", [State#state.pdcid]),
