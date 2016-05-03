@@ -116,7 +116,10 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
   case vectorclock:ge(CurrentClock, Dependencies) of
 
     %% If not, the transaction will not be stored right now.
-    false -> {State, false};
+    %% Still need to update the timestamp for that DC, up to 1 less than the
+    %% value of the commit time, because updates from other DCs might depend
+    %% on a time up to this
+    false -> {update_clock(State, DCID, Timestamp-1), false};
 
     %% If so, store the transaction
     true ->
