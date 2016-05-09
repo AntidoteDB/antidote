@@ -19,8 +19,8 @@
 %% -------------------------------------------------------------------
 
 %% This is for storing meta-data that rarely changes
-%% It all updates are broadcast to all nodes in the DC and stored locally
-%% at each node so that reading is just looking in an ets table
+%% All updates are broadcast to all nodes in the DC and stored locally
+%% in memory and on disk at each node so that reading is just looking in an ets table
 %% Updates are synchronous and should be one at a time for the whole DC
 %% otherwise concurrent updates could overwrite eachother
 
@@ -57,6 +57,7 @@
 start_link() ->
     gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
 
+%% Reads the value of a key stored in the table
 -spec read_meta_data(term()) -> {ok, term()} | error.
 read_meta_data(Key) ->
     case ets:lookup(?TABLE_NAME, Key) of
@@ -66,6 +67,7 @@ read_meta_data(Key) ->
 	    {ok, Value}
     end.
 
+%% Tells each node in the DC to broadcast all its entries to all other DCs
 -spec sync_meta_data() -> ok.
 sync_meta_data() ->
     NodeList = dc_utilities:get_my_dc_nodes(),
@@ -73,6 +75,7 @@ sync_meta_data() ->
 			       ok = gen_server:call({global,generate_server_name(Node)}, {broadcast_meta_data})
 		       end, NodeList).
 
+%% Broadcasts a list of key, value pairs to all nodes in the DC
 -spec broadcast_meta_data_list([{term(),term()}]) -> ok.
 broadcast_meta_data_list(KeyValueList) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
@@ -80,6 +83,7 @@ broadcast_meta_data_list(KeyValueList) ->
 			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, KeyValueList})
 		       end, NodeList).    
 
+%% Broadcasts a key, value pair to all nodes in the DC
 -spec broadcast_meta_data(term(), term()) -> ok.
 broadcast_meta_data(Key, Value) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
@@ -87,6 +91,9 @@ broadcast_meta_data(Key, Value) ->
 			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, [{Key, Value}]})
 		       end, NodeList).    
 
+%% Broadcasts a key, value pair to all nodes in the DC
+%% Uses the provided MergeFunc which should take as input two values to merge the new value
+%% with an exisiting value (if there is no existing value, it uses the InitFunc to create the value to merge with)
 -spec broadcast_meta_data_merge(term(), term(), function(), function()) -> ok.
 broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
@@ -98,7 +105,10 @@ broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
 %% -------------------------------------------------------------------+
 
 init([]) ->
-    {ok, DetsTable} = dets:open_file(?TABLE_NAME,[{type,set}]),
+    Path = filename:join(
+	     app_helper:get_env(riak_core, platform_data_dir), ?TABLE_NAME),
+
+    {ok, DetsTable} = dets:open_file(Path,[{type,set}]),
     Table = ets:new(?TABLE_NAME, [set, named_table, protected, ?META_TABLE_STABLE_CONCURRENCY]),
     
     LoadFromDisk = case application:get_env(antidote,recover_meta_data_on_start) of
@@ -126,7 +136,7 @@ handle_call({update_meta_data, KeyValueList}, _Sender, State = #state{table = Ta
     {reply, ok, State};
 
 handle_call({merge_meta_data,Key,Value,MergeFunc,InitFunc}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
-    Prev = case ets:lookup(?TABLE_NAME, Key) of
+    Prev = case ets:lookup(Table, Key) of
 	       [] ->
 		   InitFunc();
 	       [{Key, PrevVal}]->
