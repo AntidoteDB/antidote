@@ -58,7 +58,7 @@ get_dc_partitions_detailed(DCID) ->
 	{ok, Info} ->
 	    Info;
 	error ->
-	    larger:error("Error no partitions for dc ~w", [DCID]),
+	    lager:error("Error no partitions for dc ~w", [DCID]),
 	    {dict:new(), {}, 0}
     end.
 
@@ -69,7 +69,7 @@ get_dc_partitions_dict(DCID) ->
 	{ok, Dict} ->
 	    Dict;
 	error ->
-	    larger:error("Error no partitions for dc ~w", [DCID]),
+	    lager:error("Error no partitions for dc ~w", [DCID]),
 	    dict:new()
     end.
 
@@ -155,9 +155,9 @@ set_dc_partitions(PartitionList, DCID) ->
     NumPartitions = length(PartitionList),
     PartitionTuple = list_to_tuple(PartitionList),
     PartitionDict = 
-	list:foldl(fun(Part, Acc) ->
-			   dict:store(Part,Part,Acc)
-		   end, dict:new(), PartitionList),
+	lists:foldl(fun(Part, Acc) ->
+			    dict:store(Part,Part,Acc)
+		    end, dict:new(), PartitionList),
     ok = stable_meta_data_server:broadcast_meta_data({partition_meta_data,DCID}, {PartitionDict,PartitionTuple,NumPartitions}),
     ok = stable_meta_data_server:broadcast_meta_data({partition_dict,DCID}, PartitionDict),
     %% Add the new one to the list that doesnt include you

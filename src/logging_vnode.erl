@@ -347,7 +347,10 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 
 %% Currently this should be only used for external operations
 %% That already have their operation id numbers assigned
-handle_command({append_group, LogId, OperationList, IsLocal = false}, _Sender,
+%% That is why IsLocal is hard coded to false
+%% Might want to support appending groups of local operations in the future
+%% for efficency
+handle_command({append_group, LogId, OperationList, _IsLocal = false}, _Sender,
                #state{logs_map=Map,
                       clock=ClockDict,
                       partition=Partition}=State) ->
@@ -362,22 +365,26 @@ handle_command({append_group, LogId, OperationList, IsLocal = false}, _Sender,
 				    %% have already been assigned an op id number since
 				    %% they are coming from an external DC
 				    {OpId,OpIdDict} = get_op_id(NewClockDict, LogId, MyDCID),
-				    #op_number{local = Local, global = Global} = OpId,
-				    NewOpId = 
-					case IsLocal of
-					    true ->
-						OpId#op_number{local =  Local + 1, global = Global + 1};
-					    false ->
-						OpId#op_number{global = Global + 1}
-					end,
+				    #op_number{local = _Local, global = Global} = OpId,
+				    NewOpId = OpId#op_number{global = Global + 1},
+				    %% Should assign the opid as follows if this function starts being
+				    %% used for operations generated locally
+				    %% NewOpId = 
+				    %% 	case IsLocal of
+				    %% 	    true ->
+				    %% 		OpId#op_number{local =  Local + 1, global = Global + 1};
+				    %% 	    false ->
+				    %% 		OpId#op_number{global = Global + 1}
+				    %% 	end,
 				    NewNewClockDict = dict:store(LogId,dict:store(MyDCID,NewOpId,OpIdDict),NewClockDict),
 				    ExternalOpNum = Operation#operation.op_number,
 				    case insert_operation(Log, LogId, Operation) of
 					{ok, ExternalOpNum} ->
-					    case IsLocal of
-						true -> inter_dc_log_sender_vnode:send(Partition, Operation);
-						false -> ok
-					    end,
+					    %% Would need to uncomment this is local ops are sent to this function
+					    %% case IsLocal of
+					    %% 	true -> inter_dc_log_sender_vnode:send(Partition, Operation);
+					    %% 	false -> ok
+					    %% end,
 					    {AccErr, AccSucc ++ [NewOpId], NewNewClockDict};
 					{error, Reason} ->
 					    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClockDict}
@@ -444,7 +451,7 @@ reverse_and_add_op_id([Next|Rest],Id,Acc) ->
 
 %% Gets the id of the last operation that was put in the log
 %% and the maximum vectorclock of the commited transactions stored in the log
--spec get_last_op_from_log(log_id(), disk_log:continuation(), dict(), vectorclock()) -> {eof, dict(), vectorclock()} | {error, term()}.
+-spec get_last_op_from_log(log_id(), disk_log:continuation() | start, dict(), vectorclock()) -> {eof, dict(), vectorclock()} | {error, term()}.
 get_last_op_from_log(Log, Continuation, PrevMaxOpDict, PrevMaxVector) ->
     case disk_log:chunk(Log, Continuation) of
 	eof ->
@@ -689,7 +696,7 @@ no_elements([LogId|Rest], Map) ->
 %%      Return:         LogsMap: Maps the  preflist and actual name of
 %%                               the log in the system. dict() type.
 %%
--spec open_logs(string(), [preflist()], dict(), dict(), vectorclock()) -> dict() | {error, reason()}.
+-spec open_logs(string(), [preflist()], dict(), dict(), vectorclock()) -> {dict(),dict(),vectorclock()} | {error, reason()}.
 open_logs(_LogFile, [], Map, Clock, MaxVector) ->
     {Map,Clock, MaxVector};
 open_logs(LogFile, [Next|Rest], Map, Clock, MaxVector)->
@@ -762,7 +769,7 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), operation()) -> {ok, op_id()} | {error, reason()}.
+-spec insert_operation(log(), log_id(), operation()) -> {ok, #op_number{}} | {error, reason()}.
 insert_operation(Log, LogId, Operation) ->
     Result = disk_log:log(Log, {LogId, Operation}),
     case Result of

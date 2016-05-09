@@ -172,7 +172,9 @@ check_node_restart() ->
 	     			  dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
 	     			  connect_nodes([MyNode], DCID, LogReaders, Publishers, Desc)
 	     		  end, OtherDCs),
-	    reconnect_dcs_after_restart(OtherDCs),
+	    Responses3 = reconnect_dcs_after_restart(OtherDCs),
+	    %% Ensure all connections were successful, crash otherwise
+	    Responses3 = [X = ok || X <- Responses3],
 	    true;
 	false ->
 	    false

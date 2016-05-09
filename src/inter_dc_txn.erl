@@ -32,7 +32,7 @@
 
 %% Functions
 
--spec from_ops([#operation{}], partition_id(), log_opid() | none) -> #interdc_txn{}.
+-spec from_ops([#operation{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
 from_ops(Ops, Partition, PrevLogOpId) ->
   LastOp = lists:last(Ops),
   CommitPld = LastOp#operation.payload,
@@ -47,7 +47,7 @@ from_ops(Ops, Partition, PrevLogOpId) ->
     timestamp = CommitTime
   }.
 
--spec ping(partition_id(), log_opid(), non_neg_integer()) -> #interdc_txn{}.
+-spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
 ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   dcid = dc_meta_data_utilities:get_my_dc_id(),
   partition = Partition,

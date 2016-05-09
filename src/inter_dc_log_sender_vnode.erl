@@ -92,7 +92,7 @@ init([Partition]) ->
   {ok, #state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
-    last_log_id = 0,
+    last_log_id = #op_number{},
     timer = none
   }}.
 
