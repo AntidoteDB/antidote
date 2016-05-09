@@ -111,16 +111,21 @@ check_servers_ready() ->
 -spec check_server_ready([index_node()]) -> boolean().
 check_server_ready([]) ->
     true;
-check_server_ready([{Partition, Node} | Rest]) ->
-    Result = riak_core_vnode_master:sync_command({Partition, Node},
-        {check_servers_ready},
-        ?CLOCKSI_MASTER,
-        infinity),
-    case Result of
-        false ->
-            false;
-        true ->
-            check_server_ready(Rest)
+check_server_ready([{Partition,Node}|Rest]) ->
+    try
+	Result = riak_core_vnode_master:sync_command({Partition,Node},
+						     {check_servers_ready},
+						     ?CLOCKSI_MASTER,
+						     infinity),
+	case Result of
+	    false ->
+		false;
+	    true ->
+		check_server_ready(Rest)
+	end
+    catch
+	_:_Reason ->
+	    false
     end.
 
 -spec check_partition_ready(node(), partition_id(), non_neg_integer()) -> boolean().
@@ -133,6 +138,7 @@ check_partition_ready(Node, Partition, Num) ->
         _Res ->
             check_partition_ready(Node, Partition, Num - 1)
     end.
+
 
 
 %%%===================================================================
@@ -238,10 +244,6 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
                     check_prepared(Key, Transaction, PreparedCache, Partition)
             end
     end.
-
-
-
-
 
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and

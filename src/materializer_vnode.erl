@@ -39,6 +39,8 @@
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
 -define(RESIZE_THRESHOLD, 5).
+%% Expected time to wait until the logging vnode is up
+-define(LOG_STARTUP_WAIT, 1000).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -68,11 +70,11 @@
          handle_coverage/4,
          handle_exit/3]).
 
-
 -record(state, {
-  partition :: partition_id(),
-  ops_cache :: cache_id(),
-  snapshot_cache :: cache_id()}).
+	  partition :: partition_id(),
+	  ops_cache :: cache_id(),
+	  snapshot_cache :: cache_id(),
+	  is_ready :: boolean()}).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -117,7 +119,43 @@ store_ss(Key, Snapshot, Params) ->
 init([Partition]) ->
     OpsCache = open_table(Partition, ops_cache),
     SnapshotCache = open_table(Partition, snapshot_cache),
-    {ok, #state{partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+    IsReady = case application:get_env(antidote,recover_from_log) of
+		  {ok, true} ->
+		      lager:info("Checking for logs to init materializer ~p", [Partition]),
+		      riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+		      false;
+		  _ ->
+		      true
+	      end,
+    {ok, #state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+
+-spec load_from_log_to_tables(partition_id(), ets:tid(), ets:tid()) -> ok | {error, reason()}.
+load_from_log_to_tables(Partition, OpsCache, SnapshotCache) ->
+    LogId = [Partition],
+    Node = {Partition, log_utilities:get_my_node(Partition)},
+    loop_until_loaded(Node, LogId, start, dict:new(), OpsCache, SnapshotCache).
+
+-spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict(), ets:tid(), ets:tid()) -> ok | {error, reason()}.
+loop_until_loaded(Node, LogId, Continuation, Ops, OpsCache, SnapshotCache) ->
+    case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
+	{error, Reason} ->
+	    {error, Reason};
+	{NewContinuation, NewOps, OpsDict} ->
+	    load_ops(OpsDict, OpsCache, SnapshotCache),
+	    loop_until_loaded(Node, LogId, NewContinuation, NewOps, OpsCache, SnapshotCache);
+	{eof, OpsDict} ->
+	    load_ops(OpsDict, OpsCache, SnapshotCache),
+	    ok
+    end.
+
+-spec load_ops(dict(), ets:tid(), ets:tid()) -> true.
+load_ops(OpsDict, OpsCache, SnapshotCache) ->
+    dict:fold(fun(Key, CommittedOps, _Acc) ->
+		      lists:foreach(fun({_OpId,Op}) ->
+					    #clocksi_payload{key = Key} = Op,
+					    op_insert_gc(Key, Op, OpsCache, SnapshotCache)
+				    end, CommittedOps)
+	      end, true, OpsDict).
 
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
@@ -142,19 +180,26 @@ open_table(Partition, Name) ->
 %%      readers, allowing them to be non-blocking and concurrent.
 %%      This function checks whether or not all tables have been intialized or not yet.
 %%      Returns true if the have, false otherwise.
+-spec check_tables_ready() -> boolean().
 check_tables_ready() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),
     check_table_ready(PartitionList).
 
-
+-spec check_table_ready([{partition_id(),node()}]) -> boolean().
 check_table_ready([]) ->
     true;
 check_table_ready([{Partition,Node}|Rest]) ->
-    Result = riak_core_vnode_master:sync_command({Partition,Node},
-						 {check_ready},
-						 materializer_vnode_master,
-						 infinity),
+    Result =
+	try
+	    riak_core_vnode_master:sync_command({Partition,Node},
+						{check_ready},
+						materializer_vnode_master,
+						infinity)
+	catch
+	    _:_Reason ->
+		false
+	end,
     case Result of
 	true ->
 	    check_table_ready(Rest);
@@ -162,7 +207,10 @@ check_table_ready([{Partition,Node}|Rest]) ->
 	    false
     end.
 
-handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
+handle_command({hello}, _Sender, State) ->
+  {reply, ok, State};
+
+handle_command({check_ready},_Sender,State = #state{partition=Partition, is_ready=IsReady}) ->
     Result = case ets:info(get_cache_name(Partition,ops_cache)) of
 		 undefined ->
 		     false;
@@ -174,8 +222,8 @@ handle_command({check_ready},_Sender,State = #state{partition=Partition}) ->
 			     true
 		     end
 	     end,
-    {reply, Result, State};
-
+    Result2 = Result and IsReady,
+    {reply, Result2, State};
 
 handle_command({read, Key, Type, Transaction}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache,partition=Partition})->
@@ -192,13 +240,40 @@ handle_command({store_ss, Key, Snapshot, Params}, _Sender,
     internal_store_ss(Key,Snapshot,Params,OpsCache,SnapshotCache,false),
     {noreply, State};
 
+handle_command(load_from_log, _Sender, State=#state{partition=Partition,
+						    ops_cache=OpsCache,
+						    snapshot_cache=SnapshotCache}) ->
+    IsReady = try
+		  case load_from_log_to_tables(Partition, OpsCache, SnapshotCache) of
+		      ok ->
+			  lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
+			  true;
+		      {error, not_ready} ->
+			  false;
+		      {error, Reason} ->
+			  lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+			  true
+		  end
+	      catch
+		  _:Reason1 ->
+		      lager:info("Error loading from log ~w, will retry", [Reason1]),
+		      false
+	      end,
+    ok = case IsReady of
+	     false ->
+		 riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+		 ok;
+	     true ->
+		 ok
+	 end,
+    {noreply, State#state{is_ready=IsReady}};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
-handle_handoff_command(?FOLD_REQ{foldfun = Fun, acc0 = Acc0},
-  _Sender,
-  State = #state{ops_cache = OpsCache}) ->
+handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
+                       _Sender,
+                       State = #state{ops_cache = OpsCache}) ->
     F = fun(Key, A) ->
 		[Key1|_] = tuple_to_list(Key),
                 Fun(Key1, Key, A)
@@ -420,28 +495,30 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc) ->
                                                     end,
             {NewLength, PrunedOps} = prune_ops({Length, OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-            %% Check if the pruned ops are lager or smaller than the previous list size
-            %% if so create a larger or smaller list (by dividing or multiplying by 2)
-            %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
-            NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
-                             true ->
-                                 ListLen * 2;
-                             false ->
-                                 HalfListLen = ListLen div 2,
-                                 case HalfListLen =< ?OPS_THRESHOLD of
-                                     true ->
-                                         ?OPS_THRESHOLD;
-                                     false ->
-                                         case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
-                                             true ->
-                                                 HalfListLen;
-                                             false ->
-                                                 ListLen
-                                         end
-                                 end
-                         end,
-            true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP + NewListLen, 0, [{1, Key}, {2, {NewLength, NewListLen}}, {3, OpId} | PrunedOps]));
-        false ->
+	    %% Check if the pruned ops are lager or smaller than the previous list size
+	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
+	    %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
+	    NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
+			     true ->
+				 ListLen * 2;
+			     false ->
+				 HalfListLen = ListLen div 2,
+				 case HalfListLen =< ?OPS_THRESHOLD of
+				     true ->
+					 %% Don't shrink list, already minimun size
+					 ListLen;
+				     false ->
+					 %% Only shrink if shrinking would leave some space for new ops
+					 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
+					     true ->
+						 HalfListLen;
+					     false ->
+						 ListLen
+					 end
+				 end
+			 end,
+	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
+	false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
