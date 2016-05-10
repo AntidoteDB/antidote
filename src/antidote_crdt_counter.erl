@@ -27,6 +27,10 @@
 
 -include("antidote_crdt.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export([ new/0,
           new/1,
           value/1,
@@ -140,14 +144,14 @@ new_test() ->
 %% @doc test the correctness of `value()' function
 value_test() ->
     PNCnt = 4,
-    ?assertEqual(4, value(PNCnt1)).
+    ?assertEqual(4, value(PNCnt)).
 
 %% @doc test the correctness of increment without parameter.
 update_increment_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update(increment, PNCnt0),
+    {ok, PNCnt1} = update({increment, 1}, PNCnt0),
     {ok, PNCnt2} = update({increment, 2}, PNCnt1),
-    {ok, PNCnt3} = update(increment, PNCnt2),
+    {ok, PNCnt3} = update({increment, 1}, PNCnt2),
     ?assertEqual(4, value(PNCnt3)).
 
 %% @doc test the correctness of increment by some numbers.
@@ -167,14 +171,14 @@ update_decrement_test() ->
 
 update_negative_params_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({{increment, -7}, 1}, PNCnt0),
-    {ok, PNCnt2} = update({{decrement, -5}, 1}, PNCnt1),
+    {ok, PNCnt1} = update({increment, -7}, PNCnt0),
+    {ok, PNCnt2} = update({decrement, -5}, PNCnt1),
     ?assertEqual(-2, value(PNCnt2)).
 
 equal_test() ->
-    PNCnt1 = 4
-    PNCnt2 = 2
-    PNCnt3 = 2
+    PNCnt1 = 4,
+    PNCnt2 = 2,
+    PNCnt3 = 2,
     ?assertNot(equal(PNCnt1, PNCnt2)),
     ?assert(equal(PNCnt2, PNCnt3)).
 

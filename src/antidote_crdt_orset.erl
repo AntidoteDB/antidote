@@ -307,10 +307,10 @@ value_test() ->
 remove_test() ->
     Set1 = new(),
     %% Add an element then remove it
-    {ok, Op1} = downstream({add, <<"foo">>}, 1, Set1),
+    {ok, Op1} = downstream({add, <<"foo">>}, Set1),
     {ok, Set2} = update(Op1, Set1),
     ?assertEqual([<<"foo">>], value(Set2)),
-    {ok, Op2} = downstream({remove, <<"foo">>}, 1, Set2),
+    {ok, Op2} = downstream({remove, <<"foo">>}, Set2),
     {ok, Set3} = update(Op2, Set2),
     ?assertEqual([], value(Set3)),
 
