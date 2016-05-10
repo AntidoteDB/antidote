@@ -93,13 +93,15 @@ to_bin(Txn = #interdc_txn{partition = P}) ->
 
 -spec to_per_key_bin(#interdc_txn{}) -> [binary()].
 to_per_key_bin(Txn = #interdc_txn{operations = Ops}) ->
-    lists:foldl(fun(_Op = #operation{payload = Payload}, Acc) ->
+    lists:foldl(fun(Op = #operation{payload = Payload}, Acc) ->
 			Type = Payload#log_record.op_type,
 			case Type of
 			    update ->
+				CommitOp = lists:last(Ops),
+				NewTxn = Txn#interdc_txn{operations = [Op,CommitOp]},
 				{Key, _, _} = Payload#log_record.op_payload,
 				Prefix = key_to_bin(Key),
-				Msg = term_to_binary(Txn),
+				Msg = term_to_binary(NewTxn),
 				BinaryType = get_type_binary(singlekey),
 				[<<BinaryType/binary, Prefix/binary, Msg/binary>> | Acc];
 			    _ ->
