@@ -334,7 +334,7 @@ internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, Should
     NewSnapshotParams = case SnapshotParams of
                             empty ->
                                 case application:get_env(antidote, txn_prot) of
-                                    nmsi ->
+                                    {ok, nmsi} ->
                                         {vectorclock:new(), vectorclock:new()};
                                     _ ->
                                         vectorclock:new()
@@ -351,7 +351,6 @@ internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, Should
                    end,
     SnapshotDict1 = vector_orddict:insert_bigger(NewSnapshotParams, Snapshot, SnapshotDict),
     snapshot_insert_gc(Key, SnapshotDict1, SnapshotCache, OpsCache, ShouldGc).
-
 
 %% @doc This fuction returns the latest compatible snapshot
 %% stored in the SnapshotDict, given a transactional protocol

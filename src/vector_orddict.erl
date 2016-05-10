@@ -65,13 +65,22 @@ get_causally_compatible_internal(_DepUpbound, _CommitTimeLowbound, [], IsFirst) 
 get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, [{{CommitClock, DepClock}, Value} | Rest], IsFirst) ->
     case is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) of
         true ->
-            {{{CommitClock, DepClock}, Value}, IsFirst};
+            {{Value, {CommitClock, DepClock}}, IsFirst};
         false ->
             get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, Rest, false)
     end.
 
 is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
-vectorclock:ge(CommitClock, CommitTimeLowbound) and vectorclock:le(DepClock, DepUpbound).
+    case ((CommitTimeLowbound == undefined) or (DepUpbound == undefined) or
+            (CommitTimeLowbound == []) or (DepUpbound == [])) of
+        true ->
+            true;
+        false ->
+            lager:info("CommitClock= ~p~n CommitTimeLowbound= ~p~n, DepClock = ~p~n, DepUpbound = ~p~n",
+                [CommitClock,CommitTimeLowbound, DepClock, DepUpbound]),
+            vectorclock:ge(CommitClock, CommitTimeLowbound) and vectorclock:le(DepClock, DepUpbound)
+    end.
+
 
 -spec get_smaller(vectorclock(),vector_orddict()) -> {undefined | {vectorclock(),term()},boolean()}.
 get_smaller(Vector,{List,_Size}) ->

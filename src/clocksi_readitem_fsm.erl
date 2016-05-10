@@ -226,13 +226,21 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
     case Transaction#transaction.transactional_protocol of
         nmsi ->
             DepUpbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
-            case DepUpbound > Time of
+            case ((DepUpbound == undefined) or (DepUpbound == [])) of
                 true ->
-                    % lager:info("Waiting... Reason: clock skew"),
-                    {not_ready, (DepUpbound - Time) div 1000 + 1};
+                    ready;
                 false ->
-                    ready
+                    MyDC = dc_utilities:get_my_dc_id(),
+                    DepUpboundScalar= vectorclock:get_clock_of_dc(MyDC, DepUpbound),
+                    case DepUpboundScalar > Time of
+                        true ->
+                            % lager:info("Waiting... Reason: clock skew"),
+                            {not_ready, (DepUpbound - Time) div 1000 + 1};
+                        false ->
+                            ready
+                    end
             end;
+
             Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
                 TxId = Transaction#transaction.txn_id,
                 T_TS = TxId#tx_id.snapshot_time,

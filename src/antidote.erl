@@ -204,7 +204,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
             end;
         false ->
             case application:get_env(antidote, txn_prot) of
-                {ok, clocksi} ->
+                {ok, Protocol} when ((Protocol == clocksi) orelse (Protocol == nmsi)) ->
                     case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
                         {ok, {_TxId, Result, CommitTime}} ->
                             {ok, Result, CommitTime};

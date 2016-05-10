@@ -16,5 +16,5 @@
      %% clocksi: antidote w/ and without certification check.
      %% gr: gentleRain
      %% nmsi: clock nmsi
-  {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true}]}
+  {env, [{txn_cert, true}, {txn_prot, nmsi}, {recover_from_log, true}]}
  ]}.
