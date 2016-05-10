@@ -246,12 +246,12 @@ delete_object({_Key, _Type, _Bucket}) ->
 %%      object stored at some key.
 -spec append(key(), type(), {op(),term()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {OpParams, Actor}) ->
+append(Key, Type, OpParams) ->
     case materializer:check_operations([{update,
-                                         {Key, Type, {OpParams, Actor}}}]) of
+                                         {Key, Type, OpParams}}]) of
         ok ->
             clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_update(Key, Type,{OpParams,Actor});
+                perform_singleitem_update(Key, Type, OpParams);
         {error, Reason} ->
             {error, Reason}
     end.
