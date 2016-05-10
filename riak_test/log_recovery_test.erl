@@ -31,7 +31,7 @@ confirm() ->
 read_pncounter_log_recovery_test(Nodes) ->
     lager:info("read_snapshot_not_in_ets_test started"),
     FirstNode = hd(Nodes),
-    Type = crdt_pncounter,
+    Type = antidote_crdt_counter,
     Key = log_value_test,
     {ok, TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     increment_counter(FirstNode, Key, 15),
@@ -70,7 +70,7 @@ increment_counter(_FirstNode, _Key, 0) ->
     ok;
 increment_counter(FirstNode, Key, N) ->
     WriteResult = rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [[{update, {Key, crdt_pncounter, {increment, a}}}]]),
+        [[{update, {Key, antidote_crdt_counter, {increment, 1}}}]]),
     ?assertMatch({ok, _}, WriteResult),
     increment_counter(FirstNode, Key, N - 1).
 

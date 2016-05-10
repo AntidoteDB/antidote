@@ -58,7 +58,7 @@ confirm() ->
             Node = lists:nth(Elem, Nodes),
             lager:info("Sending append to Node ~w~n",[Node]),
             WriteResult = rpc:call(Node,
-                                   antidote, append, [abc, riak_dt_gcounter, {increment, a}]),
+                                   antidote, append, [abc, antidote_crdt_counter, increment]),
             ?assertMatch({ok, _}, WriteResult),
             Acc + 1
     end,
@@ -68,7 +68,7 @@ confirm() ->
     rt:log_to_nodes(Nodes, "Issuing read operation."),
     FirstNode = hd(Nodes),
     ReadResult = rpc:call(FirstNode,
-                          antidote, read, [abc, riak_dt_gcounter]),
+                          antidote, read, [abc, antidote_crdt_counter]),
     lager:info("Read value: ~p", [ReadResult]),
     ?assertEqual({ok, Total}, ReadResult),
 

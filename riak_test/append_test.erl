@@ -25,6 +25,8 @@
 
 -define(HARNESS, (rt_config:get(rt_harness))).
 
+-define(TYPE, antidote_crdt_counter).
+
 confirm() ->
     NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
@@ -53,28 +55,28 @@ append_test(Nodes) ->
 
     WriteResult = rpc:call(Node,
                            antidote, append,
-                           [key1, riak_dt_gcounter, {increment, ucl}]),
+                           [key1, ?TYPE, increment]),
     ?assertMatch({ok, _}, WriteResult),
 
     rt:log_to_nodes(Nodes, "Starting write operation 2"),
 
     WriteResult2 = rpc:call(Node,
                            antidote, append,
-                           [key2, riak_dt_gcounter, {increment, ucl}]),
+                           [key2, ?TYPE, increment]),
     ?assertMatch({ok, _}, WriteResult2),
 
     rt:log_to_nodes(Nodes, "Starting read operation 1"),
 
     ReadResult1 = rpc:call(Node,
                            antidote, read,
-                           [key1, riak_dt_gcounter]),
+                           [key1, ?TYPE]),
     ?assertEqual({ok, 1}, ReadResult1),
 
     rt:log_to_nodes(Nodes, "Starting read operation 2"),
 
     ReadResult2 = rpc:call(Node,
                            antidote, read,
-                           [key2, riak_dt_gcounter]),
+                           [key2, ?TYPE]),
     ?assertEqual({ok, 1}, ReadResult2).
 
 append_failure_test(Nodes) ->
@@ -93,11 +95,11 @@ append_failure_test(Nodes) ->
 
     %% Perform successful write and read.
     WriteResult = rpc:call(First,
-                           antidote, append, [Key, riak_dt_gcounter, {increment, ucl}]),
+                           antidote, append, [Key, ?TYPE, {increment, 1}]),
     lager:info("WriteResult: ~p", [WriteResult]),
     ?assertMatch({ok, _}, WriteResult),
 
-    ReadResult = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
+    ReadResult = rpc:call(First, antidote, read, [Key, ?TYPE]),
     lager:info("ReadResult: ~p", [ReadResult]),
     ?assertMatch({ok, 1}, ReadResult),
 
@@ -109,6 +111,6 @@ append_failure_test(Nodes) ->
     rt:heal(PartInfo),
 
     %% Read after the partition has been healed.
-    ReadResult3 = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
+    ReadResult3 = rpc:call(First, antidote, read, [Key, ?TYPE]),
     lager:info("ReadResult3: ~p", [ReadResult3]),
     ?assertMatch({ok, 1}, ReadResult3).

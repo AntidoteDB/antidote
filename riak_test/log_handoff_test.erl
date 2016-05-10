@@ -50,7 +50,7 @@ confirm() ->
     lager:info("Vnodes are started up"),
 
     lager:info("Populating root node."),
-    multiple_writes(RootNode, 1, NTestItems, ucl),
+    multiple_writes(RootNode, 1, NTestItems),
 
     %% Test handoff on each node:
     lager:info("Testing handoff for cluster."),
@@ -96,9 +96,9 @@ test_handoff(RootNode, NewNode, NTestItems) ->
 
     pass.
 
-multiple_writes(Node, Start, End, Actor)->
+multiple_writes(Node, Start, End)->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, append, [N, riak_dt_gcounter, {{increment, N}, Actor}]) of
+            case rpc:call(Node, antidote, append, [N, antidote_crdt_counter, {increment, N}]) of
                 {ok, _} ->
                     Acc;
                 Other ->
@@ -109,7 +109,7 @@ multiple_writes(Node, Start, End, Actor)->
 
 multiple_reads(Node, Start, End) ->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, read, [N, riak_dt_gcounter]) of
+            case rpc:call(Node, antidote, read, [N, antidote_crdt_counter]) of
                 {error, _} ->
                     [{N, error} | Acc];
                 {ok, Value} ->

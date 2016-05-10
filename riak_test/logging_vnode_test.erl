@@ -37,7 +37,7 @@ confirm() ->
 read_pncounter_initial_value_not_in_ets_test(Nodes) ->
     lager:info("read_snapshot_not_in_ets_test started"),
     FirstNode = hd(Nodes),
-    Type = crdt_pncounter,
+    Type = antidote_crdt_counter,
     Key = initial_value_test,
     {ok, TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     increment_counter(FirstNode, Key, 15),
@@ -58,7 +58,7 @@ read_pncounter_initial_value_not_in_ets_test(Nodes) ->
 read_pncounter_old_value_not_in_ets_test(Nodes) ->
     lager:info("read_old_value_not_in_ets_test started"),
     FirstNode = hd(Nodes),
-    Type = crdt_pncounter,
+    Type = antidote_crdt_counter,
     Key = read_old_val,
     increment_counter(FirstNode, Key, 5),
     {ok, {_, [ReadResult], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
@@ -81,7 +81,7 @@ read_pncounter_old_value_not_in_ets_test(Nodes) ->
 read_orset_old_value_not_in_ets_test(Nodes) ->
     lager:info("read_pncounter_old_value_not_in_ets_test started"),
     FirstNode = hd(Nodes),
-    Type = crdt_orset,
+    Type = antidote_crdt_orset,
     Key = read_orset_old_val,
     add_elements_starting_from(FirstNode, Key, 5, 0),
     {ok, {_, [ReadResult], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
@@ -105,7 +105,7 @@ increment_counter(_FirstNode, _Key, 0) ->
     ok;
 increment_counter(FirstNode, Key, N) ->
     WriteResult = rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [[{update, {Key, crdt_pncounter, {increment, a}}}]]),
+        [[{update, {Key, antidote_crdt_counter, increment}}]]),
     ?assertMatch({ok, _}, WriteResult),
     increment_counter(FirstNode, Key, N - 1).
 
@@ -115,6 +115,6 @@ add_elements_starting_from(_FirstNode, _key, 0, _start) ->
     ok;
 add_elements_starting_from(FirstNode, Key, N, Start) ->
     WriteResult = rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [[{update, {Key, crdt_orset, {{add, Start + N}, ucl}}}]]),
+        [[{update, {Key, antidote_crdt_orset, {add, Start + N}}}]]),
     ?assertMatch({ok, _}, WriteResult),
     add_elements_starting_from(FirstNode, Key, N - 1, Start).
