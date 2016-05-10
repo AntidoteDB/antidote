@@ -123,7 +123,7 @@ connect_to_node([Address|Rest]) ->
 	    %% For each partition in the current node:
 	    lists:foreach(fun(P) ->
 				  %% Make the socket subscribe to messages prefixed with the given partition number
-				  ok = zmq_utils:sub_filter(Socket, inter_dc_txn:partition_to_bin(P))
+				  ok = zmq_utils:sub_filter(Socket, inter_dc_txn:get_partition_sub(P))
 			  end, dc_utilities:get_my_partitions()),
 	    {ok, Socket};
 	_ ->
