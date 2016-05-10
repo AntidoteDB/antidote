@@ -156,11 +156,11 @@ asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
 
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
--spec get(index_node(), key(), vectorclock(), term(), key()) ->
+-spec get(index_node(), key(), transaction(), term(), key()) ->
 		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
-get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
+get(IndexNode, LogId, Transaction, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
-					{get, LogId, MinSnapshotTime, Type, Key},
+					{get, LogId, Transaction, Type, Key},
 					?LOGGING_MASTER,
 					infinity).
 
@@ -396,7 +396,7 @@ get_ops_from_log(Log, Key, Continuation, Transaction, Ops, CommittedOpsDict, Loa
             {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, Transaction, Ops, CommittedOpsDict),
 	    case LoadAll of
 		load_all ->
-		    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+		    get_ops_from_log(Log, Key, NewContinuation, Transaction, NewOps, NewCommittedOps, LoadAll);
 		load_per_chunk ->
 		    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
 	    end;
@@ -433,7 +433,7 @@ filter_terms_for_key([H|T], Key, _Transaction, Ops, CommittedOpsDict) ->
         commit ->
             handle_commit(TxId, OpPayload, T, Key, _Transaction, Ops, CommittedOpsDict);
         _ ->
-            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+            filter_terms_for_key(T, Key, _Transaction, Ops, CommittedOpsDict)
     end.
 
 handle_update(TxId, OpPayload,  T, Key, Transaction, Ops, CommittedOpsDict) ->
@@ -450,19 +450,24 @@ handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict) ->
     {{DcId, TxCommitTime}, SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
-            MinSnapshotTime = Transaction#transaction.snapshot_vc,
+            MinSnapshotTime = case Transaction of
+                                  undefined ->
+                                      undefined;
+                                  _ ->
+                                      Transaction#transaction.snapshot_vc
+                              end,
 	    NewCommittedOpsDict =
 		lists:foldl(fun({KeyInternal, Type, Op}, Acc) ->
 				    case ((MinSnapshotTime == undefined) orelse
 									   (not vectorclock:gt(SnapshotTime, MinSnapshotTime))) of
 					true ->
 					    CommittedDownstreamOp =
-						#clocksi_payload{
+						#operation_payload{
 						   key = KeyInternal,
 						   type = Type,
 						   op_param = Op,
                             snapshot_vc = SnapshotTime,
-						   commit_time = {DcId, TxCommitTime},
+						   dc_and_commit_time = {DcId, TxCommitTime},
 						   txid = TxId},
 					    dict:append(KeyInternal, CommittedDownstreamOp, Acc);
 					false ->

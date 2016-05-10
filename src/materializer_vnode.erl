@@ -152,8 +152,8 @@ loop_until_loaded(Node, LogId, Continuation, Ops, OpsCache, SnapshotCache) ->
 load_ops(OpsDict, OpsCache, SnapshotCache) ->
     dict:fold(fun(Key, CommittedOps, _Acc) ->
 		      lists:foreach(fun({_OpId,Op}) ->
-					    #clocksi_payload{key = Key} = Op,
-					    op_insert_gc(Key, Op, OpsCache, SnapshotCache)
+					    #operation_payload{key = Key} = Op,
+					    op_insert_gc(Key, Op, OpsCache, SnapshotCache, undefined)
 				    end, CommittedOps)
 	      end, true, OpsDict).
 
@@ -395,6 +395,7 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
         case get_latest_cached_compatible_snapshot(Key, Type, Transaction, IsLocal, SnapshotCache, OpsCache) of
             {error, no_snapshot} ->
                 %% No snapshot in the cache, get ops from the log
+%%                get_all_operations_for_key_from_log(Key, Type, Transaction);
                 get_all_operations_for_key_from_log(Key, Type, Transaction);
             {{LCS, SCP}, IsF} ->
                 %% There was a snapshot in the cache. Now check if there are ops too.
@@ -444,10 +445,9 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
 
 %% Todo: Future: Implement the following function for a causal snapshot
 get_all_operations_for_key_from_log(Key, Type, Transaction) ->
-LogId = log_utilities:get_logid_from_key(Key),
-[Node] = log_utilities:get_preflist_from_key(Key),
-logging_vnode:get(Node, {get, LogId, Transaction, Type, Key}).
-
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    logging_vnode:get(Node, LogId, Transaction, Type, Key).
 
 
 %% returns true if op is more recent than SS (i.e. is not in the ss)
@@ -505,10 +505,8 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc) ->
 				 HalfListLen = ListLen div 2,
 				 case HalfListLen =< ?OPS_THRESHOLD of
 				     true ->
-					 %% Don't shrink list, already minimun size
-					 ListLen;
+					 ?OPS_THRESHOLD;
 				     false ->
-					 %% Only shrink if shrinking would leave some space for new ops
 					 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
 					     true ->
 						 HalfListLen;
@@ -593,7 +591,13 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
     case ((Length) >= ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
             Type = DownstreamOp#operation_payload.type,
-            {_, _} = internal_read(Key, Type, Transaction, true, OpsCache, SnapshotCache, true),
+            NewTransaction = case Transaction of
+                undefined -> %% the function is being called by the logging vnode at startup
+                    #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc};
+                _ ->
+                    Transaction
+            end,
+            {_, _} = internal_read(Key, Type, NewTransaction, true, OpsCache, SnapshotCache, true),
             %% Have to get the new ops dict because the interal_read can change it
             {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
             true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]);
