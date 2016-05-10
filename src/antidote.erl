@@ -118,14 +118,11 @@ read_objects(Objects, TxId) ->
 -spec update_objects([{bound_object(), op(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    %% TODO: How to generate Actor,
-    %% Actor ID must be removed from crdt update interface
-    Actor = TxId,
     %% Execute each update as in an interactive transaction
     Results = lists:map(
                 fun({{Key, Type, _Bucket}, Op, OpParam}) ->
                         case clocksi_iupdate(TxId, Key, Type,
-                                             {{Op, OpParam}, Actor}) of
+                                             {Op, OpParam}) of
                             ok -> ok;
                             {error, _Reason} ->
                                 error
@@ -143,10 +140,9 @@ update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
 
 update_objects(Clock, _Properties, Updates, StayAlive) ->
-    Actor = actor, %% TODO: generate unique actors
     Operations = lists:map(
                    fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-                           {update, {Key, Type, {{Op,OpParam}, Actor}}}
+                           {update, {Key, Type, {Op,OpParam}}}
                    end,
                    Updates),
     SingleKey = case Operations of

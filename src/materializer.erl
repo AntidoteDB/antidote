@@ -40,13 +40,10 @@ create_snapshot(Type) ->
 %%      This function yields an error if the crdt does not have a corresponding update operation.
 -spec update_snapshot(type(), snapshot(), op()) -> {ok, snapshot()} | {error, reason()}.
 update_snapshot(Type, Snapshot, Op) ->
-    case Op of
-        {merge, State} ->
-            {ok, Type:merge(Snapshot, State)};
-        {update, DownstreamOp} ->
-            Type:update(DownstreamOp, Snapshot);
-        _ ->
-            lager:info("Unexpected log record: ~p for snapshot: ~p", [Op, Snapshot]),
+    try
+        Type:update(Op, Snapshot)
+    catch
+        _:_ -> 
             {error, unexpected_format}
     end.
 
@@ -79,9 +76,9 @@ check_operations([Op | Rest]) ->
 -spec check_operation(term()) -> boolean().
 check_operation(Op) ->
     case Op of
-        {update, {_, Type, {OpParams, _Actor}}} ->
+        {update, {_, Type, Update}} ->
             (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type)) andalso
-                Type:is_operation(OpParams);
+                Type:is_operation(Update);
         {read, {_, Type}} ->
             (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type));
         _ ->
@@ -95,46 +92,38 @@ check_operation(Op) ->
 is_crdt(Term) ->
     is_atom(Term) andalso lists:member(Term, ?CRDTS).
 
-
-
 -ifdef(TEST).
 
 %% @doc Testing update with pn_counter.
 update_pncounter_test() ->
-    Counter = create_snapshot(crdt_pncounter),
-    ?assertEqual(0, crdt_pncounter:value(Counter)),
-    Op = {update, {{increment, 1}, actor1}},
-    {ok, Counter2} = update_snapshot(crdt_pncounter, Counter, Op),
-    ?assertEqual(1, crdt_pncounter:value(Counter2)).
-
-%% @doc Testing update with gcounter and merge.
-update_gcounter_test() ->
-    Counter1 = riak_dt_gcounter:new(actor1, 5),
-    Counter2 = riak_dt_gcounter:new(actor2, 2),
-    ?assertEqual(5, riak_dt_gcounter:value(Counter1)),
-    ?assertEqual(2, riak_dt_gcounter:value(Counter2)),
-    {ok, Counter3} = update_snapshot(riak_dt_gcounter, Counter1, {merge, Counter2}),
-    ?assertEqual(7, riak_dt_gcounter:value(Counter3)).
-
+    Type = antidote_crdt_counter,
+    Counter = create_snapshot(Type),
+    ?assertEqual(0, Type:value(Counter)),
+    Op = {increment, 1},
+    {ok, Counter2} = update_snapshot(Type, Counter, Op),
+    ?assertEqual(1, Type:value(Counter2)).
 
 %% @doc Testing pn_counter with update log
 materializer_counter_withlog_test() ->
-    Counter = create_snapshot(crdt_pncounter),
-    ?assertEqual(0, crdt_pncounter:value(Counter)),
-    Ops = [{update, {{increment, 1}, actor1}},
-        {update, {{increment, 1}, actor2}},
-        {update, {{increment, 2}, actor3}},
-        {update, {{increment, 3}, actor4}}],
-    Counter2 = materialize_eager(crdt_pncounter, Counter, Ops),
-    ?assertEqual(7, crdt_pncounter:value(Counter2)).
+    Type = antidote_crdt_counter,
+    Counter = create_snapshot(Type),
+    ?assertEqual(0, Type:value(Counter)),
+    Ops = [{increment, 1},
+           {increment, 1},
+           {increment, 2},
+           {increment, 3}
+          ],
+    Counter2 = materialize_eager(Type, Counter, Ops),
+    ?assertEqual(7, Type:value(Counter2)).
 
 %% @doc Testing counter with empty update log
 materializer_counter_emptylog_test() ->
-    Counter = create_snapshot(crdt_pncounter),
-    ?assertEqual(0, crdt_pncounter:value(Counter)),
+    Type = antidote_crdt_counter,
+    Counter = create_snapshot(Type),
+    ?assertEqual(0, Type:value(Counter)),
     Ops = [],
-    Counter2 = materialize_eager(crdt_pncounter, Counter, Ops),
-    ?assertEqual(0, crdt_pncounter:value(Counter2)).
+    Counter2 = materialize_eager(Type, Counter, Ops),
+    ?assertEqual(0, Type:value(Counter2)).
 
 %% @doc Testing non-existing crdt
 materializer_error_nocreate_test() ->
@@ -142,42 +131,28 @@ materializer_error_nocreate_test() ->
 
 %% @doc Testing crdt with invalid update operation
 materializer_error_invalidupdate_test() ->
-    Counter = create_snapshot(crdt_pncounter),
-    ?assertEqual(0, crdt_pncounter:value(Counter)),
+    Type = antidote_crdt_counter,
+    Counter = create_snapshot(Type),
+    ?assertEqual(0, Type:value(Counter)),
     Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
-    ?assertEqual({error, unexpected_format}, materialize_eager(crdt_pncounter, Counter, Ops)).
+    ?assertEqual({error, unexpected_format}, materialize_eager(Type, Counter, Ops)).
 
 %% @doc Testing that the function check_operations works properly
 check_operations_test() ->
     Operations =
-        [{read, {key1, riak_dt_gcounter}},
-            {update, {key1, riak_dt_gcounter, {increment, a}}},
-            {update, {key2, riak_dt_gset, {{add, elem}, a}}},
-            {read, {key1, riak_dt_gcounter}}],
+        [{read, {key1, antidote_crdt_counter}},
+         {update, {key1, antidote_crdt_counter, increment}}
+        ],
     ?assertEqual(ok, check_operations(Operations)),
 
-    Operations2 = [{read, {key1, riak_dt_gcounter}},
-        {update, {key1, riak_dt_gcounter, {{add, elem}, a}}},
-        {update, {key2, riak_dt_gcounter, {increment, a}}},
-        {read, {key1, riak_dt_gcounter}}],
-    ?assertMatch({error, _}, check_operations(Operations2)),
-
-    Type1 = crdt_bcounter,
-    Key1 = bcounter2,
-    Operations3 = [{update, {Key1, Type1, {{increment, 7}, r1}}}, {update,
-        {Key1, Type1, {{increment, 5}, r2}}}, {read, {Key1, Type1}}],
-    ?assertEqual(ok, check_operations(Operations3)),
-
-    Type2 = crdt_rga,
-    Key2 = rga,
-    Operations4 = [{update,{Key2, Type2, {{addRight,a,0},r}}}],
-    ?assertEqual(ok, check_operations(Operations4)),
-
-    ?assertEqual(ok,check_operations([{update, {key_add, crdt_rga, {{remove, 0}, xxx}}}])).
-    
+    Operations2 = [{read, {key1, antidote_crdt_counter}},
+        {update, {key1, antidote_crdt_counter, {{add, elem}, a}}},
+        {update, {key2, antidote_crdt_counter, {increment, a}}},
+        {read, {key1, antidote_crdt_counter}}],
+    ?assertMatch({error, _}, check_operations(Operations2)).
 
 is_crdt_test() ->
-    ?assertEqual(true, is_crdt(crdt_orset)),
-    ?assertEqual(true, is_crdt(crdt_rga)),
+    ?assertEqual(true, is_crdt(antidote_crdt_orset)),
+    ?assertEqual(true, is_crdt(antidote_crdt_counter)),
     ?assertEqual(false, is_crdt(whatever)).
 -endif.

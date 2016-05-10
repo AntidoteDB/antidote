@@ -554,7 +554,6 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
 	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
     end.
 
-
 -ifdef(TEST).
 
 %% @doc Testing belongs_to_snapshot returns true when a commit time 
@@ -587,7 +586,7 @@ gc_test() ->
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
     DC1 = 1,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
 
     %% Make 10 snapshots
 
@@ -649,11 +648,11 @@ gc_test() ->
 
 %% @doc This tests to make sure operation lists can be large and resized
 large_list_test() ->
-        OpsCache = ets:new(ops_cache, [set]),
+    OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
     DC1 = 1,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
 
     %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
     {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1,2}]),ignore, OpsCache, SnapshotCache),
@@ -673,15 +672,15 @@ large_list_test() ->
     			  ?assertEqual(Val, Type:value(Res))
     		  end, lists:seq(1001,1100)).
 
-generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
+generate_payload(SnapshotTime,CommitTime,Prev,_Name) ->
     Key = mycount,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     DC1 = 1,
 
-    {ok,Op1} = Type:update(increment, Name, Prev),
+    {ok,Op1} = Type:downstream({increment, 1}, Prev),
     #clocksi_payload{key = Key,
 		     type = Type,
-		     op_param = {merge, Op1},
+		     op_param = Op1,
 		     snapshot_time = vectorclock:from_list([{DC1,SnapshotTime}]),
 		     commit_time = {DC1,CommitTime},
 		     txid = 1
@@ -691,15 +690,15 @@ seq_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     DC1 = 1,
     S1 = Type:new(),
 
     %% Insert one increment
-    {ok,Op1} = Type:update(increment, a, S1),
+    {ok,Op1} = Type:downstream({increment,1},S1),
     DownstreamOp1 = #clocksi_payload{key = Key,
                                      type = Type,
-                                     op_param = {merge, Op1},
+                                     op_param = Op1,
                                      snapshot_time = vectorclock:from_list([{DC1,10}]),
                                      commit_time = {DC1, 15},
                                      txid = 1
@@ -708,9 +707,9 @@ seq_write_test() ->
     {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(1, Type:value(Res1)),
     %% Insert second increment
-    {ok,Op2} = Type:update(increment, a, Res1),
+    {ok,Op2} = Type:downstream({increment,1},S1),
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
-                      op_param = {merge, Op2},
+                      op_param = Op2,
                       snapshot_time=vectorclock:from_list([{DC1,16}]),
                       commit_time = {DC1,20},
                       txid=2},
@@ -727,16 +726,16 @@ multipledc_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     DC1 = 1,
     DC2 = 2,
     S1 = Type:new(),
 
     %% Insert one increment in DC1
-    {ok,Op1} = Type:update(increment, a, S1),
+    {ok,Op1} = Type:downstream({increment,1},S1),
     DownstreamOp1 = #clocksi_payload{key = Key,
                                      type = Type,
-                                     op_param = {merge, Op1},
+                                     op_param = Op1,
                                      snapshot_time = vectorclock:from_list([{DC2,0}, {DC1,10}]),
                                      commit_time = {DC1, 15},
                                      txid = 1
@@ -746,9 +745,9 @@ multipledc_write_test() ->
     ?assertEqual(1, Type:value(Res1)),
 
     %% Insert second increment in other DC
-    {ok,Op2} = Type:update(increment, b, Res1),
+    {ok,Op2} = Type:downstream({increment,1},S1),
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
-                      op_param = {merge, Op2},
+                      op_param = Op2,
                       snapshot_time=vectorclock:from_list([{DC2,16}, {DC1,16}]),
                       commit_time = {DC2,20},
                       txid=2},
@@ -765,16 +764,16 @@ concurrent_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     DC1 = local,
     DC2 = remote,
     S1 = Type:new(),
 
     %% Insert one increment in DC1
-    {ok,Op1} = Type:update(increment, a, S1),
+    {ok,Op1} = Type:downstream({increment,1},S1),
     DownstreamOp1 = #clocksi_payload{key = Key,
                                      type = Type,
-                                     op_param = {merge, Op1},
+                                     op_param = Op1,
                                      snapshot_time = vectorclock:from_list([{DC1,0}, {DC2,0}]),
                                      commit_time = {DC2, 1},
                                      txid = 1
@@ -784,10 +783,10 @@ concurrent_write_test() ->
     ?assertEqual(1, Type:value(Res1)),
 
     %% Another concurrent increment in other DC
-    {ok, Op2} = Type:update(increment, b, S1),
+    {ok, Op2} = Type:downstream({increment,1},S1),
     DownstreamOp2 = #clocksi_payload{ key = Key,
 				      type = Type,
-				      op_param = {merge, Op2},
+				      op_param = Op2,
 				      snapshot_time=vectorclock:from_list([{DC1,0}, {DC2,0}]),
 				      commit_time = {DC1, 1},
 				      txid=2},

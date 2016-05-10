@@ -9,7 +9,8 @@
                   stdlib,
                   riak_pb,
                   riak_api,
-                  riak_core
+                  riak_core,
+		  antidote_crdt
                  ]},
   {mod, { antidote_app, []}},
   {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true}]}
