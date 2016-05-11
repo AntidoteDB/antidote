@@ -49,12 +49,12 @@ clean_clusters(Clusters, Clean)->
             Clusters
     end.
 
+%% This cleans the clusters without forming a new one
 just_clean_clusters(Clusters) ->
     disconnect_dcs(Clusters),
-    lists:foldl(fun(Cluster, Acc) ->
-			rt:clean_cluster(Cluster),
-			Acc ++ [length(Cluster)]
-		end, [], Clusters),
+    lists:foreach(fun(Cluster) ->
+			  rt:clean_cluster(Cluster)
+		  end, Clusters),
     ok.
 
 %% It set ups the listeners and connect the different dcs automatically
