@@ -55,7 +55,8 @@
   partition :: partition_id(),
   queues :: dict(), %% DCID -> queue()
   vectorclock :: vectorclock(),
-  last_updated :: non_neg_integer()
+  last_updated :: non_neg_integer(),
+  drop_ping :: boolean()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -70,7 +71,7 @@ handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_s
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   StableSnapshot = vectorclock:new(),
-  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0}}.
+  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0, drop_ping = false}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
@@ -102,8 +103,10 @@ process_queue(DCID, {State, Acc}) ->
 %% Store the heartbeat message.
 %% This is not a true transaction, so its dependencies are always satisfied.
 -spec try_store(#state{}, #interdc_txn{}) -> {#state{}, boolean()}.
+try_store(State=#state{drop_ping = true}, #interdc_txn{operations = []}) ->
+    {State, true};
 try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, operations = []}) ->
-  {update_clock(State, DCID, Timestamp), true};
+    {update_clock(State, DCID, Timestamp), true};
 
 %% Store the normal transaction
 try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
@@ -136,7 +139,12 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
 
 handle_command({txn, Txn}, _Sender, State) ->
   NewState = process_all_queues(push_txn(State, Txn)),
-  {reply, ok, NewState}.
+    {reply, ok, NewState};
+
+%% Tells the vnode to drop ping messages or not
+%% Used for debugging
+handle_command({drop_ping, DropPing}, _Sender, State) ->
+    {reply, ok, State#state{drop_ping = DropPing}}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
