@@ -367,7 +367,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
         [{Key, _Type, {_Op, _Actor}} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
+            LogRecord = #log_record{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
             %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
@@ -444,7 +444,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
                     LogRecord = #log_record{tx_id = TxId,
                         op_type = prepare,
-                        op_payload = NewPrepare},
+                        log_payload = #prepare_log_payload{prepare_time = NewPrepare}},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
                     Result = logging_vnode:append(Node, LogId, LogRecord),
@@ -484,9 +484,9 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     LogRecord = #log_record{tx_id = TxId,
-        op_type = commit,
-        op_payload = {{DcId, TxCommitTime},
-            Transaction#transaction.vec_snapshot_time}},
+			    op_type = commit,
+			    log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
+							     snapshot_time = Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of
@@ -615,7 +615,7 @@ check_prepared(_TxId, PreparedTx, Key) ->
     end.
 
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
-    Transaction :: tx(), TxCommitTime :: {term(), term()}) ->
+    Transaction :: tx(), TxCommitTime :: non_neg_integer()) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_meta_data_utilities:get_my_dc_id(),

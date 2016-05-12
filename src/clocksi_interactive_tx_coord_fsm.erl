@@ -218,7 +218,7 @@ perform_singleitem_update(Key, Type, Params) ->
             Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
             TxId = Transaction#transaction.txn_id,
             LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
+				    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
@@ -294,7 +294,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
             end,
             TxId = Transaction#transaction.txn_id,
             LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
+				    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
