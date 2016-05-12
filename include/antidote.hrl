@@ -65,17 +65,30 @@
 
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
-%% Used by the replication layer
--record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
--record(operation, {op_number :: #op_number{}, payload :: payload()}).
--type operation() :: #operation{}.
--type vectorclock() :: vectorclock:vectorclock().
+-record(commit_log_payload, {commit_time :: commit_time(),
+			     snapshot_time :: snapshot_time()
+			    }).
 
+-record(update_log_payload, {key :: key(),
+			     bucket :: key(),
+			     type :: type(),
+			     op :: op()
+			    }).
+
+-record(abort_log_payload, {}).
+
+-record(prepare_log_payload, {prepare_time :: non_neg_integer()}).
 
 %% The way records are stored in the log.
 -record(log_record, {tx_id :: txid(),
-                     op_type:: update | prepare | commit | abort | noop,
-                     op_payload}).
+                     op_type :: update | prepare | commit | abort | noop,
+                     log_payload :: #commit_log_payload{}| #update_log_payload{} | #abort_log_payload{} | #prepare_log_payload{}}).
+
+%% Used by the replication layer
+-record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
+-record(operation, {op_number :: #op_number{}, bucket_op_number :: #op_number{}, log_record :: #log_record{}}).
+-type operation() :: #operation{}.
+-type vectorclock() :: vectorclock:vectorclock().
 
 %% Clock SI
 

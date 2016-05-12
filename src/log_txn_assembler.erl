@@ -45,7 +45,7 @@ new_state() -> #state{op_buffer = dict:new()}.
 
 -spec process(operation(), #state{}) -> {{ok, [operation()]} | none, #state{}}.
 process(Operation, State) ->
-  Payload = Operation#operation.payload,
+  Payload = Operation#operation.log_record,
   TxId = Payload#log_record.tx_id,
   NewTxnBuf = find_or_default(TxId, [], State#state.op_buffer) ++ [Operation],
   case Payload#log_record.op_type of
