@@ -67,6 +67,8 @@ materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, 
     {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
         materialize_intern(Type, [], IncludeFromTime, FirstId, SnapshotCommitParams, Transaction,
             Ops, SnapshotCommitParams, false),
+    lager:info("going to apply operations: ~p~n",[OpList]),
+    lager:info("to the snapshot: ~p~n",[Snapshot]),
     case apply_operations(Type, Snapshot, OpList) of
         {ok, NewSS} ->
             {ok, NewSS, NewLastOp, LastOpCt, IsNewSS};
@@ -134,7 +136,15 @@ materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitParam
     OpsToApply = case Type == Op#operation_payload.type of
                  true ->
                      OpCT = Op#operation_payload.dc_and_commit_time,
-                     OpBaseSnapshot = Op#operation_payload.snapshot_vc,
+                     OpBaseSnapshot = case Transaction#transaction.transactional_protocol of
+                                          Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                              Op#operation_payload.snapshot_vc;
+                                          nmsi ->
+                                              Op#operation_payload.dependency_vc
+                                      end,
+                     lager:info("OpBaseSnapshot is ~p ~n",[OpBaseSnapshot]),
+                     lager:info("OpCT is ~p ~n",[OpCT]),
+                     lager:info("Operation is  ~p ~n",[Op]),
                      %% Check if the op is not in the previous snapshot and should be included in the new one
                      %% {should_be_included, is already_in_snapshot}
                      case (is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, SnapshotCommitParams, LastOpCommitParams)) of
@@ -186,12 +196,20 @@ materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitParam
 %%      be applied to the snapshot
 -spec is_op_in_snapshot(clocksi_payload(), commit_time(), snapshot_time(), transaction(),
   snapshot_time() | ignore, snapshot_time()) -> {boolean(), boolean(), snapshot_time()}.
-is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshot, PrevTime) ->
+is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParams, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
     {OpDc, OpCommitTime} = OpCT,
     OpCommitVC = vectorclock:create_commit_vector_clock(OpDc, OpCommitTime, OpBaseSnapshot),
-    case materializer_vnode:op_not_already_in_snapshot(LastSnapshot, OpCommitVC) or
+    LastSnapshotCommitVC = case Transaction#transaction.transactional_protocol of
+                               Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                   LastSnapshotCommitParams;
+                               nmsi ->
+                                   {CVC, _DepVC} = LastSnapshotCommitParams,
+                                   CVC
+                           end,
+    lager:info("OpCommitVC =~p~n LastSnapshotCommitVC =~p~n", [OpCommitVC, LastSnapshotCommitVC]),
+    case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitVC, OpCommitVC) or
         (Transaction#transaction.txn_id == Op#operation_payload.txid) of
         true ->
             %% If not, check if it should be included in the new snapshot
@@ -214,6 +232,17 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshot, PrevTime)
                                true ->
                                    Acc
                            end,
+                    lager:info("Res1 =~p~n", [Res1]),
+                    lager:info("DcIdOp =~p~n", [DcIdOp]),
+                    lager:info("TimeOp =~p~n", [TimeOp]),
+                    lager:info("PrevTime3 =~p~n", [PrevTime3]),
+                    PrevCVC = case Transaction#transaction.transactional_protocol of
+                                  Prot when ((Prot == gr) or (Prot == clocksi)) ->
+                                      PrevTime3;
+                                  nmsi ->
+                                      {PCVC, _PrevDepVC} = PrevTime3,
+                                      PCVC
+                              end,
                     Res2 = dict:update(DcIdOp, fun(Val) ->
                         case TimeOp > Val of
                             true ->
@@ -221,7 +250,7 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshot, PrevTime)
                             false ->
                                 Val
                         end
-                                               end, TimeOp, PrevTime3),
+                                               end, TimeOp, PrevCVC),
                     {Res1, Res2}
                           end, {true, PrevTime2}, OpCommitVC),
             case IncludeInSnapshot of

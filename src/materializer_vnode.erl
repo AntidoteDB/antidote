@@ -409,7 +409,23 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
     case Length of
         0 ->
             %% No operations, return the snapshot found at the beginning.
-            {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
+            case Transaction#transaction.transactional_protocol of
+                nmsi ->
+                    NMSICommitParams = case SnapshotCommitParams of
+                                           ignore ->
+                                               %% todo: make this awful patch nice.
+                                               FakeCommitDC = dc_utilities:get_my_dc_id(),
+                                               FakeCommitTime = 0,
+                                               FakeDependencyVC = vectorclock:new(),
+                                               FakeCommitVC = vectorclock:create_commit_vector_clock(FakeCommitDC, FakeCommitTime, FakeDependencyVC),
+                                               {FakeCommitVC, FakeDependencyVC};
+                                           {CommitVC, DependencyVC} ->
+                                               {CommitVC, DependencyVC}
+                                       end,
+                    {ok, {LatestCompatSnapshot, NMSICommitParams}};
+                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                    {ok, {LatestCompatSnapshot, SnapshotCommitParams}}
+            end;
         _ ->
             %% we got the available operations from the log or the cache, now
             %% we must materialize the ones needed.
@@ -444,9 +460,15 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
 
 %% Todo: Future: Implement the following function for a causal snapshot
 get_all_operations_for_key_from_log(Key, Type, Transaction) ->
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    logging_vnode:get(Node, LogId, Transaction, Type, Key).
+    case Transaction#transaction.transactional_protocol of
+        nmsi->
+            [];
+        Protocol when ((Protocol == gr) or (Protocol == clocksi))->
+            LogId = log_utilities:get_logid_from_key(Key),
+            [Node] = log_utilities:get_preflist_from_key(Key),
+            logging_vnode:get(Node, LogId, Transaction, Type, Key)
+    end.
+
 
 
 %% returns true if op is more recent than SS (i.e. is not in the ss)

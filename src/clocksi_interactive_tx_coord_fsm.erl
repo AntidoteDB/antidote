@@ -176,8 +176,8 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
         nmsi ->
             NmsiReadMetadata = #nmsi_read_metadata{
                 key_read_time = undefined,
-                dep_upbound = undefined,
-                commit_time_lowbound = undefined},
+                dep_upbound = vectorclock:new(),
+                commit_time_lowbound = vectorclock:new()},
             Now = clocksi_vnode:now_microsec(dc_utilities:now()),
             TransactionId = #tx_id{snapshot_time = Now, server_pid = Name},
             Transaction = #transaction{
@@ -309,6 +309,7 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
     end.
 perform_update(UpdateArgs, Sender, CoordState) ->
     {Key, Type, Param} = UpdateArgs,
+    lager:info("updating with the following paramaters: ~p~n",[Param]),
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
     Transaction = CoordState#tx_coord_state.transaction,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
@@ -325,6 +326,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
         {ok, DownstreamRecord, _SnapshotParameters} ->
+            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
             NewUpdatedPartitions = case WriteSet of
                                        [] ->
                                            [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
@@ -417,17 +419,26 @@ execute_op({OpType, Args}, Sender,
 %%      for maintaining the causal snapshot metadata
 update_causal_snapshot_state(State, ReadMetadata, Key) ->
     Transaction = State#tx_coord_state.transaction,
-    {Version, Dep, ReadTime} = ReadMetadata,
+    {CommitVC, DepVC, ReadTime} = ReadMetadata,
+    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTime = ~p~n",[CommitVC, DepVC, ReadTime]),
     KeysAccessTime = State#tx_coord_state.keys_access_time,
     VersionMin = State#tx_coord_state.version_min,
-    NewKeysAccessTime = dict:append(Key, Version, KeysAccessTime),
-    NewVersionMin = min(VersionMin, Version),
+    NewKeysAccessTime = dict:append(Key, CommitVC, KeysAccessTime),
+    NewVersionMin = min(VersionMin, CommitVC),
     CommitTimeLowbound = State#tx_coord_state.transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
     DepUpbound = State#tx_coord_state.transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+    ReadTimeVC = case CommitVC == ignore of
+                     true ->
+                         ignore;
+                     false ->
+                         vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
+                 end,
+%%    lager:info("ReadTimeVC= ~p~n DepUpbound= ~p~n DepVC= ~p~n CommitTimeLowbound= ~p~n", [ReadTimeVC, DepUpbound, DepVC, CommitTimeLowbound]),
     NewTransaction = Transaction#transaction{
         nmsi_read_metadata = #nmsi_read_metadata{
-            dep_upbound = max(DepUpbound, Dep),
-            commit_time_lowbound = min(CommitTimeLowbound, ReadTime)}},
+            %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
+            dep_upbound = vectorclock:min_vc(ReadTimeVC, DepUpbound),
+            commit_time_lowbound = vectorclock:max_vc(DepVC, CommitTimeLowbound)}},
     State#tx_coord_state{keys_access_time = NewKeysAccessTime,
         version_min = NewVersionMin, transaction = NewTransaction}.
 
@@ -656,28 +667,63 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
     is_static = IsStatic, stay_alive = StayAlive}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
-        Reply = case TxState of
-                    committed_read_only ->
-                        case IsStatic of
-                            false ->
-                                {ok, {TxId, Transaction#transaction.snapshot_vc}};
-                            true ->
-                                {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.snapshot_vc}}
+        Reply = case Transaction#transaction.transactional_protocol of
+                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                        case TxState of
+                            committed_read_only ->
+                                case IsStatic of
+                                    false ->
+                                        {ok, {TxId, Transaction#transaction.snapshot_vc}};
+                                    true ->
+                                        {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.snapshot_vc}}
+                                end;
+                            committed ->
+                                DcId = ?DC_UTIL:get_my_dc_id(),
+                                CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                    DcId, CommitTime, Transaction#transaction.snapshot_vc),
+                                case IsStatic of
+                                    false ->
+                                        {ok, {TxId, CausalClock}};
+                                    true ->
+                                        {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
+                                end;
+                            aborted ->
+                                {aborted, TxId};
+                            Reason ->
+                                {TxId, Reason}
                         end;
-                    committed ->
-                        DcId = ?DC_UTIL:get_my_dc_id(),
-                        CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                            DcId, CommitTime, Transaction#transaction.snapshot_vc),
-                        case IsStatic of
-                            false ->
-                                {ok, {TxId, CausalClock}};
-                            true ->
-                                {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
-                        end;
-                    aborted ->
-                        {aborted, TxId};
-                    Reason ->
-                        {TxId, Reason}
+                    nmsi ->
+                        lager:info("ct lowbound = ~p ~n",[Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound]),
+                        lager:info("ct CommitTime = ~p ~n",[CommitTime]),
+                        TxnDependencyVC = case Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound of
+                                              ignore ->
+                                                  vectorclock:new();
+                                              VC -> VC
+                                          end,
+                        case TxState of
+                            committed_read_only ->
+                                case IsStatic of
+                                    false ->
+                                        {ok, {TxId, TxnDependencyVC}};
+                                    true ->
+                                        {ok, {TxId, lists:reverse(ReadSet), TxnDependencyVC}}
+                                end;
+                            committed ->
+                                DcId = ?DC_UTIL:get_my_dc_id(),
+                                CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                    DcId, CommitTime, TxnDependencyVC),
+                                case IsStatic of
+                                    false ->
+                                        {ok, {TxId, CausalClock}};
+                                    true ->
+                                        {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
+                                end;
+                            aborted ->
+                                {aborted, TxId};
+                            Reason ->
+                                {TxId, Reason}
+                        end
+
                 end,
         _Res = gen_fsm:reply(From, Reply);
         true -> ok

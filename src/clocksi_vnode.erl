@@ -90,12 +90,17 @@ read_data_item(Node, Transaction, Key, Type, Updates) ->
                 ReadTime = now_microsec(now()),
                 NMSIMetadata = Transaction#transaction.nmsi_read_metadata,
                 UpdatedNMSIMetadata = NMSIMetadata#nmsi_read_metadata{key_read_time = ReadTime},
-                UpdatedTransaction = Transaction#transaction{nmsi_read_metadata =UpdatedNMSIMetadata},
-                case clocksi_readitem_fsm:read_data_item(Node, Key, Type, UpdatedTransaction) of
-                    {ok, {Snapshot, {SnapshotCommitVC, SnapshotDepVC}}} ->
+                UpdatedTxRecord = Transaction#transaction{nmsi_read_metadata =UpdatedNMSIMetadata},
+                case clocksi_readitem_fsm:read_data_item(Node, Key, Type, UpdatedTxRecord) of
+                    {ok, {Snapshot, {DCandCT, SnapshotDepVC}}} ->
+
+%%                        THE PROBLEM IS HERE!
+
+
+%%                        {ok,{[{a,1,0}],{dict,1,16,16,8,80,48,{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},{{[],[],[],[],[],[],[],[],[],[],[],[[{'antidote@127.0.0.1',{1463,75555,810130}}|1463075630425577]],[],[],[],[]}}}}}
                         Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
                         Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
-                        {ok, {Snapshot2, {SnapshotCommitVC, SnapshotDepVC, ReadTime}}};
+                        {ok, {Snapshot2, {DCandCT, SnapshotDepVC, ReadTime}}};
                     {error, Reason} ->
                         {error, Reason}
                 end;
@@ -170,10 +175,11 @@ send_min_prepared(Partition) ->
     dc_utilities:call_local_vnode(Partition, clocksi_vnode_master, {send_min_prepared}).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
-prepare(ListofNodes, TxId) ->
+prepare(ListofNodes, Transaction) ->
     lists:foldl(fun({Node, WriteSet}, _Acc) ->
+        lager:info("Node: ~p~n WriteSet is ~p~n",[Node, WriteSet]),
         riak_core_vnode_master:command(Node,
-            {prepare, TxId, WriteSet},
+            {prepare, Transaction, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
                 end, ok, ListofNodes).
@@ -342,16 +348,16 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
       prepared_dict = PreparedDict
   }) ->
     PrepareTime = now_microsec(dc_utilities:now()),
-    {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
+    {Result, NewPrepareTime, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
         {ok, _} ->
             CommitParams = case Transaction#transaction.transactional_protocol of
                                nmsi ->
-                                   [{_Key, _Type, {_Snapshot, {_SnapshotCommitVC, SnapshotDepVC}}}] = WriteSet,
-                                   {NewPrepare, SnapshotDepVC};
+                                   SnapshotDepVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+                                   {NewPrepareTime, SnapshotDepVC};
                                Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
-                                   NewPrepare
+                                   NewPrepareTime
                            end,
             ResultCommit = commit(Transaction, CommitParams, WriteSet, CommittedTx, NewState),
             case ResultCommit of
@@ -380,7 +386,14 @@ handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
   #state{partition = _Partition,
       committed_tx = CommittedTx
   } = State) ->
-    Result = commit(Transaction, TxCommitTime, Updates, CommittedTx, State),
+    CommitParams = case Transaction#transaction.transactional_protocol of
+                       nmsi ->
+                           SnapshotDepVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+                           {TxCommitTime, SnapshotDepVC};
+                       Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
+                           TxCommitTime
+                   end,
+    Result = commit(Transaction, CommitParams, Updates, CommittedTx, State),
     case Result of
         {ok, committed, NewPreparedDict} ->
             {reply, committed, State#state{prepared_dict = NewPreparedDict}};
@@ -669,8 +682,7 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
     case Transaction#transaction.transactional_protocol of
         nmsi ->
             {{DcId, CommitTime}, DependencyVC} = CommitParams,
-            UpdateFunction = fun({Key, Type, Op}, AccIn) ->
-                {OpParam, _} = Op,
+            UpdateFunction = fun({Key, Type, OpParam}, AccIn) ->
                 CommittedDownstreamOp =
                     #operation_payload{
                         key = Key,

@@ -42,7 +42,9 @@
     strict_ge/2,
     strict_le/2,
     max/1,
-    min/1]).
+    min/1,
+    max_vc/2,
+    min_vc/2]).
 
 -export_type([vectorclock/0]).
 
@@ -149,6 +151,29 @@ from_list(List) ->
 max([]) -> new();
 max([V]) -> V;
 max([V1, V2 | T]) -> max([merge(fun erlang:max/2, V1, V2) | T]).
+
+-spec max_vc(vectorclock(), vectorclock()) -> vectorclock().
+max_vc(V, V)-> V;
+max_vc(V, ignore)-> V;
+max_vc(ignore, V)-> V;
+max_vc(V1, V2) ->
+    case ge(V1, V2) of
+        true ->
+            V1;
+        false ->
+            V2
+    end.
+
+-spec min_vc(vectorclock(), vectorclock()) -> vectorclock().
+min_vc(V, ignore)-> V;
+min_vc(ignore, V)-> V;
+min_vc(V1, V2) ->
+    case ge(V1, V2) of
+        true ->
+            V2;
+        false ->
+            V1
+    end.
 
 -spec min([vectorclock()]) -> vectorclock().
 min([]) -> new();

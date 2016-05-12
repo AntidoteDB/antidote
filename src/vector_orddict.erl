@@ -76,8 +76,8 @@ is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
         true ->
             true;
         false ->
-            lager:info("CommitClock= ~p~n CommitTimeLowbound= ~p~n, DepClock = ~p~n, DepUpbound = ~p~n",
-                [CommitClock,CommitTimeLowbound, DepClock, DepUpbound]),
+%%            lager:info("CommitClock= ~p~n CommitTimeLowbound= ~p~n, DepClock = ~p~n, DepUpbound = ~p~n",
+%%                [CommitClock,CommitTimeLowbound, DepClock, DepUpbound]),
             vectorclock:ge(CommitClock, CommitTimeLowbound) and vectorclock:le(DepClock, DepUpbound)
     end.
 
