@@ -373,7 +373,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
     #state{partition = _Partition} = State) ->
     TxId = Transaction#transaction.txn_id,
     case Updates of
-        [{Key, _Type, {_Op, _Actor}} | _Rest] ->
+        [{Key, _Type,  _Update} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
@@ -446,7 +446,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
     case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
-                [{Key, _, {_Op, _Actor}} | _] ->
+                [{Key, _Type, _Update} | _] ->
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
@@ -467,7 +467,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
-set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) ->
+set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
@@ -484,7 +484,7 @@ set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) 
 
 reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
-reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
+reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
@@ -497,7 +497,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
         op_payload = {{DcId, TxCommitTime},
             Transaction#transaction.vec_snapshot_time}},
     case Updates of
-        [{Key, _Type, {_Op, _Param}} | _Rest] ->
+        [{Key, _Type, _Update} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of
 		{ok, true} ->
 		    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
@@ -558,7 +558,7 @@ clean_and_notify(TxId, Updates, #state{
 
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
-clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
+clean_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
