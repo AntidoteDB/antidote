@@ -35,9 +35,23 @@
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
 %% @end
--module(crdt_rga).
+-module(antidote_crdt_rga).
 
--export([new/0, update/2, purge_tombstones/1, generate_downstream/3, value/1, is_operation/1]).
+-behaviour(antidote_crdt).
+
+%% Call backs
+-export([ new/0,
+          value/1,
+          downstream/2,
+          update/2,
+          equal/2,
+          to_binary/1,
+          from_binary/1,
+          is_operation/1,
+          require_state_downstream/1
+        ]).
+
+-export([purge_tombstones/1]).
 
 -export_type([rga/0, rga_op/0, rga_downstream_op/0]).
 
@@ -55,8 +69,6 @@
 
 -type rga() :: [vertex()].
 
--type actor() :: riak_dt:actor().
-
 -spec new() -> [].
 new() ->
     [].
@@ -64,8 +76,8 @@ new() ->
 %% @doc generate downstream operations.
 %% If the operation is addRight, generates a unique token for the new element.
 %% If the operation is remove, fetches the vertex of the element to be removed.
--spec generate_downstream(rga_op(), actor(), rga()) -> {ok, rga_downstream_op()} | {error, {invalid_position, number()}}.
-generate_downstream({addRight, Elem, Position}, _Actor, Rga) ->
+-spec downstream(rga_op(), rga()) -> {ok, rga_downstream_op()} | {error, {invalid_position, number()}}.
+downstream({addRight, Elem, Position}, Rga) ->
     case (Position < 0) or (Position > length(Rga)) of
         true -> {error, {invalid_position, Position}};
         false -> case (Rga == []) or (Position == 0) of
@@ -73,7 +85,7 @@ generate_downstream({addRight, Elem, Position}, _Actor, Rga) ->
                      false -> {ok, {addRight, lists:nth(Position, Rga), {ok, Elem, unique()}}}
                  end
     end;
-generate_downstream({remove, Position}, _Actor, Rga) ->
+downstream({remove, Position}, Rga) ->
     {ok, {remove, lists:nth(Position, Rga)}}.
 
 %% @doc given an RGA, returns the same RGA, as it represents its own value.
@@ -133,16 +145,24 @@ unique() ->
 
 %% @doc The following operation verifies that Operation is supported by this particular CRDT.
 -spec is_operation(term()) -> boolean().
-is_operation(Operation) ->
-    case Operation of
-        {addRight, _, Position} ->
+is_operation({addRight, _, Position}) ->
+    (is_integer(Position) and (Position >= 0));
+is_operation({remove, Position})->
             (is_integer(Position) and (Position >= 0));
-        {remove, Position} ->
-            (is_integer(Position) and (Position >= 0));
-        _ ->
-            false
-    end.
+is_operation(_) ->
+            false.
 
+require_state_downstream(_) ->
+     true.
+
+equal(Rga1, Rga2) ->
+    Rga1 == Rga2.
+
+to_binary(Rga1) ->
+    erlang:term_to_binary(Rga1).
+
+from_binary(Bin) ->
+    {ok, erlang:binary_to_term(Bin)}.
 
 -ifdef(TEST).
 
@@ -151,34 +171,34 @@ new_test() ->
 
 generate_downstream_invalid_position_test() ->
     L = new(),
-    Result1 = generate_downstream({addRight, 1, 1}, 1, L),
+    Result1 = downstream({addRight, 1, 1}, L),
     ?assertMatch({error, {invalid_position, 1}}, Result1),
-    Result2 = generate_downstream({addRight, 1, -1}, 1, L),
+    Result2 = downstream({addRight, 1, -1}, L),
     ?assertMatch({error, {invalid_position, -1}}, Result2).
 
 generate_downstream_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 4, 0}, 1, L),
+    {ok, DownstreamOp} = downstream({addRight, 4, 0}, L),
     ?assertMatch({addRight, {ok, 0, 0}, {ok, 4, _}}, DownstreamOp).
 
 generate_downstream_non_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 4, 0}, 1, L),
+    {ok, DownstreamOp} = downstream({addRight, 4, 0}, L),
     {ok, L1} = update(DownstreamOp, L),
-    {ok, DownstreamOp1} = generate_downstream({addRight, 3, 1}, 1, L1),
+    {ok, DownstreamOp1} = downstream({addRight, 3, 1}, L1),
     ?assertMatch({addRight, {ok, 4, _}, {ok, 3, _}}, DownstreamOp1).
 
 add_right_in_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 1, 0}, 1, L),
+    {ok, DownstreamOp} = downstream({addRight, 1, 0}, L),
     {ok, L1} = update(DownstreamOp, L),
     ?assertMatch([{ok, 1, _}], L1).
 
 add_right_in_non_empty_rga_test() ->
     L = new(),
-    {ok, DownstreamOp} = generate_downstream({addRight, 1, 0}, 1, L),
+    {ok, DownstreamOp} = downstream({addRight, 1, 0}, L),
     {ok, L1} = update(DownstreamOp, L),
-    {ok, DownstreamOp1} = generate_downstream({addRight, 2, 1}, 1, L1),
+    {ok, DownstreamOp1} = downstream({addRight, 2, 1}, L1),
     {ok, L2} = update(DownstreamOp1, L1),
     ?assertMatch([{ok, 1, _}, {ok, 2, _}], L2).
 
@@ -203,7 +223,7 @@ remove_first_element_test() ->
     {ok, L1} = update(DownstreamOp1, L),
     {ok, L2} = update(DownstreamOp2, L1),
     {ok, L3} = update(DownstreamOp3, L2),
-    {ok, DownstreamOp4} = generate_downstream({remove, 1}, 1, L3),
+    {ok, DownstreamOp4} = downstream({remove, 1}, L3),
     {ok, L4} = update(DownstreamOp4, L3),
     ?assertMatch([{deleted, 1, _}, {ok, 2, _}, {ok, 3, _}], L4).
 
@@ -215,7 +235,7 @@ remove_middle_element_test() ->
     {ok, L1} = update(DownstreamOp1, L),
     {ok, L2} = update(DownstreamOp2, L1),
     {ok, L3} = update(DownstreamOp3, L2),
-    {ok, DownstreamOp4} = generate_downstream({remove, 2}, 1, L3),
+    {ok, DownstreamOp4} = downstream({remove, 2}, L3),
     {ok, L4} = update(DownstreamOp4, L3),
     ?assertMatch([{ok, 1, _}, {deleted, 2, _}, {ok, 3, _}], L4).
 
@@ -227,7 +247,7 @@ remove_last_element_test() ->
     {ok, L1} = update(DownstreamOp1, L),
     {ok, L2} = update(DownstreamOp2, L1),
     {ok, L3} = update(DownstreamOp3, L2),
-    {ok, DownstreamOp4} = generate_downstream({remove, 3}, 1, L3),
+    {ok, DownstreamOp4} = downstream({remove, 3}, L3),
     {ok, L4} = update(DownstreamOp4, L3),
     ?assertMatch([{ok, 1, _}, {ok, 2, _}, {deleted, 3, _}], L4).
 
@@ -239,7 +259,7 @@ insert_right_of_a_remove_test() ->
     {ok, L1} = update(DownstreamOp1, L),
     {ok, L2} = update(DownstreamOp2, L1),
     {ok, L3} = update(DownstreamOp3, L2),
-    {ok, DownstreamOp4} = generate_downstream({remove, 2}, 1, L3),
+    {ok, DownstreamOp4} = downstream({remove, 2}, L3),
     {ok, L4} = update(DownstreamOp4, L3),
     DownstreamOp5 = {addRight, {deleted, 2, 4}, {ok, 4, 3}},
     {ok, L5} = update(DownstreamOp5, L4),
@@ -253,7 +273,7 @@ purge_tombstones_test() ->
     {ok, L1} = update(DownstreamOp1, L),
     {ok, L2} = update(DownstreamOp2, L1),
     {ok, L3} = update(DownstreamOp3, L2),
-    {ok, DownstreamOp4} = generate_downstream({remove, 2}, 1, L3),
+    {ok, DownstreamOp4} = downstream({remove, 2}, L3),
     {ok, L4} = update(DownstreamOp4, L3),
     {ok, L5} = purge_tombstones(L4),
     ?assertMatch([{ok, 1, _}, {ok, 3, _}], L5).
@@ -263,15 +283,15 @@ purge_tombstones_test() ->
 concurrent_updates_in_two_replicas_test() ->
     R1_0 = new(),
     R2_0 = new(),
-    {ok, DownstreamOp1} = generate_downstream({addRight, 1, 0}, 1, R1_0),
-    {ok, DownstreamOp2} = generate_downstream({addRight, 2, 0}, 1, R2_0),
+    {ok, DownstreamOp1} = downstream({addRight, 1, 0},  R1_0),
+    {ok, DownstreamOp2} = downstream({addRight, 2, 0},  R2_0),
     {ok, R1_1} = update(DownstreamOp1, R1_0),
     {ok, R2_1} = update(DownstreamOp2, R2_0),
     {ok, R1_2} = update(DownstreamOp2, R1_1),
     {ok, R2_2} = update(DownstreamOp1, R2_1),
     ?assertEqual(R1_2, R2_2),
-    {ok, DownstreamOp3} = generate_downstream({addRight, 3, 2}, 1, R1_2),
-    {ok, DownstreamOp4} = generate_downstream({addRight, 4, 2}, 1, R2_2),
+    {ok, DownstreamOp3} = downstream({addRight, 3, 2}, R1_2),
+    {ok, DownstreamOp4} = downstream({addRight, 4, 2}, R2_2),
     {ok, R1_3} = update(DownstreamOp3, R1_2),
     {ok, R2_3} = update(DownstreamOp4, R2_2),
     {ok, R1_4} = update(DownstreamOp4, R1_3),
