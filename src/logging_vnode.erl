@@ -45,6 +45,7 @@
          read_from/3,
          get/5,
 	 get_all/4,
+	 request_bucket_op_id/4,
 	 request_op_id/3]).
 
 -export([init/1,
@@ -186,7 +187,14 @@ get_all(IndexNode, LogId, Continuation, PrevOps) ->
 %% @doc Gets the last id of operations stored in the log for the given DCID
 -spec request_op_id(index_node(), dcid(), partition()) -> {ok, non_neg_integer()}.
 request_op_id(IndexNode, DCID, Partition) ->
-    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, DCID, Partition},
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, {[Partition],DCID}},
+					?LOGGING_MASTER,
+					infinity).
+
+%% @doc Gets the last id of operations stored in the log for the given bucket from the given DCID
+-spec request_bucket_op_id(index_node(), dcid(), bucket(), partition()) -> {ok, non_neg_integer()}.
+request_bucket_op_id(IndexNode, DCID, Bucket, Partition) ->
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, {[Partition],Bucket,DCID}},
 					?LOGGING_MASTER,
 					infinity).
 
@@ -217,8 +225,8 @@ init([Partition]) ->
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
-handle_command({get_op_id, DCID, Partition}, _Sender, State=#state{op_id_table = OpIdTable}) ->
-    OpId = get_op_id(OpIdTable,{[Partition],DCID}),
+handle_command({get_op_id, Key}, _Sender, State=#state{op_id_table = OpIdTable}) ->
+    OpId = get_op_id(OpIdTable,Key),
     #op_number{local = Local, global = _Global} = OpId,
     {reply, {ok, Local}, State};
 

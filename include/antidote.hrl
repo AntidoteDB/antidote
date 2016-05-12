@@ -70,7 +70,7 @@
 			    }).
 
 -record(update_log_payload, {key :: key(),
-			     bucket :: key(),
+			     bucket :: bucket(),
 			     type :: type(),
 			     op :: op()
 			    }).
