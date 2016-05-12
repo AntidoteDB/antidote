@@ -12,18 +12,28 @@
 %% All operations on this CRDT are monotonic and do not keep extra tombstones.
 %% @end
 
--module(crdt_bcounter).
+-module(antidote_crdt_bcounter).
+
+-behaviour(antidote_crdt).
+
+-include("antidote_crdt.hrl").
+
+%% Call backs
+-export([ new/0,
+          value/1,
+          downstream/2,
+          update/2,
+          equal/2,
+          to_binary/1,
+          from_binary/1,
+          is_operation/1,
+          require_state_downstream/1
+        ]).
 
 %% API
--export([new/0,
-    localPermissions/2,
-    permissions/1,
-    value/1,
-    generate_downstream/3,
-    update/2,
-    to_binary/1,
-    from_binary/1, 
-    is_operation/1]).
+-export([localPermissions/2,
+         permissions/1
+        ]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -34,8 +44,8 @@
 -opaque bcounter() :: {orddict:orddict(),orddict:orddict()}.
 -type binary_bcounter() :: binary().
 -type bcounter_op() :: bcounter_anon_op() | bcounter_src_op().
--type bcounter_anon_op() :: {transfer, pos_integer(), id()} | 
-    {increment, pos_integer()} | {decrement, pos_integer()}.
+-type bcounter_anon_op() :: {transfer, pos_integer(), id(), id()} | 
+    {increment, {pos_integer(), id()}} | {decrement, {pos_integer(), id()}}.
 -type bcounter_src_op() :: {bcounter_anon_op(), id()}.
 -opaque id() :: term. %% A replica's identifier.
 
@@ -109,12 +119,12 @@ value(Counter) -> Counter.
 %% This operation fails and returns `{error, no_permissions}'
 %% if it tries to consume resources unavailable to the source replica
 %% (which prevents logging of forbidden attempts).
--spec generate_downstream(bcounter_op(), riak_dt:actor(), bcounter()) -> {ok, bcounter_op()} | {error, no_permissions}.
-generate_downstream({increment,V}, Actor, _Counter) when is_integer(V), V > 0 ->
-    {ok, {{increment,V},Actor}};
-generate_downstream({decrement,V}, Actor, Counter) when is_integer(V), V > 0 ->
+-spec downstream(bcounter_op(), bcounter()) -> {ok, bcounter_op()} | {error, no_permissions}.
+downstream({increment,{V, Actor}}, _Counter) when is_integer(V), V > 0 ->
+    {ok, {{increment,V}, Actor}};
+downstream({decrement,{V, Actor}}, Counter) when is_integer(V), V > 0 ->
     generate_downstream_check({decrement,V}, Actor, Counter, V);
-generate_downstream({transfer,V,To}, Actor, Counter) when is_integer(V), V > 0 ->
+downstream({transfer,{V,To, Actor}}, Counter) when is_integer(V), V > 0 ->
     generate_downstream_check({transfer,V,To}, Actor, Counter, V).
 
 generate_downstream_check(Op, Actor, Counter, V) ->
@@ -160,22 +170,21 @@ from_binary(<<B/binary>>) -> binary_to_term(B).
 -spec is_operation(term()) -> boolean().
 is_operation(Operation) ->
     case Operation of
-        {decrement, Number} ->
+        {decrement, {Number, _Actor}} ->
             is_integer(Number) andalso (Number >= 0);
-        {increment, Number} ->
+        {increment, {Number, _Actor}} ->
             is_integer(Number) andalso (Number >= 0);
-        {transfer, Number, _} ->
-            is_integer(Number) andalso (Number >= 0);
-        {{decrement, Number}, _} ->
-            is_integer(Number) andalso (Number >= 0);
-        {{increment, Number}, _} ->
-            is_integer(Number) andalso (Number >= 0);
-        {{transfer, Number, _}, _} ->
+        {transfer, {Number, _, _Actor}} ->
             is_integer(Number) andalso (Number >= 0);
         _ ->
             false
     end.
 
+require_state_downstream(_) ->
+     true.
+
+equal(BCounter1, BCounter2) ->
+    BCounter1 == BCounter2.
 
 %% ===================================================================
 %% EUnit tests
@@ -184,8 +193,8 @@ is_operation(Operation) ->
 -ifdef(TEST).
 
 %% Utility to generate and apply downstream operations.
-apply_op(Op, Actor, Counter) ->
-    {ok, OP_DS} = generate_downstream(Op, Actor, Counter),
+apply_op(Op, Counter) ->
+    {ok, OP_DS} = downstream(Op, Counter),
     {ok, NewCounter} = update(OP_DS, Counter),
     NewCounter.
 
@@ -196,8 +205,8 @@ new_test() ->
 %% Tests increment operations.
 increment_test() ->
     Counter0 = new(),
-    Counter1 = apply_op({increment, 10}, r1, Counter0),
-    Counter2 = apply_op({increment, 5}, r2, Counter1),
+    Counter1 = apply_op({increment, {10, r1}}, Counter0),
+    Counter2 = apply_op({increment, {5, r2}}, Counter1),
     %% Test replicas' values.
     ?assertEqual(5, localPermissions(r2,Counter2)),
     ?assertEqual(10, localPermissions(r1,Counter2)),
@@ -207,7 +216,7 @@ increment_test() ->
 %% Tests the function `localPermissions()'.
 localPermisisons_test() ->
     Counter0 = new(),
-    Counter1 = apply_op({increment, 10}, r1, Counter0),
+    Counter1 = apply_op({increment, {10, r1}}, Counter0),
     %% Test replica with positive amount of permissions.
     ?assertEqual(10, localPermissions(r1,Counter1)),
     %% Test nonexistent replica.
@@ -216,45 +225,45 @@ localPermisisons_test() ->
 %% Tests decrement operations.
 decrement_test() ->
     Counter0 = new(),
-    Counter1 = apply_op({increment, 10}, r1, Counter0),
+    Counter1 = apply_op({increment, {10, r1}}, Counter0),
     %% Test allowed decrement.
-    Counter2 = apply_op({decrement, 6}, r1, Counter1),
+    Counter2 = apply_op({decrement, {6, r1}}, Counter1),
     ?assertEqual(4, permissions(Counter2)),
     %% Test nonexistent replica.
     ?assertEqual(0, localPermissions(r2,Counter1)),
     %% Test forbidden decrement.
-    OP_DS = generate_downstream({decrement, 6}, r1, Counter2),
+    OP_DS = downstream({decrement, {6, r1}}, Counter2),
     ?assertEqual({error,no_permissions}, OP_DS).
 
 %% Tests a more complex chain of increment and decrement operations.
 decrement_increment_test() ->
     Counter0 = new(),
-    Counter1 = apply_op({increment, 10}, r1, Counter0),
-    Counter2 = apply_op({decrement, 6}, r1, Counter1),
-    Counter3 = apply_op({increment, 6}, r2, Counter2),
+    Counter1 = apply_op({increment, {10, r1}}, Counter0),
+    Counter2 = apply_op({decrement, {6, r1}}, Counter1),
+    Counter3 = apply_op({increment, {6, r2}}, Counter2),
     %% Test several replicas (balance each other).
     ?assertEqual(10, permissions(Counter3)),
     %% Test forbidden permissions, when total is higher than consumed.
-    OP_DS = generate_downstream({decrement, 6}, r1, Counter3),
+    OP_DS = downstream({decrement, {6, r1}}, Counter3),
     ?assertEqual({error,no_permissions}, OP_DS),
     %% Test the same operation is allowed on another replica with enough permissions.
-    Counter4 = apply_op({decrement, 6}, r2, Counter3),
+    Counter4 = apply_op({decrement, {6, r2}}, Counter3),
     ?assertEqual(4, permissions(Counter4)).
 
 %% Tests transferring permissions.
 transfer_test() ->
     Counter0 = new(),
-    Counter1 = apply_op({increment, 10}, r1, Counter0),
+    Counter1 = apply_op({increment, {10, r1}}, Counter0),
     %% Test transferring permissions from one replica to another.
-    Counter2 = apply_op({transfer, 6, r2}, r1, Counter1),
+    Counter2 = apply_op({transfer, {6, r2, r1}}, Counter1),
     ?assertEqual(4, localPermissions(r1,Counter2)),
     ?assertEqual(6, localPermissions(r2,Counter2)),
     ?assertEqual(10, permissions(Counter2)),
     %% Test transference forbidden by lack of previously transfered resources.
-    OP_DS = generate_downstream({transfer, 5, r2}, r1, Counter2),
+    OP_DS = downstream({transfer, {5, r2, r1}}, Counter2),
     ?assertEqual({error,no_permissions}, OP_DS),
     %% Test transference enabled by previously transfered resources.
-    Counter3 = apply_op({transfer, 5, r1}, r2, Counter2),
+    Counter3 = apply_op({transfer, {5, r1, r2}}, Counter2),
     ?assertEqual(9, localPermissions(r1,Counter3)),
     ?assertEqual(1, localPermissions(r2,Counter3)),
     ?assertEqual(10, permissions(Counter3)).
@@ -263,9 +272,9 @@ transfer_test() ->
 value_test() ->
     %% Test on `bcounter()' resulting from applying all kinds of operation.
     Counter0 = new(),
-    Counter1 = apply_op({increment, 10}, r1, Counter0),
-    Counter2 = apply_op({decrement, 6}, r1, Counter1),
-    Counter3 = apply_op({transfer, 2, r2}, r1, Counter2),
+    Counter1 = apply_op({increment, {10, r1}}, Counter0),
+    Counter2 = apply_op({decrement, {6, r1}}, Counter1),
+    Counter3 = apply_op({transfer, {2, r2, r1}}, Counter2),
     %% Assert `value()' returns `bcounter()' itself.
     ?assertEqual(Counter3, value(Counter3)).
 
@@ -273,18 +282,18 @@ value_test() ->
 binary_test() ->
     %% Test on `bcounter()' resulting from applying all kinds of operation.
     Counter0 = new(),
-    Counter1 = apply_op({increment, 10}, r1, Counter0),
-    Counter2 = apply_op({decrement, 6}, r1, Counter1),
-    Counter3 = apply_op({transfer, 2, r2}, r1, Counter2),
+    Counter1 = apply_op({increment, {10, r1}}, Counter0),
+    Counter2 = apply_op({decrement, {6, r1}}, Counter1),
+    Counter3 = apply_op({transfer, {2, r2, r1}}, Counter2),
     %% Assert marshaling and unmarshaling holds the same `bcounter()'.
     B = to_binary(Counter3),
     ?assertEqual(Counter3, from_binary(B)).
 
 is_operation_test() ->
-    ?assertEqual(true, is_operation({transfer, 2, r2})),
-    ?assertEqual(true, is_operation({increment, 50})),
+    ?assertEqual(true, is_operation({transfer, {2, r2, r1}})),
+    ?assertEqual(true, is_operation({increment, {50, r1}})),
     ?assertEqual(false, is_operation(increment)),
-    ?assertEqual(true, is_operation({decrement, 50})),
+    ?assertEqual(true, is_operation({decrement, {50, r1}})),
     ?assertEqual(false, is_operation(decrement)),
     ?assertEqual(false, is_operation({anything, [1,2,3]})).
 
