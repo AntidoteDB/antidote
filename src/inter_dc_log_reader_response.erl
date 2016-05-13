@@ -41,7 +41,7 @@
   code_change/3]).
 
 %% State
--record(state, {socket}). %% socket :: erlzmq_socket()
+-record(state, {socket, id, next}). %% socket :: erlzmq_socket()
 
 %%%% API --------------------------------------------------------------------+
 
@@ -53,11 +53,13 @@ get_address() ->
   {ok, Port} = application:get_env(antidote, logreader_port),
   {Ip, Port}.
 
--spec get_address_list() -> [socket_address()].
+-spec get_address_list() -> {[partition_id()],[socket_address()]}.
 get_address_list() ->
+    PartitionList = dc_utilities:get_my_partitions(),
     {ok, List} = inet:getif(),
     {ok, Port} = application:get_env(antidote, logreader_port),
-    [{Ip1,Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}].
+    AddressList = [{Ip1,Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}],
+    {PartitionList, AddressList}.
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -65,31 +67,50 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
   {_, Port} = get_address(),
-  Socket = zmq_utils:create_bind_socket(rep, true, Port),
+  Socket = zmq_utils:create_bind_socket(xrep, true, Port),
   lager:info("Log reader started on port ~p", [Port]),
-  {ok, #state{socket = Socket}}.
+  {ok, #state{socket = Socket,next=getid}}.
 
 %% Handle the remote request
-handle_info({zmq, Socket, BinaryMsg, _Flags}, State) ->
-  %% Decode the message
-  Msg = binary_to_term(BinaryMsg),
-  %% Create a response
-  Response = case Msg of
-    {read_log, Partition, From, To} -> {{dc_meta_data_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)};
-    {is_up} -> {ok};
-    _ -> {error, bad_request}
-  end,
-  %% Send the response using the same socket .
-  %% (yes, that's how it works in ZeroMQ - the socket holds the context of the last sent request)
-  ok = erlzmq:send(Socket, term_to_binary(Response)),
-  {noreply, State}.
+handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
+    {noreply, State#state{next = blankmsg, id=Id}};
+handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
+    {noreply, State#state{next=getmsg}};
+handle_info({zmq, Socket, BinaryMsg, Flags}, State=#state{id=Id,next=getmsg}) ->
+    %% Decode the message
+    lager:info("got the followoing ~p and ~p and ~p", [Socket, BinaryMsg,Flags]),
+    Msg = binary_to_term(BinaryMsg),
+    lager:info("got msg ~p in log reader resp", [Msg]),
+    %% Create a response
+    case Msg of
+	{read_log, Partition, From, To} ->
+	    send_response({{dc_meta_data_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)}, Id, Socket);
+	{is_up} ->
+	    send_response({ok}, Id, Socket);
+	_ ->
+	    send_response({error, bad_request}, Id, Socket)
+    end,
+    {noreply, State#state{next=getid}};
+handle_info(Info, State) ->
+    lager:info("got weird info ~p", [Info]),
+    {noreply, State}.
 
+handle_call({read_log_response, Response, Id}, _From, State=#state{socket = Socket}) ->
+    send_response(Response, Id, Socket),
+    {reply, ok, State};
+    
 handle_call(_Request, _From, State) -> {noreply, State}.
 terminate(_Reason, State) -> erlzmq:close(State#state.socket).
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
+
+send_response(Response, Id, Socket) ->
+    BinaryResponse = term_to_binary(Response),
+    ok = erlzmq:send(Socket, Id, [sndmore]),
+    ok = erlzmq:send(Socket, <<>>, [sndmore]),
+    ok = erlzmq:send(Socket, BinaryResponse).
 
 %%-spec get_entries(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
 -spec get_entries(non_neg_integer(),non_neg_integer(),non_neg_integer()) -> [].
