@@ -44,7 +44,6 @@
         ]).
 
 %% @doc Create a new, empty 'pncounter()'
--spec new() -> pncounter().
 new() ->
     0.
 
@@ -119,7 +118,6 @@ is_operation(_) -> false.
 
 %% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt 
 %%      to generate downstream effect    
--spec require_state_downstream(update()) -> boolean().
 require_state_downstream(_) ->
      false.
 

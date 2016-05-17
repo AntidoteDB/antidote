@@ -44,7 +44,7 @@
 -opaque bcounter() :: {orddict:orddict(),orddict:orddict()}.
 -type binary_bcounter() :: binary().
 -type bcounter_op() :: bcounter_anon_op() | bcounter_src_op().
--type bcounter_anon_op() :: {transfer, pos_integer(), id(), id()} | 
+-type bcounter_anon_op() :: {transfer, {pos_integer(), id(), id()}} | 
     {increment, {pos_integer(), id()}} | {decrement, {pos_integer(), id()}}.
 -type bcounter_src_op() :: {bcounter_anon_op(), id()}.
 -opaque id() :: term. %% A replica's identifier.
@@ -119,7 +119,7 @@ value(Counter) -> Counter.
 %% This operation fails and returns `{error, no_permissions}'
 %% if it tries to consume resources unavailable to the source replica
 %% (which prevents logging of forbidden attempts).
--spec downstream(bcounter_op(), bcounter()) -> {ok, bcounter_op()} | {error, no_permissions}.
+-spec downstream(bcounter_op(), bcounter()) -> {ok, term()} | {error, no_permissions}.
 downstream({increment,{V, Actor}}, _Counter) when is_integer(V), V > 0 ->
     {ok, {{increment,V}, Actor}};
 downstream({decrement,{V, Actor}}, Counter) when is_integer(V), V > 0 ->
@@ -137,7 +137,7 @@ generate_downstream_check(Op, Actor, Counter, V) ->
 %% usually created with `generate_downstream'.
 %%
 %% Return the resulting `bcounter()' after applying the operation.
--spec update(bcounter_op(), bcounter()) -> {ok, bcounter()}.
+-spec update(term(), bcounter()) -> {ok, bcounter()}.
 update({{increment, V},Id}, Counter) ->
     increment(Id,V,Counter);
 update({{decrement, V},Id}, Counter) ->
@@ -162,8 +162,8 @@ transfer(From,To,V,{P,D}) ->
 to_binary(C) -> term_to_binary(C).
 
 %% doc Return a `bcounter()' from its binary representation.
--spec from_binary(binary()) -> bcounter().
-from_binary(<<B/binary>>) -> binary_to_term(B).
+-spec from_binary(binary()) -> {ok, bcounter()}.
+from_binary(<<B/binary>>) -> {ok, binary_to_term(B)}.
 
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.

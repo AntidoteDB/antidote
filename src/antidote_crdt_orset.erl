@@ -142,8 +142,7 @@ downstream({remove_all,Elems}, ORDict) ->
 %% For update, the second element of the tuple is a list of updates to apply, each of which can
 %% either be add, add_all or remove, remove_all.
 -spec update(orset_op(), orset()) ->
-                    {ok, orset()} |
-                    {error, {precondition ,{not_present, member()}}}.
+                    {ok, orset()}.
 update({add, {Elem, [Token|_]}}, ORDict) ->
     add_elem(Elem,Token,ORDict);
 update({add_all,Elems}, ORDict0) ->
@@ -253,7 +252,6 @@ minimum_tokens(Tokens) ->
 
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
--spec is_operation(term()) -> boolean().
 is_operation({add, _Elem}) -> true;
 is_operation({add_all, [_H|_T]}) -> true;
 is_operation({remove, _Elem}) ->
