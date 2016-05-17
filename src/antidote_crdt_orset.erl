@@ -256,7 +256,8 @@ is_operation({add, _Elem}) -> true;
 is_operation({add_all, [_H|_T]}) -> true;
 is_operation({remove, _Elem}) ->
     true;
-is_operation({remove_all, [_H|_T]}) -> true.
+is_operation({remove_all, [_H|_T]}) -> true;
+is_operation(_) -> false.
 
 require_state_downstream({add,_}) ->
     false;
