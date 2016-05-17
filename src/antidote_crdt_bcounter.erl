@@ -287,7 +287,7 @@ binary_test() ->
     Counter3 = apply_op({transfer, {2, r2, r1}}, Counter2),
     %% Assert marshaling and unmarshaling holds the same `bcounter()'.
     B = to_binary(Counter3),
-    ?assertEqual(Counter3, from_binary(B)).
+    ?assertEqual({ok, Counter3}, from_binary(B)).
 
 is_operation_test() ->
     ?assertEqual(true, is_operation({transfer, {2, r2, r1}})),
