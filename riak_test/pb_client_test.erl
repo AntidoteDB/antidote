@@ -84,6 +84,9 @@ confirm() ->
     [_] = common:clean_clusters([Nodes9]),
     rt:wait_for_service(Node, antidote),
     static_transaction_test(),
+
+    interactive_read_test(),
+
     pass.
 
 start_stop_test() ->
@@ -96,14 +99,14 @@ start_stop_test() ->
 
 %% starts and transaction and read a key
 simple_transaction_test(Node) ->
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {key, antidote_crdt_counter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     rpc:call(Node, antidote, finish_transaction, [TxId]).
 
 
 read_write_test(Node) ->
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {key, antidote_crdt_counter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
@@ -113,7 +116,7 @@ read_write_test(Node) ->
 %% Single object rea
 get_empty_crdt_test() ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {<<"key">>, riak_dt_pncounter, <<"bucket">>},
+    Bound_object = {<<"key">>, antidote_crdt_counter, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
@@ -123,7 +126,7 @@ get_empty_crdt_test() ->
 pb_test_counter_read_write(_Node) ->
     Key = <<"key_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_counter, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
     ok = antidotec_pb:update_objects(Pid, [{Bound_object, increment, 1}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
@@ -137,7 +140,7 @@ pb_test_counter_read_write(_Node) ->
 pb_test_set_read_write(_Node) ->
     Key = <<"key_read_write_set">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_orset, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
     ok = antidotec_pb:update_objects(Pid, [{Bound_object, add, "a"}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
@@ -160,7 +163,7 @@ pb_empty_txn_clock_test() ->
 
 update_counter_crdt_test(Key, Bucket,  Amount) ->
     lager:info("Verifying retrieval of updated counter CRDT..."),
-    BObj = {Key, riak_dt_pncounter, Bucket},
+    BObj = {Key, antidote_crdt_counter, Bucket},
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Obj = antidotec_counter:new(),
     Obj2 = antidotec_counter:increment(Amount, Obj),
@@ -174,7 +177,7 @@ update_counter_crdt_test(Key, Bucket,  Amount) ->
 
 update_counter_crdt_and_read_test(Key, Amount) ->
     pass = update_counter_crdt_test(Key, <<"bucket">>, Amount),
-    pass = get_crdt_check_value(Key, riak_dt_pncounter, <<"bucket">>, Amount).
+    pass = get_crdt_check_value(Key, antidote_crdt_counter, <<"bucket">>, Amount).
 
 get_crdt_check_value(Key, Type, Bucket, Expected) ->
     lager:info("Verifying value of updated CRDT..."),
@@ -191,7 +194,7 @@ get_crdt_check_value(Key, Type, Bucket, Expected) ->
 update_set_read_test() ->
     Key = <<"key_update_read_set">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_orset, <<"bucket">>},
     Set = antidotec_set:new(),
     Set1 = antidotec_set:add("a", Set),
     Set2 = antidotec_set:add("b", Set1),
@@ -214,7 +217,7 @@ update_set_read_test() ->
 static_transaction_test() ->
     Key = <<"key_static_update_read_set">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_orset, <<"bucket">>},
     Set = antidotec_set:new(),
     Set1 = antidotec_set:add("a", Set),
     Set2 = antidotec_set:add("b", Set1),
@@ -232,5 +235,34 @@ static_transaction_test() ->
     ?assertEqual(2,length(antidotec_set:value(Val))),
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+interactive_read_test() ->    
+    Key1 = <<"key_int_read_set">>,
+    Key2 = <<"key_int_read_set2">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    O1 = {Key1, antidote_crdt_orset, <<"bucket">>},
+    O2 = {Key2, antidote_crdt_orset, <<"bucket">>},
+    Set = antidotec_set:new(),
+    Set1 = antidotec_set:add("a", Set),
+    Set2 = antidotec_set:add("b", Set),
+
+    {ok, TxId} = antidotec_pb:start_transaction(Pid,
+                                                term_to_binary(ignore), {}),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(O1, Set1),
+                                     TxId),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(O2, Set2),
+                                     TxId),
+
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    %% Read committed updated
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, [Val1]} = antidotec_pb:read_objects(Pid, [O1], Tx2),
+    {ok, [Val2]} = antidotec_pb:read_objects(Pid, [O2], Tx2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    ?assertMatch(true, antidotec_set:contains("a", Val1)),
+    ?assertMatch(true, antidotec_set:contains("b", Val2)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
     
