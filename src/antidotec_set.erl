@@ -98,11 +98,13 @@ is_type(T) ->
 type() -> set.
 
 to_ops(BoundObject, #antidote_set{adds=Adds, rems=Rems}) ->
-    case sets:size(Adds) =:= 0 andalso sets:size(Rems) =:= 0 of
-        true -> [];
-        false ->
-            [{BoundObject, add_all, sets:to_list(Adds)},
-             {BoundObject, remove_all, sets:to_list(Rems)}]
+    R = case sets:size(Rems) > 0 of
+            true -> [{BoundObject, remove_all, sets:to_list(Rems)}];
+            false -> []
+        end,
+    case sets:size(Adds) > 0 of
+        true -> [{BoundObject, add_all, sets:to_list(Adds)} | R];
+        false -> R
     end.
 
 
