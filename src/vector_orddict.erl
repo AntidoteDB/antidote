@@ -35,7 +35,7 @@
      get_causally_compatible/2,
      is_causally_compatible/4,
 	 insert/3,
-	 insert_bigger/3,
+	 insert_bigger/4,
 	 sublist/3,
 	 size/1,
 	 to_list/1,
@@ -56,18 +56,23 @@ new() ->
 %%      by the nmsi protocol's causal snapshot.
 -spec get_causally_compatible(transaction(), vector_orddict()) -> {undefined | {{vectorclock(), vectorclock()}, term()}, boolean()}.
 get_causally_compatible(Transaction, {List, _Size}) ->
-    DepUpbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
-    CommitTimeLowbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
-    get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, List, true).
+    DepUpboundVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+    CommitTimeLowboundVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+    {{Snapshot, {CommitVC, DepVC, ReadTime}}, IsFirst} = get_causally_compatible_internal(DepUpboundVC, CommitTimeLowboundVC, List, ignore),
+    {{Snapshot, {CommitVC, DepVC, ReadTime}}, IsFirst}.
 
-get_causally_compatible_internal(_DepUpbound, _CommitTimeLowbound, [], IsFirst) ->
-    {undefined, IsFirst};
-get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, [{{CommitClock, DepClock}, Value} | Rest], IsFirst) ->
-    case is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) of
+get_causally_compatible_internal(_DepUpbound, _CommitTimeLowbound, [], _PreviousCommitVC) ->
+    undefined;
+get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, [{{CommitVC, DepVC}, Snapshot} | Rest], PreviousCommitVC) ->
+    case is_causally_compatible(CommitVC, CommitTimeLowbound, DepVC, DepUpbound) of
         true ->
-            {{Value, {CommitClock, DepClock}}, IsFirst};
+            {ReadTime, IsFirst} = case PreviousCommitVC of
+                           ignore -> {clocksi_vnode:now_microsec(now()), true};
+                           _-> {vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), PreviousCommitVC), false}
+                       end,
+            {{Snapshot, {CommitVC, DepVC, ReadTime - 1}}, IsFirst};
         false ->
-            get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, Rest, false)
+            get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, Rest, CommitVC)
     end.
 
 is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
@@ -114,23 +119,26 @@ insert_internal(Vector,Val,[{FirstClock,FirstVal}|Rest],Size,PrevList) ->
 	    insert_internal(Vector,Val,Rest,Size,[{FirstClock,FirstVal}|PrevList])
     end.
 
--spec insert_bigger({vectorclock(), vectorclock()} | vectorclock(), term(),vector_orddict()) -> nonempty_vector_orddict().
-insert_bigger({Vector1, Vector2},Val,{List,Size}) ->
-    insert_bigger_internal({Vector1, Vector2},Val,List,Size);
-insert_bigger(Vector,Val,{List,Size}) ->
-    insert_bigger_internal(Vector,Val,List,Size).
+-spec insert_bigger({term()} | vectorclock(), term(),vector_orddict(), atom()) -> nonempty_vector_orddict().
+insert_bigger(Params,Val,{List,Size}, Protocol) ->
+    case Protocol of
+        {ok, nmsi} ->
+            {V1, V2, _RT} = Params,
+            insert_bigger_internal_nmsi({V1, V2},Val,List,Size);
+        _->
+            insert_bigger_internal(Params,Val,List,Size)
+    end.
 
--spec insert_bigger_internal({vectorclock(), vectorclock()}| vectorclock(),term(),[{vectorclock(),term()}],non_neg_integer()) -> nonempty_vector_orddict().
-insert_bigger_internal({Vector1, Vector2},Val,[],0) ->
+-spec insert_bigger_internal_nmsi({vectorclock(), vectorclock()},term(),list(),non_neg_integer()) -> nonempty_vector_orddict().
+insert_bigger_internal_nmsi({Vector1, Vector2},Val,[],0) ->
     {[{{Vector1, Vector2},Val}],1};
-
-insert_bigger_internal({Vector1, Vector2},Val,[{{FirstClock1, FirstClock2},FirstVal}|Rest],Size) ->
+insert_bigger_internal_nmsi({Vector1, Vector2},Val,[{{FirstClock1, FirstClock2},FirstVal}|Rest],Size) ->
     case not vectorclock:le(Vector1,FirstClock1) of
         true ->
             {[{{Vector1, Vector2},Val}|[{{FirstClock1, FirstClock2},FirstVal}|Rest]],Size+1};
         false ->
             {[{{FirstClock1, FirstClock2},FirstVal}|Rest],Size}
-    end;
+    end.
 
 insert_bigger_internal(Vector,Val,[],0) ->
     {[{Vector,Val}],1};
@@ -199,15 +207,15 @@ vector_orddict_insert_bigger_test() ->
     Vdict0 = vector_orddict:new(),
     %% Insert to empty dict
     CT1 = vectorclock:from_list([{dc1,4},{dc2,4}]),
-    Vdict1 = vector_orddict:insert_bigger(CT1, 1,Vdict0),
+    Vdict1 = vector_orddict:insert_bigger(CT1, 1,Vdict0, clocksi),
     ?assertEqual(1,vector_orddict:size(Vdict1)),
     %% Should not insert because smaller
     CT2 = vectorclock:from_list([{dc1,3},{dc2,3}]),
-    Vdict2 = vector_orddict:insert_bigger(CT2, 2, Vdict1),
+    Vdict2 = vector_orddict:insert_bigger(CT2, 2, Vdict1, clocksi),
     ?assertEqual(1,vector_orddict:size(Vdict2)),
     %% Should insert because bigger
     CT3 = vectorclock:from_list([{dc1,6},{dc2,10}]),
-    Vdict3 = vector_orddict:insert_bigger(CT3, 3, Vdict2),
+    Vdict3 = vector_orddict:insert_bigger(CT3, 3, Vdict2, clocksi),
     ?assertEqual(2,vector_orddict:size(Vdict3)).
 
 

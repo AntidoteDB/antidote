@@ -85,35 +85,29 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, Transaction, Key, Type, Updates) ->
-    case Transaction#transaction.transactional_protocol of
-            nmsi ->
-                ReadTime = now_microsec(now()),
-                NMSIMetadata = Transaction#transaction.nmsi_read_metadata,
-                UpdatedNMSIMetadata = NMSIMetadata#nmsi_read_metadata{key_read_time = ReadTime},
-                UpdatedTxRecord = Transaction#transaction{nmsi_read_metadata =UpdatedNMSIMetadata},
-                case clocksi_readitem_fsm:read_data_item(Node, Key, Type, UpdatedTxRecord) of
-                    {ok, {Snapshot, {DCandCT, SnapshotDepVC}}} ->
-
-%%                        THE PROBLEM IS HERE!
-
-
-%%                        {ok,{[{a,1,0}],{dict,1,16,16,8,80,48,{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},{{[],[],[],[],[],[],[],[],[],[],[],[[{'antidote@127.0.0.1',{1463,75555,810130}}|1463075630425577]],[],[],[],[]}}}}}
-                        Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-                        Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
-                        {ok, {Snapshot2, {DCandCT, SnapshotDepVC, ReadTime}}};
-                    {error, Reason} ->
-                        {error, Reason}
-                end;
-            Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
-                    {ok, {Snapshot, CommitParameters}} ->
-                        Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-                        Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
-                        {ok, {Snapshot2, CommitParameters}};
-                    {error, Reason} ->
-                        {error, Reason}
-                end
-        end.
+%%    case Transaction#transaction.transactional_protocol of
+%%            nmsi ->
+%%                NMSIMetadata = Transaction#transaction.nmsi_read_metadata,
+%%                UpdatedNMSIMetadata = NMSIMetadata#nmsi_read_metadata{key_read_time = ReadTime},
+%%                UpdatedTxRecord = Transaction#transaction{nmsi_read_metadata =UpdatedNMSIMetadata},
+%%                case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
+%%                    {ok, {Snapshot, {CommitVC, SnapshotDepVC, ReadTime}}} ->
+%%                        Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+%%                        Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+%%                        {ok, {Snapshot2, {CommitVC, SnapshotDepVC, ReadTime}}};
+%%                    {error, Reason} ->
+%%                        {error, Reason}
+%%                end;
+%%            Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
+        {ok, {Snapshot, CommitParameters}} ->
+            Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+            {ok, {Snapshot2, CommitParameters}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+%%        end.
 
 
 async_read_data_item(Node, TxId, Key, Type) ->

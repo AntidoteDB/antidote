@@ -331,9 +331,10 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 
 -spec internal_store_ss(key(), snapshot(), snapshot_time() | {snapshot_time(), snapshot_time()}, cache_id(), cache_id(), boolean()) -> true.
 internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, ShouldGc) ->
+    Protocol = application:get_env(antidote, txn_prot),
     NewSnapshotParams = case SnapshotParams of
                             empty ->
-                                case application:get_env(antidote, txn_prot) of
+                                case Protocol of
                                     {ok, nmsi} ->
                                         {vectorclock:new(), vectorclock:new()};
                                     _ ->
@@ -349,7 +350,10 @@ internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, Should
                        [{_, SnapshotDictA}] ->
                            SnapshotDictA
                    end,
-    SnapshotDict1 = vector_orddict:insert_bigger(NewSnapshotParams, Snapshot, SnapshotDict),
+
+%%    lager:info("NewSnapshotParams, ~p~n Snapshot, ~p~n SnapshotDict, ~p~n Protocol ~p~n", [NewSnapshotParams, Snapshot, SnapshotDict, Protocol]),
+
+    SnapshotDict1 = vector_orddict:insert_bigger(NewSnapshotParams, Snapshot, SnapshotDict, Protocol),
     snapshot_insert_gc(Key, SnapshotDict1, SnapshotCache, OpsCache, ShouldGc).
 
 %% @doc This fuction returns the latest compatible snapshot
@@ -358,26 +362,40 @@ get_latest_cached_compatible_snapshot(Key, Type, Transaction, IsLocal, SnapshotC
     case ets:lookup(SnapshotCache, Key) of
         [] ->
             %% First time reading this key, store an empty snapshot in the cache
+            CommitParams = case Transaction#transaction.transactional_protocol of
+                               nmsi ->
+                                   ReadTime = clocksi_vnode:now_microsec(now()),
+                                   FakeCommitDC = dc_utilities:get_my_dc_id(),
+                                   FakeCommitTime = 0,
+                                   FakeDependencyVC = vectorclock:new(),
+                                   FakeCommitVC = vectorclock:create_commit_vector_clock(FakeCommitDC, FakeCommitTime, FakeDependencyVC),
+                                   {FakeCommitVC, FakeDependencyVC, ReadTime};
+                               Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                   empty
+                           end,
             BlankSS = {0, clocksi_materializer:new(Type)},
             case IsLocal of
                 true ->
-                    internal_store_ss(Key, BlankSS, empty, OpsCache, SnapshotCache, false);
+                    internal_store_ss(Key, BlankSS, CommitParams, OpsCache, SnapshotCache, false);
                 false ->
-                    materializer_vnode:store_ss(Key, BlankSS, empty)
+                    materializer_vnode:store_ss(Key, BlankSS, CommitParams)
             end,
-            {{BlankSS, ignore}, true};
+            {{BlankSS, CommitParams}, true};
         [{_, SnapshotDict}] ->
             Result = case Transaction#transaction.transactional_protocol of
-                nmsi ->
-                    vector_orddict:get_causally_compatible(Transaction, SnapshotDict);
-                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                    SnapshotTime = Transaction#transaction.snapshot_vc,
-                    vector_orddict:get_smaller(SnapshotTime, SnapshotDict)
-            end,
+                         nmsi ->
+                             {{_Snapshot, {_CommitVC, _DepVC, _ReadTime}}, _IsFirst} =
+                                 vector_orddict:get_causally_compatible(Transaction, SnapshotDict);
+                         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                             SnapshotTime = Transaction#transaction.snapshot_vc,
+                             vector_orddict:get_smaller(SnapshotTime, SnapshotDict)
+                     end,
             case Result of
                 {undefined, _} ->
                     {error, no_snapshot};
-                _->
+                undefined -> %% this occurs in nmsi
+                    {error, no_snapshot};
+                _ ->
                     Result
             end
     end.
@@ -395,7 +413,7 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
             {error, no_snapshot} ->
                 %% No snapshot in the cache, get ops from the log
 %%                get_all_operations_for_key_from_log(Key, Type, Transaction);
-                get_all_operations_for_key_from_log(Key, Type, Transaction);
+                get_latest_compatible_snapshot_from_log(Key, Type, Transaction);
             {{LCS, SCP}, IsF} ->
                 %% There was a snapshot in the cache. Now check if there are ops too.
                 case ets:lookup(OpsCache, Key) of
@@ -406,37 +424,22 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
                         {Length1, AllOps, LCS, SCP, IsF}
                 end
         end,
+    lager:info("Length = ~p~n Ops = ~p~n LastOp = ~p~n LatestCompatSnapshot = ~p~n SnapshotCommitParams = ~p~n IsFirst = ~p~n", [Length, Ops, LastOp, LatestCompatSnapshot, SnapshotCommitParams, IsFirst]),
     case Length of
         0 ->
             %% No operations, return the snapshot found at the beginning.
-            case Transaction#transaction.transactional_protocol of
-                nmsi ->
-                    NMSICommitParams = case SnapshotCommitParams of
-                                           ignore ->
-                                               %% todo: make this awful patch nice.
-                                               FakeCommitDC = dc_utilities:get_my_dc_id(),
-                                               FakeCommitTime = 0,
-                                               FakeDependencyVC = vectorclock:new(),
-                                               FakeCommitVC = vectorclock:create_commit_vector_clock(FakeCommitDC, FakeCommitTime, FakeDependencyVC),
-                                               {FakeCommitVC, FakeDependencyVC};
-                                           {CommitVC, DependencyVC} ->
-                                               {CommitVC, DependencyVC}
-                                       end,
-                    {ok, {LatestCompatSnapshot, NMSICommitParams}};
-                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                    {ok, {LatestCompatSnapshot, SnapshotCommitParams}}
-            end;
+            {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
         _ ->
             %% we got the available operations from the log or the cache, now
             %% we must materialize the ones needed.
             case clocksi_materializer:materialize(Type, LatestCompatSnapshot, LastOp, SnapshotCommitParams, Transaction, Ops) of
-                {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
+                {ok, Snapshot, NewLastOp, CommitParameters1, NewSS} ->
                     %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                     %% for the given snapshot_time
                     %% todo: remove the following case? I believe now we read from the log this can't happen
-                    case CommitTime of
+                    case CommitParameters1 of
                         ignore ->
-                            {ok, {Snapshot, CommitTime}};
+                            {ok, {Snapshot, CommitParameters1}};
                         _ ->
                             case (NewSS and IsFirst) orelse ShouldGc of
                                 %% Only store the snapshot if it would be at the end of the list and has new operations added to the
@@ -444,14 +447,14 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
                                 true ->
                                     case IsLocal of
                                         true ->
-                                            internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
+                                            internal_store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1, OpsCache, SnapshotCache, ShouldGc);
                                         false ->
-                                            materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
+                                            materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1)
                                     end;
                                 _ ->
                                     ok
                             end,
-                            {ok, {Snapshot, CommitTime}}
+                            {ok, {Snapshot, CommitParameters1}}
                     end;
                 {error, Reason} ->
                     {error, Reason}
@@ -459,10 +462,11 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
     end.
 
 %% Todo: Future: Implement the following function for a causal snapshot
-get_all_operations_for_key_from_log(Key, Type, Transaction) ->
+get_latest_compatible_snapshot_from_log(Key, Type, Transaction) ->
     case Transaction#transaction.transactional_protocol of
         nmsi->
-            [];
+            {_Length, _Ops, {_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} =
+                {0, [], {0, Type:new()}, {vectorclock:new(),vectorclock:new(), clocksi_vnode:now_microsec(now())}, false};
         Protocol when ((Protocol == gr) or (Protocol == clocksi))->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
@@ -476,8 +480,20 @@ get_all_operations_for_key_from_log(Key, Type, Transaction) ->
 -spec op_not_already_in_snapshot(snapshot_time() | ignore, vectorclock()) -> boolean().
 op_not_already_in_snapshot(ignore, _) ->
     true;
-op_not_already_in_snapshot(SSTime, CommitVC) ->
-    not vectorclock:le(CommitVC,SSTime).
+op_not_already_in_snapshot(_, ignore) ->
+    true;
+op_not_already_in_snapshot(_, empty) ->
+    true;
+op_not_already_in_snapshot(empty, _) ->
+    true;
+op_not_already_in_snapshot(SSTime, CommitParams) ->
+    CommitVC = case CommitParams of
+                   {DCId, CT} ->
+                       vectorclock:create_commit_vector_clock(DCId, CT, CommitParams);
+                   _ ->
+                       CommitParams
+               end,
+    not vectorclock:le(CommitVC, SSTime).
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
@@ -643,8 +659,6 @@ belongs_to_snapshot_test()->
 	CommitTime3b= 10,
 	CommitTime4b= 10,
 
-%%
-%%belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs)
 	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
 	?assertEqual(true, op_not_already_in_snapshot(
 			     vectorclock:from_list([{1, CommitTime1a},{2,CommitTime1b}]),
@@ -668,7 +682,6 @@ gc_test() ->
     Type = riak_dt_gcounter,
 
     %% Make 10 snapshots
-%%    (Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache)
 
     {ok, {Res0, _}} = internal_read(Key, Type,
         #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])},true, OpsCache, SnapshotCache),

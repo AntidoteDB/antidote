@@ -136,18 +136,20 @@ materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitParam
     OpsToApply = case Type == Op#operation_payload.type of
                  true ->
                      OpCT = Op#operation_payload.dc_and_commit_time,
-                     OpBaseSnapshot = case Transaction#transaction.transactional_protocol of
+                     {OpBaseSnapshot, LatestSnapshotCommitParams} = case Transaction#transaction.transactional_protocol of
                                           Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                              Op#operation_payload.snapshot_vc;
+                                              {Op#operation_payload.snapshot_vc, SnapshotCommitParams};
                                           nmsi ->
-                                              Op#operation_payload.dependency_vc
+                                              {CommitVC, _DepVC, _ReadTime} = SnapshotCommitParams,
+                                              {Op#operation_payload.dependency_vc, CommitVC}
                                       end,
                      lager:info("OpBaseSnapshot is ~p ~n",[OpBaseSnapshot]),
                      lager:info("OpCT is ~p ~n",[OpCT]),
                      lager:info("Operation is  ~p ~n",[Op]),
+                     lager:info("LatestSnapshotCommitVC is  ~p ~n",[LatestSnapshotCommitParams]),
                      %% Check if the op is not in the previous snapshot and should be included in the new one
                      %% {should_be_included, is already_in_snapshot}
-                     case (is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, SnapshotCommitParams, LastOpCommitParams)) of
+                     case (is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LatestSnapshotCommitParams, LastOpCommitParams)) of
                          {true, _, NewOpCt} ->
                              %% Include the new op because it has a timestamp bigger than the snapshot being generated
                              {ok, [Op | OpList], NewOpCt, false, true, FirstHole};
@@ -201,15 +203,7 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParam
     %% Is the "or TxId ==" part necessary and correct????
     {OpDc, OpCommitTime} = OpCT,
     OpCommitVC = vectorclock:create_commit_vector_clock(OpDc, OpCommitTime, OpBaseSnapshot),
-    LastSnapshotCommitVC = case Transaction#transaction.transactional_protocol of
-                               Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                   LastSnapshotCommitParams;
-                               nmsi ->
-                                   {CVC, _DepVC} = LastSnapshotCommitParams,
-                                   CVC
-                           end,
-    lager:info("OpCommitVC =~p~n LastSnapshotCommitVC =~p~n", [OpCommitVC, LastSnapshotCommitVC]),
-    case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitVC, OpCommitVC) or
+    case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitParams, OpCommitVC) or
         (Transaction#transaction.txn_id == Op#operation_payload.txid) of
         true ->
             %% If not, check if it should be included in the new snapshot
@@ -218,6 +212,8 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParam
             %% of the new operation
             PrevTime2 = case PrevTime of
                             ignore ->
+                                OpCommitVC;
+                            empty ->
                                 OpCommitVC;
                             _ ->
                                 PrevTime
@@ -236,21 +232,27 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParam
                     lager:info("DcIdOp =~p~n", [DcIdOp]),
                     lager:info("TimeOp =~p~n", [TimeOp]),
                     lager:info("PrevTime3 =~p~n", [PrevTime3]),
-                    PrevCVC = case Transaction#transaction.transactional_protocol of
-                                  Prot when ((Prot == gr) or (Prot == clocksi)) ->
-                                      PrevTime3;
-                                  nmsi ->
-                                      {PCVC, _PrevDepVC} = PrevTime3,
-                                      PCVC
-                              end,
-                    Res2 = dict:update(DcIdOp, fun(Val) ->
-                        case TimeOp > Val of
-                            true ->
-                                TimeOp;
-                            false ->
-                                Val
-                        end
-                                               end, TimeOp, PrevCVC),
+                    %% todo, here I have to make this shit return the dependency vector, too.
+                    Res2 = case Transaction#transaction.transactional_protocol of
+                               Prot when ((Prot == gr) or (Prot == clocksi)) ->
+                                   dict:update(DcIdOp, fun(Val) ->
+                                       case TimeOp > Val of
+                                           true ->
+                                               TimeOp;
+                                           false ->
+                                               Val
+                                       end
+                                                       end, TimeOp, PrevTime3);
+                               nmsi ->
+                                   dict:update(DcIdOp, fun(Val) ->
+                                       case TimeOp > Val of
+                                           true ->
+                                               TimeOp;
+                                           false ->
+                                               Val
+                                       end
+                                                       end, TimeOp, PrevTime3)
+                           end,
                     {Res1, Res2}
                           end, {true, PrevTime2}, OpCommitVC),
             case IncludeInSnapshot of
