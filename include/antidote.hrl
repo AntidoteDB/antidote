@@ -24,6 +24,7 @@
 %% in the case of keys that are read frequently.  There is
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
+-define(LOG_READER_CONCURRENCY, 20).
 %% This defines the concurrency for the meta-data tables that
 %% are responsible for storing the stable time that a transaction
 %% can read.  It is set to false because the erlang docs say

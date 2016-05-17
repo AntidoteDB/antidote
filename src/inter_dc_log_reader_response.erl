@@ -66,10 +66,11 @@ get_address_list() ->
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init([]) ->
-  {_, Port} = get_address(),
-  Socket = zmq_utils:create_bind_socket(xrep, true, Port),
-  lager:info("Log reader started on port ~p", [Port]),
-  {ok, #state{socket = Socket,next=getid}}.
+    {_, Port} = get_address(),
+    Socket = zmq_utils:create_bind_socket(xrep, true, Port),
+    _Res = random:seed(dc_utilities:now()),
+    lager:info("Log reader started on port ~p", [Port]),
+    {ok, #state{socket = Socket,next=getid}}.
 
 %% Handle the remote request
 handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
@@ -78,30 +79,32 @@ handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
     {noreply, State#state{next=getmsg}};
 handle_info({zmq, Socket, BinaryMsg, Flags}, State=#state{id=Id,next=getmsg}) ->
     %% Decode the message
-    lager:info("got the followoing ~p and ~p and ~p", [Socket, BinaryMsg,Flags]),
+    lager:info("got the followoing ~p and ~p and ~p", [Socket,BinaryMsg,Flags]),
     Msg = binary_to_term(BinaryMsg),
     lager:info("got msg ~p in log reader resp", [Msg]),
     %% Create a response
     case Msg of
 	{read_log, Partition, From, To} ->
-	    send_response({{dc_meta_data_utilities:get_my_dc_id(), Partition}, get_entries(Partition, From, To)}, Id, Socket);
+	    ok = log_response_reader:get_entries(Partition,From,To,Id);
 	{is_up} ->
-	    send_response({ok}, Id, Socket);
+	    ok = send_response({ok}, Id, Socket);
 	_ ->
-	    send_response({error, bad_request}, Id, Socket)
+	    ok = send_response({error, bad_request}, Id, Socket)
     end,
     {noreply, State#state{next=getid}};
 handle_info(Info, State) ->
     lager:info("got weird info ~p", [Info]),
     {noreply, State}.
 
-handle_call({read_log_response, Response, Id}, _From, State=#state{socket = Socket}) ->
-    send_response(Response, Id, Socket),
-    {reply, ok, State};
-    
 handle_call(_Request, _From, State) -> {noreply, State}.
 terminate(_Reason, State) -> erlzmq:close(State#state.socket).
+
+handle_cast({read_log_response, Response, Partition, Id}, State=#state{socket = Socket}) ->
+    send_response({{dc_meta_data_utilities:get_my_dc_id(),Partition},Response},Id,Socket),
+    {noreply, State};
+
 handle_cast(_Request, State) -> {noreply, State}.
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -112,30 +115,4 @@ send_response(Response, Id, Socket) ->
     ok = erlzmq:send(Socket, <<>>, [sndmore]),
     ok = erlzmq:send(Socket, BinaryResponse).
 
-%%-spec get_entries(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
--spec get_entries(non_neg_integer(),non_neg_integer(),non_neg_integer()) -> [].
-get_entries(Partition, From, To) ->
-  Logs = log_read_range(Partition, node(), From, To),
-  Asm = log_txn_assembler:new_state(),
-  {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
-  Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),
-  %% This is done in order to ensure that we only send the transactions we committed.
-  %% We can remove this once the read_log_range is reimplemented.
-  lists:filter(fun inter_dc_txn:is_local/1, Txns).
-
-%% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
-%% TODO: also fix the method to provide complete snapshots if the log was trimmed
--spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#operation{}].
-log_read_range(Partition, Node, From, To) ->
-  {ok, RawOpList} = logging_vnode:read({Partition, Node}, [Partition]),
-  OpList = lists:map(fun({_Partition, Op}) -> Op end, RawOpList),
-  filter_operations(OpList, From, To).
-
--spec filter_operations([#operation{}], log_opid(), log_opid()) -> [#operation{}].
-filter_operations(Ops, Min, Max) ->
-  F = fun(Op) ->
-    Num = Op#operation.op_number#op_number.local,
-    (Num >= Min) and (Max >= Num)
-  end,
-  lists:filter(F, Ops).
 
