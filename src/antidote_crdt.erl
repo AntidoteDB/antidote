@@ -25,6 +25,16 @@
 
 -include("antidote_crdt.hrl").
 
+-define(CRDTS, [antidote_crdt_counter,
+                antidote_crdt_orset,
+                antidote_crdt_gset,
+                antidote_crdt_rga,
+                antidote_crdt_bcounter
+               ]).
+
+-export([is_type/1
+        ]).
+
 -callback new() -> crdt().
 -callback value(crdt()) -> value().
 -callback downstream(update(), crdt()) -> {ok, effect()} | {error, reason()}.
@@ -40,5 +50,8 @@
 %% Not sure if it is useful for antidote
 %-callback stats(crdt()) -> [{atom(), number()}].
 %-callback stat(atom(), crdt()) ->  number() | undefined.
+
+is_type(Type) ->
+    is_atom(Type) andalso lists:member(Type, ?CRDTS).
 
 %% End of Module.

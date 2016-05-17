@@ -1,12 +1,11 @@
 -type crdt() :: term().
--type update() :: term().
+-type update() :: {atom(), term()}.
 -type effect() :: term().
 -type value() ::  term().
 -type reason() :: term().
 
 -type pncounter() :: integer().
--type pncounter_update() :: increment | decrement | 
-                            {increment, integer()} |
+-type pncounter_update() :: {increment, integer()} |
                             {decrement, integer()}.
 -type pncounter_effect() :: pncounter_update().
 -type pncounter_value() :: integer().
