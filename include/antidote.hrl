@@ -13,11 +13,7 @@
 -define(ZMQ_TIMEOUT, 5000).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
--define(CRDTS, [antidote_crdt_counter,
-                antidote_crdt_orset,
-                antidote_crdt_gset,
-                antidote_crdt_rga
-               ]).
+
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption

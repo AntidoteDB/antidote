@@ -25,11 +25,11 @@
 -endif.
 
 -export([create_snapshot/1,
-    update_snapshot/3,
-    materialize_eager/3,
-    check_operations/1,
-    check_operation/1,
-    is_crdt/1]).
+         update_snapshot/3,
+         materialize_eager/3,
+         check_operations/1,
+         check_operation/1
+        ]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
@@ -77,20 +77,13 @@ check_operations([Op | Rest]) ->
 check_operation(Op) ->
     case Op of
         {update, {_, Type, Update}} ->
-            (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type)) andalso
+            (antidote_crdt:is_type(Type)) andalso
                 Type:is_operation(Update);
         {read, {_, Type}} ->
-            (riak_dt:is_riak_dt(Type) or materializer:is_crdt(Type));
+            (antidote_crdt:is_type(Type));
         _ ->
             false
     end.
-
-
-%% @doc Check that an atom is an op_based CRDT type.
-%%      The list of op_based CRDTS is defined in antidote.hrl
--spec is_crdt(term()) -> boolean().
-is_crdt(Term) ->
-    is_atom(Term) andalso lists:member(Term, ?CRDTS).
 
 -ifdef(TEST).
 
@@ -151,8 +144,4 @@ check_operations_test() ->
         {read, {key1, antidote_crdt_counter}}],
     ?assertMatch({error, _}, check_operations(Operations2)).
 
-is_crdt_test() ->
-    ?assertEqual(true, is_crdt(antidote_crdt_orset)),
-    ?assertEqual(true, is_crdt(antidote_crdt_counter)),
-    ?assertEqual(false, is_crdt(whatever)).
 -endif.
