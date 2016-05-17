@@ -47,7 +47,7 @@ confirm() ->
     F = fun(Elem) ->
             Node = lists:nth(Elem, Nodes),
             lager:info("Sending asign to Node ~w~n",[Node]),
-            AssignResult = rpc:call(Node, antidote, append, [abc, riak_dt_mvreg, {{assign, Elem}, actor1}]),
+            AssignResult = rpc:call(Node, antidote, append, [abc, antidote_crdt_mvreg, {assign, {Elem, actor1}}]),
             ?assertMatch({ok, _}, AssignResult)
     end,
 
@@ -55,18 +55,18 @@ confirm() ->
     FirstNode = hd(Nodes),
     Result = hd(lists:reverse(ListIds)),
     lager:info("Sending read to Node ~w~n",[FirstNode]),
-    {ok, ReadResult} = rpc:call(FirstNode, antidote, read, [abc, riak_dt_mvreg]),
+    {ok, ReadResult} = rpc:call(FirstNode, antidote, read, [abc, antidote_crdt_mvreg]),
     ?assertEqual([Result], ReadResult),
 
-    PropagateResult1 = rpc:call(FirstNode, antidote, append, [abc, riak_dt_mvreg, {{propagate, value2, [{actor2, 5}]}, actor1}]),
+    PropagateResult1 = rpc:call(FirstNode, antidote, append, [abc, antidote_crdt_mvreg, {propagate, {value2, [{actor2, 5}], actor1}}]),
     ?assertMatch({ok, _}, PropagateResult1),
-    {ok, ReadResult1} = rpc:call(FirstNode, antidote, read, [abc, riak_dt_mvreg]),
+    {ok, ReadResult1} = rpc:call(FirstNode, antidote, read, [abc, antidote_crdt_mvreg]),
     Result1 = [Result, value2],
     ?assertEqual(lists:sort(Result1), lists:sort(ReadResult1)),
 
-    PropagateResult2 = rpc:call(FirstNode, antidote, append, [abc, riak_dt_mvreg, {{propagate, value3, [{actor2, 6}, {actor1, 11}]}, actor1}]),
+    PropagateResult2 = rpc:call(FirstNode, antidote, append, [abc, antidote_crdt_mvreg, {propagate, {value3, [{actor2, 6}, {actor1, 11}], actor1}}]),
     ?assertMatch({ok, _}, PropagateResult2),
-    {ok, ReadResult2} = rpc:call(FirstNode, antidote, read, [abc, riak_dt_mvreg]),
+    {ok, ReadResult2} = rpc:call(FirstNode, antidote, read, [abc, antidote_crdt_mvreg]),
     ?assertEqual([value3], ReadResult2),
 
     pass.
