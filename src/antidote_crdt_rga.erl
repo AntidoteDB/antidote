@@ -63,7 +63,7 @@
 
 -type rga_downstream_op() :: {addRight, vertex(), vertex()} | {remove, {ok, any(), number()}}.
 
--type rga_op() :: {addRight, any(), non_neg_integer()} | {remove, non_neg_integer()}.
+-type rga_op() :: {addRight, {any(), non_neg_integer()}} | {remove, non_neg_integer()}.
 
 -type rga_result() :: {ok, rga()}.
 
