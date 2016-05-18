@@ -47,9 +47,6 @@ confirm() ->
 
     lager:info("Waiting until vnodes are started up"),
     rt:wait_until(RootNode,fun wait_init:check_ready/1),
-    lists:foreach(fun(TNode) ->
-                          rt:wait_until(TNode,fun wait_init:check_ready/1)
-                  end, TestNodes),
     lager:info("Vnodes are started up"),
 
     lager:info("Populating root node."),
@@ -57,7 +54,9 @@ confirm() ->
 
     %% Test handoff on each node:
     lager:info("Testing handoff for cluster."),
-
+    lists:foreach(fun(TestNode) -> 
+                          test_handoff(RootNode, TestNode, NTestItems)
+                  end, TestNodes),
     %% Prepare for the next call to our test (we aren't polite about it,
     %% it's faster that way):
     lager:info("Bringing down test nodes."),
