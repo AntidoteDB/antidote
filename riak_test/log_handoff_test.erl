@@ -47,6 +47,9 @@ confirm() ->
 
     lager:info("Waiting until vnodes are started up"),
     rt:wait_until(RootNode,fun wait_init:check_ready/1),
+    lists:foreach(fun(TNode) ->
+                          rt:wait_until(TNode,fun wait_init:check_ready/1)
+                  end, TestNodes),
     lager:info("Vnodes are started up"),
 
     lager:info("Populating root node."),
@@ -54,9 +57,6 @@ confirm() ->
 
     %% Test handoff on each node:
     lager:info("Testing handoff for cluster."),
-    lists:foreach(fun(TestNode) ->
-                test_handoff(RootNode, TestNode, NTestItems)
-        end, TestNodes),
 
     %% Prepare for the next call to our test (we aren't polite about it,
     %% it's faster that way):
@@ -98,21 +98,22 @@ test_handoff(RootNode, NewNode, NTestItems) ->
 
 multiple_writes(Node, Start, End)->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, append, [N, antidote_crdt_counter, {increment, N}]) of
+            case rpc:call(Node, antidote, append, [N, antidote_crdt_gset, {add, {N, actor}}]) of
                 {ok, _} ->
                     Acc;
                 Other ->
                     [{N, Other} | Acc]
             end
     end,
-    lists:foldl(F, [], lists:seq(Start, End)).
+    Res = lists:foldl(F, [], lists:seq(Start, End)),
+    ?assertEqual(0, length(Res)).
 
 multiple_reads(Node, Start, End) ->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, read, [N, antidote_crdt_counter]) of
+            case rpc:call(Node, antidote, read, [N, antidote_crdt_gset]) of
                 {error, _} ->
                     [{N, error} | Acc];
-                {ok, Value} ->
+                {ok, [Value]} ->
                     case Value =:= N of
                         true ->
                             Acc;
