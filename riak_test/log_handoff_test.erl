@@ -98,7 +98,7 @@ test_handoff(RootNode, NewNode, NTestItems) ->
 
 multiple_writes(Node, Start, End, Actor)->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, append, [N, crdt_pncounter, {{increment, N}, Actor}]) of
+            case rpc:call(Node, antidote, append, [N, riak_dt_gcounter, {{increment, N}, Actor}]) of
                 {ok, _} ->
                     Acc;
                 Other ->
@@ -109,7 +109,7 @@ multiple_writes(Node, Start, End, Actor)->
 
 multiple_reads(Node, Start, End) ->
     F = fun(N, Acc) ->
-            case rpc:call(Node, antidote, read, [N, crdt_pncounter]) of
+            case rpc:call(Node, antidote, read, [N, riak_dt_gcounter]) of
                 {error, _} ->
                     [{N, error} | Acc];
                 {ok, Value} ->
