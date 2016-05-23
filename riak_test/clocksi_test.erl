@@ -46,7 +46,7 @@ confirm() ->
     NumVNodes = rt_config:get(num_vnodes, 8),
     rt:update_app_config(all,[
                               {riak_core, [{ring_creation_size, NumVNodes}]},
-                              {antidote, [{txn_prot, nmsi}]}
+                              {antidote, [{txn_prot, clocksi}]}
                              ]),
     [Nodes] = rt:build_clusters([3]),
     lager:info("Waiting for ring to converge."),
@@ -57,7 +57,7 @@ confirm() ->
     lager:info("Vnodes are started up"),
     lager:info("Nodes: ~p", [Nodes]),
     {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
-    ?assertMatch(nmsi, Prot),
+    ?assertMatch(clocksi, Prot),
     clocksi_test1(Nodes),
 
     [Nodes1] = common:clean_clusters([Nodes]),

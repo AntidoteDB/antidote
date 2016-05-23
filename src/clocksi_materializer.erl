@@ -67,8 +67,8 @@ materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, 
     {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
         materialize_intern(Type, [], IncludeFromTime, FirstId, SnapshotCommitParams, Transaction,
             Ops, SnapshotCommitParams, false),
-    lager:info("going to apply operations: ~p~n",[OpList]),
-    lager:info("to the snapshot: ~p~n",[Snapshot]),
+%%    lager:info("going to apply operations: ~p~n",[OpList]),
+%%    lager:info("to the snapshot: ~p~n",[Snapshot]),
     case apply_operations(Type, Snapshot, OpList) of
         {ok, NewSS} ->
             {ok, NewSS, NewLastOp, LastOpCt, IsNewSS};

@@ -309,7 +309,7 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
     end.
 perform_update(UpdateArgs, Sender, CoordState) ->
     {Key, Type, Param} = UpdateArgs,
-    lager:info("updating with the following paramaters: ~p~n",[Param]),
+%%    lager:info("updating with the following paramaters: ~p~n",[Param]),
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
     Transaction = CoordState#tx_coord_state.transaction,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
@@ -326,7 +326,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
         {ok, DownstreamRecord, _SnapshotParameters} ->
-            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
+%%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
             NewUpdatedPartitions = case WriteSet of
                                        [] ->
                                            [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
@@ -420,7 +420,7 @@ execute_op({OpType, Args}, Sender,
 update_causal_snapshot_state(State, ReadMetadata, Key) ->
     Transaction = State#tx_coord_state.transaction,
     {CommitVC, DepVC, ReadTime} = ReadMetadata,
-    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTime = ~p~n",[CommitVC, DepVC, ReadTime]),
+%%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTime = ~p~n",[CommitVC, DepVC, ReadTime]),
     KeysAccessTime = State#tx_coord_state.keys_access_time,
     VersionMin = State#tx_coord_state.version_min,
     NewKeysAccessTime = dict:append(Key, CommitVC, KeysAccessTime),
@@ -693,8 +693,8 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                 {TxId, Reason}
                         end;
                     nmsi ->
-                        lager:info("ct lowbound = ~p ~n",[Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound]),
-                        lager:info("ct CommitTime = ~p ~n",[CommitTime]),
+%%                        lager:info("ct lowbound = ~p ~n",[Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound]),
+%%                        lager:info("ct CommitTime = ~p ~n",[CommitTime]),
                         TxnDependencyVC = case Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound of
                                               ignore ->
                                                   vectorclock:new();

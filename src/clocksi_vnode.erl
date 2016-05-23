@@ -171,7 +171,7 @@ send_min_prepared(Partition) ->
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, Transaction) ->
     lists:foldl(fun({Node, WriteSet}, _Acc) ->
-        lager:info("Node: ~p~n WriteSet is ~p~n",[Node, WriteSet]),
+%%        lager:info("Node: ~p~n WriteSet is ~p~n",[Node, WriteSet]),
         riak_core_vnode_master:command(Node,
             {prepare, Transaction, WriteSet},
             {fsm, undefined, self()},
@@ -271,7 +271,7 @@ open_table(Partition) ->
                 [set, protected, named_table, ?TABLE_CONCURRENCY]);
         _ ->
             %% Other vnode hasn't finished closing tables
-            lager:info("Unable to open ets table in clocksi vnode, retrying"),
+%%            lager:info("Unable to open ets table in clocksi vnode, retrying"),
             timer:sleep(100),
             try
                 ets:delete(get_cache_name(Partition, prepared))
