@@ -335,7 +335,7 @@ handle_command({append_group, LogId, PayloadList, IsLocal}, _Sender,
 	    {reply, Error, State}
     end;
 
-handle_command({get, LogId, Transaction, Type, Key}, _Sender,
+handle_command({get, LogId, Transaction, Key}, _Sender,
   #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
@@ -350,8 +350,7 @@ handle_command({get, LogId, Transaction, Type, Key}, _Sender,
                             error ->
                                 []
                         end,
-                    {reply, {length(CommittedOpsForKey), CommittedOpsForKey, {0, clocksi_materializer:new(Type)},
-                        vectorclock:new(), false}, State}
+                    {reply, {length(CommittedOpsForKey), CommittedOpsForKey}, State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}

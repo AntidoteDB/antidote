@@ -143,10 +143,6 @@ materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitParam
                                               {CommitVC, _DepVC, _ReadTime} = SnapshotCommitParams,
                                               {Op#operation_payload.dependency_vc, CommitVC}
                                       end,
-                     lager:info("OpBaseSnapshot is ~p ~n",[OpBaseSnapshot]),
-                     lager:info("OpCT is ~p ~n",[OpCT]),
-                     lager:info("Operation is  ~p ~n",[Op]),
-                     lager:info("LatestSnapshotCommitVC is  ~p ~n",[LatestSnapshotCommitParams]),
                      %% Check if the op is not in the previous snapshot and should be included in the new one
                      %% {should_be_included, is already_in_snapshot}
                      case (is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LatestSnapshotCommitParams, LastOpCommitParams)) of
@@ -228,31 +224,14 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParam
                                true ->
                                    Acc
                            end,
-                    lager:info("Res1 =~p~n", [Res1]),
-                    lager:info("DcIdOp =~p~n", [DcIdOp]),
-                    lager:info("TimeOp =~p~n", [TimeOp]),
-                    lager:info("PrevTime3 =~p~n", [PrevTime3]),
-                    %% todo, here I have to make this shit return the dependency vector, too.
-                    Res2 = case Transaction#transaction.transactional_protocol of
-                               Prot when ((Prot == gr) or (Prot == clocksi)) ->
-                                   dict:update(DcIdOp, fun(Val) ->
-                                       case TimeOp > Val of
-                                           true ->
-                                               TimeOp;
-                                           false ->
-                                               Val
-                                       end
-                                                       end, TimeOp, PrevTime3);
-                               nmsi ->
-                                   dict:update(DcIdOp, fun(Val) ->
-                                       case TimeOp > Val of
-                                           true ->
-                                               TimeOp;
-                                           false ->
-                                               Val
-                                       end
-                                                       end, TimeOp, PrevTime3)
-                           end,
+                    Res2 = dict:update(DcIdOp, fun(Val) ->
+                        case TimeOp > Val of
+                            true ->
+                                TimeOp;
+                            false ->
+                                Val
+                        end
+                                               end, TimeOp, PrevTime3),
                     {Res1, Res2}
                           end, {true, PrevTime2}, OpCommitVC),
             case IncludeInSnapshot of
@@ -269,19 +248,19 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParam
 %% @doc Returns true if an operation defined by its commit vectorclock and
 %%      its base snapshot is compatible with a transaction's snapshot, as
 %%      defined by the metadata encoded in the Transaction record.
-compat(OpCommitVC, OpBaseSnapshot, Transaction) ->
-    case Transaction#transaction.transactional_protocol of
-        nmsi ->
-            DepUpbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
-            CommitTimeLowbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
-            vector_orddict:is_causally_compatible(
-                OpCommitVC, CommitTimeLowbound, OpBaseSnapshot, DepUpbound);
-        Protocol  when ((Protocol == clocksi) or (Protocol == gr)) ->
+compat(OpCommitVC, _OpBaseSnapshot, Transaction) ->
+%%    case Transaction#transaction.transactional_protocol of
+%%        nmsi ->
+%%            DepUpbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+%%            CommitTimeLowbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+%%            vector_orddict:is_causally_compatible(
+%%                OpCommitVC, CommitTimeLowbound, OpBaseSnapshot, DepUpbound);
+%%        Protocol  when ((Protocol == clocksi) or (Protocol == gr)) ->
             SnapshotTime = Transaction#transaction.snapshot_vc,
-            vectorclock:le(OpCommitVC,SnapshotTime);
-        Other ->
-            {error, {unknown_transactional_protocol, Other}}
-    end.
+            vectorclock:le(OpCommitVC,SnapshotTime).
+%%        Other ->
+%%            {error, {unknown_transactional_protocol, Other}}
+%%    end.
 
 %% @doc Apply updates in given order without any checks.
 %%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!

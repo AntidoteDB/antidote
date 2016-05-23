@@ -555,6 +555,8 @@ commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
                                             Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                                                 {DcId, CommitTime}
                                         end,
+%%                    lager:info("~nUpdates ~p~n Transaction ~p~n FinalCommitParams ~p~n",
+%%                        [Updates, Transaction, FinalCommitParams]),
                     case update_materializer(Updates, Transaction, FinalCommitParams) of
                         ok ->
                             NewPreparedDict = clean_and_notify(TxId, Updates, State),

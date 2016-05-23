@@ -109,7 +109,7 @@
 
 
 -record(nmsi_read_metadata, {
-    key_read_time :: clock_value() | undefined,
+    dict_key_read_vc :: clock_value() | undefined,
     dep_upbound :: clock_value() | undefined,
     commit_time_lowbound :: clock_value() | undefined
 }).

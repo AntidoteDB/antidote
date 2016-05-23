@@ -332,55 +332,21 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 -spec internal_store_ss(key(), snapshot(), snapshot_time() | {snapshot_time(), snapshot_time()}, cache_id(), cache_id(), boolean()) -> true.
 internal_store_ss(Key, Snapshot, SnapshotParams, OpsCache, SnapshotCache, ShouldGc) ->
     Protocol = application:get_env(antidote, txn_prot),
-    NewSnapshotParams = case SnapshotParams of
-                            empty ->
-                                case Protocol of
-                                    {ok, nmsi} ->
-                                        {vectorclock:new(), vectorclock:new()};
-                                    _ ->
-                                        vectorclock:new()
-                                end;
-                            _ ->
-                                SnapshotParams
-                        end,
-
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
                        [] ->
                            vector_orddict:new();
                        [{_, SnapshotDictA}] ->
                            SnapshotDictA
                    end,
-
-%%    lager:info("NewSnapshotParams, ~p~n Snapshot, ~p~n SnapshotDict, ~p~n Protocol ~p~n", [NewSnapshotParams, Snapshot, SnapshotDict, Protocol]),
-
-    SnapshotDict1 = vector_orddict:insert_bigger(NewSnapshotParams, Snapshot, SnapshotDict, Protocol),
+    SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams, Snapshot, SnapshotDict, Protocol),
     snapshot_insert_gc(Key, SnapshotDict1, SnapshotCache, OpsCache, ShouldGc).
 
 %% @doc This fuction returns the latest compatible snapshot
 %% stored in the SnapshotDict, given a transactional protocol
-get_latest_cached_compatible_snapshot(Key, Type, Transaction, IsLocal, SnapshotCache, OpsCache) ->
+get_latest_cached_compatible_snapshot(Key, _Type, Transaction, _IsLocal, SnapshotCache, _OpsCache) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
-            %% First time reading this key, store an empty snapshot in the cache
-            CommitParams = case Transaction#transaction.transactional_protocol of
-                               nmsi ->
-                                   ReadTime = clocksi_vnode:now_microsec(now()),
-                                   FakeCommitDC = dc_utilities:get_my_dc_id(),
-                                   FakeCommitTime = 0,
-                                   FakeDependencyVC = vectorclock:new(),
-                                   FakeCommitVC = vectorclock:create_commit_vector_clock(FakeCommitDC, FakeCommitTime, FakeDependencyVC),
-                                   {FakeCommitVC, FakeDependencyVC, ReadTime};
-                               Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                   empty
-                           end,
-            BlankSS = {0, clocksi_materializer:new(Type)},
-            case IsLocal of
-                true ->
-                    internal_store_ss(Key, BlankSS, CommitParams, OpsCache, SnapshotCache, false);
-                false ->
-                    materializer_vnode:store_ss(Key, BlankSS, CommitParams)
-            end,
-            {{BlankSS, CommitParams}, true};
+            empty;
         [{_, SnapshotDict}] ->
             Result = case Transaction#transaction.transactional_protocol of
                          nmsi ->
@@ -408,72 +374,130 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache) ->
 
 internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc) ->
     %% First, get the latest available snapshot from the cache or the log.
-    {Length, Ops, {LastOp, LatestCompatSnapshot}, SnapshotCommitParams, IsFirst} =
-        case get_latest_cached_compatible_snapshot(Key, Type, Transaction, IsLocal, SnapshotCache, OpsCache) of
-            {error, no_snapshot} ->
-                %% No snapshot in the cache, get ops from the log
-%%                get_all_operations_for_key_from_log(Key, Type, Transaction);
-                get_latest_compatible_snapshot_from_log(Key, Type, Transaction);
-            {{LCS, SCP}, IsF} ->
-                %% There was a snapshot in the cache. Now check if there are ops too.
-                case ets:lookup(OpsCache, Key) of
-                    [] ->
-                        {0, [], LCS, SCP, IsF};
-                    [Tuple] ->
-                        {Key, Length1, _OpId, _ListLen, AllOps} = tuple_to_key(Tuple),
-                        {Length1, AllOps, LCS, SCP, IsF}
-                end
-        end,
-    lager:info("Length = ~p~n Ops = ~p~n LastOp = ~p~n LatestCompatSnapshot = ~p~n SnapshotCommitParams = ~p~n IsFirst = ~p~n", [Length, Ops, LastOp, LatestCompatSnapshot, SnapshotCommitParams, IsFirst]),
-    case Length of
-        0 ->
-            %% No operations, return the snapshot found at the beginning.
+    case ets:lookup(OpsCache, Key) of
+        [] ->
+            %% No operations exist for this object, just return an empty snapshot.
+            {LatestCompatSnapshot, SnapshotCommitParams} = create_empty_snapshot(Transaction, Type),
             {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
-        _ ->
-            %% we got the available operations from the log or the cache, now
-            %% we must materialize the ones needed.
-            case clocksi_materializer:materialize(Type, LatestCompatSnapshot, LastOp, SnapshotCommitParams, Transaction, Ops) of
-                {ok, Snapshot, NewLastOp, CommitParameters1, NewSS} ->
-                    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-                    %% for the given snapshot_time
-                    %% todo: remove the following case? I believe now we read from the log this can't happen
-                    case CommitParameters1 of
-                        ignore ->
+        [Tuple] ->
+            {Key, _Length, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
+            UpdatedTxnRecord = case Transaction#transaction.transactional_protocol of
+                                   nmsi ->
+                                       LocalDCReadTime = clocksi_vnode:now_microsec(now()),
+                                       {SnapshotVC, StartReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey, LocalDCReadTime),
+                                       ReadTimeDict = orddict:store(Key, StartReadVC, Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dict_key_read_vc),
+                                       NMSIMetadata = Transaction#nmsi_read_metadata{dict_key_read_vc = ReadTimeDict},
+                                       Transaction#transaction{snapshot_vc = SnapshotVC, nmsi_read_metadata = NMSIMetadata};
+                                   Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+                                       Transaction
+                               end,
+%%            {{LastOp, LatestCompatSnapshot}, SnapshotCommitParams, IsFirst} =
+            case get_latest_cached_compatible_snapshot(Key, Type, UpdatedTxnRecord, IsLocal, SnapshotCache, OpsCache) of
+                empty ->
+                    {LCS, SCP} = create_empty_snapshot(UpdatedTxnRecord, Type),
+                    {ok, {LCS, SCP}};
+                {error, no_snapshot} ->
+                    %% No snapshot in the cache, get ops from the log
+%%                  get_all_operations_for_key_from_log(Key, Type, Transaction);
+                    {_NumOps, _OpsList} = get_all_operations_from_log_for_key(Key, Type, UpdatedTxnRecord),
+                    case clocksi_materializer:materialize(Type, [], 0, vectorclock:new(), UpdatedTxnRecord, OperationsForKey) of
+                        {ok, Snapshot, _, CommitParameters1, _} ->
                             {ok, {Snapshot, CommitParameters1}};
-                        _ ->
-                            case (NewSS and IsFirst) orelse ShouldGc of
-                                %% Only store the snapshot if it would be at the end of the list and has new operations added to the
-                                %% previous snapshot
-                                true ->
-                                    case IsLocal of
-                                        true ->
-                                            internal_store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1, OpsCache, SnapshotCache, ShouldGc);
-                                        false ->
-                                            materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1)
-                                    end;
-                                _ ->
-                                    ok
-                            end,
-                            {ok, {Snapshot, CommitParameters1}}
+                        {error, Reason} ->
+                            {error, Reason}
                     end;
-                {error, Reason} ->
-                    {error, Reason}
+                {{LastOp, LatestCompatSnapshot, SnapshotCommitParams}, IsFirst} ->
+                    case clocksi_materializer:materialize(Type, LatestCompatSnapshot, LastOp, SnapshotCommitParams, UpdatedTxnRecord, OperationsForKey) of
+                        {ok, Snapshot, NewLastOp, CommitParameters1, NewSS} ->
+                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+                            %% for the given snapshot_time
+                            %% todo: remove the following case? I believe now we read from the log this can't happen
+                            case CommitParameters1 of
+                                ignore ->
+                                    {ok, {Snapshot, CommitParameters1}};
+                                {error, Reason} ->
+                                    {error, Reason};
+                                _ ->
+                                    case (NewSS and IsFirst) orelse ShouldGc of
+                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
+                                        %% previous snapshot
+                                        true ->
+                                            case IsLocal of
+                                                true ->
+                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1, OpsCache, SnapshotCache, ShouldGc);
+                                                false ->
+                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1)
+                                            end;
+                                        _ ->
+                                            ok
+                                    end,
+                                    {ok, {Snapshot, CommitParameters1}}
+%%                                end;
+                            end
+                    end
             end
+    end.
+%% @doc This fuction is used by the causally consistent cut for defining
+%% which is the latest operation that is compatible with the snapshot
+%% the protocol uses the commit time of the operation as the "snapshot time"
+%% of this particular read, whithin the transaction.
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime) ->
+    no_compatible_operation_found;
+define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime) ->
+    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore).
+
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC) ->
+    no_compatible_operation_found;
+define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadTime, ReadVC) ->
+    [{_OpId, Op} | Rest] = Operation,
+    TxCTLowBound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+    TxDepUpBound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+    OperationDependencyVC = Op#operation_payload.dependency_vc,
+    {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
+    OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
+
+    case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+        true ->
+            FinalReadVC = case ReadVC of
+                              ignore -> %% newest operation in the list.
+                                  OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
+                                  vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC));
+                              _ ->
+                                  ReadVC
+                          end,
+            {OperationCommitVC, FinalReadVC};
+        false ->
+            NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
+            define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC)
     end.
 
 %% Todo: Future: Implement the following function for a causal snapshot
-get_latest_compatible_snapshot_from_log(Key, Type, Transaction) ->
+get_all_operations_from_log_for_key(Key, Type, Transaction) ->
     case Transaction#transaction.transactional_protocol of
         nmsi->
-            {_Length, _Ops, {_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} =
-                {0, [], {0, Type:new()}, {vectorclock:new(),vectorclock:new(), clocksi_vnode:now_microsec(now())}, false};
+            {{_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} =
+                {{0, Type:new()}, {vectorclock:new(),vectorclock:new(), clocksi_vnode:now_microsec(now())}, false};
         Protocol when ((Protocol == gr) or (Protocol == clocksi))->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            logging_vnode:get(Node, LogId, Transaction, Type, Key)
+%%            {{_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
+            {_Lenght, _CommittedOpsForKey} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
     end.
+create_empty_snapshot(Transaction, Type) ->
+    case Transaction#transaction.transactional_protocol of
+        nmsi ->
+            ReadTime = clocksi_vnode:now_microsec(now()),
+            MyDc = dc_utilities:get_my_dc_id(),
+            ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
+%%    FakeCommitDC = dc_utilities:get_my_dc_id(),
+%%    FakeCommitTime = 0,
+%%    FakeDependencyVC = vectorclock:new(),
+%%    FakeCommitVC = vectorclock:create_commit_vector_clock(FakeCommitDC, FakeCommitTime, FakeDependencyVC),
+            {clocksi_materializer:new(Type), {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
 
-
+        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+            {clocksi_materializer:new(Type), vectorclock:new()}
+    end.
 
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
@@ -630,11 +654,14 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
             Type = DownstreamOp#operation_payload.type,
             NewTransaction = case Transaction of
                 undefined -> %% the function is being called by the logging vnode at startup
-                    #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc};
+                    lager:info("Undefined transaction!!!"),
+                    {ok, Protocol} = application:get_env(antidote, txn_prot),
+                    #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc,
+                        transactional_protocol = Protocol};
                 _ ->
                     Transaction
             end,
-            {_, _} = internal_read(Key, Type, NewTransaction, true, OpsCache, SnapshotCache, true),
+            internal_read(Key, Type, NewTransaction, true, OpsCache, SnapshotCache, true),
             %% Have to get the new ops dict because the interal_read can change it
             {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
             true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]);
@@ -642,301 +669,306 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
             true = ets:update_element(OpsCache, Key, [{Length + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length + 1, ListLen}}])
     end.
 
+['ops_cache-1164634117248063262943561351070788031288321245184',key2,
+[{55,{52,{operation_payload,key2,riak_dt_lwwreg,{merge,{john,1463995302711812}},
+{dict,1,16,16,8,80,48,{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},{{[],[],[],[],[],[],[],[],[],[],[],[],
+[[{'antidote@127.0.0.1',{1463,994892,424531}}|1463995302711072]],[],[],[]}}},
+undefined,{{'antidote@127.0.0.1',{1463,994892,424531}},1463995302712240},{tx_id,1463995302711072,<0.3636.0>}}}},{2,{52,50}}]]
 
--ifdef(TEST).
-
-%% @doc Testing belongs_to_snapshot returns true when a commit time 
-%% is smaller than a snapshot time
-belongs_to_snapshot_test()->
-	CommitTime1a= 1,
-	CommitTime2a= 1,
-	CommitTime1b= 1,
-	CommitTime2b= 7,
-	SnapshotClockDC1 = 5,
-	SnapshotClockDC2 = 5,
-	CommitTime3a= 5,
-	CommitTime4a= 5,
-	CommitTime3b= 10,
-	CommitTime4b= 10,
-
-	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-	?assertEqual(true, op_not_already_in_snapshot(
-			     vectorclock:from_list([{1, CommitTime1a},{2,CommitTime1b}]),
-            vectorclock:create_commit_vector_clock(1, SnapshotClockDC1, SnapshotVC))),
-	?assertEqual(true, op_not_already_in_snapshot(
-			     vectorclock:from_list([{1, CommitTime2a},{2,CommitTime2b}]),
-        vectorclock:create_commit_vector_clock(2, SnapshotClockDC2, SnapshotVC))),
-	?assertEqual(false, op_not_already_in_snapshot(
-			      vectorclock:from_list([{1, CommitTime3a},{2,CommitTime3b}]),
-        vectorclock:create_commit_vector_clock(1, SnapshotClockDC1, SnapshotVC))),
-	?assertEqual(false, op_not_already_in_snapshot(
-			      vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]),
-        vectorclock:create_commit_vector_clock(2, SnapshotClockDC2, SnapshotVC))).
-
-%% @doc This tests to make sure when garbage collection happens, no updates are lost
-gc_test() ->
-    OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
-    Key = mycount,
-    DC1 = 1,
-    Type = riak_dt_gcounter,
-
-    %% Make 10 snapshots
-
-    {ok, {Res0, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(0, Type:value(Res0)),
-
-    op_insert_gc(Key, generate_payload(10,11,Res0,a1), OpsCache, SnapshotCache, transaction),
-    {ok, {Res1, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,12}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(Res1)),
-
-    op_insert_gc(Key, generate_payload(20,21,Res1,a2), OpsCache, SnapshotCache, transaction),
-    {ok, {Res2, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,22}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(2, Type:value(Res2)),
-
-    op_insert_gc(Key, generate_payload(30,31,Res2,a3), OpsCache, SnapshotCache, transaction),
-    {ok, {Res3, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,32}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(3, Type:value(Res3)),
-
-    op_insert_gc(Key, generate_payload(40,41,Res3,a4), OpsCache, SnapshotCache, transaction),
-    {ok, {Res4, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,42}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(4, Type:value(Res4)),
-
-    op_insert_gc(Key, generate_payload(50,51,Res4,a5), OpsCache, SnapshotCache, transaction),
-    {ok, {Res5, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,52}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(5, Type:value(Res5)),
-
-    op_insert_gc(Key, generate_payload(60,61,Res5,a6), OpsCache, SnapshotCache, transaction),
-    {ok, {Res6, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,62}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(6, Type:value(Res6)),
-
-    op_insert_gc(Key, generate_payload(70,71,Res6,a7), OpsCache, SnapshotCache, transaction),
-    {ok, {Res7, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,72}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(7, Type:value(Res7)),
-
-    op_insert_gc(Key, generate_payload(80,81,Res7,a8), OpsCache, SnapshotCache, transaction),
-    {ok, {Res8, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,82}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(8, Type:value(Res8)),
-
-    op_insert_gc(Key, generate_payload(90,91,Res8,a9), OpsCache, SnapshotCache, transaction),
-    {ok, {Res9, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,92}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(9, Type:value(Res9)),
-
-    op_insert_gc(Key, generate_payload(100,101,Res9,a10), OpsCache, SnapshotCache, transaction),
-
-    %% Insert some new values
-
-    op_insert_gc(Key, generate_payload(15,111,Res1,a11), OpsCache, SnapshotCache, transaction),
-    op_insert_gc(Key, generate_payload(16,121,Res1,a12), OpsCache, SnapshotCache, transaction),
-
-    %% Trigger the clean
-
-    Tx = #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,102}])},
-
-    {ok, {Res10, _}} = internal_read(Key, Type,
-        Tx ,true, OpsCache, SnapshotCache),
-    ?assertEqual(10, Type:value(Res10)),
-
-    op_insert_gc(Key, generate_payload(102,131,Res9,a13), OpsCache, SnapshotCache, Tx),
-
-    %% Be sure you didn't loose any updates
-    {ok, {Res13, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,142}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(13, Type:value(Res13)).
-
-%% @doc This tests to make sure operation lists can be large and resized
-large_list_test() ->
-        OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
-    Key = mycount,
-    DC1 = 1,
-    Type = riak_dt_gcounter,
-
-    %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
-    {ok, {Res0, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(0, Type:value(Res0)),
-
-    lists:foreach(fun(Val) ->
-			  op_insert_gc(Key, generate_payload(10,11+Val,Res0,Val), OpsCache, SnapshotCache,
-                  #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{1,11+Val}])} )
-		  end, lists:seq(1,1000)),
-    
-    {ok, {Res1000, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2000}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1000, Type:value(Res1000)),
-    
-    %% Now check everything is ok as the list shrinks from generating new snapshots
-    lists:foreach(fun(Val) ->
-    			  op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), OpsCache, SnapshotCache,
-                      #transaction{transactional_protocol = clocksi,
-                          snapshot_vc = vectorclock:from_list([{DC1,2000}])}),
-    			  {ok, {Res, _}} = internal_read(Key, Type,
-                      #transaction{transactional_protocol = clocksi,
-                          snapshot_vc = vectorclock:from_list([{DC1,2000}])},true, OpsCache, SnapshotCache),
-    			  ?assertEqual(Val, Type:value(Res))
-    		  end, lists:seq(1001,1100)).
-
-generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
-    Key = mycount,
-    Type = riak_dt_gcounter,
-    DC1 = 1,
-
-    {ok,Op1} = Type:update(increment, Name, Prev),
-    #operation_payload{key = Key,
-		     type = Type,
-		     op_param = {merge, Op1},
-		     snapshot_vc = vectorclock:from_list([{DC1,SnapshotTime}]),
-		     dc_and_commit_time = {DC1,CommitTime},
-		     txid = 1
-		    }.
-
-seq_write_test() ->
-    OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
-    Key = mycount,
-    Type = riak_dt_gcounter,
-    DC1 = 1,
-    S1 = Type:new(),
-
-    %% Insert one increment
-    {ok,Op1} = Type:update(increment, a, S1),
-    DownstreamOp1 = #operation_payload{key = Key,
-                                     type = Type,
-                                     op_param = {merge, Op1},
-                                     snapshot_vc = vectorclock:from_list([{DC1,10}]),
-                                     dc_and_commit_time = {DC1, 15},
-                                     txid = 1
-                                    },
-    op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache, transaction),
-    {ok, {Res1, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(Res1)),
-    %% Insert second increment
-    {ok,Op2} = Type:update(increment, a, Res1),
-    DownstreamOp2 = DownstreamOp1#operation_payload{
-                      op_param = {merge, Op2},
-                      snapshot_vc =vectorclock:from_list([{DC1,16}]),
-                      dc_and_commit_time = {DC1,20},
-                      txid=2},
-
-    op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache, transaction),
-    {ok, {Res2, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 21}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(2, Type:value(Res2)),
-
-    %% Read old version
-    {ok, {ReadOld, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(ReadOld)).
-
-multipledc_write_test() ->
-    OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
-    Key = mycount,
-    Type = riak_dt_gcounter,
-    DC1 = 1,
-    DC2 = 2,
-    S1 = Type:new(),
-
-    %% Insert one increment in DC1
-    {ok,Op1} = Type:update(increment, a, S1),
-    DownstreamOp1 = #operation_payload{key = Key,
-                                     type = Type,
-                                     op_param = {merge, Op1},
-                                     snapshot_vc = vectorclock:from_list([{DC2,0}, {DC1,10}]),
-                                     dc_and_commit_time = {DC1, 15},
-                                     txid = 1
-                                    },
-    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache, transaction),
-    {ok, {Res1, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}, {DC2, 0}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(Res1)),
-
-    %% Insert second increment in other DC
-    {ok,Op2} = Type:update(increment, b, Res1),
-    DownstreamOp2 = DownstreamOp1#operation_payload{
-                      op_param = {merge, Op2},
-                      snapshot_vc =vectorclock:from_list([{DC2,16}, {DC1,16}]),
-                      dc_and_commit_time = {DC2,20},
-                      txid=2},
-
-    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache, transaction),
-    {ok, {Res2, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,16}, {DC2,21}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(2, Type:value(Res2)),
-
-    %% Read old version
-    {ok, {ReadOld, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,15}, {DC2,15}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(ReadOld)).
-
-concurrent_write_test() ->
-    OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
-    Key = mycount,
-    Type = riak_dt_gcounter,
-    DC1 = local,
-    DC2 = remote,
-    S1 = Type:new(),
-
-    %% Insert one increment in DC1
-    {ok,Op1} = Type:update(increment, a, S1),
-    DownstreamOp1 = #operation_payload{key = Key,
-                                     type = Type,
-                                     op_param = {merge, Op1},
-                                     snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,0}]),
-                                     dc_and_commit_time = {DC2, 1},
-                                     txid = 1
-                                    },
-    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache, transaction),
-    {ok, {Res1, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,1}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(Res1)),
-
-    %% Another concurrent increment in other DC
-    {ok, Op2} = Type:update(increment, b, S1),
-    DownstreamOp2 = #operation_payload{ key = Key,
-				      type = Type,
-				      op_param = {merge, Op2},
-				      snapshot_vc =vectorclock:from_list([{DC1,0}, {DC2,0}]),
-				      dc_and_commit_time = {DC1, 1},
-				      txid=2},
-    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache, transaction),
-
-    %% Read different snapshots
-    {ok, {ReadDC1, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,1}, {DC2,0}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(1, Type:value(ReadDC1)),
-    io:format("Result1 = ~p", [ReadDC1]),
-    {ok, {ReadDC2, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,1}])},true, OpsCache, SnapshotCache),
-    io:format("Result2 = ~p", [ReadDC2]),
-    ?assertEqual(1, Type:value(ReadDC2)),
-
-    %% Read snapshot including both increments
-    {ok, {Res2, _}} = internal_read(Key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,1}, {DC2,1}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(2, Type:value(Res2)).
-
-%% Check that a read to a key that has never been read or updated, returns the CRDTs initial value
-%% E.g., for a gcounter, return 0.
-read_nonexisting_key_test() ->
-	OpsCache = ets:new(ops_cache, [set]),
-    SnapshotCache = ets:new(snapshot_cache, [set]),
-    Type = riak_dt_gcounter,
-    {ok, {ReadResult, _}} = internal_read(key, Type,
-        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{dc1,1}, {dc2,0}])},true, OpsCache, SnapshotCache),
-    ?assertEqual(0, Type:value(ReadResult)).
-
--endif.
+%%-ifdef(TEST).
+%%
+%%%% @doc Testing belongs_to_snapshot returns true when a commit time
+%%%% is smaller than a snapshot time
+%%belongs_to_snapshot_test()->
+%%	CommitTime1a= 1,
+%%	CommitTime2a= 1,
+%%	CommitTime1b= 1,
+%%	CommitTime2b= 7,
+%%	SnapshotClockDC1 = 5,
+%%	SnapshotClockDC2 = 5,
+%%	CommitTime3a= 5,
+%%	CommitTime4a= 5,
+%%	CommitTime3b= 10,
+%%	CommitTime4b= 10,
+%%
+%%	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
+%%	?assertEqual(true, op_not_already_in_snapshot(
+%%			     vectorclock:from_list([{1, CommitTime1a},{2,CommitTime1b}]),
+%%            vectorclock:create_commit_vector_clock(1, SnapshotClockDC1, SnapshotVC))),
+%%	?assertEqual(true, op_not_already_in_snapshot(
+%%			     vectorclock:from_list([{1, CommitTime2a},{2,CommitTime2b}]),
+%%        vectorclock:create_commit_vector_clock(2, SnapshotClockDC2, SnapshotVC))),
+%%	?assertEqual(false, op_not_already_in_snapshot(
+%%			      vectorclock:from_list([{1, CommitTime3a},{2,CommitTime3b}]),
+%%        vectorclock:create_commit_vector_clock(1, SnapshotClockDC1, SnapshotVC))),
+%%	?assertEqual(false, op_not_already_in_snapshot(
+%%			      vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]),
+%%        vectorclock:create_commit_vector_clock(2, SnapshotClockDC2, SnapshotVC))).
+%%
+%%%% @doc This tests to make sure when garbage collection happens, no updates are lost
+%%gc_test() ->
+%%    OpsCache = ets:new(ops_cache, [set]),
+%%    SnapshotCache = ets:new(snapshot_cache, [set]),
+%%    Key = mycount,
+%%    DC1 = 1,
+%%    Type = riak_dt_gcounter,
+%%
+%%    %% Make 10 snapshots
+%%
+%%    {ok, {Res0, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(0, Type:value(Res0)),
+%%
+%%    op_insert_gc(Key, generate_payload(10,11,Res0,a1), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res1, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,12}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1, Type:value(Res1)),
+%%
+%%    op_insert_gc(Key, generate_payload(20,21,Res1,a2), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res2, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,22}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(2, Type:value(Res2)),
+%%
+%%    op_insert_gc(Key, generate_payload(30,31,Res2,a3), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res3, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,32}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(3, Type:value(Res3)),
+%%
+%%    op_insert_gc(Key, generate_payload(40,41,Res3,a4), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res4, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,42}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(4, Type:value(Res4)),
+%%
+%%    op_insert_gc(Key, generate_payload(50,51,Res4,a5), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res5, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,52}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(5, Type:value(Res5)),
+%%
+%%    op_insert_gc(Key, generate_payload(60,61,Res5,a6), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res6, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,62}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(6, Type:value(Res6)),
+%%
+%%    op_insert_gc(Key, generate_payload(70,71,Res6,a7), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res7, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,72}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(7, Type:value(Res7)),
+%%
+%%    op_insert_gc(Key, generate_payload(80,81,Res7,a8), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res8, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,82}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(8, Type:value(Res8)),
+%%
+%%    op_insert_gc(Key, generate_payload(90,91,Res8,a9), OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res9, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,92}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(9, Type:value(Res9)),
+%%
+%%    op_insert_gc(Key, generate_payload(100,101,Res9,a10), OpsCache, SnapshotCache, transaction),
+%%
+%%    %% Insert some new values
+%%
+%%    op_insert_gc(Key, generate_payload(15,111,Res1,a11), OpsCache, SnapshotCache, transaction),
+%%    op_insert_gc(Key, generate_payload(16,121,Res1,a12), OpsCache, SnapshotCache, transaction),
+%%
+%%    %% Trigger the clean
+%%
+%%    Tx = #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,102}])},
+%%
+%%    {ok, {Res10, _}} = internal_read(Key, Type,
+%%        Tx ,true, OpsCache, SnapshotCache),
+%%    ?assertEqual(10, Type:value(Res10)),
+%%
+%%    op_insert_gc(Key, generate_payload(102,131,Res9,a13), OpsCache, SnapshotCache, Tx),
+%%
+%%    %% Be sure you didn't loose any updates
+%%    {ok, {Res13, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,142}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(13, Type:value(Res13)).
+%%
+%%%% @doc This tests to make sure operation lists can be large and resized
+%%large_list_test() ->
+%%        OpsCache = ets:new(ops_cache, [set]),
+%%    SnapshotCache = ets:new(snapshot_cache, [set]),
+%%    Key = mycount,
+%%    DC1 = 1,
+%%    Type = riak_dt_gcounter,
+%%
+%%    %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
+%%    {ok, {Res0, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(0, Type:value(Res0)),
+%%
+%%    lists:foreach(fun(Val) ->
+%%			  op_insert_gc(Key, generate_payload(10,11+Val,Res0,Val), OpsCache, SnapshotCache,
+%%                  #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{1,11+Val}])} )
+%%		  end, lists:seq(1,1000)),
+%%
+%%    {ok, {Res1000, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2000}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1000, Type:value(Res1000)),
+%%
+%%    %% Now check everything is ok as the list shrinks from generating new snapshots
+%%    lists:foreach(fun(Val) ->
+%%    			  op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), OpsCache, SnapshotCache,
+%%                      #transaction{transactional_protocol = clocksi,
+%%                          snapshot_vc = vectorclock:from_list([{DC1,2000}])}),
+%%    			  {ok, {Res, _}} = internal_read(Key, Type,
+%%                      #transaction{transactional_protocol = clocksi,
+%%                          snapshot_vc = vectorclock:from_list([{DC1,2000}])},true, OpsCache, SnapshotCache),
+%%    			  ?assertEqual(Val, Type:value(Res))
+%%    		  end, lists:seq(1001,1100)).
+%%
+%%generate_payload(SnapshotTime,CommitTime,Prev,Name) ->
+%%    Key = mycount,
+%%    Type = riak_dt_gcounter,
+%%    DC1 = 1,
+%%
+%%    {ok,Op1} = Type:update(increment, Name, Prev),
+%%    #operation_payload{key = Key,
+%%		     type = Type,
+%%		     op_param = {merge, Op1},
+%%		     snapshot_vc = vectorclock:from_list([{DC1,SnapshotTime}]),
+%%		     dc_and_commit_time = {DC1,CommitTime},
+%%		     txid = 1
+%%		    }.
+%%
+%%seq_write_test() ->
+%%    OpsCache = ets:new(ops_cache, [set]),
+%%    SnapshotCache = ets:new(snapshot_cache, [set]),
+%%    Key = mycount,
+%%    Type = riak_dt_gcounter,
+%%    DC1 = 1,
+%%    S1 = Type:new(),
+%%
+%%    %% Insert one increment
+%%    {ok,Op1} = Type:update(increment, a, S1),
+%%    DownstreamOp1 = #operation_payload{key = Key,
+%%                                     type = Type,
+%%                                     op_param = {merge, Op1},
+%%                                     snapshot_vc = vectorclock:from_list([{DC1,10}]),
+%%                                     dc_and_commit_time = {DC1, 15},
+%%                                     txid = 1
+%%                                    },
+%%    op_insert_gc(Key,DownstreamOp1, OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res1, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1, Type:value(Res1)),
+%%    %% Insert second increment
+%%    {ok,Op2} = Type:update(increment, a, Res1),
+%%    DownstreamOp2 = DownstreamOp1#operation_payload{
+%%                      op_param = {merge, Op2},
+%%                      snapshot_vc =vectorclock:from_list([{DC1,16}]),
+%%                      dc_and_commit_time = {DC1,20},
+%%                      txid=2},
+%%
+%%    op_insert_gc(Key,DownstreamOp2, OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res2, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 21}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(2, Type:value(Res2)),
+%%
+%%    %% Read old version
+%%    {ok, {ReadOld, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1, Type:value(ReadOld)).
+%%
+%%multipledc_write_test() ->
+%%    OpsCache = ets:new(ops_cache, [set]),
+%%    SnapshotCache = ets:new(snapshot_cache, [set]),
+%%    Key = mycount,
+%%    Type = riak_dt_gcounter,
+%%    DC1 = 1,
+%%    DC2 = 2,
+%%    S1 = Type:new(),
+%%
+%%    %% Insert one increment in DC1
+%%    {ok,Op1} = Type:update(increment, a, S1),
+%%    DownstreamOp1 = #operation_payload{key = Key,
+%%                                     type = Type,
+%%                                     op_param = {merge, Op1},
+%%                                     snapshot_vc = vectorclock:from_list([{DC2,0}, {DC1,10}]),
+%%                                     dc_and_commit_time = {DC1, 15},
+%%                                     txid = 1
+%%                                    },
+%%    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res1, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}, {DC2, 0}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1, Type:value(Res1)),
+%%
+%%    %% Insert second increment in other DC
+%%    {ok,Op2} = Type:update(increment, b, Res1),
+%%    DownstreamOp2 = DownstreamOp1#operation_payload{
+%%                      op_param = {merge, Op2},
+%%                      snapshot_vc =vectorclock:from_list([{DC2,16}, {DC1,16}]),
+%%                      dc_and_commit_time = {DC2,20},
+%%                      txid=2},
+%%
+%%    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res2, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,16}, {DC2,21}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(2, Type:value(Res2)),
+%%
+%%    %% Read old version
+%%    {ok, {ReadOld, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,15}, {DC2,15}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1, Type:value(ReadOld)).
+%%
+%%concurrent_write_test() ->
+%%    OpsCache = ets:new(ops_cache, [set]),
+%%    SnapshotCache = ets:new(snapshot_cache, [set]),
+%%    Key = mycount,
+%%    Type = riak_dt_gcounter,
+%%    DC1 = local,
+%%    DC2 = remote,
+%%    S1 = Type:new(),
+%%
+%%    %% Insert one increment in DC1
+%%    {ok,Op1} = Type:update(increment, a, S1),
+%%    DownstreamOp1 = #operation_payload{key = Key,
+%%                                     type = Type,
+%%                                     op_param = {merge, Op1},
+%%                                     snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,0}]),
+%%                                     dc_and_commit_time = {DC2, 1},
+%%                                     txid = 1
+%%                                    },
+%%    op_insert_gc(Key,DownstreamOp1,OpsCache, SnapshotCache, transaction),
+%%    {ok, {Res1, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,1}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1, Type:value(Res1)),
+%%
+%%    %% Another concurrent increment in other DC
+%%    {ok, Op2} = Type:update(increment, b, S1),
+%%    DownstreamOp2 = #operation_payload{ key = Key,
+%%				      type = Type,
+%%				      op_param = {merge, Op2},
+%%				      snapshot_vc =vectorclock:from_list([{DC1,0}, {DC2,0}]),
+%%				      dc_and_commit_time = {DC1, 1},
+%%				      txid=2},
+%%    op_insert_gc(Key,DownstreamOp2,OpsCache, SnapshotCache, transaction),
+%%
+%%    %% Read different snapshots
+%%    {ok, {ReadDC1, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,1}, {DC2,0}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(1, Type:value(ReadDC1)),
+%%    io:format("Result1 = ~p", [ReadDC1]),
+%%    {ok, {ReadDC2, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,1}])},true, OpsCache, SnapshotCache),
+%%    io:format("Result2 = ~p", [ReadDC2]),
+%%    ?assertEqual(1, Type:value(ReadDC2)),
+%%
+%%    %% Read snapshot including both increments
+%%    {ok, {Res2, _}} = internal_read(Key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,1}, {DC2,1}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(2, Type:value(Res2)).
+%%
+%%%% Check that a read to a key that has never been read or updated, returns the CRDTs initial value
+%%%% E.g., for a gcounter, return 0.
+%%read_nonexisting_key_test() ->
+%%	OpsCache = ets:new(ops_cache, [set]),
+%%    SnapshotCache = ets:new(snapshot_cache, [set]),
+%%    Type = riak_dt_gcounter,
+%%    {ok, {ReadResult, _}} = internal_read(key, Type,
+%%        #transaction{transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{dc1,1}, {dc2,0}])},true, OpsCache, SnapshotCache),
+%%    ?assertEqual(0, Type:value(ReadResult)).
+%%
+%%-endif.
