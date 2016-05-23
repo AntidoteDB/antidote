@@ -372,79 +372,79 @@ get_latest_cached_compatible_snapshot(Key, _Type, Transaction, _IsLocal, Snapsho
 internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache) ->
     internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache,false).
 
-%%internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc) ->
-%%    %% First, get the latest available snapshot from the cache or the log.
-%%    case ets:lookup(OpsCache, Key) of
-%%        [] ->
-%%            %% No operations exist for this object, just return an empty snapshot.
-%%            {LatestCompatSnapshot, SnapshotCommitParams} = create_empty_snapshot(Transaction, Type),
-%%            {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
-%%        [Tuple] ->
-%%            {Key, _Length, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
-%%            UpdatedTxnRecord = case Transaction#transaction.transactional_protocol of
-%%                                   nmsi ->
-%%                                       LocalDCReadTime = clocksi_vnode:now_microsec(now()),
-%%                                       {SnapshotVC, StartReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey, LocalDCReadTime),
-%%                                       ReadTimeDict = orddict:store(Key, StartReadVC, Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dict_key_read_vc),
-%%                                       NMSIMetadata = Transaction#nmsi_read_metadata{dict_key_read_vc = ReadTimeDict},
-%%                                       Transaction#transaction{snapshot_vc = SnapshotVC, nmsi_read_metadata = NMSIMetadata};
-%%                                   Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-%%                                       Transaction
-%%                               end,
-%%%%            {{LastOp, LatestCompatSnapshot}, SnapshotCommitParams, IsFirst} =
-%%            case get_latest_cached_compatible_snapshot(Key, Type, UpdatedTxnRecord, IsLocal, SnapshotCache, OpsCache) of
-%%                empty ->
-%%                    {LCS, SCP} = create_empty_snapshot(UpdatedTxnRecord, Type),
-%%                    {ok, {LCS, SCP}};
-%%                {error, no_snapshot} ->
-%%                    %% No snapshot in the cache, get ops from the log
-%%%%                  get_all_operations_for_key_from_log(Key, Type, Transaction);
-%%                    {_NumOps, _OpsList} = get_all_operations_from_log_for_key(Key, Type, UpdatedTxnRecord),
-%%                    case clocksi_materializer:materialize(Type, [], 0, vectorclock:new(), UpdatedTxnRecord, OperationsForKey) of
-%%                        {ok, Snapshot, _, CommitParameters1, _} ->
-%%                            {ok, {Snapshot, CommitParameters1}};
-%%                        {error, Reason} ->
-%%                            {error, Reason}
-%%                    end;
-%%                {{LastOp, LatestCompatSnapshot, SnapshotCommitParams}, IsFirst} ->
-%%                    case clocksi_materializer:materialize(Type, LatestCompatSnapshot, LastOp, SnapshotCommitParams, UpdatedTxnRecord, OperationsForKey) of
-%%                        {ok, Snapshot, NewLastOp, CommitParameters1, NewSS} ->
-%%                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-%%                            %% for the given snapshot_time
-%%                            %% todo: remove the following case? I believe now we read from the log this can't happen
-%%                            case CommitParameters1 of
-%%                                ignore ->
-%%                                    {ok, {Snapshot, CommitParameters1}};
-%%                                {error, Reason} ->
-%%                                    {error, Reason};
-%%                                _ ->
-%%                                    case (NewSS and IsFirst) orelse ShouldGc of
-%%                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
-%%                                        %% previous snapshot
-%%                                        true ->
-%%                                            case IsLocal of
-%%                                                true ->
-%%                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1, OpsCache, SnapshotCache, ShouldGc);
-%%                                                false ->
-%%                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1)
-%%                                            end;
-%%                                        _ ->
-%%                                            ok
-%%                                    end,
-%%                                    {ok, {Snapshot, CommitParameters1}}
-%%%%                                end;
-%%                            end
-%%                    end
-%%            end
-%%    end.
-
-
 internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc) ->
+    %% First, get the latest available snapshot from the cache or the log.
+    case ets:lookup(OpsCache, Key) of
+        [] ->
+            %% No operations exist for this object, just return an empty snapshot.
+            {LatestCompatSnapshot, SnapshotCommitParams} = create_empty_snapshot(Transaction, Type),
+            {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
+        [Tuple] ->
+            {Key, _Length, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
+            UpdatedTxnRecord = case Transaction#transaction.transactional_protocol of
+                                   nmsi ->
+                                       LocalDCReadTime = clocksi_vnode:now_microsec(now()),
+                                       {SnapshotVC, StartReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey, LocalDCReadTime),
+                                       ReadTimeDict = orddict:store(Key, StartReadVC, Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dict_key_read_vc),
+                                       NMSIMetadata = Transaction#nmsi_read_metadata{dict_key_read_vc = ReadTimeDict},
+                                       Transaction#transaction{snapshot_vc = SnapshotVC, nmsi_read_metadata = NMSIMetadata};
+                                   Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+                                       Transaction
+                               end,
+%%            {{LastOp, LatestCompatSnapshot}, SnapshotCommitParams, IsFirst} =
+            case get_latest_cached_compatible_snapshot(Key, Type, UpdatedTxnRecord, IsLocal, SnapshotCache, OpsCache) of
+                empty ->
+                    {LCS, SCP} = create_empty_snapshot(UpdatedTxnRecord, Type),
+                    {ok, {LCS, SCP}};
+                {error, no_snapshot} ->
+                    %% No snapshot in the cache, get ops from the log
+%%                  get_all_operations_for_key_from_log(Key, Type, Transaction);
+                    {_NumOps, _OpsList} = get_all_operations_from_log_for_key(Key, Type, UpdatedTxnRecord),
+                    case clocksi_materializer:materialize(Type, [], 0, vectorclock:new(), UpdatedTxnRecord, OperationsForKey) of
+                        {ok, Snapshot, _, CommitParameters1, _} ->
+                            {ok, {Snapshot, CommitParameters1}};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
+                {{LastOp, LatestCompatSnapshot, SnapshotCommitParams}, IsFirst} ->
+                    case clocksi_materializer:materialize(Type, LatestCompatSnapshot, LastOp, SnapshotCommitParams, UpdatedTxnRecord, OperationsForKey) of
+                        {ok, Snapshot, NewLastOp, CommitParameters1, NewSS} ->
+                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+                            %% for the given snapshot_time
+                            %% todo: remove the following case? I believe now we read from the log this can't happen
+                            case CommitParameters1 of
+                                ignore ->
+                                    {ok, {Snapshot, CommitParameters1}};
+                                {error, Reason} ->
+                                    {error, Reason};
+                                _ ->
+                                    case (NewSS and IsFirst) orelse ShouldGc of
+                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
+                                        %% previous snapshot
+                                        true ->
+                                            case IsLocal of
+                                                true ->
+                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1, OpsCache, SnapshotCache, ShouldGc);
+                                                false ->
+                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitParameters1)
+                                            end;
+                                        _ ->
+                                            ok
+                                    end,
+                                    {ok, {Snapshot, CommitParameters1}}
+%%                                end;
+                            end
+                    end
+            end
+    end.
+
+
+internal_read(Key, Type, Transaction, _IsLocal, OpsCache, SnapshotCache, ShouldGc) ->
+    TxnId = Transaction#transaction.txn_id,
     Result = case ets:lookup(SnapshotCache, Key) of
                  [] ->
                      %% First time reading this key, store an empty snapshot in the cache
                      BlankSS = {0,clocksi_materializer:new(Type)},
-                     TxnId = Transaction#transaction.txn_id,
                      case TxnId of %%Why do we need this?
                          ignore ->
                              internal_store_ss(Key,BlankSS,vectorclock:new(),OpsCache,SnapshotCache,false);
@@ -480,7 +480,7 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
         0 ->
             {ok, LatestSnapshot};
         _Len ->
-            case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
+            case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, Transaction, Ops) of
                 {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
                     %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                     %% for the given snapshot_time
@@ -493,7 +493,7 @@ internal_read(Key, Type, Transaction, IsLocal, OpsCache, SnapshotCache, ShouldGc
                                 %% Only store the snapshot if it would be at the end of the list and has new operations added to the
                                 %% previous snapshot
                                 true ->
-                                    case TxId of
+                                    case TxnId of
                                         ignore ->
                                             internal_store_ss(Key,{NewLastOp,Snapshot},CommitTime,OpsCache,SnapshotCache,ShouldGc);
                                         _ ->

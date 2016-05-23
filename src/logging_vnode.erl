@@ -334,12 +334,34 @@ handle_command({append_group, LogId, PayloadList, IsLocal}, _Sender,
 	    %%Error
 	    {reply, Error, State}
     end;
+%%
+%%handle_command({get, LogId, Transaction, Key}, _Sender,
+%%  #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
+%%    case get_log_from_map(Map, Partition, LogId) of
+%%        {ok, Log} ->
+%%            case get_ops_from_log(Log, {key, Key}, start, Transaction, dict:new(), dict:new(), load_all) of
+%%                {error, Reason} ->
+%%                    {reply, {error, Reason}, State};
+%%                {eof, CommittedOpsForKeyDict} ->
+%%                    CommittedOpsForKey =
+%%                        case dict:find(Key, CommittedOpsForKeyDict) of
+%%                            {ok, Val} ->
+%%                                Val;
+%%                            error ->
+%%                                []
+%%                        end,
+%%                    {reply, {length(CommittedOpsForKey), CommittedOpsForKey}, State}
+%%            end;
+%%        {error, Reason} ->
+%%            {reply, {error, Reason}, State}
+%%    end;
 
-handle_command({get, LogId, Transaction, Key}, _Sender,
+
+handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
   #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case get_ops_from_log(Log, {key, Key}, start, Transaction, dict:new(), dict:new(), load_all) of
+            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 {eof, CommittedOpsForKeyDict} ->
@@ -350,7 +372,8 @@ handle_command({get, LogId, Transaction, Key}, _Sender,
                             error ->
                                 []
                         end,
-                    {reply, {length(CommittedOpsForKey), CommittedOpsForKey}, State}
+                    {reply, {length(CommittedOpsForKey), CommittedOpsForKey, {0,clocksi_materializer:new(Type)},
+                        vectorclock:new(), false}, State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
