@@ -439,112 +439,129 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache) ->
 %%            end
 %%    end.
 
-
 internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
     TxnId = Transaction#transaction.txn_id,
-    Result = case ets:lookup(SnapshotCache, Key) of
-                 [] ->
-                     %% First time reading this key, store an empty snapshot in the cache
-                     BlankSS = {0,clocksi_materializer:new(Type)},
-                     case TxnId of %%Why do we need this?
-                         ignore ->
-                             internal_store_ss(Key,BlankSS,vectorclock:new(),OpsCache,SnapshotCache,false);
-                         _ ->
-                             materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
+    case ets:lookup(OpsCache, Key) of
+        [] ->
+            %% No operations exist for this object, just return an empty snapshot.
+            {LatestCompatSnapshot, SnapshotCommitParams} = create_empty_snapshot(Transaction, Type),
+            {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
+        [Tuple] ->
+            {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
+            UpdatedTxnRecord = case Transaction#transaction.transactional_protocol of
+                                   nmsi ->
+                                       LocalDCReadTime = clocksi_vnode:now_microsec(now()),
+                                       {SnapshotVC, StartReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey, LocalDCReadTime),
+                                       ReadTimeDict = orddict:store(Key, StartReadVC, Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dict_key_read_vc),
+                                       NMSIMetadata = Transaction#nmsi_read_metadata{dict_key_read_vc = ReadTimeDict},
+                                       Transaction#transaction{snapshot_vc = SnapshotVC, nmsi_read_metadata = NMSIMetadata};
+                                   Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+                                       Transaction
+                               end,
+            Result = case ets:lookup(SnapshotCache, Key) of
+                         [] ->
+                             %% First time reading this key, store an empty snapshot in the cache
+                             BlankSS = {0, clocksi_materializer:new(Type)},
+                             case TxnId of %%Why do we need this?
+                                 ignore ->
+                                     internal_store_ss(Key, BlankSS, vectorclock:new(), OpsCache, SnapshotCache, false);
+                                 _ ->
+                                     materializer_vnode:store_ss(Key, BlankSS, vectorclock:new())
+                             end,
+                             {BlankSS, ignore, true};
+                         [{_, SnapshotDict}] ->
+                             case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
+                                 {undefined, _IsF} ->
+                                     {error, no_snapshot};
+                                 {{LS, SCT}, IsF} ->
+                                     {LS, SCT, IsF}
+                             end
                      end,
-                     {BlankSS,ignore,true};
-                 [{_, SnapshotDict}] ->
-                     case vector_orddict:get_smaller(Transaction#transaction.snapshot_vc, SnapshotDict) of
-                         {undefined, _IsF} ->
-                             {error, no_snapshot};
-                         {{LS, SCT},IsF}->
-                             {LS,SCT,IsF}
-                     end
-             end,
-     {Length,Ops,{LastOp,LatestSnapshot},SnapshotCommitTime,IsFirst} =
-        case Result of
-            {error, no_snapshot} ->
-                LogId = log_utilities:get_logid_from_key(Key),
-                [Node] = log_utilities:get_preflist_from_key(Key),
-                Res = logging_vnode:get(Node, LogId, Transaction, Type, Key),
-                Res;
-            {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
-                case ets:lookup(OpsCache, Key) of
-                    [] ->
-                        {0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
-                    [Tuple] ->
-                        {Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
-
-                        {Length1, AllOps, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
-                end
-        end,
-    case Length of
-        0 ->
-            {ok, {LatestSnapshot, SnapshotCommitTime}};
-        _ ->
-            case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, Transaction, Ops) of
-                {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
-                    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-                    %% for the given snapshot_time
-                    %% But is the snapshot not safe?
-                    case CommitTime of
-                        ignore ->
-                            {ok, {Snapshot, CommitTime}};
-                        _ ->
-                            case (NewSS and IsFirst) orelse ShouldGc of
-                                %% Only store the snapshot if it would be at the end of the list and has new operations added to the
-                                %% previous snapshot
-                                true ->
-                                    case TxnId of
-                                        ignore ->
-                                            internal_store_ss(Key,{NewLastOp,Snapshot},CommitTime,OpsCache,SnapshotCache,ShouldGc);
-                                        _ ->
-                                            materializer_vnode:store_ss(Key,{NewLastOp,Snapshot},CommitTime)
-                                    end;
+            {Length, Ops, {LastOp, LatestSnapshot}, SnapshotCommitTime, IsFirst} =
+                case Result of
+                    {error, no_snapshot} ->
+                        LogId = log_utilities:get_logid_from_key(Key),
+                        [Node] = log_utilities:get_preflist_from_key(Key),
+                        Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
+                        Res;
+                    {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
+%%                        case ets:lookup(OpsCache, Key) of
+%%                            [] ->
+%%                                {0, [], LatestSnapshot1,SnapshotCommitTime1,IsFirst1};
+%%                            [Tuple] ->
+%%                                {Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
+                        {Len, OperationsForKey, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
+%%                        end
+                end,
+            case Length of
+                0 ->
+                    {ok, {LatestSnapshot, SnapshotCommitTime}};
+                _ ->
+                    case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, UpdatedTxnRecord, Ops) of
+                        {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
+                            %% the following checks for the case there were no snapshots and there were operations, but none was applicable
+                            %% for the given snapshot_time
+                            %% But is the snapshot not safe?
+                            case CommitTime of
+                                ignore ->
+                                    {ok, {Snapshot, CommitTime}};
                                 _ ->
-                                    ok
-                            end,
-                            {ok, {Snapshot, CommitTime}}
-                    end;
-                {error, Reason} ->
-                    {error, Reason}
+                                    case (NewSS and IsFirst) orelse ShouldGc of
+                                        %% Only store the snapshot if it would be at the end of the list and has new operations added to the
+                                        %% previous snapshot
+                                        true ->
+                                            case TxnId of
+                                                ignore ->
+                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
+                                                _ ->
+                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
+                                            end;
+                                        _ ->
+                                            ok
+                                    end,
+                                    {ok, {Snapshot, CommitTime}}
+                            end;
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
             end
     end.
+
 %%
 %%
-%%%% @doc This fuction is used by the causally consistent cut for defining
-%%%% which is the latest operation that is compatible with the snapshot
-%%%% the protocol uses the commit time of the operation as the "snapshot time"
-%%%% of this particular read, whithin the transaction.
-%%define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime) ->
-%%    no_compatible_operation_found;
-%%define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime) ->
-%%    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore).
-%%
-%%define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC) ->
-%%    no_compatible_operation_found;
-%%define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadTime, ReadVC) ->
-%%    [{_OpId, Op} | Rest] = Operation,
-%%    TxCTLowBound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
-%%    TxDepUpBound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
-%%    OperationDependencyVC = Op#operation_payload.dependency_vc,
-%%    {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
-%%    OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
-%%    case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
-%%        true ->
-%%            FinalReadVC = case ReadVC of
-%%                              ignore -> %% newest operation in the list.
-%%                                  OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
-%%                                  vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC));
-%%                              _ ->
-%%                                  ReadVC
-%%                          end,
-%%            {OperationCommitVC, FinalReadVC};
-%%        false ->
-%%            NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
-%%            define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC)
-%%    end.
-%%
+%% @doc This fuction is used by the causally consistent cut for defining
+%% which is the latest operation that is compatible with the snapshot
+%% the protocol uses the commit time of the operation as the "snapshot time"
+%% of this particular read, whithin the transaction.
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime) ->
+    no_compatible_operation_found;
+define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime) ->
+    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore).
+
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC) ->
+    no_compatible_operation_found;
+define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadTime, ReadVC) ->
+    [{_OpId, Op} | Rest] = Operation,
+    TxCTLowBound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+    TxDepUpBound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+    OperationDependencyVC = Op#operation_payload.dependency_vc,
+    {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
+    OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
+    case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+        true ->
+            FinalReadVC = case ReadVC of
+                              ignore -> %% newest operation in the list.
+                                  OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
+                                  vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC));
+                              _ ->
+                                  ReadVC
+                          end,
+            {OperationCommitVC, FinalReadVC};
+        false ->
+            NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
+            define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC)
+    end.
+
 %%%% Todo: Future: Implement the following function for a causal snapshot
 %%get_all_operations_from_log_for_key(Key, Type, Transaction) ->
 %%    case Transaction#transaction.transactional_protocol of
@@ -557,20 +574,20 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
 %%%%            {{_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
 %%            {_Lenght, _CommittedOpsForKey} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
 %%    end.
-%%create_empty_snapshot(Transaction, Type) ->
-%%    case Transaction#transaction.transactional_protocol of
-%%        nmsi ->
-%%            ReadTime = clocksi_vnode:now_microsec(now()),
-%%            MyDc = dc_utilities:get_my_dc_id(),
-%%            ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
-%%%%    FakeCommitDC = dc_utilities:get_my_dc_id(),
-%%%%    FakeCommitTime = 0,
-%%%%    FakeDependencyVC = vectorclock:new(),
-%%%%    FakeCommitVC = vectorclock:create_commit_vector_clock(FakeCommitDC, FakeCommitTime, FakeDependencyVC),
-%%            {clocksi_materializer:new(Type), {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
-%%        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-%%            {clocksi_materializer:new(Type), vectorclock:new()}
-%%    end.
+create_empty_snapshot(Transaction, Type) ->
+    case Transaction#transaction.transactional_protocol of
+        nmsi ->
+            ReadTime = clocksi_vnode:now_microsec(now()),
+            MyDc = dc_utilities:get_my_dc_id(),
+            ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
+%%    FakeCommitDC = dc_utilities:get_my_dc_id(),
+%%    FakeCommitTime = 0,
+%%    FakeDependencyVC = vectorclock:new(),
+%%    FakeCommitVC = vectorclock:create_commit_vector_clock(FakeCommitDC, FakeCommitTime, FakeDependencyVC),
+            {clocksi_materializer:new(Type), {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
+        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+            {clocksi_materializer:new(Type), vectorclock:new()}
+    end.
 
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
