@@ -22,8 +22,8 @@ init([StatsPid]) ->
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.
 
-handle_cast({update, Metric}, {_Timer, Pid} = State) ->
-    Val = antidote_stat:get_value(Pid, Metric),
+handle_cast({update, Metric}, State) ->
+    Val = antidote_stat:get_value(Metric),
     exometer:update(Metric, Val),
     {noreply, State};
 
@@ -42,8 +42,8 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-update(Pid, Metric) ->
-    Val = antidote_stats:get_value(Pid, Metric),
+update(_Pid, Metric) ->
+    Val = antidote_stats:get_value(Metric),
     exometer:update(Metric, Val).
 
 init_metrics() ->   

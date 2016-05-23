@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0,  get_value/2, stats/0]).
+-export([start_link/0,  get_value/1, stats/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -14,9 +14,9 @@ start_link() ->
 
 %% List of configured metrics
 stats() ->
-    [[staleness], [random]].
+    [[staleness]].
 
-get_value(_Pid, Metric) ->    
+get_value(Metric) ->    
     gen_server:call(?MODULE, {get_value, Metric}).
 
 init([]) ->
@@ -46,10 +46,7 @@ calculate([staleness]) ->
     Staleness = dict:fold(fun(_K, C, Max) ->
                                    max(CurrentClock - C, Max)
                            end, 0, SS),
-    Staleness;
-
-calculate([random]) ->
-    random:uniform(100).
+    Staleness.
 
 to_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
