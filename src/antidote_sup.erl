@@ -90,6 +90,10 @@ init(_Args) ->
 			  permanent, 5000, supervisor,
 			  [meta_data_sender_sup]},
 
+    StatsSup =  {antidote_stats_sup,
+                           {antidote_stats_sup, start_link, []},
+                           permanent, 5000, supervisor, [antidote_stats_sup]},
+
 
     {ok,
      {{one_for_one, 5, 10},
@@ -108,4 +112,5 @@ init(_Args) ->
        InterDcLogReaderRMaster,
        InterDcLogSenderMaster,
        MetaDataManagerSup,
-       MetaDataSenderSup]}}.
+       MetaDataSenderSup,
+       StatsSup]}}.

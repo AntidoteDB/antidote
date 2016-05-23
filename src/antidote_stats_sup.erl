@@ -33,18 +33,17 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_stats() ->
-    ChildSpec1 = {antidote_stats,
-                 {antidote_stats, start_link, []},
-                 permanent, 5000, worker, [antidote_stats]},
-    {ok, StatsPid} = supervisor:start_child(?MODULE, ChildSpec1),
     ChildSpec2 = {antidote_stats_collector,
-                  {antidote_stats_collector, start_link, [StatsPid]},
+                  {antidote_stats_collector, start_link, [ignore]},
                   permanent, 5000, worker, [antidote_stats_collector]},
     {ok, CollectorPid} = supervisor:start_child(?MODULE, ChildSpec2),
     {ok, CollectorPid}.    
 
 %% @doc Starts the coordinator
 init([]) ->
+    StatsServer = {antidote_stats,
+                   {antidote_stats, start_link, []},
+                   permanent, 5000, worker, [antidote_stats]},
     {ok,
      {{one_for_one, 5, 10},
-      []}}.
+      [StatsServer]}}.

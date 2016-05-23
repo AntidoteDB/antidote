@@ -46,7 +46,10 @@ calculate([staleness]) ->
     Staleness = dict:fold(fun(_K, C, Max) ->
                                    max(CurrentClock - C, Max)
                            end, 0, SS),
-    Staleness.
+    Staleness;
+
+calculate(_) ->
+    {error, metric_not_found}.
 
 to_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
