@@ -105,17 +105,17 @@
     server_pid :: pid(),
     snapshot_vc :: vectorclock(),
     txn_id :: txid(),
-    nmsi_read_metadata :: nmsi_read_metadata()}).
+    physics_read_metadata :: physics_read_metadata()}).
 
 
--record(nmsi_read_metadata, {
+-record(physics_read_metadata, {
     dict_key_read_vc :: clock_value() | undefined,
     dep_upbound :: clock_value() | undefined,
     commit_time_lowbound :: clock_value() | undefined
 }).
-%%-record(nmsi_transaction, {snapshot_time :: snapshot_time(),
+%%-record(physics_transaction, {snapshot_time :: snapshot_time(),
 %%    server_pid :: pid(),
-%%    nmsi_read_metadata :: nmsi_read_metadata(),
+%%    physics_read_metadata :: physics_read_metadata(),
 %%    txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
@@ -143,14 +143,14 @@
 -type clocksi_payload() :: #operation_payload{}.
 -type dcid() :: term().
 -type transaction() :: #transaction{}.
-%-type nmsi_tx() :: #nmsi_transaction{}.
+%-type physics_tx() :: #physics_transaction{}.
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
-%%NMSI
+%%physics
 -type clock_value() :: non_neg_integer().
 -type key_access_time_tuple() :: {clock_value(), boolean()}.
--type nmsi_read_metadata() :: #nmsi_read_metadata{}.
+-type physics_read_metadata() :: #physics_read_metadata{}.
 
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
     log/0, op_id/0, payload/0, operation/0, partition_id/0,
@@ -186,7 +186,7 @@
     is_static :: boolean(),
     full_commit :: boolean(),
     stay_alive :: boolean(),
-    %% The following are needed by the NMSI protocol
+    %% The following are needed by the physics protocol
     %% Should I create a new tx_coord_record?
     version_min :: clock_value() | undefined,
     keys_access_time :: dict()

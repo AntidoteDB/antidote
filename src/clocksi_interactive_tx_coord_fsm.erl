@@ -139,9 +139,9 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
         is_static = IsStatic,
         read_set = [],
         stay_alive = StayAlive,
-        %% The following are needed by the NMSI protocol
+        %% The following are needed by the physics protocol
         version_min = undefined,
-        keys_access_time = dict:new()
+        keys_access_time = orddict:new()
     }.
 
 -spec generate_name(pid()) -> atom().
@@ -173,17 +173,18 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                    self()
            end,
     case Protocol of
-        nmsi ->
-            NmsiReadMetadata = #nmsi_read_metadata{
-                dict_key_read_vc = undefined,
+        physics ->
+            PhysicsReadMetadata = #physics_read_metadata{
+                dict_key_read_vc = orddict:new(),
                 dep_upbound = vectorclock:new(),
                 commit_time_lowbound = vectorclock:new()},
             Now = clocksi_vnode:now_microsec(dc_utilities:now()),
             TransactionId = #tx_id{snapshot_time = Now, server_pid = Name},
             Transaction = #transaction{
                 transactional_protocol = Protocol,
-                nmsi_read_metadata = NmsiReadMetadata,
+                physics_read_metadata = PhysicsReadMetadata,
                 txn_id = TransactionId},
+%%            lager:info("Transaction = ~p",[Transaction]),
                 {Transaction, TransactionId};
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             Result = case ClientClock of
@@ -249,7 +250,7 @@ perform_singleitem_update(Key, Type, Params) ->
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
         {ok, DownstreamRecord, Parameters} ->
             Updated_partition = case Transaction#transaction.transactional_protocol of
-                                    nmsi ->
+                                    physics ->
                                         [{IndexNode, [{Key, Type, {DownstreamRecord, Parameters}}]}];
                                     Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                                         [{IndexNode, [{Key, Type, DownstreamRecord}]}]
@@ -264,13 +265,13 @@ perform_singleitem_update(Key, Type, Params) ->
                         {committed, CommitParameters} ->
                             DcId = ?DC_UTIL:get_my_dc_id(),
                             CausalClock = case Transaction#transaction.transactional_protocol of
-                                              nmsi ->
+                                              physics ->
                                                   {CommitTime, DepVC} = CommitParameters,
-                                                  ?VECTORCLOCK:set_clock_of_dc(
+                                                  vectorclock:set_clock_of_dc(
                                                       DcId, CommitTime, DepVC);
                                               Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
                                                   CommitTime = CommitParameters,
-                                                  ?VECTORCLOCK:set_clock_of_dc(
+                                                  vectorclock:set_clock_of_dc(
                                                       DcId, CommitTime, Transaction#transaction.snapshot_vc)
                                           end,
                             {ok, {TxId, [], CausalClock}};
@@ -348,7 +349,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                 {ok, _} ->
                     State1 = case Transaction#transaction.transactional_protocol of
-                        nmsi->
+                        physics->
                             update_causal_snapshot_state(CoordState, _SnapshotParameters, Key);
                         Protocol when ((Protocol == gr) or (Protocol == clocksi))->
                             CoordState
@@ -395,15 +396,13 @@ execute_op({OpType, Args}, Sender,
                 {error, _Reason} ->
                     abort(SD0);
                 ReadResult ->
-                    case Transaction#transaction.transactional_protocol of
-                        nmsi ->
-                            SD1 = update_causal_snapshot_state(SD0, ReadResult, Key),
-                            {Result, _} = ReadResult,
-                            {reply, {ok, Type:value(Result)}, execute_op, SD1};
-                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                            {Snapshot, _CommitParams} = ReadResult,
-                            {reply, {ok, Type:value(Snapshot)}, execute_op, SD0}
-                    end
+                    {Snapshot, CommitParams} = ReadResult,
+                    SD1 = case Transaction#transaction.transactional_protocol of
+                              physics ->
+                                  update_causal_snapshot_state(SD0, CommitParams, Key);
+                              Protocol when ((Protocol == gr) or (Protocol == clocksi)) -> SD0
+                          end,
+                    {reply, {ok, Type:value(Snapshot)}, execute_op, SD1}
             end;
         update ->
             case perform_update(Args, Sender, SD0) of
@@ -414,7 +413,7 @@ execute_op({OpType, Args}, Sender,
             end
     end.
 
-%% @doc Used by the causal snapshot for NMSI
+%% @doc Used by the causal snapshot for physics
 %%      Updates the state of a transaction coordinator
 %%      for maintaining the causal snapshot metadata
 update_causal_snapshot_state(State, ReadMetadata, Key) ->
@@ -423,10 +422,10 @@ update_causal_snapshot_state(State, ReadMetadata, Key) ->
 %%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTime = ~p~n",[CommitVC, DepVC, ReadTime]),
     KeysAccessTime = State#tx_coord_state.keys_access_time,
     VersionMin = State#tx_coord_state.version_min,
-    NewKeysAccessTime = dict:append(Key, CommitVC, KeysAccessTime),
+    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
     NewVersionMin = min(VersionMin, CommitVC),
-    CommitTimeLowbound = State#tx_coord_state.transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
-    DepUpbound = State#tx_coord_state.transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+    CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+    DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
     ReadTimeVC = case CommitVC == ignore of
                      true ->
                          ignore;
@@ -435,7 +434,7 @@ update_causal_snapshot_state(State, ReadMetadata, Key) ->
                  end,
 %%    lager:info("ReadTimeVC= ~p~n DepUpbound= ~p~n DepVC= ~p~n CommitTimeLowbound= ~p~n", [ReadTimeVC, DepUpbound, DepVC, CommitTimeLowbound]),
     NewTransaction = Transaction#transaction{
-        nmsi_read_metadata = #nmsi_read_metadata{
+        physics_read_metadata = #physics_read_metadata{
             %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
             dep_upbound = vectorclock:min_vc(ReadTimeVC, DepUpbound),
             commit_time_lowbound = vectorclock:max_vc(DepVC, CommitTimeLowbound)}},
@@ -692,10 +691,8 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                             Reason ->
                                 {TxId, Reason}
                         end;
-                    nmsi ->
-%%                        lager:info("ct lowbound = ~p ~n",[Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound]),
-%%                        lager:info("ct CommitTime = ~p ~n",[CommitTime]),
-                        TxnDependencyVC = case Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound of
+                    physics ->
+                        TxnDependencyVC = case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound of
                                               ignore ->
                                                   vectorclock:new();
                                               VC -> VC

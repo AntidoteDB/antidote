@@ -86,10 +86,10 @@ start_vnode(I) ->
 %%      from the ets table to allow for concurrency
 read_data_item(Node, Transaction, Key, Type, Updates) ->
 %%    case Transaction#transaction.transactional_protocol of
-%%            nmsi ->
-%%                NMSIMetadata = Transaction#transaction.nmsi_read_metadata,
-%%                UpdatedNMSIMetadata = NMSIMetadata#nmsi_read_metadata{key_read_time = ReadTime},
-%%                UpdatedTxRecord = Transaction#transaction{nmsi_read_metadata =UpdatedNMSIMetadata},
+%%            physics ->
+%%                physicsMetadata = Transaction#transaction.physics_read_metadata,
+%%                UpdatedphysicsMetadata = physicsMetadata#physics_read_metadata{key_read_time = ReadTime},
+%%                UpdatedTxRecord = Transaction#transaction{physics_read_metadata =UpdatedphysicsMetadata},
 %%                case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
 %%                    {ok, {Snapshot, {CommitVC, SnapshotDepVC, ReadTime}}} ->
 %%                        Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
@@ -347,16 +347,16 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
     case Result of
         {ok, _} ->
             CommitParams = case Transaction#transaction.transactional_protocol of
-                               nmsi ->
-                                   SnapshotDepVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+                               physics ->
+                                   SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
                                    {NewPrepareTime, SnapshotDepVC};
                                Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
-                                   NewPrepareTime
+                                   {NewPrepareTime, Transaction#transaction.snapshot_vc}
                            end,
             ResultCommit = commit(Transaction, CommitParams, WriteSet, CommittedTx, NewState),
             case ResultCommit of
                 {ok, committed, NewPreparedDict2} ->
-                    {reply, {committed, CommitParams}, NewState#state{prepared_dict = NewPreparedDict2}};
+                    {reply, {committed, NewPrepareTime}, NewState#state{prepared_dict = NewPreparedDict2}};
                 {error, materializer_failure} ->
                     {reply, {error, materializer_failure}, NewState};
                 {error, timeout} ->
@@ -381,11 +381,11 @@ handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
       committed_tx = CommittedTx
   } = State) ->
     CommitParams = case Transaction#transaction.transactional_protocol of
-                       nmsi ->
-                           SnapshotDepVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+                       physics ->
+                           SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
                            {TxCommitTime, SnapshotDepVC};
                        Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
-                           TxCommitTime
+                           {TxCommitTime, Transaction#transaction.snapshot_vc}
                    end,
     Result = commit(Transaction, CommitParams, Updates, CommittedTx, State),
     case Result of
@@ -521,21 +521,13 @@ reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, Active
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
+    {CommitTime, SnapshotVC} = CommitParameters,
         TxId = Transaction#transaction.txn_id,
     DcId = dc_utilities:get_my_dc_id(),
-    Protocol = Transaction#transaction.transactional_protocol,
     LogRecord = #log_record
     {tx_id = TxId,
         op_type = commit,
-        op_payload = {{DcId, CommitTime}, Parameter} =
-            case Protocol of
-                         nmsi -> %%
-                             {CT, SnapshotDepVC} = CommitParameters,
-                             {{DcId, CT}, SnapshotDepVC};
-                         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                             CT = CommitParameters,
-                             {{DcId, CT}, Transaction#transaction.snapshot_vc}
-                     end},
+        op_payload = {{DcId, CommitTime}, SnapshotVC}},
             case application:get_env(antidote, txn_cert) of
                 {ok, true} ->
                     lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, CommitTime}) end,
@@ -548,15 +540,8 @@ commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
                 {ok, _} ->
-                    FinalCommitParams = case Protocol of
-                                            nmsi ->
-                                                DependencyVC = Parameter,
-                                                {{DcId, CommitTime}, DependencyVC};
-                                            Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                                {DcId, CommitTime}
-                                        end,
-%%                    lager:info("~nUpdates ~p~n Transaction ~p~n FinalCommitParams ~p~n",
-%%                        [Updates, Transaction, FinalCommitParams]),
+                    FinalCommitParams =
+                    {{DcId, CommitTime}, SnapshotVC},
                     case update_materializer(Updates, Transaction, FinalCommitParams) of
                         ok ->
                             NewPreparedDict = clean_and_notify(TxId, Updates, State),
@@ -676,7 +661,7 @@ check_prepared(TxId, PreparedTx, Key) ->
 update_materializer(DownstreamOps, Transaction, CommitParams) ->
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
     case Transaction#transaction.transactional_protocol of
-        nmsi ->
+        physics ->
             {{DcId, CommitTime}, DependencyVC} = CommitParams,
             UpdateFunction = fun({Key, Type, OpParam}, AccIn) ->
                 CommittedDownstreamOp =
@@ -690,14 +675,14 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
                              end;
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            {DcId, CommitTime} = CommitParams,
+            {{DcId, CommitTime}, SnapshotVC} = CommitParams,
             UpdateFunction = fun({Key, Type, Op}, AccIn) ->
                 CommittedDownstreamOp =
                     #operation_payload{
                         key = Key,
                         type = Type,
                         op_param = Op,
-                        snapshot_vc = Transaction#transaction.snapshot_vc,
+                        snapshot_vc = SnapshotVC,
                         dc_and_commit_time = {DcId, CommitTime},
                         txid = Transaction#transaction.txn_id},
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]

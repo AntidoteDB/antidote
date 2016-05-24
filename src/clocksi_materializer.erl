@@ -67,8 +67,6 @@ materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, 
     {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
         materialize_intern(Type, [], IncludeFromTime, FirstId, SnapshotCommitParams, Transaction,
             Ops, SnapshotCommitParams, false),
-%%    lager:info("going to apply operations: ~p~n",[OpList]),
-%%    lager:info("to the snapshot: ~p~n",[Snapshot]),
     case apply_operations(Type, Snapshot, OpList) of
         {ok, NewSS} ->
             {ok, NewSS, NewLastOp, LastOpCt, IsNewSS};
@@ -129,23 +127,22 @@ apply_operations(Type,Snapshot,[Op | Rest]) ->
 materialize_intern(_Type, OpList, _IncludeFromTime, FirstHole, _SnapshotCommitParams, _Transaction, [], LastOpCommitParams, NewSS) ->
     {ok, OpList, FirstHole, LastOpCommitParams, NewSS};
 
-materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitParams,
+materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitTime,
   Transaction, [{OpId, Op} | Rest], LastOpCommitParams, NewSS) ->
 %%    This first phase obtains, in OpsToApply, from the list of operations, the sublist of the ones
 %%    not already included in the Snapshot
     OpsToApply = case Type == Op#operation_payload.type of
                  true ->
                      OpCT = Op#operation_payload.dc_and_commit_time,
-                     {OpBaseSnapshot, LatestSnapshotCommitParams} = case Transaction#transaction.transactional_protocol of
+                     OpBaseSnapshot = case Transaction#transaction.transactional_protocol of
                                           Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                              {Op#operation_payload.snapshot_vc, SnapshotCommitParams};
-                                          nmsi ->
-                                              {CommitVC, _DepVC, _ReadTime} = SnapshotCommitParams,
-                                              {Op#operation_payload.dependency_vc, CommitVC}
+                                              Op#operation_payload.snapshot_vc;
+                                          physics ->
+                                              Op#operation_payload.dependency_vc
                                       end,
                      %% Check if the op is not in the previous snapshot and should be included in the new one
                      %% {should_be_included, is already_in_snapshot}
-                     case (is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LatestSnapshotCommitParams, LastOpCommitParams)) of
+                     case (is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, SnapshotCommitTime, LastOpCommitParams)) of
                          {true, _, NewOpCt} ->
                              %% Include the new op because it has a timestamp bigger than the snapshot being generated
                              {ok, [Op | OpList], NewOpCt, false, true, FirstHole};
@@ -163,16 +160,16 @@ materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitParam
 %%    Now we have the ops to apply, call the materializer to do so.
     case OpsToApply of
         {ok, NewOpList1, NewLastOpCt, false, NewSS1, NewHole} ->
-            materialize_intern(Type, NewOpList1, IncludeFromTime, NewHole, SnapshotCommitParams,
+            materialize_intern(Type, NewOpList1, IncludeFromTime, NewHole, SnapshotCommitTime,
                 Transaction, Rest, NewLastOpCt, NewSS1);
         {ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole} ->
             case OpId - 1 =< IncludeFromTime of
                 true ->
                     %% can skip the rest of the ops because they are already included in the SS
-                    materialize_intern(Type, NewOpList1, IncludeFromTime, NewHole, SnapshotCommitParams,
+                    materialize_intern(Type, NewOpList1, IncludeFromTime, NewHole, SnapshotCommitTime,
                         Transaction, [], NewLastOpCt, NewSS1);
                 false ->
-                    materialize_intern(Type, NewOpList1, IncludeFromTime, NewHole, SnapshotCommitParams,
+                    materialize_intern(Type, NewOpList1, IncludeFromTime, NewHole, SnapshotCommitTime,
                         Transaction, Rest, NewLastOpCt, NewSS1)
             end
     end.
@@ -249,18 +246,8 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParam
 %%      its base snapshot is compatible with a transaction's snapshot, as
 %%      defined by the metadata encoded in the Transaction record.
 compat(OpCommitVC, _OpBaseSnapshot, Transaction) ->
-%%    case Transaction#transaction.transactional_protocol of
-%%        nmsi ->
-%%            DepUpbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
-%%            CommitTimeLowbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
-%%            vector_orddict:is_causally_compatible(
-%%                OpCommitVC, CommitTimeLowbound, OpBaseSnapshot, DepUpbound);
-%%        Protocol  when ((Protocol == clocksi) or (Protocol == gr)) ->
             SnapshotTime = Transaction#transaction.snapshot_vc,
             vectorclock:le(OpCommitVC,SnapshotTime).
-%%        Other ->
-%%            {error, {unknown_transactional_protocol, Other}}
-%%    end.
 
 %% @doc Apply updates in given order without any checks.
 %%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
@@ -289,8 +276,6 @@ materializer_clocksi_test()->
                            dc_and_commit_time = {1, 4}, txid = 4, snapshot_vc =vectorclock:from_list([{1,4}])},
 
     Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
-%%    materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, Ops)
-%%    materialize(Type, Snapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) ->
     {ok, PNCounter2, 3, CommitTime2, _SsSave} = materialize(crdt_pncounter,
 						PNCounter, 0, ignore,
         #transaction{snapshot_vc = vectorclock:from_list([{1, 3}]),

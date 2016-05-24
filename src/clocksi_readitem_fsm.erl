@@ -224,8 +224,8 @@ perform_read_internal(Coordinator, Key, Type, Transaction, OpsCache, SnapshotCac
 check_clock(Key, Transaction, PreparedCache, Partition) ->
     Time = clocksi_vnode:now_microsec(dc_utilities:now()),
     case Transaction#transaction.transactional_protocol of
-        nmsi ->
-            DepUpbound = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
+        physics ->
+            DepUpbound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
             case ((DepUpbound == undefined) or (DepUpbound == [])) of
                 true ->
                     ready;

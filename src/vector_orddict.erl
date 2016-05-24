@@ -53,11 +53,11 @@ new() ->
 
 
 %% @doc gets the causally compatible version as defined
-%%      by the nmsi protocol's causal snapshot.
+%%      by the physics protocol's causal snapshot.
 -spec get_causally_compatible(transaction(), vector_orddict()) -> {undefined | {{vectorclock(), vectorclock()}, term()}, boolean()}.
 get_causally_compatible(Transaction, {List, _Size}) ->
-    DepUpboundVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.dep_upbound,
-    CommitTimeLowboundVC = Transaction#transaction.nmsi_read_metadata#nmsi_read_metadata.commit_time_lowbound,
+    DepUpboundVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+    CommitTimeLowboundVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
     {{Snapshot, {CommitVC, DepVC, ReadTime}}, IsFirst} = get_causally_compatible_internal(DepUpboundVC, CommitTimeLowboundVC, List, ignore),
     {{Snapshot, {CommitVC, DepVC, ReadTime}}, IsFirst}.
 
@@ -120,25 +120,25 @@ insert_internal(Vector,Val,[{FirstClock,FirstVal}|Rest],Size,PrevList) ->
     end.
 
 -spec insert_bigger({term()} | vectorclock(), term(),vector_orddict(), atom()) -> nonempty_vector_orddict().
-insert_bigger(Params,Val,{List,Size}, Protocol) ->
-    case Protocol of
-        {ok, nmsi} ->
-            {V1, V2, _RT} = Params,
-            insert_bigger_internal_nmsi({V1, V2},Val,List,Size);
-        _->
-            insert_bigger_internal(Params,Val,List,Size)
-    end.
+insert_bigger(Params,Val,{List,Size}, _Protocol) ->
+%%    case Protocol of
+%%        {ok, physics} ->
+%%            {V1, V2, _RT} = Params,
+%%            insert_bigger_internal_physics({V1, V2},Val,List,Size);
+%%        _->
+            insert_bigger_internal(Params,Val,List,Size).
+%%    end.
 
--spec insert_bigger_internal_nmsi({vectorclock(), vectorclock()},term(),list(),non_neg_integer()) -> nonempty_vector_orddict().
-insert_bigger_internal_nmsi({Vector1, Vector2},Val,[],0) ->
-    {[{{Vector1, Vector2},Val}],1};
-insert_bigger_internal_nmsi({Vector1, Vector2},Val,[{{FirstClock1, FirstClock2},FirstVal}|Rest],Size) ->
-    case not vectorclock:le(Vector1,FirstClock1) of
-        true ->
-            {[{{Vector1, Vector2},Val}|[{{FirstClock1, FirstClock2},FirstVal}|Rest]],Size+1};
-        false ->
-            {[{{FirstClock1, FirstClock2},FirstVal}|Rest],Size}
-    end.
+%%-spec insert_bigger_internal_physics({vectorclock(), vectorclock()},term(),list(),non_neg_integer()) -> nonempty_vector_orddict().
+%%insert_bigger_internal_physics({Vector1, Vector2},Val,[],0) ->
+%%    {[{{Vector1, Vector2},Val}],1};
+%%insert_bigger_internal_physics({Vector1, Vector2},Val,[{{FirstClock1, FirstClock2},FirstVal}|Rest],Size) ->
+%%    case not vectorclock:le(Vector1,FirstClock1) of
+%%        true ->
+%%            {[{{Vector1, Vector2},Val}|[{{FirstClock1, FirstClock2},FirstVal}|Rest]],Size+1};
+%%        false ->
+%%            {[{{FirstClock1, FirstClock2},FirstVal}|Rest],Size}
+%%    end.
 
 insert_bigger_internal(Vector,Val,[],0) ->
     {[{Vector,Val}],1};
