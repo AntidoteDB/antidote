@@ -45,9 +45,7 @@ init() ->
 
 %% @doc decode/2 callback. Decodes an incoming message.
 decode(Code, Bin) ->
-    lager:info("got the msg code ~p bin ~p", [Code, Bin]),
     Msg = riak_pb_codec:decode(Code, Bin),
-    %%lager:info("got the msg ~p code ~p bin ~p", [Msg, Code, Bin]),
     case Msg of
         #apbstarttransaction{} ->
             {ok, Msg, {"antidote.startxn",<<>>}};
@@ -71,7 +69,6 @@ decode(Code, Bin) ->
 
 %% @doc encode/1 callback. Encodes an outgoing response message.
 encode(Message) ->
-    lager:info("encoding msg ~p", [Message]),
     {ok, riak_pb_codec:encode(Message)}.
 
 process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
@@ -194,7 +191,6 @@ process(#apbstaticreadobjects{
 %% For legion clients
 process(#apbgetobjects{boundobjects=BoundObjects},
         State) ->
-    lager:info("blah2222 ~p", [BoundObjects]),
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
@@ -211,7 +207,6 @@ process(#apbgetobjects{boundobjects=BoundObjects},
     end;
 process(#apbgetlogoperations{timestamp=BClock,boundobjects=BoundObjects},
         State) ->
-    lager:info("blah 111 ~p", [BClock]),
     Clock = binary_to_term(BClock),
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
@@ -226,10 +221,7 @@ process(#apbgetlogoperations{timestamp=BClock,boundobjects=BoundObjects},
             {reply, antidote_pb_codec:encode(get_log_operations_response,
                                              {ok, lists:zip(Objects,Results)}),
              State}
-    end;
-process(Blah, State) ->
-    lager:info("blah ~p", [Blah]),
-    {reply, ok, State}.
+    end.
 
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.
