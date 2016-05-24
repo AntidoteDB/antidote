@@ -36,6 +36,8 @@
          update_objects/4,
          abort_transaction/1,
          commit_transaction/1,
+	 get_objects/1,
+	 get_log_operations/2,
          create_bucket/2,
          create_object/3,
          delete_object/1
@@ -228,6 +230,40 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                             end
                     end
             end
+    end.
+
+
+get_objects(Objects) ->
+    get_objects_internal(Objects,[]).
+
+get_objects_internal([],Acc) ->
+    {ok,lists:reverse(Acc)};
+get_objects_internal([{Key,Type,_Bucket}|Rest], Acc) ->
+    case materializer:check_operations([{read, {Key, Type}}]) of
+	ok ->
+	    case clocksi_interactive_tx_coord_fsm:perform_singleitem_get(Key,Type) of
+		{ok, Val, CommitTime} ->
+		    get_objects_internal(Rest,[{Val,CommitTime}|Acc]);
+		{error, Reason} ->
+		    {error, Reason}
+	    end;
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+
+get_log_operations(Objects, Clock) ->
+    get_log_operations_internal(Objects,Clock,[]).
+
+get_log_operations_internal([],_Clock,Acc) ->
+    {ok,lists:reverse(Acc)};
+get_log_operations_internal([{Key,Type,_Bucket}|Rest],Clock,Acc) ->
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    case logging_vnode:get_from_time(Node,LogId,Clock,Type,Key) of
+	{_Length,Ops,{_LastOp,_LatestSnapshot},_SnapshotCommitTime,_IsFirst} ->
+	    get_log_operations_internal(Rest,Clock,[Ops|Acc]);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 %% Object creation and types

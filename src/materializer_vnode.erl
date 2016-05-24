@@ -370,7 +370,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 	    {error, no_snapshot} ->
 		LogId = log_utilities:get_logid_from_key(Key),
 		[Node] = log_utilities:get_preflist_from_key(Key),
-		Res = logging_vnode:get(Node, LogId, MinSnapshotTime, Type, Key),
+		Res = logging_vnode:get_up_to_time(Node, LogId, MinSnapshotTime, Type, Key),
 		Res;
 	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
 		case ets:lookup(OpsCache, Key) of

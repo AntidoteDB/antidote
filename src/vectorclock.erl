@@ -32,6 +32,8 @@
          get_scalar_stable_time/0,
          get_partition_snapshot/1,
          from_list/1,
+	 to_json/1,
+	 from_json/1,
          new/0,
          eq/2,
          lt/2,
@@ -139,6 +141,21 @@ set_clock_of_dc(Key, Value, VectorClock) ->
 -spec from_list([{any(), non_neg_integer()}]) -> vectorclock().
 from_list(List) ->
     dict:from_list(List).
+
+to_json(VectorClock) ->
+    Elements = 
+	dict:fold(fun(DCID,Time,Acc) ->
+			  Acc++[[{dcid_and_time,
+				  [json_utilities:convert_to_json(DCID),Time]}]]
+		     end,[],VectorClock),
+    [{vectorclock,Elements}].
+
+from_json([{vectorclock,Elements}]) ->
+    List = 
+	lists:map(fun([{dcid_and_time,[JSONDCID,Time]}]) ->
+			 {json_utilities:deconvert_from_json(JSONDCID),Time}
+		 end,Elements),
+    from_list(List).
 
 -spec max([vectorclock()]) -> vectorclock().
 max([]) -> new();

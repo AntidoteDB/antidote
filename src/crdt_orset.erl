@@ -45,7 +45,7 @@
 -module(crdt_orset).
 
 %% API
--export([new/0, value/1, generate_downstream/3, update/2, equal/2,
+-export([new/0, value/1, generate_downstream/3, update/2, equal/2, to_json/1, from_json/1,
     to_binary/1, from_binary/1, value/2, precondition_context/1, stats/1, stat/2, is_operation/1]).
 
 -ifdef(TEST).
@@ -249,6 +249,20 @@ minimum_tokens(Tokens) ->
 -spec is_operation(term()) -> boolean().
 is_operation(Operation) ->
     riak_dt_orset:is_operation(Operation).
+
+to_json(ORSet) ->
+    Contents = 
+	lists:map(fun({Elem,Tokens}) ->
+			  [{element,[json_utilities:convert_to_json(Elem),
+				     [{tokens,json_utilities:list_to_json_binary_list(Tokens)}]]}]
+		  end, ORSet),
+    [{orset,Contents}].
+
+from_json([{orset,JSONContents}]) ->
+    lists:map(fun([{element,[Object,[{tokens,JSONTokens}]]}]) ->
+		      {json_utilities:deconvert_from_json(Object),
+		       json_utilities:json_binary_list_to_list(JSONTokens)}
+	      end, JSONContents).
 
 %% ===================================================================
 %% EUnit tests

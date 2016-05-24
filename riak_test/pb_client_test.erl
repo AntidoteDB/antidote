@@ -81,9 +81,13 @@ confirm() ->
     [Nodes9] = common:clean_clusters([Nodes8]),
     rt:wait_for_service(Node, antidote),
     update_set_read_test(),
-    [_] = common:clean_clusters([Nodes9]),
+    [Nodes10] = common:clean_clusters([Nodes9]),
     rt:wait_for_service(Node, antidote),
     static_transaction_test(),
+
+    [_Nodes11] = common:clean_clusters([Nodes10]),
+    rt:wait_for_service(Node, antidote),
+    pb_get_objects_test(),
     pass.
 
 start_stop_test() ->
@@ -119,6 +123,29 @@ get_empty_crdt_test() ->
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(true, antidotec_counter:is_type(Val)).
+
+pb_get_objects_test() ->
+    Key1 = <<"key_get_objects1">>,
+    Key2 = <<"key_get_objects2">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object1 = {Key1, crdt_orset, <<"bucket">>},
+    Bound_object2 = {Key2, crdt_orset, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object1, add, <<"a">>},{Bound_object2, add, <<"b">>}], TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    %% Read committed updated
+    
+    {ok, Val} = antidotec_pb:get_objects(Pid, [Bound_object1,Bound_object2]),
+    lager:info("The get objects result ~p", [Val]),
+    [[JObject1,JCommitTime1],[JObject2,JCommitTime2]]=Val,
+    Object1 = crdt_orset:from_json(JObject1),
+    Object2 = crdt_orset:from_json(JObject2),
+    CommitTime1 = vectorclock:from_json(JCommitTime1),
+    CommitTime2 = vectorclock:from_json(JCommitTime2),
+    lager:info("The base objects ~p", [[Object1,Object2]]),
+    lager:info("The commit times ~p", [[dict:to_list(CommitTime1),dict:to_list(CommitTime2)]]),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+    
 
 pb_test_counter_read_write(_Node) ->
     Key = <<"key_read_write">>,

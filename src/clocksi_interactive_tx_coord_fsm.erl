@@ -83,6 +83,7 @@
     abort/1,
     abort/2,
     perform_singleitem_read/2,
+    perform_singleitem_get/2,
     perform_singleitem_update/3,
     reply_to_client/1,
     generate_name/1]).
@@ -189,6 +190,16 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
 %%      transaction fsm and directly in the calling thread.
 -spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
+    perform_singleitem_operation(Key,Type,object_value).
+
+%% @doc This is the same as perform_singleitem_read, except returns
+%%      the object state instead of its value
+-spec perform_singleitem_get(key(), type()) -> {ok, term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_get(Key, Type) ->
+    perform_singleitem_operation(Key,Type,object_state).
+
+-spec perform_singleitem_operation(key(), type(), object_state | object_value) -> {ok, val() | term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_operation(Key, Type, ReturnType) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -196,12 +207,15 @@ perform_singleitem_read(Key, Type) ->
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
-            ReadResult = Type:value(Snapshot),
+            ReadResult =
+		case ReturnType of
+		    object_state -> Snapshot;
+		    object_value -> Type:value(Snapshot)
+		end,
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
             {ok, ReadResult, CommitTime}
     end.
-
 
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
