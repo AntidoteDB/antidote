@@ -418,7 +418,7 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
                                                 ignore ->
                                                     internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, OpsCache, SnapshotCache, ShouldGc);
                                                 _ ->
-                                                    materializer_vnode:store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
+                                                    store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
                                             end;
                                         _ ->
                                             ok
@@ -456,7 +456,7 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
 
-%%    lager:info("OperationDC = ~p~n OperationCommitTime = ~p~n OperationDependencyVC = ~p~n",[OperationDC, OperationCommitTime, OperationDependencyVC]),
+    lager:info("OperationDC = ~p~n OperationCommitTime = ~p~n OperationDependencyVC = ~p~n",[OperationDC, OperationCommitTime, OperationDependencyVC]),
 
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
     case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
@@ -511,6 +511,8 @@ op_not_already_in_snapshot(empty, _) ->
 op_not_already_in_snapshot(SSTime, CommitVC) ->
 %%    CommitVC = vectorclock:create_commit_vector_clock(DcId, CT, SSTime),
     not vectorclock:le(CommitVC, SSTime).
+%%vectorclock:strict_ge(CommitVC, SSTime).
+
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
@@ -522,11 +524,19 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
         true ->
             %% snapshots are no longer totally ordered
             PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
+
+            lager:info("Snapshots: ~p~n",[SnapshotDict]),
+            lager:info("Pruned Snapshots: ~p~n",[PrunedSnapshots]),
+
             FirstOp = vector_orddict:last(PrunedSnapshots),
-                    {CT, _S} = FirstOp,
+            lager:info("FirstOp: ~p~n",[FirstOp]),
+
+            {CT, _S} = FirstOp,
                     CommitTime = lists:foldl(fun({CT1, _ST}, Acc) ->
                         vectorclock:min([CT1, Acc])
                                              end, CT, vector_orddict:to_list(PrunedSnapshots)),
+
+            lager:info("Minimum commit time in snapshot pruned: ~p~n",[CommitTime]),
 
             {Key, Length, OpId, ListLen, OpsDict} = case ets:lookup(OpsCache, Key) of
                                                         [] ->
@@ -534,8 +544,21 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
                                                         [Tuple] ->
                                                             tuple_to_key(Tuple)
                                                     end,
+
+
+
+            lager:info("op lenght: ~p~n",[Length]),
+            lager:info("OpId: ~p~n",[OpId]),
+            lager:info("ListLen: ~p~n",[ListLen]),
+            lager:info("OpsDict: ~p~n",[OpsDict]),
+            lager:info("prunning ops with this commit time: ~p~n",[CommitTime]),
+
             {NewLength, PrunedOps} = prune_ops({Length, OpsDict}, CommitTime, Protocol),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
+
+            lager:info("NewLength: ~p~n",[NewLength]),
+            lager:info("PrunedOps: ~p~n",[PrunedOps]),
+
             %% Check if the pruned ops are lager or smaller than the previous list size
             %% if so create a larger or smaller list (by dividing or multiplying by 2)
             %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
@@ -558,6 +581,9 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
                                          end
                                  end
                          end,
+
+            lager:info("NewListLen: ~p~n",[NewListLen]),
+
             true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
@@ -573,12 +599,19 @@ prune_ops({_Len, OpsDict}, Threshold, Protocol) ->
 %% So can add a stop function to ordered_filter
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
+    lager:info("Threshold for prunning ops: ~p~n", [Threshold]),
     Res = reverse_and_filter(fun({_OpId, Op}) ->
         BaseSnapshotVC = case Protocol of {ok, physics} -> Op#operation_payload.dependency_vc;
-                             _-> Op#operation_payload.snapshot_vc
+                             _ -> Op#operation_payload.snapshot_vc
                          end,
         {DcId, CommitTime} = Op#operation_payload.dc_and_commit_time,
         CommitVC = vectorclock:create_commit_vector_clock(DcId, CommitTime, BaseSnapshotVC),
+        case op_not_already_in_snapshot(Threshold, CommitVC) of
+            true ->
+                lager:info("Op not already in snapshot, will stay ~p~n", [CommitVC]);
+            false ->
+                lager:info("Op already in snapshot, will NOT STAY ~p~n", [CommitVC])
+        end,
         (op_not_already_in_snapshot(Threshold, CommitVC))
                              end, OpsDict, ?FIRST_OP, []),
     case Res of
@@ -636,10 +669,13 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
     %% Perform the GC in case the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
     case ((Length) >= ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
+            lager:info("triggering GC by ops"),
+            lager:info("Length = ~p",[Length]),
+
             Type = DownstreamOp#operation_payload.type,
             NewTransaction = case Transaction of
                                  undefined -> %% the function is being called by the logging vnode at startup
-%%                    lager:info("Undefined transaction!!!"),
+                    lager:info("Undefined transaction!!!"),
                                      {ok, Protocol} = application:get_env(antidote, txn_prot),
                                      #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc,
                                          transactional_protocol = Protocol, txn_id = ignore};
@@ -652,6 +688,7 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
                                                                DownstreamOp#operation_payload.snapshot_vc
                                                        end}
                              end,
+            lager:info("Running internal read"),
             internal_read(Key, Type, NewTransaction, OpsCache, SnapshotCache, true),
             %% Have to get the new ops dict because the interal_read can change it
             {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
