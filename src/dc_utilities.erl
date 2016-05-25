@@ -158,7 +158,7 @@ ensure_all_vnodes_running_master(VnodeType) ->
 check_staleness() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     {ok, SS} = vectorclock:get_stable_snapshot(),
-    dict:fold(fun(DcId,Time,_Acc) ->
+    vectorclock:fold(fun(DcId,Time,_Acc) ->
 		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
 		      ok
 	      end, ok, SS).

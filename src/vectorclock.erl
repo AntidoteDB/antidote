@@ -39,10 +39,16 @@
     gt/2,
     le/2,
     ge/2,
+    find/2,
     strict_ge/2,
     strict_le/2,
     max/1,
     min/1,
+    fold/3,
+    store/3,
+    fetch/2,
+    erase/2,
+    map/2,
     max_vc/2,
     min_vc/2]).
 
@@ -50,7 +56,26 @@
 
 -spec new() -> vectorclock().
 new() ->
-    dict:new().
+    orddict:new().
+
+fold(F, Acc, [{Key,Val}|D]) ->
+    orddict:fold(F, F(Key, Val, Acc), D);
+fold(F, Acc, []) when is_function(F, 3) -> Acc.
+
+find(Key, Orddict) ->
+    orddict:find(Key, Orddict).
+
+store(Key, Value, Orddict1) ->
+    orddict:store(Key, Value, Orddict1).
+
+fetch(Key, Orddict)->
+    orddict:fetch(Key, Orddict).
+
+erase(Key, Orddict1)->
+    orddict:erase(Key, Orddict1).
+
+map(Fun, Orddict1) ->
+    orddict:map(Fun, Orddict1).
 
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
@@ -70,18 +95,18 @@ get_stable_snapshot() ->
                     {ok, SS};
                 {ok, gr} ->
                     %% For gentlerain use the same format as clocksi
-                    %% But, replicate GST to all entries in the dict
+                    %% But, replicate GST to all entries in the orddict
                     StableSnapshot = SS,
-                    case dict:size(StableSnapshot) of
+                    case orddict:size(StableSnapshot) of
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            ListTime = dict:fold(
+                            ListTime = vectorclock:fold(
                                 fun(_Key, Value, Acc) ->
                                     [Value | Acc]
                                 end, [], StableSnapshot),
                             GST = lists:min(ListTime),
-                            {ok, dict:map(
+                            {ok, orddict:map(
                                 fun(_K, _V) ->
                                     GST
                                 end,
@@ -106,9 +131,9 @@ get_partition_snapshot(Partition) ->
 -spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
-    %% dict:is_empty/1 is not available, hence using dict:size/1
+    %% orddict:is_empty/1 is not available, hence using orddict:size/1
     %% to check whether it is empty
-    case dict:size(StableSnapshot) of
+    case orddict:size(StableSnapshot) of
         0 ->
             %% This case occur when updates from remote replicas has not yet received
             %% or when there are no remote replicas
@@ -120,7 +145,7 @@ get_scalar_stable_time() ->
             %% This is correct only if stablesnapshot has entries for
             %% all DCs. Inorder to check that we need to configure the 
             %% number of DCs in advance, which is not possible now.
-            ListTime = dict:fold(
+            ListTime = orddict:fold(
                 fun(_Key, Value, Acc) ->
                     [Value | Acc]
                 end, [], StableSnapshot),
@@ -130,14 +155,14 @@ get_scalar_stable_time() ->
 
 -spec get_clock_of_dc(any(), vectorclock()) -> non_neg_integer().
 get_clock_of_dc(Key, VectorClock) ->
-    case dict:find(Key, VectorClock) of
+    case orddict:find(Key, VectorClock) of
         {ok, Value} -> Value;
         error -> 0
     end.
 
 -spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> vectorclock().
 set_clock_of_dc(Key, Value, VectorClock) ->
-    dict:store(Key, Value, VectorClock).
+    orddict:store(Key, Value, VectorClock).
 
 -spec create_commit_vector_clock(any(), non_neg_integer(), vectorclock()) -> vectorclock().
 create_commit_vector_clock(Key, Value, VectorClock)->
@@ -145,7 +170,7 @@ set_clock_of_dc(Key, Value, VectorClock).
 
 -spec from_list([{any(), non_neg_integer()}]) -> vectorclock().
 from_list(List) ->
-    dict:from_list(List).
+    orddict:from_list(List).
 
 -spec max([vectorclock()]) -> vectorclock().
 max([]) -> new();
@@ -182,7 +207,7 @@ min([V1, V2 | T]) -> min([merge(fun erlang:min/2, V1, V2) | T]).
 
 -spec merge(fun((non_neg_integer(), non_neg_integer()) -> non_neg_integer()), vectorclock(), vectorclock()) -> vectorclock().
 merge(F, V1, V2) ->
-    AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+    AllDCs = orddict:fetch_keys(V1) ++ orddict:fetch_keys(V2),
     Func = fun(DC) ->
         A = get_clock_of_dc(DC, V1),
         B = get_clock_of_dc(DC, V2),
@@ -193,7 +218,7 @@ merge(F, V1, V2) ->
 -spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->
     %% We could but do not care about duplicate DC keys - finding duplicates is not worth the effort
-    AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+    AllDCs = orddict:fetch_keys(V1) ++ orddict:fetch_keys(V2),
     Func = fun(DC) ->
         A = get_clock_of_dc(DC, V1),
         B = get_clock_of_dc(DC, V2),

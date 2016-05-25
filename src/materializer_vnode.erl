@@ -100,7 +100,7 @@ get_cache_name(Partition,Base) ->
 
 %%@doc write operation to cache for future read, updates are stored
 %%     one at a time into the ets tables
--spec update(key(), clocksi_payload(), transaction()) -> ok | {error, reason()}.
+-spec update(key(), operation_payload(), transaction()) -> ok | {error, reason()}.
 update(Key, DownstreamOp, Transaction) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -509,9 +509,7 @@ op_not_already_in_snapshot(_, empty) ->
 op_not_already_in_snapshot(empty, _) ->
     true;
 op_not_already_in_snapshot(SSTime, CommitVC) ->
-%%    CommitVC = vectorclock:create_commit_vector_clock(DcId, CT, SSTime),
     not vectorclock:le(CommitVC, SSTime).
-%%vectorclock:strict_ge(CommitVC, SSTime).
 
 
 %% @doc Operation to insert a Snapshot in the cache and start
@@ -606,7 +604,7 @@ prune_ops({_Len, OpsDict}, Threshold, Protocol) ->
                          end,
         {DcId, CommitTime} = Op#operation_payload.dc_and_commit_time,
         CommitVC = vectorclock:create_commit_vector_clock(DcId, CommitTime, BaseSnapshotVC),
-        case op_not_already_in_snapshot(Threshold, CommitVC) of
+        case (op_not_already_in_snapshot(Threshold, CommitVC) or (Threshold == CommitVC)) of
             true ->
                 lager:info("Op not already in snapshot, will stay ~p~n", [CommitVC]);
             false ->
@@ -656,7 +654,7 @@ reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), clocksi_payload(), cache_id(), cache_id(), transaction()) -> true.
+-spec op_insert_gc(key(), operation_payload(), cache_id(), cache_id(), transaction()) -> true.
 op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
     case ets:member(OpsCache, Key) of
         false ->

@@ -477,7 +477,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
         true ->
             case TxWriteSet of
                 [{Key, _, _Operation} | _] ->
-                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
+                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, orddict:new()),
                     NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
                     NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
@@ -510,14 +510,14 @@ set_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, PrepareTime, A
             set_prepared(PreparedTx, Rest, TxId, PrepareTime, Acc);
         false ->
             true = ets:insert(PreparedTx, {Key, [{TxId, PrepareTime} | ActiveTxs]}),
-            set_prepared(PreparedTx, Rest, TxId, PrepareTime, dict:append_list(Key, ActiveTxs, Acc))
+            set_prepared(PreparedTx, Rest, TxId, PrepareTime, orddict:append_list(Key, ActiveTxs, Acc))
     end.
 
 reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
 reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
-    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | orddict:fetch(Key, ActiveTxs)]}),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->

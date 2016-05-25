@@ -82,7 +82,7 @@ read_multiple_test(Nodes) ->
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O1, increment, 1}]]),
     O2 = {o2, riak_dt_pncounter, bucket},
     {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O2, increment, 1}]]),
-    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [CT, {}, [O1,O2]]),
+        {ok, Res, _} = rpc:call(Node, antidote, read_objects, [CT, {}, [O1,O2]]),
     ?assertMatch([1,1], Res).
 
 replication_test(Node1, Node2) ->

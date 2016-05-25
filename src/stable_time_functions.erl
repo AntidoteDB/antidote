@@ -29,7 +29,7 @@
 %% These functions are input to create a meta_data_sender
 %% The functions merge by taking the minimum of all entries per node per DC
 export_funcs_and_vals() ->
-    [stable, fun update_func_min/2, fun get_min_time/1, dict:new(), dict:new()].
+    [stable, fun update_func_min/2, fun get_min_time/1, vectorclock:new(), vectorclock:new()].
 
 update_func_min(Last,Time) ->
     case Last of
@@ -40,38 +40,38 @@ update_func_min(Last,Time) ->
     end.
 
 %% This assumes the dicts being sent have all DCs
-get_min_time(Dict) ->
-    {MinDict,FoundUndefined} =
-	dict:fold(fun(NodeId, NodeDict, {Acc1,Undefined}) ->
-			  case NodeDict of
-			      undefined ->
-				  lager:info("missing a time for node ~p", [NodeId]),
-				  {Acc1,true};
-			      _ ->
-				  RetDict =
-				      dict:fold(fun(DcId, Time, Acc2) ->
-							PrevTime = case dict:find(DcId, Acc2) of
-								       {ok, Val} ->
-									   Val;
-								       error ->
-									   Time
-								   end,
+get_min_time(VectorClock) ->
+	{MinDict, FoundUndefined} =
+		vectorclock:fold(fun(NodeId, NodeDict, {Acc1, Undefined}) ->
+			case NodeDict of
+				undefined ->
+					lager:info("missing a time for node ~p", [NodeId]),
+					{Acc1, true};
+				_ ->
+					RetDict =
+						vectorclock:fold(fun(DcId, Time, Acc2) ->
+							PrevTime = case vectorclock:find(DcId, Acc2) of
+										   {ok, Val} ->
+											   Val;
+										   error ->
+											   Time
+									   end,
 							case PrevTime >= Time of
-							    true ->
-								dict:store(DcId, Time, Acc2);
-							    false ->
-								dict:store(DcId, PrevTime, Acc2)
+								true ->
+									vectorclock:store(DcId, Time, Acc2);
+								false ->
+									vectorclock:store(DcId, PrevTime, Acc2)
 							end
-						end, Acc1, NodeDict),
-				  {RetDict,Undefined}
-			  end
-		  end, {dict:new(),false}, Dict),
-    %% This means we didn't get updated from all nodes/paritions so 0 is the stable time
-    case FoundUndefined of
-	true ->
-	    dict:fold(fun(NodeId, _Val, Acc) ->
-			      dict:store(NodeId,0,Acc)
-		      end, dict:new(), MinDict);
-	false ->
-	    MinDict
-    end.
+										 end, Acc1, NodeDict),
+					{RetDict, Undefined}
+			end
+						 end, {vectorclock:new(), false}, VectorClock),
+	%% This means we didn't get updated from all nodes/paritions so 0 is the stable time
+	case FoundUndefined of
+		true ->
+			vectorclock:fold(fun(NodeId, _Val, Acc) ->
+				vectorclock:store(NodeId, 0, Acc)
+							 end, vectorclock:new(), MinDict);
+		false ->
+			MinDict
+	end.

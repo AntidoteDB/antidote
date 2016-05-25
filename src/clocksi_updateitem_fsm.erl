@@ -59,7 +59,7 @@ check_clock(timeout, SD0=#state{vclock=Vclock}) ->
     DcId = dc_utilities:get_my_dc_id(),
     T_TS = vectorclock:get_clock_of_dc(DcId, Vclock),
     Time = clocksi_vnode:now_microsec(dc_utilities:now()),
-    Newclock = dict:erase(DcId, Vclock),
+    Newclock = vectorclock:erase(DcId, Vclock),
     case T_TS > Time of
         true ->
             timer:sleep((T_TS - Time)div 1000 +1 ),

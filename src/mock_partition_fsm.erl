@@ -94,7 +94,7 @@ get_preflist_from_key(_Key) ->
     [Pid].
 
 get_stable_snapshot() ->
-    {ok, dict:new()}.
+    {ok, vectorclock:new()}.
 
 get_logid_from_key(_Key) ->
     self().

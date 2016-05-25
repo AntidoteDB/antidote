@@ -55,7 +55,7 @@ new(Type) ->
   integer(),
   snapshot_time() | ignore | {snapshot_time(),snapshot_time()},
   transaction(),
-  [{integer(), clocksi_payload()}]) ->
+  [{integer(), operation_payload()}]) ->
     {ok, snapshot(), integer(), snapshot_time() | ignore, boolean()} | {error, reason()}.
 materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, Ops) ->
     FirstId = case Ops of
@@ -81,7 +81,7 @@ materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, 
 %%      OpList: The list of operations to apply
 %%      Output: Either the snapshot with the operations applied to
 %%      it, or an error.
--spec apply_operations(type(), snapshot(), [clocksi_payload()]) -> {ok, snapshot()} | {error, reason()}.
+-spec apply_operations(type(), snapshot(), [operation_payload()]) -> {ok, snapshot()} | {error, reason()}.
 apply_operations(_Type,Snapshot,[]) ->
     {ok, Snapshot};
 apply_operations(Type,Snapshot,[Op | Rest]) ->
@@ -115,15 +115,15 @@ apply_operations(Type,Snapshot,[Op | Rest]) ->
 %%      The fourth element is the snapshot time of the last operation in the list.
 %%      The fifth element is a boolean, true if a new snapshot should be generated, false otherwise.
 -spec materialize_intern(type(),
-			 [clocksi_payload()],
+			 [operation_payload()],
 			 integer(),
 			 integer(),
              snapshot_time() | {snapshot_time(), snapshot_time()} | ignore,
              transaction(),
-			 [{integer(),clocksi_payload()}],
+			 [{integer(),operation_payload()}],
 			 snapshot_time() | ignore,
 			 boolean()) ->
-				{ok,[clocksi_payload()],integer(),snapshot_time()|ignore,boolean()}.
+				{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean()}.
 materialize_intern(_Type, OpList, _IncludeFromTime, FirstHole, _SnapshotCommitParams, _Transaction, [], LastOpCommitParams, NewSS) ->
     {ok, OpList, FirstHole, LastOpCommitParams, NewSS};
 
@@ -189,7 +189,7 @@ materialize_intern(Type, OpList, IncludeFromTime, FirstHole, SnapshotCommitTime,
 %%      is a boolean that is true if the operation was already included in the previous snapshot,
 %%      false otherwise.  The thrid element is the snapshot time of the last operation to
 %%      be applied to the snapshot
--spec is_op_in_snapshot(clocksi_payload(), commit_time(), snapshot_time(), transaction(),
+-spec is_op_in_snapshot(operation_payload(), commit_time(), snapshot_time(), transaction(),
   snapshot_time() | ignore, snapshot_time()) -> {boolean(), boolean(), snapshot_time()}.
 is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParams, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
@@ -214,14 +214,14 @@ is_op_in_snapshot(Op, OpCT, OpBaseSnapshot, Transaction, LastSnapshotCommitParam
             %% IncludeInSnapshot is true if the op should be included in the snapshot
             %% NewTime is the updated vectorclock of the snapshot that includes Op
             {IncludeInSnapshot, NewTime} =
-                dict:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
+                orddict:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
                     Res1 = case compat(OpCommitVC, OpBaseSnapshot, Transaction) of
                                false ->
                                    false;
                                true ->
                                    Acc
                            end,
-                    Res2 = dict:update(DcIdOp, fun(Val) ->
+                    Res2 = orddict:update(DcIdOp, fun(Val) ->
                         case TimeOp > Val of
                             true ->
                                 TimeOp;

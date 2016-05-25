@@ -137,10 +137,11 @@
 -type type() :: atom().
 -type bucket() :: term().
 -type snapshot() :: term().
+-type orddict() :: orddict().
 -type snapshot_time() :: vectorclock:vectorclock().
 -type commit_time() :: {dcid(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
--type clocksi_payload() :: #operation_payload{}.
+-type operation_payload() :: #operation_payload{}.
 -type dcid() :: term().
 -type transaction() :: #transaction{}.
 %-type physics_tx() :: #physics_transaction{}.
@@ -189,6 +190,6 @@
     %% The following are needed by the physics protocol
     %% Should I create a new tx_coord_record?
     version_min :: clock_value() | undefined,
-    keys_access_time :: dict()
+    keys_access_time :: orddict()
 }).
 

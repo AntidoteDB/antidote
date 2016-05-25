@@ -136,10 +136,10 @@ parallel_writes_test(Cluster1, Cluster2, Cluster3) ->
                 {ok, CT2} ->
                 receive
                     {ok, CT3} ->
-                        Time = dict:merge(fun(_K, T1,T2) ->
+                        Time = orddict:merge(fun(_K, T1,T2) ->
                                                   max(T1,T2)
                                           end,
-                                          CT3, dict:merge(
+                                          CT3, orddict:merge(
                                                  fun(_K, T1,T2) ->
                                                          max(T1,T2)
                                                  end,

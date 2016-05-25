@@ -170,12 +170,13 @@ wait_for_stable_snapshot(DCID, MinValue) ->
     true -> ok;
     false ->
       {ok, SS} = vectorclock:get_stable_snapshot(),
-      Value = vectorclock:get_clock_of_dc(DCID, SS),
+        Value = vectorclock:get_clock_of_dc(DCID, SS),
       case Value > MinValue of
         true ->
           lager:info("Connected to DC ~p", [DCID]),
           ok;
         false ->
+            lager:info("Stable Snapshot ~p", [SS]),
           lager:info("Waiting for DC ~p", [DCID]),
           timer:sleep(1000),
           wait_for_stable_snapshot(DCID, MinValue)

@@ -891,15 +891,22 @@ downstream_fail_test(Pid) ->
 
 
 get_snapshot_time_test() ->
+%%    {ok, SnapshotTime} = get_snapshot_time(),
+%%    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)).
     {ok, SnapshotTime} = get_snapshot_time(),
-    ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime)).
+    ?assertMatch([{mock_dc, _}], SnapshotTime).
 
 wait_for_clock_test() ->
-    {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
-    ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime)),
+%%    {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
+%%    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)),
+%%    VecClock = clocksi_vnode:now_microsec(dc_utilities:now()),
+%%    {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
+%%    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime2)).
+    {ok, SnapshotTime} = wait_for_clock([{mock_dc, 10}]),
+    ?assertMatch([{mock_dc, _}], SnapshotTime),
     VecClock = clocksi_vnode:now_microsec(dc_utilities:now()),
-    {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
-    ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime2)).
+    {ok, SnapshotTime2} = wait_for_clock([{mock_dc, VecClock}]),
+    ?assertMatch([{mock_dc, _}], SnapshotTime2).
 
 
 -endif.
