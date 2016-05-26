@@ -357,13 +357,13 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
             {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
         [Tuple] ->
             {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
-            lager:info("Opsfor key = ~p",[OperationsForKey]),
+%%            lager:info("Opsfor key = ~p",[OperationsForKey]),
             {UpdatedTxnRecord, TempCommitParameters} = case Protocol of
                                                            physics ->
                                                                case TxnId of ignore -> {Transaction, empty};
                                                                    _ ->
                                                                        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey),
-                                                                       lager:info("Using this operation VC for snapshot = ~p",[OperationCommitVC]),
+%%                                                                       lager:info("Using this operation VC for snapshot = ~p",[OperationCommitVC]),
                                                                        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams}
                                                                end;
                                                            Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
@@ -400,7 +400,7 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
                 end,
             case Length of
                 0 ->
-                    lager:info("materializer_vnode: line 489 IS THIS POSSIBLE?"),
+%%                    lager:info("materializer_vnode: line 489 IS THIS POSSIBLE?"),
                     {ok, {LatestSnapshot, SnapshotCommitTime}};
                 _ ->
                     case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, UpdatedTxnRecord, Ops) of
@@ -458,7 +458,7 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
 
-    lager:info("OperationDC = ~p~n OperationCommitTime = ~p~n OperationDependencyVC = ~p~n",[OperationDC, OperationCommitTime, OperationDependencyVC]),
+%%    lager:info("OperationDC = ~p~n OperationCommitTime = ~p~n OperationDependencyVC = ~p~n",[OperationDC, OperationCommitTime, OperationDependencyVC]),
 
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
     case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
@@ -525,18 +525,18 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
             %% snapshots are no longer totally ordered
             PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
 
-            lager:info("Snapshots: ~p~n",[SnapshotDict]),
-            lager:info("Pruned Snapshots: ~p~n",[PrunedSnapshots]),
+%%            lager:info("Snapshots: ~p~n",[SnapshotDict]),
+%%            lager:info("Pruned Snapshots: ~p~n",[PrunedSnapshots]),
 
             FirstOp = vector_orddict:last(PrunedSnapshots),
-            lager:info("FirstOp: ~p~n",[FirstOp]),
+%%            lager:info("FirstOp: ~p~n",[FirstOp]),
 
             {CT, _S} = FirstOp,
                     CommitTime = lists:foldl(fun({CT1, _ST}, Acc) ->
                         vectorclock:min([CT1, Acc])
                                              end, CT, vector_orddict:to_list(PrunedSnapshots)),
 
-            lager:info("Minimum commit time in snapshot pruned: ~p~n",[CommitTime]),
+%%            lager:info("Minimum commit time in snapshot pruned: ~p~n",[CommitTime]),
 
             {Key, Length, OpId, ListLen, OpsDict} = case ets:lookup(OpsCache, Key) of
                                                         [] ->
@@ -547,17 +547,17 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
 
 
 
-            lager:info("op lenght: ~p~n",[Length]),
-            lager:info("OpId: ~p~n",[OpId]),
-            lager:info("ListLen: ~p~n",[ListLen]),
-            lager:info("OpsDict: ~p~n",[OpsDict]),
-            lager:info("prunning ops with this commit time: ~p~n",[CommitTime]),
+%%            lager:info("op lenght: ~p~n",[Length]),
+%%            lager:info("OpId: ~p~n",[OpId]),
+%%            lager:info("ListLen: ~p~n",[ListLen]),
+%%            lager:info("OpsDict: ~p~n",[OpsDict]),
+%%            lager:info("prunning ops with this commit time: ~p~n",[CommitTime]),
 
             {NewLength, PrunedOps} = prune_ops({Length, OpsDict}, CommitTime, Protocol),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
 
-            lager:info("NewLength: ~p~n",[NewLength]),
-            lager:info("PrunedOps: ~p~n",[PrunedOps]),
+%%            lager:info("NewLength: ~p~n",[NewLength]),
+%%            lager:info("PrunedOps: ~p~n",[PrunedOps]),
 
             %% Check if the pruned ops are lager or smaller than the previous list size
             %% if so create a larger or smaller list (by dividing or multiplying by 2)
@@ -582,7 +582,7 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
                                  end
                          end,
 
-            lager:info("NewListLen: ~p~n",[NewListLen]),
+%%            lager:info("NewListLen: ~p~n",[NewListLen]),
 
             true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
         false ->
@@ -606,23 +606,15 @@ prune_ops({_Len, OpsDict}, Threshold, Protocol) ->
         {DcId, CommitTime} = Op#operation_payload.dc_and_commit_time,
         CommitVC = vectorclock:create_commit_vector_clock(DcId, CommitTime, BaseSnapshotVC),
         (op_not_already_in_snapshot(Threshold, CommitVC))
-                             end, OpsDict, ?FIRST_OP, []),
-    lager:info("Res = ",[Res]),
-%%
-%%    [{2,[
-%%        {5,{15, {operation_payload,ale,riak_dt_pncounter,{merge,[{a,14,0}]},undefined,[],{{'antidote@127.0.0.1',{1464,253582,828829}},1464254495305898},{tx_id,1464254495304559,<0.4265.0>}}}},
-%%        {4,{16,{operation_payload,ale,riak_dt_pncounter,{merge,[{a,15,0}]},undefined,[],{{'antidote@127.0.0.1',{1464,253582,828829}},1464254495449237},{tx_id,1464254495447315,<0.4269.0>}}}}]}]
-%%
-
-
+                             end, lists:reverse(OpsDict), ?FIRST_OP, []),
     case Res of
         {_, []} ->
             [First | _Rest] = OpsDict,
             {1, [{?FIRST_OP, First}]};
-        {Number, UnsortedOpList} ->
-            SortedOpList = lists:reverse(lists:sort(UnsortedOpList)),
-            {Number, SortedOpList}
+        _ ->
+            Res
     end.
+
 
 %% This is an internal function used to convert the tuple stored in ets
 %% to a tuple and list usable by the materializer
