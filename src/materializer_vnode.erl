@@ -457,9 +457,6 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
     TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
-
-%%    lager:info("OperationDC = ~p~n OperationCommitTime = ~p~n OperationDependencyVC = ~p~n",[OperationDC, OperationCommitTime, OperationDependencyVC]),
-
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
     case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
         true ->
@@ -524,41 +521,19 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
         true ->
             %% snapshots are no longer totally ordered
             PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
-
-%%            lager:info("Snapshots: ~p~n",[SnapshotDict]),
-%%            lager:info("Pruned Snapshots: ~p~n",[PrunedSnapshots]),
-
             FirstOp = vector_orddict:last(PrunedSnapshots),
-%%            lager:info("FirstOp: ~p~n",[FirstOp]),
-
             {CT, _S} = FirstOp,
                     CommitTime = lists:foldl(fun({CT1, _ST}, Acc) ->
                         vectorclock:min([CT1, Acc])
                                              end, CT, vector_orddict:to_list(PrunedSnapshots)),
-
-%%            lager:info("Minimum commit time in snapshot pruned: ~p~n",[CommitTime]),
-
             {Key, Length, OpId, ListLen, OpsDict} = case ets:lookup(OpsCache, Key) of
                                                         [] ->
                                                             {Key, 0, 0, 0, []};
                                                         [Tuple] ->
                                                             tuple_to_key(Tuple)
                                                     end,
-
-
-
-%%            lager:info("op lenght: ~p~n",[Length]),
-%%            lager:info("OpId: ~p~n",[OpId]),
-%%            lager:info("ListLen: ~p~n",[ListLen]),
-%%            lager:info("OpsDict: ~p~n",[OpsDict]),
-%%            lager:info("prunning ops with this commit time: ~p~n",[CommitTime]),
-
             {NewLength, PrunedOps} = prune_ops({Length, OpsDict}, CommitTime, Protocol),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-
-%%            lager:info("NewLength: ~p~n",[NewLength]),
-%%            lager:info("PrunedOps: ~p~n",[PrunedOps]),
-
             %% Check if the pruned ops are lager or smaller than the previous list size
             %% if so create a larger or smaller list (by dividing or multiplying by 2)
             %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
@@ -581,9 +556,6 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache, ShouldGc, Protoco
                                          end
                                  end
                          end,
-
-%%            lager:info("NewListLen: ~p~n",[NewListLen]),
-
             true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
         false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
