@@ -249,12 +249,13 @@ perform_singleitem_update(Key, Type, Params) ->
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
         {ok, DownstreamRecord, Parameters} ->
-            Updated_partition = case Transaction#transaction.transactional_protocol of
-                                    physics ->
-                                        [{IndexNode, [{Key, Type, {DownstreamRecord, Parameters}}]}];
-                                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                        [{IndexNode, [{Key, Type, DownstreamRecord}]}]
-                                end,
+            Updated_partition =
+%%                case Transaction#transaction.transactional_protocol of
+%%                                    physics ->
+%%                                        [{IndexNode, [{Key, Type, {DownstreamRecord, Parameters}}]}];
+%%                                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                        [{IndexNode, [{Key, Type, DownstreamRecord}]}],
+%%                                end,
             LogRecord = #log_record{tx_id = TxId, op_type = update,
                 op_payload = {Key, Type, DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
@@ -262,18 +263,18 @@ perform_singleitem_update(Key, Type, Params) ->
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                 {ok, _} ->
                     case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
-                        {committed, CommitParameters} ->
+                        {committed, CommitTime} ->
                             DcId = ?DC_UTIL:get_my_dc_id(),
-                            CausalClock = case Transaction#transaction.transactional_protocol of
-                                              physics ->
-                                                  {CommitTime, DepVC} = CommitParameters,
-                                                  vectorclock:set_clock_of_dc(
-                                                      DcId, CommitTime, DepVC);
-                                              Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-                                                  CommitTime = CommitParameters,
-                                                  vectorclock:set_clock_of_dc(
-                                                      DcId, CommitTime, Transaction#transaction.snapshot_vc)
-                                          end,
+                            SnapshotVC =
+                                case Transaction#transaction.transactional_protocol of
+                                    physics ->
+                                        {_CommitVC, DepVC, _ReadTime} = Parameters,
+                                        DepVC;
+                                    Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+                                        Transaction#transaction.snapshot_vc
+                                end,
+                            CausalClock = vectorclock:set_clock_of_dc(
+                                DcId, CommitTime, SnapshotVC),
                             {ok, {TxId, [], CausalClock}};
                         abort ->
                             {error, aborted};

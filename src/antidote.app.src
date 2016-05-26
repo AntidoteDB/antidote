@@ -16,5 +16,5 @@
      %% clocksi: antidote w/ and without certification check.
      %% gr: gentleRain
      %% physics: physics
-  {env, [{txn_cert, true}, {txn_prot, physics}, {recover_from_log, true}]}
+  {env, [{txn_cert, false}, {txn_prot, physics}, {recover_from_log, true}]}
  ]}.
