@@ -326,7 +326,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     %% todo: another for logging, and finally one (or two) for  commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
-        {ok, DownstreamRecord, _SnapshotParameters} ->
+        {ok, DownstreamRecord, SnapshotParameters} ->
 %%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
             NewUpdatedPartitions = case WriteSet of
                                        [] ->
@@ -350,7 +350,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
                 {ok, _} ->
                     State1 = case Transaction#transaction.transactional_protocol of
                         physics->
-                            update_causal_snapshot_state(CoordState, _SnapshotParameters, Key);
+                            update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
                         Protocol when ((Protocol == gr) or (Protocol == clocksi))->
                             CoordState
                     end,

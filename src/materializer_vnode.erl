@@ -357,11 +357,13 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
             {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
         [Tuple] ->
             {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
+            lager:info("Opsfor key = ~p",[OperationsForKey]),
             {UpdatedTxnRecord, TempCommitParameters} = case Protocol of
                                                            physics ->
                                                                case TxnId of ignore -> {Transaction, empty};
                                                                    _ ->
                                                                        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey),
+                                                                       lager:info("Using this operation VC for snapshot = ~p",[OperationCommitVC]),
                                                                        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams}
                                                                end;
                                                            Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
@@ -597,27 +599,29 @@ prune_ops({_Len, OpsDict}, Threshold, Protocol) ->
 %% So can add a stop function to ordered_filter
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
-    lager:info("Threshold for prunning ops: ~p~n", [Threshold]),
     Res = reverse_and_filter(fun({_OpId, Op}) ->
         BaseSnapshotVC = case Protocol of {ok, physics} -> Op#operation_payload.dependency_vc;
                              _ -> Op#operation_payload.snapshot_vc
                          end,
         {DcId, CommitTime} = Op#operation_payload.dc_and_commit_time,
         CommitVC = vectorclock:create_commit_vector_clock(DcId, CommitTime, BaseSnapshotVC),
-        case (op_not_already_in_snapshot(Threshold, CommitVC) or (Threshold == CommitVC)) of
-            true ->
-                lager:info("Op not already in snapshot, will stay ~p~n", [CommitVC]);
-            false ->
-                lager:info("Op already in snapshot, will NOT STAY ~p~n", [CommitVC])
-        end,
         (op_not_already_in_snapshot(Threshold, CommitVC))
                              end, OpsDict, ?FIRST_OP, []),
+    lager:info("Res = ",[Res]),
+%%
+%%    [{2,[
+%%        {5,{15, {operation_payload,ale,riak_dt_pncounter,{merge,[{a,14,0}]},undefined,[],{{'antidote@127.0.0.1',{1464,253582,828829}},1464254495305898},{tx_id,1464254495304559,<0.4265.0>}}}},
+%%        {4,{16,{operation_payload,ale,riak_dt_pncounter,{merge,[{a,15,0}]},undefined,[],{{'antidote@127.0.0.1',{1464,253582,828829}},1464254495449237},{tx_id,1464254495447315,<0.4269.0>}}}}]}]
+%%
+
+
     case Res of
         {_, []} ->
             [First | _Rest] = OpsDict,
             {1, [{?FIRST_OP, First}]};
-        _ ->
-            Res
+        {Number, UnsortedOpList} ->
+            SortedOpList = lists:reverse(lists:sort(UnsortedOpList)),
+            {Number, SortedOpList}
     end.
 
 %% This is an internal function used to convert the tuple stored in ets
@@ -667,13 +671,9 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
     %% Perform the GC in case the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
     case ((Length) >= ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
-            lager:info("triggering GC by ops"),
-            lager:info("Length = ~p",[Length]),
-
             Type = DownstreamOp#operation_payload.type,
             NewTransaction = case Transaction of
                                  undefined -> %% the function is being called by the logging vnode at startup
-                    lager:info("Undefined transaction!!!"),
                                      {ok, Protocol} = application:get_env(antidote, txn_prot),
                                      #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc,
                                          transactional_protocol = Protocol, txn_id = ignore};
@@ -686,7 +686,6 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
                                                                DownstreamOp#operation_payload.snapshot_vc
                                                        end}
                              end,
-            lager:info("Running internal read"),
             internal_read(Key, Type, NewTransaction, OpsCache, SnapshotCache, true),
             %% Have to get the new ops dict because the interal_read can change it
             {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
