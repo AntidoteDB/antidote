@@ -340,8 +340,16 @@ clocksi_test_read_wait(Nodes) ->
     receive
         {Pid, ReadResult1} ->
             %%receive the read value
-            ?assertMatch({ok, 1}, ReadResult1),
-            lager:info("Tx2 Read value...~p", [ReadResult1])
+            {ok, Prot} = rpc:call(FirstNode, application, get_env, [antidote, txn_prot]),
+            case Prot of
+                physics ->
+                    ?assertMatch({ok, 0}, ReadResult1),
+                    lager:info("Tx2 Read value...~p", [ReadResult1]);
+                _ ->
+                    ?assertMatch({ok, 1}, ReadResult1),
+                    lager:info("Tx2 Read value...~p", [ReadResult1])
+            end
+
     end,
 
     %% prepare and commit the second transaction.
@@ -397,10 +405,14 @@ clocksi_concurrency_test(Nodes) ->
     Node = hd(Nodes),
     %% read txn starts before the write txn's prepare phase,
     Key = clocksi_concurrency_test_pncounter1,
+    %% Transaction 1 starts, makes an update and sends prepare.
     {ok, TxId1} = rpc:call(Node, antidote, clocksi_istart_tx, []),
     rpc:call(Node, antidote, clocksi_iupdate,
              [TxId1, Key, riak_dt_gcounter, {increment, ucl}]),
     rpc:call(Node, antidote, clocksi_iprepare, [TxId1]),
+
+    %% transaction 2 starts, makes an update from another process,
+    %% prepares and commits.
     {ok, TxId2} = rpc:call(Node, antidote, clocksi_istart_tx, []),
     Pid = self(),
     spawn( fun() ->
@@ -411,6 +423,7 @@ clocksi_concurrency_test(Nodes) ->
                    Pid ! ok
            end),
 
+    %% then, transaction 1 commits.
     {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId1]),
      receive
          ok ->
