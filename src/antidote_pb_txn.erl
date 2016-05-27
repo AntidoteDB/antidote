@@ -218,6 +218,7 @@ process(#apbgetlogoperations{timestamp=BClock,boundobjects=BoundObjects},
             {reply, antidote_pb_codec:encode(get_log_operations_response,
                                              {error, Reason}), State};
         {ok, Results} ->
+	    %% {opid, #clocksi_payload}
             {reply, antidote_pb_codec:encode(get_log_operations_response,
                                              {ok, lists:zip(Objects,Results)}),
              State}

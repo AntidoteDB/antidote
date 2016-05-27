@@ -252,7 +252,9 @@ get_objects_internal([{Key,Type,_Bucket}|Rest], Acc) ->
     end.
 
 get_log_operations(Objects, Clock) ->
-    get_log_operations_internal(Objects,Clock,[]).
+    Res = get_log_operations_internal(Objects,Clock,[]),
+    lager:info("log operations ~p", [Res]),
+    Res.
 
 get_log_operations_internal([],_Clock,Acc) ->
     {ok,lists:reverse(Acc)};

@@ -85,9 +85,13 @@ confirm() ->
     rt:wait_for_service(Node, antidote),
     static_transaction_test(),
 
-    [_Nodes11] = common:clean_clusters([Nodes10]),
+    [Nodes11] = common:clean_clusters([Nodes10]),
     rt:wait_for_service(Node, antidote),
     pb_get_objects_test(),
+
+    [_Nodes12] = common:clean_clusters([Nodes11]),
+    rt:wait_for_service(Node, antidote),
+    pb_get_log_operations_test(),
     pass.
 
 start_stop_test() ->
@@ -144,6 +148,33 @@ pb_get_objects_test() ->
     CommitTime2 = vectorclock:from_json(JCommitTime2),
     lager:info("The base objects ~p", [[Object1,Object2]]),
     lager:info("The commit times ~p", [[dict:to_list(CommitTime1),dict:to_list(CommitTime2)]]),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+
+pb_get_log_operations_test() ->
+    Key1 = <<"key_get_objects1">>,
+    Key2 = <<"key_get_objects2">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object1 = {Key1, crdt_orset, <<"bucket">>},
+    Bound_object2 = {Key2, crdt_orset, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object1, add, <<"a">>},{Bound_object2, add, <<"b">>}], TxId),
+    {ok, CommitTime} = antidotec_pb:commit_transaction(Pid, TxId),
+    lager:info("committime ~p",[binary_to_term(CommitTime)]),
+    %% Read committed updated
+    %% Set the commit time to 0, so you can get all updates
+    CommitTime2 = dict:map(fun(_DCID,_Time) ->
+				   0
+			   end, binary_to_term(CommitTime)),
+    {ok, Val} = antidotec_pb:get_log_operations(Pid, term_to_binary(CommitTime2), [Bound_object1,Bound_object2]),
+    lager:info("The get objects result ~p", [Val]),
+    %% [[JObject1,JCommitTime1],[JObject2,JCommitTime2]]=Val,
+    %% Object1 = crdt_orset:from_json(JObject1),
+    %% Object2 = crdt_orset:from_json(JObject2),
+    %% CommitTime1 = vectorclock:from_json(JCommitTime1),
+    %% CommitTime2 = vectorclock:from_json(JCommitTime2),
+    %% lager:info("The base objects ~p", [[Object1,Object2]]),
+    %% lager:info("The commit times ~p", [[dict:to_list(CommitTime1),dict:to_list(CommitTime2)]]),
     _Disconnected = antidotec_pb_socket:stop(Pid).
     
 
