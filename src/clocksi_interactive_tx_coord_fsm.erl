@@ -766,7 +766,8 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
-    Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
+%%    Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
+    Now = clocksi_vnode:now_microsec(dc_utilities:now()) + random:uniform(100000),
     DcId = ?DC_UTIL:get_my_dc_id(),
     {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
