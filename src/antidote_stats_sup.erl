@@ -44,6 +44,12 @@ init([]) ->
     StatsServer = {antidote_stats,
                    {antidote_stats, start_link, []},
                    permanent, 5000, worker, [antidote_stats]},
+    
+    ChildSpec2 = {antidote_stats_collector,
+                  {antidote_stats_collector, start_link, [ignore]},
+                  permanent, 5000, worker, [antidote_stats_collector]},
+
     {ok,
      {{one_for_one, 5, 10},
-      [StatsServer]}}.
+      [StatsServer,
+       ChildSpec2]}}.
