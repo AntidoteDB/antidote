@@ -391,17 +391,24 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
             {Length, Ops, {LastOp, LatestSnapshot}, SnapshotCommitTime, IsFirst} =
                 case Result of
                     {error, no_snapshot} ->
-                        LogId = log_utilities:get_logid_from_key(Key),
-                        [Node] = log_utilities:get_preflist_from_key(Key),
-                        Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
-                        Res;
+                        lager:info("no snapshot in the cache for key: ~p",[Key]),
+%%                        LogId = log_utilities:get_logid_from_key(Key),
+%%                        [Node] = log_utilities:get_preflist_from_key(Key),
+%%                        Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
+%%                        Res;
+                        {0, {error, no_snapshot}, {foo, foo}, foo, foo};
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
                         {Len, OperationsForKey, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
                 end,
             case Length of
                 0 ->
+                    case Ops of
+                        {error, no_snapshot} ->
+                            {error, no_snapshot};
+                        _ ->
+                            {ok, {LatestSnapshot, SnapshotCommitTime}}
 %%                    lager:info("materializer_vnode: line 489 IS THIS POSSIBLE?"),
-                    {ok, {LatestSnapshot, SnapshotCommitTime}};
+                    end;
                 _ ->
                     case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, UpdatedTxnRecord, Ops) of
                         {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
@@ -645,7 +652,10 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
                                      Transaction#transaction{txn_id = ignore,
                                          snapshot_vc = case Transaction#transaction.transactional_protocol of
                                                            physics ->
-                                                               DownstreamOp#operation_payload.dependency_vc;
+                                                               case DownstreamOp#operation_payload.dependency_vc of
+                                                                   [] -> vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(now()), []);
+                                                                   DepVC -> DepVC
+                                                               end;
                                                            Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                                                                DownstreamOp#operation_payload.snapshot_vc
                                                        end}
@@ -653,10 +663,9 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
             internal_read(Key, Type, NewTransaction, OpsCache, SnapshotCache, true),
             %% Have to get the new ops dict because the interal_read can change it
             {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
-%%            lager:info("Length1 ~p",[Length1]),
-%%            lager:info("ListLen1 ~p",[ListLen1]),
-%%            OpsDict = ets:lookup(OpsCache, Key),
-%%            lager:info("OpsDict after GV ~p",[OpsDict]),
+%%            lager:info("BEFORE GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length, ListLen]),
+%%            lager:info("AFTER GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length1, ListLen1]),
+
             true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]);
         false ->
             true = ets:update_element(OpsCache, Key, [{Length + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length + 1, ListLen}}])

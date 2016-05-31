@@ -785,6 +785,7 @@ wait_for_clock(Clock) ->
             %% No need to wait
             {ok, VecSnapshotTime};
         false ->
+            lager:info("waiting for clock"),
             %% wait for snapshot time to catch up with Client Clock
             timer:sleep(3),
             wait_for_clock(Clock)
