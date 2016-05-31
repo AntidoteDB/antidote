@@ -256,8 +256,8 @@ handle_command(load_from_log, _Sender, State=#state{partition=Partition,
                           true
                   end
               catch
-                  _:Reason1 ->
-                      lager:info("Error loading from log ~w, will retry", [Reason1]),
+                  Error:Reason1 ->
+                      lager:info("Error loading from log ~w~n~w, will retry", [Error, Reason1]),
                       false
               end,
     ok = case IsReady of
@@ -653,6 +653,10 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
             internal_read(Key, Type, NewTransaction, OpsCache, SnapshotCache, true),
             %% Have to get the new ops dict because the interal_read can change it
             {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
+%%            lager:info("Length1 ~p",[Length1]),
+%%            lager:info("ListLen1 ~p",[ListLen1]),
+%%            OpsDict = ets:lookup(OpsCache, Key),
+%%            lager:info("OpsDict after GV ~p",[OpsDict]),
             true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]);
         false ->
             true = ets:update_element(OpsCache, Key, [{Length + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length + 1, ListLen}}])

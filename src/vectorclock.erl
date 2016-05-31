@@ -180,7 +180,9 @@ max([V1, V2 | T]) -> max([merge(fun erlang:max/2, V1, V2) | T]).
 -spec max_vc(vectorclock(), vectorclock()) -> vectorclock().
 max_vc(V, V)-> V;
 max_vc(V, ignore)-> V;
+max_vc(V, undefined)-> V;
 max_vc(ignore, V)-> V;
+max_vc(undefined, V)-> V;
 max_vc(V1, V2) ->
     case ge(V1, V2) of
         true ->

@@ -695,6 +695,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                     physics ->
                         TxnDependencyVC = case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound of
                                               ignore ->
+                                                  lager:info("got ignore as dependency VC"),
                                                   vectorclock:new();
                                               VC -> VC
                                           end,
@@ -767,7 +768,7 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
 %%    Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
-    Now = clocksi_vnode:now_microsec(dc_utilities:now()) + random:uniform(100000),
+    Now = clocksi_vnode:now_microsec(dc_utilities:now()) + random:uniform(35000) - 17500,
     DcId = ?DC_UTIL:get_my_dc_id(),
     {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
