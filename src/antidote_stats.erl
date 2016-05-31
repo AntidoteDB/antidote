@@ -46,7 +46,7 @@ calculate([staleness]) ->
     Staleness = dict:fold(fun(_K, C, Max) ->
                                    max(CurrentClock - C, Max)
                            end, 0, SS),
-    Staleness;
+    Staleness/(1000); %% To millisecs
 
 calculate(_) ->
     {error, metric_not_found}.
