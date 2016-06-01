@@ -433,7 +433,6 @@ update_causal_snapshot_state(State, ReadMetadata, Key) ->
                      false ->
                          vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
                  end,
-%%    lager:info("ReadTimeVC= ~p~n DepUpbound= ~p~n DepVC= ~p~n CommitTimeLowbound= ~p~n", [ReadTimeVC, DepUpbound, DepVC, CommitTimeLowbound]),
     NewTransaction = Transaction#transaction{
         physics_read_metadata = #physics_read_metadata{
             %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.

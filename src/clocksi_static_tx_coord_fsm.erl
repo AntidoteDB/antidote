@@ -143,6 +143,7 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
     _Res = case NewState of 
 	       {error, Reason} ->
 		   %From ! {error, Reason},
+               lager:info("Error, Reason:",[Reason]),
 		   gen_fsm:reply(Sender,{error,Reason}),
 		   {stop, normal, SD};
 	       _ ->

@@ -392,23 +392,18 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
                 case Result of
                     {error, no_snapshot} ->
                         lager:info("no snapshot in the cache for key: ~p",[Key]),
-%%                        LogId = log_utilities:get_logid_from_key(Key),
-%%                        [Node] = log_utilities:get_preflist_from_key(Key),
-%%                        Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
-%%                        Res;
-                        {0, {error, no_snapshot}, {foo, foo}, foo, foo};
+                        LogId = log_utilities:get_logid_from_key(Key),
+                        [Node] = log_utilities:get_preflist_from_key(Key),
+                        Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
+                        Res;
+%%                        {0, {error, no_snapshot}, {foo, foo}, foo, foo};
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
                         {Len, OperationsForKey, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
                 end,
             case Length of
                 0 ->
-                    case Ops of
-                        {error, no_snapshot} ->
-                            {error, no_snapshot};
-                        _ ->
-                            {ok, {LatestSnapshot, SnapshotCommitTime}}
+                            {ok, {LatestSnapshot, SnapshotCommitTime}};
 %%                    lager:info("materializer_vnode: line 489 IS THIS POSSIBLE?"),
-                    end;
                 _ ->
                     case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, UpdatedTxnRecord, Ops) of
                         {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
