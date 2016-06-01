@@ -1,3 +1,5 @@
+-include_lib("antidote_utils/include/antidote_utils.hrl").
+
 -define(BUCKET, <<"antidote">>).
 -define(MASTER, antidote_vnode_master).
 -define(LOGGING_MASTER, logging_vnode_master).
@@ -68,8 +70,6 @@
 %% Used by the replication layer
 -record(operation, {op_number, payload :: payload()}).
 -type operation() :: #operation{}.
--type vectorclock() :: vectorclock:vectorclock().
-
 
 %% The way records are stored in the log.
 -record(log_record, {tx_id :: txid(),
