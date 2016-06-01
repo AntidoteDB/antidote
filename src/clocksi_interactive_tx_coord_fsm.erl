@@ -248,14 +248,15 @@ perform_singleitem_update(Key, Type, Params) ->
     %% todo: another for logging, and finally one for single commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
-        {ok, DownstreamRecord, Parameters} ->
+        {ok, DownstreamRecord, CommitRecordParameters} ->
             Updated_partition =
-%%                case Transaction#transaction.transactional_protocol of
-%%                                    physics ->
-%%                                        [{IndexNode, [{Key, Type, {DownstreamRecord, Parameters}}]}];
-%%                                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                        [{IndexNode, [{Key, Type, DownstreamRecord}]}],
-%%                                end,
+                case Transaction#transaction.transactional_protocol of
+                                    physics ->
+                                        {DownstreamRecordCommitVC, _, _} = CommitRecordParameters,
+                                        [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamRecordCommitVC}}]}];
+                                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                        [{IndexNode, [{Key, Type, DownstreamRecord}]}]
+                                end,
             LogRecord = #log_record{tx_id = TxId, op_type = update,
                 op_payload = {Key, Type, DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
@@ -268,7 +269,7 @@ perform_singleitem_update(Key, Type, Params) ->
                             SnapshotVC =
                                 case Transaction#transaction.transactional_protocol of
                                     physics ->
-                                        {_CommitVC, DepVC, _ReadTime} = Parameters,
+                                        {_CommitVC, DepVC, _ReadTime} = CommitRecordParameters,
                                         DepVC;
                                     Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
                                         Transaction#transaction.snapshot_vc
@@ -314,6 +315,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
 %%    lager:info("updating with the following paramaters: ~p~n",[Param]),
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
     Transaction = CoordState#tx_coord_state.transaction,
+    TransactionalProtocol = Transaction#transaction.transactional_protocol,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
 %%    Add the vnode to the updated partitions, if not already there.
@@ -329,13 +331,27 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
         {ok, DownstreamRecord, SnapshotParameters} ->
 %%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
-            NewUpdatedPartitions = case WriteSet of
-                                       [] ->
-                                           [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
-                                       _ ->
-                                           lists:keyreplace(IndexNode, 1, UpdatedPartitions,
-                                               {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
-                                   end,
+            NewUpdatedPartitions =
+                case TransactionalProtocol of
+                    physics->
+%%                        lager:info("SnapshotParameters ~p",[SnapshotParameters]),
+                        {DownstreamOpCommitVC, _DepVC, _ReadTimeVC} = SnapshotParameters,
+                        case WriteSet of
+                            [] ->
+                                [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]} | UpdatedPartitions];
+                            _ ->
+                                lists:keyreplace(IndexNode, 1, UpdatedPartitions,
+                                    {IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}} | WriteSet]})
+                        end;
+                    Prot when ((Prot == gr) or (Prot == clocksi))->
+                        case WriteSet of
+                            [] ->
+                                [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
+                            _ ->
+                                lists:keyreplace(IndexNode, 1, UpdatedPartitions,
+                                    {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
+                        end
+                end,
             case Sender of
                 undefined ->
                     ok;
@@ -349,12 +365,12 @@ perform_update(UpdateArgs, Sender, CoordState) ->
             [Node] = Preflist,
             case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                 {ok, _} ->
-                    State1 = case Transaction#transaction.transactional_protocol of
-                        physics->
-                            update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
-                        Protocol when ((Protocol == gr) or (Protocol == clocksi))->
-                            CoordState
-                    end,
+                    State1 = case TransactionalProtocol of
+                                 physics ->
+                                     update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
+                                 Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                     CoordState
+                             end,
                     State1#tx_coord_state{updated_partitions = NewUpdatedPartitions};
                 Error ->
                     case Sender of
@@ -446,8 +462,8 @@ update_causal_snapshot_state(State, ReadMetadata, Key) ->
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
     transaction = Transaction, num_to_read = NumToRead,
-    updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
-    case Updated_partitions of
+    updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
+    case UpdatedPartitions of
         [] ->
             Snapshot_time = Transaction#transaction.snapshot_clock,
             case NumToRead of
@@ -464,12 +480,12 @@ prepare(SD0 = #tx_coord_state{
                         SD0#tx_coord_state{state = prepared}}
             end;
         [_] ->
-            ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
+            ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction),
             {next_state, single_committing,
                 SD0#tx_coord_state{state = committing, num_to_ack = 1}};
         [_ | _] ->
-            ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
-            Num_to_ack = length(Updated_partitions),
+            ok = ?CLOCKSI_VNODE:prepare(UpdatedPartitions, Transaction),
+            Num_to_ack = length(UpdatedPartitions),
             {next_state, receive_prepared,
                 SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
@@ -767,7 +783,8 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
 %%    Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
-    Now = clocksi_vnode:now_microsec(dc_utilities:now()) + random:uniform(35000) - 17500,
+    Now = clocksi_vnode:now_microsec(dc_utilities:now()),
+%%    Now = clocksi_vnode:now_microsec(dc_utilities:now()) + random:uniform(35000) - 17500,
     DcId = ?DC_UTIL:get_my_dc_id(),
     {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),

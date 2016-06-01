@@ -609,11 +609,9 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
 certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
-    TxId = Transaction#transaction.txn_id,
     case application:get_env(antidote, txn_cert) of
         {ok, true} ->
-            %io:format("AAAAH"),
-            certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
+            certification_with_check(Transaction, Updates, CommittedTx, PreparedTx);
         _ -> true
     end.
 
@@ -621,18 +619,26 @@ certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
 %%      to the prepared state.
 certification_with_check(_, [], _, _) ->
     true;
-certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
-    SnapshotTime = TxId#tx_id.snapshot_time,
-    {Key, _, _} = H,
+certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
+    {Key, _, OperationData} = H,
+    TxId = Transaction#transaction.txn_id,
+    ReferenceSnapshotTime = case Transaction#transaction.transactional_protocol of
+                                physics ->
+                                    {_DownstreamOp, DownstreamOpCommitVC} = OperationData,
+                                    vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), DownstreamOpCommitVC);
+                                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                    Transaction#transaction.snapshot_vc
+                            end,
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
-            case CommitTime > SnapshotTime of
+            case CommitTime > ReferenceSnapshotTime of
                 true ->
+%%                    io:format("conflict detected, aborting"),
                     false;
                 false ->
                     case check_prepared(TxId, PreparedTx, Key) of
                         true ->
-                            certification_with_check(TxId, T, CommittedTx, PreparedTx);
+                            certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
                             false
                     end
@@ -640,7 +646,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
         [] ->
             case check_prepared(TxId, PreparedTx, Key) of
                 true ->
-                    certification_with_check(TxId, T, CommittedTx, PreparedTx);
+                    certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                 false ->
                     false
             end
@@ -663,7 +669,7 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
             {{DcId, CommitTime}, DependencyVC} = CommitParams,
-            UpdateFunction = fun({Key, Type, OpParam}, AccIn) ->
+            UpdateFunction = fun({Key, Type, {OpParam, _OpCommitVC}}, AccIn) ->
                 CommittedDownstreamOp =
                     #operation_payload{
                         key = Key,
