@@ -36,7 +36,7 @@
     single_commit_sync/2,
     abort/2,
     now_microsec/1,
-    reverse_and_filter_updates_per_key/2,
+    reverse_and_filter_updates_per_key/3,
     init/1,
     terminate/2,
     handle_command/3,
@@ -85,23 +85,9 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, Transaction, Key, Type, Updates) ->
-%%    case Transaction#transaction.transactional_protocol of
-%%            physics ->
-%%                physicsMetadata = Transaction#transaction.physics_read_metadata,
-%%                UpdatedphysicsMetadata = physicsMetadata#physics_read_metadata{key_read_time = ReadTime},
-%%                UpdatedTxRecord = Transaction#transaction{physics_read_metadata =UpdatedphysicsMetadata},
-%%                case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
-%%                    {ok, {Snapshot, {CommitVC, SnapshotDepVC, ReadTime}}} ->
-%%                        Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-%%                        Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
-%%                        {ok, {Snapshot2, {CommitVC, SnapshotDepVC, ReadTime}}};
-%%                    {error, Reason} ->
-%%                        {error, Reason}
-%%                end;
-%%            Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
     case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
         {ok, {Snapshot, CommitParameters}} ->
-            Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
+            Updates2 = reverse_and_filter_updates_per_key(Updates, Key, Transaction),
             Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
             {ok, {Snapshot2, CommitParameters}};
         {error, Reason} ->
@@ -704,15 +690,30 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
     end.
 
 %% Internal functions
-reverse_and_filter_updates_per_key(Updates, Key) ->
-    lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
-        case KeyPrime == Key of
-            true ->
-                [Op | Acc];
-            false ->
-                Acc
-        end
-                end, [], Updates).
+reverse_and_filter_updates_per_key(Updates, Key, Transaction) ->
+    case Transaction#transaction.transactional_protocol of
+        physics ->
+            lists:foldl(fun({KeyPrime, _Type, {Op, _OpCommitVC}}, Acc) ->
+                case KeyPrime == Key of
+                    true ->
+                        [Op | Acc];
+                    false ->
+                        Acc
+                end
+                        end, [], Updates);
+        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+            lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
+                case KeyPrime == Key of
+                    true ->
+                        [Op | Acc];
+                    false ->
+                        Acc
+                end
+                        end, [], Updates)
+
+    end.
+
+
 
 
 -spec get_min_prep(list()) -> {ok, non_neg_integer()}.
@@ -738,7 +739,7 @@ get_time([{Time, TxId} | Rest], TxIdCheck) ->
 -ifdef(TEST).
 
 %% @doc Testing filter_updates_per_key.
-filter_updates_per_key_test() ->
+filter_updates_per_key_clocksi_test() ->
     Op1 = {update, {{increment, 1}, actor1}},
     Op2 = {update, {{increment, 2}, actor1}},
     Op3 = {update, {{increment, 3}, actor1}},
@@ -749,7 +750,26 @@ filter_updates_per_key_test() ->
     ClockSIOp3 = {c, crdt_pncounter, Op3},
     ClockSIOp4 = {a, crdt_pncounter, Op4},
 
+    Transaction = #transaction{transactional_protocol = clocksi},
+
     ?assertEqual([Op4, Op1],
-        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
+        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a, Transaction)).
+
+%% @doc Testing filter_updates_per_key.
+filter_updates_per_key_physics_test() ->
+    Op1 = {{update, {{increment, 1}, actor1}}, dummy_vc},
+    Op2 = {{update, {{increment, 2}, actor1}}, dummy_vc},
+    Op3 = {{update, {{increment, 3}, actor1}}, dummy_vc},
+    Op4 = {{update, {{increment, 4}, actor1}}, dummy_vc},
+
+    ClockSIOp1 = {a, crdt_pncounter, Op1},
+    ClockSIOp2 = {b, crdt_pncounter, Op2},
+    ClockSIOp3 = {c, crdt_pncounter, Op3},
+    ClockSIOp4 = {a, crdt_pncounter, Op4},
+
+    Transaction = #transaction{transactional_protocol = clocksi},
+
+    ?assertEqual([Op4, Op1],
+        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a, Transaction)).
 
 -endif.

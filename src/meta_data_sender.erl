@@ -189,18 +189,19 @@ remove_partition(Name,Partition) ->
 %% used by other modules to communicate to other DC
 -spec get_merged_data(atom()) -> vectorclock() | undefined.
 get_merged_data(Name) ->
-    case ets:info(get_name(Name, ?META_TABLE_STABLE_NAME)) of
-	undefined ->
-	    vectorclock:new();
-	_ ->
-	    case ets:lookup(get_name(Name,?META_TABLE_STABLE_NAME), merged_data) of
-		[] ->
-		    vectorclock:new();
-		[{merged_data, Other}] ->
+	case ets:info(get_name(Name, ?META_TABLE_STABLE_NAME)) of
+		undefined ->
+			vectorclock:new();
+		_ ->
+			case ets:lookup(get_name(Name, ?META_TABLE_STABLE_NAME), merged_data) of
+				undefined -> vectorclock:new();
+				[] ->
+					vectorclock:new();
+				[{merged_data, Other}] ->
 %%		    vectorclock:to_list(Other)
-		Other
-	    end
-    end.
+					Other
+			end
+	end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

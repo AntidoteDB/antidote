@@ -47,10 +47,10 @@ read_pncounter_initial_value_not_in_ets_test(Nodes) ->
     {ok, Prot} = rpc:call(FirstNode, application, get_env, [antidote, txn_prot]),
     case Prot of
         physics ->
-            ?assertMatch({ok, 15}, ReadResult1),
+            ?assertMatch(15, ReadResult1),
             lager:info("Physics allows to read later commited snapshots...~p", [ReadResult1]);
         _ ->
-            ?assertMatch({ok, 0}, ReadResult1),
+            ?assertMatch(0, ReadResult1),
             lager:info("Tx2 Read value...~p", [ReadResult1])
     end,
     %% most recent read value is 15
@@ -77,7 +77,16 @@ read_pncounter_old_value_not_in_ets_test(Nodes) ->
     %% old read value is 5
     {ok, ReadResult1} = rpc:call(FirstNode,
         antidote, clocksi_iread, [TxId, Key, Type]),
-    ?assertEqual(5, ReadResult1),
+    {ok, Prot} = rpc:call(FirstNode, application, get_env, [antidote, txn_prot]),
+    case Prot of
+        physics ->
+            ?assertMatch(20, ReadResult1),
+            lager:info("Physics allows to read later commited snapshots...~p", [ReadResult1]);
+        _ ->
+            ?assertEqual(5, ReadResult1),
+            lager:info("Tx Read value...~p", [ReadResult1])
+    end,
+
     %% most recent read value is 20
     {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
         [[{read, {Key, Type}}]]),
@@ -99,8 +108,18 @@ read_orset_old_value_not_in_ets_test(Nodes) ->
     add_elements_starting_from(FirstNode, Key, 15, 5),
     {ok, ReadResult1} = rpc:call(FirstNode,
         antidote, clocksi_iread, [TxId, Key, Type]),
-    %% old read value contains elements 1 to 5
-    ?assertEqual([1, 2, 3, 4, 5], ReadResult1),
+
+    {ok, Prot} = rpc:call(FirstNode, application, get_env, [antidote, txn_prot]),
+    case Prot of
+        physics ->
+            ?assertEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                13, 14, 15, 16, 17, 18, 19, 20], ReadResult1),
+            lager:info("Physics allows to read later commited snapshots...~p", [ReadResult1]);
+        _ ->
+            %% old read value contains elements 1 to 5
+            ?assertEqual([1, 2, 3, 4, 5], ReadResult1),
+            lager:info("Tx Read value...~p", [ReadResult1])
+    end,
     {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
         [[{read, {Key, Type}}]]),
     %% most recent read vale contains elements 1 to 20

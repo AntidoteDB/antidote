@@ -44,10 +44,10 @@ update_snapshot(Type, Snapshot, Op) ->
         {merge, State} ->
             {ok, Type:merge(Snapshot, State)};
         {update, DownstreamOp} ->
-            Type:update(DownstreamOp, Snapshot);
-        _ ->
-            lager:info("Unexpected log record: ~p for snapshot: ~p", [Op, Snapshot]),
-            {error, unexpected_format}
+            Type:update(DownstreamOp, Snapshot)
+%%        _ ->
+%%            lager:info("Unexpected log record: ~p for snapshot: ~p", [Op, Snapshot]),
+%%            {error, unexpected_format}
     end.
 
 %% @doc Applies updates in given order without any checks, errors are simply propagated.
@@ -141,11 +141,11 @@ materializer_error_nocreate_test() ->
     ?assertException(error, undef, create_snapshot(bla)).
 
 %% @doc Testing crdt with invalid update operation
-materializer_error_invalidupdate_test() ->
-    Counter = create_snapshot(crdt_pncounter),
-    ?assertEqual(0, crdt_pncounter:value(Counter)),
-    Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
-    ?assertEqual({error, unexpected_format}, materialize_eager(crdt_pncounter, Counter, Ops)).
+%%materializer_error_invalidupdate_test() ->
+%%    Counter = create_snapshot(crdt_pncounter),
+%%    ?assertEqual(0, crdt_pncounter:value(Counter)),
+%%    Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
+%%    ?assertEqual({error, unexpected_format}, materialize_eager(crdt_pncounter, Counter, Ops)).
 
 %% @doc Testing that the function check_operations works properly
 check_operations_test() ->

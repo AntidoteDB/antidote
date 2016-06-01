@@ -162,7 +162,10 @@ get_clock_of_dc(Key, VectorClock) ->
 
 -spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> vectorclock().
 set_clock_of_dc(Key, Value, VectorClock) ->
-    orddict:store(Key, Value, VectorClock).
+    case is_atom(VectorClock) of
+        true -> orddict:store(Key, Value, []);
+        false -> orddict:store(Key, Value, VectorClock)
+    end.
 
 -spec create_commit_vector_clock(any(), non_neg_integer(), vectorclock()) -> vectorclock().
 create_commit_vector_clock(Key, Value, VectorClock)->

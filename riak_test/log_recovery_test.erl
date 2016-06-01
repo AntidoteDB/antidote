@@ -41,10 +41,10 @@ read_pncounter_log_recovery_test(Nodes) ->
     {ok, Prot} = rpc:call(FirstNode, application, get_env, [antidote, txn_prot]),
     case Prot of
         physics ->
-            ?assertMatch({ok, 15}, ReadResult1),
+            ?assertMatch(15, ReadResult1),
             lager:info("Physics allows to read later commited snapshots...~p", [ReadResult1]);
         _ ->
-            ?assertMatch({ok, 0}, ReadResult1),
+            ?assertMatch(0, ReadResult1),
             lager:info("Tx2 Read value...~p", [ReadResult1])
     end,    %% most recent read value is 15
     {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode,
