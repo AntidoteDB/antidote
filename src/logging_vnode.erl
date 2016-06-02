@@ -33,6 +33,9 @@
 
 %% API
 -export([start_vnode/1,
+	 is_sync_log/0,
+	 set_sync_log/1,
+	 set_sync_log_internal/1,
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
@@ -137,7 +140,7 @@ append(IndexNode, LogId, Payload) ->
 -spec append_commit(index_node(), key(), payload()) -> {ok, op_id()} | {error, term()}.
 append_commit(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, ?SYNC_LOG},
+                                        {append, LogId, Payload, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -146,7 +149,7 @@ append_commit(IndexNode, LogId, Payload) ->
 -spec append_group(index_node(), key(), [#operation{}], boolean()) -> {ok, op_id()} | {error, term()}.
 append_group(IndexNode, LogId, OperationList, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append_group, LogId, OperationList, IsLocal},
+                                        {append_group, LogId, OperationList, IsLocal, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -154,7 +157,7 @@ append_group(IndexNode, LogId, OperationList, IsLocal) ->
 -spec asyn_append_group(index_node(), key(), [term()], boolean()) -> ok.
 asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
-				   {append_group, LogId, PayloadList, IsLocal},
+				   {append_group, LogId, PayloadList, IsLocal, is_sync_log()},
 				   ?LOGGING_MASTER,
 				   infinity).
 
@@ -189,6 +192,32 @@ request_op_id(IndexNode, DCID, Partition) ->
     riak_core_vnode_master:sync_command(IndexNode, {get_op_id, DCID, Partition},
 					?LOGGING_MASTER,
 					infinity).
+
+%% @doc Returns true if syncrounous logging is enabled
+%%      False otherwise.
+%%      Uses environment variable "sync_log" set in antidote.app.src
+-spec is_sync_log() -> boolean().
+is_sync_log() ->
+    application:get_env(antidote,sync_log,false).
+
+%% @doc Takes as input a boolean to set whether or not items will
+%%      be logged synchronously at this DC (sends a broadcast to update
+%%      the environment variable "sync_log" to all nodes).
+%%      If true, items will be logged synchronously
+%%      If false, items will be logged asynchronously
+-spec set_sync_log(boolean()) -> ok.
+set_sync_log(Value) ->
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    %% Update the environment varible on all nodes in the DC
+    lists:foreach(fun(Node) -> 
+			  ok = rpc:call(Node, logging_vnode, set_sync_log_internal, [Value])
+		  end, Nodes).
+
+%% @doc internal function to set syncrounous logging environment variable.
+-spec set_sync_log_internal(boolean()) -> ok.
+set_sync_log_internal(Value) ->
+    lager:info("setting sync log ~p at ~p", [Value,node()]),
+    application:set_env(antidote,sync_log,Value).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -329,6 +358,7 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 		    inter_dc_log_sender_vnode:send(Partition, Operation),
 		    case Sync of
 			true ->
+			    lager:info("syncing the log"),
 			    case disk_log:sync(Log) of
 				ok ->
 				    {reply, {ok, OpId}, State#state{clock=NewClockDict}};
@@ -350,13 +380,13 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 %% That is why IsLocal is hard coded to false
 %% Might want to support appending groups of local operations in the future
 %% for efficency
-handle_command({append_group, LogId, OperationList, _IsLocal = false}, _Sender,
+handle_command({append_group, LogId, OperationList, _IsLocal = false, Sync}, _Sender,
                #state{logs_map=Map,
                       clock=ClockDict,
                       partition=Partition}=State) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-    {ErrorList, SuccList, NNC} =
-	lists:foldl(fun(Operation, {AccErr, AccSucc,NewClockDict}) ->
+    {ErrorList, SuccList, UpdatedLogs, NNC} =
+	lists:foldl(fun(Operation, {AccErr, AccSucc, UpdatedLogs, NewClockDict}) ->
 			    case get_log_from_map(Map, Partition, LogId) of
 				{ok, Log} ->
 				    %% Generate the new operation ID
@@ -385,14 +415,24 @@ handle_command({append_group, LogId, OperationList, _IsLocal = false}, _Sender,
 					    %% 	true -> inter_dc_log_sender_vnode:send(Partition, Operation);
 					    %% 	false -> ok
 					    %% end,
-					    {AccErr, AccSucc ++ [NewOpId], NewNewClockDict};
+					    {AccErr, AccSucc ++ [NewOpId], ordsets:add_element(Log,UpdatedLogs), NewNewClockDict};
 					{error, Reason} ->
-					    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClockDict}
+					    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs, NewNewClockDict}
 				    end;
 				{error, Reason} ->
-				    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewClockDict}
+				    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs, NewClockDict}
 			    end
-		    end, {[],[],ClockDict}, OperationList),
+		    end, {[],[], ordsets:new(),ClockDict}, OperationList),
+    %% Sync the updated logs if necessary
+    case Sync of
+	true ->
+	    ordsets:fold(fun(Log,_Acc) ->
+				 lager:info("syncing log from interdc"),
+				 ok = disk_log:sync(Log)
+			 end, ok, UpdatedLogs);
+	false ->
+	    ok
+    end,
     case ErrorList of
 	[] ->
 	    [SuccId|_T] = SuccList,
