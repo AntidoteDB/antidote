@@ -611,21 +611,36 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
     ReferenceSnapshotTime = case Transaction#transaction.transactional_protocol of
                                 physics ->
                                     {_DownstreamOp, DownstreamOpCommitVC} = OperationData,
-                                    vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), DownstreamOpCommitVC);
+                                    _CT = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), DownstreamOpCommitVC);
                                 Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                    Transaction#transaction.snapshot_vc
+                                    Transaction#transaction.txn_id#tx_id.snapshot_time
                             end,
+
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
             case CommitTime > ReferenceSnapshotTime of
+%%                case 0 > ReferenceSnapshotTime of
                 true ->
-%%                    io:format("conflict detected, aborting"),
+                    case ((ReferenceSnapshotTime > Transaction#transaction.txn_id#tx_id.snapshot_time)
+                    andalso (CommitTime < Transaction#transaction.txn_id#tx_id.snapshot_time)) of
+                        true ->
+                            lager:info("conflict detected, COMMITTED transaction"),
+                            lager:info("CommitTime ~p ",[CommitTime]),
+                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
+                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]);
+                        false ->
+                            nada
+                    end,
                     false;
                 false ->
+%%                    true
                     case check_prepared(TxId, PreparedTx, Key) of
                         true ->
                             certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
+%%                            lager:info("conflict detected, PREPARED transaction"),
+%%                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
+%%                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
                             false
                     end
             end;
@@ -638,8 +653,8 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
             end
     end.
 
-check_prepared(TxId, PreparedTx, Key) ->
-    _SnapshotTime = TxId#tx_id.snapshot_time,
+check_prepared(_TxId, PreparedTx, Key) ->
+%%    _SnapshotTime = TxId#tx_id.snapshot_time,
     case ets:lookup(PreparedTx, Key) of
         [] ->
             true;
