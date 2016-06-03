@@ -174,6 +174,9 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
             end
     end.
 
+read_objects(_Clock, _Properties, []) ->
+    {ok, [], vectorclock:new()};
+
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
 
