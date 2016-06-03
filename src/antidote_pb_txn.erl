@@ -189,37 +189,52 @@ process(#apbstaticreadobjects{
     end;
 
 %% For legion clients
-process(#apbgetobjects{boundobjects=BoundObjects},
+process(#apbgetobjects{replytype=Type,boundobjects=BoundObjects},
         State) ->
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-
+    ReplyType = case antidote_pb_codec:decode(replytype_code,Type) of
+		    proto_buf ->
+			get_objects_response;
+		    _ ->
+			%% Default to json
+			get_objects_response_json
+		end,
+    
     Response = antidote:get_objects(Objects),
-    case Response of
-        {error, Reason} ->
-            {reply, antidote_pb_codec:encode(get_objects_response,
-                                             {error, Reason}), State};
-        {ok, Results} ->
-            {reply, antidote_pb_codec:encode(get_objects_response,
-                                             {ok, lists:zip(Objects,Results)}),
-             State}
-    end;
-process(#apbgetlogoperations{timestamp=BClock,boundobjects=BoundObjects},
+    Reply = case Response of
+		{error, Reason} ->
+		    antidote_pb_codec:encode(ReplyType,
+                                             {error, Reason});
+		{ok, Results} ->
+		    antidote_pb_codec:encode(ReplyType,
+					     {ok, lists:zip(Objects,Results)})
+	    end,
+    {reply, Reply, State};
+
+process(#apbgetlogoperations{replytype=Type,timestamp=BClock,boundobjects=BoundObjects},
         State) ->
     Clock = binary_to_term(BClock),
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-
+    ReplyType = case antidote_pb_codec:decode(replytype_code,Type) of
+		    proto_buf ->
+			get_log_operations_response;
+		    _ ->
+			%% Default to json
+			get_log_operations_response_json
+		end,
+    
     Response = antidote:get_log_operations(Objects, Clock),
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(get_log_operations_response,
+            {reply, antidote_pb_codec:encode(ReplyType,
                                              {error, Reason}), State};
         {ok, Results} ->
 	    %% {opid, #clocksi_payload}
-            {reply, antidote_pb_codec:encode(get_log_operations_response,
+            {reply, antidote_pb_codec:encode(ReplyType,
                                              {ok, lists:zip(Objects,Results)}),
              State}
     end.

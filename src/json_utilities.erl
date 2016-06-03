@@ -18,8 +18,13 @@
 %%
 %% -------------------------------------------------------------------
 -module(json_utilities).
+-include("antidote.hrl").
 
 -export([
+	 txid_to_json/1,
+	 txid_from_json/1,
+	 clocksi_payload_to_json/1,
+	 clocksi_payload_from_json/1,
 	 convert_to_json/1,
 	 deconvert_from_json/1,
 	 list_to_json_binary_list/1,
@@ -30,6 +35,42 @@
 	 binary_to_json_binary/1
 	]).
 	 
+
+txid_to_json(#tx_id{snapshot_time=Time,server_pid=Pid}) ->
+    [{txid,[convert_to_json(Time),convert_to_json(Pid)]}].
+
+txid_from_json([{txid,[JTime,JPid]}]) ->
+    #tx_id{snapshot_time=deconvert_from_json(JTime),
+	  server_pid=deconvert_from_json(JPid)}.
+
+clocksi_payload_to_json(#clocksi_payload{key=Key,type=Type,op_param=Op,snapshot_time=SnapshotTime,commit_time=CommitTime,txid=TxId}) ->
+    JKey = convert_to_json(Key),
+    JType = convert_to_json(Type),
+    JOp = Type:downstream_to_json(Op),
+    JSnapshotTime = vectorclock:to_json(SnapshotTime),
+    JCommitTime = vectorclock:to_json(CommitTime),
+    JTxId = txid_to_json(TxId),
+    [{clocksi_payload,[[{key,JKey}],
+		       [{type,JType}],
+		       JOp,
+		       [{snapshot_time,JSnapshotTime}],
+		       [{commit_time,JCommitTime}],
+		       JTxId]}].
+
+clocksi_payload_from_json([{clocksi_payload,[[{key,JKey}],
+					     [{type,JType}],
+					     JOp,
+					     [{snapshot_time,JSnapshotTime}],
+					     [{commit_time,JCommitTime}],
+					     JTxId]}]) ->
+    Key = deconvert_from_json(JKey),
+    Type = deconvert_from_json(JType),
+    Op = Type:downstream_from_json(JOp),
+    SnapshotTime = vectorclock:from_json(JSnapshotTime),
+    CommitTime = vectorclock:from_json(JCommitTime),
+    TxId = txid_from_json(JTxId),
+    #clocksi_payload{key=Key,type=Type,op_param=Op,snapshot_time=SnapshotTime,commit_time=CommitTime,txid=TxId}.
+
 convert_to_json(Elem) ->
     IsJSON = jsx:is_term(Elem),
     {IsUtf8,IsBinary} =

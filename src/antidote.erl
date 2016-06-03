@@ -251,8 +251,11 @@ get_objects_internal([{Key,Type,_Bucket}|Rest], Acc) ->
 	    {error, Reason}
     end.
 
+%%-get_log_operations({key(),type(),bucket()}) -> [[{non_neg_integer(),#clocksi_payload{}]] | {error, term()}.
 get_log_operations(Objects, Clock) ->
     Res = get_log_operations_internal(Objects,Clock,[]),
+    %% result is a list of lists of lists
+    %% internal list is {number, clocksi_payload}
     lager:info("log operations ~p", [Res]),
     Res.
 
