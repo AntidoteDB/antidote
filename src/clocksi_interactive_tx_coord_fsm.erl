@@ -175,7 +175,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
     case Protocol of
         physics ->
             PhysicsReadMetadata = #physics_read_metadata{
-                dict_key_read_vc = orddict:new(),
+%%                dict_key_read_vc = orddict:new(),
                 dep_upbound = vectorclock:new(),
                 commit_time_lowbound = vectorclock:new()},
             Now = clocksi_vnode:now_microsec(dc_utilities:now()),
@@ -185,33 +185,33 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                 physics_read_metadata = PhysicsReadMetadata,
                 txn_id = TransactionId},
 %%            lager:info("Transaction = ~p",[Transaction]),
-                {Transaction, TransactionId};
+            {Transaction, TransactionId};
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            Result = case ClientClock of
-                         ignore ->
-                             get_snapshot_time();
-                         _ ->
-                             case UpdateClock of
-                                 update_clock ->
-                                     get_snapshot_time(ClientClock);
-                                 no_update_clock ->
-                                     {ok, ClientClock}
-                             end
-                     end,
-            case Result of
-                {ok, SnapshotTime} ->
-                    DcId = ?DC_UTIL:get_my_dc_id(),
-                    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
-                    TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
+            {ok, SnapshotTime} = case ClientClock of
+                                     ignore ->
+                                         get_snapshot_time();
+                                     _ ->
+                                         case UpdateClock of
+                                             update_clock ->
+                                                 get_snapshot_time(ClientClock);
+                                             no_update_clock ->
+                                                 {ok, ClientClock}
+                                         end
+                                 end,
+%%            case Result of
+%%                ->
+            DcId = ?DC_UTIL:get_my_dc_id(),
+            LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
+            TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
 
-                    Transaction = #transaction{snapshot_clock = LocalClock,
-                        transactional_protocol = Protocol,
-                        snapshot_vc = SnapshotTime,
-                        txn_id = TransactionId},
-                    {Transaction, TransactionId};
-                {error, Reason} ->
-                    {error, Reason}
-            end
+            Transaction = #transaction{snapshot_clock = LocalClock,
+                transactional_protocol = Protocol,
+                snapshot_vc = SnapshotTime,
+                txn_id = TransactionId},
+            {Transaction, TransactionId}
+%%                {error, Reason} ->
+%%                    {error, Reason}
+%%            end
     end.
 
 %% @doc This is a standalone function for directly contacting the read

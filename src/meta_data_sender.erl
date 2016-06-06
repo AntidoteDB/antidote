@@ -194,7 +194,7 @@ get_merged_data(Name) ->
 			vectorclock:new();
 		_ ->
 			case ets:lookup(get_name(Name, ?META_TABLE_STABLE_NAME), merged_data) of
-				undefined -> vectorclock:new();
+%%				undefined -> vectorclock:new();
 				[] ->
 					vectorclock:new();
 				[{merged_data, Other}] ->

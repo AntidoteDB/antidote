@@ -416,13 +416,13 @@ clocksi_concurrency_test(Nodes) ->
     {ok, TxId2} = rpc:call(Node, antidote, clocksi_istart_tx, []),
     Pid = self(),
     spawn( fun() ->
+                   timer:sleep(1000),
                    rpc:call(Node, antidote, clocksi_iupdate,
                             [TxId2, Key, riak_dt_gcounter, {increment, ucl}]),
                    rpc:call(Node, antidote, clocksi_iprepare, [TxId2]),
                    {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId2]),
                    Pid ! ok
            end),
-
     %% then, transaction 1 commits.
     {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId1]),
      receive

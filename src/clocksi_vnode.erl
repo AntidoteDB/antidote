@@ -346,9 +346,9 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
                 {error, materializer_failure} ->
                     {reply, {error, materializer_failure}, NewState};
                 {error, timeout} ->
-                    {reply, {error, timeout}, NewState};
-                {error, no_updates} ->
-                    {reply, no_tx_record, NewState}
+                    {reply, {error, timeout}, NewState}
+%%                {error, no_updates} ->
+%%                    {reply, no_tx_record, NewState}
             end;
         {error, timeout} ->
             {reply, {error, timeout}, NewState};
@@ -380,9 +380,9 @@ handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
         {error, materializer_failure} ->
             {reply, {error, materializer_failure}, State};
         {error, timeout} ->
-            {reply, {error, timeout}, State};
-        {error, no_updates} ->
-            {reply, no_tx_record, State}
+            {reply, {error, timeout}, State}
+%%        {error, no_updates} ->
+%%            {reply, no_tx_record, State}
     end;
 
 handle_command({abort, Transaction, Updates}, _Sender,

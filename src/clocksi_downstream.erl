@@ -28,7 +28,7 @@
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
     Type :: type(), Update :: op(), list()) ->
-    {ok, op()} | {error, atom()}.
+    {error,_} | {ok,{merge,_} | {update,_},_}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
     {Op, Actor} = Update,
     case clocksi_vnode:read_data_item(Node,

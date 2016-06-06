@@ -109,9 +109,9 @@
 
 
 -record(physics_read_metadata, {
-    dict_key_read_vc :: clock_value() | undefined,
-    dep_upbound :: clock_value() | undefined,
-    commit_time_lowbound :: clock_value() | undefined
+%%    dict_key_read_vc :: clock_value() | undefined,
+    dep_upbound :: vectorclock() | undefined,
+    commit_time_lowbound :: vectorclock() | undefined
 }).
 %%-record(physics_transaction, {snapshot_time :: snapshot_time(),
 %%    server_pid :: pid(),
@@ -140,7 +140,7 @@
 -type orddict() :: orddict().
 -type snapshot_time() :: vectorclock:vectorclock().
 -type commit_time() :: {dcid(), non_neg_integer()}.
--type txid() :: #tx_id{}.
+-type txid() :: #tx_id{} | ignore.
 -type operation_payload() :: #operation_payload{}.
 -type dcid() :: term().
 -type transaction() :: #transaction{}.

@@ -17,11 +17,8 @@ confirm() ->
     lager:info("Waiting until vnodes are started up"),
     rt:wait_until(hd(Nodes), fun wait_init:check_ready/1),
     lager:info("Vnodes are started up"),
-
     lager:info("Nodes: ~p", [Nodes]),
-    
     read_pncounter_log_recovery_test(Nodes),
-
     pass.
 
 %% First we remember the initial time of the counter (with value 0).
@@ -76,7 +73,6 @@ read_pncounter_log_recovery_test(Nodes) ->
         _ ->
             ?assertEqual(15, ReadResult3)
     end,
-
     lager:info("read_pncounter_log_recovery_test").
 
 %% Auxiliary method to increment a counter N times.
@@ -87,4 +83,3 @@ increment_counter(FirstNode, Key, N) ->
         [[{update, {Key, crdt_pncounter, {increment, a}}}]]),
     ?assertMatch({ok, _}, WriteResult),
     increment_counter(FirstNode, Key, N - 1).
-

@@ -226,7 +226,9 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
             DepUpbound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-            case ((DepUpbound == undefined) or (DepUpbound == [])) of
+            case
+%%                ((DepUpbound == undefined) or
+                (DepUpbound == []) of
                 true ->
                     ready;
                 false ->
@@ -235,7 +237,7 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
                     case DepUpboundScalar > Time of
                         true ->
                             % lager:info("Waiting... Reason: clock skew"),
-                            {not_ready, (DepUpbound - Time) div 1000 + 1};
+                            {not_ready, (DepUpboundScalar - Time) div 1000 + 1};
                         false ->
                             ready
                     end
