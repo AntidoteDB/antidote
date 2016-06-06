@@ -145,17 +145,26 @@ parallel_writes_test(Cluster1, Cluster2, Cluster3) ->
                            antidote, clocksi_read,
                            [Time, Key, riak_dt_gcounter]),
                         {ok, {_,[ReadSet1],_} }= ReadResult1,
-                        ?assertEqual(15, ReadSet1),
+
                         ReadResult2 = rpc:call(Node2,
                            antidote, clocksi_read,
                            [Time, Key, riak_dt_gcounter]),
                         {ok, {_,[ReadSet2],_} }= ReadResult2,
-                        ?assertEqual(15, ReadSet2),
+
                         ReadResult3 = rpc:call(Node3,
                            antidote, clocksi_read,
                            [Time, Key, riak_dt_gcounter]),
                         {ok, {_,[ReadSet3],_} }= ReadResult3,
-                        ?assertEqual(15, ReadSet3),
+
+                        {ok, Prot} = rpc:call(Node1, application, get_env, [antidote, txn_prot]),
+                        case Prot of
+                            physics ->
+                                ok;
+                            _ ->
+                                ?assertEqual(15, ReadSet1),
+                                ?assertEqual(15, ReadSet2),
+                                ?assertEqual(15, ReadSet3)
+                        end,
                         lager:info("Parallel reads passed"),
                         pass
                     end
@@ -234,6 +243,18 @@ failure_test(Cluster1, Cluster2, Cluster3) ->
     {ok, {_,[ReadSet2],_} }= ReadResult3,
     ?assertEqual(3, ReadSet2),
     lager:info("Done read from Node2"),
+
+    {ok, Prot} = rpc:call(Node1, application, get_env, [antidote, txn_prot]),
+    case Prot of
+        physics ->
+            %% physics does not wait for a snapshot to be stable,
+            %% so we need to wait until the node receives the updates to read them.
+            timer:sleep(5000);
+        _ ->
+            nothing
+    end,
+
+
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
                            [CommitTime, Key, riak_dt_gcounter]),

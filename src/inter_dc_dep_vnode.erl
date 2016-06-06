@@ -109,7 +109,7 @@ try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, operations = [
 try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant.
   %% Therefore, we remove it prior to further checks.
-  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
+  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.causal_dependencies),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
 
   %% Check if the current clock is greater than or equal to the dependency vector
@@ -207,14 +207,15 @@ get_partition_clock(State) ->
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
 -spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#operation_payload{}).
-updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, snapshot = SnapshotTime}) ->
+updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, causal_dependencies = CausalDependencies}) ->
   lists:map(fun(#operation{payload = LogRecord}) ->
     {Key, Type, Op} = LogRecord#log_record.op_payload,
     #operation_payload{
       key = Key,
       type = Type,
       op_param = Op,
-      snapshot_vc = SnapshotTime,
+      snapshot_vc = CausalDependencies,
+      dependency_vc = CausalDependencies,
       dc_and_commit_time = {DCID, CommitTime},
       txid =  LogRecord#log_record.tx_id
     }

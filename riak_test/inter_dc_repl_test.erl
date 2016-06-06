@@ -202,5 +202,12 @@ atomic_read_txn(Node, Key1, Key2, Key3) ->
                         [TxId, Key2, Type]),
     {ok, R3} = rpc:call(Node, antidote, clocksi_iread,
                         [TxId, Key3, Type]),
-    ?assertEqual(R1,R2),
-    ?assertEqual(R2,R3).
+
+    {ok, Prot} = rpc:call(Node, application, get_env, [antidote, txn_prot]),
+    case Prot of
+        physics -> %% Physics can read values arriving from other DCs while running the Txn.
+            lager:info("Values: ~p ~p ~p", [R1, R2, R3]);
+        _ ->
+            ?assertEqual(R1,R2),
+            ?assertEqual(R2,R3)
+    end.

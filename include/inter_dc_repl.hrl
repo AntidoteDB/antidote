@@ -15,7 +15,7 @@
  dcid :: dcid(),
  partition :: partition_id(),
  prev_log_opid :: log_opid() | none, %% the value is *none* if the transaction is read directly from the log
- snapshot :: snapshot_time(),
+ causal_dependencies :: snapshot_time(),
  timestamp :: non_neg_integer(),
  operations :: [operation()] %% if the OP list is empty, the message is a HEARTBEAT
 }).
