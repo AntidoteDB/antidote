@@ -357,11 +357,11 @@ handle_command({append_group, LogId, PayloadList, IsLocal}, _Sender,
 %%    end;
 
 
-handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
+handle_command({get, LogId, Transaction, Type, Key}, _Sender,
   #state{logs_map = Map, clock = _Clock, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
+            case get_ops_from_log(Log, {key, Key}, start, Transaction, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 {eof, CommittedOpsForKeyDict} ->
@@ -447,15 +447,15 @@ finish_op_load(CommittedOpsDict) ->
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
 filter_terms_for_key([], _Key, _Transaction, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
-filter_terms_for_key([H|T], Key, _Transaction, Ops, CommittedOpsDict) ->
+filter_terms_for_key([H|T], Key, Transaction, Ops, CommittedOpsDict) ->
     {_, {operation, _, #log_record{tx_id = TxId, op_type = OpType, op_payload = OpPayload}}} = H,
     case OpType of
         update ->
-            handle_update(TxId, OpPayload, T, Key, _Transaction, Ops, CommittedOpsDict);
+            handle_update(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict);
         commit ->
-            handle_commit(TxId, OpPayload, T, Key, _Transaction, Ops, CommittedOpsDict);
+            handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict);
         _ ->
-            filter_terms_for_key(T, Key, _Transaction, Ops, CommittedOpsDict)
+            filter_terms_for_key(T, Key, Transaction, Ops, CommittedOpsDict)
     end.
 
 handle_update(TxId, OpPayload,  T, Key, Transaction, Ops, CommittedOpsDict) ->
