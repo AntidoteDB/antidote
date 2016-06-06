@@ -139,7 +139,7 @@ pb_get_objects_test() ->
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
     
-    {ok, Val} = antidotec_pb:get_objects(Pid, [Bound_object1,Bound_object2]),
+    {ok, Val} = antidotec_pb:get_objects(Pid, [Bound_object1,Bound_object2], json),
     lager:info("The get objects result ~p", [Val]),
     [[JObject1,JCommitTime1],[JObject2,JCommitTime2]]=Val,
     Object1 = crdt_orset:from_json(JObject1),

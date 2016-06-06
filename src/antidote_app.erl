@@ -25,7 +25,7 @@
 -export([start/2, stop/1]).
 
 %% PB Services
--define(SERVICES, [{antidote_pb_txn, 107, 134}]).
+-define(SERVICES, [{antidote_pb_txn, 107, 135}]).
 
 %% ===================================================================
 %% Application callbacks

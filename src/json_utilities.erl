@@ -21,6 +21,8 @@
 -include("antidote.hrl").
 
 -export([
+	 crdt_to_json/2,
+	 crdt_from_json/1,
 	 txid_to_json/1,
 	 txid_from_json/1,
 	 clocksi_payload_to_json/1,
@@ -35,6 +37,12 @@
 	 binary_to_json_binary/1
 	]).
 	 
+
+crdt_to_json(Type, Value) ->
+    Type:to_json(Value).
+
+crdt_from_json([{orset,Value}]) ->
+    crdt_orset:from_json([{orset,Value}]).
 
 txid_to_json(#tx_id{snapshot_time=Time,server_pid=Pid}) ->
     [{txid,[convert_to_json(Time),convert_to_json(Pid)]}].
