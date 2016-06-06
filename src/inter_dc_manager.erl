@@ -190,7 +190,7 @@ observe_dcs(Descriptors) -> lists:map(fun observe_dc/1, Descriptors).
 
 -spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
-    {ok, SS} = vectorclock:get_stable_snapshot(),
+    {ok, SS} = dc_utilities:get_stable_snapshot(),
     DCs = lists:map(fun(DC) ->
 			    {observe_dc(DC), DC}
 		    end, Descriptors),
@@ -236,7 +236,7 @@ wait_for_stable_snapshot(DCID, MinValue) ->
   case DCID == dc_utilities:get_my_dc_id() of
     true -> ok;
     false ->
-      {ok, SS} = vectorclock:get_stable_snapshot(),
+      {ok, SS} = dc_utilities:get_stable_snapshot(),
       Value = vectorclock:get_clock_of_dc(DCID, SS),
       case Value > MinValue of
         true ->
