@@ -141,11 +141,11 @@ pb_get_objects_test() ->
     
     {ok, Val} = antidotec_pb:get_objects(Pid, [Bound_object1,Bound_object2], json),
     lager:info("The get objects result ~p", [Val]),
-    [[JObject1,JCommitTime1],[JObject2,JCommitTime2]]=Val,
-    Object1 = crdt_orset:from_json(JObject1),
-    Object2 = crdt_orset:from_json(JObject2),
-    CommitTime1 = vectorclock:from_json(JCommitTime1),
-    CommitTime2 = vectorclock:from_json(JCommitTime2),
+    [[Object1,CommitTime1],[Object2,CommitTime2]]=Val,
+    %%Object1 = crdt_orset:from_json(JObject1),
+    %%Object2 = crdt_orset:from_json(JObject2),
+    %%CommitTime1 = vectorclock:from_json(JCommitTime1),
+    %%CommitTime2 = vectorclock:from_json(JCommitTime2),
     lager:info("The base objects ~p", [[Object1,Object2]]),
     lager:info("The commit times ~p", [[dict:to_list(CommitTime1),dict:to_list(CommitTime2)]]),
     _Disconnected = antidotec_pb_socket:stop(Pid).
@@ -166,7 +166,7 @@ pb_get_log_operations_test() ->
     CommitTime2 = dict:map(fun(_DCID,_Time) ->
 				   0
 			   end, binary_to_term(CommitTime)),
-    {ok, Val} = antidotec_pb:get_log_operations(Pid, term_to_binary(CommitTime2), [Bound_object1,Bound_object2]),
+    {ok, Val} = antidotec_pb:get_log_operations(Pid, term_to_binary(CommitTime2), [Bound_object1,Bound_object2], json),
     lager:info("The get objects result ~p", [Val]),
     %% [[JObject1,JCommitTime1],[JObject2,JCommitTime2]]=Val,
     %% Object1 = crdt_orset:from_json(JObject1),

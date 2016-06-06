@@ -194,6 +194,7 @@ check_registered_global(Name) ->
 	    check_registered_global(Name);
 	_ ->
 	    ok
+    end.
 
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
