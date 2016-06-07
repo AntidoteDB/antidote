@@ -139,12 +139,12 @@ update_objects(Updates, TxId) ->
 %% For static transactions: bulk updates and bulk reads
 -spec update_objects(snapshot_time(), term(), [{bound_object(), op(), op_param()}]) ->
                             {ok, snapshot_time()} | {error, reason()}.
-update_objects(_Clock, _Properties, []) ->
-    {ok, vectorclock:new()};
+
 
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
-
+update_objects(_Clock, _Properties, [], _StayAlive) ->
+    {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
     Actor = actor, %% TODO: generate unique actors
     Operations = lists:map(
@@ -177,11 +177,11 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
             end
     end.
 
-read_objects(_Clock, _Properties, []) ->
-    {ok, [], vectorclock:new()};
-
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
+
+read_objects(_Clock, _Properties, [], _StayAlive) ->
+    {ok, [], vectorclock:new()};
 
 read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
