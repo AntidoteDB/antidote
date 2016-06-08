@@ -37,7 +37,7 @@
          abort_transaction/1,
          commit_transaction/1,
 	 get_objects/1,
-	 get_log_operations/2,
+	 get_log_operations/1,
          create_bucket/2,
          create_object/3,
          delete_object/1
@@ -252,21 +252,21 @@ get_objects_internal([{Key,Type,_Bucket}|Rest], Acc) ->
     end.
 
 %%-get_log_operations({key(),type(),bucket()}) -> [[{non_neg_integer(),#clocksi_payload{}]] | {error, term()}.
-get_log_operations(Objects, Clock) ->
-    Res = get_log_operations_internal(Objects,Clock,[]),
+get_log_operations(ObjectClockPairs) ->
+    Res = get_log_operations_internal(ObjectClockPairs,[]),
     %% result is a list of lists of lists
     %% internal list is {number, clocksi_payload}
     lager:info("log operations ~p", [Res]),
     Res.
 
-get_log_operations_internal([],_Clock,Acc) ->
+get_log_operations_internal([],Acc) ->
     {ok,lists:reverse(Acc)};
-get_log_operations_internal([{Key,Type,_Bucket}|Rest],Clock,Acc) ->
+get_log_operations_internal([{{Key,Type,_Bucket},Clock}|Rest],Acc) ->
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
     case logging_vnode:get_from_time(Node,LogId,Clock,Type,Key) of
 	{_Length,Ops,{_LastOp,_LatestSnapshot},_SnapshotCommitTime,_IsFirst} ->
-	    get_log_operations_internal(Rest,Clock,[Ops|Acc]);
+	    get_log_operations_internal(Rest,[Ops|Acc]);
 	{error, Reason} ->
 	    {error, Reason}
     end.

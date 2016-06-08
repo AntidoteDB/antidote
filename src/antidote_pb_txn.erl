@@ -64,7 +64,9 @@ decode(Code, Bin) ->
         #apbgetobjects{} ->
             {ok, Msg, {"antidote.getobjects",<<>>}};
         #apbgetlogoperations{} ->
-            {ok, Msg, {"antidote.getlogoperations",<<>>}}
+            {ok, Msg, {"antidote.getlogoperations",<<>>}};
+	#apbjsonrequest{} ->
+            {ok, Msg, {"antidote.jsonrequest",<<>>}}
     end.
 
 %% @doc encode/1 callback. Encodes an outgoing response message.
@@ -189,19 +191,25 @@ process(#apbstaticreadobjects{
     end;
 
 %% For legion clients
-process(#apbgetobjects{replytype=Type,boundobjects=BoundObjects},
-        State) ->
+process(#apbjsonrequest{value=JValue},State) ->
+    Req = antidote_pb_codec:decode_json(jsx:decode(JValue,[{labels,atom}])),
+    process(Req,State);
+
+process(#apbgetobjects{replytype=Type,boundobjects=BoundObjects},State) ->
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-    ReplyType = case antidote_pb_codec:decode(replytype_code,Type) of
+    ReplyType = antidote_pb_codec:decode(replytype_code,Type),
+    process({get_objects,ReplyType,Objects},State);
+
+process({get_objects,Type,Objects},State) ->
+    ReplyType = case Type of
 		    proto_buf ->
 			get_objects_response;
 		    _ ->
 			%% Default to json
 			get_objects_response_json
 		end,
-    
     Response = antidote:get_objects(Objects),
     Reply = case Response of
 		{error, Reason} ->
@@ -213,21 +221,28 @@ process(#apbgetobjects{replytype=Type,boundobjects=BoundObjects},
 	    end,
     {reply, Reply, State};
 
-process(#apbgetlogoperations{replytype=Type,timestamp=BClock,boundobjects=BoundObjects},
-        State) ->
-    Clock = binary_to_term(BClock),
-    Objects = lists:map(fun(O) ->
-                                antidote_pb_codec:decode(bound_object, O) end,
-                        BoundObjects),
-    ReplyType = case antidote_pb_codec:decode(replytype_code,Type) of
+process(#apbgetlogoperations{replytype=Type,timestamps=BClocks,boundobjects=BoundObjects}, State) ->
+    Objects =
+	lists:map(fun(O) ->
+			  antidote_pb_codec:decode(bound_object, O)
+		  end, BoundObjects),
+    Clocks =
+	lists:map(fun(C) ->
+			  antidote_pb_codec:decode(vectorclock, C)
+		  end, BClocks),
+    ReplyType = antidote_pb_codec:decode(replytype_code,Type),
+    process({get_log_operations,ReplyType,Objects,Clocks},State);
+
+process({get_log_operations,Type,Objects,Clocks},State) ->
+    ReplyType = case Type of
 		    proto_buf ->
 			get_log_operations_response;
 		    _ ->
 			%% Default to json
 			get_log_operations_response_json
 		end,
-    
-    Response = antidote:get_log_operations(Objects, Clock),
+    ObjectClockPairs = lists:zip(Objects,Clocks),
+    Response = antidote:get_log_operations(ObjectClockPairs),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(ReplyType,
