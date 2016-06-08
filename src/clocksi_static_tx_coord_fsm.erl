@@ -186,6 +186,7 @@ receive_prepared({ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}},
                             transaction=Transaction,
                             updated_partitions=UpdatedPartitions,
                             num_to_ack=NumToAck}) ->
+
     %%TODO: type is hard-coded..
     Value = Type:value(Snapshot), 
     ReadSet1 = replace(ReadSet, Key, Value),

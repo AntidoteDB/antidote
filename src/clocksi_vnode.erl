@@ -96,8 +96,8 @@ read_data_item(Node, Transaction, Key, Type, Updates) ->
 %%        end.
 
 
-async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}).
+async_read_data_item(Node, Transaction, Key, Type) ->
+    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, Transaction, {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
