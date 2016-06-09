@@ -25,9 +25,9 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 %% Number of snapshots to trigger GC
--define(SNAPSHOT_THRESHOLD, 20).
+-define(SNAPSHOT_THRESHOLD, 10).
 %% Number of snapshots to keep after GC
--define(SNAPSHOT_MIN, 10).
+-define(SNAPSHOT_MIN, 5).
 %% Number of ops to keep before GC
 -define(OPS_THRESHOLD, 50).
 %% The first 3 elements in operations list are meta-data
