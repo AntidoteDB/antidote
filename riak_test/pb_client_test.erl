@@ -166,8 +166,11 @@ pb_get_log_operations_test() ->
     CommitTime2 = dict:map(fun(_DCID,_Time) ->
 				   0
 			   end, binary_to_term(CommitTime)),
-    {ok, Val} = antidotec_pb:get_log_operations(Pid,[{Bound_object1,CommitTime2},{Bound_object2,CommitTime2}], json),
-    lager:info("The get objects result ~p", [Val]),
+
+    lists:foreach(fun(ReplyType) ->
+			  {ok, Val} = antidotec_pb:get_log_operations(Pid,[{Bound_object1,CommitTime2},{Bound_object2,CommitTime2}], ReplyType),
+			  lager:info("The get objects result using ~p are ~p", [ReplyType,Val])
+		  end, [json,proto_buf]),
     %% [[JObject1,JCommitTime1],[JObject2,JCommitTime2]]=Val,
     %% Object1 = crdt_orset:from_json(JObject1),
     %% Object2 = crdt_orset:from_json(JObject2),

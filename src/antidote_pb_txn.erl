@@ -77,24 +77,38 @@ process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
         State) ->
     Clock = binary_to_term(BClock),
     Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    process({start_transaction, Clock, Properties, proto_buf}, State);
+
+process({start_transaction, Clock, Properties, ReplyType}, State) ->
     Response = antidote:start_transaction(Clock, Properties, true),
+    EncodeType = 
+	case ReplyType of
+	    proto_buf -> start_transaction_response;
+	    json -> start_transaction_response_json end,
     case Response of
         {ok, TxId} ->
-            {reply, antidote_pb_codec:encode(start_transaction_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {ok, TxId}),
              State};
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(start_transaction_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}),
              State}
     end;
 
 process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
     TxId = binary_to_term(Td),
+    process({abort_transaction, TxId, proto_buf}, State);
+
+process({abort_transaction, TxId, ReplyType}, State) ->
     Response = antidote:abort_transaction(TxId),
+    EncodeType = 
+	case ReplyType of
+	    proto_buf -> operation_response;
+	    json -> operation_response_json end,
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(operation_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}),
              State}
             %% TODO: client initiated abort is not implemented yet
@@ -106,13 +120,20 @@ process(#apbaborttransaction{transaction_descriptor=Td}, State) ->
 
 process(#apbcommittransaction{transaction_descriptor=Td}, State) ->
     TxId = binary_to_term(Td),
+    process({commit_transaction,TxId,proto_buf},State);
+
+process({commit_transaction,TxId,ReplyType},State) ->
     Response = antidote:commit_transaction(TxId),
+    EncodeType = 
+	case ReplyType of
+	    proto_buf -> commit_response;
+	    json -> commit_response_json end,
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(commit_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}), State};
         {ok, CommitTime} ->
-            {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
+            {reply, antidote_pb_codec:encode(EncodeType, {ok, CommitTime}),
              State}
     end;
 
@@ -121,15 +142,21 @@ process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td},
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-
     TxId = binary_to_term(Td),
+    process({read_objects,Objects,TxId,proto_buf},State);
+
+process({read_objects,Objects,TxId,ReplyType},State) ->
     Response = antidote:read_objects(Objects, TxId),
+    EncodeType = 
+	case ReplyType of
+	    proto_buf -> read_objects_response;
+	    json -> read_objects_response_json end,
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(read_objects_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}), State};
         {ok, Results} ->
-            {reply, antidote_pb_codec:encode(read_objects_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {ok, lists:zip(Objects,Results)}),
              State}
     end;
@@ -139,37 +166,51 @@ process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td},
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
-
     TxId = binary_to_term(Td),
+    process({update_objects,Updates,TxId,proto_buf},State);
+
+process({update_objects,Updates,TxId,ReplyType},State) ->
     Response = antidote:update_objects(Updates, TxId),
+    EncodeType = 
+	case ReplyType of
+	    proto_buf -> operation_response;
+	    json -> operation_response_json end,
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(operation_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}),
              State};
         ok ->
-            {reply, antidote_pb_codec:encode(operation_response, ok),
+            {reply, antidote_pb_codec:encode(EncodeType, ok),
              State}
     end;
+
 process(#apbstaticupdateobjects{
            transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            updates=BUpdates},
         State) ->
-
     Clock = binary_to_term(BClock),
     Properties = antidote_pb_codec:decode(txn_properties, BProperties),
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
+    process({static_update_objects,Clock,Updates,Properties,proto_buf},State);
+
+process({static_update_objects,Clock,Updates,Properties,ReplyType},State) ->
     Response = antidote:update_objects(Clock, Properties, Updates, true),
+    EncodeType = 
+	case ReplyType of
+	    proto_buf -> commit_response;
+	    json -> commit_json end,
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(commit_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}), State};
         {ok, CommitTime} ->
-            {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
+            {reply, antidote_pb_codec:encode(EncodeType, {ok, CommitTime}),
              State}
     end;            
+
 process(#apbstaticreadobjects{
            transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            objects=BoundObjects},
@@ -179,13 +220,20 @@ process(#apbstaticreadobjects{
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
+    process({static_read_objects,Clock,Properties,Objects,proto_buf},State);
+
+process({static_read_objects,Clock,Properties,Objects,ReplyType},State) ->
     Response = antidote:read_objects(Clock, Properties, Objects, true),
+    EncodeType = 
+	case ReplyType of
+	    proto_buf -> static_read_objects_response;
+	    json -> static_read_objects_response_json end,
     case Response of
         {error, Reason} ->
-            {reply, antidote_pb_codec:encode(commit_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}), State};
         {ok, Results, CommitTime} ->
-            {reply, antidote_pb_codec:encode(static_read_objects_response,
+            {reply, antidote_pb_codec:encode(EncodeType,
                                              {ok, lists:zip(Objects,Results), CommitTime}),
              State}
     end;
@@ -195,14 +243,13 @@ process(#apbjsonrequest{value=JValue},State) ->
     Req = antidote_pb_codec:decode_json(jsx:decode(JValue,[{labels,atom}])),
     process(Req,State);
 
-process(#apbgetobjects{replytype=Type,boundobjects=BoundObjects},State) ->
+process(#apbgetobjects{boundobjects=BoundObjects},State) ->
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-    ReplyType = antidote_pb_codec:decode(replytype_code,Type),
-    process({get_objects,ReplyType,Objects},State);
+    process({get_objects,Objects,proto_buf},State);
 
-process({get_objects,Type,Objects},State) ->
+process({get_objects,Objects,Type},State) ->
     ReplyType = case Type of
 		    proto_buf ->
 			get_objects_response;
@@ -221,7 +268,7 @@ process({get_objects,Type,Objects},State) ->
 	    end,
     {reply, Reply, State};
 
-process(#apbgetlogoperations{replytype=Type,timestamps=BClocks,boundobjects=BoundObjects}, State) ->
+process(#apbgetlogoperations{timestamps=BClocks,boundobjects=BoundObjects}, State) ->
     Objects =
 	lists:map(fun(O) ->
 			  antidote_pb_codec:decode(bound_object, O)
@@ -230,10 +277,9 @@ process(#apbgetlogoperations{replytype=Type,timestamps=BClocks,boundobjects=Boun
 	lists:map(fun(C) ->
 			  antidote_pb_codec:decode(vectorclock, C)
 		  end, BClocks),
-    ReplyType = antidote_pb_codec:decode(replytype_code,Type),
-    process({get_log_operations,ReplyType,Objects,Clocks},State);
+    process({get_log_operations,Objects,Clocks,proto_buf},State);
 
-process({get_log_operations,Type,Objects,Clocks},State) ->
+process({get_log_operations,Objects,Clocks,Type},State) ->
     ReplyType = case Type of
 		    proto_buf ->
 			get_log_operations_response;
