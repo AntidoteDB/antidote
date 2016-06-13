@@ -183,7 +183,8 @@
     state :: active | prepared | committing | committed | undefined
     | aborted | committed_read_only,
     operations :: list(),
-    read_set :: list(),
+    internal_read_set :: orddict(),
+    return_read_set :: list(),
     is_static :: boolean(),
     full_commit :: boolean(),
     stay_alive :: boolean(),

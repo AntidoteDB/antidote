@@ -71,6 +71,7 @@
     perform_update/3,
     perform_read/4,
     execute_op/3,
+receive_read_objects_result/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -137,7 +138,8 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
         from = undefined,
         full_commit = FullCommit,
         is_static = IsStatic,
-        read_set = [],
+        return_read_set = [],
+        internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         %% The following are needed by the physics protocol
         version_min = undefined,
@@ -247,7 +249,7 @@ perform_singleitem_update(Key, Type, Params) ->
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
     %% todo: another for logging, and finally one for single commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
+    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, [], []) of
         {ok, DownstreamRecord, CommitRecordParameters} ->
             Updated_partition =
                 case Transaction#transaction.transactional_protocol of
@@ -316,6 +318,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
     Transaction = CoordState#tx_coord_state.transaction,
     TransactionalProtocol = Transaction#transaction.transactional_protocol,
+    InternalReadSet = CoordState#tx_coord_state.internal_read_set,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
 %%    Add the vnode to the updated partitions, if not already there.
@@ -328,7 +331,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
     %% todo: another for logging, and finally one (or two) for  commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
+    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
         {ok, DownstreamRecord, SnapshotParameters} ->
 %%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
             NewUpdatedPartitions =
@@ -419,16 +422,64 @@ execute_op({OpType, Args}, Sender,
                                   update_causal_snapshot_state(SD0, CommitParams, Key);
                               Protocol when ((Protocol == gr) or (Protocol == clocksi)) -> SD0
                           end,
-                    {reply, {ok, Type:value(Snapshot)}, execute_op, SD1}
+                    InternalReadSet = orddict:store(key, ReadResult, SD1#tx_coord_state.internal_read_set),
+                    {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set = InternalReadSet}}
             end;
+        read_objects ->
+            ExecuteReads = fun({Key, Type}, Acc) ->
+                Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+                IndexNode = hd(Preflist),
+                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                ReadSet = Acc#tx_coord_state.return_read_set,
+                Acc#tx_coord_state{return_read_set = [Key | ReadSet]}
+                           end,
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_read_set = []}, Args),
+            {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
         update ->
             case perform_update(Args, Sender, SD0) of
                 {error, _Reason} ->
                     abort(SD0);
                 NewCoordinatorState ->
                     {next_state, execute_op, NewCoordinatorState}
+            end;
+        update_objects ->
+            case perform_update(Args, Sender, SD0) of
+                {error, _Reason} ->
+                    abort(SD0);
+                NewCoordinatorState ->
+                    {next_state, execute_op, NewCoordinatorState}
             end
+
     end.
+
+receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
+  S0 = #tx_coord_state{num_to_read = NumToRead,
+      return_read_set = ReadSet,
+      internal_read_set = InternalReadSet,
+      transactional_protocol = TransactionalProtocol}) ->
+%%    lager:info("got result !!! ~p ", [{ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}}]),
+
+    %%TODO: type is hard-coded..
+
+    Value = Type:value(Snapshot),
+    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value),
+    NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
+    SD1 = case TransactionalProtocol of
+              physics ->
+                  update_causal_snapshot_state(S0, SnapshotCommitParams, Key);
+              Protocol when ((Protocol == gr) or (Protocol == clocksi)) -> S0
+          end,
+    case NumToRead of
+        1 ->
+            gen_fsm:reply(SD1#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+            {next_state, execute_op, SD1#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+        _ ->
+            {next_state, receive_read_objects_result,
+                SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_read_set = ReadSet1, num_to_read = NumToRead - 1}}
+    end.
+
+
+
 
 %% @doc Used by the causal snapshot for physics
 %%      Updates the state of a transaction coordinator
@@ -677,7 +728,7 @@ receive_aborted(_, S0) ->
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, read_set = ReadSet,
+reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_read_set = ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
     is_static = IsStatic, stay_alive = StayAlive}) ->
     if undefined =/= From ->
@@ -690,7 +741,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                     false ->
                                         {ok, {TxId, Transaction#transaction.snapshot_vc}};
                                     true ->
-                                        {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.snapshot_vc}}
+                                        {ok, {TxId, lists:reverse(ReturnReadSet), Transaction#transaction.snapshot_vc}}
                                 end;
                             committed ->
                                 DcId = ?DC_UTIL:get_my_dc_id(),
@@ -700,7 +751,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                     false ->
                                         {ok, {TxId, CausalClock}};
                                     true ->
-                                        {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
+                                        {ok, {TxId, lists:reverse(ReturnReadSet), CausalClock}}
                                 end;
                             aborted ->
                                 {aborted, TxId};
@@ -720,7 +771,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                     false ->
                                         {ok, {TxId, TxnDependencyVC}};
                                     true ->
-                                        {ok, {TxId, lists:reverse(ReadSet), TxnDependencyVC}}
+                                        {ok, {TxId, lists:reverse(ReturnReadSet), TxnDependencyVC}}
                                 end;
                             committed ->
                                 DcId = ?DC_UTIL:get_my_dc_id(),
@@ -730,7 +781,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                     false ->
                                         {ok, {TxId, CausalClock}};
                                     true ->
-                                        {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
+                                        {ok, {TxId, lists:reverse(ReturnReadSet), CausalClock}}
                                 end;
                             aborted ->
                                 {aborted, TxId};

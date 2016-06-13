@@ -99,20 +99,42 @@ commit_transaction(TxId) ->
 
 -spec read_objects(Objects::[bound_object()], TxId::txid())
                   -> {ok, [term()]} | {error, reason()}.
+
+
+%%read_objects(Objects, TxId) ->
+%%    %%TODO: Transaction co-ordinator handles multiple reads
+%%    %% Executes each read as in a interactive transaction
+%%    Results = lists:map(fun({Key, Type, _Bucket}) ->
+%%                                case clocksi_iread(TxId, Key, Type) of
+%%                                    {ok, Res} ->
+%%                                        Res;
+%%                                    {error, Reason} ->
+%%                                        {error, Reason}
+%%                                end
+%%                        end, Objects),
+%%    case lists:member({error, _ErrorReason}, Results) of
+%%        true -> {error, {read_failed, _ErrorReason}};
+%%        false -> {ok, Results}
+%%    end.
+
 read_objects(Objects, TxId) ->
-    %%TODO: Transaction co-ordinator handles multiple reads
-    %% Executes each read as in a interactive transaction
-    Results = lists:map(fun({Key, Type, _Bucket}) ->
-                                case clocksi_iread(TxId, Key, Type) of
-                                    {ok, Res} ->
-                                        Res;
-                                    {error, _Reason} ->
-                                        error
-                                end
-                        end, Objects),
-    case lists:member(error, Results) of
-        true -> {error, read_failed}; %% TODO: Capture the reason for error
-        false -> {ok, Results}
+    {_, _, CoordFsmPid} = TxId,
+    NewObjects = lists:map(fun({Key, Type, _Bucket}) ->
+        case materializer:check_operations([{read, {Key, Type}}]) of
+            ok ->
+                {Key, Type};
+            {error, _Reason} ->
+                {error, type_check}
+        end
+                           end, Objects),
+    case lists:member({error, type_check}, NewObjects) of
+        true -> {error, type_check};
+        false ->
+%%            lager:info("gonna start multiple reads: ~p", [NewObjects]),
+            case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
+                     {ok, Res} -> {ok, Res};
+                     {error, Reason} -> {error, Reason}
+                 end
     end.
 
 -spec update_objects([{bound_object(), op(), op_param()}], txid())
