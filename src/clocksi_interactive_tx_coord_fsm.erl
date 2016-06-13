@@ -68,6 +68,7 @@
 -export([create_transaction_record/5,
     start_tx/2,
     init_state/3,
+    get_snapshot_time/0,
     perform_update/4,
     perform_read/4,
     execute_op/3,
