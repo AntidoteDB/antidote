@@ -36,7 +36,8 @@
          execute_op/3,
          execute_op/2,
          code_change/4,
-	 append/3,
+    append/3,
+    asyn_append/3,
          handle_event/3,
          handle_info/3,
          handle_sync_event/4,
@@ -138,6 +139,9 @@ generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws, _Rs) -
 
 append(_Node,_LogId,_LogRecord) ->
     {ok, {0,node}}.
+
+asyn_append(_Node,_LogId,_LogRecord) ->
+    ok.
 
 update_data_item(FsmRef, _Transaction, Key, _Type, _DownstreamRecord) ->
     gen_fsm:sync_send_event(FsmRef, {update_data_item, Key}).

@@ -263,8 +263,8 @@ perform_singleitem_update(Key, Type, Params) ->
                 op_payload = {Key, Type, DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
-            case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                {ok, _} ->
+            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
+                ok ->
                     case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
                         {committed, CommitTime} ->
                             DcId = ?DC_UTIL:get_my_dc_id(),
@@ -366,8 +366,9 @@ perform_update(UpdateArgs, Sender, CoordState) ->
                 op_payload = {Key, Type, DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
-            case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                {ok, _} ->
+            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
+                ok ->
+%%                    {ok, _} ->
                     State1 = case TransactionalProtocol of
                                  physics ->
                                      update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
