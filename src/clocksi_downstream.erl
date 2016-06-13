@@ -21,22 +21,25 @@
 
 -include("antidote.hrl").
 
--export([generate_downstream_op/6]).
+-export([generate_downstream_op/7]).
 
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
-    Type :: type(), Update :: op(), list()) ->
-    {error,_} | {ok,{merge,_} | {update,_},_}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
+    Type :: type(), Update :: op(), list(), orddict()) ->
+    {error, _} | {ok, {merge, _} | {update, _}, _}.
+generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet) ->
     {Op, Actor} = Update,
-    case clocksi_vnode:read_data_item(Node,
-        Transaction,
-        Key,
-        Type,
-        WriteSet) of
-        {ok, {Snapshot, SnapshotCommitParams}} ->
+    Result = case orddict:find(Key, InternalReadSet) of
+                 {ok, {S, SCP}} -> {S, SCP};
+                 error -> case clocksi_vnode:read_data_item(Node, Transaction, Key, Type, WriteSet) of
+                              {ok, {S, SCP}} -> {S, SCP};
+                              {error, _Reason} -> {error, _Reason}
+                          end
+             end,
+    case Result of
+        {Snapshot, SnapshotCommitParams} ->
             TypeString = lists:flatten(io_lib:format("~p", [Type])),
             case string:str(TypeString, "riak_dt") of
                 0 -> %% dealing with an op_based crdt
@@ -54,6 +57,6 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
                             {error, Reason}
                     end
             end;
-        {error, Reason} ->
-            {error, Reason}
+        {error, R} ->
+            {error, R} %% {error, Reason} is returned here.
     end.
