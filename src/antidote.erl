@@ -139,23 +139,49 @@ read_objects(Objects, TxId) ->
 
 -spec update_objects([{bound_object(), op(), op_param()}], txid())
                     -> ok | {error, reason()}.
+%%update_objects(Updates, TxId) ->
+%%    %% TODO: How to generate Actor,
+%%    %% Actor ID must be removed from crdt update interface
+%%    Actor = TxId,
+%%    %% Execute each update as in an interactive transaction
+%%    Results = lists:map(
+%%                fun({{Key, Type, _Bucket}, Op, OpParam}) ->
+%%                        case clocksi_iupdate(TxId, Key, Type,
+%%                                             {{Op, OpParam}, Actor}) of
+%%                            ok -> ok;
+%%                            {error, _Reason} ->
+%%                                error
+%%                        end
+%%                end, Updates),
+%%    case lists:member(error, Results) of
+%%        true -> {error, read_failed}; %% TODO: Capture the reason for error
+%%        false -> ok
+%%    end.
+
+
 update_objects(Updates, TxId) ->
-    %% TODO: How to generate Actor,
-    %% Actor ID must be removed from crdt update interface
+%%    lager:info("gonna start multiple updates: ~p", [Updates]),
+
+    {_, _, CoordFsmPid} = TxId,
     Actor = TxId,
-    %% Execute each update as in an interactive transaction
-    Results = lists:map(
-                fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-                        case clocksi_iupdate(TxId, Key, Type,
-                                             {{Op, OpParam}, Actor}) of
-                            ok -> ok;
-                            {error, _Reason} ->
-                                error
-                        end
-                end, Updates),
-    case lists:member(error, Results) of
-        true -> {error, read_failed}; %% TODO: Capture the reason for error
-        false -> ok
+    NewObjects = lists:map(fun({{Key, Type, _Bucket}, Op, OpParam}) ->
+        case materializer:check_operations([{update, {Key, Type, {{Op, OpParam}, Actor}}}]) of
+            ok ->
+%%                lager:info("check ok!"),
+                {Key, Type, {{Op, OpParam}, Actor}};
+            {error, _Reason} ->
+%%                lager:info("check WRONG!"),
+                    {error, type_check}
+        end
+                           end, Updates),
+    case lists:member({error, type_check}, NewObjects) of
+        true -> {error, type_check};
+        false ->
+%%            lager:info("gonna start multiple updates: ~p", [NewObjects]),
+            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, NewObjects}, ?OP_TIMEOUT) of
+                ok-> ok;
+                {error, Reason} -> {error, Reason}
+            end
     end.
 
 %% For static transactions: bulk updates and bulk reads

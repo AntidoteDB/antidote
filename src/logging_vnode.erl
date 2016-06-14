@@ -33,7 +33,7 @@
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
-         asyn_append/3,
+         asyn_append/4,
          append/3,
          append_commit/3,
          append_group/4,
@@ -112,18 +112,15 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), term()) -> ok.
-asyn_append(Preflist, Log, Payload) ->
-    riak_core_vnode_master:command(Preflist,
-                                   {append, Log, Payload},
-                                   {fsm, undefined, self(), ?SYNC_LOG},
-                                   ?LOGGING_MASTER).
+-spec asyn_append(preflist(), key(), term(), pid()) -> ok.
+asyn_append(Preflist, Log, Payload, Sender) ->
+    riak_core_vnode_master:command(Preflist, {append, Log, Payload, false, Sender}, ?LOGGING_MASTER).
+%%    lager:info("log asyn_append returning ~p...",[Something]).
 
 %% @doc synchronous append operation
 -spec append(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload) ->
-    riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, false},
+    riak_core_vnode_master:sync_command(IndexNode,    {append, LogId, Payload, false},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -270,34 +267,46 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload, Sync}, _Sender,
-               #state{logs_map=Map,
-                      clock=Clock,
-                      partition=Partition}=State) ->
+handle_command({append, LogId, Payload, Sync}, Sender, State)->
+    handle_command({append, LogId, Payload, Sync, ignore}, Sender, State);
+
+
+handle_command({append, LogId, Payload, Sync, Sender}, _S,
+  #state{logs_map = Map,
+      clock = Clock,
+      partition = Partition} = State) ->
     OpId = generate_op_id(Clock),
     {NewClock, _Node} = OpId,
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            Operation = #operation{op_number = OpId, payload = Payload},
-            case insert_operation(Log, LogId, Operation) of
-                {ok, OpId} ->
-                  inter_dc_log_sender_vnode:send(Partition, Operation),
-		    case Sync of
-			true ->
-			    case disk_log:sync(Log) of
-				ok ->
-				    {reply, {ok, OpId}, State#state{clock=NewClock}};
-				{error, Reason} ->
-				    {reply, {error, Reason}, State}
-			    end;
-			false ->
-			    {reply, {ok, OpId}, State#state{clock=NewClock}}
-		    end;
+    {Reply, NewState} = case get_log_from_map(Map, Partition, LogId) of
+                {ok, Log} ->
+                    Operation = #operation{op_number = OpId, payload = Payload},
+                    case insert_operation(Log, LogId, Operation) of
+                        {ok, OpId} ->
+                            inter_dc_log_sender_vnode:send(Partition, Operation),
+                            case Sync of
+                                true ->
+                                    case disk_log:sync(Log) of
+                                        ok ->
+
+                                            {{ok, OpId}, State#state{clock = NewClock}};
+                                        {error, Reason} ->
+                                            {{error, Reason}, State}
+                                    end;
+                                false ->
+                                    {{ok, OpId}, State#state{clock = NewClock}}
+                            end;
+                        {error, Reason} ->
+                            {{error, Reason}, State}
+                    end;
                 {error, Reason} ->
-                    {reply, {error, Reason}, State}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+                    {{error, Reason}, State}
+            end,
+    case Sender of
+        ignore ->
+            {reply, Reply, NewState};
+        _ ->
+            gen_fsm:send_event(Sender, Reply),
+            {noreply, NewState}
     end;
 
 

@@ -32,7 +32,9 @@
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet) ->
     {Op, Actor} = Update,
     Result = case orddict:find(Key, InternalReadSet) of
-                 {ok, {S, SCP}} -> {S, SCP};
+                 {ok, {S, SCP}} ->
+%%                     lager:info("cache hit!"),
+                     {S, SCP};
                  error -> case clocksi_vnode:read_data_item(Node, Transaction, Key, Type, WriteSet) of
                               {ok, {S, SCP}} -> {S, SCP};
                               {error, _Reason} -> {error, _Reason}

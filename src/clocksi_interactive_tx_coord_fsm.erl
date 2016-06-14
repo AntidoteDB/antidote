@@ -72,6 +72,7 @@
     perform_read/4,
     execute_op/3,
 receive_read_objects_result/2,
+    receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -132,13 +133,13 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
         transaction = undefined,
         updated_partitions = [],
         prepare_time = 0,
-        num_to_read = 0,
+        num_to_reply = 0,
         num_to_ack = 0,
         operations = undefined,
         from = undefined,
         full_commit = FullCommit,
         is_static = IsStatic,
-        return_read_set = [],
+        return_accumulator = [],
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         %% The following are needed by the physics protocol
@@ -156,7 +157,7 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction = Transaction, num_to_read = 0}.
+    SD#tx_coord_state{transaction = Transaction, num_to_reply = 0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
   boolean(), pid() | undefined, boolean(), atom()) -> {transaction(), txid() | {error, term()}}.
@@ -263,7 +264,7 @@ perform_singleitem_update(Key, Type, Params) ->
                 op_payload = {Key, Type, DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
-            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
+            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()) of
                 ok ->
                     case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
                         {committed, CommitTime} ->
@@ -312,9 +313,9 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
         {ok, ReadResult} ->
             ReadResult
     end.
-perform_update(UpdateArgs, Sender, CoordState) ->
+perform_update(UpdateArgs, _Sender, CoordState) ->
     {Key, Type, Param} = UpdateArgs,
-%%    lager:info("updating with the following paramaters: ~p~n",[Param]),
+%%    lager:info("updating with the following paramaters: ~p~n", [Param]),
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
     Transaction = CoordState#tx_coord_state.transaction,
     TransactionalProtocol = Transaction#transaction.transactional_protocol,
@@ -333,65 +334,63 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
         {ok, DownstreamRecord, SnapshotParameters} ->
-%%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
-            NewUpdatedPartitions =
-                case TransactionalProtocol of
-                    physics->
+%%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
+            State1 = case TransactionalProtocol of
+                         physics ->
 %%                        lager:info("SnapshotParameters ~p",[SnapshotParameters]),
-                        {DownstreamOpCommitVC, _DepVC, _ReadTimeVC} = SnapshotParameters,
-                        case WriteSet of
-                            [] ->
-                                [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]} | UpdatedPartitions];
-                            _ ->
-                                lists:keyreplace(IndexNode, 1, UpdatedPartitions,
-                                    {IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}} | WriteSet]})
-                        end;
-                    Prot when ((Prot == gr) or (Prot == clocksi))->
-                        case WriteSet of
-                            [] ->
-                                [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
-                            _ ->
-                                lists:keyreplace(IndexNode, 1, UpdatedPartitions,
-                                    {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
-                        end
-                end,
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    gen_fsm:reply(Sender, ok)
-            end,
+                             {DownstreamOpCommitVC, _DepVC, _ReadTimeVC} = SnapshotParameters,
+                             case WriteSet of
+                                 [] ->
+                                     NewUpdatedPartitions = [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]} | UpdatedPartitions],
+                                     update_causal_snapshot_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key);
+                                 _ ->
+                                     NewUpdatedPartitions = lists:keyreplace(IndexNode, 1, UpdatedPartitions,
+                                         {IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}} | WriteSet]}),
+                                     CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}
+                             end;
+                         Prot when ((Prot == gr) or (Prot == clocksi)) ->
+                             case WriteSet of
+                                 [] ->
+                                     NewUpdatedPartitions = [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions],
+                                     CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions};
+                                 _ ->
+                                     NewUpdatedPartitions = lists:keyreplace(IndexNode, 1, UpdatedPartitions,
+                                         {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]}),
+                                     CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}
+                             end
+                     end,
+%%            case Sender of
+%%                undefined ->
+%%                    ok;
+%%                _ ->
+%%                    lager:info("reply ok."),
+%%                    gen_fsm:reply(Sender, ok)
+%%            end,
             TxId = Transaction#transaction.txn_id,
             LogRecord = #log_record{tx_id = TxId, op_type = update,
                 op_payload = {Key, Type, DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
-            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
+            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()) of
                 ok ->
-%%                    {ok, _} ->
-                    State1 = case TransactionalProtocol of
-                                 physics ->
-                                     update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
-                                 Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                     CoordState
-                             end,
-                    State1#tx_coord_state{updated_partitions = NewUpdatedPartitions};
-                Error ->
-                    case Sender of
-                        undefined ->
-                            ok;
-                        _ ->
-                            _Res = gen_fsm:reply(Sender, {error, Error})
-                    end,
-                    {error, Error}
+%%                    lager:info("got ok from loggin vnode."),
+                    State1;
+                {error, Reason} ->
+%%                    case Sender of
+%%                        undefined ->
+%%                            ok;
+%%                        _ ->
+%%                            _Res = gen_fsm:reply(Sender, {error, Error})
+%%                    end,
+                    {error, Reason}
             end;
         {error, Reason} ->
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    _Res = gen_fsm:reply(Sender, {error, Reason})
-            end,
+%%            case Sender of
+%%                undefined ->
+%%                    ok;
+%%                _ ->
+%%                    _Res = gen_fsm:reply(Sender, {error, Reason})
+%%            end,
             {error, Reason}
     end.
 
@@ -399,6 +398,10 @@ perform_update(UpdateArgs, Sender, CoordState) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
+
+execute_op({update, Args}, Sender, SD0) ->
+    execute_op({update_objects, [Args]}, Sender, SD0);
+
 execute_op({OpType, Args}, Sender,
   SD0 = #tx_coord_state{transaction = Transaction,
       updated_partitions = Updated_partitions
@@ -431,31 +434,71 @@ execute_op({OpType, Args}, Sender,
                 Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                 IndexNode = hd(Preflist),
                 ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                ReadSet = Acc#tx_coord_state.return_read_set,
-                Acc#tx_coord_state{return_read_set = [Key | ReadSet]}
+                ReadSet = Acc#tx_coord_state.return_accumulator,
+                Acc#tx_coord_state{return_accumulator = [Key | ReadSet]}
                            end,
-            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_read_set = []}, Args),
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_reply = length(Args), return_accumulator = []}, Args),
             {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
-        update ->
-            case perform_update(Args, Sender, SD0) of
-                {error, _Reason} ->
-                    abort(SD0);
-                NewCoordinatorState ->
-                    {next_state, execute_op, NewCoordinatorState}
-            end;
+
+
+        %%        update ->
+%%            case perform_update(Args, Sender, SD0) of
+%%                {error, _Reason} ->
+%%                    {reply, ok, abort(SD0), SD0};
+%%                NewCoordinatorState ->
+%%                    {reply, ok, execute_op, NewCoordinatorState}
+%%            end;
+
         update_objects ->
-            case perform_update(Args, Sender, SD0) of
-                {error, _Reason} ->
-                    abort(SD0);
-                NewCoordinatorState ->
-                    {next_state, execute_op, NewCoordinatorState}
+            ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc) ->
+%%                lager:info("performning the following update :~p",[{{Key, Type, UpdateParams}, Sender, Acc}]),
+                Result = perform_update({Key, Type, UpdateParams}, Sender, Acc),
+%%                io:format("~nResult is : ~w~n", [Result]),
+                case Result of
+                    {error, Reason} ->
+%%                        lager:info("there was an error :~p",[_Reason]),
+                        Acc#tx_coord_state{return_accumulator = {error, Reason}};
+                    NewCoordinatorState ->
+%%                        lager:info("accumulator is  :~p",[NewCoordinatorState#tx_coord_state.return_accumulator]),
+                        NewCoordinatorState#tx_coord_state{num_to_reply = NewCoordinatorState#tx_coord_state.num_to_reply +1}
+                end
+                             end,
+            NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_reply = 0, return_accumulator = ok}, Args),
+%%            io:format("~nNewCoordState ~w~n",[NewCoordState]),
+            case NewCoordState#tx_coord_state.num_to_reply > 0 of
+                true ->
+                    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
+                false ->
+                    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
             end
 
     end.
 
+receive_logging_responses(Response, S0 = #tx_coord_state{num_to_reply = NumToReply,
+    return_accumulator = ReturnAcc}) ->
+    NewAcc = case Response of
+                 {error, Reason} -> {error, Reason};
+                 {ok, _OpId} -> ReturnAcc;
+                 timeout -> ReturnAcc
+             end,
+    case NumToReply > 1 of
+        false ->
+            gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
+            case (NewAcc == ok) of
+                true ->
+                    {next_state, execute_op, S0#tx_coord_state{num_to_reply = 0, return_accumulator = []}};
+                false ->
+                    abort(S0)
+            end;
+        true ->
+            {next_state, receive_logging_responses,
+                S0#tx_coord_state{num_to_reply = NumToReply - 1, return_accumulator = NewAcc}}
+    end.
+
+
 receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
-  S0 = #tx_coord_state{num_to_read = NumToRead,
-      return_read_set = ReadSet,
+  S0 = #tx_coord_state{num_to_reply = NumToRead,
+      return_accumulator = ReadSet,
       internal_read_set = InternalReadSet,
       transactional_protocol = TransactionalProtocol}) ->
 %%    lager:info("got result !!! ~p ", [{ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}}]),
@@ -473,10 +516,10 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
     case NumToRead of
         1 ->
             gen_fsm:reply(SD1#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
-            {next_state, execute_op, SD1#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+            {next_state, execute_op, SD1#tx_coord_state{num_to_reply = 0, internal_read_set = NewInternalReadSet}};
         _ ->
             {next_state, receive_read_objects_result,
-                SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_read_set = ReadSet1, num_to_read = NumToRead - 1}}
+                SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator = ReadSet1, num_to_reply = NumToRead - 1}}
     end.
 
 
@@ -513,7 +556,7 @@ update_causal_snapshot_state(State, ReadMetadata, Key) ->
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
-    transaction = Transaction, num_to_read = NumToRead,
+    transaction = Transaction, num_to_reply = NumToRead,
     updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
     case UpdatedPartitions of
         [] ->
@@ -729,7 +772,7 @@ receive_aborted(_, S0) ->
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_read_set = ReturnReadSet,
+reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator = ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
     is_static = IsStatic, stay_alive = StayAlive}) ->
     if undefined =/= From ->
