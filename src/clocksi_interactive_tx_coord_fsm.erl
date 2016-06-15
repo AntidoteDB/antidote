@@ -430,10 +430,24 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set = InternalReadSet}}
             end;
         read_objects ->
+            NewTransaction = case Transaction#transaction.transactional_protocol of
+                physics ->
+                    case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == [] of
+                        true ->
+                            %% create a static read
+                            PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), vectorclock:new()),
+                            PhysicsMetadata = #physics_read_metadata{dep_upbound = PhysicsClock, commit_time_lowbound = PhysicsClock},
+                            Transaction#transaction{physics_read_metadata = PhysicsMetadata};
+                        false ->
+                            Transaction
+                    end;
+                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                    Transaction
+            end,
             ExecuteReads = fun({Key, Type}, Acc) ->
                 Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                 IndexNode = hd(Preflist),
-                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                ok = clocksi_vnode:async_read_data_item(IndexNode, NewTransaction, Key, Type),
                 ReadSet = Acc#tx_coord_state.return_accumulator,
                 Acc#tx_coord_state{return_accumulator = [Key | ReadSet]}
                            end,
