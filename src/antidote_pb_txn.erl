@@ -133,6 +133,7 @@ process({commit_transaction,TxId,ReplyType},State) ->
             {reply, antidote_pb_codec:encode(EncodeType,
                                              {error, Reason}), State};
         {ok, CommitTime} ->
+	    lager:info("Commit time ~p", [CommitTime]),
             {reply, antidote_pb_codec:encode(EncodeType, {ok, CommitTime}),
              State}
     end;
@@ -146,7 +147,9 @@ process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td},
     process({read_objects,Objects,TxId,proto_buf},State);
 
 process({read_objects,Objects,TxId,ReplyType},State) ->
+    lager:info("the read ~p", [{read_objects,Objects,TxId,ReplyType}]),
     Response = antidote:read_objects(Objects, TxId),
+    lager:info("the response ~p", [Response]),
     EncodeType = 
 	case ReplyType of
 	    proto_buf -> read_objects_response;
@@ -170,6 +173,7 @@ process(#apbupdateobjects{updates=BUpdates, transaction_descriptor=Td},
     process({update_objects,Updates,TxId,proto_buf},State);
 
 process({update_objects,Updates,TxId,ReplyType},State) ->
+    lager:info("The request ~p", [{update_objects,Updates,TxId,ReplyType}]),
     Response = antidote:update_objects(Updates, TxId),
     EncodeType = 
 	case ReplyType of
@@ -197,11 +201,12 @@ process(#apbstaticupdateobjects{
     process({static_update_objects,Clock,Updates,Properties,proto_buf},State);
 
 process({static_update_objects,Clock,Updates,Properties,ReplyType},State) ->
+    lager:info("the request ~p", [{static_update_objects,Clock,Updates,Properties,ReplyType}]),
     Response = antidote:update_objects(Clock, Properties, Updates, true),
     EncodeType = 
 	case ReplyType of
 	    proto_buf -> commit_response;
-	    json -> commit_json end,
+	    json -> commit_response_json end,
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(EncodeType,
@@ -240,6 +245,7 @@ process({static_read_objects,Clock,Properties,Objects,ReplyType},State) ->
 
 %% For legion clients
 process(#apbjsonrequest{value=JValue},State) ->
+    lager:info("The request is ~p",[jsx:decode(JValue,[{labels,atom}])]),
     Req = antidote_pb_codec:decode_json(jsx:decode(JValue,[{labels,atom}])),
     process(Req,State);
 
@@ -257,7 +263,7 @@ process({get_objects,Objects,Type},State) ->
 			%% Default to json
 			get_objects_response_json
 		end,
-    Response = antidote:get_objects(Objects),
+    Response = antidote:get_objects(Objects,[]),
     Reply = case Response of
 		{error, Reason} ->
 		    antidote_pb_codec:encode(ReplyType,

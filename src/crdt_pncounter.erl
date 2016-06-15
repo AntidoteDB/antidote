@@ -47,7 +47,18 @@
 
 -module(crdt_pncounter).
 
--export([new/0, new/1, value/1, value/2, update/2, generate_downstream/3, to_binary/1, from_binary/1]).
+-export([new/0,
+	 new/1,
+	 value/1,
+	 value/2,
+	 update/2,
+	 generate_downstream/3,
+	 to_binary/1,
+	 from_binary/1,
+	 to_json/1,
+	 from_json/1,
+	 downstream_to_json/1,
+	 downstream_from_json/1]).
 -export([equal/2, is_operation/1]).
 
 -ifdef(TEST).
@@ -181,6 +192,20 @@ unique(_Actor) ->
 -spec is_operation(term()) -> boolean().
 is_operation(Operation) ->
     riak_dt_pncounter:is_operation(Operation).
+
+to_json({P,N}) ->
+    [{crdt_pncounter, [P,N]}].
+from_json([{crdt_pncounter, [P,N]}]) ->
+    {P,N}.
+downstream_to_json({{increment, By},Token}) ->
+    [{increment, [By,json_utilities:convert_to_json(Token)]}];
+downstream_to_json({{decrement, By},Token}) ->
+    [{decrement, [By,json_utilities:convert_to_json(Token)]}].
+downstream_from_json([{increment, [By, Token]}]) ->
+    {{increment, By}, json_utilities:deconvert_from_json(Token)};
+downstream_from_json([{decrement, [By, Token]}]) ->
+    {{decrement, By}, json_utilities:deconvert_from_json(Token)}.
+
 
 %% ===================================================================
 %% EUnit tests

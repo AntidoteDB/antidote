@@ -85,9 +85,9 @@
     receive_aborted/2,
     abort/1,
     abort/2,
-    perform_singleitem_read/2,
-    perform_singleitem_get/2,
-    perform_singleitem_update/3,
+    perform_singleitem_read/3,
+    perform_singleitem_get/3,
+    perform_singleitem_update/4,
     reply_to_client/1,
     generate_name/1]).
 
@@ -95,22 +95,22 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Clientclock, UpdateClock, StayAlive) ->
+start_link(From, Clientclock, Properties, StayAlive) ->
     case StayAlive of
 	true ->
-	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Properties, StayAlive], []);
 	false ->
-	    gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+	    gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive], [])
     end.
 
 start_link(From, Clientclock) ->
-    start_link(From, Clientclock, update_clock).
+    start_link(From, Clientclock, [{update_clock, true}]).
 
-start_link(From,Clientclock,UpdateClock) ->
-    start_link(From,Clientclock,UpdateClock,false).
+start_link(From,Clientclock,Properties) ->
+    start_link(From,Clientclock,Properties,false).
 
 start_link(From) ->
-    start_link(From, ignore, update_clock).
+    start_link(From, ignore, [{update_clock, true}]).
 
 finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -122,8 +122,8 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([From, ClientClock, UpdateClock, StayAlive]) ->
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))}.
+init([From, ClientClock, Properties, StayAlive]) ->
+    {ok, execute_op, start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, false, false))}.
 
 init_state(StayAlive, FullCommit, IsStatic) ->
     #tx_coord_state{
@@ -144,11 +144,11 @@ init_state(StayAlive, FullCommit, IsStatic) ->
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
-start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
+start_tx({start_tx, From, ClientClock, Properties}, SD0) ->
+    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, SD0)}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
-    {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
+start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive = StayAlive}) ->
+    {Transaction, TransactionId} = create_transaction_record(ClientClock, antidote:get_txn_property(update_clock,Properties), StayAlive, From, false),
     From ! {ok, TransactionId},
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
@@ -191,19 +191,19 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
-perform_singleitem_read(Key, Type) ->
-    perform_singleitem_operation(Key,Type,object_value).
+-spec perform_singleitem_read(key(), type(), list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
+perform_singleitem_read(Key, Type, Properties) ->
+    perform_singleitem_operation(Key,Type,object_value,Properties).
 
 %% @doc This is the same as perform_singleitem_read, except returns
 %%      the object state instead of its value
--spec perform_singleitem_get(key(), type()) -> {ok, term(), snapshot_time()} | {error, reason()}.
-perform_singleitem_get(Key, Type) ->
-    perform_singleitem_operation(Key,Type,object_state).
+-spec perform_singleitem_get(key(), type(), list()) -> {ok, term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_get(Key, Type, Properties) ->
+    perform_singleitem_operation(Key,Type,object_state,Properties).
 
--spec perform_singleitem_operation(key(), type(), object_state | object_value) -> {ok, val() | term(), snapshot_time()} | {error, reason()}.
-perform_singleitem_operation(Key, Type, ReturnType) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+-spec perform_singleitem_operation(key(), type(), object_state | object_value, list()) -> {ok, val() | term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_operation(Key, Type, ReturnType, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(ignore, antidote:get_txn_property(update_clock,Properties), false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
@@ -223,9 +223,9 @@ perform_singleitem_operation(Key, Type, ReturnType) ->
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Key, Type, Params) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+-spec perform_singleitem_update(key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+perform_singleitem_update(Key, Type, Params, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(ignore, antidote:get_txn_property(update_clock,Properties), false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
@@ -256,7 +256,6 @@ perform_singleitem_update(Key, Type, Params) ->
         {error, Reason} ->
             {error, Reason}
     end.
-
 
 perform_read(Args, Updated_partitions, Transaction, Sender) ->
     {Key, Type} = Args,
