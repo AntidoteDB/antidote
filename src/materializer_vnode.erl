@@ -25,9 +25,9 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 %% Number of snapshots to trigger GC
--define(SNAPSHOT_THRESHOLD, 10).
+-define(SNAPSHOT_THRESHOLD, 15).
 %% Number of snapshots to keep after GC
--define(SNAPSHOT_MIN, 5).
+-define(SNAPSHOT_MIN, 10).
 %% Number of ops to keep before GC
 -define(OPS_THRESHOLD, 50).
 %% The first 3 elements in operations list are meta-data
@@ -367,16 +367,23 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
             {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
         [Tuple] ->
             {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
-            {UpdatedTxnRecord, TempCommitParameters} = case Protocol of
-                                                           physics ->
-                                                               case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
-                                                                   _ ->
-                                                                       OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey),
-                                                                       {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams}
-                                                               end;
-                                                           Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-                                                               {Transaction, empty}
-                                                       end,
+            {UpdatedTxnRecord, TempCommitParameters} =
+                case Protocol of
+                    physics ->
+                        case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
+                            _ ->
+                                case define_snapshot_vc_for_transaction(Transaction, OperationsForKey) of
+                                    OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
+                                        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
+                                    no_operation_to_define_snapshot ->
+                                        lager:info("there no_operation_to_define_snapshot"),
+                                        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+                                        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}}
+                                end
+                        end;
+                    Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+                        {Transaction, empty}
+                end,
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
                              %% First time reading this key, store an empty snapshot in the cache
@@ -454,7 +461,7 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
 %% the protocol uses the commit time of the operation as the "snapshot time"
 %% of this particular read, whithin the transaction.
 define_snapshot_vc_for_transaction(_Transaction, []) ->
-    no_compatible_operation_found;
+    no_operation_to_define_snapshot;
 define_snapshot_vc_for_transaction(Transaction, OperationList) ->
     LocalDCReadTime = clocksi_vnode:now_microsec(now()),
     define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore).
@@ -468,15 +475,18 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
-    case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+%%    lager:info("~nOperationCommitVC =~p~n TxCTLowBound =~p~n OperationDependencyVC =~p~n TxDepUpBound =~p~n",
+%%        [OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound]),
+    FinalReadVC = case ReadVC of
+                      ignore -> %% newest operation in the list.
+                          OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
+                          vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationDependencyVC);
+                      _ ->
+                          ReadVC
+                  end,
+
+    case vector_orddict:is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
         true ->
-            FinalReadVC = case ReadVC of
-                              ignore -> %% newest operation in the list.
-                                  OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
-                                  vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationDependencyVC);
-                              _ ->
-                                  ReadVC
-                          end,
             {OperationCommitVC, OperationDependencyVC, FinalReadVC};
         false ->
             NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
