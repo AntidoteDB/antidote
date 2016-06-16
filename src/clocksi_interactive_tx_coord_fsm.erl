@@ -143,7 +143,7 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         %% The following are needed by the physics protocol
-        version_min = undefined,
+        version_max = undefined,
         keys_access_time = orddict:new()
     }.
 
@@ -342,7 +342,8 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
                              case WriteSet of
                                  [] ->
                                      NewUpdatedPartitions = [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]} | UpdatedPartitions],
-                                     update_causal_snapshot_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key);
+%%                                     update_causal_snapshot_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key);
+                                     CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions};
                                  _ ->
                                      NewUpdatedPartitions = lists:keyreplace(IndexNode, 1, UpdatedPartitions,
                                          {IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}} | WriteSet]}),
@@ -542,29 +543,31 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
 %% @doc Used by the causal snapshot for physics
 %%      Updates the state of a transaction coordinator
 %%      for maintaining the causal snapshot metadata
-update_causal_snapshot_state(State, ReadMetadata, Key) ->
+update_causal_snapshot_state(State, ReadMetadata, _Key) ->
     Transaction = State#tx_coord_state.transaction,
-    {CommitVC, DepVC, ReadTime} = ReadMetadata,
-%%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTime = ~p~n",[CommitVC, DepVC, ReadTime]),
-    KeysAccessTime = State#tx_coord_state.keys_access_time,
-    VersionMin = State#tx_coord_state.version_min,
-    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
-    NewVersionMin = min(VersionMin, CommitVC),
+    {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
+%%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTimeVC = ~p~n",[CommitVC, DepVC, ReadTimeVC]),
+%%    KeysAccessTime = State#tx_coord_state.keys_access_time,
+    VersionMax = State#tx_coord_state.version_max,
+%%    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
+    NewVersionMax = vectorclock:max_vc(VersionMax, CommitVC),
+%%    lager:info("VersionMax = ~p~n, NewVersionMax = ~p",[VersionMax, NewVersionMax]),
     CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
     DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-    ReadTimeVC = case CommitVC == ignore of
-                     true ->
-                         ignore;
-                     false ->
-                         vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
-                 end,
+%%    ReadTimeVC = case CommitVC == ignore of
+%%                     true ->
+%%                         ignore;
+%%                     false ->
+%%                         vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
+%%                 end,
     NewTransaction = Transaction#transaction{
         physics_read_metadata = #physics_read_metadata{
             %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
             dep_upbound = vectorclock:min_vc(ReadTimeVC, DepUpbound),
             commit_time_lowbound = vectorclock:max_vc(DepVC, CommitTimeLowbound)}},
-    State#tx_coord_state{keys_access_time = NewKeysAccessTime,
-        version_min = NewVersionMin, transaction = NewTransaction}.
+    State#tx_coord_state{
+%%        keys_access_time = NewKeysAccessTime,
+        version_max = NewVersionMax, transaction = NewTransaction}.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes
@@ -626,29 +629,36 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
     commit_protocol = CommitProtocol, full_commit = FullCommit,
     from = From, prepare_time = PrepareTime,
     transaction = Transaction,
+    version_max = DependencyVC,
     updated_partitions = Updated_partitions}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
+    PrepareParams = case Transaction#transaction.transactional_protocol of
+                        physics ->
+                            {MaxPrepareTime, DependencyVC};
+                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                            MaxPrepareTime
+                    end,
     case NumToAck of 1 ->
         case CommitProtocol of
             two_phase ->
                 case FullCommit of
                     true ->
-                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
+                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
                         {next_state, receive_committed,
                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
                     false ->
-                        gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                        gen_fsm:reply(From, {ok, PrepareParams}),
                         {next_state, committing_2pc,
                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
                 end;
             _ ->
                 case FullCommit of
                     true ->
-                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
+                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
                         {next_state, receive_committed,
                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
                     false ->
-                        gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                        gen_fsm:reply(From, {ok, PrepareParams}),
                         {next_state, committing,
                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
                 end
@@ -701,13 +711,14 @@ committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transacti
 %%      start the commit phase.
 committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
-    commit_time = Commit_time}) ->
+    commit_time = Commit_time,
+    version_max = DependencyVC}) ->
     NumToAck = length(Updated_partitions),
     case NumToAck of
         0 ->
             reply_to_client(SD0#tx_coord_state{state = committed_read_only, from = Sender});
         _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, DependencyVC}),
             {next_state, receive_committed,
                 SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
@@ -718,13 +729,14 @@ committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
 %%      expected
 committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
-    commit_time = Commit_time}) ->
+    commit_time = Commit_time,
+    version_max = DependencyVC}) ->
     NumToAck = length(Updated_partitions),
     case NumToAck of
         0 ->
             reply_to_client(SD0#tx_coord_state{state = committed_read_only, from = Sender});
         _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, DependencyVC}),
             {next_state, receive_committed,
                 SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.

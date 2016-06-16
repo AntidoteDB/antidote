@@ -190,7 +190,7 @@
     stay_alive :: boolean(),
     %% The following are needed by the physics protocol
     %% Should I create a new tx_coord_record?
-    version_min :: clock_value() | undefined,
+    version_max :: vectorclock() | undefined,
     keys_access_time :: orddict()
 }).
 

@@ -20,7 +20,7 @@
 -module(physics_test).
 
 -export([confirm/0,
-    clocksi_test1/1,
+%%    clocksi_test1/1,
     clocksi_test2/1,
     clocksi_test3/1,
     clocksi_test5/1,
@@ -30,7 +30,7 @@
     spawn_read/4,
     clocksi_test_prepare/1,
     clocksi_tx_noclock_test/1,
-    clocksi_single_key_update_read_test/1,
+%%    clocksi_single_key_update_read_test/1,
     clocksi_multiple_key_update_read_test/1,
     clocksi_test_certification_check/1,
     clocksi_multiple_test_certification_check/1,
@@ -58,7 +58,7 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
     ?assertMatch(physics, Prot),
-    clocksi_test1(Nodes),
+%%    clocksi_test1(Nodes),
 
     [Nodes1] = common:clean_clusters([Nodes]),
     clocksi_test2(Nodes1),
@@ -76,7 +76,7 @@ confirm() ->
     clocksi_tx_noclock_test(Nodes5),
 
     [Nodes6] = common:clean_clusters([Nodes5]),
-    clocksi_single_key_update_read_test(Nodes6),
+%%    clocksi_single_key_update_read_test(Nodes6),
 
     [Nodes7] = common:clean_clusters([Nodes6]),
     clocksi_multiple_key_update_read_test(Nodes7),
@@ -110,61 +110,61 @@ confirm() ->
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
-clocksi_test1(Nodes) ->
-    FirstNode = hd(Nodes),
-    lager:info("Test1 started"),
-    Key1=clocksi_test1_key1,
-    Key2=clocksi_test1_key2,
-    Type = riak_dt_pncounter,
-    %% Empty transaction works,
-    Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [[]]),
-    ?assertMatch({ok, _}, Result0),
-    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [[]]),
-    ?assertMatch({ok, _}, Result1),
-
-    % A simple read returns empty
-    Result11=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [
-            [{read, {Key1, Type}}]]),
-    ?assertMatch({ok, _}, Result11),
-    {ok, {_, ReadSet11, _}}=Result11,
-    ?assertMatch([0], ReadSet11),
-
-    %% Read what you wrote
-    Result2=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [
-            [{read, {Key1, Type}},
-                {update, {Key1, Type, {increment, a}}},
-                {update, {Key2, Type, {increment, a}}},
-                {read, {Key1, Type}}]]),
-    ?assertMatch({ok, _}, Result2),
-    {ok, {_, ReadSet2, _}}=Result2,
-    ?assertMatch([0,0], ReadSet2),
-
-    %% Update is persisted && update to multiple keys are atomic
-    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [
-            [{read, {Key1, Type}},
-                {read, {Key2, Type}}]]),
-    ?assertMatch({ok, _}, Result3),
-    {ok, {_, ReadSet3, _}}=Result3,
-    ?assertEqual([1,1], ReadSet3),
-
-    %% Multiple updates to a key in a transaction works
-    Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [
-            [{update, {Key1, Type, {increment, a}}},
-                {update, {Key1, Type, {increment, a}}}]]),
-    ?assertMatch({ok,_}, Result5),
-
-    Result6=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [
-            [{read, {Key1, Type}}]]),
-    {ok, {_, ReadSet6, _}}=Result6,
-    ?assertEqual(3, hd(ReadSet6)),
-    pass.
+%%clocksi_test1(Nodes) ->
+%%    FirstNode = hd(Nodes),
+%%    lager:info("Test1 started"),
+%%    Key1=clocksi_test1_key1,
+%%    Key2=clocksi_test1_key2,
+%%    Type = riak_dt_pncounter,
+%%    %% Empty transaction works,
+%%    Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%%        [[]]),
+%%    ?assertMatch({ok, _}, Result0),
+%%    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%%        [[]]),
+%%    ?assertMatch({ok, _}, Result1),
+%%
+%%    % A simple read returns empty
+%%    Result11=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%%        [
+%%            [{read, {Key1, Type}}]]),
+%%    ?assertMatch({ok, _}, Result11),
+%%    {ok, {_, ReadSet11, _}}=Result11,
+%%    ?assertMatch([0], ReadSet11),
+%%
+%%    %% Read what you wrote
+%%    Result2=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%%        [
+%%            [{read, {Key1, Type}},
+%%                {update, {Key1, Type, {increment, a}}},
+%%                {update, {Key2, Type, {increment, a}}},
+%%                {read, {Key1, Type}}]]),
+%%    ?assertMatch({ok, _}, Result2),
+%%    {ok, {_, ReadSet2, _}}=Result2,
+%%    ?assertMatch([0,0], ReadSet2),
+%%
+%%    %% Update is persisted && update to multiple keys are atomic
+%%    Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%%        [
+%%            [{read, {Key1, Type}},
+%%                {read, {Key2, Type}}]]),
+%%    ?assertMatch({ok, _}, Result3),
+%%    {ok, {_, ReadSet3, _}}=Result3,
+%%    ?assertEqual([1,1], ReadSet3),
+%%
+%%    %% Multiple updates to a key in a transaction works
+%%    Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%%        [
+%%            [{update, {Key1, Type, {increment, a}}},
+%%                {update, {Key1, Type, {increment, a}}}]]),
+%%    ?assertMatch({ok,_}, Result5),
+%%
+%%    Result6=rpc:call(FirstNode, antidote, clocksi_execute_tx,
+%%        [
+%%            [{read, {Key1, Type}}]]),
+%%    {ok, {_, ReadSet6, _}}=Result6,
+%%    ?assertEqual(3, hd(ReadSet6)),
+%%    pass.
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %%      that updates multiple partitions.
@@ -383,61 +383,59 @@ clocksi_tx_noclock_test(Nodes) ->
     {ok, {_, ReadSet1, _}}= ReadResult1,
     ?assertMatch([1], ReadSet1),
 
-    FirstNode = hd(Nodes),
-    WriteResult1 = rpc:call(FirstNode, antidote, clocksi_bulk_update,
-        [[{update, {Key, Type, {increment, a}}}]]),
-    ?assertMatch({ok, _}, WriteResult1),
-    ReadResult2= rpc:call(FirstNode, antidote, clocksi_read,
-        [Key, riak_dt_pncounter]),
-    {ok, {_, ReadSet2, _}}=ReadResult2,
-    ?assertMatch([2], ReadSet2),
-    lager:info("Test3 passed"),
-    pass.
 
-%% @doc The following function tests that ClockSI can run both a single
-%%      read and a bulk-update tx.
-clocksi_single_key_update_read_test(Nodes) ->
-    lager:info("Test3 started"),
-    FirstNode = hd(Nodes),
-    Key = clocksi_single_key_update_read_test_key1,
-    Type = riak_dt_pncounter,
-    Result= rpc:call(FirstNode, antidote, clocksi_bulk_update,
-        [
-            [{update, {Key, Type, {increment, a}}},
-                {update, {Key, Type, {increment, b}}}]]),
-    ?assertMatch({ok, _}, Result),
-    {ok,{_,_,CommitTime}} = Result,
-    Result2= rpc:call(FirstNode, antidote, clocksi_read,
-        [CommitTime, Key, riak_dt_pncounter]),
-    {ok, {_, ReadSet, _}}=Result2,
-    ?assertMatch([2], ReadSet),
+    Operation = {{Key, Type, bucket}, increment, 1},
+
+    {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ok = rpc:call(FirstNode, antidote, update_objects,
+        [[Operation], TxId1]),
+    CommitTime1=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
+    ?assertMatch({ok, _}, CommitTime1),
+    End1=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+    ?assertMatch({ok, _}, End1),
+
+    {ok,TxId2}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ReadResult2=rpc:call(FirstNode, antidote, clocksi_iread,
+        [TxId2, Key, riak_dt_pncounter]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId2]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId2]),
+
+    {ok, 2}=ReadResult2,
+
     lager:info("Test3 passed"),
     pass.
 
 %% @doc Verify that multiple reads/writes are successful.
 clocksi_multiple_key_update_read_test(Nodes) ->
-    Firstnode = hd(Nodes),
+    FirstNode = hd(Nodes),
     Type = riak_dt_pncounter,
     Key1 = clocksi_multiple_key_update_read_test_key1,
     Key2 = clocksi_multiple_key_update_read_test_key2,
     Key3 = clocksi_multiple_key_update_read_test_key3,
-    Ops = [{update, {Key1, Type, {increment,a}}},
-        {update, {Key2, Type, {{increment,10},a}}},
-        {update,{Key3, Type, {increment,a}}}],
-    Writeresult = rpc:call(Firstnode, antidote, clocksi_bulk_update,
-        [Ops]),
-    ?assertMatch({ok,{_Txid, _Readset, _Committime}}, Writeresult),
-    {ok,{_Txid, _Readset, Committime}} = Writeresult,
-    {ok,{_,[ReadResult1],_}} = rpc:call(Firstnode, antidote, clocksi_read,
-        [Committime, Key1, riak_dt_pncounter]),
-    {ok,{_,[ReadResult2],_}} = rpc:call(Firstnode, antidote, clocksi_read,
-        [Committime, Key2, riak_dt_pncounter]),
-    {ok,{_,[ReadResult3],_}} = rpc:call(Firstnode, antidote, clocksi_read,
-        [Committime, Key3, riak_dt_pncounter]),
-    ?assertMatch(ReadResult1,1),
-    ?assertMatch(ReadResult2,10),
-    ?assertMatch(ReadResult3,1),
+    Operation1 = {{Key1, Type, bucket}, increment, 1},
+    Operation2 = {{Key2, Type, bucket}, increment, 1},
+    Operation3 = {{Key3, Type, bucket}, increment, 1},
+
+    {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ok = rpc:call(FirstNode, antidote, update_objects,
+        [[Operation1, Operation2, Operation3], TxId1]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+
+
+    {ok,TxId2}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    {ok, [1,10,1]} = rpc:call(FirstNode, antidote, read_objects,
+        [[{Key1, riak_dt_pncounter, bucket},
+            {Key2, riak_dt_pncounter, bucket},
+            {Key3, riak_dt_pncounter,  bucket}]
+            , TxId2]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId2]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId2]),
+    lager:info("passed clocksi_multiple_key_update_read_test"),
     pass.
+
+
+
 
 %% @doc The following function tests that ClockSI can excute a
 %%      read-only interactive tx.
@@ -463,7 +461,7 @@ clocksi_test4(Nodes) ->
     lager:info("Test 4 passed."),
     pass.
 
-%% @doc The following function tests that ClockSI waits, when reading,
+%% @doc The following function tests that Physics does not waits, when reading,
 %%      for a tx that has updated an element that it wants to read and
 %%      has a smaller TxId, but has not yet committed.
 clocksi_test_read_time(Nodes) ->
