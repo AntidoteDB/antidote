@@ -36,7 +36,8 @@
   dc_successfully_started/0,
   check_node_restart/0,
   forget_dc/1,
-  forget_dcs/1]).
+  forget_dcs/1,
+  drop_ping/1]).
 
 -spec get_descriptor() -> {ok, #descriptor{}}.
 get_descriptor() ->
@@ -224,6 +225,16 @@ forget_dc(#descriptor{dcid = DCID}) ->
 
 -spec forget_dcs([#descriptor{}]) -> ok.
 forget_dcs(Descriptors) -> lists:foreach(fun forget_dc/1, Descriptors).
+
+%% Tell nodes within the DC to drop heartbeat ping messages from other
+%% DCs, used for debugging
+-spec drop_ping(boolean()) -> ok.
+drop_ping(DropPing) ->
+    Responses = dc_utilities:bcast_vnode_sync(inter_dc_dep_vnode_master, {drop_ping, DropPing}),
+    %% Be sure they all returned ok, crash otherwise
+    ok = lists:foreach(fun({_, ok}) ->
+			       ok
+		       end, Responses).    
 
 %%%%%%%%%%%%%
 %% Utils
