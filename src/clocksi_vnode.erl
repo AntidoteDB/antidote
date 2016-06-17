@@ -369,13 +369,14 @@ handle_command({commit, Transaction, TxCommitParams, Updates}, _Sender,
   #state{partition = _Partition,
       committed_tx = CommittedTx
   } = State) ->
-    CommitParams = case Transaction#transaction.transactional_protocol of
-                       physics ->
-%%                           SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-                           TxCommitParams;
-                       Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
-                           {TxCommitParams, Transaction#transaction.snapshot_vc}
-                   end,
+    CommitParams =
+%%        case Transaction#transaction.transactional_protocol of
+%%                       physics ->
+%%%%                           SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+                           TxCommitParams,
+%%                       Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
+%%                           {TxCommitParams, Transaction#transaction.snapshot_vc}
+%%                   end,
 %%    lager:info("these are the commit params: ~p~n", [CommitParams]),
     Result = commit(Transaction, CommitParams, Updates, CommittedTx, State),
     case Result of
@@ -625,16 +626,16 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
             case CommitTime > ReferenceSnapshotTime of
 %%                case 0 > ReferenceSnapshotTime of
                 true ->
-                    case ((ReferenceSnapshotTime > Transaction#transaction.txn_id#tx_id.snapshot_time)
-                    andalso (CommitTime < Transaction#transaction.txn_id#tx_id.snapshot_time)) of
-                        true ->
+%%                    case ((ReferenceSnapshotTime > Transaction#transaction.txn_id#tx_id.snapshot_time)
+%%                    andalso (CommitTime < Transaction#transaction.txn_id#tx_id.snapshot_time)) of
+%%                        true ->
                             lager:info("conflict detected, COMMITTED transaction"),
                             lager:info("CommitTime ~p ",[CommitTime]),
                             lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
-                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]);
-                        false ->
-                            nada
-                    end,
+                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
+%%                        false ->
+%%                            nada
+%%                    end,
                     false;
                 false ->
 %%                    true
@@ -642,9 +643,9 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
                         true ->
                             certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
-%%                            lager:info("conflict detected, PREPARED transaction"),
-%%                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
-%%                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
+                            lager:info("conflict detected, PREPARED transaction"),
+                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
+                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
                             false
                     end
             end;
@@ -662,7 +663,8 @@ check_prepared(_TxId, PreparedTx, Key) ->
     case ets:lookup(PreparedTx, Key) of
         [] ->
             true;
-        _ ->
+        Some ->
+            lager:info("found some prepared tx: ~p",[Some]),
             false
     end.
 

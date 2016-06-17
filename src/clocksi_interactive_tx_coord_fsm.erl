@@ -636,13 +636,14 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                         physics ->
                             {MaxPrepareTime, DependencyVC};
                         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                            MaxPrepareTime
+                            {MaxPrepareTime, tyler_broke_this}
                     end,
     case NumToAck of 1 ->
         case CommitProtocol of
             two_phase ->
                 case FullCommit of
                     true ->
+
                         ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
                         {next_state, receive_committed,
                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
