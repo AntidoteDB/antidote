@@ -89,9 +89,13 @@ confirm() ->
     rt:wait_for_service(Node, antidote),
     pb_get_objects_test(),
 
-    [_Nodes12] = common:clean_clusters([Nodes11]),
+    [Nodes12] = common:clean_clusters([Nodes11]),
     rt:wait_for_service(Node, antidote),
     pb_get_log_operations_test(),
+    
+    [Nodes13] = common:clean_clusters([Nodes12]),
+    rt:wait_for_service(Node, antidote),
+    update_set_fixed_snapshot_test(hd(Nodes13)),
     pass.
 
 start_stop_test() ->
@@ -284,3 +288,55 @@ static_transaction_test() ->
     ?assertMatch(true, antidotec_set:contains("b", Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
     
+update_set_fixed_snapshot_test(Node) ->
+
+    %% Disable certification
+    ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [false]),
+
+    Key = <<"key_fixed_snapshot_set">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, crdt_orset, <<"bucket">>},
+    Set = antidotec_set:new(),
+    Set1 = antidotec_set:add("a", Set),
+    Set2 = antidotec_set:add("b", Set1),
+
+    {ok, TxId} = antidotec_pb:start_transaction(Pid,
+                                                ignore, [], json),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(Bound_object, Set2),
+                                     TxId, json),
+    {ok, CT} = antidotec_pb:commit_transaction(Pid, TxId, json),
+    CT2 = dict:map(fun(_DCID,Time) ->
+			   Time + 1
+		   end, CT),
+        
+    %% Add b again
+    Set3 = antidotec_set:add("b",Set),
+    {ok, TxId2} = antidotec_pb:start_transaction(Pid,
+                                                ignore, [], json),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(Bound_object, Set3),
+                                     TxId2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId2, json),
+
+    %% Remove b using the old commit time
+    Set4 = antidotec_set:remove("b",Set),
+    {ok, TxId3} = antidotec_pb:start_transaction(Pid, CT2, [{update_clock, false}], json),
+    lager:info("The remove ops ~p", [antidotec_set:to_ops(Bound_object, Set4)]),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(Bound_object, Set4),
+                                     TxId3, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId3, json),
+
+    %% Read the set again to be sure b is still there
+    {ok, TxId4} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId4, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId4, json),
+    ?assertEqual(2,length(antidotec_set:value(Val))),
+    ?assertMatch(true, antidotec_set:contains("a", Val)),
+    ?assertMatch(true, antidotec_set:contains("b", Val)),
+
+    %% Reenable certification
+    ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [true]),
+
+    _Disconnected = antidotec_pb_socket:stop(Pid).
