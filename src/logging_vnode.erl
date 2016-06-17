@@ -258,7 +258,6 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, clo
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
     {OpId,_} = get_op_id(ClockDict,[Partition],MyDCID),
     IsReady = try
-		  lager:info("The op Id ~w, partition ~w", [OpId, Partition]),
 		  ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
 		  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId),
 		  ok = inter_dc_log_sender_vnode:start_timer(Partition),
@@ -358,7 +357,6 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 		    inter_dc_log_sender_vnode:send(Partition, Operation),
 		    case Sync of
 			true ->
-			    lager:info("syncing the log"),
 			    case disk_log:sync(Log) of
 				ok ->
 				    {reply, {ok, OpId}, State#state{clock=NewClockDict}};
@@ -427,7 +425,6 @@ handle_command({append_group, LogId, OperationList, _IsLocal = false, Sync}, _Se
     case Sync of
 	true ->
 	    ordsets:fold(fun(Log,_Acc) ->
-				 lager:info("syncing log from interdc"),
 				 ok = disk_log:sync(Log)
 			 end, ok, UpdatedLogs);
 	false ->
