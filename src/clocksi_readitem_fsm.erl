@@ -104,8 +104,7 @@ async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
 %%      Returns true if they have been, false otherwise.
 -spec check_servers_ready() -> boolean().
 check_servers_ready() ->
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_server_ready(PartitionList).
 
 -spec check_server_ready([index_node()]) -> boolean().

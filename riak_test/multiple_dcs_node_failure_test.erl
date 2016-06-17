@@ -273,7 +273,7 @@ update_during_cluster_failure_test(Cluster1, Cluster2, Cluster3) ->
     %% Be sure the other DC works while the node is down
     WriteResult3a = rpc:call(Node2,
                             antidote, append,
-                            [Key1, riak_dt_gcounter, {increment, ucl3}]),
+                            [Key1, riak_dt_gcounter, {increment, ucl4}]),
     ?assertMatch({ok, _}, WriteResult3a),
     {ok,{_,_,CommitTime3a}}=WriteResult3a,
     ReadResult3a = rpc:call(Node2, antidote, read,
@@ -296,29 +296,36 @@ update_during_cluster_failure_test(Cluster1, Cluster2, Cluster3) ->
     rt:wait_until(Node1, fun wait_init:check_ready/1),
     %% timer:sleep(10000),
 
+    %% Take the max of the commit times to be sure
+    %% to read all updateds
+    Time = dict:merge(fun(_K, T1,T2) ->
+			      max(T1,T2)
+		      end, CommitTime, CommitTime3a),
+		      
+
     ReadResult2a = rpc:call(Node1,
                            antidote, clocksi_read,
-                           [CommitTime3a, Key1, riak_dt_gcounter]),
+                           [Time, Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet1a],_} }= ReadResult2a,
     ?assertEqual(4, ReadSet1a),
     lager:info("Done Read in Node3"),
 
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
-                           [CommitTime3a, Key1, riak_dt_gcounter]),
+                           [Time, Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet1],_} }= ReadResult2,
     ?assertEqual(4, ReadSet1),
     lager:info("Done Read in Node3"),
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
-                           [CommitTime3a, Key1, riak_dt_gcounter]),
+                           [Time, Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet2],_} }= ReadResult3,
     ?assertEqual(4, ReadSet2),
 
     lager:info("Done first round of read, I am gonna append"),
     WriteResult4= rpc:call(Node2,
                            antidote, clocksi_bulk_update,
-                           [ CommitTime,
+                           [Time,
                              [{update, {Key1, riak_dt_gcounter, {increment, ucl4}}}]]),
     ?assertMatch({ok, _}, WriteResult4),
     {ok,{_,_,CommitTime2}}=WriteResult4,

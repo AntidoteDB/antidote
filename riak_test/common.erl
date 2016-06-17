@@ -20,8 +20,8 @@
 -module(common).
 
 -export([
-  clean_clusters/1,
-  clean_clusters/2,
+  clean_and_rebuild_clusters/1,
+  clean_and_rebuild_clusters/2,
   just_clean_clusters/1,
   setup_dc_manager/2]).
 
@@ -29,10 +29,10 @@
 %% In case the clean_cluster parameter is set to false in the riak_test configuration file
 %% the function simply returns the inputed set of clusters
 %% Clusters: A list of clusters as defined by rt
-clean_clusters(Clusters) ->
-    clean_clusters(Clusters, rt_config:get(clean_cluster, true)).
+clean_and_rebuild_clusters(Clusters) ->
+    clean_and_rebuild_clusters(Clusters, rt_config:get(clean_cluster, true)).
 
-clean_clusters(Clusters, Clean)->
+clean_and_rebuild_clusters(Clusters, Clean)->
     case Clean of
         true ->
 	    disconnect_dcs(Clusters),

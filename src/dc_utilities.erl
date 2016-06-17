@@ -30,6 +30,7 @@
   call_vnode/3,
   call_local_vnode/3,
   get_all_partitions/0,
+  get_all_partitions_nodes/0,
   bcast_vnode/2,
   get_my_partitions/0,
   ensure_all_vnodes_running/1,
@@ -44,6 +45,10 @@
   now_millisec/0]).
 
 %% Returns the ID of the current DC.
+%% This should not be used, instead use
+%% dc_meta_data_utilites:get_my_dc_id
+%% The reason is that the dcid can change on fail and restart, but
+%% the original name is stored on disk in the meta_data_utilities
 -spec get_my_dc_id() -> dcid().
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -70,10 +75,30 @@ partition_to_indexnode(Partition) ->
 %% use the inter_dc_txn:partition_to_bin/1 function.
 -spec get_all_partitions() -> [partition_id()].
 get_all_partitions() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    CHash = riak_core_ring:chash(Ring),
-    Nodes = chash:nodes(CHash),
-    [I || {I, _} <- Nodes].
+    try
+	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	CHash = riak_core_ring:chash(Ring),
+	Nodes = chash:nodes(CHash),
+	[I || {I, _} <- Nodes]
+    catch
+	_Ex:Res ->
+	    lager:info("Error loading partition names: ~p, will retry", [Res]),
+	    get_all_partitions()
+    end.
+
+%% Returns a list of all partition indcies plus the node each
+%% belongs to
+-spec get_all_partitions_nodes() -> [{partition_id(),node()}].
+get_all_partitions_nodes() ->
+    try
+	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	CHash = riak_core_ring:chash(Ring),
+	Nodes = chash:nodes(CHash)
+    catch
+	_Ex:Res ->
+	    lager:info("Error loading partition-node names ~p, will retry", [Res]),
+	    get_all_partitions_nodes()
+    end.
 
 %% Returns the partition indices hosted by the local (caller) node.
 -spec get_my_partitions() -> [partition_id()].

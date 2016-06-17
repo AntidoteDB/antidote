@@ -46,7 +46,7 @@ get_descriptor() ->
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address_list, []) end, Nodes),
   {ok, #descriptor{
-    dcid = dc_utilities:get_my_dc_id(),
+    dcid = dc_meta_data_utilities:get_my_dc_id(),
     partition_num = dc_utilities:get_partitions_num(),
     publishers = Publishers,
     logreaders = LogReaders
@@ -167,11 +167,11 @@ check_node_restart() ->
 			       end, Responses2),
 	    %% Reconnect this node to other DCs
 	    OtherDCs = dc_meta_data_utilities:get_dc_descriptors(),
-	    lists:foreach(fun(Desc = #descriptor{dcid = DCID, partition_num = _PartitionsNumRemote,
-	     					 publishers = Publishers, logreaders = LogReaders}) ->
-	     			  dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
-	     			  connect_nodes([MyNode], DCID, LogReaders, Publishers, Desc)
-	     		  end, OtherDCs),
+	    %% lists:foreach(fun(Desc = #descriptor{dcid = DCID, partition_num = _PartitionsNumRemote,
+	    %%  					 publishers = Publishers, logreaders = LogReaders}) ->
+	    %%  			  dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
+	    %%  			  connect_nodes([MyNode], DCID, LogReaders, Publishers, Desc)
+	    %%  		  end, OtherDCs),
 	    Responses3 = reconnect_dcs_after_restart(OtherDCs),
 	    %% Ensure all connections were successful, crash otherwise
 	    Responses3 = [X = ok || X <- Responses3],
@@ -213,7 +213,7 @@ observe_dc_sync(Descriptor) ->
 
 -spec forget_dc(#descriptor{}) -> ok.
 forget_dc(#descriptor{dcid = DCID}) ->
-  case DCID == dc_utilities:get_my_dc_id() of
+  case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
     false ->
       lager:info("Forgetting DC ~p", [DCID]),
@@ -233,7 +233,7 @@ observe(DcNodeAddress) ->
   observe_dc(Desc).
 
 wait_for_stable_snapshot(DCID, MinValue) ->
-  case DCID == dc_utilities:get_my_dc_id() of
+  case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
     false ->
       {ok, SS} = vectorclock:get_stable_snapshot(),

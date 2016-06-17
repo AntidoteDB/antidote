@@ -144,8 +144,8 @@ handle_command({set_dependency_clock, Vector}, _Sender, State) ->
     {reply, ok, State#state{vectorclock = Vector}};
     
 handle_command({txn, Txn}, _Sender, State) ->
-  NewState = process_all_queues(push_txn(State, Txn)),
-  {reply, ok, NewState}.
+    NewState = process_all_queues(push_txn(State, Txn)),
+    {reply, ok, NewState}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
