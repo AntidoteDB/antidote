@@ -218,5 +218,48 @@ vector_orddict_insert_bigger_test() ->
     Vdict3 = vector_orddict:insert_bigger(CT3, 3, Vdict2, clocksi),
     ?assertEqual(2,vector_orddict:size(Vdict3)).
 
+is_causally_compatible_test() ->
+
+    DepUpBound = [{dc1, 1}, {dc2, 2}],
+    RTLowBound = [{dc1, 5}, {dc2, 10}],
+
+    OpDepVC1 = [{dc1, 2}, {dc2, 3}],
+    OpCommitVC1 = [{dc1, 5}, {dc2, 10}],
+
+    false = is_causally_compatible(OpCommitVC1, RTLowBound, OpDepVC1, DepUpBound),
+
+    OpDepVC2 = [{dc1, 1}, {dc2, 2}],
+    OpCommitVC2 = [{dc1, 5}, {dc2, 10}],
+
+    true = is_causally_compatible(OpCommitVC2, RTLowBound, OpDepVC2, DepUpBound),
+
+    OpDepVC3 = [],
+    OpCommitVC3 = [{dc1, 5}, {dc2, 10}],
+
+    true = is_causally_compatible(OpCommitVC3, RTLowBound, OpDepVC3, DepUpBound),
+
+    OpDepVC4 = [],
+    OpCommitVC4 = [{dc1, 4}, {dc2, 10}],
+
+    false = is_causally_compatible(OpCommitVC4, RTLowBound, OpDepVC4, DepUpBound),
+    true = is_causally_compatible(OpCommitVC4, [], OpDepVC4, []),
+
+
+    DepUpBound2 = [{dc1, 1}, {dc2, 2}],
+    RTLowBound2 = [{dc1, 1}, {dc2, 2}],
+
+    OpDepVC21 = [{dc1, 1}, {dc2, 2}],
+    OpCommitVC21 = [{dc1, 4}, {dc2, 10}],
+
+    true = is_causally_compatible(OpCommitVC21, RTLowBound2, OpDepVC21, DepUpBound2),
+
+    OpDepVC22 = [{dc1, 1}, {dc2, 2}],
+    OpCommitVC22 = [{dc1, 0}, {dc2, 10}],
+
+    false = is_causally_compatible(OpCommitVC22, RTLowBound2, OpDepVC22, DepUpBound2).
+
+
+
+
 
 -endif.
