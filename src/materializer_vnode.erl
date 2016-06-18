@@ -463,13 +463,17 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
 define_snapshot_vc_for_transaction(_Transaction, []) ->
     no_operation_to_define_snapshot;
 define_snapshot_vc_for_transaction(Transaction, OperationList) ->
-    LocalDCReadTime = clocksi_vnode:now_microsec(now()),
-    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore).
+    LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
+    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore, OperationList).
 
-define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC) ->
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, FullOpList) ->
+    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+    TxDepUpBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+    lager:info("Transaction: ~n~p~n OperationList: ~n~p", [_Transaction, FullOpList]),
+    lager:info("TxCTLowBound: ~n~p~n TxDepUpBound: ~n~p", [TxCTLowBound, TxDepUpBound]),
     no_compatible_operation_found;
-define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadTime, ReadVC) ->
-    {_OpId, Op} = Operation,
+define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ReadVC, FullOpList) ->
+    [{_OpId, Op} | Rest] = OperationList,
     TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
     TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
     OperationDependencyVC = Op#operation_payload.dependency_vc,
@@ -479,8 +483,9 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
 %%        [OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound]),
     FinalReadVC = case ReadVC of
                       ignore -> %% newest operation in the list.
-                          OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
-                          vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationDependencyVC);
+                          LocalDC = dc_utilities:get_my_dc_id(),
+                          OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
+                          vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
                       _ ->
                           ReadVC
                   end,
@@ -490,7 +495,7 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
             {OperationCommitVC, OperationDependencyVC, FinalReadVC};
         false ->
             NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
-            define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC)
+            define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC, FullOpList)
     end.
 
 %%%% Todo: Future: Implement the following function for a causal snapshot
@@ -508,7 +513,7 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
 create_empty_snapshot(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
-            ReadTime = clocksi_vnode:now_microsec(now()),
+            ReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
             MyDc = dc_utilities:get_my_dc_id(),
             ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
             {clocksi_materializer:new(Type), {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
@@ -667,7 +672,7 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache, Transaction) ->
                                                            physics ->
                                                                case DownstreamOp#operation_payload.dependency_vc of
                                                                    [] ->
-                                                                       vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(now()), []);
+                                                                       vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), []);
                                                                    DepVC -> DepVC
                                                                end;
                                                            Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->

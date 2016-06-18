@@ -67,7 +67,7 @@ get_causally_compatible_internal(DepUpbound, CommitTimeLowbound, [{{CommitVC, De
     case is_causally_compatible(CommitVC, CommitTimeLowbound, DepVC, DepUpbound) of
         true ->
             {ReadTime, IsFirst} = case PreviousCommitVC of
-                           ignore -> {clocksi_vnode:now_microsec(now()), true};
+                           ignore -> {clocksi_vnode:now_microsec(dc_utilities:now()), true};
                            _-> {vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), PreviousCommitVC), false}
                        end,
             {{Snapshot, {CommitVC, DepVC, ReadTime - 1}}, IsFirst};
