@@ -404,6 +404,9 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
                          [{_, SnapshotDict}] ->
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
                                  {undefined, _IsF} ->
+                                     lager:info("Original VC ~n~p", [Transaction#transaction.snapshot_vc]),
+                                     lager:info("SnapshotVC ~n~p", [UpdatedTxnRecord#transaction.snapshot_vc]),
+                                     lager:info("SnapshotDict#transaction.snapshot_vc ~n~p", [SnapshotDict]),
                                      {error, no_snapshot};
                                  {{LS, SCP}, IsF} ->
                                      {LS, SCP, IsF}

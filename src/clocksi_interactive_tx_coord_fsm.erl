@@ -130,7 +130,7 @@ init([From, ClientClock, UpdateClock, StayAlive]) ->
 init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
     #tx_coord_state{
        transactional_protocol = Protocol,
-        transaction = #transaction{},
+        transaction = undefined,
         updated_partitions = [],
         prepare_time = 0,
         commit_time = 0,
@@ -212,6 +212,11 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                 transactional_protocol = Protocol,
                 snapshot_vc = SnapshotTime,
                 txn_id = TransactionId},
+            case SnapshotTime of [] ->
+            lager:info("SnapshotTime ~p, TransactionId ~p~n", [SnapshotTime, TransactionId]);
+                _->
+                    nada
+                    end,
             {Transaction, TransactionId}
 %%                {error, Reason} ->
 %%                    {error, Reason}
