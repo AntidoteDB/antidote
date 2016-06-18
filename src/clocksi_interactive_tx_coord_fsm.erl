@@ -130,12 +130,13 @@ init([From, ClientClock, UpdateClock, StayAlive]) ->
 init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
     #tx_coord_state{
        transactional_protocol = Protocol,
-        transaction = undefined,
+        transaction = #transaction{},
         updated_partitions = [],
         prepare_time = 0,
+        commit_time = 0,
         num_to_reply = 0,
         num_to_ack = 0,
-        operations = undefined,
+        operations = [],
         from = undefined,
         full_commit = FullCommit,
         is_static = IsStatic,
@@ -143,8 +144,8 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         %% The following are needed by the physics protocol
-        version_max = undefined,
-        keys_access_time = orddict:new()
+        version_max = vectorclock:new()
+%%        keys_access_time = orddict:new()
     }.
 
 -spec generate_name(pid()) -> atom().
@@ -544,30 +545,47 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
 %%      Updates the state of a transaction coordinator
 %%      for maintaining the causal snapshot metadata
 update_causal_snapshot_state(State, ReadMetadata, _Key) ->
-    Transaction = State#tx_coord_state.transaction,
     {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
-%%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTimeVC = ~p~n",[CommitVC, DepVC, ReadTimeVC]),
+    case CommitVC of
+        [] ->
+            State;
+        _ ->
+            Transaction = State#tx_coord_state.transaction,
+            %%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTimeVC = ~p~n",[CommitVC, DepVC, ReadTimeVC]),
 %%    KeysAccessTime = State#tx_coord_state.keys_access_time,
-    VersionMax = State#tx_coord_state.version_max,
+            VersionMax = State#tx_coord_state.version_max,
 %%    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
-    NewVersionMax = vectorclock:max_vc(VersionMax, CommitVC),
-%%    lager:info("VersionMax = ~p~n, NewVersionMax = ~p",[VersionMax, NewVersionMax]),
-    CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-    DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+            NewVersionMax = vectorclock:max_vc(VersionMax, CommitVC),
+            CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+            DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 %%    ReadTimeVC = case CommitVC == ignore of
 %%                     true ->
 %%                         ignore;
 %%                     false ->
 %%                         vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
 %%                 end,
-    NewTransaction = Transaction#transaction{
-        physics_read_metadata = #physics_read_metadata{
-            %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
-            dep_upbound = vectorclock:min_vc(ReadTimeVC, DepUpbound),
-            commit_time_lowbound = vectorclock:max_vc(DepVC, CommitTimeLowbound)}},
-    State#tx_coord_state{
+            NewDepUpB = vectorclock:min_vc(ReadTimeVC, DepUpbound),
+            NewCTLowB = vectorclock:max_vc(DepVC, CommitTimeLowbound),
+
+            case NewDepUpB < NewCTLowB of
+                true ->
+                    lager:info("PROBLEM! "),
+                    lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+                    lager:info("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+                    lager:info("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+                    lager:info("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]);
+                false ->
+                    move_on
+            end,
+            NewTransaction = Transaction#transaction{
+                physics_read_metadata = #physics_read_metadata{
+                    %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
+                    dep_upbound = NewDepUpB,
+                    commit_time_lowbound = NewCTLowB}},
+            State#tx_coord_state{
 %%        keys_access_time = NewKeysAccessTime,
-        version_max = NewVersionMax, transaction = NewTransaction}.
+                version_max = NewVersionMax, transaction = NewTransaction}
+    end.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes

@@ -629,10 +629,10 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
 %%                    case ((ReferenceSnapshotTime > Transaction#transaction.txn_id#tx_id.snapshot_time)
 %%                    andalso (CommitTime < Transaction#transaction.txn_id#tx_id.snapshot_time)) of
 %%                        true ->
-                            lager:info("conflict detected, COMMITTED transaction"),
-                            lager:info("CommitTime ~p ",[CommitTime]),
-                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
-                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
+%%                            lager:info("conflict detected, COMMITTED transaction"),
+%%                            lager:info("CommitTime ~p ",[CommitTime]),
+%%                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
+%%                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
 %%                        false ->
 %%                            nada
 %%                    end,
@@ -643,9 +643,9 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
                         true ->
                             certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
-                            lager:info("conflict detected, PREPARED transaction"),
-                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
-                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
+%%                            lager:info("conflict detected, PREPARED transaction"),
+%%                            lager:info("ReferenceSnapshotTime ~p ",[ReferenceSnapshotTime]),
+%%                            lager:info("SI SnapshotTime ~p ",[Transaction#transaction.txn_id#tx_id.snapshot_time]),
                             false
                     end
             end;
@@ -663,8 +663,8 @@ check_prepared(_TxId, PreparedTx, Key) ->
     case ets:lookup(PreparedTx, Key) of
         [] ->
             true;
-        Some ->
-            lager:info("found some prepared tx: ~p",[Some]),
+        _Some ->
+%%            lager:info("found some prepared tx: ~p",[_Some]),
             false
     end.
 

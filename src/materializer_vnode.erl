@@ -378,7 +378,13 @@ internal_read(Key, Type, Transaction, OpsCache, SnapshotCache, ShouldGc) ->
                                     no_operation_to_define_snapshot ->
                                         lager:info("there no_operation_to_define_snapshot"),
                                         JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-                                        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}}
+                                        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
+                                    no_compatible_operation_found ->
+                                        case length(OperationsForKey) of 1 ->
+                                            JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+                                            {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
+                                            _->  {error, no_compatible_operation_found}
+                                        end
                                 end
                         end;
                     Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
@@ -466,11 +472,11 @@ define_snapshot_vc_for_transaction(Transaction, OperationList) ->
     LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
     define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore, OperationList).
 
-define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, FullOpList) ->
-    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-    TxDepUpBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-    lager:info("Transaction: ~n~p~n OperationList: ~n~p", [_Transaction, FullOpList]),
-    lager:info("TxCTLowBound: ~n~p~n TxDepUpBound: ~n~p", [TxCTLowBound, TxDepUpBound]),
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, _FullOpList) ->
+%%    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+%%    TxDepUpBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%    lager:info("Transaction: ~n~p~n OperationList: ~n~p", [_Transaction, FullOpList]),
+%%    lager:info("TxCTLowBound: ~n~p~n TxDepUpBound: ~n~p", [TxCTLowBound, TxDepUpBound]),
     no_compatible_operation_found;
 define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ReadVC, FullOpList) ->
     [{_OpId, Op} | Rest] = OperationList,
@@ -479,8 +485,6 @@ define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, 
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
-%%    lager:info("~nOperationCommitVC =~p~n TxCTLowBound =~p~n OperationDependencyVC =~p~n TxDepUpBound =~p~n",
-%%        [OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound]),
     FinalReadVC = case ReadVC of
                       ignore -> %% newest operation in the list.
                           LocalDC = dc_utilities:get_my_dc_id(),
@@ -489,7 +493,6 @@ define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, 
                       _ ->
                           ReadVC
                   end,
-
     case vector_orddict:is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
         true ->
             {OperationCommitVC, OperationDependencyVC, FinalReadVC};
