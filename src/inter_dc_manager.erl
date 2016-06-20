@@ -130,6 +130,8 @@ start_bg_processes(MetaDataName) ->
     ok.
 
 %% This should be called once the DC is up and running successfully
+%% It sets a flag on disk to true.  When this is true on fail and
+%% restart the DC will load its state from disk
 -spec dc_successfully_started() -> ok.
 dc_successfully_started() ->
     dc_meta_data_utilities:dc_start_success().
@@ -168,11 +170,6 @@ check_node_restart() ->
 			       end, Responses2),
 	    %% Reconnect this node to other DCs
 	    OtherDCs = dc_meta_data_utilities:get_dc_descriptors(),
-	    %% lists:foreach(fun(Desc = #descriptor{dcid = DCID, partition_num = _PartitionsNumRemote,
-	    %%  					 publishers = Publishers, logreaders = LogReaders}) ->
-	    %%  			  dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
-	    %%  			  connect_nodes([MyNode], DCID, LogReaders, Publishers, Desc)
-	    %%  		  end, OtherDCs),
 	    Responses3 = reconnect_dcs_after_restart(OtherDCs),
 	    %% Ensure all connections were successful, crash otherwise
 	    Responses3 = [X = ok || X <- Responses3],

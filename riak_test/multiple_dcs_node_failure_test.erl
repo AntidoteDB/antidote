@@ -84,13 +84,11 @@ cluster_failure_test(Cluster1, Cluster2, Cluster3) ->
 
     %% Kill and restart a node an be sure everyhing works
     lager:info("Killing and restarting node ~w", [Node1]),
-    %% timer:sleep(5000),
     rt:brutal_kill(Node1),
     rt:start_and_wait(Node1),
     rt:wait_until_ring_converged(Cluster1),
     lager:info("Waiting until vnodes are restarted"),
     rt:wait_until(Node1, fun wait_init:check_ready/1),
-    %% timer:sleep(10000),
 
     lager:info("Done append in Node1"),
     ReadResult2 = rpc:call(Node3,
@@ -174,13 +172,11 @@ multiple_cluster_failure_test(Cluster1, Cluster2) ->
 
     %% Kill and restart a node an be sure everyhing works
     lager:info("Killing and restarting node ~w", [Node1]),
-    %% timer:sleep(5000),
     rt:brutal_kill(Node1),
     rt:start_and_wait(Node1),
     rt:wait_until_ring_converged(Cluster1),
     lager:info("Waiting until vnodes are restarted"),
     rt:wait_until(Node1, fun wait_init:check_ready/1),
-    %% timer:sleep(10000),
 
     lager:info("Done append in Node1"),
     ReadResult2 = rpc:call(Node3,
@@ -267,7 +263,6 @@ update_during_cluster_failure_test(Cluster1, Cluster2, Cluster3) ->
 
     %% Kill a node
     lager:info("Killing node ~w", [Node1]),
-    %% timer:sleep(5000),
     rt:brutal_kill(Node1),
 
     %% Be sure the other DC works while the node is down
@@ -278,14 +273,12 @@ update_during_cluster_failure_test(Cluster1, Cluster2, Cluster3) ->
     {ok,{_,_,CommitTime3a}}=WriteResult3a,
     ReadResult3a = rpc:call(Node2, antidote, read,
                           [Key1, riak_dt_gcounter]),
-    %%?assertEqual({ok, 4}, ReadResult3a),
     lager:info("read result3a ~p", [ReadResult3a]),
 
     ReadResult3b = rpc:call(Node3,
                            antidote, clocksi_read,
                            [CommitTime3a, Key1, riak_dt_gcounter]),
     {ok, {_,[ReadSet3b],_} }= ReadResult3b,
-    %%?assertEqual(4, ReadSet3b),
     lager:info("read result3b ~p", [ReadSet3b]),
 
     %% Start the node back up and be sure everything works
@@ -294,7 +287,6 @@ update_during_cluster_failure_test(Cluster1, Cluster2, Cluster3) ->
     rt:wait_until_ring_converged(Cluster1),
     lager:info("Waiting until vnodes are restarted"),
     rt:wait_until(Node1, fun wait_init:check_ready/1),
-    %% timer:sleep(10000),
 
     %% Take the max of the commit times to be sure
     %% to read all updateds
