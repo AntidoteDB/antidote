@@ -135,6 +135,7 @@ init([]) ->
 	    ok = dets:delete_all_objects(DetsTable),
 	    Table
     end,
+    ok = dets:sync(DetsTable),
     {ok, #state{table = Table, dets_table = DetsTable}}.
 
 handle_cast(_Info, State) ->
@@ -143,6 +144,7 @@ handle_cast(_Info, State) ->
 handle_call({update_meta_data, KeyValueList}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
     true = ets:insert(Table, KeyValueList),
     ok = dets:insert(DetsTable, KeyValueList),
+    ok = dets:sync(DetsTable),
     {reply, ok, State};
 
 handle_call({merge_meta_data,Key,Value,MergeFunc,InitFunc}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
@@ -154,11 +156,13 @@ handle_call({merge_meta_data,Key,Value,MergeFunc,InitFunc}, _Sender, State = #st
 	   end,
     true = ets:insert(Table, {Key,MergeFunc(Value,Prev)}),
     ok = dets:insert(DetsTable, {Key,MergeFunc(Value,Prev)}),
+    ok = dets:sync(DetsTable),
     {reply, ok, State};
 
 handle_call({sync_meta_data, NewList}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
     true = ets:insert(Table, NewList),
     ok = dets:insert(DetsTable, NewList),
+    ok = dets:sync(DetsTable),
     {reply, ok, State};
 
 handle_call({broadcast_meta_data}, _Sender, State = #state{table = Table}) ->

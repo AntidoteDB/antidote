@@ -36,7 +36,8 @@
   dc_successfully_started/0,
   check_node_restart/0,
   forget_dc/1,
-  forget_dcs/1]).
+  forget_dcs/1,
+  drop_ping/1]).
 
 -spec get_descriptor() -> {ok, #descriptor{}}.
 get_descriptor() ->
@@ -46,7 +47,7 @@ get_descriptor() ->
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address_list, []) end, Nodes),
   {ok, #descriptor{
-    dcid = dc_utilities:get_my_dc_id(),
+    dcid = dc_meta_data_utilities:get_my_dc_id(),
     partition_num = dc_utilities:get_partitions_num(),
     publishers = Publishers,
     logreaders = LogReaders
@@ -129,6 +130,8 @@ start_bg_processes(MetaDataName) ->
     ok.
 
 %% This should be called once the DC is up and running successfully
+%% It sets a flag on disk to true.  When this is true on fail and
+%% restart the DC will load its state from disk
 -spec dc_successfully_started() -> ok.
 dc_successfully_started() ->
     dc_meta_data_utilities:dc_start_success().
@@ -167,11 +170,6 @@ check_node_restart() ->
 			       end, Responses2),
 	    %% Reconnect this node to other DCs
 	    OtherDCs = dc_meta_data_utilities:get_dc_descriptors(),
-	    lists:foreach(fun(Desc = #descriptor{dcid = DCID, partition_num = _PartitionsNumRemote,
-	     					 publishers = Publishers, logreaders = LogReaders}) ->
-	     			  dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
-	     			  connect_nodes([MyNode], DCID, LogReaders, Publishers, Desc)
-	     		  end, OtherDCs),
 	    Responses3 = reconnect_dcs_after_restart(OtherDCs),
 	    %% Ensure all connections were successful, crash otherwise
 	    Responses3 = [X = ok || X <- Responses3],
@@ -190,7 +188,7 @@ observe_dcs(Descriptors) -> lists:map(fun observe_dc/1, Descriptors).
 
 -spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
-    {ok, SS} = vectorclock:get_stable_snapshot(),
+    {ok, SS} = dc_utilities:get_stable_snapshot(),
     DCs = lists:map(fun(DC) ->
 			    {observe_dc(DC), DC}
 		    end, Descriptors),
@@ -213,7 +211,7 @@ observe_dc_sync(Descriptor) ->
 
 -spec forget_dc(#descriptor{}) -> ok.
 forget_dc(#descriptor{dcid = DCID}) ->
-  case DCID == dc_utilities:get_my_dc_id() of
+  case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
     false ->
       lager:info("Forgetting DC ~p", [DCID]),
@@ -225,6 +223,16 @@ forget_dc(#descriptor{dcid = DCID}) ->
 -spec forget_dcs([#descriptor{}]) -> ok.
 forget_dcs(Descriptors) -> lists:foreach(fun forget_dc/1, Descriptors).
 
+%% Tell nodes within the DC to drop heartbeat ping messages from other
+%% DCs, used for debugging
+-spec drop_ping(boolean()) -> ok.
+drop_ping(DropPing) ->
+    Responses = dc_utilities:bcast_vnode_sync(inter_dc_dep_vnode_master, {drop_ping, DropPing}),
+    %% Be sure they all returned ok, crash otherwise
+    ok = lists:foreach(fun({_, ok}) ->
+			       ok
+		       end, Responses).    
+
 %%%%%%%%%%%%%
 %% Utils
 
@@ -233,10 +241,10 @@ observe(DcNodeAddress) ->
   observe_dc(Desc).
 
 wait_for_stable_snapshot(DCID, MinValue) ->
-  case DCID == dc_utilities:get_my_dc_id() of
+  case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
     false ->
-      {ok, SS} = vectorclock:get_stable_snapshot(),
+      {ok, SS} = dc_utilities:get_stable_snapshot(),
       Value = vectorclock:get_clock_of_dc(DCID, SS),
       case Value > MinValue of
         true ->
