@@ -31,6 +31,7 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-define(DC_META_UTIL, mock_partition_fsm).
 -define(DC_UTIL, mock_partition_fsm).
 -define(VECTORCLOCK, mock_partition_fsm).
 -define(LOG_UTIL, mock_partition_fsm).
@@ -38,7 +39,8 @@
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
 -define(LOGGING_VNODE, mock_partition_fsm).
 -else.
--define(DC_UTIL, dc_meta_data_utilities).
+-define(DC_META_UTIL, dc_meta_data_utilities).
+-define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
 -define(CLOCKSI_VNODE, clocksi_vnode).
@@ -164,7 +166,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
                                          {ok, ClientClock}
                                  end
                          end,
-    DcId = ?DC_UTIL:get_my_dc_id(),
+    DcId = ?DC_META_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     Name = case StayAlive of
 	       true ->
@@ -224,7 +226,7 @@ perform_singleitem_update(Key, Type, Params) ->
                     case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
                         {committed, CommitTime} ->
                             TxId = Transaction#transaction.txn_id,
-                            DcId = ?DC_UTIL:get_my_dc_id(),
+                            DcId = ?DC_META_UTIL:get_my_dc_id(),
                             CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                                 DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                             {ok, {TxId, [], CausalClock}};
@@ -584,7 +586,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                 {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.vec_snapshot_time}}
                         end;
                     committed ->
-                        DcId = ?DC_UTIL:get_my_dc_id(),
+                        DcId = ?DC_META_UTIL:get_my_dc_id(),
                         CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                             DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                         case IsStatic of
@@ -643,7 +645,7 @@ get_snapshot_time(ClientClock) ->
 get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
-    DcId = ?DC_UTIL:get_my_dc_id(),
+    DcId = ?DC_META_UTIL:get_my_dc_id(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
     {ok, SnapshotTime}.
 
