@@ -424,7 +424,7 @@ clocksi_multiple_key_update_read_test(Nodes) ->
 
 
     {ok,TxId2}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    {ok, [1,10,1]} = rpc:call(FirstNode, antidote, read_objects,
+    {ok, [1,1,1]} = rpc:call(FirstNode, antidote, read_objects,
         [[{Key1, riak_dt_pncounter, bucket},
             {Key2, riak_dt_pncounter, bucket},
             {Key3, riak_dt_pncounter,  bucket}]
@@ -701,15 +701,15 @@ clocksi_concurrency_test(Nodes) ->
     %% read txn starts before the write txn's prepare phase,
     Key = conc,
     {ok, TxId1} = rpc:call(Node, antidote, clocksi_istart_tx, []),
-    rpc:call(Node, antidote, clocksi_iupdate,
+    ok = rpc:call(Node, antidote, clocksi_iupdate,
         [TxId1, Key, riak_dt_gcounter, {increment, ucl}]),
-    rpc:call(Node, antidote, clocksi_iprepare, [TxId1]),
+    {ok, _CommitTime} = rpc:call(Node, antidote, clocksi_iprepare, [TxId1]),
     {ok, TxId2} = rpc:call(Node, antidote, clocksi_istart_tx, []),
     Pid = self(),
     spawn( fun() ->
-        rpc:call(Node, antidote, clocksi_iupdate,
+        ok = rpc:call(Node, antidote, clocksi_iupdate,
             [TxId2, Key, riak_dt_gcounter, {increment, ucl1}]),
-        rpc:call(Node, antidote, clocksi_iprepare, [TxId2]),
+        {ok, _CommitTime2} = rpc:call(Node, antidote, clocksi_iprepare, [TxId2]),
         {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId2]),
         Pid ! ok
            end),

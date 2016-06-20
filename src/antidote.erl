@@ -304,28 +304,21 @@ delete_object({_Key, _Type, _Bucket}) ->
 %%      object stored at some key.
 -spec append(key(), type(), {op(),term()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {OpParams, Actor}) ->
-    case materializer:check_operations([{update,
-                                         {Key, Type, {OpParams, Actor}}}]) of
-        ok ->
-            clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_update(Key, Type,{OpParams,Actor});
-        {error, Reason} ->
-            {error, Reason}
-    end.
+
+append(Key, Type, {{Op, OpParam}, _Actor}) ->
+    {ok, TxId} = start_transaction(ignore, []),
+    ok = update_objects([{{Key, Type, bucket}, Op, OpParam}], TxId),
+    {ok, CommitTime} = commit_transaction(TxId),
+    {ok, {TxId, [], CommitTime}}.
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 -spec read(key(), type()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
 read(Key, Type) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
-        ok ->
-            {ok, Val, _CommitTime} = clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_read(Key,Type),
-            {ok, Val};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    {ok, TxId} = start_transaction(ignore, []),
+    {ok, [Val]} = read_objects([{Key, Type, bucket}], TxId),
+    {ok, _CommitTime} = commit_transaction(TxId),
+    {ok, Val}.
 
 
 %% Clock SI API
@@ -344,31 +337,10 @@ read(Key, Type) ->
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()],snapshot_time(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
-    case materializer:check_operations(Operations) of
-        {error, Reason} ->
-            {error, Reason};
-        ok ->
-	    TxPid = case KeepAlive of
-			true ->
-			    whereis(clocksi_static_tx_coord_fsm:generate_name(self()));
-			false ->
-			    undefined
-		    end,
-	    CoordPid = case TxPid of
-			   undefined ->
-			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock, KeepAlive]),
-			       CoordFsmPid;
-			   TxPid ->
-			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, UpdateClock}),
-			       TxPid
-		       end,
-	    case gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT) of
-		{aborted, Info} ->
-		    {error, {aborted, Info}};
-		Other ->
-		    Other
-	    end
-    end.
+    {ok, TxId} = start_transaction(Clock, [UpdateClock], KeepAlive),
+    ReadSet = execute_ops(Operations, TxId, []),
+    {ok, CommitTime} = commit_transaction(TxId),
+    {ok, {TxId, ReadSet, CommitTime}}.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->
     clocksi_execute_tx(Clock, Operations, UpdateClock, false).

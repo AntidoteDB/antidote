@@ -441,7 +441,6 @@ execute_op({OpType, Args}, Sender,
                 physics ->
                     case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == [] of
                         true ->
-                            %% create a static read
                             PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), vectorclock:new()),
                             PhysicsMetadata = #physics_read_metadata{dep_upbound = PhysicsClock, commit_time_lowbound = PhysicsClock},
                             Transaction#transaction{physics_read_metadata = PhysicsMetadata};
