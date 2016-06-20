@@ -68,7 +68,8 @@
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
--record(operation, {op_number, payload :: payload()}).
+-record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
+-record(operation, {op_number :: #op_number{}, payload :: payload()}).
 -type operation() :: #operation{}.
 
 %% The way records are stored in the log.
@@ -89,14 +90,6 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time :: snapshot_time(), 
-                server_pid :: pid()}).
--record(clocksi_payload, {key :: key(),
-                          type :: type(),
-                          op_param :: op(),
-                          snapshot_time :: snapshot_time(),
-                          commit_time :: commit_time(),
-                          txid :: txid()}).
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(),
                       vec_snapshot_time,
@@ -104,8 +97,6 @@
 
 %%---------------------------------------------------------------------
 -type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
--type key() :: term().
--type op()  :: {term(), term()}.
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
@@ -118,14 +109,9 @@
 -type payload() :: term().
 -type partition_id()  :: non_neg_integer().
 -type log_id() :: [partition_id()].
--type type() :: atom().
 -type bucket() :: term().
 -type snapshot() :: term().
--type snapshot_time() ::  vectorclock:vectorclock().
--type commit_time() ::  {dcid(), non_neg_integer()}.
--type txid() :: #tx_id{}.
--type clocksi_payload() :: #clocksi_payload{}.
--type dcid() :: term().
+
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.

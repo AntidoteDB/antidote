@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 -module(wait_init).
 
--export([wait_ready_nodes/1,
+-export([check_ready_nodes/1,
 	 wait_ready/1,
 	 check_ready/1
         ]).
@@ -30,18 +30,13 @@
 %% and gen_servers serving read have been started.
 %% Returns true if all vnodes are initialized for all phyisical nodes,
 %% false otherwise
-wait_ready_nodes([]) ->
-    true;
-wait_ready_nodes([Node|Rest]) ->
-    case check_ready(Node) of
-	true ->
-	    wait_ready_nodes(Rest);
-	false ->
-	    false
-    end.
+-spec check_ready_nodes([node()]) -> true.
+check_ready_nodes(Nodes) ->
+    lists:all(fun check_ready/1, Nodes).
 
 %% @doc This calls the check_ready function repatabliy
 %% until it returns true
+-spec wait_ready(node()) -> true.
 wait_ready(Node) ->
     case check_ready(Node) of
 	true ->
@@ -53,6 +48,7 @@ wait_ready(Node) ->
 
 %% @doc This function provides the same functionality as wait_ready_nodes
 %% except it takes as input a sinlge physical node instead of a list
+-spec check_ready(node()) -> boolean().
 check_ready(Node) ->
     lager:info("Checking if node ~w is ready ~n", [Node]),
     case rpc:call(Node,clocksi_vnode,check_tables_ready,[]) of

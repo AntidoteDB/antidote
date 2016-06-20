@@ -447,7 +447,7 @@ gr_snapshot_read(ClientClock, Args) ->
     %% GST = scalar stable time
     %% VST = vector stable time with entries for each dc
     {ok, GST, VST} = dc_utilities:get_scalar_stable_time(),
-    DcId = dc_utilities:get_my_dc_id(),
+    DcId = dc_meta_data_utilities:get_my_dc_id(),
     Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
     case Dt =< GST of
         true ->
