@@ -582,11 +582,11 @@ certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
 certification_with_check(_, [], _, _) ->
     true;
 certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
-    SnapshotTime = TxId#tx_id.snapshot_time,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
     {Key, _, _} = H,
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
-            case CommitTime > SnapshotTime of
+            case CommitTime > TxLocalStartTime of
                 true ->
                     false;
                 false ->
@@ -606,8 +606,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
             end
     end.
 
-check_prepared(TxId, PreparedTx, Key) ->
-    _SnapshotTime = TxId#tx_id.snapshot_time,
+check_prepared(_TxId, PreparedTx, Key) ->
     case ets:lookup(PreparedTx, Key) of
         [] ->
             true;

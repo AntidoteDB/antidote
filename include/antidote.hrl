@@ -66,7 +66,7 @@
 %% which is unsafe for clock-si
 -define(SAFE_TIME, true).
 
--record (payload, {key:: key(), type :: type(), op_param, actor}).
+-record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
 %% Used by the replication layer
 -record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
@@ -140,8 +140,8 @@
           updated_partitions :: list(),
           num_to_ack :: non_neg_integer(),
           num_to_read :: non_neg_integer(),
-          prepare_time :: non_neg_integer(),
-          commit_time :: non_neg_integer(),
+          prepare_time :: clock_time(),
+          commit_time :: clock_time(),
           commit_protocol :: term(),
           state :: active | prepared | committing | committed | undefined
                  | aborted | committed_read_only,

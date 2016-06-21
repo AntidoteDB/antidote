@@ -41,7 +41,7 @@
 %% Public API
 %% ===================================================================
 
--spec start_link(atom()) -> {ok,pid()} | ignore | {error,term()}.
+-spec start_link(non_neg_integer()) -> {ok,pid()} | ignore | {error,term()}.
 start_link(Num) ->
     gen_server:start_link({local,generate_server_name(Num)}, ?MODULE, [Num], []).
 
@@ -71,8 +71,8 @@ handle_call(_Info, _From, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%%-spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
--spec get_entries_internal(non_neg_integer(),non_neg_integer(),non_neg_integer()) -> [].
+%%-spec get_entries_internal(partition_id(),log_opid(),log_opid()) -> [].
+-spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
 get_entries_internal(Partition, From, To) ->
   Logs = log_read_range(Partition, node(), From, To),
   Asm = log_txn_assembler:new_state(),
@@ -80,7 +80,8 @@ get_entries_internal(Partition, From, To) ->
   Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),
   %% This is done in order to ensure that we only send the transactions we committed.
   %% We can remove this once the read_log_range is reimplemented.
-  lists:filter(fun inter_dc_txn:is_local/1, Txns).
+  %%lists:filter(fun inter_dc_txn:is_local/1, Txns).
+    Txns.
 
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed

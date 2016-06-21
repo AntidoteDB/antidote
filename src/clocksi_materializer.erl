@@ -181,7 +181,7 @@ materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnaps
 %%      is a boolean that is true if the operation was already included in the previous snapshot,
 %%      false otherwise.  The thrid element is the snapshot time of the last operation to
 %%      be applied to the snapshot
--spec is_op_in_snapshot(txid(), clocksi_payload(), commit_time(), snapshot_time(), snapshot_time(),
+-spec is_op_in_snapshot(txid(), clocksi_payload(), dc_and_commit_time(), snapshot_time(), snapshot_time(),
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
 is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot

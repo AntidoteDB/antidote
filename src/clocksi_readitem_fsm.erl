@@ -56,6 +56,10 @@
 		prepared_cache :: cache_id(),
 		self :: atom()}).
 
+%% -type external_read_property() :: {external_read, dcid(), dc_and_commit_time(), snapshot_time()}.
+%% -type read_property() :: external_read_property().
+%% -type read_property_list() :: [read_property()].
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -192,67 +196,66 @@ init([Partition, Id]) ->
 		snapshot_cache=SnapshotCache,
 		prepared_cache=PreparedCache,self=Self}}.
 
-handle_call({perform_read, Key, Type, Transaction},Coordinator,
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+handle_call({perform_read, Key, Type, Transaction},Coordinator,SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
-handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0}.
 
-perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition) ->
-    case check_clock(Key,Transaction,PreparedCache,Partition) of
+perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
+		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+    PropertyList = [],
+    TxId = Transaction#transaction.txn_id,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
+    case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-        lager:info("Not ready"),
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
-	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
+	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
-check_clock(Key,Transaction,PreparedCache,Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    T_TS = TxId#tx_id.snapshot_time,
+check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
     Time = clocksi_vnode:now_microsec(dc_utilities:now()),
-    case T_TS > Time of
+    case TxLocalStartTime > Time of
         true ->
-	    {not_ready, (T_TS - Time) div 1000 +1};
+	    {not_ready, (TxLocalStartTime - Time) div 1000 +1};
         false ->
-	    check_prepared(Key,Transaction,PreparedCache,Partition)
+	    check_prepared(Key,TxLocalStartTime,PreparedCache,Partition)
     end.
 
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
-check_prepared(Key,Transaction,PreparedCache,Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
+check_prepared(Key,TxLocalStartTime,PreparedCache,Partition) ->
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
-    check_prepared_list(Key,SnapshotTime,ActiveTxs).
+    check_prepared_list(Key,TxLocalStartTime,ActiveTxs).
 
-check_prepared_list(_Key,_SnapshotTime,[]) ->
+check_prepared_list(_Key,_TxLocalStartTime,[]) ->
     ready;
-check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
-    case Time =< SnapshotTime of
+check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
+    case Time =< TxLocalStartTime of
     true ->
         {not_ready, ?SPIN_WAIT};
     false ->
-        check_prepared_list(Key,SnapshotTime,Rest)
+        check_prepared_list(Key,TxLocalStartTime,Rest)
     end.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
-return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
+return(Coordinator,Key,Type,Transaction,PropertyList,
+       #state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition}) ->
+    PropertyList = [],
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
@@ -274,9 +277,8 @@ return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     ok.
 
 
-handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0};
 
 handle_info(_Info, StateData) ->

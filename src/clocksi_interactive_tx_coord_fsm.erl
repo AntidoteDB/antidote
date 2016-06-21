@@ -179,7 +179,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
 	       false ->
 		   self()
 	   end,
-    TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
+    TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
         vec_snapshot_time = SnapshotTime,
         txn_id = TransactionId},
