@@ -493,8 +493,7 @@ stat_test() ->
     {ok, MVReg1} = apply_update({assign, {<<"abcd">>, 1}}, MVReg),
     ?assertEqual([{value_size, 25}], stats(MVReg)),
     ?assertEqual([{value_size, 40}], stats(MVReg1)),
-    ?assertEqual(40, stat(value_size, MVReg1)),
-    ?assertEqual(undefined, stat(actor_count, MVReg1)).
+    ?assertEqual(40, stat(value_size, MVReg1)).
 
 is_operation_test() ->
     ?assertEqual(true, is_operation({assign, {value, actor}})),
