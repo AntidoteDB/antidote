@@ -54,7 +54,7 @@ simple_replication_test(Cluster1, Cluster2, Cluster3) ->
     Node3 = hd(Cluster3),
 
     Key1 = simple_replication_test,
-    
+
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
                             [Key1, antidote_crdt_counter, {increment, 1}]),
@@ -197,7 +197,7 @@ multiple_writes(Node, Key, ReplyTo) ->
     ReplyTo ! {ok, CommitTime}.
 
 %% Test: when a DC is disconnected for a while and connected back it should
-%%  be able to read the missing updates. This should not affect the causal 
+%%  be able to read the missing updates. This should not affect the causal
 %%  dependency protocol
 failure_test(Cluster1, Cluster2, Cluster3) ->
     Node1 = hd(Cluster1),
@@ -249,7 +249,7 @@ failure_test(Cluster1, Cluster2, Cluster3) ->
     ?assertEqual(3, ReadSet1),
     lager:info("Done Read in Node3"),
     pass.
-   
+
 %% This is to test a situation where interDC transactions
 %% can be blocked depending on the timing of transactions
 %% going between 3 DCs
@@ -267,28 +267,27 @@ blocking_test(Cluster1, Cluster2, Cluster3) ->
     %% Perform some transactions at DC1 and DC2
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [Key, riak_dt_gcounter, {increment, ucl1}]),
+                            [Key, antidote_crdt_counter, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult1),
     {ok,{_,_,CommitTime1}}=WriteResult1,
     WriteResult2 = rpc:call(Node2,
                             antidote, append,
-                            [Key, riak_dt_gcounter, {increment, ucl2}]),
+                            [Key, antidote_crdt_counter, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult2),
     {ok,{_,_,CommitTime2}}=WriteResult2,
-    
+
     %% Besure you can read the updates at DC1 and DC2
     CommitTime3 = vectorclock:max([CommitTime1,CommitTime2]),
     ReadResult = rpc:call(Node1,
                           antidote, clocksi_read,
-                          [CommitTime3, Key, riak_dt_gcounter]),
+                          [CommitTime3, Key, antidote_crdt_counter]),
     {ok, {_,[ReadSet],_} }= ReadResult,
     ?assertEqual(2, ReadSet),
     ReadResult2 = rpc:call(Node2,
                           antidote, clocksi_read,
-                          [CommitTime3, Key, riak_dt_gcounter]),
+                          [CommitTime3, Key, antidote_crdt_counter]),
     {ok, {_,[ReadSet2],_} }= ReadResult2,
     ?assertEqual(2, ReadSet2),
-
 
     timer:sleep(1000),
 
@@ -299,7 +298,7 @@ blocking_test(Cluster1, Cluster2, Cluster3) ->
     %% Check that the updates are visible at DC3
     ReadResult3 = rpc:call(Node3,
                           antidote, clocksi_read,
-                          [CommitTime3, Key, riak_dt_gcounter]),
+                          [CommitTime3, Key, antidote_crdt_counter]),
     {ok, {_,[ReadSet3],_} }= ReadResult3,
     ?assertEqual(2, ReadSet3),
 
