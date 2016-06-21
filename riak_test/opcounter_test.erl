@@ -50,28 +50,28 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     clocksi_test1(Nodes),
     
-    [Nodes1] = common:clean_clusters([Nodes]),
+    [Nodes1] = common:clean_and_rebuild_clusters([Nodes]),
     clocksi_test2(Nodes1),
 
-    [Nodes2] = common:clean_clusters([Nodes1]),
+    [Nodes2] = common:clean_and_rebuild_clusters([Nodes1]),
     clocksi_tx_noclock_test(Nodes2),
 
-    [Nodes3] = common:clean_clusters([Nodes2]),
+    [Nodes3] = common:clean_and_rebuild_clusters([Nodes2]),
     clocksi_single_key_update_read_test(Nodes3),
 
-    [Nodes4] = common:clean_clusters([Nodes3]),
+    [Nodes4] = common:clean_and_rebuild_clusters([Nodes3]),
     clocksi_multiple_key_update_read_test(Nodes4),
 
-    [Nodes5] = common:clean_clusters([Nodes4]),
+    [Nodes5] = common:clean_and_rebuild_clusters([Nodes4]),
     clocksi_test_read_time(Nodes5),
 
-    [Nodes6] = common:clean_clusters([Nodes5]),
+    [Nodes6] = common:clean_and_rebuild_clusters([Nodes5]),
     clocksi_test_read_wait(Nodes6),
 
-    [Nodes7] = common:clean_clusters([Nodes6]),
+    [Nodes7] = common:clean_and_rebuild_clusters([Nodes6]),
     clocksi_multiple_read_update_test(Nodes7),
 
-    [Nodes8] = common:clean_clusters([Nodes7]),
+    [Nodes8] = common:clean_and_rebuild_clusters([Nodes7]),
     clocksi_concurrency_test(Nodes8),
     pass.
 

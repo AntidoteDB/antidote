@@ -37,7 +37,7 @@ confirm() ->
 
     append_test(Nodes),
 
-    [Nodes1] = common:clean_clusters([Nodes]),
+    [Nodes1] = common:clean_and_rebuild_clusters([Nodes]),
     append_failure_test(Nodes1),
     pass.
 
