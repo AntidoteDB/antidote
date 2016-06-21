@@ -22,10 +22,10 @@
 
 %% @doc
 %% A Multi-Value Register CRDT.
-%% There are two kinds of updates: assign and propagate.  Assign is use for a 
-%% single replica of MVReg where updates are linealizable. Propagate is used 
+%% There are two kinds of updates: assign and propagate.  Assign is use for a
+%% single replica of MVReg where updates are linealizable. Propagate is used
 %% to propagate update from a replica to other replicas. It is similar to the
-%% 'merge' operation of the state-based specifiction of MVReg. 
+%% 'merge' operation of the state-based specifiction of MVReg.
 %%
 %% This file is adapted from riak_dt_lwwreg, a state-based implementation of
 %% last-writer-wins register.
@@ -34,7 +34,7 @@
 %%    may contain multiple values.
 %% 2. There is a new kind of operation: propagate, which stands for merging the
 %%    contents of two MVRegs.
-%%  
+%%
 %% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
@@ -192,7 +192,7 @@ merge(MVReg1, MVReg2) ->
     merge(MVReg1, MVReg2, []).
 
 %% @doc Helper function of `merge/2'. It removes value entries that are descendes of
-%% any other. Remainder are value entries whose vector clock is neither descendent of 
+%% any other. Remainder are value entries whose vector clock is neither descendent of
 %% any other entry nor being ascendent of any other.
 merge([], MVReg2, Remainder) ->
     MVReg2++Remainder;
@@ -239,13 +239,12 @@ eq(_, _) ->
 stats(MVReg) ->
     [{value_size, stat(value_size, MVReg)}].
 
--spec stat(atom(), mvreg()) -> non_neg_integer() | undefined.
+-spec stat(atom(), mvreg()) -> non_neg_integer().
 stat(value_size, MVReg) ->
     Values = value(MVReg),
     TS = value(timestamp, MVReg),
     Size =  erlang:external_size(Values) + erlang:external_size(TS),
-    Size;
-stat(_, _) -> undefined. 
+    Size.
 
 -include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(DT_MVREG_TAG, 85).
@@ -364,7 +363,7 @@ merge_test() ->
     ?assert(equal([{value2, [{actor1, 2}, {actor2, 3}]}, {value4, [{actor1, 3}, {actor2, 2}]}], MergedMVReg3)),
     MVReg7 = [{value3, [{actor1, 3}, {actor2, 3}]}],
     MergedMVReg4 = merge(MVReg5, MVReg7),
-    %% Merge two MVRegs that one dominates the other 
+    %% Merge two MVRegs that one dominates the other
     ?assert(equal(MVReg7, MergedMVReg4)).
 
 

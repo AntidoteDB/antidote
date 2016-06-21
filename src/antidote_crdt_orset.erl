@@ -180,10 +180,9 @@ precondition_context(ORDict) ->
 stats(ORSet) ->
     [ {S, stat(S, ORSet)} || S <- [element_count] ].
 
--spec stat(atom(), orset()) -> integer() | undefined.
+-spec stat(atom(), orset()) -> integer().
 stat(element_count, ORSet) ->
-    orddict:size(ORSet);
-stat(_, _) -> undefined.
+    orddict:size(ORSet).
 
 -include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(TAG, ?DT_ORSET_TAG).

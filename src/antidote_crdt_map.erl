@@ -67,8 +67,8 @@ update({merge, State1}, State2) ->
 
 require_state_downstream(_Operation) -> true.
 
-is_operation(Operation) ->
-    ?RIAK_MODULE:is_operation(Operation).
+is_operation({Op, {Param, _Actor}}) ->
+    ?RIAK_MODULE:is_operation({Op, Param}).
 
 equal(CRDT1, CRDT2) ->
     ?RIAK_MODULE:equal(CRDT1,CRDT2).
