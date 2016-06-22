@@ -112,15 +112,20 @@ check_servers_ready() ->
 check_server_ready([]) ->
     true;
 check_server_ready([{Partition,Node}|Rest]) ->
-    Result = riak_core_vnode_master:sync_command({Partition,Node},
-						 {check_servers_ready},
-						 ?CLOCKSI_MASTER,
-						 infinity),
-    case Result of
-	false ->
-	    false;
-	true ->
-	    check_server_ready(Rest)
+    try
+	Result = riak_core_vnode_master:sync_command({Partition,Node},
+						     {check_servers_ready},
+						     ?CLOCKSI_MASTER,
+						     infinity),
+	case Result of
+	    false ->
+		false;
+	    true ->
+		check_server_ready(Rest)
+	end
+    catch
+	_:_Reason ->
+	    false
     end.
 
 -spec check_partition_ready(node(), partition_id(), non_neg_integer()) -> boolean().

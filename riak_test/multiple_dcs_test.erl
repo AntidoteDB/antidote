@@ -4,6 +4,7 @@
          multiple_writes/4,
          simple_replication_test/3,
          failure_test/3,
+	 blocking_test/3,
          parallel_writes_test/3]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -40,6 +41,10 @@ confirm() ->
     [Cluster7, Cluster8, Cluster9] = common:clean_clusters([Cluster4, Cluster5, Cluster6]),
     ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], Clean),
     failure_test(Cluster7, Cluster8, Cluster9),
+
+    [Cluster10, Cluster11, Cluster12] = common:clean_clusters([Cluster7, Cluster8, Cluster9]),
+    ok = common:setup_dc_manager([Cluster10, Cluster11, Cluster12], Clean),
+    blocking_test(Cluster10, Cluster11, Cluster12),
 
     pass.
 
@@ -245,3 +250,57 @@ failure_test(Cluster1, Cluster2, Cluster3) ->
     lager:info("Done Read in Node3"),
     pass.
    
+%% This is to test a situation where interDC transactions
+%% can be blocked depending on the timing of transactions
+%% going between 3 DCs
+blocking_test(Cluster1, Cluster2, Cluster3) ->
+    Node1 = hd(Cluster1),
+    Node2 = hd(Cluster2),
+    Node3 = hd(Cluster3),
+    Key = blocking_test,
+
+    %% Drop the heartbeat messages at DC3, allowing its
+    %% stable time to get old
+    ok = rpc:call(Node3, inter_dc_manager, drop_ping, [true]),
+    timer:sleep(5000),
+
+    %% Perform some transactions at DC1 and DC2
+    WriteResult1 = rpc:call(Node1,
+                            antidote, append,
+                            [Key, riak_dt_gcounter, {increment, ucl1}]),
+    ?assertMatch({ok, _}, WriteResult1),
+    {ok,{_,_,CommitTime1}}=WriteResult1,
+    WriteResult2 = rpc:call(Node2,
+                            antidote, append,
+                            [Key, riak_dt_gcounter, {increment, ucl2}]),
+    ?assertMatch({ok, _}, WriteResult2),
+    {ok,{_,_,CommitTime2}}=WriteResult2,
+    
+    %% Besure you can read the updates at DC1 and DC2
+    CommitTime3 = vectorclock:max([CommitTime1,CommitTime2]),
+    ReadResult = rpc:call(Node1,
+                          antidote, clocksi_read,
+                          [CommitTime3, Key, riak_dt_gcounter]),
+    {ok, {_,[ReadSet],_} }= ReadResult,
+    ?assertEqual(2, ReadSet),
+    ReadResult2 = rpc:call(Node2,
+                          antidote, clocksi_read,
+                          [CommitTime3, Key, riak_dt_gcounter]),
+    {ok, {_,[ReadSet2],_} }= ReadResult2,
+    ?assertEqual(2, ReadSet2),
+
+
+    timer:sleep(1000),
+
+    %% Allow heartbeat pings to be received at DC3 again
+    ok = rpc:call(Node3, inter_dc_manager, drop_ping, [false]),
+    timer:sleep(5000),
+
+    %% Check that the updates are visible at DC3
+    ReadResult3 = rpc:call(Node3,
+                          antidote, clocksi_read,
+                          [CommitTime3, Key, riak_dt_gcounter]),
+    {ok, {_,[ReadSet3],_} }= ReadResult3,
+    ?assertEqual(2, ReadSet3),
+
+    lager:info("Blocking test passed!").
