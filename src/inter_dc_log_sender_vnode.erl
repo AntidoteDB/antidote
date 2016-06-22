@@ -71,7 +71,7 @@ send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_se
 %% Send the stable time to this vnode, no transaction in the future will commit with a smaller time
 -spec send_stable_time(partition_id(), non_neg_integer()) -> ok.
 send_stable_time(Partition, Time) ->
-    dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {stable_time, Time}).
+    dc_utilities:call_local_vnode(Partition, inter_dc_log_sender_vnode_master, {stable_time, Time}).
 
 %%%% VNode methods ----------------------------------------------------------+
 
@@ -183,5 +183,6 @@ broadcast(State, Txn) ->
 
 %% @doc Sends an async request to get the smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
+-spec get_stable_time(partition_id()) -> ok.
 get_stable_time(Partition) ->
-    ok = logging_vnode:get_stable_time({Partition, node()}).
+    ok = clocksi_vnode:send_min_prepared(Partition).

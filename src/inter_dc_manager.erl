@@ -34,7 +34,8 @@
   observe_dcs/1,
   observe_dcs_sync/1,
   forget_dc/1,
-  forget_dcs/1]).
+  forget_dcs/1,
+  drop_ping/1]).
 
 -spec get_descriptor() -> {ok, #descriptor{}}.
 get_descriptor() ->
@@ -97,6 +98,9 @@ start_bg_processes(Name) ->
     Nodes = dc_utilities:get_my_dc_nodes(),
     ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
+    ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
+    ok = dc_utilities:ensure_all_vnodes_running_master(materializer_vnode_master),
+    wait_init:wait_ready(hd(Nodes)),
     lists:foreach(fun(Node) -> 
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
@@ -154,6 +158,16 @@ forget_dc(#descriptor{dcid = DCID}) ->
 
 -spec forget_dcs([#descriptor{}]) -> ok.
 forget_dcs(Descriptors) -> lists:foreach(fun forget_dc/1, Descriptors).
+
+%% Tell nodes within the DC to drop heartbeat ping messages from other
+%% DCs, used for debugging
+-spec drop_ping(boolean()) -> ok.
+drop_ping(DropPing) ->
+    Responses = dc_utilities:bcast_vnode_sync(inter_dc_dep_vnode_master, {drop_ping, DropPing}),
+    %% Be sure they all returned ok, crash otherwise
+    ok = lists:foreach(fun({_, ok}) ->
+			       ok
+		       end, Responses).    
 
 %%%%%%%%%%%%%
 %% Utils
