@@ -66,7 +66,8 @@
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
--record(operation, {op_number, payload :: payload()}).
+-record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
+-record(operation, {op_number :: #op_number{}, payload :: payload()}).
 -type operation() :: #operation{}.
 -type vectorclock() :: vectorclock:vectorclock().
 
@@ -125,7 +126,7 @@
 -type commit_time() ::  {dcid(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
--type dcid() :: term().
+-type dcid() :: 'undefined' | {_,_}.
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.

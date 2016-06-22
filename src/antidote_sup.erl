@@ -73,6 +73,7 @@ init(_Args) ->
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
     InterDcSub = ?CHILD(inter_dc_sub, worker, []),
+    StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
     InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
     InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
     InterDcLogReaderQMaster = ?CHILD(inter_dc_log_reader_query, worker, []),
@@ -107,5 +108,6 @@ init(_Args) ->
        InterDcLogReaderQMaster,
        InterDcLogReaderRMaster,
        InterDcLogSenderMaster,
+       StableMetaData,
        MetaDataManagerSup,
        MetaDataSenderSup]}}.
