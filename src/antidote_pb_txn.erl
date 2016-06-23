@@ -45,6 +45,7 @@ init() ->
 
 %% @doc decode/2 callback. Decodes an incoming message.
 decode(Code, Bin) ->
+    lager:info("The code ~p and binary req ~p", [Code,Bin]),
     Msg = riak_pb_codec:decode(Code, Bin),
     case Msg of
         #apbstarttransaction{} ->

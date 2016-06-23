@@ -30,6 +30,7 @@
   call_vnode/3,
   call_local_vnode/3,
   get_all_partitions/0,
+  get_all_partitions_nodes/0,
   bcast_vnode/2,
   get_my_partitions/0,
   ensure_all_vnodes_running/1,
@@ -38,15 +39,21 @@
   get_partitions_num/0,
   check_staleness/0,
   check_registered/1,
-  check_registered_global/1,	 
   get_scalar_stable_time/0,
   get_partition_snapshot/1,
   get_stable_snapshot/0,
+  check_registered_global/1,	 
   now/0,
   now_microsec/0,
   now_millisec/0]).
 
 %% Returns the ID of the current DC.
+%% This should not be called manually (it is only used the very
+%% first time the DC is started), instead if you need to know
+%% the id of the DC use the following:
+%% dc_meta_data_utilites:get_my_dc_id
+%% The reason is that the dcid can change on fail and restart, but
+%% the original name is stored on disk in the meta_data_utilities
 -spec get_my_dc_id() -> dcid().
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -73,10 +80,30 @@ partition_to_indexnode(Partition) ->
 %% use the inter_dc_txn:partition_to_bin/1 function.
 -spec get_all_partitions() -> [partition_id()].
 get_all_partitions() ->
-    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    CHash = riak_core_ring:chash(Ring),
-    Nodes = chash:nodes(CHash),
-    [I || {I, _} <- Nodes].
+    try
+	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	CHash = riak_core_ring:chash(Ring),
+	Nodes = chash:nodes(CHash),
+	[I || {I, _} <- Nodes]
+    catch
+	_Ex:Res ->
+	    lager:info("Error loading partition names: ~p, will retry", [Res]),
+	    get_all_partitions()
+    end.
+
+%% Returns a list of all partition indcies plus the node each
+%% belongs to
+-spec get_all_partitions_nodes() -> [{partition_id(),node()}].
+get_all_partitions_nodes() ->
+    try
+	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	CHash = riak_core_ring:chash(Ring),
+	Nodes = chash:nodes(CHash)
+    catch
+	_Ex:Res ->
+	    lager:info("Error loading partition-node names ~p, will retry", [Res]),
+	    get_all_partitions_nodes()
+    end.
 
 %% Returns the partition indices hosted by the local (caller) node.
 -spec get_my_partitions() -> [partition_id()].
@@ -110,6 +137,8 @@ bcast_vnode_sync(VMaster, Request) ->
     %% TODO: a parallel map function would be nice here
     lists:map(fun(P) -> {P, call_vnode_sync(P, VMaster, Request)} end, get_all_partitions()).
 
+%% Broadcasts a message to all vnodes of the given type
+%% located on the physical node from which this method is called
 -spec bcast_my_vnode_sync(atom(), any()) -> any().
 bcast_my_vnode_sync(VMaster, Request) ->
     %% TODO: a parallel map function would be nice here
@@ -136,6 +165,8 @@ ensure_all_vnodes_running(VnodeType) ->
             ensure_all_vnodes_running(VnodeType)
     end.
 
+%% Internal function that loops until a given vnode type is running
+-spec bcast_vnode_check_up(atom(),{hello},[partition_id()]) -> ok.
 bcast_vnode_check_up(_VMaster,_Request,[]) ->
     ok;
 bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
@@ -158,15 +189,23 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
 	false ->
 	    bcast_vnode_check_up(VMaster,Request,Rest)
     end.
-    
+
+%% Loops until all vnodes of a given type are running
+%% on the local phyical node from which this was funciton called  
+-spec ensure_local_vnodes_running_master(atom()) -> ok.
 ensure_local_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
     bcast_vnode_check_up(VnodeType,{hello},get_my_partitions()).
 
+%% Loops until all vnodes of a given type are running on all
+%% nodes in the cluster
+-spec ensure_all_vnodes_running_master(atom()) -> ok.
 ensure_all_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
     bcast_vnode_check_up(VnodeType,{hello}, get_all_partitions()).
 
+%% Prints to the console the staleness between this DC and all
+%% other DCs that it is connected to
 -spec check_staleness() -> ok.
 check_staleness() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
@@ -176,22 +215,13 @@ check_staleness() ->
 		      ok
 	      end, ok, SS).
 
+%% Loops until a process with the given name is registered locally
 -spec check_registered(atom()) -> ok.
 check_registered(Name) ->
     case whereis(Name) of
 	undefined ->
 	    timer:sleep(100),
 	    check_registered(Name);
-	_ ->
-	    ok
-    end.
-
--spec check_registered_global(atom()) -> ok.
-check_registered_global(Name) ->
-    case global:whereis_name(Name) of
-	undefined ->
-	    timer:sleep(100),
-	    check_registered_global(Name);
 	_ ->
 	    ok
     end.
@@ -272,13 +302,28 @@ get_scalar_stable_time() ->
             {ok, GST, StableSnapshot}
     end.
 
--ifdef(SAFE_TIME).
+%% Loops until a process with the given name is registered globally
+-spec check_registered_global(atom()) -> ok.
+check_registered_global(Name) ->
+    case global:whereis_name(Name) of
+	undefined ->
+	    timer:sleep(100),
+	    check_registered_global(Name);
+	_ ->
+	    ok
+    end.
 
+-ifdef(SAFE_TIME).
+%% Uses erlang now to the the physical time
+%% This value is guaranteed not to go backwards,
+%% but is a scalability bottleneck
 now() ->
     erlang:now().
 
 -else.
-
+%% Uses os:timestamp to get the current physical time
+%% This time can go backwards which could break the
+%% consistency guarantees of clock si
 now() ->
     os:timestamp().
 

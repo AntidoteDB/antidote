@@ -26,6 +26,7 @@
 %% in the case of keys that are read frequently.  There is
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
+-define(LOG_READER_CONCURRENCY, 20).
 %% This defines the concurrency for the meta-data tables that
 %% are responsible for storing the stable time that a transaction
 %% can read.  It is set to false because the erlang docs say
@@ -65,9 +66,9 @@
 %% which is unsafe for clock-si
 -define(SAFE_TIME, true).
 
--record (payload, {key:: key(), type :: type(), op_param, actor}).
+-record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
--record(commit_log_payload, {commit_time :: commit_time(),
+-record(commit_log_payload, {commit_time :: dc_and_commit_time(),
 			     snapshot_time :: snapshot_time()
 			    }).
 
@@ -81,11 +82,6 @@
 
 -record(prepare_log_payload, {prepare_time :: non_neg_integer()}).
 
-%% Used by the replication layer
-%% -record(operation, {op_number, payload :: payload()}).
-%% -type operation() :: #operation{}.
-
-
 %% The way records are stored in the log.
 -record(log_record, {tx_id :: txid(),
                      op_type :: update | prepare | commit | abort | noop,
@@ -95,7 +91,6 @@
 -record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
 -record(operation, {op_number :: #op_number{}, bucket_op_number :: #op_number{}, log_record :: #log_record{}}).
 -type operation() :: #operation{}.
-%% -type vectorclock() :: vectorclock:vectorclock().
 
 %% Clock SI
 
@@ -110,14 +105,6 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
-%% -record(tx_id, {snapshot_time :: snapshot_time(), 
-%%                 server_pid :: pid()}).
-%% -record(clocksi_payload, {key :: key(),
-%%                           type :: type(),
-%%                           op_param :: op(),
-%%                           snapshot_time :: snapshot_time(),
-%%                           commit_time :: commit_time(),
-%%                           txid :: txid()}).
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(),
                       vec_snapshot_time,
@@ -125,8 +112,6 @@
 
 %%---------------------------------------------------------------------
 -type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
-%% -type key() :: term().
-%% -type op()  :: {term(), term()}.
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: atom().
@@ -139,14 +124,9 @@
 -type payload() :: term().
 -type partition_id()  :: non_neg_integer().
 -type log_id() :: [partition_id()].
-%% -type type() :: atom().
 -type bucket() :: term().
 -type snapshot() :: term().
-%% -type snapshot_time() ::  vectorclock:vectorclock().
-%% -type commit_time() ::  {dcid(), non_neg_integer()}.
-%% -type txid() :: #tx_id{}.
-%% -type clocksi_payload() :: #clocksi_payload{}.
-%% -type dcid() :: 'undefined' | {_,_}.
+
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
@@ -174,8 +154,8 @@
           updated_partitions :: list(),
           num_to_ack :: non_neg_integer(),
           num_to_read :: non_neg_integer(),
-          prepare_time :: non_neg_integer(),
-          commit_time :: non_neg_integer(),
+          prepare_time :: clock_time(),
+          commit_time :: clock_time(),
           commit_protocol :: term(),
           state :: active | prepared | committing | committed | undefined
                  | aborted | committed_read_only,

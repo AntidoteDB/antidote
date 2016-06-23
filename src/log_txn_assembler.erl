@@ -55,7 +55,7 @@ process(Operation, State) ->
   end.
 
 %%-spec process_all([operation()], #state{}) -> {[#interdc_txn{}], #state{}}. %% TODO: fix this spec
--spec process_all([#operation{}],#state{op_buffer::'undefined' | dict()}) -> {[],#state{op_buffer::'undefined' | dict()}}.
+-spec process_all([#operation{}],#state{op_buffer::'undefined' | dict()}) -> {[#interdc_txn{}],#state{op_buffer::'undefined' | dict()}}.
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
 
 -spec process_all([#operation{}], [#interdc_txn{}], #state{}) -> {[#interdc_txn{}], #state{}}.

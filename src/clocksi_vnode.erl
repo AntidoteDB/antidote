@@ -214,10 +214,8 @@ abort(ListofNodes, TxId) ->
             ?CLOCKSI_MASTER)
     end, ok, ListofNodes).
 
-
 get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
-
 
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
@@ -230,16 +228,13 @@ init([Partition]) ->
         read_servers = ?READ_CONCURRENCY,
         prepared_dict = orddict:new()}}.
 
-
 %% @doc The table holding the prepared transactions is shared with concurrent
 %%      readers, so they can safely check if a key they are reading is being updated.
 %%      This function checks whether or not all tables have been intialized or not yet.
 %%      Returns true if the have, false otherwise.
 check_tables_ready() ->
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_table_ready(PartitionList).
-
 
 check_table_ready([]) ->
     true;
@@ -260,7 +255,6 @@ check_table_ready([{Partition, Node} | Rest]) ->
         false ->
             false
     end.
-
 
 open_table(Partition) ->
     case ets:info(get_cache_name(Partition, prepared)) of
@@ -605,11 +599,11 @@ certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
 certification_with_check(_, [], _, _) ->
     true;
 certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
-    SnapshotTime = TxId#tx_id.snapshot_time,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
     {Key, _, _} = H,
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
-            case CommitTime > SnapshotTime of
+            case CommitTime > TxLocalStartTime of
                 true ->
                     false;
                 false ->
@@ -629,8 +623,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
             end
     end.
 
-check_prepared(TxId, PreparedTx, Key) ->
-    _SnapshotTime = TxId#tx_id.snapshot_time,
+check_prepared(_TxId, PreparedTx, Key) ->
     case ets:lookup(PreparedTx, Key) of
         [] ->
             true;

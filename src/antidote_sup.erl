@@ -21,6 +21,8 @@
 
 -behaviour(supervisor).
 
+-include("antidote.hrl").
+
 %% API
 -export([start_link/0]).
 
@@ -91,6 +93,11 @@ init(_Args) ->
 			  permanent, 5000, supervisor,
 			  [meta_data_sender_sup]},
 
+    LogResponseReaderSup = {log_response_reader_sup,
+			  {log_response_reader_sup, start_link, [?LOG_READER_CONCURRENCY]},
+			  permanent, 5000, supervisor,
+			  [log_response_reader_sup]},
+
 
     {ok,
      {{one_for_one, 5, 10},
@@ -110,4 +117,5 @@ init(_Args) ->
        InterDcLogSenderMaster,
        StableMetaData,
        MetaDataManagerSup,
-       MetaDataSenderSup]}}.
+       MetaDataSenderSup,
+       LogResponseReaderSup]}}.

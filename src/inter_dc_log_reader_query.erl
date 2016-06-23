@@ -76,27 +76,42 @@ init([]) -> {ok, #state{sockets = dict:new(), unanswered_queries = dict:new()}}.
 %% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, State) ->
     %% Create a socket and store it
-    case connect_to_node(hd(LogReaders)) of
-	{ok, Socket} ->
-	    NewState = State#state{sockets = dict:store(DCID, Socket, State#state.sockets)},
-	    F = fun({{QDCID, _}, Request}) ->
-			%% if there are unanswered queries that were sent to the DC we just connected with, resend them
-			case QDCID == DCID of
-			    true -> erlzmq:send(Socket, term_to_binary(Request));
-			    false -> ok
-			end
-		end,
-	    lists:foreach(F, dict:to_list(NewState#state.unanswered_queries)),
-	    {reply, ok, NewState};
-	connection_error ->
-	    {reply, error, State}
-    end;
+    {Result,NewState} =
+	lists:foldl(fun({PartitionList,AddressList}, {ResultAcc,AccState}) ->
+			    case connect_to_node(AddressList) of
+				{ok, Socket} ->
+				    DCPartitionDict = 
+					case dict:find(DCID,State#state.sockets) of
+					    {ok, Val} ->
+						Val;
+					    error ->
+						dict:new()
+					end,
+				    NewDCPartitionDict = 
+					lists:foldl(fun(Partition,Acc) ->
+							    dict:store(Partition,Socket,Acc)
+						    end, DCPartitionDict, PartitionList),
+				    NewAccState = AccState#state{sockets = dict:store(DCID,NewDCPartitionDict,AccState#state.sockets)},
+				    F = fun({{QDCID, _}, Request}) ->
+						%% if there are unanswered queries that were sent to the DC we just connected with, resend them
+						case QDCID == DCID of
+						    true -> erlzmq:send(Socket, term_to_binary(Request));
+						    false -> ok
+						end
+					end,
+				    lists:foreach(F, dict:to_list(NewAccState#state.unanswered_queries)),
+				    {ResultAcc, NewAccState};
+				connection_error ->
+				    {error, AccState}
+			    end
+		    end, {ok,State}, LogReaders),
+    {reply,Result,NewState};
 
 %% Remove a DC. Unanswered queries are left untouched.
 handle_call({del_dc, DCID}, _From, State) ->
     case dict:find(DCID, State#state.sockets) of
-	{ok, Socket} ->
-	    ok = zmq_utils:close_socket(Socket),
+	{ok, DCPartitionDict} ->
+	    ok = close_dc_sockets(DCPartitionDict),
 	    {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
 	error ->
 	    {reply, ok, State}
@@ -107,13 +122,29 @@ handle_call({query, PDCID, From, To}, _From, State) ->
     {DCID, Partition} = PDCID,
     case dict:find(DCID, State#state.sockets) of
 	%% If socket found
-	{ok, Socket} ->
+	%% Find the socket that is responsible for this partition
+	{ok, DCPartitionDict} ->
+	    Socket = case dict:find(Partition,DCPartitionDict) of
+			 {ok, Val} ->
+			     Val;
+			 error ->
+			     %% If you don't see this parition at the DC, just take the first
+			     %% socket from this DC
+			     {_Part, Soc} = hd(dict:to_list(DCPartitionDict)),
+			     Soc
+		     end,
 	    Request = {read_log, Partition, From, To},
 	    ok = erlzmq:send(Socket, term_to_binary(Request)),
 	    {reply, ok, req_sent(PDCID, Request, State)};
 	%% If socket not found
 	_ -> {reply, unknown_dc, State}
     end.
+
+close_dc_sockets(DCPartitionDict) ->
+    F = fun({_,Socket}) -> 
+		(catch zmq_utils:close_socket(Socket)) end,
+    lists:foreach(F, dict:to_list(DCPartitionDict)),
+    ok.
 
 %% Handle a response from any of the connected sockets
 %% Possible improvement - disconnect sockets unused for a defined period of time.
@@ -123,8 +154,10 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   {noreply, rsp_rcvd(PDCID, State)}.
 
 terminate(_Reason, State) ->
-  F = fun({_, Socket}) -> zmq_utils:close_socket(Socket) end,
-  lists:foreach(F, dict:to_list(State#state.sockets)).
+    F = fun({_,DCPartitionDict}) -> 
+		close_dc_sockets(DCPartitionDict) end,
+    lists:foreach(F, dict:to_list(State#state.sockets)),
+    ok.
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.

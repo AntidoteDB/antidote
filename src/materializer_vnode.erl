@@ -182,8 +182,7 @@ open_table(Partition, Name) ->
 %%      Returns true if the have, false otherwise.
 -spec check_tables_ready() -> boolean().
 check_tables_ready() ->
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_table_ready(PartitionList).
 
 -spec check_table_ready([{partition_id(),node()}]) -> boolean().
@@ -417,7 +416,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 %% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
--spec belongs_to_snapshot_op(snapshot_time() | ignore, commit_time(), snapshot_time()) -> boolean().
+-spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
 belongs_to_snapshot_op(ignore, {_OpDc,_OpCommitTime}, _OpSs) ->
     true;
 belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->

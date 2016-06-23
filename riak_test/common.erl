@@ -20,8 +20,8 @@
 -module(common).
 
 -export([
-  clean_clusters/1,
-  clean_clusters/2,
+  clean_and_rebuild_clusters/1,
+  clean_and_rebuild_clusters/2,
   just_clean_clusters/1,
   setup_dc_manager/2]).
 
@@ -29,10 +29,10 @@
 %% In case the clean_cluster parameter is set to false in the riak_test configuration file
 %% the function simply returns the inputed set of clusters
 %% Clusters: A list of clusters as defined by rt
-clean_clusters(Clusters) ->
-    clean_clusters(Clusters, rt_config:get(clean_cluster, true)).
+clean_and_rebuild_clusters(Clusters) ->
+    clean_and_rebuild_clusters(Clusters, rt_config:get(clean_cluster, true)).
 
-clean_clusters(Clusters, Clean)->
+clean_and_rebuild_clusters(Clusters, Clean)->
     case Clean of
         true ->
 	    disconnect_dcs(Clusters),
@@ -67,6 +67,7 @@ setup_dc_manager(Clusters, true) -> connect_dcs(Clusters).
 
 connect_dcs(Clusters) ->
     lager:info("Connecting DC clusters..."),
+    SyncLog = rt_config:get(sync_log, true),
     lists:foreach(fun(Cluster) ->
 			  Node1 = hd(Cluster),
 			  lager:info("Waiting until vnodes start on node ~p", [Node1]),
@@ -76,7 +77,8 @@ connect_dcs(Clusters) ->
 			  rt:wait_until_registered(Node1, inter_dc_sub),
 			  rt:wait_until_registered(Node1, meta_data_sender_sup),
 			  rt:wait_until_registered(Node1, meta_data_manager_sup),
-			  ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
+			  ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable]),
+			  ok = rpc:call(Node1, logging_vnode, set_sync_log, [SyncLog])
 		  end, Clusters),
     Descriptors = descriptors(Clusters),
     Res = [ok || _ <- Clusters],
