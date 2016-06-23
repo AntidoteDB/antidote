@@ -68,12 +68,12 @@
 
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
--record(commit_log_payload, {commit_time :: clock_time(),
+-record(commit_log_payload, {commit_time :: dc_and_commit_time(),
 			     snapshot_time :: snapshot_time()
 			    }).
 
 -record(update_log_payload, {key :: key(),
-			     bucket :: key(),
+			     bucket :: bucket(),
 			     type :: type(),
 			     op :: op()
 			    }).

@@ -48,6 +48,7 @@
          read_from/3,
          get/5,
 	 get_all/4,
+	 request_bucket_op_id/4,
 	 request_op_id/3]).
 
 -export([init/1,
@@ -189,7 +190,14 @@ get_all(IndexNode, LogId, Continuation, PrevOps) ->
 %% @doc Gets the last id of operations stored in the log for the given DCID
 -spec request_op_id(index_node(), dcid(), partition()) -> {ok, non_neg_integer()}.
 request_op_id(IndexNode, DCID, Partition) ->
-    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, DCID, Partition},
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, {[Partition],DCID}},
+					?LOGGING_MASTER,
+					infinity).
+
+%% @doc Gets the last id of operations stored in the log for the given bucket from the given DCID
+-spec request_bucket_op_id(index_node(), dcid(), bucket(), partition()) -> {ok, non_neg_integer()}.
+request_bucket_op_id(IndexNode, DCID, Bucket, Partition) ->
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, {[Partition],Bucket,DCID}},
 					?LOGGING_MASTER,
 					infinity).
 
@@ -604,6 +612,7 @@ get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict,
             end
     end.
 
+-spec finish_op_load(dict:dict(key(),clocksi_payload())) -> dict:dict(key(),{non_neg_integer(),clocksi_payload()}).
 finish_op_load(CommittedOpsDict) ->
     dict:fold(fun(Key1, CommittedOps, Acc) ->
 		      dict:store(Key1, reverse_and_add_op_id(CommittedOps,0,[]), Acc)
