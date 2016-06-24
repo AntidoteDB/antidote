@@ -82,6 +82,8 @@
 
 -record(prepare_log_payload, {prepare_time :: non_neg_integer()}).
 
+-type any_log_payload() :: #update_log_payload{} | #commit_log_payload{} | #abort_log_payload{} | #prepare_log_payload{}.
+
 %% The way records are stored in the log.
 -record(log_record, {tx_id :: txid(),
                      op_type :: update | prepare | commit | abort | noop,

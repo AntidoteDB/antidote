@@ -71,7 +71,6 @@ handle_call(_Info, _From, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%%-spec get_entries_internal(partition_id(),log_opid(),log_opid()) -> [].
 -spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
 get_entries_internal(Partition, From, To) ->
   Logs = log_read_range(Partition, node(), From, To),
@@ -80,8 +79,7 @@ get_entries_internal(Partition, From, To) ->
   Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),
   %% This is done in order to ensure that we only send the transactions we committed.
   %% We can remove this once the read_log_range is reimplemented.
-  %%lists:filter(fun inter_dc_txn:is_local/1, Txns).
-    Txns.
+  lists:filter(fun inter_dc_txn:is_local/1, Txns).
 
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed

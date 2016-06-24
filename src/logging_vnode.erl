@@ -504,6 +504,8 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 %% This will reply with all downstream operations that have
 %% been stored in the log given by LogId
 %% The resut is a dict, with a list of ops per key
+%% -spec handle_command({get_all, log_id(), disk_log:continuation() | start, dict()}, term(), #state{}) ->
+%% 			   {reply, {error, reason()} | dict(), #state{}}.
 handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 	       #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
@@ -521,6 +523,8 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
+-spec reverse_and_add_op_id([clocksi_payload()],non_neg_integer(),[{non_neg_integer(),clocksi_payload()}]) ->
+				   [{non_neg_integer(),clocksi_payload()}].
 reverse_and_add_op_id([],_Id,Acc) ->
     Acc;
 reverse_and_add_op_id([Next|Rest],Id,Acc) ->
@@ -589,6 +593,14 @@ update_ets_op_id(Key,NewOp,ClockTable) ->
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
+%% TODO: upgrade to newer erlang version so can use dict type spec
+%% -spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(),
+%% 		       dict:dict(txid(),[any_log_payload()]), dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}]), load_all | load_per_chunk) ->
+%%  			      {disk_log:continuation(), dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}
+%%  				  | {error, reason()} | {eof, dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}.
+-spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(), dict(), dict(), load_all | load_per_chunk) ->
+			      {disk_log:continuation(), dict(), dict()}
+				  | {error, reason()} | {eof, dict()}.
 get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
@@ -617,7 +629,9 @@ get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict,
             end
     end.
 
--spec finish_op_load(dict:dict(key(),clocksi_payload())) -> dict:dict(key(),{non_neg_integer(),clocksi_payload()}).
+%% TODO: upgrade to newer erlang version so can use dict type spec
+%%-spec finish_op_load(dict:dict(key(),clocksi_payload())) -> dict:dict(key(),[{non_neg_integer(),clocksi_payload()}]).
+-spec finish_op_load(dict()) -> dict().
 finish_op_load(CommittedOpsDict) ->
     dict:fold(fun(Key1, CommittedOps, Acc) ->
 		      dict:store(Key1, reverse_and_add_op_id(CommittedOps,0,[]), Acc)
@@ -627,6 +641,12 @@ finish_op_load(CommittedOpsDict) ->
 %% If key is undefined then is returns all records for all keys
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
+%% TODO: upgrade to newer erlang version so can use dict type spec
+%% -spec filter_terms_for_key([{non_neg_integer(),#operation{}}],key(),snapshot_time(),
+%% 			   dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])) ->
+%% 				  {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])}.
+-spec filter_terms_for_key([{non_neg_integer(),#operation{}}],key(),snapshot_time(),
+			   dict(),dict()) -> {dict(),dict()}.
 filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
 filter_terms_for_key([{_,#operation{log_record = LogRecord}}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
@@ -640,6 +660,11 @@ filter_terms_for_key([{_,#operation{log_record = LogRecord}}|T], Key, MinSnapsho
             filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
     end.
 
+%% TODO: upgrade to newer erlang version so can use dict type spec
+%% -spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
+%% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
+%% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
+-spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
 handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
     case (Key == {key, Key1}) or (Key == undefined) of
@@ -650,6 +675,11 @@ handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) 
             filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
     end.
 
+%% TODO: upgrade to newer erlang version so can use dict type spec
+%% -spec handle_update(txid(), #commit_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
+%% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
+%% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
+-spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
 handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
