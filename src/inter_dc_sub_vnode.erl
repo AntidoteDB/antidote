@@ -91,7 +91,7 @@ delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-call(Partition, Request) -> dc_utilities:call_vnode(Partition, inter_dc_sub_vnode_master, Request).
+call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of

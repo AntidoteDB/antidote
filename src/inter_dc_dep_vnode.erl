@@ -65,12 +65,12 @@
 %% Passes the received transaction to the dependency buffer.
 %% At this point no message can be lost (the transport layer must ensure all transactions are delivered reliably).
 -spec handle_transaction(#interdc_txn{}) -> ok.
-handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
+handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_local_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
 
 %% After restarting from failure, load the vectorclock of the max times of all the updates received from other DCs
 %% Otherwise new updates from other DCs will be blocked
 -spec set_dependency_clock(partition_id(), vectorclock()) -> ok.
-set_dependency_clock(Partition, Vector) -> dc_utilities:call_vnode_sync(Partition, inter_dc_dep_vnode_master, {set_dependency_clock, Vector}).
+set_dependency_clock(Partition, Vector) -> dc_utilities:call_local_vnode_sync(Partition, inter_dc_dep_vnode_master, {set_dependency_clock, Vector}).
 
 %%%% VNode methods ----------------------------------------------------------+
 
@@ -133,7 +133,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% If so, store the transaction
     true ->
       %% Put the operations in the log
-      {ok, _} = logging_vnode:append_group(dc_utilities:partition_to_indexnode(Partition),
+      {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
