@@ -260,7 +260,6 @@ get_log_operations(ObjectClockPairs) ->
     Res = get_log_operations_internal(ObjectClockPairs,[]),
     %% result is a list of lists of lists
     %% internal list is {number, clocksi_payload}
-    lager:info("log operations ~p", [Res]),
     Res.
 
 get_log_operations_internal([],Acc) ->
@@ -532,7 +531,7 @@ execute_ops([{read, {Key, Type}}|Rest], TxId, ReadSet) ->
 get_txn_property(update_clock, Properties) ->
     case lists:keyfind(update_clock, 1, Properties) of
 	false ->
-	    no_update_clock;
+	    update_clock;
 	{update_clock, ShouldUpdate} ->
 	    case ShouldUpdate of 
 		true ->
