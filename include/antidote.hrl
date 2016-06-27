@@ -89,7 +89,7 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time :: snapshot_time(), 
+-record(tx_id, {snapshot_time :: snapshot_time(),
                 server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
@@ -131,9 +131,9 @@
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
 
--type txn_properties() :: term(). %% TODO: Define
+-type txn_properties() :: term().
 -type op_name() :: atom().
--type op_param() :: term(). %% TODO: Define
+-type op_param() :: term().
 -type bound_object() :: {key(), type(), bucket()}.
 
 -type module_name() :: atom().

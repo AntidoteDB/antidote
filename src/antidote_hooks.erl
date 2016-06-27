@@ -17,6 +17,33 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%% Pre-Commit hooks
+%% ------------------------
+%% Pre-commit hooks are executed before an object is being updated. If
+%% pre-commit hook fails, the entire transaction is aborted.
+%%
+%% The commit hook function must be a function which take one argument which is
+%% of type update_object() and returns update_object().
+%% fun (update_object()) -> {ok, update_object()} | {error, Reason}.
+%% -type update_object() :: {{key(), bucket()}, crdt_type(), op()}
+
+%% The returned update_object() is used for updating the object.
+%% An example commit hook function is written in
+%% antidote_hooks.erl : test_increment_hook/1.
+
+%% Post-commit hooks
+%% ------------------------
+%% Post commit hooks are executed after the transaction is successfully committed
+%% and before the reply is sent to the client. Currently if post commit hook is
+%% failed, it is ignored and transaction is still considered to be successfully
+%% committed and the client is notified of the success.
+%% An example commit hook function is written in
+%% antidote_hooks.erl: test_post_hook/1
+
+%% An example of how to use these interfaces is given in
+%% riak_test/commit_hooks_test.erl
+
 -module(antidote_hooks).
 
 -include("antidote.hrl").
@@ -40,11 +67,13 @@
 -define(PREFIX_PRE, {commit_hooks, pre}).
 -define(PREFIX_POST, {commit_hooks, post}).
 
--spec register_post_hook(bucket(), module_name(), function_name()) -> ok | {error, reason()}.
+-spec register_post_hook(bucket(), module_name(), function_name()) ->
+      ok | {error, reason()}.
 register_post_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_POST, Bucket, Module, Function).
 
--spec register_pre_hook(bucket(), module_name(), function_name()) -> ok | {error, reason()}.
+-spec register_pre_hook(bucket(), module_name(), function_name()) ->
+      ok | {error, reason()}.
 register_pre_hook(Bucket, Module, Function) ->
     register_hook(?PREFIX_PRE, Bucket, Module, Function).
 
@@ -53,12 +82,12 @@ register_hook(Prefix, Bucket, Module, Function) ->
     case erlang:function_exported(Module, Function, 1) of
         true ->
             riak_core_metadata:put(Prefix, Bucket, {Module, Function}),
-            ok;        
+            ok;
         false ->
             {error, function_not_exported}
     end.
-        
--spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.    
+
+-spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.
 unregister_hook(pre_commit, Bucket) ->
     riak_core_metadata:delete(?PREFIX_PRE, Bucket);
 
@@ -71,6 +100,8 @@ get_hooks(pre_commit, Bucket) ->
 get_hooks(post_commit, Bucket) ->
     riak_core_metadata:get(?PREFIX_POST, Bucket).
 
+-spec execute_pre_commit_hook(term(), type(), op_param()) ->
+        {term(), type(), op_param()} | {error, reason()}.
 execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
     Hook = get_hooks(pre_commit, Bucket),
     case Hook of
@@ -88,6 +119,8 @@ execute_pre_commit_hook({Key, Bucket}, Type, Param) ->
 execute_pre_commit_hook(Key, Type, Param) ->
     {Key, Type, Param}.
 
+-spec execute_post_commit_hook(term(), type(), op_param()) ->
+            {term(), type(), op_param()} | {error, reason()}.
 execute_post_commit_hook({Key, Bucket}, Type, Param) ->
     Hook = get_hooks(post_commit, Bucket),
     case Hook of
@@ -102,7 +135,6 @@ execute_post_commit_hook({Key, Bucket}, Type, Param) ->
     end;
 execute_post_commit_hook(Key, Type, Param) ->
     {Key, Type, Param}.
-
 
 -ifdef(TEST).
 test_commit_hook(Object) ->

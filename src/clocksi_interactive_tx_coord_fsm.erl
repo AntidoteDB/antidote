@@ -51,7 +51,7 @@
 -export([start_link/2,
          start_link/1,
          start_link/3,
-	 start_link/4]).
+         start_link/4]).
 
 %% Callbacks
 -export([init/1,
@@ -93,10 +93,10 @@
 
 start_link(From, Clientclock, UpdateClock, StayAlive) ->
     case StayAlive of
-	true ->
-	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
-	false ->
-	    gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+        true ->
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+        false ->
+            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
     end.
 
 start_link(From, Clientclock) ->
@@ -150,7 +150,7 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-				boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
+                                boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
@@ -168,16 +168,16 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
     DcId = ?DC_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     Name = case StayAlive of
-	       true ->
-		   case IsStatic of
-		       true ->
-			   clocksi_static_tx_coord_fsm:generate_name(From);
-		       false ->
-			   generate_name(From)
-		   end;
-	       false ->
-		   self()
-	   end,
+               true ->
+                   case IsStatic of
+                       true ->
+                           clocksi_static_tx_coord_fsm:generate_name(From);
+                       false ->
+                           generate_name(From)
+                   end;
+               false ->
+                   self()
+           end,
     TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
         vec_snapshot_time = SnapshotTime,
@@ -502,7 +502,7 @@ committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transacti
 
 %% @doc after receiving all prepare_times, send the commit message to all
 %%      updated partitions, and go to the "receive_committed" state.
-%%      This state expects other process to sen the commit message to 
+%%      This state expects other process to sen the commit message to
 %%      start the commit phase.
 committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
@@ -520,7 +520,7 @@ committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
 %% @doc after receiving all prepare_times, send the commit message to all
 %%      updated partitions, and go to the "receive_committed" state.
 %%      This state is used when no commit message from the client is
-%%      expected 
+%%      expected
 committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
     commit_time = Commit_time}) ->
@@ -547,10 +547,10 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
             {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
     end.
 
-%% @doc when an error occurs or an updated partition 
+%% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
 abort(SD0 = #tx_coord_state{transaction = Transaction,
-			    updated_partitions = UpdatedPartitions}) ->
+                            updated_partitions = UpdatedPartitions}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
@@ -562,15 +562,15 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
-				   updated_partitions = _UpdatedPartitions}) ->
+                                   updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort({prepared, _}, SD0 = #tx_coord_state{transaction = _Transaction,
-					   updated_partitions = _UpdatedPartitions}) ->
+                                           updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
-			       updated_partitions = _UpdatedPartitions}) ->
+                               updated_partitions = _UpdatedPartitions}) ->
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
@@ -591,13 +591,16 @@ receive_aborted(_, S0) ->
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, read_set = ReadSet,
-    state = TxState, commit_time = CommitTime, full_commit = FullCommit,
-    is_static = IsStatic, stay_alive = StayAlive,
-                                     client_ops = ClientOps}) ->
+reply_to_client(SD = #tx_coord_state
+                {from = From, transaction = Transaction, read_set = ReadSet,
+                 state = TxState, commit_time = CommitTime,
+                 full_commit = FullCommit,
+                 is_static = IsStatic, stay_alive = StayAlive,
+                 client_ops = ClientOps}) ->
     if undefined =/= From ->
-        TxId = Transaction#transaction.txn_id,
-        Reply = case TxState of
+            TxId = Transaction#transaction.txn_id,
+            Reply =
+                case TxState of
                     committed_read_only ->
                         case IsStatic of
                             false ->
@@ -607,19 +610,12 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                         end;
                     committed ->
                         %% Execute post_commit_hooks
-                        _Result = %lists:map(fun (Updates) ->
-                                          lists:foreach( fun({Key, Type, Update}) ->
-                                                             case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
-                                                                 {error, Reason} ->
-                                                                     lager:info("Post commit hook failed. Reason ~p", [Reason]);
-                                                                 _ -> ok
-                                                             end
-                                                     end, lists:reverse(ClientOps)),
-                        
-                        %          end, UpdatedPartitions), %% TODO: What happens if commit hook fails?
+                        _Result = execute_post_commit_hooks(ClientOps),
+                        %% TODO: What happens if commit hook fails?
                         DcId = ?DC_UTIL:get_my_dc_id(),
                         CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                            DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                                         DcId, CommitTime,
+                                         Transaction#transaction.vec_snapshot_time),
                         case IsStatic of
                             false ->
                                 {ok, {TxId, CausalClock}};
@@ -631,15 +627,25 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                     Reason ->
                         {TxId, Reason}
                 end,
-        _Res = gen_fsm:reply(From, Reply);
-        true -> ok
+            _Res = gen_fsm:reply(From, Reply);
+       true -> ok
     end,
     case StayAlive of
-	true ->
-	    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
-	false ->
-	    {stop, normal, SD}
+        true ->
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+        false ->
+            {stop, normal, SD}
     end.
+
+execute_post_commit_hooks(Ops) ->
+    lists:foreach(
+      fun({Key, Type, Update}) ->
+              case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
+                  {error, Reason} ->
+                      lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                  _ -> ok
+              end
+      end, lists:reverse(Ops)).
 
 %% =============================================================================
 
@@ -692,7 +698,7 @@ wait_for_clock(Clock) ->
             %% wait for snapshot time to catch up with Client Clock
             timer:sleep(10),
             wait_for_clock(Clock)
-    end.         
+    end.
 
 -ifdef(TEST).
 
@@ -809,4 +815,3 @@ wait_for_clock_test() ->
 
 
 -endif.
-
