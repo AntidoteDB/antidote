@@ -79,12 +79,18 @@ to_binary(CRDT) ->
 from_binary(Bin) ->
     ?RIAK_MODULE:from_binary(Bin).
 
--ifdef(test).
+-ifdef(TEST).
 all_test() ->
     S0 = new(),
     Field = {'C', riak_dt_pncounter},
     {ok, Downstream} = downstream({update, {[{update, Field, {increment, 1}}], actor}}, S0),
     {ok, S1} = update(Downstream, S0),
     ?assertEqual([{Field, 1}], value(S1)).
+
+type_check_test() ->
+    Res = is_operation({update,{[{update,{key,riak_dt_lwwreg},{assign,<<"A">>}},
+                                          {update,{val,riak_dt_pncounter},{increment,1}}],
+                                         hardcodedactor}}),
+    ?assertEqual(true, Res).
 
 -endif.

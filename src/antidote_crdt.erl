@@ -30,7 +30,8 @@
                 antidote_crdt_gset,
                 antidote_crdt_rga,
                 antidote_crdt_bcounter,
-                antidote_crdt_mvreg
+                antidote_crdt_mvreg,
+                antidote_crdt_map
                ]).
 
 -export([is_type/1
