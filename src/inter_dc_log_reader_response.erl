@@ -73,6 +73,8 @@ init([]) ->
     {ok, #state{socket = Socket,next=getid}}.
 
 %% Handle the remote request
+%% ZMQ requests come in 3 parts
+%% 1st the Id of the sender, 2nd an empty binary, 3rd the binary msg
 handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
     {noreply, State#state{next = blankmsg, id=Id}};
 handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
@@ -110,6 +112,8 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
 send_response(Response, Id, Socket) ->
+    %% Must send a response in 3 parts with ZMQ
+    %% 1st Id, 2nd empty binary, 3rd the binary message
     BinaryResponse = term_to_binary(Response),
     ok = erlzmq:send(Socket, Id, [sndmore]),
     ok = erlzmq:send(Socket, <<>>, [sndmore]),

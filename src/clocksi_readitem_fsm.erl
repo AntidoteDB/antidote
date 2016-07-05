@@ -51,8 +51,7 @@
 %% Spawn
 -record(state, {partition :: partition_id(),
 		id :: non_neg_integer(),
-		ops_cache :: cache_id(),
-		snapshot_cache :: cache_id(),
+		mat_state :: #mat_state{},
 		prepared_cache :: cache_id(),
 		self :: atom()}).
 
@@ -166,7 +165,6 @@ start_read_servers_internal(Node, Partition, Num) ->
 	    end,
 	    start_read_servers_internal(Node, Partition, Num)
     end.
-	    
 
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
@@ -191,9 +189,10 @@ init([Partition, Id]) ->
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
     PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
+    MatState = #mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition},
     Self = generate_server_name(Addr,Partition,Id),
-    {ok, #state{partition=Partition, id=Id, ops_cache=OpsCache,
-		snapshot_cache=SnapshotCache,
+    {ok, #state{partition=Partition, id=Id,
+		mat_state = MatState,
 		prepared_cache=PreparedCache,self=Self}}.
 
 handle_call({perform_read, Key, Type, Transaction},Coordinator,SD0) ->
@@ -254,11 +253,11 @@ check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
 return(Coordinator,Key,Type,Transaction,PropertyList,
-       #state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition}) ->
+       #state{mat_state=MatState}) ->
     PropertyList = [],
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, MatState) of
         {ok, Snapshot} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.

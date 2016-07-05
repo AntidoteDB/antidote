@@ -162,9 +162,20 @@ asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
 				   ?LOGGING_MASTER,
 				   infinity).
 
+-record(log_get_response, {
+	  number_of_ops :: non_neg_integer(),
+	  ops_list :: [{op_num(),clocksi_payload()}],
+	  materialized_snapshot :: #materialized_snapshot{},
+	  last_op_id :: op_num(),
+	  snapshot_time :: snapshot_time(),
+	  is_newest_snapshot :: boolean()	  
+	 }).
+
+
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
 -spec get(index_node(), key(), vectorclock(), term(), key()) ->
+		 #log_get_response{} |
 		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
 get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
@@ -494,8 +505,10 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 			    error ->
 				[]
 			end,
-                    {reply, {length(CommittedOpsForKey), CommittedOpsForKey, {0,clocksi_materializer:new(Type)},
-			     vectorclock:new(), false}, State}
+		    {reply, #snapshot_get_response{number_of_ops = length(CommittedOpsForKey), ops_list = CommittedOpsForKey,
+						   materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
+						   snapshot_time = vectorclock:new(), is_newest_snapshot = false},
+		     State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}

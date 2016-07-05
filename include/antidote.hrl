@@ -112,6 +112,9 @@
                       vec_snapshot_time,
                       txn_id :: txid()}).
 
+-record(materialized_snapshot, {last_op_id :: op_num(),
+				value :: snapshot()}).
+
 %%---------------------------------------------------------------------
 -type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
 -type crdt() :: term().
@@ -122,7 +125,8 @@
 -type index_node() :: {chash:index_as_int(), node()}.
 -type preflist() :: riak_core_apl:preflist().
 -type log() :: term().
--type op_id() :: {non_neg_integer(), node()}.
+-type op_num() :: non_neg_integer().
+-type op_id() :: {op_num(), node()}.
 -type payload() :: term().
 -type partition_id()  :: non_neg_integer().
 -type log_id() :: [partition_id()].
@@ -181,3 +185,17 @@
           is_static :: boolean(),
           full_commit :: boolean(),
 	  stay_alive :: boolean()}).
+
+-record(snapshot_get_response, {
+	  number_of_ops :: non_neg_integer(),
+	  ops_list :: [{op_num(),clocksi_payload()}],
+	  materialized_snapshot :: #materialized_snapshot{},
+	  snapshot_time :: snapshot_time() | ignore,
+	  is_newest_snapshot :: boolean()	  
+	 }).
+
+-record(mat_state, {
+	  partition :: partition_id(),
+	  ops_cache :: cache_id(),
+	  snapshot_cache :: cache_id(),
+	  is_ready :: boolean()}).
