@@ -25,15 +25,15 @@ confirm() ->
     ok = common:setup_dc_manager([Cluster1, Cluster2], first_run),
     simple_replication_test(Cluster1, Cluster2),
 
-    [Cluster3, Cluster4] = common:clean_clusters([Cluster1, Cluster2]),
+    [Cluster3, Cluster4] = common:clean_and_rebuild_clusters([Cluster1, Cluster2]),
     ok = common:setup_dc_manager([Cluster3, Cluster4], Clean),
     multiple_keys_test(Cluster3, Cluster4),
 
-    [Cluster5, Cluster6] = common:clean_clusters([Cluster3, Cluster4]),
+    [Cluster5, Cluster6] = common:clean_and_rebuild_clusters([Cluster3, Cluster4]),
     ok = common:setup_dc_manager([Cluster5, Cluster6], Clean),
     causality_test(Cluster5, Cluster6),
 
-    [Cluster7, Cluster8] = common:clean_clusters([Cluster5, Cluster6]),
+    [Cluster7, Cluster8] = common:clean_and_rebuild_clusters([Cluster5, Cluster6]),
     ok = common:setup_dc_manager([Cluster7, Cluster8], Clean),
     atomicity_test(Cluster7, Cluster8),
 

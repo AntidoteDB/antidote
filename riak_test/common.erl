@@ -20,30 +20,42 @@
 -module(common).
 
 -export([
-  clean_clusters/1,
+  clean_and_rebuild_clusters/1,
+  clean_and_rebuild_clusters/2,
+  just_clean_clusters/1,
   setup_dc_manager/2]).
 
 %% It cleans the cluster and formes a new one with the same characteristic of the input one.
 %% In case the clean_cluster parameter is set to false in the riak_test configuration file
 %% the function simply returns the inputed set of clusters
 %% Clusters: A list of clusters as defined by rt
-clean_clusters(Clusters)->
-    Clean = rt_config:get(clean_cluster, true),
+clean_and_rebuild_clusters(Clusters) ->
+    clean_and_rebuild_clusters(Clusters, rt_config:get(clean_cluster, true)).
+
+clean_and_rebuild_clusters(Clusters, Clean)->
     case Clean of
         true ->
 	    disconnect_dcs(Clusters),
             Sizes = lists:foldl(fun(Cluster, Acc) ->
-                                    rt:clean_cluster(Cluster),
-                                    Acc ++ [length(Cluster)]
+					rt:clean_cluster(Cluster),
+					Acc ++ [length(Cluster)]
                                 end, [], Clusters),
             Clusters1 = rt:build_clusters(Sizes),
             lists:foreach(fun(Cluster) ->
-                            rt:wait_until_ring_converged(Cluster)
+				  rt:wait_until_ring_converged(Cluster)
                           end, Clusters1),
             Clusters1;
         false ->
             Clusters
     end.
+
+%% This cleans the clusters without forming a new one
+just_clean_clusters(Clusters) ->
+    disconnect_dcs(Clusters),
+    lists:foreach(fun(Cluster) ->
+			  rt:clean_cluster(Cluster)
+		  end, Clusters),
+    ok.
 
 %% It set ups the listeners and connect the different dcs automatically
 %% Input:   Clusters:   List of clusters
@@ -54,27 +66,33 @@ setup_dc_manager(_Clusters, false) -> ok;
 setup_dc_manager(Clusters, true) -> connect_dcs(Clusters).
 
 connect_dcs(Clusters) ->
-  lager:info("Connecting DC clusters..."),
-  lists:foreach(fun(Cluster) ->
-    Node1 = hd(Cluster),
-    lager:info("Waiting until vnodes start on node ~p", [Node1]),
-    rt:wait_until_registered(Node1, inter_dc_pub),
-    rt:wait_until_registered(Node1, inter_dc_log_reader_response),
-    rt:wait_until_registered(Node1, inter_dc_log_reader_query),
-    rt:wait_until_registered(Node1, inter_dc_sub),
-    rt:wait_until_registered(Node1, meta_data_sender_sup),
-    rt:wait_until_registered(Node1, meta_data_manager_sup),
-    ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
-  end, Clusters),
-  Descriptors = descriptors(Clusters),
-  Res = [ok || _ <- Clusters],
-  lists:foreach(fun(Cluster) ->
-    Node = hd(Cluster),
-    lager:info("Making node ~p observe other DCs...", [Node]),
-    %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-    Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
-  end, Clusters),
-  lager:info("DC clusters connected!").
+    lager:info("Connecting DC clusters..."),
+    SyncLog = rt_config:get(sync_log, true),
+    lists:foreach(fun(Cluster) ->
+			  Node1 = hd(Cluster),
+			  lager:info("Waiting until vnodes start on node ~p", [Node1]),
+			  rt:wait_until_registered(Node1, inter_dc_pub),
+			  rt:wait_until_registered(Node1, inter_dc_log_reader_response),
+			  rt:wait_until_registered(Node1, inter_dc_log_reader_query),
+			  rt:wait_until_registered(Node1, inter_dc_sub),
+			  rt:wait_until_registered(Node1, meta_data_sender_sup),
+			  rt:wait_until_registered(Node1, meta_data_manager_sup),
+			  ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable]),
+			  ok = rpc:call(Node1, logging_vnode, set_sync_log, [SyncLog])
+		  end, Clusters),
+    Descriptors = descriptors(Clusters),
+    Res = [ok || _ <- Clusters],
+    lists:foreach(fun(Cluster) ->
+			  Node = hd(Cluster),
+			  lager:info("Making node ~p observe other DCs...", [Node]),
+			  %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
+			  Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+		  end, Clusters),
+    lists:foreach(fun(Cluster) ->
+			  Node = hd(Cluster),
+			  ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
+		  end, Clusters),
+    lager:info("DC clusters connected!").
 
 disconnect_dcs(Clusters) ->
   lager:info("Disconnecting DC clusters..."),

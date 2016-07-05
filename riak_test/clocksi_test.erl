@@ -60,48 +60,48 @@ confirm() ->
     ?assertMatch(clocksi, Prot),
     clocksi_test1(Nodes),
 
-    [Nodes1] = common:clean_clusters([Nodes]),
+    [Nodes1] = common:clean_and_rebuild_clusters([Nodes]),
     clocksi_test2(Nodes1),
 
-    [Nodes2] = common:clean_clusters([Nodes1]),
+    [Nodes2] = common:clean_and_rebuild_clusters([Nodes1]),
     clocksi_test3(Nodes2),
 
-    [Nodes3] = common:clean_clusters([Nodes2]),
+    [Nodes3] = common:clean_and_rebuild_clusters([Nodes2]),
     clocksi_test_prepare(Nodes3),
 
-    [Nodes4] = common:clean_clusters([Nodes3]),
+    [Nodes4] = common:clean_and_rebuild_clusters([Nodes3]),
     clocksi_test5(Nodes4),
 
-    [Nodes5] = common:clean_clusters([Nodes4]),
+    [Nodes5] = common:clean_and_rebuild_clusters([Nodes4]),
     clocksi_tx_noclock_test(Nodes5),
 
-    [Nodes6] = common:clean_clusters([Nodes5]),
+    [Nodes6] = common:clean_and_rebuild_clusters([Nodes5]),
     clocksi_single_key_update_read_test(Nodes6),
 
-    [Nodes7] = common:clean_clusters([Nodes6]),
+    [Nodes7] = common:clean_and_rebuild_clusters([Nodes6]),
     clocksi_multiple_key_update_read_test(Nodes7),
 
-    [Nodes8] = common:clean_clusters([Nodes7]),
+    [Nodes8] = common:clean_and_rebuild_clusters([Nodes7]),
     clocksi_test4 (Nodes8),
 
-    [Nodes9] = common:clean_clusters([Nodes8]),
+    [Nodes9] = common:clean_and_rebuild_clusters([Nodes8]),
     clocksi_test_read_time(Nodes9),
 
-    [Nodes10] = common:clean_clusters([Nodes9]),
+    [Nodes10] = common:clean_and_rebuild_clusters([Nodes9]),
     clocksi_test_read_wait(Nodes10),
 
-    [Nodes11] = common:clean_clusters([Nodes10]),
+    [Nodes11] = common:clean_and_rebuild_clusters([Nodes10]),
     clocksi_multiple_read_update_test(Nodes11),
 
-    [Nodes12] = common:clean_clusters([Nodes11]),
+    [Nodes12] = common:clean_and_rebuild_clusters([Nodes11]),
     clocksi_concurrency_test(Nodes12),
 
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
         {ok, true} ->
-            [Nodes13] = common:clean_clusters([Nodes12]),
+            [Nodes13] = common:clean_and_rebuild_clusters([Nodes12]),
             clocksi_test_certification_check(Nodes13),
 
-            [Nodes14] = common:clean_clusters([Nodes13]),
+            [Nodes14] = common:clean_and_rebuild_clusters([Nodes13]),
             clocksi_multiple_test_certification_check(Nodes14);
         _ -> 
             pass

@@ -39,10 +39,10 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     empty_set_test(Nodes),
 
-    [Nodes1] = common:clean_clusters([Nodes]),
+    [Nodes1] = common:clean_and_rebuild_clusters([Nodes]),
     add_test(Nodes1),
 
-    [Nodes2] = common:clean_clusters([Nodes1]),
+    [Nodes2] = common:clean_and_rebuild_clusters([Nodes1]),
     remove_test(Nodes2),
     pass.
 

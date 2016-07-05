@@ -24,12 +24,18 @@
 -include("antidote.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
+%% Expected time to wait until the inter_dc_log_sender_vnode is started
+-define(LOG_SENDER_STARTUP_WAIT, 1000).
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
 %% API
 -export([start_vnode/1,
+	 is_sync_log/0,
+	 set_sync_log/1,
+	 set_sync_log_internal/1,
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
@@ -41,7 +47,8 @@
          asyn_read_from/3,
          read_from/3,
          get/5,
-	 get_all/4]).
+	 get_all/4,
+	 request_op_id/3]).
 
 -export([init/1,
          terminate/2,
@@ -62,7 +69,8 @@
 
 -record(state, {partition :: partition_id(),
 		logs_map :: dict(),
-		clock :: non_neg_integer(),
+		clock :: dict(),
+		recovered_vector :: vectorclock(),
 		senders_awaiting_ack :: dict(),
 		last_read :: term()}).
 
@@ -112,36 +120,36 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), term()) -> ok.
+-spec asyn_append(preflist(), key(), payload()) -> ok.
 asyn_append(Preflist, Log, Payload) ->
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, Payload},
                                    {fsm, undefined, self(), ?SYNC_LOG},
                                    ?LOGGING_MASTER).
 
-%% @doc synchronous append operation
--spec append(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
+%% @doc synchronous append operation payload
+-spec append(index_node(), key(), payload()) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, Payload, false},
                                         ?LOGGING_MASTER,
                                         infinity).
 
-%% @doc synchronous append operation
+%% @doc synchronous append operation payload
 %% If enabled in antidote.hrl will ensure item is written to disk
--spec append_commit(index_node(), key(), term()) -> {ok, op_id()} | {error, term()}.
+-spec append_commit(index_node(), key(), payload()) -> {ok, op_id()} | {error, term()}.
 append_commit(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, ?SYNC_LOG},
+                                        {append, LogId, Payload, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
-%% @doc synchronous append list of operations
+%% @doc synchronous append list of operations (note an operations is a payload with an operation number)
 %% The IsLocal flag indicates if the operations in the transaction were handled by the local or remote DC.
--spec append_group(index_node(), key(), [term()], boolean()) -> {ok, op_id()} | {error, term()}.
-append_group(IndexNode, LogId, PayloadList, IsLocal) ->
+-spec append_group(index_node(), key(), [#operation{}], boolean()) -> {ok, op_id()} | {error, term()}.
+append_group(IndexNode, LogId, OperationList, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append_group, LogId, PayloadList, IsLocal},
+                                        {append_group, LogId, OperationList, IsLocal, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
@@ -149,7 +157,7 @@ append_group(IndexNode, LogId, PayloadList, IsLocal) ->
 -spec asyn_append_group(index_node(), key(), [term()], boolean()) -> ok.
 asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
-				   {append_group, LogId, PayloadList, IsLocal},
+				   {append_group, LogId, PayloadList, IsLocal, is_sync_log()},
 				   ?LOGGING_MASTER,
 				   infinity).
 
@@ -178,6 +186,38 @@ get_all(IndexNode, LogId, Continuation, PrevOps) ->
 					?LOGGING_MASTER,
 					infinity).
 
+%% @doc Gets the last id of operations stored in the log for the given DCID
+-spec request_op_id(index_node(), dcid(), partition()) -> {ok, non_neg_integer()}.
+request_op_id(IndexNode, DCID, Partition) ->
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, DCID, Partition},
+					?LOGGING_MASTER,
+					infinity).
+
+%% @doc Returns true if syncrounous logging is enabled
+%%      False otherwise.
+%%      Uses environment variable "sync_log" set in antidote.app.src
+-spec is_sync_log() -> boolean().
+is_sync_log() ->
+    application:get_env(antidote,sync_log,false).
+
+%% @doc Takes as input a boolean to set whether or not items will
+%%      be logged synchronously at this DC (sends a broadcast to update
+%%      the environment variable "sync_log" to all nodes).
+%%      If true, items will be logged synchronously
+%%      If false, items will be logged asynchronously
+-spec set_sync_log(boolean()) -> ok.
+set_sync_log(Value) ->
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    %% Update the environment varible on all nodes in the DC
+    lists:foreach(fun(Node) -> 
+			  ok = rpc:call(Node, logging_vnode, set_sync_log_internal, [Value])
+		  end, Nodes).
+
+%% @doc internal function to set syncrounous logging environment variable.
+-spec set_sync_log_internal(boolean()) -> ok.
+set_sync_log_internal(Value) ->
+    lager:info("setting sync log ~p at ~p", [Value,node()]),
+    application:set_env(antidote,sync_log,Value).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -188,21 +228,52 @@ init([Partition]) ->
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
     lager:info("Opening logs for partition ~w", [Partition]),
-    case open_logs(LogFile, Preflists, dict:new()) of
+    case open_logs(LogFile, Preflists, dict:new(), dict:new(), vectorclock:new()) of
         {error, Reason} ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
-        Map ->
+        {Map,Clock,MaxVector} ->
 	    lager:info("Done opening logs for partition ~w", [Partition]),
             {ok, #state{partition=Partition,
                         logs_map=Map,
-                        clock=0,
+                        clock=Clock,
+			recovered_vector=MaxVector,
                         senders_awaiting_ack=dict:new(),
                         last_read=start}}
     end.
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
+
+handle_command({get_op_id, DCID, Partition}, _Sender, State=#state{clock=ClockDict}) ->
+    {OpId,_} = get_op_id(ClockDict,[Partition],DCID),
+    #op_number{local = Local, global = _Global} = OpId,
+    {reply, {ok, Local}, State};
+
+%% Let the log sender know the last log id that was sent so the receiving DCs
+%% don't think they are getting old messages
+handle_command({start_timer, undefined}, Sender, State) ->
+    handle_command({start_timer, Sender}, Sender, State);
+handle_command({start_timer, Sender}, _, State = #state{partition=Partition, clock=ClockDict, recovered_vector=MaxVector}) ->
+    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    {OpId,_} = get_op_id(ClockDict,[Partition],MyDCID),
+    IsReady = try
+		  ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
+		  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId),
+		  ok = inter_dc_log_sender_vnode:start_timer(Partition),
+		  true
+	      catch
+		  _:Reason ->
+		      lager:info("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
+		      false
+	      end,
+    case IsReady of
+	true ->
+	    riak_core_vnode:reply(Sender, ok);
+	false ->
+	    riak_core_vnode:send_command_after(?LOG_SENDER_STARTUP_WAIT, {start_timer, Sender})
+    end,
+    {noreply, State};
 
 %% @doc Read command: Returns the phyiscal time of the 
 %%      clocksi vnode for which no transactions will commit with smaller time
@@ -271,26 +342,29 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%
 handle_command({append, LogId, Payload, Sync}, _Sender,
                #state{logs_map=Map,
-                      clock=Clock,
+                      clock=ClockDict,
                       partition=Partition}=State) ->
-    OpId = generate_op_id(Clock),
-    {NewClock, _Node} = OpId,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            Operation = #operation{op_number = OpId, payload = Payload},
+	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+	    {OpId,OpIdDict} = get_op_id(ClockDict, LogId, MyDCID),
+	    #op_number{local = Local, global = Global} = OpId,
+	    NewOpId = OpId#op_number{local =  Local + 1, global = Global + 1},
+	    NewClockDict = dict:store(LogId,dict:store(MyDCID,NewOpId,OpIdDict),ClockDict),
+            Operation = #operation{op_number = NewOpId, payload = Payload},
             case insert_operation(Log, LogId, Operation) of
-                {ok, OpId} ->
-                  inter_dc_log_sender_vnode:send(Partition, Operation),
+                {ok, NewOpId} ->
+		    inter_dc_log_sender_vnode:send(Partition, Operation),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of
 				ok ->
-				    {reply, {ok, OpId}, State#state{clock=NewClock}};
+				    {reply, {ok, OpId}, State#state{clock=NewClockDict}};
 				{error, Reason} ->
 				    {reply, {error, Reason}, State}
 			    end;
 			false ->
-			    {reply, {ok, OpId}, State#state{clock=NewClock}}
+			    {reply, {ok, OpId}, State#state{clock=NewClockDict}}
 		    end;
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
@@ -299,36 +373,67 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
             {reply, {error, Reason}, State}
     end;
 
-
-handle_command({append_group, LogId, PayloadList, IsLocal}, _Sender,
+%% Currently this should be only used for external operations
+%% That already have their operation id numbers assigned
+%% That is why IsLocal is hard coded to false
+%% Might want to support appending groups of local operations in the future
+%% for efficency
+handle_command({append_group, LogId, OperationList, _IsLocal = false, Sync}, _Sender,
                #state{logs_map=Map,
-                      clock=Clock,
+                      clock=ClockDict,
                       partition=Partition}=State) ->
-    {ErrorList, SuccList, _NNC} = lists:foldl(fun(Payload, {AccErr, AccSucc,NewClock}) ->
-						      OpId = generate_op_id(NewClock),
-						      {NewNewClock, _Node} = OpId,
-						      case get_log_from_map(Map, Partition, LogId) of
-							  {ok, Log} ->
-                    Operation = #operation{op_number = OpId, payload = Payload},
-							      case insert_operation(Log, LogId, Operation) of
-								  {ok, OpId} ->
-                      case IsLocal of
-                        true -> inter_dc_log_sender_vnode:send(Partition, Operation);
-                        false -> ok
-                      end,
-								      {AccErr, AccSucc ++ [OpId], NewNewClock};
-								  {error, Reason} ->
-								      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
-							      end;
-							  {error, Reason} ->
-							      {AccErr ++ [{reply, {error, Reason}, State}], AccSucc,NewNewClock}
-						      end
-					      end, {[],[],Clock}, PayloadList),
+    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    {ErrorList, SuccList, UpdatedLogs, NNC} =
+	lists:foldl(fun(Operation, {AccErr, AccSucc, UpdatedLogs, NewClockDict}) ->
+			    case get_log_from_map(Map, Partition, LogId) of
+				{ok, Log} ->
+				    %% Generate the new operation ID
+				    %% This is only stored in memory to count the total number
+				    %% of operations, since the input operations should
+				    %% have already been assigned an op id number since
+				    %% they are coming from an external DC
+				    {OpId,OpIdDict} = get_op_id(NewClockDict, LogId, MyDCID),
+				    #op_number{local = _Local, global = Global} = OpId,
+				    NewOpId = OpId#op_number{global = Global + 1},
+				    %% Should assign the opid as follows if this function starts being
+				    %% used for operations generated locally
+				    %% NewOpId = 
+				    %% 	case IsLocal of
+				    %% 	    true ->
+				    %% 		OpId#op_number{local =  Local + 1, global = Global + 1};
+				    %% 	    false ->
+				    %% 		OpId#op_number{global = Global + 1}
+				    %% 	end,
+				    NewNewClockDict = dict:store(LogId,dict:store(MyDCID,NewOpId,OpIdDict),NewClockDict),
+				    ExternalOpNum = Operation#operation.op_number,
+				    case insert_operation(Log, LogId, Operation) of
+					{ok, ExternalOpNum} ->
+					    %% Would need to uncomment this is local ops are sent to this function
+					    %% case IsLocal of
+					    %% 	true -> inter_dc_log_sender_vnode:send(Partition, Operation);
+					    %% 	false -> ok
+					    %% end,
+					    {AccErr, AccSucc ++ [NewOpId], ordsets:add_element(Log,UpdatedLogs), NewNewClockDict};
+					{error, Reason} ->
+					    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs, NewNewClockDict}
+				    end;
+				{error, Reason} ->
+				    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs, NewClockDict}
+			    end
+		    end, {[],[], ordsets:new(),ClockDict}, OperationList),
+    %% Sync the updated logs if necessary
+    case Sync of
+	true ->
+	    ordsets:fold(fun(Log,_Acc) ->
+				 ok = disk_log:sync(Log)
+			 end, ok, UpdatedLogs);
+	false ->
+	    ok
+    end,
     case ErrorList of
 	[] ->
 	    [SuccId|_T] = SuccList,
-	    {NewC, _Node} = lists:last(SuccList),
-	    {reply, {ok, SuccId}, State#state{clock=NewC}};
+	    {reply, {ok, SuccId}, State#state{clock=NNC}};
 	[Error|_T] ->
 	    %%Error
 	    {reply, Error, State}
@@ -380,6 +485,54 @@ reverse_and_add_op_id([],_Id,Acc) ->
     Acc;
 reverse_and_add_op_id([Next|Rest],Id,Acc) ->
     reverse_and_add_op_id(Rest,Id+1,[{Id,Next}|Acc]).
+
+%% Gets the id of the last operation that was put in the log
+%% and the maximum vectorclock of the commited transactions stored in the log
+-spec get_last_op_from_log(log_id(), disk_log:continuation() | start, dict(), vectorclock()) -> {eof, dict(), vectorclock()} | {error, term()}.
+get_last_op_from_log(Log, Continuation, PrevMaxOpDict, PrevMaxVector) ->
+    case disk_log:chunk(Log, Continuation) of
+	eof ->
+	    {eof, PrevMaxOpDict, PrevMaxVector};
+	{error, Reason} ->
+	    {error, Reason};
+	{NewContinuation, NewTerms} ->
+	    {NewMaxOpDict, NewMaxVector} = get_max_op_numbers(NewTerms,PrevMaxOpDict,PrevMaxVector),
+	    get_last_op_from_log(Log, NewContinuation, NewMaxOpDict, NewMaxVector);
+	 {NewContinuation, NewTerms, BadBytes} ->
+            case BadBytes > 0 of
+                true -> {error, bad_bytes};
+                false ->
+		    {NewMaxOpDict,NewMaxVector} = get_max_op_numbers(NewTerms,PrevMaxOpDict,PrevMaxVector),
+		    get_last_op_from_log(Log, NewContinuation, NewMaxOpDict, NewMaxVector)
+	    end
+    end.
+
+-spec get_max_op_numbers([{log_id(),#operation{}}],dict(), vectorclock()) -> {dict(), vectorclock()}.
+get_max_op_numbers([],MaxOpDict,MaxVector) ->
+    {MaxOpDict,MaxVector};
+get_max_op_numbers([{_, #operation{op_number = NewOp, payload = Payload}}|Rest],PrevMaxOpDict,PrevMaxVector) ->
+    #op_number{local = Num, node = {_,DCID}} = NewOp,
+    #log_record{op_type = OpType,
+		op_payload = OpPayload
+	       } = Payload,
+    NewMaxVector =
+	case OpType of
+	    commit ->
+		{{DcId, TxCommitTime}, _} = OpPayload,
+		vectorclock:set_clock_of_dc(DcId, TxCommitTime, PrevMaxVector);
+	    _ ->
+		PrevMaxVector
+	end,
+    NewMaxOpDict = 
+	dict:update(DCID,fun(OldOp = #op_number{local = OldNum}) ->
+				 case Num >= OldNum of
+				     true ->
+					 NewOp;
+				     false ->
+					 OldOp
+				 end
+			 end, NewOp, PrevMaxOpDict),
+    get_max_op_numbers(Rest,NewMaxOpDict,NewMaxVector).
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
@@ -580,10 +733,10 @@ no_elements([LogId|Rest], Map) ->
 %%      Return:         LogsMap: Maps the  preflist and actual name of
 %%                               the log in the system. dict() type.
 %%
--spec open_logs(string(), [preflist()], dict()) -> dict() | {error, reason()}.
-open_logs(_LogFile, [], Map) ->
-    Map;
-open_logs(LogFile, [Next|Rest], Map)->
+-spec open_logs(string(), [preflist()], dict(), dict(), vectorclock()) -> {dict(),dict(),vectorclock()} | {error, reason()}.
+open_logs(_LogFile, [], Map, Clock, MaxVector) ->
+    {Map,Clock, MaxVector};
+open_logs(LogFile, [Next|Rest], Map, Clock, MaxVector)->
     PartitionList = log_utilities:remove_node_from_preflist(Next),
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
@@ -593,11 +746,13 @@ open_logs(LogFile, [Next|Rest], Map)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2);
+            open_logs(LogFile, Rest, Map2, Clock, MaxVector);
         {repaired, Log, _, _} ->
-            lager:info("Repaired log ~p", [Log]),
+	    {eof, LastOpDict, NewMaxVector} = get_last_op_from_log(Log, start, dict:new(), MaxVector),
+	    NewClock = dict:store(PartitionList,LastOpDict,Clock),
+            lager:info("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, dict:to_list(LastOpDict), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2);
+            open_logs(LogFile, Rest, Map2, NewClock, NewMaxVector);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -651,7 +806,7 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), operation()) -> {ok, op_id()} | {error, reason()}.
+-spec insert_operation(log(), log_id(), operation()) -> {ok, #op_number{}} | {error, reason()}.
 insert_operation(Log, LogId, Operation) ->
     Result = disk_log:log(Log, {LogId, Operation}),
     case Result of
@@ -671,8 +826,21 @@ insert_operation(Log, LogId, Operation) ->
 preflist_member(Partition,Preflist) ->
     lists:any(fun({P, _}) -> P =:= Partition end, Preflist).
 
-generate_op_id(Current) ->
-    {Current + 1, node()}.
+-spec get_op_id(dict(), log_id(), dcid()) -> {#op_number{},dict()}.
+get_op_id(ClockDict,LogId,DCID) ->
+    OpDict = case dict:find(LogId,ClockDict) of
+		 {ok, Val} ->
+		     Val;
+		 error ->
+		     dict:new()
+	     end,
+    OpId = case dict:find(DCID,OpDict) of
+	       {ok, Val2} ->
+		   Val2;
+	       error ->
+		   #op_number{node = {node(), DCID}, global = 0, local = 0}
+	   end,
+    {OpId,OpDict}.
 
 -ifdef(TEST).
 

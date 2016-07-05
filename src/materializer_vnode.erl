@@ -182,8 +182,7 @@ open_table(Partition, Name) ->
 %%      Returns true if the have, false otherwise.
 -spec check_tables_ready() -> boolean().
 check_tables_ready() ->
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_table_ready(PartitionList).
 
 -spec check_table_ready([{partition_id(),node()}]) -> boolean().
