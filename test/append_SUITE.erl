@@ -95,7 +95,7 @@ append_failure_test(Config) ->
     First = hd(A),
 
     %% Perform successful write and read.
-    {ok, WriteResult} = rpc:call(First,
+    {ok, _} = rpc:call(First,
                            antidote, append, [Key, riak_dt_gcounter, {increment, ucl}]),
     
     {ok, 1} = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
