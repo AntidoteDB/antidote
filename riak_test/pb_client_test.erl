@@ -99,7 +99,7 @@ simple_transaction_test(Node) ->
     Bound_object = {key, riak_dt_pncounter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
-    rpc:call(Node, antidote, finish_transaction, [TxId]).
+    rpc:call(Node, antidote, commit_transaction, [TxId]).
 
 
 read_write_test(Node) ->
@@ -107,7 +107,7 @@ read_write_test(Node) ->
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
-    rpc:call(Node, antidote, finish_transaction, [TxId]).
+    rpc:call(Node, antidote, commit_transaction, [TxId]).
 
 
 %% Single object rea
