@@ -341,6 +341,13 @@ internal_read(Key, Type, MinSnapshotTime, TxId, State) ->
     internal_read(Key, Type, MinSnapshotTime, TxId, false, State).
 
 internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}) ->
+    %% First look for any existing snapshots in the cache that is compatible with 
+    %% Result is a tuple where on success:
+    %%     1st element is the snapshot of type #materialized_snapshot{}
+    %%     2nd element is the commit time of the snapshost or igore if it is a new (empty) snapshot
+    %%     3rd is a boolean that is true if the snapshot returned is the most recent one in the cache
+    %% or on failure the tuple is
+    %%    {error, no_snapshot}
     Result = case ets:lookup(SnapshotCache, Key) of
 		 [] ->
 		     %% First time reading this key, store an empty snapshot in the cache
@@ -360,6 +367,11 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
 			     {LatestSnapshot,SnapshotCommitTime,IsFirst}
 		     end
 	     end,
+    %% Now check for any additional operations that might be needed to apply to the snapshot
+    %% If no snapshot was returned, operations are returned from the log
+    %% Otherwise operations are taken from the in-memory cache (any snapshot in the cache
+    %% will have any more recent operations also in the cache so no need to go to the log)
+    %% The value returned is of type #snapshot_get_response{}
     SnapshotGetResp = 
 	case Result of
 	    {error, no_snapshot} ->
@@ -379,11 +391,11 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
 		end
 	end,
+    %% Now apply the operations to the snapshot
     case SnapshotGetResp#snapshot_get_response.number_of_ops of
 	0 ->
 	    {ok, SnapshotGetResp#snapshot_get_response.materialized_snapshot#materialized_snapshot.value};
 	_Len ->
-	    %%case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
 	    case clocksi_materializer:materialize(Type, TxId, MinSnapshotTime, SnapshotGetResp) of
 		{ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
 		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
@@ -428,6 +440,8 @@ belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
 -spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
                          boolean(),#mat_state{}) -> true.
 snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache})->
+    %% Perform the garbage collection when the size of the snapshot dict passed the threshold
+    %% or when a GC is forced (a GC is forced after every ?OPS_THRESHOLD ops are inserted into the cache)
     %% Should check op size here also, when run from op gc
     case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) orelse ShouldGc of
         true ->
@@ -545,6 +559,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
+	    %% Here is where the GC is done (with the 5th argument being "true", GC is performed by the internal read
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, true, State),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    {Length1,ListLen1} = ets:lookup_element(OpsCache, Key, 2),
