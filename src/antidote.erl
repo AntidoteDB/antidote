@@ -119,19 +119,19 @@ read_objects(Objects, TxId) ->
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     %% Execute each update as in an interactive transaction
-    Results = lists:map(
-                fun({{Key, Type, _Bucket}, Op, OpParam}) ->
+    Results = lists:foldl(
+                fun({{Key, Type, _Bucket}, Op, OpParam}, Err) ->
                         case clocksi_iupdate(TxId, Key, Type,
                                              {Op, OpParam}) of
-                            ok -> ok;
+                            ok -> Err;
                             {error, Reason} ->
                                 lager:error("Update failed. Reason : ~p",[Reason]),
-                                error
+                                [{error, Reason}| Err]
                         end
-                end, Updates),
-    case lists:member(error, Results) of
-        true -> {error, update_failed}; %% TODO: Capture the reason for error
-        false -> ok
+                end, [], Updates),
+    case Results of
+       [] -> ok;
+       [_H|_T] -> {error, {update_failed, Results}}
     end.
 
 %% For static transactions: bulk updates and bulk reads
