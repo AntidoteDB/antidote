@@ -20,14 +20,7 @@
 -include_lib("kernel/include/inet.hrl").
 
 init_per_suite(Config) ->
-    %% this might help, might not...
-    os:cmd(os:find_executable("epmd")++" -daemon"),
-    {ok, Hostname} = inet:gethostname(),
-    case net_kernel:start([list_to_atom("runner@"++Hostname), shortnames]) of
-        {ok, _} -> ok;
-        {error, {already_started, _}} -> ok;
-        {error, {{already_started, _},_}} -> ok
-    end,
+    test_utils:at_init_testsuite(),
     Config.
 
 

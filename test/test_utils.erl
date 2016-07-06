@@ -21,7 +21,8 @@
 -module(test_utils).
 -author("Annette Bieniusa <bieniusa@cs.uni-kl.de>").
 
--export([%get_cluster_members/1,
+-export([at_init_testsuite/0,
+         %get_cluster_members/1,
          pmap/2,
          wait_until/3,
          %wait_until_left/2,
@@ -34,6 +35,17 @@
          connect_dcs/1,
          partition_cluster/2,
          heal_cluster/2]).
+
+at_init_testsuite() ->
+%% this might help, might not...
+    os:cmd(os:find_executable("epmd")++" -daemon"),
+    {ok, Hostname} = inet:gethostname(),
+    case net_kernel:start([list_to_atom("runner@"++Hostname), shortnames]) of
+        {ok, _} -> ok;
+        {error, {already_started, _}} -> ok;
+        {error, {{already_started, _},_}} -> ok
+    end.
+
 
 %get_cluster_members(Node) ->
 %    {Node, {ok, Res}} = {Node, rpc:call(Node, plumtree_peer_service_manager, get_local_state, [])},
@@ -138,12 +150,6 @@ start_node(Name, Config, Case) ->
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
-            %ok = wait_until(fun() ->
-            %                case rpc:call(Node, plumtree_peer_service_manager, get_local_state, []) of
-            %                    {ok, _Res} -> true;
-            %                    _ -> false
-            %                end
-            %        end, 60, 500),
             Node;
         {error, already_started, Node} ->
             ct_slave:stop(Name),
@@ -219,4 +225,6 @@ rt_retry_delay() -> 500.
 web_ports(dev1) ->
     10015;
 web_ports(dev2) ->
-    10025.
+    10025;
+web_ports(dev3) ->
+    10035.
