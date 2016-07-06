@@ -31,12 +31,6 @@
 start_link(Args) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, Args).
 
-%% start_fsm(Args) ->
-%%     _Res = random:seed(dc_utilities:now()),
-%%     Random = random:uniform(?LOG_READER_CONCURRENCY),
-%%     Module = generate_module_name(Random),
-%%     supervisor:start_child(Module, Args).
-
 generate_module_name(N) ->
     list_to_atom(atom_to_list(?MODULE) ++ "-" ++ integer_to_list(N)).
 

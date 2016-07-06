@@ -70,8 +70,11 @@
 
 -record(state, {partition :: partition_id(),
 		logs_map :: dict(),
-		op_id_table :: cache_id(),
-		recovered_vector :: vectorclock(),
+		op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
+		recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
+	                                            %% of the last operation appended to this log, this value
+		                                    %% is sent to the interdc dependcy module, so it knows up to
+                                                    %% what time updates from other DCs have been receieved (after crash and restart)
 		senders_awaiting_ack :: dict(),
 		last_read :: term()}).
 
@@ -162,21 +165,11 @@ asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
 				   ?LOGGING_MASTER,
 				   infinity).
 
--record(log_get_response, {
-	  number_of_ops :: non_neg_integer(),
-	  ops_list :: [{op_num(),clocksi_payload()}],
-	  materialized_snapshot :: #materialized_snapshot{},
-	  last_op_id :: op_num(),
-	  snapshot_time :: snapshot_time(),
-	  is_newest_snapshot :: boolean()	  
-	 }).
-
-
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
+%% It returns a #log_get_response{} record which is defined in antidote.hrl
 -spec get(index_node(), key(), vectorclock(), term(), key()) ->
-		 #log_get_response{} |
-		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
+		 #snapshot_get_response{} | {error, term()}.
 get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
 					{get, LogId, MinSnapshotTime, Type, Key},
@@ -262,6 +255,7 @@ init([Partition]) ->
                         last_read=start}}
     end.
 
+%% Used to check if the vnode is up
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
@@ -517,6 +511,7 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 %% This will reply with all downstream operations that have
 %% been stored in the log given by LogId
 %% The resut is a dict, with a list of ops per key
+%% The following spec is only for reference
 %% -spec handle_command({get_all, log_id(), disk_log:continuation() | start, dict()}, term(), #state{}) ->
 %% 			   {reply, {error, reason()} | dict(), #state{}}.
 handle_command({get_all, LogId, Continuation, Ops}, _Sender,
@@ -564,6 +559,9 @@ get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
 	    end
     end.
 
+%% This is called when the vnode starts and loads into the cache
+%% the id of the last operation appened to the log, so that new ops will
+%% be assigned corret ids (after crash and restart)
 -spec get_max_op_numbers([{log_id(),#operation{}}],cache_id(),vectorclock()) -> vectorclock().
 get_max_op_numbers([],_ClockTable,MaxVector) ->
     MaxVector;
@@ -589,6 +587,7 @@ get_max_op_numbers([{LogId, #operation{op_number = NewOp, bucket_op_number = New
     true = update_ets_op_id({LogId,DCID},NewOp,ClockTable),
     get_max_op_numbers(Rest,ClockTable,NewMaxVector).
 
+%% After appeded an operation to the log, increment the op id
 -spec update_ets_op_id({log_id(),dcid()} | {log_id(),bucket(),dcid()}, #op_number{}, cache_id()) -> true.
 update_ets_op_id(Key,NewOp,ClockTable) ->
     #op_number{local = Num, global = GlobalNum} = NewOp,
@@ -829,7 +828,8 @@ no_elements([LogId|Rest], Map) ->
 %%                           type.
 %%      Return:         LogsMap: Maps the  preflist and actual name of
 %%                               the log in the system. dict() type.
-%%
+%%                      MaxVector: The version vector time of the last
+%%                               operation appended to the logs
 -spec open_logs(string(), [preflist()], dict(), cache_id(), vectorclock()) -> {dict(),vectorclock()} | {error, reason()}.
 open_logs(_LogFile, [], Map, _ClockTable, MaxVector) ->
     {Map,MaxVector};
