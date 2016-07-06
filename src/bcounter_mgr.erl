@@ -43,13 +43,11 @@ process_op(Key, {{transfer, _Amount}=Operation, _Actor}, BCounter) ->
 %% ===================================================================
 
 handle_call({_IncOrDec, Key, {_,Amount}=Operation, BCounter}, _From, #state{req_queue=RequestsQueue}=State) ->
-    lager:info("Checking Available Permissions for ~p", [dc_meta_data_utilities:get_my_dc_id()]),
     MyId = dc_meta_data_utilities:get_my_dc_id(),
     case crdt_bcounter:generate_downstream(Operation, MyId, BCounter) of
         {error, no_permissions} = FailedResult ->
             Available = crdt_bcounter:local_permissions(MyId, BCounter),
-            UpdtQueue=queue_request(Key, Amount - Available, RequestsQueue),
-            lager:info("Updated Requests Queue ~p.", [UpdtQueue]),
+            UpdtQueue=queue_request(Key, Amount - Available, Amount, RequestsQueue),
             {reply, FailedResult, State#state{req_queue=UpdtQueue}};
         Result -> {reply, Result, State}
     end.
@@ -60,15 +58,43 @@ handle_cast(_Info, State) ->
 handle_info(transfer_periodic, #state{req_queue=RequestsQueue,transfer_timer=OldTimer}=State) ->
     erlang:cancel_timer(OldTimer),
     lager:info("Periodic Resources Transfer ~p.",[RequestsQueue]),
+    %OtherIds = dc_meta_data_utilities:get_dc_ids(true),
+    %Process descriptors to get the names of the DCs.
+    OtherIds = dc_meta_data_utilities:get_dc_descriptors(),
+    lager:info("DCs ~p.",[OtherIds]),
+
     orddict:fold(
       fun(Key, Queue, Accum) ->
         case Queue of
             [] -> Accum;
             Queue ->
-                Required = lists:foldl(fun({Amount,_Timeout}, Acc) -> Acc + Amount end, 0, Queue),
+                lager:info("Processing queue ~p for key ~p.",[Queue,Key]),
+                {RequiredT, RequestedT} = lists:foldl(fun({Amount, Requested, _Timeout}, {SumR1, SumR2}) ->
+                                                              {SumR1 + Amount, SumR2 + Requested} end, {0, 0}, Queue),
                 {ok,Obj} = antidote:read(Key, crdt_bcounter),
                 Available = crdt_bcounter:permissions(Obj),
-                lager:info("Going to Request ~p for key ~p.", [Required - Available, Key])
+                case Available > RequestedT of
+                    true ->
+                        lager:info("Request already satisfyable from storage"),
+                        Accum; %Nothing to do, resources already satisfied.
+                    false ->
+                        PrefList= pref_list(Obj),
+                        lager:info("PrefList ~p",[PrefList]),
+                        Remaining = lists:foldl(
+                                      fun({RemoteId, AvailableRemotely}, Required) ->
+                                              case Required > 0 of
+                                                  true when AvailableRemotely > 0 ->
+                                                      ToRequest = case AvailableRemotely - Required >= 0 of
+                                                                      true -> Required;
+                                                                      false -> AvailableRemotely
+                                                                  end,
+                                                      lager:info("Going to Request ~p to ~p.", [ToRequest, RemoteId]),
+                                                      Required - ToRequest;
+                                                  _ -> 0
+                                              end
+                                      end, RequiredT, PrefList),
+                        lager:info("Remaining required resources after transfer request: ~p.", [Remaining])
+                end
         end
       end, orddict:new(), RequestsQueue),
     NewTimer=erlang:send_after(?TRANSFER_PERIOD, self(), transfer_periodic),
@@ -80,14 +106,22 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-queue_request(Key, Amount, RequestsQueue) ->
+queue_request(Key, Amount, Requested, RequestsQueue) ->
     lager:info("Current requests Queue ~p", [RequestsQueue]),
     QueueForKey = case orddict:find(Key, RequestsQueue) of
                       {ok, Value} -> Value;
                       error -> []
                   end,
     CurrTime = erlang:now(),
-    orddict:store(Key, [{Amount, CurrTime} | QueueForKey], RequestsQueue).
+    orddict:store(Key, [{Amount, Requested, CurrTime} | QueueForKey], RequestsQueue).
 
+pref_list(Obj) ->
+    OtherIds = dc_meta_data_utilities:get_dc_ids(false),
+    lists:sort(
+      fun({_, A}, {_, B}) -> A =< B end,
+      lists:foldl(fun(Id, Accum) ->
+                          Permissions = crdt_bcounter:local_permissions(Id, Obj),
+                          [{Id, Permissions} | Accum]
+                  end, [], OtherIds)).
 
 

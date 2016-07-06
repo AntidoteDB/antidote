@@ -1,7 +1,7 @@
 -module(bcounter_mgr_test).
 
 -export([confirm/0,
-         execute_op/6,
+         execute_op/5,
          read_empty/2,
          test_dec_success/3,
          test_dec_fail/3
@@ -32,12 +32,13 @@ confirm() ->
     test_dec_fail(Node1, key2, actor1),
     pass.
 
-execute_op(Node, Op, Key, Amount, Actor, CommitTime0) ->
-    Result = rpc:call(Node, antidote, clocksi_bulk_update,
-                           [ CommitTime0,
-                             [{update, {Key, ?TYPE, {{Op, Amount}, Actor}}}]]),
+execute_op(Node, Op, Key, Amount, Actor) ->
+    %Result = rpc:call(Node, antidote, clocksi_bulk_update,
+    %                       [[{update, {Key, ?TYPE, {{Op, Amount}, Actor}}}]]),
+    Result = rpc:call(Node, antidote, append,
+                      [Key, ?TYPE, {{Op, Amount}, Actor}]),
     case Result of
-        {ok, {_, _, CommitTime}} -> {ok, CommitTime};
+        {ok, {_,_,CommitTime}} -> {ok, CommitTime};
         Error -> Error
     end.
 
@@ -46,6 +47,10 @@ read(Node, Key) ->
 
 read(Node, Key, CommitTime) ->
     rpc:call(Node, antidote, clocksi_read, [CommitTime, Key, ?TYPE]).
+
+%check_read(Node, Key, Expected) ->
+%    {ok, {_, [Obj], _}} = read(Node, Key),
+%    ?assertEqual(Expected, crdt_bcounter:permissions(Obj)).
 
 check_read(Node, Key, Expected, CommitTime) ->
     {ok, {_, [Obj], _}} = read(Node, Key, CommitTime),
@@ -57,15 +62,14 @@ read_empty(Node, Key) ->
     ?assertEqual(0, crdt_bcounter:permissions(Obj)).
 
 test_dec_success(Node, Key, Actor) ->
-    {ok, {_, _, CommitTime0}} = read(Node, Key),
-    {ok, CommitTime1} = execute_op(Node, increment, Key, 10, Actor, CommitTime0),
-    {ok, _} = execute_op(Node, decrement, Key, 4, Actor, CommitTime1),
-    check_read(Node, Key, 6, CommitTime1).
+    %{ok, _} = read(Node, Key),
+    {ok, _} = execute_op(Node, increment, Key, 10, Actor),
+    {ok, CommitTime} = execute_op(Node, decrement, Key, 4, Actor),
+    check_read(Node, Key, 6, CommitTime).
 
 test_dec_fail(Node, Key, Actor) ->
-    {ok, {_, _, CommitTime0}} = read(Node, Key),
-    {ok, CommitTime1} = execute_op(Node, increment, Key, 10, Actor, CommitTime0),
-    Result = execute_op(Node, decrement, Key, 12, Actor, CommitTime1),
-    timer:sleep(10000),
+    %{ok, _} = read(Node, Key),
+    {ok, _} = execute_op(Node, increment, Key, 10, Actor),
+    Result = execute_op(Node, decrement, Key, 12, Actor),
     ?assertEqual({error, no_permissions}, Result).
 
