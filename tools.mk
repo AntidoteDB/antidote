@@ -5,7 +5,7 @@ test:
 
 systests: rel
 	mkdir -p logs
-	ct_run -dir test  -pa ./_build/default/lib/*/ebin -logdir logs
+	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -suite mvreg_SUITE -dir test
 
 docs:
 	${REBAR} doc skip_deps=true
