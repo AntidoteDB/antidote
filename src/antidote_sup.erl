@@ -37,7 +37,7 @@
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-    
+
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
@@ -59,16 +59,19 @@ init(_Args) ->
                             {clocksi_interactive_tx_coord_sup, start_link, []},
                             permanent, 5000, supervisor,
                             [clockSI_interactive_tx_coord_sup]},
-    
+
     ClockSIReadSup = {clocksi_readitem_sup,
     		      {clocksi_readitem_sup, start_link, []},
     		      permanent, 5000, supervisor,
     		      [clocksi_readitem_sup]},
-    
+
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
                            [materializer_vnode]},
                           permanent, 5000, worker, [riak_core_vnode_master]},
+
+
+    BCounterManager = ?CHILD(bcounter_mgr, worker, []),
 
     ZMQContextManager = ?CHILD(zmq_context, worker, []),
     InterDcPub = ?CHILD(inter_dc_pub, worker, []),
@@ -80,7 +83,7 @@ init(_Args) ->
     InterDcLogReaderRMaster = ?CHILD(inter_dc_log_reader_response, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
-    
+
     MetaDataManagerSup = {meta_data_manager_sup,
 			  {meta_data_manager_sup, start_link, [stable]},
 			  permanent, 5000, supervisor,
@@ -110,4 +113,5 @@ init(_Args) ->
        InterDcLogSenderMaster,
        StableMetaData,
        MetaDataManagerSup,
-       MetaDataSenderSup]}}.
+       MetaDataSenderSup,
+       BCounterManager]}}.
