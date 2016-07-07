@@ -102,6 +102,9 @@ pad(Width, Binary) ->
     N -> <<0:(N*8), Binary/binary>>
   end.
 
+%% Takes a binary and makes it size width
+%% if it is too small than it adds 0s
+%% otherwise it trims bits from the left size
 -spec pad_or_trim(non_neg_integer(), binary()) -> binary().
 pad_or_trim(Width, Binary) ->
     case Width - byte_size(Binary) of
@@ -116,6 +119,9 @@ pad_or_trim(Width, Binary) ->
 -spec partition_to_bin(partition_id()) -> binary().
 partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigned(Partition)).
 
+%% These are interdc message ids, as non-neg-integers, encoded as unsigned
+%% They are of a fixed binary size, looping back to zero
+%% once the max size is reached (by triming the bits on the left)
 -spec req_id_to_bin(non_neg_integer()) -> binary().
 req_id_to_bin(ReqId) ->
     pad_or_trim(?REQUEST_ID_BYTE_LENGTH, binary:encode_unsigned(ReqId)).
