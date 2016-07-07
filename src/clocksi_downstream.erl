@@ -42,7 +42,7 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
                 0 -> %% dealing with an op_based crdt
                     Downstream = case Type of
                                      crdt_bcounter -> %% bcounter data-type.
-                                         bcounter_mgr:process_op(Key,Update,Snapshot);
+                                         bcounter_mgr:generate_downstream(Key,Update,Snapshot);
                                      _ -> Type:generate_downstream(Op, Actor, Snapshot)
                                  end,
                     case Downstream of
