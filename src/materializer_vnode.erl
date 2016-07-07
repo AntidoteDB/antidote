@@ -70,13 +70,6 @@
          handle_coverage/4,
          handle_exit/3]).
 
-%% -record(read_state, {
-%% 	  ops_cache :: cache_id(),
-%% 	  snapshot_cache :: cache_id(),
-%% 	  partition :: partition_id(),
-%% 	  properties :: [term()]
-%% 	 }).
-
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 

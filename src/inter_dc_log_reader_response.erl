@@ -23,12 +23,14 @@
 -module(inter_dc_log_reader_response).
 -behaviour(gen_server).
 -include("antidote.hrl").
+-include("antidote_message_types.hrl").
 -include("inter_dc_repl.hrl").
 
 %% API
 -export([
   get_address/0,
-  get_address_list/0]).
+  get_address_list/0,
+  send_response/4]).
 
 %% Server methods
 -export([
@@ -61,6 +63,10 @@ get_address_list() ->
     AddressList = [{Ip1,Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}],
     {PartitionList, AddressList}.
 
+-spec send_response(binary(), term(), binary(), pid()) -> ok.
+send_response(BinaryResponse, RequesterID, RequestIDNum, Sender) ->
+    ok = gen_server:cast(Sender, {send_response,BinaryResponse,RequesterID,RequestIDNum}).
+
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -82,16 +88,16 @@ handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
 handle_info({zmq, Socket, BinaryMsg, Flags}, State=#state{id=Id,next=getmsg}) ->
     %% Decode the message
     lager:info("got the followoing ~p and ~p and ~p", [Socket,BinaryMsg,Flags]),
-    Msg = binary_to_term(BinaryMsg),
-    lager:info("got msg ~p in log reader resp", [Msg]),
+    RestMsg = binary_utilities:check_message_version(BinaryMsg),
     %% Create a response
-    case Msg of
-	{read_log, Partition, From, To} ->
-	    ok = log_response_reader:get_entries(Partition,From,To,Id);
-	{is_up} ->
-	    ok = send_response({ok}, Id, Socket);
+    case RestMsg of
+	<<ReqId:?REQUEST_ID_BYTE_LENGTH/binary,?LOG_READ_MSG,Query/binary>> ->
+	    ok = log_response_reader:get_entries(Query,Id,ReqId);
+	<<?CHECK_UP_MSG>> ->
+	    ok = finish_send_response(<<?OK_MSG>>, Id, Socket);
 	_ ->
-	    ok = send_response({error, bad_request}, Id, Socket)
+	    ErrorBinary = term_to_binary(bad_request),
+	    ok = finish_send_response(<<?ERROR_MSG, ErrorBinary/binary>>, Id, Socket)
     end,
     {noreply, State#state{next=getid}};
 handle_info(Info, State) ->
@@ -101,8 +107,8 @@ handle_info(Info, State) ->
 handle_call(_Request, _From, State) -> {noreply, State}.
 terminate(_Reason, State) -> erlzmq:close(State#state.socket).
 
-handle_cast({read_log_response, Response, Partition, Id}, State=#state{socket = Socket}) ->
-    send_response({{dc_meta_data_utilities:get_my_dc_id(),Partition},Response},Id,Socket),
+handle_cast({send_response, BinaryResponse, Id, ReqId}, State=#state{socket = Socket}) ->
+    finish_send_response(BinaryResponse, Id, ReqId, Socket),
     {noreply, State};
 
 handle_cast(_Request, State) -> {noreply, State}.
@@ -111,12 +117,20 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
-send_response(Response, Id, Socket) ->
+finish_send_response(BinaryResponse, Id, Socket) ->
+    finish_send_response(BinaryResponse, Id, none, Socket).
+finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message
-    BinaryResponse = term_to_binary(Response),
+    VersionBinary = ?MESSAGE_VERSION,
+    Msg = case ReqId of
+	      none ->
+		  <<VersionBinary/binary,BinaryResponse/binary>>;
+	      ReqId when is_binary(ReqId) ->
+		  <<VersionBinary/binary,ReqId/binary,BinaryResponse/binary>>
+	  end,
     ok = erlzmq:send(Socket, Id, [sndmore]),
     ok = erlzmq:send(Socket, <<>>, [sndmore]),
-    ok = erlzmq:send(Socket, BinaryResponse).
+    ok = erlzmq:send(Socket, Msg).
 
 

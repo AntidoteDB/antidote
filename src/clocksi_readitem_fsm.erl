@@ -55,6 +55,7 @@
 		prepared_cache :: cache_id(),
 		self :: atom()}).
 
+%% TODO: allow properties for reads
 %% -type external_read_property() :: {external_read, dcid(), dc_and_commit_time(), snapshot_time()}.
 %% -type read_property() :: external_read_property().
 %% -type read_property_list() :: [read_property()].
@@ -208,6 +209,7 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
 
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+    %% TODO: Add support for read properties
     PropertyList = [],
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
@@ -254,6 +256,7 @@ check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
 %%  - Reads and returns the log of specified Key using replication layer.
 return(Coordinator,Key,Type,Transaction,PropertyList,
        #state{mat_state=MatState}) ->
+    %% TODO: Add support for read properties
     PropertyList = [],
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,

@@ -59,8 +59,8 @@
 -spec deliver_txn(#interdc_txn{}) -> ok.
 deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
 
--spec deliver_log_reader_resp(pdcid(), [#interdc_txn{}]) -> ok.
-deliver_log_reader_resp({DCID, Partition}, Txns) -> call(Partition, {log_reader_resp, DCID, Txns}).
+-spec deliver_log_reader_resp(partition_id(),binary()) -> ok.
+deliver_log_reader_resp(Partition,BinaryRep) -> call(Partition, {log_reader_resp, BinaryRep}).
 
 %%%% VNode methods ----------------------------------------------------------+
 
@@ -72,7 +72,9 @@ handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
   Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
   {noreply, set_buf(DCID, Buf1, State)};
 
-handle_command({log_reader_resp, DCID, Txns}, _Sender, State) ->
+handle_command({log_reader_resp, BinaryRep}, _Sender, State) ->
+  %% The binary reply is type {pdcid(), [#interdc_txn{}]}
+  {{DCID, _Partition}, Txns} = binary_to_term(BinaryRep),
   Buf0 = get_buf(DCID, State),
   Buf1 = inter_dc_sub_buf:process({log_reader_resp, Txns}, Buf0),
   {noreply, set_buf(DCID, Buf1, State)}.

@@ -21,14 +21,18 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--define(PARTITION_BYTE_LENGTH, 20).
-
 %% API
 -export([
   from_ops/3,
   ping/3,
   is_local/1,
-  ops_by_type/2, to_bin/1, from_bin/1, partition_to_bin/1, last_log_opid/1, is_ping/1]).
+  req_id_to_bin/1,
+  ops_by_type/2,
+  to_bin/1,
+  from_bin/1,
+  partition_to_bin/1,
+  last_log_opid/1,
+  is_ping/1]).
 
 %% Functions
 
@@ -98,5 +102,21 @@ pad(Width, Binary) ->
     N -> <<0:(N*8), Binary/binary>>
   end.
 
+-spec pad_or_trim(non_neg_integer(), binary()) -> binary().
+pad_or_trim(Width, Binary) ->
+    case Width - byte_size(Binary) of
+	N when N == 0 -> Binary;
+	N when N < 0 ->
+	    Pos = abs(N),
+	    <<_:Pos, Rest:Width/binary>> = Binary,
+	    Rest;
+	N -> <<0:(N*8), Binary/binary>>
+  end.
+
 -spec partition_to_bin(partition_id()) -> binary().
 partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigned(Partition)).
+
+-spec req_id_to_bin(non_neg_integer()) -> binary().
+req_id_to_bin(ReqId) ->
+    pad_or_trim(?REQUEST_ID_BYTE_LENGTH, binary:encode_unsigned(ReqId)).
+			   
