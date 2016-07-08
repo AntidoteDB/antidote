@@ -59,8 +59,10 @@
 -spec deliver_txn(#interdc_txn{}) -> ok.
 deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
 
--spec deliver_log_reader_resp(partition_id(),binary()) -> ok.
-deliver_log_reader_resp(Partition,BinaryRep) -> call(Partition, {log_reader_resp, BinaryRep}).
+-spec deliver_log_reader_resp(binary(),#request_cache_entry{}) -> ok.
+deliver_log_reader_resp(BinaryRep,_RequestCacheEntry) ->
+    <<Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, RestBinary/binary>> = BinaryRep,
+    call(Partition, {log_reader_resp, RestBinary}).
 
 %%%% VNode methods ----------------------------------------------------------+
 

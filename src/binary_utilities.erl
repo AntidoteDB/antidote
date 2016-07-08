@@ -19,10 +19,11 @@
 %% -------------------------------------------------------------------
 -module(binary_utilities).
 -include("antidote.hrl").
--include("antidote_message_types.hrl").
+-include("inter_dc_repl.hrl").
 
 -export([
-	 check_message_version/1
+	 check_message_version/1,
+	 check_version_and_req_id/1
 	]).
 
 %% Check a binary message version
@@ -30,3 +31,7 @@ check_message_version(<<Version:?VERSION_BYTES/binary,Rest/binary>>) ->
     %% Only support one version now
     ?MESSAGE_VERSION = Version,
     Rest.
+
+check_version_and_req_id(Binary) ->
+    <<ReqId:?REQUEST_ID_BYTE_LENGTH/binary,Rest/binary>> = check_message_version(Binary),
+    {ReqId,Rest}.

@@ -22,11 +22,11 @@
 -behaviour(gen_server).
 
 -include("antidote.hrl").
--include("antidote_message_types.hrl").
+%%-include("antidote_message_types.hrl").
 -include("inter_dc_repl.hrl").
 
 -export([start_link/1,
-	 get_entries/3,
+	 get_entries/2,
 	 generate_server_name/1]).
 -export([init/1,
 	 handle_cast/2,
@@ -36,7 +36,7 @@
 	 code_change/3]).
 
 -record(state, {
-	  id :: non_neg_integer()}).
+	  id :: non_neg_integer()}).	  
 
 %% ===================================================================
 %% Public API
@@ -46,9 +46,9 @@
 start_link(Num) ->
     gen_server:start_link({local,generate_server_name(Num)}, ?MODULE, [Num], []).
 
--spec get_entries(binary(),term(),binary()) -> ok.
-get_entries(BinaryQuery,RequesterID,RequestIDNum) ->
-    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,RequesterID,RequestIDNum,self()}).
+-spec get_entries(binary(),#inter_dc_query_state{}) -> ok.
+get_entries(BinaryQuery,QueryState) ->
+    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -57,13 +57,13 @@ get_entries(BinaryQuery,RequesterID,RequestIDNum) ->
 init([Num]) ->
     {ok, #state{id=Num}}.
 
-handle_cast({get_entries,BinaryQuery,RequesterID,RequestIDNum,Sender}, State) ->
+handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
     {read_log,Partition, From, To} = binary_to_term(BinaryQuery),
     Entries = get_entries_internal(Partition,From,To),
     BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(),Partition},Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
-    FullResponse = <<?LOG_RESP_MSG,BinaryPartition/binary,BinaryResp/binary>>,
-    ok = inter_dc_query_receive_socket:send_response(FullResponse,RequesterID,RequestIDNum,Sender),
+    FullResponse = <<BinaryPartition/binary,BinaryResp/binary>>,
+    ok = inter_dc_query_receive_socket:send_response(FullResponse,QueryState),
     {noreply, State};
 
 handle_cast(_Info, State) ->

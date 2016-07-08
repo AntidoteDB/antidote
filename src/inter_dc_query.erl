@@ -28,13 +28,12 @@
 -module(inter_dc_query).
 -behaviour(gen_server).
 -include("antidote.hrl").
--include("antidote_message_types.hrl").
+%%-include("antidote_message_types.hrl").
 -include("inter_dc_repl.hrl").
 
 %% API
 -export([
-  query/3,
-  perform_request/2,
+  perform_request/4,
   add_dc/2,
   del_dc/1]).
 
@@ -57,18 +56,10 @@
 
 %%%% API --------------------------------------------------------------------+
 
-%% Instructs the log reader to ask the remote DC for a given range of operations.
-%% Instead of a simple request/response with blocking, the result is delivered
-%% asynchronously to inter_dc_sub_vnode.
--spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
-query({DCID,Partition}, From, To) ->
-    BinaryRequest = term_to_binary({read_log, Partition, From, To}),
-    FullRequest = <<?LOG_READ_MSG,BinaryRequest/binary>>,
-    gen_server:call(?MODULE, {any_request, {DCID, Partition}, FullRequest}).
-
 %% Send any request to another DC partition
-perform_request(PDCID, BinaryRequest) ->
-    gen_server:call(?MODULE, {any_request, PDCID, BinaryRequest}).    
+-spec perform_request(inter_dc_message_type(), pdcid(), binary(), function()) -> ok | unknown_dc.
+perform_request(RequestType, PDCID, BinaryRequest, Func) ->
+    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
@@ -81,7 +72,7 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new(), req_id = 0, unanswered_queries = ets:new(queries,[set])}}.
+init([]) -> {ok, #state{sockets = dict:new(), req_id = 1, unanswered_queries = ets:new(queries,[set])}}.
 
 %% Handle the instruction to add a new DC.
 handle_call({add_dc, DCID, LogReaders}, _From, State) ->
@@ -105,7 +96,7 @@ handle_call({add_dc, DCID, LogReaders}, _From, State) ->
 							    dict:store(Partition,Socket,Acc)
 						    end, DCPartitionDict, PartitionList),
 				    NewAccState = AccState#state{sockets = dict:store(DCID,NewDCPartitionDict,AccState#state.sockets)},
-				    F = fun({_ReqId, {QDCID, Partition}, Request}, _Acc) ->
+				    F = fun({_ReqId, #request_cache_entry{binary_req=Request,pdcid={QDCID,Partition}}}, _Acc) ->
 						%% if there are unanswered queries that were sent to the DC we just connected with, resend them
 						case (QDCID == DCID and lists:member(Partition,PartitionList)) of
 						    true -> erlzmq:send(Socket, Request);
@@ -131,7 +122,7 @@ handle_call({del_dc, DCID}, _From, State) ->
     end;
 
 %% Handle an instruction to ask a remote DC.
-handle_call({any_request, PDCID, BinaryReq}, _From, State=#state{req_id=ReqId}) ->
+handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
     {DCID, Partition} = PDCID,
     case dict:find(DCID, State#state.sockets) of
 	%% If socket found
@@ -151,8 +142,11 @@ handle_call({any_request, PDCID, BinaryReq}, _From, State=#state{req_id=ReqId}) 
 	    lager:info("the request id ~p", [ReqId]),
 	    ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
 	    lager:info("the binary version ~p", [ReqIdBinary]),
-	    ok = erlzmq:send(Socket, <<VersionBinary/binary,ReqIdBinary/binary,BinaryReq/binary>>),
-	    {reply, ok, req_sent(ReqIdBinary, {DCID,SendPartition}, BinaryReq, State)};
+	    FullRequest = <<VersionBinary/binary,ReqIdBinary/binary,RequestType,BinaryRequest/binary>>,
+	    ok = erlzmq:send(Socket,FullRequest),
+	    RequestEntry = #request_cache_entry{request_type=RequestType,req_id_binary=ReqIdBinary,
+						func=Func,pdcid={DCID,SendPartition},binary_req=FullRequest},
+	    {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
 	%% If socket not found
 	_ -> {reply, unknown_dc, State}
     end.
@@ -171,10 +165,12 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
     lager:info("the full msg ~p~n and the reqid ~p", [BinaryMsg,ReqIdBinary]),
     %% Be sure this is a request from this socket
     case ets:lookup(Table,ReqIdBinary) of
-	[_] ->
+	[{ReqIdBinary,CacheEntry=#request_cache_entry{request_type=RequestType,func=Func}}] ->
 	    case RestMsg of
-		<<?LOG_RESP_MSG, Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, BinaryRep/binary>> ->
-		    inter_dc_sub_vnode:deliver_log_reader_resp(Partition,BinaryRep);
+		%% <<?LOG_RESP_MSG, Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, BinaryRep/binary>> ->
+		%%     inter_dc_sub_vnode:deliver_log_reader_resp(Partition,BinaryRep);
+		<<RequestType,RestBinary/binary>> ->
+		    Func(RestBinary,CacheEntry);
 		Other ->
 		    lager:error("Received unknown reply: ~p", [Other])
 	    end,
@@ -195,8 +191,8 @@ handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %% Saves the request in the state, so it can be resent if the DC was disconnected.
-req_sent(ReqIdBinary, PDCID, BinaryReq, State=#state{unanswered_queries=Table,req_id=OldReq}) ->
-    true = ets:insert(Table,{ReqIdBinary,PDCID,BinaryReq}),
+req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table,req_id=OldReq}) ->
+    true = ets:insert(Table,{ReqIdBinary,RequestEntry}),
     State#state{req_id=(OldReq+1)}.
 
 connect_to_node([]) ->
@@ -207,7 +203,9 @@ connect_to_node([Address| Rest]) ->
     Socket1 = zmq_utils:create_connect_socket(req, false, Address),
     ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
     BinaryVersion = ?MESSAGE_VERSION,
-    ok = erlzmq:send(Socket1, <<BinaryVersion/binary,?CHECK_UP_MSG>>),
+    %% Always use 0 as the id of the check up message
+    ReqIdBinary = inter_dc_txn:req_id_to_bin(0),
+    ok = erlzmq:send(Socket1, <<BinaryVersion/binary,ReqIdBinary/binary,?CHECK_UP_MSG>>),
     Res = erlzmq:recv(Socket1),
     ok = zmq_utils:close_socket(Socket1),
     case Res of

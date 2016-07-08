@@ -1,3 +1,5 @@
+-include("antidote_message_types.hrl").
+
 -define(PARTITION_BYTE_LENGTH, 20).
 -define(REQUEST_ID_BYTE_LENGTH, 2).
 
@@ -31,3 +33,23 @@
  publishers :: [socket_address()],
  logreaders :: [socket_address()]
 }).
+
+%% This keeps information about an inter-dc request that
+%% is waiting for a reply
+-record(request_cache_entry, {
+	  request_type :: inter_dc_message_type(),
+	  func :: function() | undefined,
+	  req_id_binary :: binary(),
+	  pdcid :: pdcid(),
+	  binary_req :: binary()
+	 }).
+
+%% This keeps information about an inter-dc request
+%% on the site that is performing the query
+-record(inter_dc_query_state, {
+	  request_type :: inter_dc_message_type(),
+	  zmq_id :: term(),
+	  request_id_num_binary :: binary(),
+	  local_pid :: pid()
+	 }).
+	  

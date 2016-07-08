@@ -103,7 +103,7 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
         gt ->
           lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
 		     [TxnLast, Last, State#state.pdcid]),
-          case inter_dc_query:query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
+          case query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
             ok ->
               State#state{state_name = buffering};
             _ ->
@@ -125,6 +125,14 @@ deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 %% The lost messages would be then fetched again by the log_reader.
 -spec push(#interdc_txn{}, #state{}) -> #state{}.
 push(Txn, State) -> State#state{queue = queue:in(Txn, State#state.queue)}.
+
+%% Instructs the log reader to ask the remote DC for a given range of operations.
+%% Instead of a simple request/response with blocking, the result is delivered
+%% asynchronously to inter_dc_sub_vnode.
+-spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
+query({DCID,Partition}, From, To) ->
+    BinaryRequest = term_to_binary({read_log, Partition, From, To}),
+    inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2).
 
 cmp(A, B) when A > B -> gt;
 cmp(A, B) when B > A -> lt;

@@ -11,3 +11,5 @@
 -define(LOG_RESP_MSG,3).
 -define(OK_MSG,4).
 -define(ERROR_MSG,5).
+
+-type inter_dc_message_type() :: ?CHECK_UP_MSG | ?LOG_READ_MSG | ?LOG_RESP_MSG | ?OK_MSG | ?ERROR_MSG.
