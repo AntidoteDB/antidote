@@ -213,7 +213,8 @@ connect_to_node([Address| Rest]) ->
     case Res of
 	{ok, Binary} ->
 	    %% check that an ok msg was received
-	    <<?OK_MSG>> = binary_utilities:check_message_version(Binary),
+	    %%<<?OK_MSG>> = binary_utilities:check_message_version(Binary),
+	    lager:info("The binary from connection ~p", [Binary]),
 	    %% Create a subscriber socket for the specified DC
 	    Socket = zmq_utils:create_connect_socket(req, true, Address),
 	    %% For each partition in the current node:

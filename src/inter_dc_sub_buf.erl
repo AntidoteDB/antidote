@@ -103,7 +103,7 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
         gt ->
           lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
 		     [TxnLast, Last, State#state.pdcid]),
-          case inter_dc_log_reader_query:query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
+          case inter_dc_query:query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
             ok ->
               State#state{state_name = buffering};
             _ ->

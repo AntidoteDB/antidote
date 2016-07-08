@@ -63,7 +63,7 @@ handle_cast({get_entries,BinaryQuery,RequesterID,RequestIDNum,Sender}, State) ->
     BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(),Partition},Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<?LOG_RESP_MSG,BinaryPartition/binary,BinaryResp/binary>>,
-    ok = inter_dc_query_response:send_response(FullResponse,RequesterID,RequestIDNum,Sender),
+    ok = inter_dc_query_receive_socket:send_response(FullResponse,RequesterID,RequestIDNum,Sender),
     {noreply, State};
 
 handle_cast(_Info, State) ->
@@ -110,4 +110,4 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 generate_server_name(Id) ->
-    list_to_atom("log_response_reader" ++ integer_to_list(Id)).
+    list_to_atom("inter_dc_query_response" ++ integer_to_list(Id)).

@@ -22,7 +22,7 @@
  timestamp :: clock_time(),
  last_update_opid :: #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort)
  bucket :: bucket(),
- operations :: [operation()] %% if the OP list is empty, the message is a HEARTBEAT
+ log_records :: [#log_record{}] %% if the OP list is empty, the message is a HEARTBEAT
 }).
 
 -record(descriptor, {

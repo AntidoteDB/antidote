@@ -79,7 +79,7 @@ init(_Args) ->
     InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
     InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
     InterDcLogReaderQMaster = ?CHILD(inter_dc_query, worker, []),
-    InterDcLogReaderRMaster = ?CHILD(inter_dc_query_response, worker, []),
+    InterDcLogReaderRMaster = ?CHILD(inter_dc_query_receive_socket, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
     
@@ -93,10 +93,10 @@ init(_Args) ->
 			  permanent, 5000, supervisor,
 			  [meta_data_sender_sup]},
 
-    LogResponseReaderSup = {log_response_reader_sup,
-			  {log_response_reader_sup, start_link, [?LOG_READER_CONCURRENCY]},
+    LogResponseReaderSup = {inter_dc_query_response_sup,
+			  {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]},
 			  permanent, 5000, supervisor,
-			  [log_response_reader_sup]},
+			  [inter_dc_query_response_sup]},
 
 
     {ok,

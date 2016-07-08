@@ -109,13 +109,13 @@ process_queue(DCID, {State, Acc}) ->
 %% Store the heartbeat message.
 %% This is not a true transaction, so its dependencies are always satisfied.
 -spec try_store(#state{}, #interdc_txn{}) -> {#state{}, boolean()}.
-try_store(State=#state{drop_ping = true}, #interdc_txn{operations = []}) ->
+try_store(State=#state{drop_ping = true}, #interdc_txn{log_records = []}) ->
     {State, true};
-try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, operations = []}) ->
+try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = []}) ->
     {update_clock(State, DCID, Timestamp), true};
 
 %% Store the normal transaction
-try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, operations = Ops}) ->
+try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant.
   %% Therefore, we remove it prior to further checks.
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),

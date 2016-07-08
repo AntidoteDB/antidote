@@ -20,7 +20,7 @@
 
 %% Log reader reads all transactions in the log that happened between the defined
 
--module(inter_dc_log_reader_response).
+-module(inter_dc_query_receive_socket).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("antidote_message_types.hrl").
@@ -92,7 +92,7 @@ handle_info({zmq, Socket, BinaryMsg, Flags}, State=#state{id=Id,next=getmsg}) ->
     %% Create a response
     case RestMsg of
 	<<ReqId:?REQUEST_ID_BYTE_LENGTH/binary,?LOG_READ_MSG,Query/binary>> ->
-	    ok = log_response_reader:get_entries(Query,Id,ReqId);
+	    ok = inter_dc_query_response:get_entries(Query,Id,ReqId);
 	<<?CHECK_UP_MSG>> ->
 	    ok = finish_send_response(<<?OK_MSG>>, Id, Socket);
 	_ ->

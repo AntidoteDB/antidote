@@ -24,8 +24,8 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
-%% If you can fix the dialyzer warns for process_all/3, be my guest.
--dialyzer({nowarn_function, process_all/3}).
+%% %% If you can fix the dialyzer warns for process_all/3, be my guest.
+%% -dialyzer({nowarn_function, process_all/3}).
 
 %% API
 -export([
@@ -57,7 +57,7 @@ process(LogRecord, State) ->
 -spec process_all([#log_record{}],#state{op_buffer::'undefined' | dict()}) -> {[[#log_record{}]],#state{}}.
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
 
--spec process_all([#operation{}], [[#log_record{}]], #state{}) -> {[[#log_record{}]], #state{}}.
+-spec process_all([#log_record{}], [[#log_record{}]], #state{}) -> {[[#log_record{}]], #state{}}.
 process_all([], Acc, State) -> {Acc, State};
 process_all([H|T], Acc, State) ->
   {Result, NewState} = process(H, State),

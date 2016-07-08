@@ -62,7 +62,7 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
 }.
 
 -spec last_log_opid(#interdc_txn{}) -> #op_number{}.
-last_log_opid(Txn = #interdc_txn{operations = Ops, prev_log_opid = LogOpId}) ->
+last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId}) ->
     case is_ping(Txn) of
 	true -> LogOpId;
 	false ->
@@ -110,8 +110,8 @@ pad_or_trim(Width, Binary) ->
     case Width - byte_size(Binary) of
 	N when N == 0 -> Binary;
 	N when N < 0 ->
-	    Pos = abs(N),
-	    <<_:Pos, Rest:Width/binary>> = Binary,
+	    Pos = trunc(abs(N)),
+	    <<_:Pos/binary, Rest:Width/binary>> = Binary,
 	    Rest;
 	N -> <<0:(N*8), Binary/binary>>
   end.
