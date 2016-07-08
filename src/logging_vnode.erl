@@ -124,44 +124,44 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), payload()) -> ok.
-asyn_append(Preflist, Log, Payload) ->
+-spec asyn_append(preflist(), key(), #log_operation{}) -> ok.
+asyn_append(Preflist, Log, LogOperation) ->
     riak_core_vnode_master:command(Preflist,
-                                   {append, Log, Payload},
+                                   {append, Log, LogOperation},
                                    {fsm, undefined, self(), ?SYNC_LOG},
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation payload
--spec append(index_node(), key(), payload()) -> {ok, op_id()} | {error, term()}.
-append(IndexNode, LogId, Payload) ->
+-spec append(index_node(), key(), #log_operation{}) -> {ok, op_id()} | {error, term()}.
+append(IndexNode, LogId, LogOperation) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append, LogId, Payload, false},
+                                        {append, LogId, LogOperation, false},
                                         ?LOGGING_MASTER,
                                         infinity).
 
 %% @doc synchronous append operation payload
 %% If enabled in antidote.hrl will ensure item is written to disk
--spec append_commit(index_node(), key(), #log_record{}) -> {ok, op_id()} | {error, term()}.
+-spec append_commit(index_node(), key(), #log_operation{}) -> {ok, op_id()} | {error, term()}.
 append_commit(IndexNode, LogId, Payload) ->
     riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, Payload, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
-%% @doc synchronous append list of operations (note an operations is a payload with an operation number)
+%% @doc synchronous append list of log records (note a log record is a payload (log_operation) with an operation number)
 %% The IsLocal flag indicates if the operations in the transaction were handled by the local or remote DC.
--spec append_group(index_node(), key(), [#operation{}], boolean()) -> {ok, op_id()} | {error, term()}.
-append_group(IndexNode, LogId, OperationList, IsLocal) ->
+-spec append_group(index_node(), key(), [#log_record{}], boolean()) -> {ok, op_id()} | {error, term()}.
+append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {append_group, LogId, OperationList, IsLocal, is_sync_log()},
+                                        {append_group, LogId, LogRecordList, IsLocal, is_sync_log()},
                                         ?LOGGING_MASTER,
                                         infinity).
 
 %% @doc asynchronous append list of operations
--spec asyn_append_group(index_node(), key(), [#operation{}], boolean()) -> ok.
-asyn_append_group(IndexNode, LogId, PayloadList, IsLocal) ->
+-spec asyn_append_group(index_node(), key(), [#log_record{}], boolean()) -> ok.
+asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
-				   {append_group, LogId, PayloadList, IsLocal, is_sync_log()},
+				   {append_group, LogId, LogRecordList, IsLocal, is_sync_log()},
 				   ?LOGGING_MASTER,
 				   infinity).
 
@@ -355,11 +355,13 @@ handle_command({read_from, LogId, _From}, _Sender,
 %% @doc Append command: Appends a new op to the Log of Key
 %%      Input:  LogId: Indetifies which log the operation has to be
 %%              appended to.
-%%              Payload of the operation
+%%              LogOperation of the operation
 %%              OpId: Unique operation id
 %%      Output: {ok, {vnode_id, op_id}} | {error, Reason}
 %%
-handle_command({append, LogId, Payload, Sync}, _Sender,
+%% -spec handle_command({append, log_id(), #log_operation{}, boolean()}, pid(), #state{}) ->
+%%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
+handle_command({append, LogId, LogOperation, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition}=State) ->
@@ -374,9 +376,9 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 	    %% non commit operations update the bucket id number to keep track
 	    %% of the number of updates per bucket
 	    NewBucketOpId = 
-		case Payload#log_record.op_type of
+		case LogOperation#log_operation.op_type of
 		    update ->
-			Bucket = (Payload#log_record.log_payload)#update_log_payload.bucket,
+			Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
 			BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
 			#op_number{local = BLocal, global = BGlobal} = BOpId,
 			NewBOpId = BOpId#op_number{local = BLocal + 1, global = BGlobal + 1},
@@ -385,10 +387,10 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 		    _ ->
 			NewOpId
 		end,		    
-            Operation = #operation{op_number = NewOpId, bucket_op_number = NewBucketOpId, log_record = Payload},
-            case insert_operation(Log, LogId, Operation) of
+            LogRecord = #log_record{op_number = NewOpId, bucket_op_number = NewBucketOpId, log_operation = LogOperation},
+            case insert_log_record(Log, LogId, LogRecord) of
                 {ok, NewOpId} ->
-		    inter_dc_log_sender_vnode:send(Partition, Operation),
+		    inter_dc_log_sender_vnode:send(Partition, LogRecord),
 		    case Sync of
 			true ->
 			    case disk_log:sync(Log) of
@@ -412,13 +414,15 @@ handle_command({append, LogId, Payload, Sync}, _Sender,
 %% That is why IsLocal is hard coded to false
 %% Might want to support appending groups of local operations in the future
 %% for efficency
-handle_command({append_group, LogId, OperationList, _IsLocal = false, Sync}, _Sender,
+%% -spec handle_command({append_group, log_id(), [#log_record{}], false, boolean()}, pid(), #state{}) ->
+%%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
+handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition}=State) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
     {ErrorList, SuccList, UpdatedLogs} =
-	lists:foldl(fun(Operation, {AccErr, AccSucc, UpdatedLogs}) ->
+	lists:foldl(fun(LogRecord, {AccErr, AccSucc, UpdatedLogs}) ->
 			    case get_log_from_map(Map, Partition, LogId) of
 				{ok, Log} ->
 				    %% Generate the new operation ID
@@ -439,10 +443,10 @@ handle_command({append_group, LogId, OperationList, _IsLocal = false, Sync}, _Se
 				    %% 		OpId#op_number{global = Global + 1}
 				    %% 	end,
 				    true = update_ets_op_id({LogId,MyDCID},NewOpId,OpIdTable),
-				    LogRecord = Operation#operation.log_record,
-				    case LogRecord#log_record.op_type of
+				    LogOperation = LogRecord#log_record.log_operation,
+				    case LogOperation#log_operation.op_type of
 					update ->
-					    Bucket = (LogRecord#log_record.log_payload)#update_log_payload.bucket,
+					    Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
 					    BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
 					    #op_number{local = _BLocal, global = BGlobal} = BOpId,
 					    NewBOpId = BOpId#op_number{global = BGlobal + 1},
@@ -450,8 +454,8 @@ handle_command({append_group, LogId, OperationList, _IsLocal = false, Sync}, _Se
 					_ ->
 					    true
 				    end,
-				    ExternalOpNum = Operation#operation.op_number,
-				    case insert_operation(Log, LogId, Operation) of
+				    ExternalOpNum = LogRecord#log_record.op_number,
+				    case insert_log_record(Log, LogId, LogRecord) of
 					{ok, ExternalOpNum} ->
 					    %% Would need to uncomment this is local ops are sent to this function
 					    %% case IsLocal of
@@ -465,7 +469,7 @@ handle_command({append_group, LogId, OperationList, _IsLocal = false, Sync}, _Se
 				{error, Reason} ->
 				    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
 			    end
-		    end, {[],[], ordsets:new()}, OperationList),
+		    end, {[],[], ordsets:new()}, LogRecordList),
     %% Sync the updated logs if necessary
     case Sync of
 	true ->
@@ -562,13 +566,13 @@ get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
 %% This is called when the vnode starts and loads into the cache
 %% the id of the last operation appened to the log, so that new ops will
 %% be assigned corret ids (after crash and restart)
--spec get_max_op_numbers([{log_id(),#operation{}}],cache_id(),vectorclock()) -> vectorclock().
+-spec get_max_op_numbers([{log_id(),#log_record{}}],cache_id(),vectorclock()) -> vectorclock().
 get_max_op_numbers([],_ClockTable,MaxVector) ->
     MaxVector;
-get_max_op_numbers([{LogId, #operation{op_number = NewOp, bucket_op_number = NewBucketOp, log_record = Payload}}|Rest],ClockTable,PrevMaxVector) ->
-    #log_record{op_type = OpType,
+get_max_op_numbers([{LogId, #log_record{op_number = NewOp, bucket_op_number = NewBucketOp, log_operation = LogOperation}}|Rest],ClockTable,PrevMaxVector) ->
+    #log_operation{op_type = OpType,
 		log_payload = LogPayload
-	       } = Payload,
+	       } = LogOperation,
     #op_number{node = {_,DCID}} = NewBucketOp,
     NewMaxVector =
 	case OpType of
@@ -654,15 +658,15 @@ finish_op_load(CommittedOpsDict) ->
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
 %% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec filter_terms_for_key([{non_neg_integer(),#operation{}}],key(),snapshot_time(),
+%% -spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
 %% 			   dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])) ->
 %% 				  {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])}.
--spec filter_terms_for_key([{non_neg_integer(),#operation{}}],key(),snapshot_time(),
+-spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
 			   dict(),dict()) -> {dict(),dict()}.
 filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
-filter_terms_for_key([{_,#operation{log_record = LogRecord}}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
-    #log_record{tx_id = TxId, op_type = OpType, log_payload = OpPayload} = LogRecord,
+filter_terms_for_key([{_,#log_record{log_operation = LogOperation}}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+    #log_operation{tx_id = TxId, op_type = OpType, log_payload = OpPayload} = LogOperation,
     case OpType of
         update ->
             handle_update(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict);
@@ -676,7 +680,7 @@ filter_terms_for_key([{_,#operation{log_record = LogRecord}}|T], Key, MinSnapsho
 %% -spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
 %% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
 %% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
+-spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
 handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
     case (Key == {key, Key1}) or (Key == undefined) of
@@ -691,7 +695,7 @@ handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) 
 %% -spec handle_update(txid(), #commit_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
 %% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
 %% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
+-spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
 handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
@@ -722,7 +726,7 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) -
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
-    F = fun({Key, Operation}, Acc) -> FoldFun(Key, Operation, Acc) end,
+    F = fun({Key, LogRecord}, Acc) -> FoldFun(Key, LogRecord, Acc) end,
     Acc = join_logs(dict:to_list(Map), F, Acc0),
     {reply, Acc, State};
 
@@ -739,11 +743,11 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, #state{partition=Partition, logs_map=Map}=State) ->
-    {LogId, Operation} = binary_to_term(Data),
+    {LogId, LogRecord} = binary_to_term(Data),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             %% Optimistic handling; crash otherwise.
-            {ok, _OpId} = insert_operation(Log, LogId, Operation),
+            {ok, _OpId} = insert_log_record(Log, LogId, LogRecord),
             ok = disk_log:sync(Log),
             {reply, ok, State};
         {error, Reason} ->
@@ -892,7 +896,7 @@ fold_log(Log, Continuation, F, Acc) ->
     end.
 
 
-%% @doc insert_operation: Inserts an operation into the log only if the
+%% @doc insert_log_record: Inserts an operation into the log only if the
 %%      OpId is not already in the log
 %%      Input:
 %%          Log: The identifier log the log where the operation will be
@@ -902,12 +906,12 @@ fold_log(Log, Continuation, F, Acc) ->
 %%          Payload: The payload of the operation to insert
 %%      Return: {ok, OpId} | {error, Reason}
 %%
--spec insert_operation(log(), log_id(), operation()) -> {ok, #op_number{}} | {error, reason()}.
-insert_operation(Log, LogId, Operation) ->
-    Result = disk_log:log(Log, {LogId, Operation}),
+-spec insert_log_record(log(), log_id(), #log_record{}) -> {ok, #op_number{}} | {error, reason()}.
+insert_log_record(Log, LogId, LogRecord) ->
+    Result = disk_log:log(Log, {LogId, LogRecord}),
     case Result of
         ok ->
-            {ok, Operation#operation.op_number};
+            {ok, LogRecord#log_record.op_number};
         {error, Reason} ->
             {error, Reason}
     end.

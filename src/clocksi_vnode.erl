@@ -367,7 +367,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
         [{Key, _Type, {_Op, _Actor}} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            LogRecord = #log_record{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
+            LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
             %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
@@ -442,7 +442,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
                     NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
-                    LogRecord = #log_record{tx_id = TxId,
+                    LogRecord = #log_operation{tx_id = TxId,
                         op_type = prepare,
                         log_payload = #prepare_log_payload{prepare_time = NewPrepare}},
                     LogId = log_utilities:get_logid_from_key(Key),
@@ -483,7 +483,7 @@ reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Act
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_meta_data_utilities:get_my_dc_id(),
-    LogRecord = #log_record{tx_id = TxId,
+    LogRecord = #log_operation{tx_id = TxId,
 			    op_type = commit,
 			    log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
 							     snapshot_time = Transaction#transaction.vec_snapshot_time}},

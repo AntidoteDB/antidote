@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(log_response_reader).
+-module(inter_dc_query_response).
 -behaviour(gen_server).
 
 -include("antidote.hrl").
@@ -48,7 +48,7 @@ start_link(Num) ->
 
 -spec get_entries(binary(),term(),binary()) -> ok.
 get_entries(BinaryQuery,RequesterID,RequestIDNum) ->
-    ok = gen_server:cast(generate_server_name(random:uniform(?LOG_READER_CONCURRENCY)), {get_entries,BinaryQuery,RequesterID,RequestIDNum,self()}).
+    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,RequesterID,RequestIDNum,self()}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -63,7 +63,7 @@ handle_cast({get_entries,BinaryQuery,RequesterID,RequestIDNum,Sender}, State) ->
     BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(),Partition},Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<?LOG_RESP_MSG,BinaryPartition/binary,BinaryResp/binary>>,
-    ok = inter_dc_log_reader_response:send_response(FullResponse,RequesterID,RequestIDNum,Sender),
+    ok = inter_dc_query_response:send_response(FullResponse,RequesterID,RequestIDNum,Sender),
     {noreply, State};
 
 handle_cast(_Info, State) ->
@@ -87,16 +87,16 @@ get_entries_internal(Partition, From, To) ->
 
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
--spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#operation{}].
+-spec log_read_range(partition_id(), node(), log_opid(), log_opid()) -> [#log_record{}].
 log_read_range(Partition, Node, From, To) ->
   {ok, RawOpList} = logging_vnode:read({Partition, Node}, [Partition]),
   OpList = lists:map(fun({_Partition, Op}) -> Op end, RawOpList),
   filter_operations(OpList, From, To).
 
--spec filter_operations([#operation{}], log_opid(), log_opid()) -> [#operation{}].
+-spec filter_operations([#log_record{}], log_opid(), log_opid()) -> [#log_record{}].
 filter_operations(Ops, Min, Max) ->
   F = fun(Op) ->
-    Num = Op#operation.op_number#op_number.local,
+    Num = Op#log_record.op_number#op_number.local,
     (Num >= Min) and (Max >= Num)
   end,
   lists:filter(F, Ops).

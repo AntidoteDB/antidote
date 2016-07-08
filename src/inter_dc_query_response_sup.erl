@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(log_response_reader_sup).
+-module(inter_dc_query_response_sup).
 
 -behavior(supervisor).
 
@@ -37,8 +37,8 @@ generate_module_name(N) ->
 generate_worker_spec(N) ->
     Module = generate_module_name(N),
     {Module,
-     {log_response_reader, start_link, [N]},
-     permanent, 5000, worker, [log_response_reader]}.
+     {inter_dc_query_response, start_link, [N]},
+     permanent, 5000, worker, [inter_dc_query_response]}.
 
 %% @doc Start the log response readers
 init(Num) ->

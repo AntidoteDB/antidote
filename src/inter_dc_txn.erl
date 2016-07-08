@@ -36,17 +36,17 @@
 
 %% Functions
 
--spec from_ops([#operation{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
+-spec from_ops([#log_record{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
 from_ops(Ops, Partition, PrevLogOpId) ->
   LastOp = lists:last(Ops),
-  CommitPld = LastOp#operation.log_record,
-  commit = CommitPld#log_record.op_type, %% sanity check
-  #commit_log_payload{commit_time = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_record.log_payload,
+  CommitPld = LastOp#log_record.log_operation,
+  commit = CommitPld#log_operation.op_type, %% sanity check
+  #commit_log_payload{commit_time = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_operation.log_payload,
   #interdc_txn{
     dcid = DCID,
     partition = Partition,
     prev_log_opid = PrevLogOpId,
-    operations = Ops,
+    log_records = Ops,
     snapshot = SnapshotTime,
     timestamp = CommitTime
   }.
@@ -56,7 +56,7 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   dcid = dc_meta_data_utilities:get_my_dc_id(),
   partition = Partition,
   prev_log_opid = PrevLogOpId,
-  operations = [],
+  log_records = [],
   snapshot = dict:new(),
   timestamp = Timestamp
 }.
@@ -67,20 +67,20 @@ last_log_opid(Txn = #interdc_txn{operations = Ops, prev_log_opid = LogOpId}) ->
 	true -> LogOpId;
 	false ->
 	    LastOp = lists:last(Ops),
-	    CommitPld = LastOp#operation.log_record,
-	    commit = CommitPld#log_record.op_type, %% sanity check
-	    LastOp#operation.op_number
+	    CommitPld = LastOp#log_record.log_operation,
+	    commit = CommitPld#log_operation.op_type, %% sanity check
+	    LastOp#log_record.op_number
     end.
 
 -spec is_local(#interdc_txn{}) -> boolean().
 is_local(#interdc_txn{dcid = DCID}) -> DCID == dc_meta_data_utilities:get_my_dc_id().
 
 -spec is_ping(#interdc_txn{}) -> boolean().
-is_ping(#interdc_txn{operations = Ops}) -> Ops == [].
+is_ping(#interdc_txn{log_records = Ops}) -> Ops == [].
 
--spec ops_by_type(#interdc_txn{}, any()) -> [#operation{}].
-ops_by_type(#interdc_txn{operations = Ops}, Type) ->
-  F = fun(Op) -> Type == Op#operation.log_record#log_record.op_type end,
+-spec ops_by_type(#interdc_txn{}, any()) -> [#log_record{}].
+ops_by_type(#interdc_txn{log_records = Ops}, Type) ->
+  F = fun(Op) -> Type == Op#log_record.log_operation#log_operation.op_type end,
   lists:filter(F, Ops).
 
 -spec to_bin(#interdc_txn{}) -> binary().

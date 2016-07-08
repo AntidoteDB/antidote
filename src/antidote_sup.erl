@@ -78,8 +78,8 @@ init(_Args) ->
     StableMetaData = ?CHILD(stable_meta_data_server, worker, []),
     InterDcSubVnode = ?VNODE(inter_dc_sub_vnode_master, inter_dc_sub_vnode),
     InterDcDepVnode = ?VNODE(inter_dc_dep_vnode_master, inter_dc_dep_vnode),
-    InterDcLogReaderQMaster = ?CHILD(inter_dc_log_reader_query, worker, []),
-    InterDcLogReaderRMaster = ?CHILD(inter_dc_log_reader_response, worker, []),
+    InterDcLogReaderQMaster = ?CHILD(inter_dc_query, worker, []),
+    InterDcLogReaderRMaster = ?CHILD(inter_dc_query_response, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
     

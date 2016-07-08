@@ -221,7 +221,7 @@ perform_singleitem_update(Key, Type, Params) ->
                 {ok, DownstreamRecord} ->
                     Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_record{tx_id = TxId, op_type = update,
+                    LogRecord = #log_operation{tx_id = TxId, op_type = update,
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
@@ -309,7 +309,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
                             gen_fsm:reply(Sender, ok)
                     end,
                     TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_record{tx_id = TxId, op_type = update,
+                    LogRecord = #log_operation{tx_id = TxId, op_type = update,
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,

@@ -25,7 +25,7 @@
 %% The reliability-related features like resending the query are handled by ZeroMQ.
 
 
--module(inter_dc_log_reader_query).
+-module(inter_dc_query).
 -behaviour(gen_server).
 -include("antidote.hrl").
 -include("antidote_message_types.hrl").

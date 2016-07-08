@@ -29,7 +29,8 @@
 -export([get_preflist_from_key/1,
          get_logid_from_key/1,
          remove_node_from_preflist/1,
-         get_my_node/1
+         get_my_node/1,
+	 generate_empty_log_record/0
         ]).
 
 %% @doc get_logid_from_key computes the log identifier from a key
@@ -97,6 +98,10 @@ convert_key(Key) ->
                     abs(crypto:bytes_to_integer(HashedKey))
             end
     end.
+
+-spec generate_empty_log_record() -> #log_record{}.
+generate_empty_log_record() ->
+    #log_record{version = ?LOG_RECORD_VERSION}.
 
 -ifdef(TEST).
 

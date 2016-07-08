@@ -27,10 +27,9 @@
 %% still only 1 writer per vnode
 -define(READ_CONCURRENCY, 20).
 %% The log reader concurrency is the pool of threads per
-%% physical node that handle request from other DCs when
-%% they want to retrevied some log operations that were
-%% not transfered
--define(LOG_READER_CONCURRENCY, 20).
+%% physical node that handle requests from other DCs
+%% for example to request missing log operations
+-define(INTER_DC_QUERY_CONCURRENCY, 20).
 %% This defines the concurrency for the meta-data tables that
 %% are responsible for storing the stable time that a transaction
 %% can read.  It is set to false because the erlang docs say
@@ -69,6 +68,8 @@
 %% Otherwise os:timestamp() is used which can go backwards
 %% which is unsafe for clock-si
 -define(SAFE_TIME, true).
+%% Version of log records being used
+-define(LOG_RECORD_VERSION, 0).
 
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
@@ -88,15 +89,20 @@
 
 -type any_log_payload() :: #update_log_payload{} | #commit_log_payload{} | #abort_log_payload{} | #prepare_log_payload{}.
 
-%% The way records are stored in the log.
--record(log_record, {tx_id :: txid(),
-                     op_type :: update | prepare | commit | abort | noop,
-                     log_payload :: #commit_log_payload{}| #update_log_payload{} | #abort_log_payload{} | #prepare_log_payload{}}).
-
-%% Used by the replication layer
+-record(log_operation, {
+	  tx_id :: txid(),
+	  op_type :: update | prepare | commit | abort | noop,
+	  log_payload :: #commit_log_payload{}| #update_log_payload{} | #abort_log_payload{} | #prepare_log_payload{}}).
 -record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
--record(operation, {op_number :: #op_number{}, bucket_op_number :: #op_number{}, log_record :: #log_record{}}).
--type operation() :: #operation{}.
+
+%% The way records are stored in the log.
+-record(log_record,{
+	  version :: non_neg_integer(), %% The version of the log record, for backwards compatability
+	  op_number :: #op_number{},
+	  bucket_op_number :: #op_number{},
+	  log_operation :: #log_operation{}}).
+
+%%-type operation() :: #operation{}.
 
 %% Clock SI
 
