@@ -19,7 +19,6 @@
 %% -------------------------------------------------------------------
 
 -module(mvreg_SUITE).
--author("Annette Bieniusa <bieniusa@cs.uni-kl.de>").
 
 -compile({parse_transform, lager_transform}).
 
@@ -40,19 +39,18 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Config.
-
-
-end_per_suite(Config) ->
-    Config.
-
-init_per_testcase(Case, Config) ->
     Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_node(N, Config, Case)
+                    test_utils:start_suite(N, Config)
             end, [dev1]),
 
     test_utils:connect_dcs(Nodes),
     [{nodes, Nodes}|Config].
+
+end_per_suite(Config) ->
+    Config.
+
+init_per_testcase(_Case, Config) ->
+    Config.
     
 end_per_testcase(_, _) ->
     ok.

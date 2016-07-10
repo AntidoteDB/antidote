@@ -19,7 +19,6 @@
 %% -------------------------------------------------------------------
 
 -module(test_utils).
--author("Annette Bieniusa <bieniusa@cs.uni-kl.de>").
 
 -export([at_init_testsuite/0,
          %get_cluster_members/1,
@@ -32,7 +31,7 @@
          wait_until_disconnected/2,
          wait_until_connected/2,
          wait_until_registered/2,
-         start_node/3,
+         start_suite/2,
          connect_dcs/1,
          partition_cluster/2,
          heal_cluster/2]).
@@ -115,7 +114,7 @@ wait_until_connected(Node1, Node2) ->
                 pong == rpc:call(Node1, net_adm, ping, [Node2])
         end, 60*2, 500).
 
-start_node(Name, Config, Case) ->
+start_suite(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [
@@ -127,7 +126,7 @@ start_node(Name, Config, Case) ->
     case ct_slave:start(Name, NodeConfig) of
         {ok, Node} ->
             PrivDir = proplists:get_value(priv_dir, Config),
-            NodeDir = filename:join([PrivDir, Node, Case]),
+            NodeDir = filename:join([PrivDir, Node]),
             
             ct:print("Node dir: ~p",[NodeDir]),
 
@@ -162,7 +161,7 @@ start_node(Name, Config, Case) ->
         {error, already_started, Node} ->
             ct_slave:stop(Name),
             wait_until_offline(Node),
-            start_node(Name, Config, Case)
+            start_suite(Name, Config)
     end.
 
 partition_cluster(ANodes, BNodes) ->

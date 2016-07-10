@@ -17,13 +17,13 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
-%% @doc log_test: Test that perform NumWrites increments to the key:abc.
+%% @doc log_test: Test that perform NumWrites increments to the key:key1.
 %%      Each increment is sent to a random node of the cluster.
-%%      Test norml behaviour of the logging layer
-%%      Perflorms a read to the first node of the cluster to check whether all the
+%%      Test normal behavior of the logging layer
+%%      Performs a read to the first node of the cluster to check whether all the
 %%      increment operations where successfully applied.
-%%  Input:  N:  Number of nodes
-%%          Nodes: List of the nodes that belong to the built cluster.
+%%  Variables:  N:  Number of nodes
+%%              Nodes: List of the nodes that belong to the built cluster
 %%
 
 -module(log_SUITE).
@@ -32,7 +32,7 @@
 -compile({parse_transform, lager_transform}).
 
 %% common_test callbacks
--export([%% suite/0,
+-export([
          init_per_suite/1,
          end_per_suite/1,
          init_per_testcase/2,
@@ -47,22 +47,19 @@
 -include_lib("kernel/include/inet.hrl").
 
 init_per_suite(Config) ->
+    lager_common_test_backend:bounce(debug),
     test_utils:at_init_testsuite(),
-    Config.
-
+    Nodes = test_utils:pmap(fun(N) ->
+                    test_utils:start_suite(N, Config)
+            end, [dev1, dev2]),
+    test_utils:connect_dcs(Nodes),
+    [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
     Config.
 
-init_per_testcase(Case, Config) ->
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_node(N, Config, Case)
-            end, [dev1, dev2]),
-
-    test_utils:connect_dcs(Nodes),
-   
-    lager_common_test_backend:bounce(debug),
-    [{nodes, Nodes}|Config].
+init_per_testcase(_Case, Config) ->
+    Config.
     
 end_per_testcase(_, _) ->
     ok.
