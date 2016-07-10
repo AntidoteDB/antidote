@@ -27,6 +27,7 @@ end_per_suite(Config) ->
     Config.
 
 init_per_testcase(Case, Config) ->
+    %lager_common_test_backend:bounce(debug),
     %% have the slave nodes monitor the runner node, so they can't outlive it
     ct:pal("Hello"),
     Nodes = test_utils:pmap(fun(N) ->
@@ -52,8 +53,17 @@ dummy_test(Config) ->
   %application:set_env(antidote, txn_cert, true),
   %application:set_env(antidote, txn_prot, clocksi),
 
-  {ok,_} = rpc:call(Node1, antidote, append, [myKey1, riak_dt_gcounter, {increment, 4}]),
-  {ok,_} = rpc:call(Node2, antidote, append, [myKey2, riak_dt_gcounter, {increment, 4}]),
+  {ok,_} = rpc:call(Node1, antidote, append, [myKey2, crdt_pncounter, {increment, a}]),
+  {ok,_} = rpc:call(Node1, antidote, append, [myKey2, crdt_pncounter, {increment, a}]),
+  {ok,_} = rpc:call(Node2, antidote, append, [myKey2, crdt_pncounter, {increment, a}]),
+
+  % Propagation of updates
+  F = fun() -> 
+    rpc:call(Node2, antidote, read, [myKey2, crdt_pncounter])
+    end,
+  Delay = 100,
+  Retry = 360000 div Delay, %wait for max 1 min
+  ok = test_utils:wait_until_result(F, {ok, 3}, Retry, Delay),
 
   ok.
 

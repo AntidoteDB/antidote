@@ -25,6 +25,7 @@
          %get_cluster_members/1,
          pmap/2,
          wait_until/3,
+         wait_until_result/4,
          %wait_until_left/2,
          %wait_until_joined/2,
          wait_until_offline/1,
@@ -65,16 +66,20 @@ pmap(F, L) ->
     L3.
 
 wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    wait_until_result(Fun, true, Retry, Delay).
+   
+wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
     Res = Fun(),
-    case Res of
-        true ->
+    case Res  of
+        Result ->
             ok;
         _ when Retry == 1 ->
             {fail, Res};
         _ ->
             timer:sleep(Delay),
-            wait_until(Fun, Retry-1, Delay)
+            wait_until_result(Fun, Result, Retry-1, Delay)
     end.
+
 
 %wait_until_left(Nodes, LeavingNode) ->
 %    wait_until(fun() ->
@@ -126,17 +131,20 @@ start_node(Name, Config, Case) ->
             
             ct:print("Node dir: ~p",[NodeDir]),
 
-            ok = rpc:call(Node, application, load, [lager]),
             ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir]),
+            ok = rpc:call(Node, application, load, [lager]),
             
             ok = rpc:call(Node, application, load, [riak_core]),
 
             PlatformDir = NodeDir ++ "/data/",
             RingDir = PlatformDir ++ "/ring/",
+            NumberOfVNodes = 2,
             filelib:ensure_dir(PlatformDir),
             filelib:ensure_dir(RingDir),
             
             ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
+            ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, NumberOfVNodes]),
+            
             ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, web_ports(Name) + 3]),
             
@@ -176,42 +184,49 @@ heal_cluster(ANodes, BNodes) ->
     ok.
 
 connect_dcs(Nodes) ->
-  Clusters = [Nodes],
+  Clusters = [[Node] || Node <- Nodes],
   ct:pal("Connecting DC clusters..."),
+  
   lists:foreach(fun(Cluster) ->
-    Node1 = hd(Cluster),
-    ct:print("Waiting until vnodes start on node ~p", [Node1]),
-    wait_until_registered(Node1, inter_dc_pub),
-    wait_until_registered(Node1, inter_dc_log_reader_response),
-    wait_until_registered(Node1, inter_dc_log_reader_query),
-    wait_until_registered(Node1, inter_dc_sub),
-    wait_until_registered(Node1, meta_data_sender_sup),
-    wait_until_registered(Node1, meta_data_manager_sup),
-    ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable])
-  end, Clusters),
-  Descriptors = descriptors(Clusters),
-  Res = [ok || _ <- Clusters],
-  lists:foreach(fun(Cluster) ->
-    Node = hd(Cluster),
-    ct:print("Making node ~p observe other DCs...", [Node]),
-    %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
-    Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
-  end, Clusters),
-  ct:pal("DC clusters connected!").
+              Node1 = hd(Cluster),
+              ct:print("Waiting until vnodes start on node ~p", [Node1]),
+              wait_until_registered(Node1, inter_dc_pub),
+              wait_until_registered(Node1, inter_dc_log_reader_response),
+              wait_until_registered(Node1, inter_dc_log_reader_query),
+              wait_until_registered(Node1, inter_dc_sub),
+              wait_until_registered(Node1, meta_data_sender_sup),
+              wait_until_registered(Node1, meta_data_manager_sup),
+              ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable]),
+              ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
+          end, Clusters),
+    Descriptors = descriptors(Clusters),
+    Res = [ok || _ <- Clusters],
+    lists:foreach(fun(Cluster) ->
+              Node = hd(Cluster),
+              ct:print("Making node ~p observe other DCs...", [Node]),
+              %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
+              Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
+          end, Clusters),
+    lists:foreach(fun(Cluster) ->
+              Node = hd(Cluster),
+              ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
+          end, Clusters),
+    ct:pal("DC clusters connected!").
+
 
 
 % Waits until a certain registered name pops up on the remote node.
-wait_until_registered(Node, _Name) ->
-    ct:print("Wait until the ring manager is up on ~p", [Node]),
-
+wait_until_registered(Node, Name) ->
+    ct:print("Wait until ~p is up on ~p", [Name,Node]),
     F = fun() ->
                 Registered = rpc:call(Node, erlang, registered, []),
-                lists:member(riak_core_ring_manager, Registered)
+                lists:member(Name, Registered)
         end,
     Delay = rt_retry_delay(),
     Retry = 360000 div Delay,
     ok = wait_until(F, Retry, Delay),
     ok.
+    
 
 descriptors(Clusters) ->
   lists:map(fun(Cluster) ->
