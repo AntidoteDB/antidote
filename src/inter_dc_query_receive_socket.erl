@@ -123,7 +123,7 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec finish_send_response(binary(), term(), binary(), term()) -> ok. 
+-spec finish_send_response(<<_:8,_:_*8>>,binary(),binary(),erlzmq:erlzmq_socket()) -> ok. 
 finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message

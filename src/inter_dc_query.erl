@@ -98,7 +98,7 @@ handle_call({add_dc, DCID, LogReaders}, _From, State) ->
 				    NewAccState = AccState#state{sockets = dict:store(DCID,NewDCPartitionDict,AccState#state.sockets)},
 				    F = fun({_ReqId, #request_cache_entry{binary_req=Request,pdcid={QDCID,Partition}}}, _Acc) ->
 						%% if there are unanswered queries that were sent to the DC we just connected with, resend them
-						case (QDCID == DCID and lists:member(Partition,PartitionList)) of
+						case ((QDCID == DCID) and lists:member(Partition,PartitionList)) of
 						    true -> erlzmq:send(Socket, Request);
 						    false -> ok
 						end
