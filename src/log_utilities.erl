@@ -30,7 +30,8 @@
          get_logid_from_key/1,
          remove_node_from_preflist/1,
          get_my_node/1,
-	 generate_empty_log_record/0
+	 generate_empty_log_record/0,
+	 check_log_record_version/1
         ]).
 
 %% @doc get_logid_from_key computes the log identifier from a key
@@ -102,6 +103,16 @@ convert_key(Key) ->
 -spec generate_empty_log_record() -> #log_record{}.
 generate_empty_log_record() ->
     #log_record{version = ?LOG_RECORD_VERSION}.
+
+%% Check the version of the log record and convert
+%% to a different version if necessary
+%% Checked when loading the log from disk, or
+%% when log messages are recieved from another DC
+-spec check_log_record_version(#log_record{}) -> #log_record{}.
+check_log_record_version(LogRecord) ->
+    %% Only support one version for now
+    ?LOG_RECORD_VERSION = LogRecord#log_record.version,
+    LogRecord.
 
 -ifdef(TEST).
 

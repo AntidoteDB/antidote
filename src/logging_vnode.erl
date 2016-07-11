@@ -423,7 +423,8 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
                       partition=Partition}=State) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
     {ErrorList, SuccList, UpdatedLogs} =
-	lists:foldl(fun(LogRecord, {AccErr, AccSucc, UpdatedLogs}) ->
+	lists:foldl(fun(LogRecordOrg, {AccErr, AccSucc, UpdatedLogs}) ->
+			    LogRecord = log_utilities:check_log_record_version(LogRecordOrg),
 			    case get_log_from_map(Map, Partition, LogId) of
 				{ok, Log} ->
 				    %% Generate the new operation ID
@@ -570,7 +571,9 @@ get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
 -spec get_max_op_numbers([{log_id(),#log_record{}}],cache_id(),vectorclock()) -> vectorclock().
 get_max_op_numbers([],_ClockTable,MaxVector) ->
     MaxVector;
-get_max_op_numbers([{LogId, #log_record{op_number = NewOp, bucket_op_number = NewBucketOp, log_operation = LogOperation}}|Rest],ClockTable,PrevMaxVector) ->
+get_max_op_numbers([{LogId, LogRecord}|Rest],ClockTable,PrevMaxVector) ->
+    #log_record{op_number = NewOp, bucket_op_number = NewBucketOp, log_operation = LogOperation}
+	= log_utilities:check_log_record_version(LogRecord),
     #log_operation{op_type = OpType,
 		log_payload = LogPayload
 	       } = LogOperation,
@@ -666,7 +669,8 @@ finish_op_load(CommittedOpsDict) ->
 			   dict(),dict()) -> {dict(),dict()}.
 filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
-filter_terms_for_key([{_,#log_record{log_operation = LogOperation}}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+filter_terms_for_key([{_,LogRecord}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+    #log_record{log_operation = LogOperation} = log_utilities:check_log_record_version(LogRecord),
     #log_operation{tx_id = TxId, op_type = OpType, log_payload = OpPayload} = LogOperation,
     case OpType of
         update ->

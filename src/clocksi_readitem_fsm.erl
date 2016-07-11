@@ -76,7 +76,7 @@ start_link(Partition,Id) ->
     Addr = node(),
     gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
 
--spec start_read_servers(partition_id(),non_neg_integer()) -> non_neg_integer().
+-spec start_read_servers(partition_id(),non_neg_integer()) -> 0.
 start_read_servers(Partition, Count) ->
     Addr = node(),
     start_read_servers_internal(Addr, Partition, Count).
@@ -148,6 +148,7 @@ check_partition_ready(Node,Partition,Num) ->
 %%% Internal
 %%%===================================================================
 
+-spec start_read_servers_internal(node(), partition_id(), non_neg_integer()) -> non_neg_integer().
 start_read_servers_internal(_Node,_Partition,0) ->
     0;
 start_read_servers_internal(Node, Partition, Num) ->
@@ -167,6 +168,7 @@ start_read_servers_internal(Node, Partition, Num) ->
 	    start_read_servers_internal(Node, Partition, Num)
     end.
 
+-spec stop_read_servers_internal(node(), partition_id(), non_neg_integer()) -> ok.
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
 stop_read_servers_internal(Node,Partition, Num) ->
@@ -178,10 +180,11 @@ stop_read_servers_internal(Node,Partition, Num) ->
     end,
     stop_read_servers_internal(Node, Partition, Num-1).
 
-
+-spec generate_server_name(node(), partition_id(), non_neg_integer()) -> atom().
 generate_server_name(Node, Partition, Id) ->
     list_to_atom(integer_to_list(Id) ++ integer_to_list(Partition) ++ atom_to_list(Node)).
 
+-spec generate_random_server_name(node(), partition_id()) -> atom().
 generate_random_server_name(Node, Partition) ->
     generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
 
@@ -207,6 +210,8 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0}.
 
+-spec perform_read_internal(pid(), key(), type(), #transaction{}, [], #state{}) ->
+				   ok.
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
     %% TODO: Add support for read properties
@@ -226,6 +231,8 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
+-spec check_clock(key(),clock_time(),ets:tid(),partition_id()) ->
+			 {not_ready, clock_time()} | ready.
 check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
     Time = clocksi_vnode:now_microsec(dc_utilities:now()),
     case TxLocalStartTime > Time of
@@ -238,10 +245,14 @@ check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
+-spec check_prepared(key(),clock_time(),ets:tid(),partition_id()) ->
+			    ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key,TxLocalStartTime,PreparedCache,Partition) ->
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
     check_prepared_list(Key,TxLocalStartTime,ActiveTxs).
 
+-spec check_prepared_list(key(),clock_time(),[{txid(),clock_time()}]) ->
+				 ready | {not_ready, ?SPIN_WAIT}.
 check_prepared_list(_Key,_TxLocalStartTime,[]) ->
     ready;
 check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
@@ -254,6 +265,7 @@ check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
+-spec return({fsm,pid()} | pid(),key(),type(),#transaction{},[],#state{}) -> ok.
 return(Coordinator,Key,Type,Transaction,PropertyList,
        #state{mat_state=MatState}) ->
     %% TODO: Add support for read properties
@@ -277,7 +289,6 @@ return(Coordinator,Key,Type,Transaction,PropertyList,
             end
     end,
     ok.
-
 
 handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},SD0) ->
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
