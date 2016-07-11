@@ -23,7 +23,6 @@
 -module(inter_dc_query_receive_socket).
 -behaviour(gen_server).
 -include("antidote.hrl").
-%%-include("antidote_message_types.hrl").
 -include("inter_dc_repl.hrl").
 
 %% API

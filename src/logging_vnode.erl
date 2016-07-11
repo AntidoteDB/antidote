@@ -387,7 +387,8 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 		    _ ->
 			NewOpId
 		end,		    
-            LogRecord = #log_record{op_number = NewOpId, bucket_op_number = NewBucketOpId, log_operation = LogOperation},
+            LogRecord = (log_utilities:generate_empty_log_record())#log_record{
+			  op_number = NewOpId, bucket_op_number = NewBucketOpId, log_operation = LogOperation},
             case insert_log_record(Log, LogId, LogRecord) of
                 {ok, NewOpId} ->
 		    inter_dc_log_sender_vnode:send(Partition, LogRecord),

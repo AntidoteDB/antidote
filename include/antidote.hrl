@@ -102,8 +102,6 @@
 	  bucket_op_number :: #op_number{},
 	  log_operation :: #log_operation{}}).
 
-%%-type operation() :: #operation{}.
-
 %% Clock SI
 
 %% MIN is Used for generating the timeStamp of a new snapshot

@@ -24,9 +24,6 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
-%% %% If you can fix the dialyzer warns for process_all/3, be my guest.
-%% -dialyzer({nowarn_function, process_all/3}).
-
 %% API
 -export([
   new_state/0,

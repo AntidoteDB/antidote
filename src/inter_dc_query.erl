@@ -57,7 +57,14 @@
 %%%% API --------------------------------------------------------------------+
 
 %% Send any request to another DC partition
--spec perform_request(inter_dc_message_type(), pdcid(), binary(), function()) -> ok | unknown_dc.
+%%     RequestType must be an value defined in antidote_message_types.hrl
+%%     Func is a function that will be called when the reply is received
+%%          It should take two arguments the first is the binary response,
+%%          the second is a #request_cache_entry{} record
+%%          Note that the function should not perform anywork, instead just send
+%%%         the work to another thread, otherwise it will block other messages
+-spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(),#request_cache_entry{})->ok))
+		     -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
     gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
 
@@ -139,9 +146,7 @@ handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State
 				      end,
 	    %% Build the binary request
 	    VersionBinary = ?MESSAGE_VERSION,
-	    lager:info("the request id ~p", [ReqId]),
 	    ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
-	    lager:info("the binary version ~p", [ReqIdBinary]),
 	    FullRequest = <<VersionBinary/binary,ReqIdBinary/binary,RequestType,BinaryRequest/binary>>,
 	    ok = erlzmq:send(Socket,FullRequest),
 	    RequestEntry = #request_cache_entry{request_type=RequestType,req_id_binary=ReqIdBinary,
@@ -162,7 +167,6 @@ close_dc_sockets(DCPartitionDict) ->
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=Table}) ->
     <<ReqIdBinary:?REQUEST_ID_BYTE_LENGTH/binary,RestMsg/binary>>
 	= binary_utilities:check_message_version(BinaryMsg),
-    lager:info("the full msg ~p~n and the reqid ~p", [BinaryMsg,ReqIdBinary]),
     %% Be sure this is a request from this socket
     case ets:lookup(Table,ReqIdBinary) of
 	[{ReqIdBinary,CacheEntry=#request_cache_entry{request_type=RequestType,func=Func}}] ->
@@ -195,6 +199,8 @@ req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table,req_id
     true = ets:insert(Table,{ReqIdBinary,RequestEntry}),
     State#state{req_id=(OldReq+1)}.
 
+%% A node is a list of addresses because it can have multiple interfaces
+%% this just goes through the list and connects to the first interface that works
 connect_to_node([]) ->
     lager:error("Unable to subscribe to DC log reader"),
     connection_error;
@@ -210,9 +216,11 @@ connect_to_node([Address| Rest]) ->
     ok = zmq_utils:close_socket(Socket1),
     case Res of
 	{ok, Binary} ->
+	    %% erlzmq:recv returns binary, its spec says iolist, but dialyzer compains that it is not a binary
+	    %% so I added this conversion, even though the result of recv is a binary anyway...
+	    ResBinary = iolist_to_binary(Binary),
 	    %% check that an ok msg was received
-	    %%<<?OK_MSG>> = binary_utilities:check_message_version(Binary),
-	    lager:info("The binary from connection ~p", [Binary]),
+	    {_,<<?OK_MSG>>} = binary_utilities:check_version_and_req_id(ResBinary),
 	    %% Create a subscriber socket for the specified DC
 	    Socket = zmq_utils:create_connect_socket(req, true, Address),
 	    %% For each partition in the current node:
