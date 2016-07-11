@@ -173,8 +173,6 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
     case ets:lookup(Table,ReqIdBinary) of
 	[{ReqIdBinary,CacheEntry=#request_cache_entry{request_type=RequestType,func=Func}}] ->
 	    case RestMsg of
-		%% <<?LOG_RESP_MSG, Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, BinaryRep/binary>> ->
-		%%     inter_dc_sub_vnode:deliver_log_reader_resp(Partition,BinaryRep);
 		<<RequestType,RestBinary/binary>> ->
 		    Func(RestBinary,CacheEntry);
 		Other ->

@@ -22,7 +22,6 @@
 -behaviour(gen_server).
 
 -include("antidote.hrl").
-%%-include("antidote_message_types.hrl").
 -include("inter_dc_repl.hrl").
 
 -export([start_link/1,
