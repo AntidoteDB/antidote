@@ -18,8 +18,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% Log reader client - stores the ZeroMQ socket connections to all other DCs,
-%% performs queries and returns responses to appropriate vnodes.
+%% This is a process running on each node, that is responsible for sending
+%% queries to other DCs, the types of messages that can be sent are found in
+%% include/antidote_message_types.hrl
+%% To perform a request, call the "perform_request" function below
+%% Then need to update the code of the recipiant of the query at inter_dc_query_receive_socket
 
 %% The unanswered_query caching is there only for the purpose of disconnecting DCs.
 %% The reliability-related features like resending the query are handled by ZeroMQ.
@@ -28,7 +31,6 @@
 -module(inter_dc_query).
 -behaviour(gen_server).
 -include("antidote.hrl").
-%%-include("antidote_message_types.hrl").
 -include("inter_dc_repl.hrl").
 
 %% API

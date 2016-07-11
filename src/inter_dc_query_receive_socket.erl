@@ -18,7 +18,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% Log reader reads all transactions in the log that happened between the defined
+%% This is a process running on each node, that is responsible for receiving
+%% queries from other DCs, the types of messages that can be sent are found in
+%% include/antidote_message_types.hrl
+%% To handle new types, need to update the handle_info method below
+%% As well as in the sender of the query at inter_dc_query
 
 -module(inter_dc_query_receive_socket).
 -behaviour(gen_server).
