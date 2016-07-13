@@ -214,7 +214,7 @@ update_counter_crdt_test(Key, Bucket,  Amount) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Obj = antidotec_counter:new(),
     Obj2 = antidotec_counter:increment(Amount, Obj),
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_counter:to_ops(BObj, Obj2),
                                      TxId),
