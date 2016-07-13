@@ -539,5 +539,20 @@ get_txn_property(update_clock, Properties) ->
 		false ->
 		    no_update_clock
 	    end
+    end;
+get_txn_property(certify, Properties) ->
+    case lists:keyfind(certify, 1, Properties) of
+	false ->
+	    application:get_env(antidote, txn_cert, true);
+	{certify, Certify} ->
+	    case Certify of 
+		use_default ->
+		    application:get_env(antidote, txn_cert, true);
+		certify ->
+		    true;
+		dont_certify ->
+		    false
+	    end
     end.
+
 
