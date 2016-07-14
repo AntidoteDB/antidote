@@ -161,6 +161,10 @@ start_suite(Name, Config) ->
         {error, already_started, Node} ->
             ct_slave:stop(Name),
             wait_until_offline(Node),
+            start_suite(Name, Config);
+        {error, started_not_connected, Node} ->
+            ct_slave:stop(Name),
+            wait_until_offline(Node),
             start_suite(Name, Config)
     end.
 
