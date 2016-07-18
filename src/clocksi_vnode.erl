@@ -450,11 +450,11 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%%===================================================================
 
 prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
-    TxId = Transaction#transaction.txn_id,
-    case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
+    case certification_check(Transaction, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
                 [{Key, _, {_Op, _Actor}} | _] ->
+		    TxId = Transaction#transaction.txn_id,
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
@@ -586,12 +586,13 @@ clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
-certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
-    case application:get_env(antidote, txn_cert) of
-        {ok, true} -> 
-        %io:format("AAAAH"),
-        certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
-        _  -> true
+certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
+    TxId = Transaction#transaction.txn_id,
+    Certify = antidote:get_txn_property(certify,Transaction#transaction.properties),	  
+    case Certify of
+        true -> 
+	    certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
+        false -> true
     end.
 
 %% @doc Performs a certification check when a transaction wants to move

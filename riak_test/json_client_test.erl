@@ -96,6 +96,10 @@ confirm() ->
     [Nodes13] = common:clean_and_rebuild_clusters([Nodes12]),
     rt:wait_for_service(Node, antidote),
     update_set_fixed_snapshot_test(hd(Nodes13)),
+
+    [_Nodes14] = common:clean_and_rebuild_clusters([Nodes13]),
+    rt:wait_for_service(Node, antidote),
+    dont_certify_test(),
     pass.
 
 start_stop_test() ->
@@ -340,3 +344,27 @@ update_set_fixed_snapshot_test(Node) ->
     ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [true]),
 
     _Disconnected = antidotec_pb_socket:stop(Pid).
+
+dont_certify_test() ->
+    Key = <<"dont_certify_test">>,
+    {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid2} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
+    %% First Tx
+    {ok, TxId1} = antidotec_pb:start_transaction(Pid1, ignore, [], json),
+    %% Second Tx, that doesn't certify
+    {ok, TxId2} = antidotec_pb:start_transaction(Pid2, ignore, [{certify, dont_certify}], json),
+    %% Update and commit first tx
+    ok = antidotec_pb:update_objects(Pid1, [{Bound_object, increment, 1}], TxId1, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId1, json),
+    %% Update and commit second tx
+    ok = antidotec_pb:update_objects(Pid2, [{Bound_object, increment, 1}], TxId2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid2, TxId2, json),
+
+    %% Read committed updated
+    {ok, TxId3} = antidotec_pb:start_transaction(Pid1, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid1, [Bound_object], TxId3, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId3, json),
+    ?assertEqual(2, antidotec_counter:value(Val)),
+    _Disconnected = antidotec_pb_socket:stop(Pid1),
+    _Disconnected = antidotec_pb_socket:stop(Pid2).

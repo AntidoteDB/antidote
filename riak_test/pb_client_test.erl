@@ -89,9 +89,17 @@ confirm() ->
     rt:wait_for_service(Node, antidote),
     pb_get_objects_test(),
 
-    [_Nodes12] = common:clean_and_rebuild_clusters([Nodes11]),
+    [Nodes12] = common:clean_and_rebuild_clusters([Nodes11]),
     rt:wait_for_service(Node, antidote),
     pb_get_log_operations_test(),
+
+    [Nodes13] = common:clean_and_rebuild_clusters([Nodes12]),
+    rt:wait_for_service(Node, antidote),
+    update_set_fixed_snapshot_test(hd(Nodes13)),
+
+    [_Nodes14] = common:clean_and_rebuild_clusters([Nodes13]),
+    rt:wait_for_service(Node, antidote),
+    dont_certify_test(),
     pass.
 
 start_stop_test() ->
@@ -283,4 +291,81 @@ static_transaction_test() ->
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
+
+update_set_fixed_snapshot_test(Node) ->
+    %% Disable certification
+    ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [false]),
+
+    Key = <<"key_fixed_snapshot_set">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, crdt_orset, <<"bucket">>},
+    Set = antidotec_set:new(),
+    Set1 = antidotec_set:add("a", Set),
+    Set2 = antidotec_set:add("b", Set1),
+
+    {ok, TxId} = antidotec_pb:start_transaction(Pid,
+                                                ignore, []),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(Bound_object, Set2),
+                                     TxId),
+    {ok, CT} = antidotec_pb:commit_transaction(Pid, TxId),
+    CT2 = dict:map(fun(_DCID,Time) ->
+			   Time + 1
+		   end, binary_to_term(CT)),
+        
+    %% Add b again
+    Set3 = antidotec_set:add("b",Set),
+    {ok, TxId2} = antidotec_pb:start_transaction(Pid,
+                                                ignore, []),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(Bound_object, Set3),
+                                     TxId2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId2),
+
+    %% Remove b using the old commit time
+    Set4 = antidotec_set:remove("b",Set),
+    {ok, TxId3} = antidotec_pb:start_transaction(Pid, CT2, [{update_clock, false}]),
+    lager:info("The remove ops ~p", [antidotec_set:to_ops(Bound_object, Set4)]),
+    ok = antidotec_pb:update_objects(Pid,
+                                     antidotec_set:to_ops(Bound_object, Set4),
+                                     TxId3),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId3),
+
+    %% Read the set again to be sure b is still there
+    {ok, TxId4} = antidotec_pb:start_transaction(Pid, ignore, []),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId4),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId4),
+    ?assertEqual(2,length(antidotec_set:value(Val))),
+    ?assertMatch(true, antidotec_set:contains("a", Val)),
+    ?assertMatch(true, antidotec_set:contains("b", Val)),
+
+    %% Reenable certification
+    ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [true]),
+
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+    
+dont_certify_test() ->
+    Key = <<"dont_certify_test">>,
+    {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    {ok, Pid2} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
+    %% First Tx
+    {ok, TxId1} = antidotec_pb:start_transaction(Pid1, term_to_binary(ignore), []),
+    %% Second Tx, that doesn't certify
+    {ok, TxId2} = antidotec_pb:start_transaction(Pid2, term_to_binary(ignore), [{certify, dont_certify}]),
+    %% Update and commit first tx
+    ok = antidotec_pb:update_objects(Pid1, [{Bound_object, increment, 1}], TxId1),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId1),
+    %% Update and commit second tx
+    ok = antidotec_pb:update_objects(Pid2, [{Bound_object, increment, 1}], TxId2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid2, TxId2),
+
+    %% Read committed updated
+    {ok, TxId3} = antidotec_pb:start_transaction(Pid1, term_to_binary(ignore), []),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid1, [Bound_object], TxId3),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId3),
+    ?assertEqual(2, antidotec_counter:value(Val)),
+    _Disconnected = antidotec_pb_socket:stop(Pid1),
+    _Disconnected = antidotec_pb_socket:stop(Pid2).
     

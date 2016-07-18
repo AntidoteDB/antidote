@@ -70,7 +70,6 @@
 	 get_txn_property/2]).
 %% ===========================================================
 
--type txn_properties() :: term(). %% TODO: Define
 -type op_param() :: term(). %% TODO: Define
 -type bound_object() :: {key(), type(), bucket()}.
 
@@ -549,6 +548,12 @@ get_txn_property(certify, Properties) ->
 		use_default ->
 		    application:get_env(antidote, txn_cert, true);
 		certify ->
+		    %% Note that certify will only work correctly when
+		    %% application:get_env(antidote, txn_cert, true); returns true
+		    %% the reason is is that in clocksi_vnode:commit, the timestamps
+		    %% for commited transactions will only be saved if application:get_env(antidote, txn_cert, true)
+		    %% is true
+		    %% we might want to change this in the future
 		    true;
 		dont_certify ->
 		    false

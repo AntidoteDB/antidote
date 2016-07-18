@@ -105,9 +105,12 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
+-type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify}]. %% TODO: Define
+
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(),
                       vec_snapshot_time,
+		      properties :: Properties::txn_properties(),
                       txn_id :: txid()}).
 
 %%---------------------------------------------------------------------
@@ -163,4 +166,5 @@
           read_set :: list(),
           is_static :: boolean(),
           full_commit :: boolean(),
+	  properties :: Properties::txn_properties(),
 	  stay_alive :: boolean()}).
