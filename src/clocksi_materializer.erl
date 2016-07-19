@@ -105,7 +105,7 @@ apply_operations(Type,Snapshot,[Op | Rest]) ->
 %%      id of the first op in OpList
 %%      SnapshotCommitTime: The time used to describe the intitial state of the CRDT given in Snapshot
 %%      MinSnapshotTime: The threshold time given by the reading transaction
-%%      Ops: The list of operations to apply in causal order
+%%      Ops: The list of operations to apply in causal order, the most recent op is on the left
 %%      TxId: The Id of the transaction requesting the snapshot
 %%      LastOpCommitTime: The snapshot time of the last operation in the list of operations to apply
 %%      NewSS: Boolean that is true if any operations should be applied, fale otherwise.  Should start as false.

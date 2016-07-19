@@ -43,10 +43,14 @@
 
 %% States
 -export([read_data_item/4,
-        async_read_data_item/5,
+	 async_read_data_item/5,
 	 check_partition_ready/3,
 	 start_read_servers/2,
 	 stop_read_servers/2]).
+
+-export_type([external_read_property/0,
+	     read_property/0,
+	     read_property_list/0]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
@@ -55,10 +59,9 @@
 		prepared_cache :: cache_id(),
 		self :: atom()}).
 
-%% TODO: allow properties for reads
-%% -type external_read_property() :: {external_read, dcid(), dc_and_commit_time(), snapshot_time()}.
-%% -type read_property() :: external_read_property().
-%% -type read_property_list() :: [read_property()].
+-type external_read_property() :: #external_read_property{}.
+-type read_property() :: external_read_property().
+-type read_property_list() :: [read_property()].
 
 %%%===================================================================
 %%% API

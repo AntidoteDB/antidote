@@ -215,3 +215,9 @@
 	  ops_cache :: cache_id(),
 	  snapshot_cache :: cache_id(),
 	  is_ready :: boolean()}).
+
+%% TODO: allow properties for reads
+-record(external_read_property, {read_snapshot :: snapshot_time(),
+				 from_dcid :: dcid(),
+				 included_ops :: [clocksi_payload()],
+				 included_ops_time :: clock_time()}).
