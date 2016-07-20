@@ -180,6 +180,11 @@ receive_prepared({prepared, ReceivedPrepareTime},
              S0#tx_coord_state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 
+%% When receiving external reads
+receive_prepared({external_read_resp, BinaryRep}, S0) ->
+    {external_read_rep, Key, Type, Snapshot} = binary_to_term(BinaryRep),
+    receive_prepared({ok, {Key, Type, Snapshot}}, S0);
+
 receive_prepared({ok, {Key, Type, Snapshot}},
                  S0=#tx_coord_state{num_to_read=NumToRead,
                             read_set=ReadSet,
@@ -218,6 +223,11 @@ receive_prepared(abort, S0) ->
 
 receive_prepared(timeout, S0) ->
     {next_state, abort, S0, 0}.
+
+%% When receiving external reads
+single_committing({external_read_resp, BinaryRep}, S0) ->
+    {external_read_rep, Key, Type, Snapshot} = binary_to_term(BinaryRep),
+    single_committing({ok, {Key, Type, Snapshot}}, S0);
 
 single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
                             num_to_read=NumToRead,

@@ -89,22 +89,41 @@ stop_read_servers(Partition, Count) ->
     Addr = node(),
     stop_read_servers_internal(Addr, Partition, Count).
 
+%% TODO: implement this
+is_external(<<"external">>) ->
+    {true, {a,0}};
+is_external(_Key) ->
+    false.
+
 -spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition,Node},Key,Type,Transaction) ->
-    try
-	gen_server:call({global,generate_random_server_name(Node,Partition)},
-			{perform_read,Key,Type,Transaction},infinity)
-    catch
-        _:Reason ->
-            lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
-	    check_server_ready([{Partition,Node}]),
-            read_data_item({Partition,Node},Key,Type,Transaction)
+    %% Check if should perform the read externally
+    case is_external(Key) of
+	{true, {ExDCID,ExPartition}} ->
+	    ok = partial_repli_utils:perform_read_external({ExDCID,ExPartition},Key,Type,Transaction,self()),
+	    partial_repli_utils:wait_for_external_read_resp();
+	false ->
+	    try
+		gen_server:call({global,generate_random_server_name(Node,Partition)},
+				{perform_read,Key,Type,Transaction},infinity)
+	    catch
+		_:Reason ->
+		    lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+		    check_server_ready([{Partition,Node}]),
+		    read_data_item({Partition,Node},Key,Type,Transaction)
+	    end
     end.
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> ok.
 async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
-	gen_server:cast({global,generate_random_server_name(Node,Partition)},
-            {perform_read_cast, Coordinator, Key, Type, Transaction}).
+    %% Check if should perform the read externally
+    case is_external(Key) of
+	{true, {ExDCID, ExPartition}} ->
+	    ok = partial_repli_utils:perform_read_external({ExDCID,ExPartition},Key,Type,Transaction,Coordinator);
+	false ->
+	    gen_server:cast({global,generate_random_server_name(Node,Partition)},
+			    {perform_read_cast, Coordinator, Key, Type, Transaction})
+    end.
 
 %% @doc This checks all partitions in the system to see if all read
 %%      servers have been started up.
@@ -217,10 +236,10 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
 				   ok.
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
-    %% TODO: Add support for read properties
-    PropertyList = [],
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
+    %% Check if wait for external read is necessary
+    partial_repli_utils:check_wait_time(Transaction#transaction.snapshot_time,PropertyList),
     case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);

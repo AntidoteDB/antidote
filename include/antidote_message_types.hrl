@@ -11,6 +11,7 @@
 -define(LOG_READ_MSG,2).
 -define(OK_MSG,4).
 -define(ERROR_MSG,5).
+-define(EXTERNAL_READ_MSG,5).
 
 %% The number of bytes a parition id is in a message
 -define(PARTITION_BYTE_LENGTH, 20).

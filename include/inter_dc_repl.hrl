@@ -37,6 +37,7 @@
 	  request_type :: inter_dc_message_type(),
 	  func :: function() | undefined,
 	  req_id_binary :: binary(),
+	  req_pid :: pid() | {fsm, pid()},
 	  pdcid :: pdcid(),
 	  binary_req :: binary()
 	 }).

@@ -87,6 +87,7 @@
     perform_singleitem_read/2,
     perform_singleitem_update/3,
     reply_to_client/1,
+    wait_for_clock/1,
     generate_name/1]).
 
 %%%===================================================================

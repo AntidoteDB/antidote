@@ -337,7 +337,6 @@ internal_store_ss(Key,Snapshot,CommitTime,ShouldGc,State = #mat_state{snapshot_c
 -spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem_fsm:read_property_list(), boolean(), #mat_state{})
 		   -> {ok, snapshot()} | {error, no_snapshot}.
 internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}) ->
-    PropertyList = [],
     %% First look for any existing snapshots in the cache that is compatible with 
     %% Result is a tuple where on success:
     %%     1st element is the snapshot of type #materialized_snapshot{}
@@ -369,7 +368,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
     %% Otherwise operations are taken from the in-memory cache (any snapshot in the cache
     %% will have any more recent operations also in the cache so no need to go to the log)
     %% The value returned is of type #snapshot_get_response{}
-    SnapshotGetResp = 
+    SnapshotGetRespPrev = 
 	case Result of
 	    {error, no_snapshot} ->
 		LogId = log_utilities:get_logid_from_key(Key),
@@ -388,6 +387,9 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
 		end
 	end,
+    %% Apply any changes needed by the read properties
+    SnapshotGetResp =
+	partial_repli_utils:replace_external_ops(SnapshotGetRespPrev, PropertyList),
     %% Now apply the operations to the snapshot
     case SnapshotGetResp#snapshot_get_response.number_of_ops of
 	0 ->

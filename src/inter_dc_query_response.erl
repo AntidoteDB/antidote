@@ -26,6 +26,7 @@
 
 -export([start_link/1,
 	 get_entries/2,
+	 perform_external_read/2,
 	 generate_server_name/1]).
 -export([init/1,
 	 handle_cast/2,
@@ -49,6 +50,10 @@ start_link(Num) ->
 get_entries(BinaryQuery,QueryState) ->
     ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
 
+-spec perform_external_read(binary(),#inter_dc_query_state{}) -> ok.
+perform_external_read(BinaryQuery,QueryState) ->
+    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {perform_external_read,BinaryQuery,QueryState}).
+
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================
@@ -64,6 +69,12 @@ handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
     FullResponse = <<BinaryPartition/binary,BinaryResp/binary>>,
     ok = inter_dc_query_receive_socket:send_response(FullResponse,QueryState),
     {noreply, State};
+
+handle_cast({perform_external_read,BinaryQuery,QueryState}, State) ->
+    {external_read, _Key, _Type, _Transaction, _Property} = binary_to_term(BinaryQuery),
+    %% TODO: perform the read
+    ok = inter_dc_query_receive_socket:send_response(BinaryQuery,QueryState),
+    {noreply, State};    
 
 handle_cast(_Info, State) ->
     {noreply, State}.
