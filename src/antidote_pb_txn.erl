@@ -163,7 +163,7 @@ process(#apbstaticupdateobjects{
         {ok, CommitTime} ->
             {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
              State}
-    end;            
+    end;
 process(#apbstaticreadobjects{
            transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            objects=BoundObjects},
