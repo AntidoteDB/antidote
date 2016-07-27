@@ -4,7 +4,8 @@
          execute_op/5,
          read_empty/2,
          test_dec_success/4,
-         test_dec_fail/4
+         test_dec_fail/4,
+         test_dec_multi_success/4
         ]).
 
 
@@ -31,9 +32,10 @@ confirm() ->
 
     ok = common:setup_dc_manager([Cluster1, Cluster2], first_run),
 
-    read_empty(NodeDC1, empty_key),
-    test_dec_success(NodeDC1, NodeDC2, key1, actor1),
-    test_dec_fail(NodeDC1, NodeDC2, key2, actor1),
+    %read_empty(NodeDC1, empty_key),
+    %test_dec_success(NodeDC1, NodeDC2, key1, actor1),
+    %test_dec_fail(NodeDC1, NodeDC2, key2, actor1),
+    test_dec_multi_success(NodeDC1, NodeDC2, key3, actor1),
     pass.
 
 execute_op(Node, Op, Key, Amount, Actor) ->
@@ -75,11 +77,24 @@ test_dec_fail(DC1, DC2, Key, Actor) ->
     Result = execute_op(DC2, decrement, Key, 5, Actor),
     ?assertEqual({error, no_permissions}, Result).
 
-%test_transference(DC1, DC2, Key, Actor) ->
-%    {ok, _} = execute_op(DC1, increment, Key, 10, Actor),
-%    ok = rpc:call(DC1, bcounter_mgr, process_transfer, [Key, {{transfer, 5, DC2}, Actor}]),
-%    {ok, {_, [Obj], _}}  = read(DC1, Key),
-%    lager:info("Obj ~p", [Obj]).
+test_dec_multi_success(DC1, DC2, Key, Actor) ->
+    {ok, _} = execute_op(DC1, increment, Key, 10, Actor),
+    _Result = execute_op(DC2, decrement, Key, 5, Actor),
+    timer:sleep(4000),
+    %FIXME: Operation always fails... It seems that transfer
+    %is only processed after the second attemp, independently
+    %of the timer.
+    Result2 = execute_op(DC2, decrement, Key, 5, Actor),
+    lager:info("RESULT2 ~p", [Result2]),
+    timer:sleep(4000),
+    Result3 = execute_op(DC2, decrement, Key, 5, Actor),
+    lager:info("RESULT3 ~p", [Result3]),
+    timer:sleep(4000).
+    %check_read(DC1, Key, 5, CommitTime),
+    %check_read(DC2, Key, 5, CommitTime).
+
+
+
 
 
 
