@@ -196,7 +196,7 @@ perform_singleitem_read(Key, Type) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
+    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->

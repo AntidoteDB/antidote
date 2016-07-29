@@ -85,7 +85,7 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, TxId, Key, Type, Updates) ->
-    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId) of
+    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId, []) of
         {ok, Snapshot} ->
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
             Snapshot2 = clocksi_materializer:materialize_eager
@@ -96,7 +96,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}). 
+    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}). 
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node

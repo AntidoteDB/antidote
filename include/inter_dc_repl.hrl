@@ -26,6 +26,7 @@
 
 -record(descriptor, {
  dcid :: dcid(),
+ partition_list :: [partition_id()],
  partition_num :: non_neg_integer(),
  publishers :: [socket_address()],
  logreaders :: [socket_address()]

@@ -49,6 +49,7 @@
 %% API
 -export([start_vnode/1,
 	 check_tables_ready/0,
+	 get_ops/4,
          read/5,
          read/6,
 	 get_cache_name/2,
@@ -73,6 +74,19 @@
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
+
+-spec get_ops(key(),clock_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]} | {error, reason()}.
+get_ops(Key, Time, DCID, MatState = #mat_state{ops_cache = OpsCache}) ->
+    case ets:info(OpsCache) of
+	undefined ->
+	    riak_core_vnode_master:sync_command({MatState#mat_state.partition,node()},
+						{get_ops,Key,Time,DCID},
+						materializer_vnode_master,
+						infinity);
+	_ ->
+	    internal_get_ops(Key,Time,DCID,MatState)
+    end.
+    
 
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
@@ -226,6 +240,9 @@ handle_command({check_ready},_Sender,State = #mat_state{partition=Partition, is_
 handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
     {reply, read(Key, Type, SnapshotTime, TxId, State), State};
 
+handle_command({get_ops, Key, Time, DCID}, _Sender, State) ->
+    {reply, internal_get_ops(Key, Time, DCID, State), State};
+
 handle_command({update, Key, DownstreamOp}, _Sender, State) ->
     true = op_insert_gc(Key,DownstreamOp,State),
     {reply, ok, State};
@@ -320,6 +337,30 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 
 
 %%---------------- Internal Functions -------------------%%
+
+-spec internal_get_ops(key(),clock_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]} | {error, reason()}.
+internal_get_ops(Key, Time, DCID, MatState = #mat_state{ops_cache = OpsCache}) ->
+    %% First get the oldest snapshot in the cache
+    Result = case ets:lookup(SnapshotCache, Key) of
+		 [] ->
+		     %% First time reading this key, store an empty snapshot in the cache
+		     BlankSS = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
+		     case TxId of
+			 ignore ->
+			     internal_store_ss(Key,BlankSS,vectorclock:new(),false,State);
+			 _ ->
+			     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
+		     end,
+		     {BlankSS,ignore,true};
+		 [{_, SnapshotDict}] ->
+		     case vector_orddict:get_smallest(MinSnapshotTime, SnapshotDict) of
+			 {undefined, _IsF} ->
+			     {error, no_snapshot};
+			 {{SnapshotCommitTime, LatestSnapshot},IsFirst}->
+			     {LatestSnapshot,SnapshotCommitTime,IsFirst}
+		     end
+	     end,
+    .
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> true.
 internal_store_ss(Key,Snapshot,CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->

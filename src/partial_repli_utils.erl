@@ -49,8 +49,9 @@ wait_for_external_read_resp() ->
 perform_external_read({DCID,Partition},Key,Type,Transaction,Coordinator) ->
     %% First check for any ops in this DC
     StartTime = Transaction#transaction.snapshot_time - ?EXTERNAL_READ_BACK_TIME,
-    %% TODO: implement this
-    OpList = clocksi_readitem_fsm:get_ops(Key,StartTime),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    OpList = clocksi_readitem_fsm:get_ops(IndexNode,Key,StartTime,Transaction),
     Property = #external_read_property{from_dcid=dc_meta_data_utilities:get_my_dc_id(),included_ops=OpList,included_ops_time=StartTime},
     BinaryRequest = term_to_binary({external_read, Key, Type, Transaction, Property}),
     inter_dc_query:perform_request(?EXTERNAL_READ_MSG, {DCID,Partition}, BinaryRequest,fun deliver_external_read_resp/2, Coordinator).
@@ -73,7 +74,7 @@ check_wait_time(MinSnapshotTime, PropertyList) ->
 %% An external read will include a list of ops from the external DC (to avoid blocking)
 %% This method will place those in the list of ops to be materialized locally
 -spec replace_external_ops(#snapshot_get_response{}, clocksi_readitem_fsm:read_property_list()) ->
-				  [{integer(), clocksi_payload()}].
+				  #snapshot_get_response{}.
 replace_external_ops(SnapshotGetResp, PropertyList) ->
     case get_property(external_read_property, PropertyList) of
 	ReadProp when is_record(ReadProp, external_read_property) ->

@@ -71,9 +71,12 @@ handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
     {noreply, State};
 
 handle_cast({perform_external_read,BinaryQuery,QueryState}, State) ->
-    {external_read, _Key, _Type, _Transaction, _Property} = binary_to_term(BinaryQuery),
-    %% TODO: perform the read
-    ok = inter_dc_query_receive_socket:send_response(BinaryQuery,QueryState),
+    {external_read, Key, Type, Transaction, Property} = binary_to_term(BinaryQuery),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    {ok,Snapshot} = clocksi_readitem_fsm:read_data_item(IndexNode,Key,Type,Transaction,[Property]),
+    BinaryRep = term_to_binary({external_read_rep, Key, Type, Snapshot}),
+    ok = inter_dc_query_receive_socket:send_response(BinaryRep,QueryState),
     {noreply, State};    
 
 handle_cast(_Info, State) ->

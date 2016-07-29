@@ -22,6 +22,7 @@
 -behavior(gen_server).
 
 -include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -42,8 +43,9 @@
          terminate/2]).
 
 %% States
--export([read_data_item/4,
-	 async_read_data_item/5,
+-export([read_data_item/5,
+	 async_read_data_item/6,
+	 get_ops/4,
 	 check_partition_ready/3,
 	 start_read_servers/2,
 	 stop_read_servers/2]).
@@ -90,39 +92,57 @@ stop_read_servers(Partition, Count) ->
     stop_read_servers_internal(Addr, Partition, Count).
 
 %% TODO: implement this
-is_external(<<"external">>) ->
-    {true, {a,0}};
-is_external(_Key) ->
+is_external(<<"external",_/binary>>,[]) ->
+    case dc_meta_data_utilities:get_dc_descriptors() of
+	[] ->
+	    false;
+	Descs ->
+	    #descriptor{dcid=ExDCID,partition_num=PartitionNum,partition_list=PartitionList} = lists:nth(random:uniform(length(Descs)),Descs),
+	    {true, {ExDCID,lists:nth(random:uniform(PartitionNum),PartitionList)}}
+    end;
+is_external(_Key,_PropList) ->
     false.
 
--spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
-read_data_item({Partition,Node},Key,Type,Transaction) ->
+-spec get_ops(index_node(), key(), clock_time(), tx()) -> [clocksi_payload()].
+get_ops({Partition,Node},Key,Time,Transaction) ->
+    try
+	gen_server:call({global,generate_random_server_name(Node,Partition)},
+			{get_ops,Key,Time,Transaction},infinity)
+    catch
+	_:Reason ->
+	    lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+	    check_server_ready([{Partition,Node}]),
+	    get_ops({Partition,Node},Key,Time,Transaction)
+    end.
+
+-spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
+read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
     %% Check if should perform the read externally
-    case is_external(Key) of
+    case is_external(Key,PropertyList) of
 	{true, {ExDCID,ExPartition}} ->
-	    ok = partial_repli_utils:perform_read_external({ExDCID,ExPartition},Key,Type,Transaction,self()),
+	    ok = partial_repli_utils:perform_external_read({ExDCID,ExPartition},Key,Type,Transaction,self()),
 	    partial_repli_utils:wait_for_external_read_resp();
 	false ->
 	    try
 		gen_server:call({global,generate_random_server_name(Node,Partition)},
-				{perform_read,Key,Type,Transaction},infinity)
+				{perform_read,Key,Type,Transaction,PropertyList},infinity)
 	    catch
 		_:Reason ->
 		    lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
 		    check_server_ready([{Partition,Node}]),
-		    read_data_item({Partition,Node},Key,Type,Transaction)
+		    read_data_item({Partition,Node},Key,Type,Transaction,PropertyList)
 	    end
     end.
 
--spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> ok.
-async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
+-spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
+async_read_data_item({Partition,Node},Key,Type,Transaction,PropertyList,Coordinator) ->
     %% Check if should perform the read externally
-    case is_external(Key) of
+    case is_external(Key,PropertyList) of
 	{true, {ExDCID, ExPartition}} ->
-	    ok = partial_repli_utils:perform_read_external({ExDCID,ExPartition},Key,Type,Transaction,Coordinator);
+	    ok = partial_repli_utils:perform_external_read({ExDCID,ExPartition},Key,Type,Transaction,Coordinator);
 	false ->
 	    gen_server:cast({global,generate_random_server_name(Node,Partition)},
-			    {perform_read_cast, Coordinator, Key, Type, Transaction})
+			    {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList})
     end.
 
 %% @doc This checks all partitions in the system to see if all read
@@ -221,29 +241,50 @@ init([Partition, Id]) ->
 		mat_state = MatState,
 		prepared_cache=PreparedCache,self=Self}}.
 
-handle_call({perform_read, Key, Type, Transaction},Coordinator,SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
+handle_call({perform_read, Key, Type, Transaction, PropertyList},Coordinator,SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
+    {noreply,SD0};
+
+handle_call({get_ops,Key,Time,Transaction},Coordinator,SD0) ->
+    ok = get_ops_internal(Coordinator,Key,Time,Transaction,SD0),
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
-handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
+handle_cast({get_ops_cast,Coordinator,Key,Time,Transaction},SD0) ->
+    ok = get_ops_internal(Coordinator,Key,Time,Transaction,SD0),
+    {noreply,SD0};
+
+handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
     {noreply,SD0}.
 
--spec perform_read_internal(pid(), key(), type(), #transaction{}, [], #state{}) ->
+-spec get_ops_internal(pid(), key(), clock_time(), tx(), #state{}) -> ok.
+get_ops_internal(Coordinator,Key,Time,Transaction,
+		 SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+    TxId = Transaction#transaction.txn_id,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
+    case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
+	{not_ready,Time} ->
+	    _Tref = erlang:send_after(Time, self(), {get_ops_cast,Coordinator,Key,Time,Transaction}),
+	    ok;
+	ready ->
+	    return_ops(Coordinator,Key,Time,SD0)
+    end.
+
+-spec perform_read_internal(pid(), key(), type(), #transaction{}, read_property_list(), #state{}) ->
 				   ok.
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     %% Check if wait for external read is necessary
-    partial_repli_utils:check_wait_time(Transaction#transaction.snapshot_time,PropertyList),
+    {ok,_} = partial_repli_utils:check_wait_time(Transaction#transaction.snapshot_time,PropertyList),
     case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
+	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction,PropertyList}),
 	    ok;
 	ready ->
 	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
@@ -285,9 +326,20 @@ check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
         check_prepared_list(Key,TxLocalStartTime,Rest)
     end.
 
+-spec return_ops({pid(),term()},key(),clock_time(),#state{}) -> ok.
+return_ops(Coordinator,Key,Time,#state{mat_state=MatState}) ->
+    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    case materializer_vnode:get_ops(Key, Time, MyDCID, MatState) of
+        {ok, OpList} ->
+	    _Ignore=gen_server:reply(Coordinator, {ok, OpList});
+        {error, Reason} ->
+	    _Ignore=gen_server:reply(Coordinator, {error, Reason})
+    end,
+    ok.
+
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return({fsm,pid()} | pid(),key(),type(),#transaction{},[],#state{}) -> ok.
+-spec return({fsm,pid()} | {pid(),term()},key(),type(),#transaction{},[],#state{}) -> ok.
 return(Coordinator,Key,Type,Transaction,PropertyList,
        #state{mat_state=MatState}) ->
     %% TODO: Add support for read properties
@@ -312,8 +364,8 @@ return(Coordinator,Key,Type,Transaction,PropertyList,
     end,
     ok.
 
-handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
+handle_info({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList},SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
     {noreply,SD0};
 
 handle_info(_Info, StateData) ->
