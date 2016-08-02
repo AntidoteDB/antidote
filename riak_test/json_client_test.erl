@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(pb_client_test).
+-module(json_client_test).
 
 -export([confirm/0]).
 
@@ -92,7 +92,7 @@ confirm() ->
     [Nodes12] = common:clean_and_rebuild_clusters([Nodes11]),
     rt:wait_for_service(Node, antidote),
     pb_get_log_operations_test(),
-
+    
     [Nodes13] = common:clean_and_rebuild_clusters([Nodes12]),
     rt:wait_for_service(Node, antidote),
     update_set_fixed_snapshot_test(hd(Nodes13)),
@@ -112,27 +112,27 @@ start_stop_test() ->
 
 %% starts and transaction and read a key
 simple_transaction_test(Node) ->
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {key, crdt_pncounter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
-    rpc:call(Node, antidote, commit_transaction, [TxId]).
+    rpc:call(Node, antidote, finish_transaction, [TxId]).
 
 
 read_write_test(Node) ->
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {key, crdt_pncounter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
-    rpc:call(Node, antidote, commit_transaction, [TxId]).
+    rpc:call(Node, antidote, finish_transaction, [TxId]).
 
 
 %% Single object rea
 get_empty_crdt_test() ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {<<"key">>, riak_dt_pncounter, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    Bound_object = {<<"key">>, crdt_pncounter, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId, json),
     _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(true, antidotec_counter:is_type(Val)).
 
@@ -142,12 +142,12 @@ pb_get_objects_test() ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object1 = {Key1, crdt_orset, <<"bucket">>},
     Bound_object2 = {Key2, crdt_orset, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    ok = antidotec_pb:update_objects(Pid, [{Bound_object1, add, <<"a">>},{Bound_object2, add, <<"b">>}], TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object1, add, <<"a">>},{Bound_object2, add, <<"b">>}], TxId, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId, json),
     %% Read committed updated
     
-    {ok, Val} = antidotec_pb:get_objects(Pid, [Bound_object1,Bound_object2], proto_buf),
+    {ok, Val} = antidotec_pb:get_objects(Pid, [Bound_object1,Bound_object2], json),
     lager:info("The get objects result ~p", [Val]),
     [[Object1,CommitTime1],[Object2,CommitTime2]]=Val,
     lager:info("The base objects ~p", [[Object1,Object2]]),
@@ -161,86 +161,86 @@ pb_get_log_operations_test() ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object1 = {Key1, crdt_orset, <<"bucket">>},
     Bound_object2 = {Key2, crdt_orset, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    ok = antidotec_pb:update_objects(Pid, [{Bound_object1, add, <<"a">>},{Bound_object2, add, <<"b">>}], TxId),
-    {ok, CommitTime} = antidotec_pb:commit_transaction(Pid, TxId),
-    lager:info("committime ~p",[binary_to_term(CommitTime)]),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object1, add, <<"a">>},{Bound_object2, add, <<"b">>}], TxId, json),
+    {ok, CommitTime} = antidotec_pb:commit_transaction(Pid, TxId, json),
+    lager:info("committime ~p",[CommitTime]),
     %% Read committed updated
     %% Set the commit time to 0, so you can get all updates
     CommitTime2 = dict:map(fun(_DCID,_Time) ->
 				   0
-			   end, binary_to_term(CommitTime)),
+			   end, CommitTime),
 
     lists:foreach(fun(ReplyType) ->
 			  {ok, Val} = antidotec_pb:get_log_operations(Pid,[{Bound_object1,CommitTime2},{Bound_object2,CommitTime2}], ReplyType),
 			  lager:info("The get objects result using ~p are ~p", [ReplyType,Val])
-		  end, [proto_buf]),
+		  end, [json]),
     _Disconnected = antidotec_pb_socket:stop(Pid).
     
 
 pb_test_counter_read_write(_Node) ->
     Key = <<"key_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    ok = antidotec_pb:update_objects(Pid, [{Bound_object, increment, 1}], TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    Bound_object = {Key, crdt_pncounter, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object, increment, 1}], TxId, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId, json),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2, json),
     ?assertEqual(1, antidotec_counter:value(Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 pb_test_set_read_write(_Node) ->
     Key = <<"key_read_write_set">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    ok = antidotec_pb:update_objects(Pid, [{Bound_object, add, "a"}], TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    Bound_object = {Key, crdt_orset, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object, add, "a"}], TxId, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId, json),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2, json),
     ?assertEqual(["a"],antidotec_set:value(Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 pb_empty_txn_clock_test() ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    {ok, CommitTime} = antidotec_pb:commit_transaction(Pid, TxId),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, CommitTime} = antidotec_pb:commit_transaction(Pid, TxId, json),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, CommitTime, []),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, CommitTime, [], json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2, json),
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 
 update_counter_crdt_test(Key, Bucket,  Amount) ->
     lager:info("Verifying retrieval of updated counter CRDT..."),
-    BObj = {Key, riak_dt_pncounter, Bucket},
+    BObj = {Key, crdt_pncounter, Bucket},
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Obj = antidotec_counter:new(),
     Obj2 = antidotec_counter:increment(Amount, Obj),
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, [], json),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_counter:to_ops(BObj, Obj2),
-                                     TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+                                     TxId, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId, json),
     _Disconnected = antidotec_pb_socket:stop(Pid),
     pass.
 
 update_counter_crdt_and_read_test(Key, Amount) ->
     pass = update_counter_crdt_test(Key, <<"bucket">>, Amount),
-    pass = get_crdt_check_value(Key, riak_dt_pncounter, <<"bucket">>, Amount).
+    pass = get_crdt_check_value(Key, crdt_pncounter, <<"bucket">>, Amount).
 
 get_crdt_check_value(Key, Type, Bucket, Expected) ->
     lager:info("Verifying value of updated CRDT..."),
     BoundObject = {Key, Type, Bucket},
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [BoundObject], Tx2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [BoundObject], Tx2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2, json),
     _Disconnected = antidotec_pb_socket:stop(Pid),
     Mod = antidotec_datatype:module_for_term(Val),
     ?assertEqual(Expected,Mod:value(Val)),
@@ -249,21 +249,21 @@ get_crdt_check_value(Key, Type, Bucket, Expected) ->
 update_set_read_test() ->
     Key = <<"key_update_read_set">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
+    Bound_object = {Key, crdt_orset, <<"bucket">>},
     Set = antidotec_set:new(),
     Set1 = antidotec_set:add("a", Set),
     Set2 = antidotec_set:add("b", Set1),
 
     {ok, TxId} = antidotec_pb:start_transaction(Pid,
-                                                term_to_binary(ignore), []),
+                                                ignore, [], json),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_set:to_ops(Bound_object, Set2),
-                                     TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+                                     TxId, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId, json),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2, json),
     ?assertEqual(2,length(antidotec_set:value(Val))),
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
@@ -272,27 +272,28 @@ update_set_read_test() ->
 static_transaction_test() ->
     Key = <<"key_static_update_read_set">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, riak_dt_orset, <<"bucket">>},
+    Bound_object = {Key, crdt_orset, <<"bucket">>},
     Set = antidotec_set:new(),
     Set1 = antidotec_set:add("a", Set),
     Set2 = antidotec_set:add("b", Set1),
 
     {ok, TxId} = antidotec_pb:start_transaction(Pid,
-                                                term_to_binary(ignore), [{static, true}]),
+                                                ignore, [{static, true}], json),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_set:to_ops(Bound_object, Set2),
-                                     TxId),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+                                     TxId, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId, json),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), [{static, true}]),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, [{static, true}], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2, json),
     ?assertEqual(2,length(antidotec_set:value(Val))),
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
-
+    
 update_set_fixed_snapshot_test(Node) ->
+
     %% Disable certification
     ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [false]),
 
@@ -304,37 +305,37 @@ update_set_fixed_snapshot_test(Node) ->
     Set2 = antidotec_set:add("b", Set1),
 
     {ok, TxId} = antidotec_pb:start_transaction(Pid,
-                                                ignore, []),
+                                                ignore, [], json),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_set:to_ops(Bound_object, Set2),
-                                     TxId),
-    {ok, CT} = antidotec_pb:commit_transaction(Pid, TxId),
+                                     TxId, json),
+    {ok, CT} = antidotec_pb:commit_transaction(Pid, TxId, json),
     CT2 = dict:map(fun(_DCID,Time) ->
 			   Time + 1
-		   end, binary_to_term(CT)),
+		   end, CT),
         
     %% Add b again
     Set3 = antidotec_set:add("b",Set),
     {ok, TxId2} = antidotec_pb:start_transaction(Pid,
-                                                ignore, []),
+                                                ignore, [], json),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_set:to_ops(Bound_object, Set3),
-                                     TxId2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId2),
+                                     TxId2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId2, json),
 
     %% Remove b using the old commit time
     Set4 = antidotec_set:remove("b",Set),
-    {ok, TxId3} = antidotec_pb:start_transaction(Pid, CT2, [{update_clock, false}]),
+    {ok, TxId3} = antidotec_pb:start_transaction(Pid, CT2, [{update_clock, false}], json),
     lager:info("The remove ops ~p", [antidotec_set:to_ops(Bound_object, Set4)]),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_set:to_ops(Bound_object, Set4),
-                                     TxId3),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId3),
+                                     TxId3, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId3, json),
 
     %% Read the set again to be sure b is still there
-    {ok, TxId4} = antidotec_pb:start_transaction(Pid, ignore, []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId4),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId4),
+    {ok, TxId4} = antidotec_pb:start_transaction(Pid, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId4, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId4, json),
     ?assertEqual(2,length(antidotec_set:value(Val))),
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
@@ -344,28 +345,26 @@ update_set_fixed_snapshot_test(Node) ->
 
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
-    
 dont_certify_test() ->
     Key = <<"dont_certify_test">>,
     {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     {ok, Pid2} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
     %% First Tx
-    {ok, TxId1} = antidotec_pb:start_transaction(Pid1, term_to_binary(ignore), []),
+    {ok, TxId1} = antidotec_pb:start_transaction(Pid1, ignore, [], json),
     %% Second Tx, that doesn't certify
-    {ok, TxId2} = antidotec_pb:start_transaction(Pid2, term_to_binary(ignore), [{certify, dont_certify}]),
+    {ok, TxId2} = antidotec_pb:start_transaction(Pid2, ignore, [{certify, dont_certify}], json),
     %% Update and commit first tx
-    ok = antidotec_pb:update_objects(Pid1, [{Bound_object, increment, 1}], TxId1),
-    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId1),
+    ok = antidotec_pb:update_objects(Pid1, [{Bound_object, increment, 1}], TxId1, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId1, json),
     %% Update and commit second tx
-    ok = antidotec_pb:update_objects(Pid2, [{Bound_object, increment, 1}], TxId2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid2, TxId2),
+    ok = antidotec_pb:update_objects(Pid2, [{Bound_object, increment, 1}], TxId2, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid2, TxId2, json),
 
     %% Read committed updated
-    {ok, TxId3} = antidotec_pb:start_transaction(Pid1, term_to_binary(ignore), []),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid1, [Bound_object], TxId3),
-    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId3),
+    {ok, TxId3} = antidotec_pb:start_transaction(Pid1, ignore, [], json),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid1, [Bound_object], TxId3, json),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, TxId3, json),
     ?assertEqual(2, antidotec_counter:value(Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid1),
     _Disconnected = antidotec_pb_socket:stop(Pid2).
-    

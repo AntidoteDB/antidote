@@ -76,19 +76,19 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Clientclock, Operations, UpdateClock, StayAlive) ->
+start_link(From, Clientclock, Operations, Properties, StayAlive) ->
     case StayAlive of
 	true ->
-	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Operations, UpdateClock, StayAlive], []);
+	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Operations, Properties, StayAlive], []);
 	false ->
-	    gen_fsm:start_link(?MODULE, [From, Clientclock, Operations, UpdateClock, StayAlive], [])
+	    gen_fsm:start_link(?MODULE, [From, Clientclock, Operations, Properties, StayAlive], [])
     end.
 
-start_link(From, Clientclock, Operations, UpdateClock) ->
-    start_link(From, Clientclock, Operations, UpdateClock, false).
+start_link(From, Clientclock, Operations, Properties) ->
+    start_link(From, Clientclock, Operations, Properties, false).
 
 start_link(From, Clientclock, Operations) ->
-    start_link(From, Clientclock, Operations, update_clock).
+    start_link(From, Clientclock, Operations, [{update_clock,true}]).
 
 start_link(From, Operations) ->
     start_link(From, ignore, Operations).
@@ -97,18 +97,19 @@ start_link(From, Operations) ->
 %%% States
 %%%===================================================================
 
-init([From, ClientClock, Operations, UpdateClock, StayAlive]) ->
-    {ok, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, clocksi_interactive_tx_coord_fsm:init_state(StayAlive, true, true))}.
+init([From, ClientClock, Operations, Properties, StayAlive]) ->
+    {ok, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, Properties, clocksi_interactive_tx_coord_fsm:init_state(StayAlive, true, true, Properties))}.
 
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "static_cord").
 
-start_tx({start_tx, From, ClientClock, Operations, UpdateClock}, SD0) ->
-    {next_state, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, SD0)}.
+start_tx({start_tx, From, ClientClock, Operations, Properties}, SD0) ->
+    {next_state, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, Properties, SD0)}.
 
-start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
-    {Transaction, _TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock, StayAlive, From, true),
-    SD#tx_coord_state{transaction=Transaction, operations=Operations}.
+start_tx_internal(From, ClientClock, Operations, Properties, SD = #tx_coord_state{stay_alive = StayAlive}) ->
+    {Transaction, _TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(
+				      ClientClock, StayAlive, From, true, Properties),
+    SD#tx_coord_state{transaction=Transaction, operations=Operations, properties=Properties}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP

@@ -36,6 +36,8 @@
          update_objects/4,
          abort_transaction/1,
          commit_transaction/1,
+	 get_objects/2,
+	 get_log_operations/1,
          create_bucket/2,
          create_object/3,
          delete_object/1,
@@ -47,7 +49,9 @@
 %% ==========================================================
 %% Old APIs, We would still need them for tests and benchmarks
 -export([append/3,
+	 append/4,
          read/2,
+         read/3,
          clocksi_execute_tx/4,
          clocksi_execute_tx/3,
          clocksi_execute_tx/2,
@@ -57,6 +61,7 @@
          clocksi_read/2,
          clocksi_bulk_update/2,
          clocksi_bulk_update/1,
+         clocksi_istart_tx/3,
          clocksi_istart_tx/2,
          clocksi_istart_tx/1,
          clocksi_istart_tx/0,
@@ -64,20 +69,24 @@
          clocksi_iupdate/4,
          clocksi_iprepare/1,
          clocksi_full_icommit/1,
-         clocksi_icommit/1]).
+         clocksi_icommit/1,
+	 get_txn_property/2]).
 %% ===========================================================
+
+%% -type op_param() :: term(). %% TODO: Define
+%% -type bound_object() :: {key(), type(), bucket()}.
 
 %% Public API
 
 -spec start_transaction(Clock::snapshot_time() | ignore , Properties::txn_properties(), boolean())
                        -> {ok, txid()} | {error, reason()}.
-start_transaction(Clock, _Properties, KeepAlive) ->
-    clocksi_istart_tx(Clock, KeepAlive).
+start_transaction(Clock, Properties, KeepAlive) ->
+    clocksi_istart_tx(Clock, KeepAlive, Properties).
 
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
                        -> {ok, txid()} | {error, reason()}.
-start_transaction(Clock, _Properties) ->
-    clocksi_istart_tx(Clock, false).
+start_transaction(Clock, Properties) ->
+    clocksi_istart_tx(Clock, false, Properties).
 
 -spec abort_transaction(TxId::txid()) -> {error, reason()}.
 abort_transaction(_TxId) ->
@@ -141,7 +150,7 @@ update_objects(Updates, TxId) ->
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
 
-update_objects(Clock, _Properties, Updates, StayAlive) ->
+update_objects(Clock, Properties, Updates, StayAlive) ->
     Actor = actor, %% TODO: generate unique actors
     Operations = lists:map(
                    fun({{Key, Type, Bucket}, Op, OpParam}) ->
@@ -159,14 +168,14 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
     case SingleKey of 
         true ->  %% if single key, execute the fast path
             [{update, {K, T, Op}}] = Operations,
-            case append(K, T, Op) of
+            case append(K, T, Op, Properties) of
                 {ok, {_TxId, [], CT}} ->
                     {ok, CT};
                 {error, Reason} ->
                     {error, Reason}
             end;
         false ->
-            case clocksi_execute_tx(Clock, Operations, update_clock, StayAlive) of
+            case clocksi_execute_tx(Clock, Operations, Properties, StayAlive) of
                 {ok, {_TxId, [], CommitTime}} ->
                     {ok, CommitTime};
                 {error, Reason} -> {error, Reason}
@@ -176,7 +185,7 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
 
-read_objects(Clock, _Properties, Objects, StayAlive) ->
+read_objects(Clock, Properties, Objects, StayAlive) ->
     Args = lists:map(
              fun({Key, Type, Bucket}) ->
                      {read, {{Key,Bucket}, Type}}
@@ -196,7 +205,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
             case materializer:check_operations([{read, {Key, Type}}]) of
                 ok ->
                     {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
-                        perform_singleitem_read(Key,Type),
+                        perform_singleitem_read(Key,Type,Properties),
                     {ok, [Val], CommitTime};
                 {error, Reason} ->
                     {error, Reason}
@@ -204,7 +213,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
-                    case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
+                    case clocksi_execute_tx(Clock, Args, Properties, StayAlive) of
                         {ok, {_TxId, Result, CommitTime}} ->
                             {ok, Result, CommitTime};
                         {error, Reason} -> {error, Reason}
@@ -212,7 +221,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                 {ok, gr} ->
                     case Args of
                         [_Op] -> %% Single object read = read latest value
-                            case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
+                            case clocksi_execute_tx(Clock, Args, Properties, StayAlive) of
                                 {ok, {_TxId, Result, CommitTime}} ->
                                     {ok, Result, CommitTime};
                                 {error, Reason} -> {error, Reason}
@@ -227,6 +236,44 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                             end
                     end
             end
+    end.
+
+
+get_objects(Objects,Properties) ->
+    get_objects_internal(Objects,[],Properties).
+
+get_objects_internal([],_Properties,Acc) ->
+    {ok,lists:reverse(Acc)};
+get_objects_internal([{Key,Type,_Bucket}|Rest],Properties, Acc) ->
+    case materializer:check_operations([{read, {Key, Type}}]) of
+	ok ->
+	    case clocksi_interactive_tx_coord_fsm:perform_singleitem_get(Key,Type,Properties) of
+		{ok, Val, CommitTime} ->
+		    get_objects_internal(Rest,Properties,[{Val,CommitTime}|Acc]);
+		{error, Reason} ->
+		    {error, Reason}
+	    end;
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+
+%%-get_log_operations({key(),type(),bucket()}) -> [[{non_neg_integer(),#clocksi_payload{}]] | {error, term()}.
+get_log_operations(ObjectClockPairs) ->
+    Res = get_log_operations_internal(ObjectClockPairs,[]),
+    %% result is a list of lists of lists
+    %% internal list is {number, clocksi_payload}
+    Res.
+
+get_log_operations_internal([],Acc) ->
+    {ok,lists:reverse(Acc)};
+get_log_operations_internal([{{Key,Type,_Bucket},Clock}|Rest],Acc) ->
+    LogId = log_utilities:get_logid_from_key(Key),
+    [Node] = log_utilities:get_preflist_from_key(Key),
+    case logging_vnode:get_from_time(Node,LogId,Clock,Type,Key) of
+	{_Length,Ops,{_LastOp,_LatestSnapshot},_SnapshotCommitTime,_IsFirst} ->
+	    get_log_operations_internal(Rest,[Ops|Acc]);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 %% Object creation and types
@@ -257,28 +304,35 @@ unregister_hook(Prefix, Bucket) ->
 %% =============================================================================
 %% OLD API, We might still need them
 
+
+append(Key, Type, {OpParams, Actor}) ->
+    append(Key, Type, {OpParams, Actor}, []).
+
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}) ->
+-spec append(key(), type(), {op(),term()}, list()) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {OpParams, Actor}) ->
+append(Key, Type, {OpParams, Actor}, Properties) ->
     case materializer:check_operations([{update,
                                          {Key, Type, {OpParams, Actor}}}]) of
         ok ->
             clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_update(Key, Type,{OpParams,Actor});
+                perform_singleitem_update(Key, Type,{OpParams,Actor}, Properties);
         {error, Reason} ->
             {error, Reason}
     end.
 
+read(Key, Type) ->
+    read(Key, Type, []).
+
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
--spec read(key(), type()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
-read(Key, Type) ->
+-spec read(key(), type(), list()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
+read(Key, Type, Properties) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
             {ok, Val, _CommitTime} = clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_read(Key,Type),
+                perform_singleitem_read(Key,Type,Properties),
             {ok, Val};
         {error, Reason} ->
             {error, Reason}
@@ -300,7 +354,7 @@ read(Key, Type) ->
 %%
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()],snapshot_time(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
+clocksi_execute_tx(Clock, Operations, Properties, KeepAlive) ->
     case materializer:check_operations(Operations) of
         {error, Reason} ->
             {error, Reason};
@@ -313,10 +367,10 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
 		    end,
 	    CoordPid = case TxPid of
 			   undefined ->
-			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock, KeepAlive]),
+			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, Properties, KeepAlive]),
 			       CoordFsmPid;
 			   TxPid ->
-			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, UpdateClock}),
+			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, Properties}),
 			       TxPid
 		       end,
 	    case gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT) of
@@ -327,11 +381,11 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
 	    end
     end.
 
-clocksi_execute_tx(Clock, Operations, UpdateClock) ->
-    clocksi_execute_tx(Clock, Operations, UpdateClock, false).
+clocksi_execute_tx(Clock, Operations, Properties) ->
+    clocksi_execute_tx(Clock, Operations, Properties, false).
 
 clocksi_execute_tx(Clock, Operations) ->
-    clocksi_execute_tx(Clock, Operations, update_clock).
+    clocksi_execute_tx(Clock, Operations, []).
 
 -spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Operations) ->
@@ -378,7 +432,7 @@ clocksi_read(Key, Type) ->
 %%
 -spec clocksi_istart_tx(Clock:: snapshot_time()) ->
                                {ok, txid()} | {error, reason()}.
-clocksi_istart_tx(Clock, KeepAlive) ->
+clocksi_istart_tx(Clock, KeepAlive, Properties) ->
     TxPid = case KeepAlive of
 		true ->
 		    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
@@ -387,9 +441,9 @@ clocksi_istart_tx(Clock, KeepAlive) ->
 	    end,
     _ = case TxPid of
 	undefined ->
-	    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, KeepAlive]);
+	    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, Properties, KeepAlive]);
 	TxPid ->
-	    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock})
+	    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Properties})
     end,
     receive
         {ok, TxId} ->
@@ -397,6 +451,9 @@ clocksi_istart_tx(Clock, KeepAlive) ->
         Other ->
             {error, Other}
     end.
+
+clocksi_istart_tx(Clock, false) ->
+    clocksi_istart_tx(Clock, false, []).
 
 clocksi_istart_tx(Clock) ->
     clocksi_istart_tx(Clock, false).
@@ -467,7 +524,7 @@ gr_snapshot_read(ClientClock, Args) ->
             %% ST doesnot contain entry for local dc, hence explicitly 
             %% add it in snapshot time
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
-            clocksi_execute_tx(SnapshotTime, Args, no_update_clock);
+            clocksi_execute_tx(SnapshotTime, Args, [{update_clock,no_update_clock}]);
         false ->
             timer:sleep(10),
             gr_snapshot_read(ClientClock, Args)
@@ -484,3 +541,38 @@ execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
 execute_ops([{read, {Key, Type}}|Rest], TxId, ReadSet) ->
     {ok, Value} = clocksi_iread(TxId, Key, Type),
     execute_ops(Rest, TxId, [Value|ReadSet]).
+
+get_txn_property(update_clock, Properties) ->
+    case lists:keyfind(update_clock, 1, Properties) of
+	false ->
+	    update_clock;
+	{update_clock, ShouldUpdate} ->
+	    case ShouldUpdate of 
+		true ->
+		    update_clock;
+		false ->
+		    no_update_clock
+	    end
+    end;
+get_txn_property(certify, Properties) ->
+    case lists:keyfind(certify, 1, Properties) of
+	false ->
+	    application:get_env(antidote, txn_cert, true);
+	{certify, Certify} ->
+	    case Certify of 
+		use_default ->
+		    application:get_env(antidote, txn_cert, true);
+		certify ->
+		    %% Note that certify will only work correctly when
+		    %% application:get_env(antidote, txn_cert, true); returns true
+		    %% the reason is is that in clocksi_vnode:commit, the timestamps
+		    %% for commited transactions will only be saved if application:get_env(antidote, txn_cert, true)
+		    %% is true
+		    %% we might want to change this in the future
+		    true;
+		dont_certify ->
+		    false
+	    end
+    end.
+
+

@@ -24,6 +24,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
+    set_txn_cert/1,
+    set_txn_cert_internal/1,
     read_data_item/5,
     async_read_data_item/4,
     get_cache_name/2,
@@ -77,6 +79,21 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+
+-spec set_txn_cert(boolean()) -> ok.
+set_txn_cert(Value) ->
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    %% Update the environment varible on all nodes in the DC
+    lists:foreach(fun(Node) -> 
+			  ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [Value])
+		  end, Nodes).
+
+%% @doc internal function to set txn certification environment variable.
+-spec set_txn_cert_internal(boolean()) -> ok.
+set_txn_cert_internal(Value) ->
+    lager:info("setting txn cert ~p at ~p", [Value,node()]),
+    application:set_env(antidote,txn_cert,Value).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -433,11 +450,11 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%%===================================================================
 
 prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
-    TxId = Transaction#transaction.txn_id,
-    case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
+    case certification_check(Transaction, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
                 [{Key, _, {_Op, _Actor}} | _] ->
+		    TxId = Transaction#transaction.txn_id,
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
@@ -569,12 +586,13 @@ clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
-certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
-    case application:get_env(antidote, txn_cert) of
-        {ok, true} -> 
-        %io:format("AAAAH"),
-        certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
-        _  -> true
+certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
+    TxId = Transaction#transaction.txn_id,
+    Certify = antidote:get_txn_property(certify,Transaction#transaction.properties),	  
+    case Certify of
+        true -> 
+	    certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
+        false -> true
     end.
 
 %% @doc Performs a certification check when a transaction wants to move

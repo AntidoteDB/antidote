@@ -117,9 +117,12 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
+-type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify}]. %% TODO: Define
+
 -record(transaction, {snapshot_time :: snapshot_time(),
                       server_pid :: pid(),
                       vec_snapshot_time,
+		      properties :: Properties::txn_properties(),
                       txn_id :: txid()}).
 
 -record(materialized_snapshot, {last_op_id :: op_num(),  %% This is the opid of the latest op in the list
@@ -151,7 +154,6 @@
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
 
--type txn_properties() :: term().
 -type op_name() :: atom().
 -type op_param() :: term().
 -type bound_object() :: {key(), type(), bucket()}.
@@ -197,6 +199,7 @@
           read_set :: list(),
           is_static :: boolean(),
           full_commit :: boolean(),
+	  properties :: Properties::txn_properties(),
 	  stay_alive :: boolean()}).
 
 %% The record is using during materialization to keep the

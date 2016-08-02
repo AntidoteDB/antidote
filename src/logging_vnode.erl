@@ -46,7 +46,8 @@
          asyn_append_group/4,
          asyn_read_from/3,
          read_from/3,
-         get/5,
+         get_up_to_time/5,
+         get_from_time/5,
 	 get_all/4,
 	 request_bucket_op_id/4,
 	 request_op_id/3]).
@@ -165,14 +166,24 @@ asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
 				   ?LOGGING_MASTER,
 				   infinity).
 
+%% @doc given the MaxSnapshotTime and the type, this method fetchs from the log the
+%% desired operations smaller than the time so a new snapshot can be created.
+-spec get_up_to_time(index_node(), key(), vectorclock(), term(), key()) ->
+		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
+get_up_to_time(IndexNode, LogId, MaxSnapshotTime, Type, Key) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+					{get, LogId, undefined, MaxSnapshotTime, Type, Key},
+					?LOGGING_MASTER,
+					infinity).
+
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
 %% It returns a #log_get_response{} record which is defined in antidote.hrl
--spec get(index_node(), key(), vectorclock(), term(), key()) ->
+-spec get_from_time(index_node(), key(), vectorclock(), term(), key()) ->
 		 #snapshot_get_response{} | {error, term()}.
-get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
+get_from_time(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
-					{get, LogId, MinSnapshotTime, Type, Key},
+					{get, LogId, MinSnapshotTime, undefined, Type, Key},
 					?LOGGING_MASTER,
 					infinity).
 
@@ -490,11 +501,11 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
 	    {reply, Error, State}
     end;
 
-handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
+handle_command({get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key}, _Sender,
     #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
+            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, MaxSnapshotTime, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 {eof, CommittedOpsForKeyDict} ->
@@ -524,7 +535,7 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 	       #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-	    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
+	    case get_ops_from_log(Log, undefined, Continuation, undefined, undefined, Ops, dict:new(), load_per_chunk) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommittedOpsForKeyDict ->
@@ -614,24 +625,24 @@ update_ets_op_id(Key,NewOp,ClockTable) ->
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
 %% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(),
+%% -spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(), snapshot_time(),
 %% 		       dict:dict(txid(),[any_log_payload()]), dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}]), load_all | load_per_chunk) ->
 %%  			      {disk_log:continuation(), dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}
 %%  				  | {error, reason()} | {eof, dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}.
--spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(), dict(), dict(), load_all | load_per_chunk) ->
+-spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(), snapshot_time(), dict(), dict(), load_all | load_per_chunk) ->
 			      {disk_log:continuation(), dict(), dict()}
 				  | {error, reason()} | {eof, dict()}.
-get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
+get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
 	    {eof, finish_op_load(CommittedOpsDict)};
         {error, Reason} ->
             {error, Reason};
         {NewContinuation, NewTerms} ->
-            {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
+            {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict),
 	    case LoadAll of
 		load_all ->
-		    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+		    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, MaxSnapshotTime, NewOps, NewCommittedOps, LoadAll);
 		load_per_chunk ->
 		    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
 	    end;
@@ -639,10 +650,10 @@ get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict,
             case BadBytes > 0 of
                 true -> {error, bad_bytes};
                 false ->
-		    {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
+		    {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict),
 		    case LoadAll of
 			load_all ->
-			    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+			    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, MaxSnapshotTime, NewOps, NewCommittedOps, LoadAll);
 			load_per_chunk ->
 			    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
 		    end
@@ -662,53 +673,54 @@ finish_op_load(CommittedOpsDict) ->
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
 %% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
+%% -spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(), snapshot_time(),
 %% 			   dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])) ->
 %% 				  {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])}.
--spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
+-spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(), snapshot_time(),
 			   dict(),dict()) -> {dict(),dict()}.
-filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommittedOpsDict) ->
+filter_terms_for_key([], _Key, _MinSnapshotTime, _MaxSnapshotTime, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
-filter_terms_for_key([{_,LogRecord}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+filter_terms_for_key([{_,LogRecord}|T], Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #log_record{log_operation = LogOperation} = log_utilities:check_log_record_version(LogRecord),
     #log_operation{tx_id = TxId, op_type = OpType, log_payload = OpPayload} = LogOperation,
     case OpType of
         update ->
-            handle_update(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict);
+            handle_update(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict);
         commit ->
-            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict);
+            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict);
         _ ->
-            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+            filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
 %% TODO: upgrade to newer erlang version so can use dict type spec
 %% -spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
-%% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
+%% 		    snapshot_time(), dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
 %% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
-handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+-spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, snapshot_time(), dict(),dict()) -> {dict(),dict()}.
+handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
     case (Key == {key, Key1}) or (Key == undefined) of
         true ->
-            filter_terms_for_key(T, Key, MinSnapshotTime,
+            filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime,
                 dict:append(TxId, OpPayload, Ops), CommittedOpsDict);
         false ->
-            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+            filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
 %% TODO: upgrade to newer erlang version so can use dict type spec
 %% -spec handle_update(txid(), #commit_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
-%% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
+%% 		    snapshot_time(), dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
 %% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
-handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+-spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, snapshot_time(),
+		    dict(),dict()) -> {dict(),dict()}.
+handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
 	    NewCommittedOpsDict = 
 		lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
-				    case ((MinSnapshotTime == undefined) orelse
-									   (not vectorclock:gt(SnapshotTime, MinSnapshotTime))) of
+				    case (check_min_time(SnapshotTime,MinSnapshotTime) andalso
+					  check_max_time(SnapshotTime,MaxSnapshotTime)) of
 					true ->
 					    CommittedDownstreamOp =
 						#clocksi_payload{
@@ -723,11 +735,17 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) -
 					    Acc
 				    end
 			    end, CommittedOpsDict, OpsList),
-	    filter_terms_for_key(T, Key, MinSnapshotTime, dict:erase(TxId,Ops),
+	    filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, dict:erase(TxId,Ops),
 				 NewCommittedOpsDict);
 	error ->
-	    filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+	    filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
+
+check_min_time(SnapshotTime, MinSnapshotTime) ->
+    ((MinSnapshotTime == undefined) orelse (vectorclock:ge(SnapshotTime, MinSnapshotTime))).
+
+check_max_time(SnapshotTime, MaxSnapshotTime) ->
+    ((MaxSnapshotTime == undefined) orelse (vectorclock:le(SnapshotTime, MaxSnapshotTime))).
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->

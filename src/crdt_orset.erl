@@ -45,8 +45,22 @@
 -module(crdt_orset).
 
 %% API
--export([new/0, value/1, generate_downstream/3, update/2, equal/2,
-    to_binary/1, from_binary/1, value/2, precondition_context/1, stats/1, stat/2, is_operation/1]).
+-export([new/0,
+	 value/1,
+	 generate_downstream/3,
+	 update/2,
+	 equal/2,
+	 to_json/1,
+	 from_json/1,
+	 downstream_to_json/1,
+	 downstream_from_json/1,
+	 to_binary/1,
+	 from_binary/1,
+	 value/2,
+	 precondition_context/1,
+	 stats/1,
+	 stat/2,
+	 is_operation/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -249,6 +263,55 @@ minimum_tokens(Tokens) ->
 -spec is_operation(term()) -> boolean().
 is_operation(Operation) ->
     riak_dt_orset:is_operation(Operation).
+
+to_json(ORSet) ->
+    Contents = 
+	lists:map(fun({Elem,Tokens}) ->
+			  [{element,[json_utilities:convert_to_json(Elem),
+				     [{tokens,json_utilities:list_to_json_binary_list(Tokens)}]]}]
+		  end, ORSet),
+    [{orset,Contents}].
+
+from_json([{orset,JSONContents}]) ->
+    lists:map(fun([{element,[Object,[{tokens,JSONTokens}]]}]) ->
+		      {json_utilities:deconvert_from_json(Object),
+		       json_utilities:json_binary_list_to_list(JSONTokens)}
+	      end, JSONContents).
+
+downstream_to_json({add, {Elem, [Token]}}) ->
+    [{add,[json_utilities:convert_to_json(Elem),[json_utilities:convert_to_json(Token)]]}];
+downstream_to_json({add_all,Ops}) ->
+    JsonOps = 
+	lists:map(fun({Elem,[Token]}) ->
+			  [json_utilities:convert_to_json(Elem),[json_utilities:convert_to_json(Token)]]
+		  end, Ops),
+    [{add_all, JsonOps}];
+downstream_to_json({remove, {Elem,Tokens}}) ->
+    [{remove,[json_utilities:convert_to_json(Elem),json_utilities:list_to_json_binary_list(Tokens)]}];
+downstream_to_json({remove_all,ToRemove}) ->
+    JsonOps = 
+	lists:map(fun({Elem,Tokens}) ->
+			  [json_utilities:convert_to_json(Elem),json_utilities:list_to_json_binary_list(Tokens)]
+		  end, ToRemove),
+    [{remove_all, JsonOps}].
+
+downstream_from_json([{add,[JElem,[JToken]]}]) ->
+    {add, {json_utilities:deconvert_from_json(JElem), [json_utilities:deconvert_from_json(JToken)]}};
+downstream_from_json([{add_all, JsonOps}]) ->
+    Ops = 
+	lists:map(fun([JElem,[JToken]]) ->
+			  {json_utilities:deconvert_from_json(JElem), [json_utilities:deconvert_from_json(JToken)]}
+		  end, JsonOps),
+    {add_all, Ops};
+downstream_from_json([{remove, [JElem, JTokens]}]) ->
+    {remove, {json_utilities:deconvert_from_json(JElem), json_utilities:json_binary_list_to_list(JTokens)}};
+downstream_from_json([{remove_all, JsonOps}]) ->
+    Ops = 
+	lists:map(fun([JElem,JTokens]) ->
+			  {json_utilities:deconvert_from_json(JElem), json_utilities:json_binary_list_to_list(JTokens)}
+		  end, JsonOps),
+    {remove_all, Ops}.
+
 
 %% ===================================================================
 %% EUnit tests

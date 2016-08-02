@@ -67,7 +67,8 @@
 %% States
 -export([create_transaction_record/5,
     start_tx/2,
-    init_state/3,
+    init_state/4,
+    get_snapshot_time/0,
     perform_update/5,
     perform_read/4,
     execute_op/3,
@@ -84,8 +85,9 @@
     receive_aborted/2,
     abort/1,
     abort/2,
-    perform_singleitem_read/2,
-    perform_singleitem_update/3,
+    perform_singleitem_read/3,
+    perform_singleitem_get/3,
+    perform_singleitem_update/4,
     reply_to_client/1,
     wait_for_clock/1,
     generate_name/1]).
@@ -94,22 +96,22 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Clientclock, UpdateClock, StayAlive) ->
+start_link(From, Clientclock, Properties, StayAlive) ->
     case StayAlive of
-        true ->
-            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
-        false ->
-            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+	true ->
+	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Properties, StayAlive], []);
+	false ->
+	    gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive], [])
     end.
 
 start_link(From, Clientclock) ->
-    start_link(From, Clientclock, update_clock).
+    start_link(From, Clientclock, [{update_clock, true}]).
 
-start_link(From,Clientclock,UpdateClock) ->
-    start_link(From,Clientclock,UpdateClock,false).
+start_link(From,Clientclock,Properties) ->
+    start_link(From,Clientclock,Properties,false).
 
 start_link(From) ->
-    start_link(From, ignore, update_clock).
+    start_link(From, ignore, [{update_clock, true}]).
 
 finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -121,10 +123,10 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([From, ClientClock, UpdateClock, StayAlive]) ->
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))}.
+init([From, ClientClock, Properties, StayAlive]) ->
+    {ok, execute_op, start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, false, false, Properties))}.
 
-init_state(StayAlive, FullCommit, IsStatic) ->
+init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     #tx_coord_state{
        transaction = undefined,
        updated_partitions=[],
@@ -137,31 +139,32 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        full_commit=FullCommit,
        is_static=IsStatic,
        read_set=[],
-       stay_alive = StayAlive
+       stay_alive = StayAlive,
+       properties = Properties
       }.
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
-start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
+start_tx({start_tx, From, ClientClock, Properties}, SD0) ->
+    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, SD0)}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
-    {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
+start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive = StayAlive}) ->
+    {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
+    SD#tx_coord_state{transaction=Transaction, num_to_read=0, properties = Properties}.
 
--spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-                                boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
-create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
+-spec create_transaction_record(snapshot_time() | ignore,
+				boolean(), pid() | undefined, boolean(), Properties::txn_properties()) -> {tx(), txid()}.
+create_transaction_record(ClientClock, StayAlive, From, IsStatic, Properties) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
     {ok, SnapshotTime} = case ClientClock of
                              ignore ->
                                  get_snapshot_time();
                              _ ->
-                                 case UpdateClock of
+                                 case antidote:get_txn_property(update_clock,Properties) of
                                      update_clock ->
                                          get_snapshot_time(ClientClock);
                                      no_update_clock ->
@@ -183,36 +186,50 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
-        vec_snapshot_time = SnapshotTime,
-        txn_id = TransactionId},
+			       vec_snapshot_time = SnapshotTime,
+			       txn_id = TransactionId,
+			       properties = Properties},
     {Transaction, TransactionId}.
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
-perform_singleitem_read(Key, Type) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+-spec perform_singleitem_read(key(), type(), list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
+perform_singleitem_read(Key, Type, Properties) ->
+    perform_singleitem_operation(Key,Type,object_value,Properties).
+
+%% @doc This is the same as perform_singleitem_read, except returns
+%%      the object state instead of its value
+-spec perform_singleitem_get(key(), type(), list()) -> {ok, term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_get(Key, Type, Properties) ->
+    perform_singleitem_operation(Key,Type,object_state,Properties).
+
+-spec perform_singleitem_operation(key(), type(), object_state | object_value, list()) -> {ok, val() | term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_operation(Key, Type, ReturnType, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(ignore, false, undefined, true, Properties),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
-            ReadResult = Type:value(Snapshot),
+            ReadResult =
+		case ReturnType of
+		    object_state -> Snapshot;
+		    object_value -> Type:value(Snapshot)
+		end,
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
             {ok, ReadResult, CommitTime}
     end.
 
-
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Key, Type, Params) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+-spec perform_singleitem_update(key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+perform_singleitem_update(Key, Type, Params, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(ignore, false, undefined, true, Properties),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     %% Execute pre_commit_hook if any
@@ -633,10 +650,10 @@ reply_to_client(SD = #tx_coord_state
        true -> ok
     end,
     case StayAlive of
-        true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
-        false ->
-            {stop, normal, SD}
+	true ->
+	    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, [])};
+	false ->
+	    {stop, normal, SD}
     end.
 
 execute_post_commit_hooks(Ops) ->
