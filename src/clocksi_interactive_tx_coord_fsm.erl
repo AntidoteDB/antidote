@@ -195,17 +195,20 @@ create_transaction_record(ClientClock, StayAlive, From, IsStatic, Properties) ->
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type(), list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
+-spec perform_singleitem_read(key(), type(), clocksi_readitem_fsm:read_property_list()) ->
+				     {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type, Properties) ->
     perform_singleitem_operation(Key,Type,object_value,Properties).
 
 %% @doc This is the same as perform_singleitem_read, except returns
 %%      the object state instead of its value
--spec perform_singleitem_get(key(), type(), list()) -> {ok, term(), snapshot_time()} | {error, reason()}.
+-spec perform_singleitem_get(key(), type(), clocksi_readitem_fsm:read_property_list()) ->
+{ok, term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_get(Key, Type, Properties) ->
     perform_singleitem_operation(Key,Type,object_state,Properties).
 
--spec perform_singleitem_operation(key(), type(), object_state | object_value, list()) -> {ok, val() | term(), snapshot_time()} | {error, reason()}.
+-spec perform_singleitem_operation(key(), type(), object_state | object_value, clocksi_readitem_fsm:read_property_list()) ->
+					  {ok, val() | term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_operation(Key, Type, ReturnType, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, false, undefined, true, Properties),
     Preflist = log_utilities:get_preflist_from_key(Key),

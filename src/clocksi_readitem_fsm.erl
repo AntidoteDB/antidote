@@ -45,7 +45,7 @@
 %% States
 -export([read_data_item/5,
 	 async_read_data_item/6,
-	 get_ops/4,
+	 get_ops/6,
 	 check_partition_ready/3,
 	 start_read_servers/2,
 	 stop_read_servers/2]).
@@ -103,16 +103,16 @@ is_external(<<"external",_/binary>>,[]) ->
 is_external(_Key,_PropList) ->
     false.
 
--spec get_ops(index_node(), key(), clock_time(), tx()) -> [clocksi_payload()].
-get_ops({Partition,Node},Key,Time,Transaction) ->
+-spec get_ops(index_node(), key(), type(), clock_time(), snapshot_time(), tx()) -> {ok,[clocksi_payload()]} | {error, reason()}.
+get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction) ->
     try
 	gen_server:call({global,generate_random_server_name(Node,Partition)},
-			{get_ops,Key,Time,Transaction},infinity)
+			{get_ops,Key,Type,Time,SnapshotTime,Transaction},infinity)
     catch
 	_:Reason ->
 	    lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
 	    check_server_ready([{Partition,Node}]),
-	    get_ops({Partition,Node},Key,Time,Transaction)
+	    get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction)
     end.
 
 -spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
@@ -245,32 +245,32 @@ handle_call({perform_read, Key, Type, Transaction, PropertyList},Coordinator,SD0
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
     {noreply,SD0};
 
-handle_call({get_ops,Key,Time,Transaction},Coordinator,SD0) ->
-    ok = get_ops_internal(Coordinator,Key,Time,Transaction,SD0),
+handle_call({get_ops,Key,Type,Time,SnapshotTime,Transaction},Coordinator,SD0) ->
+    ok = get_ops_internal(Coordinator,Key,Type,Time,SnapshotTime,Transaction,SD0),
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
-handle_cast({get_ops_cast,Coordinator,Key,Time,Transaction},SD0) ->
-    ok = get_ops_internal(Coordinator,Key,Time,Transaction,SD0),
+handle_cast({get_ops_cast,Coordinator,Key,Type,Time,SnapshotTime,Transaction},SD0) ->
+    ok = get_ops_internal(Coordinator,Key,Type,Time,SnapshotTime,Transaction,SD0),
     {noreply,SD0};
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
     {noreply,SD0}.
 
--spec get_ops_internal(pid(), key(), clock_time(), tx(), #state{}) -> ok.
-get_ops_internal(Coordinator,Key,Time,Transaction,
+-spec get_ops_internal(pid(), key(), type(), clock_time(), snapshot_time(), tx(), #state{}) -> ok.
+get_ops_internal(Coordinator,Key,Type,Time,SnapshotTime,Transaction,
 		 SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
 	{not_ready,Time} ->
-	    _Tref = erlang:send_after(Time, self(), {get_ops_cast,Coordinator,Key,Time,Transaction}),
+	    _Tref = erlang:send_after(Time, self(), {get_ops_cast,Coordinator,Key,Type,Time,SnapshotTime,Transaction}),
 	    ok;
 	ready ->
-	    return_ops(Coordinator,Key,Time,SD0)
+	    return_ops(Coordinator,Key,Type,Time,SnapshotTime,SD0)
     end.
 
 -spec perform_read_internal(pid(), key(), type(), #transaction{}, read_property_list(), #state{}) ->
@@ -326,10 +326,10 @@ check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
         check_prepared_list(Key,TxLocalStartTime,Rest)
     end.
 
--spec return_ops({pid(),term()},key(),clock_time(),#state{}) -> ok.
-return_ops(Coordinator,Key,Time,#state{mat_state=MatState}) ->
+-spec return_ops({pid(),term()},key(),type(),clock_time(),snapshot_time(),#state{}) -> ok.
+return_ops(Coordinator,Key,Type,Time,SnapshotTime,#state{mat_state=MatState}) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-    case materializer_vnode:get_ops(Key, Time, MyDCID, MatState) of
+    case materializer_vnode:get_ops(Key, Type, Time, SnapshotTime, MyDCID, MatState) of
         {ok, OpList} ->
 	    _Ignore=gen_server:reply(Coordinator, {ok, OpList});
         {error, Reason} ->

@@ -48,6 +48,7 @@
          read_from/3,
          get_up_to_time/5,
          get_from_time/5,
+	 get_range/6,
 	 get_all/4,
 	 request_bucket_op_id/4,
 	 request_op_id/3]).
@@ -168,8 +169,8 @@ asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
 
 %% @doc given the MaxSnapshotTime and the type, this method fetchs from the log the
 %% desired operations smaller than the time so a new snapshot can be created.
--spec get_up_to_time(index_node(), key(), vectorclock(), term(), key()) ->
-		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
+-spec get_up_to_time(index_node(), key(), vectorclock(), type(), key()) ->
+		 {number(), list(), snapshot(), vectorclock(), false} | {error, reason()}.
 get_up_to_time(IndexNode, LogId, MaxSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
 					{get, LogId, undefined, MaxSnapshotTime, Type, Key},
@@ -179,13 +180,25 @@ get_up_to_time(IndexNode, LogId, MaxSnapshotTime, Type, Key) ->
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
 %% It returns a #log_get_response{} record which is defined in antidote.hrl
--spec get_from_time(index_node(), key(), vectorclock(), term(), key()) ->
-		 #snapshot_get_response{} | {error, term()}.
+-spec get_from_time(index_node(), key(), vectorclock(), type(), key()) ->
+		 #snapshot_get_response{} | {error, reason()}.
 get_from_time(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
 					{get, LogId, MinSnapshotTime, undefined, Type, Key},
 					?LOGGING_MASTER,
 					infinity).
+
+%% @doc given the MinSnapshotTime, MaxSnapshotTime and the type, this method fetchs from the log the
+%% desired operations so a new snapshot can be created.
+%% It returns a #log_get_response{} record which is defined in antidote.hrl
+-spec get_range(index_node(), key(), vectorclock(), vectorclock(), type(), key()) ->
+		 #snapshot_get_response{} | {error, reason()}.
+get_range(IndexNode, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+					{get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key},
+					?LOGGING_MASTER,
+					infinity).
+
 
 %% @doc Given the logid and position in the log (given by continuation) and a dict
 %% of non_commited operations up to this position returns

@@ -25,6 +25,7 @@
 	 replace_external_ops/2,
 	 perform_external_read/5,
 	 deliver_external_read_resp/2,
+	 trim_ops_from_dc/5,
 	 wait_for_external_read_resp/0]).
 
 -spec deliver_external_read_resp(binary(),#request_cache_entry{}) -> ok.
@@ -49,9 +50,10 @@ wait_for_external_read_resp() ->
 perform_external_read({DCID,Partition},Key,Type,Transaction,Coordinator) ->
     %% First check for any ops in this DC
     StartTime = Transaction#transaction.snapshot_time - ?EXTERNAL_READ_BACK_TIME,
+    SnapshotTime = Transaction#transaction.vec_snapshot_time,
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    OpList = clocksi_readitem_fsm:get_ops(IndexNode,Key,StartTime,Transaction),
+    {ok, OpList} = clocksi_readitem_fsm:get_ops(IndexNode,Key,Type,StartTime,SnapshotTime,Transaction),
     Property = #external_read_property{from_dcid=dc_meta_data_utilities:get_my_dc_id(),included_ops=OpList,included_ops_time=StartTime},
     BinaryRequest = term_to_binary({external_read, Key, Type, Transaction, Property}),
     inter_dc_query:perform_request(?EXTERNAL_READ_MSG, {DCID,Partition}, BinaryRequest,fun deliver_external_read_resp/2, Coordinator).
@@ -132,6 +134,19 @@ insert_op([{OldId,OldOp}|RestOld],NewOp,NewOpDeps,NewOpCT,NewOpDCID,Acc) ->
 	    %% Keep going to find the place to insert the op
 	    insert_op(RestOld,NewOp,NewOpDeps,NewOpCT,NewOpDCID,[{OldId,OldOp}|Acc])
     end.
+
+%% Only keep the ops in the list that are from DCID and have committed in between the 
+%% given min and max times
+-spec trim_ops_from_dc([{op_num(),clocksi_payload()}],dcid(),clock_time(),clock_time(),[clocksi_payload()])
+		      -> [clocksi_payload()].
+trim_ops_from_dc([],_DCID,_MinTime,_MaxTime,Acc) ->
+    lists:reverse(Acc);
+trim_ops_from_dc([{_OpNum,Op = #clocksi_payload{commit_time = {DCID,Time}}}|Rest],DCID,MinTime,MaxTime,Acc)
+  when DCID == DCID, (Time >= MinTime), (Time =< MaxTime) ->
+    %% Keep this op
+    trim_ops_from_dc(Rest,DCID,MinTime,MaxTime,[Op|Acc]);
+trim_ops_from_dc([_Op|Rest],DCID,MinTime,MaxTime,Acc) ->
+    trim_ops_from_dc(Rest,DCID,MinTime,MaxTime,Acc).
 
 -spec get_property(external_read_property, clocksi_readitem_fsm:read_property_list()) -> clocksi_readitem_fsm:external_read_property() | false.
 get_property(external_read_property, PropertyList) ->

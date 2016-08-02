@@ -270,7 +270,7 @@ get_log_operations_internal([{{Key,Type,_Bucket},Clock}|Rest],Acc) ->
     LogId = log_utilities:get_logid_from_key(Key),
     [Node] = log_utilities:get_preflist_from_key(Key),
     case logging_vnode:get_from_time(Node,LogId,Clock,Type,Key) of
-	{_Length,Ops,{_LastOp,_LatestSnapshot},_SnapshotCommitTime,_IsFirst} ->
+	#snapshot_get_response{ops_list = Ops} ->
 	    get_log_operations_internal(Rest,[Ops|Acc]);
 	{error, Reason} ->
 	    {error, Reason}

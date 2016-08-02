@@ -49,7 +49,7 @@
 %% API
 -export([start_vnode/1,
 	 check_tables_ready/0,
-	 get_ops/5,
+	 get_ops/6,
          read/5,
          read/6,
 	 get_cache_name/2,
@@ -75,16 +75,16 @@
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
--spec get_ops(key(),type(),clock_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]} | {error, reason()}.
-get_ops(Key, Type, Time, DCID, MatState = #mat_state{ops_cache = OpsCache}) ->
+-spec get_ops(key(),type(),clock_time(),snapshot_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]} | {error, reason()}.
+get_ops(Key, Type, Time, SnapshotTime, DCID, MatState = #mat_state{ops_cache = OpsCache}) ->
     case ets:info(OpsCache) of
 	undefined ->
 	    riak_core_vnode_master:sync_command({MatState#mat_state.partition,node()},
-						{get_ops,Key,Type,Time,DCID},
+						{get_ops,Key,Type,Time,SnapshotTime,DCID},
 						materializer_vnode_master,
 						infinity);
 	_ ->
-	    internal_get_ops(Key,Type,Time,DCID,MatState)
+	    internal_get_ops(Key,Type,Time,SnapshotTime,DCID,MatState)
     end.
     
 
@@ -240,8 +240,8 @@ handle_command({check_ready},_Sender,State = #mat_state{partition=Partition, is_
 handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
     {reply, read(Key, Type, SnapshotTime, TxId, State), State};
 
-handle_command({get_ops, Key, Type, Time, DCID}, _Sender, State) ->
-    {reply, internal_get_ops(Key, Type, Time, DCID, State), State};
+handle_command({get_ops, Key, Type, Time, SnapshotTime, DCID}, _Sender, State) ->
+    {reply, internal_get_ops(Key, Type, Time, SnapshotTime, DCID, State), State};
 
 handle_command({update, Key, DownstreamOp}, _Sender, State) ->
     true = op_insert_gc(Key,DownstreamOp,State),
@@ -338,8 +338,8 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_get_ops(key(), type(),clock_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]} | {error, reason()}.
-internal_get_ops(Key, Type, Time, _DCID, _MatState = #mat_state{ops_cache = _OpsCache, snapshot_cache=SnapshotCache}) ->
+-spec internal_get_ops(key(), type(),clock_time(), snapshot_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]}.
+internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{ops_cache = OpsCache, snapshot_cache=SnapshotCache}) ->
     %% First get the oldest snapshot in the cache
     Result = case ets:lookup(SnapshotCache, Key) of
 		 [] ->
@@ -348,7 +348,7 @@ internal_get_ops(Key, Type, Time, _DCID, _MatState = #mat_state{ops_cache = _Ops
 		     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new()),
 		     {BlankSS,ignore,true};
 		 [{_, SnapshotDict}] ->
-		     case vector_orddict:get_smallest(Time, SnapshotDict) of
+		     case vector_orddict:get_smallest(MinTime, SnapshotDict) of
 			 {undefined, _IsF} ->
 			     {error, no_snapshot};
 			 {{SnapshotCommitTime, LatestSnapshot},IsFirst}->
@@ -356,12 +356,30 @@ internal_get_ops(Key, Type, Time, _DCID, _MatState = #mat_state{ops_cache = _Ops
 		     end
 	     end,
     %% TOTO impement this
-    case Result of
-	{error, no_snapshot} ->
-	    {ok, []};
-	_ ->
-	    {ok, []}
-    end.
+    SnapshotGetRespPrev = 
+	case Result of
+	    {error, no_snapshot} ->
+		LogId = log_utilities:get_logid_from_key(Key),
+		[Node] = log_utilities:get_preflist_from_key(Key),
+		MinSnapshotTime = vectorclock:set_clock_of_dc(DCID, MinTime, vectorclock:new()),
+		Res = logging_vnode:get_range(Node, LogId, MinSnapshotTime, SnapshotTime, Type, Key),
+		Res;
+	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
+		case ets:lookup(OpsCache, Key) of
+		    [] ->
+			#snapshot_get_response{number_of_ops = 0, ops_list = [],
+					       materialized_snapshot = LatestSnapshot1,
+					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1};
+		    [Tuple] ->
+			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
+			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
+					       materialized_snapshot = LatestSnapshot1,
+					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
+		end
+	end,
+    OpList = SnapshotGetRespPrev#snapshot_get_response.ops_list,
+    MaxTime = vectorclock:get_clock_of_dc(DCID,SnapshotTime),
+    {ok, partial_repli_utils:trim_ops_from_dc(OpList,DCID,MinTime,MaxTime,[])}.
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> true.
 internal_store_ss(Key,Snapshot,CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
