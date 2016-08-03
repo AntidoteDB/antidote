@@ -59,7 +59,7 @@
 %% to other physical nodes within the DC
 -define(META_DATA_SLEEP, 1000).
 %% This is how old operations from the local DC should be included for an external real
--define(EXTERNAL_READ_BACK_TIME, (?META_DATA_SLEEP + ?HEARTBEAT_PERIOD)).
+-define(EXTERNAL_READ_BACK_TIME, ((?META_DATA_SLEEP + ?HEARTBEAT_PERIOD) * 1000)).
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
@@ -224,5 +224,5 @@
 %% TODO: allow properties for reads
 -record(external_read_property, {%read_snapshot :: snapshot_time(),
 				 from_dcid :: dcid(),
-				 included_ops :: [clocksi_payload()],
+				 included_ops :: [{op_num(),clocksi_payload()}],
 				 included_ops_time :: clock_time()}).

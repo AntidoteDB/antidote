@@ -54,6 +54,7 @@ perform_external_read({DCID,Partition},Key,Type,Transaction,Coordinator) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     {ok, OpList} = clocksi_readitem_fsm:get_ops(IndexNode,Key,Type,StartTime,SnapshotTime,Transaction),
+    lager:info("The list of ops being sent for external read ~p", [OpList]),
     Property = #external_read_property{from_dcid=dc_meta_data_utilities:get_my_dc_id(),included_ops=OpList,included_ops_time=StartTime},
     BinaryRequest = term_to_binary({external_read, Key, Type, Transaction, Property}),
     inter_dc_query:perform_request(?EXTERNAL_READ_MSG, {DCID,Partition}, BinaryRequest,fun deliver_external_read_resp/2, Coordinator).
@@ -67,7 +68,6 @@ check_wait_time(MinSnapshotTime, PropertyList) ->
 	    FromDC = ReadProp#external_read_property.from_dcid,
 	    IncludedOpsTime = ReadProp#external_read_property.included_ops_time,
 	    Clock = vectorclock:set_clock_of_dc(FromDC, IncludedOpsTime, MinSnapshotTime),
-	    lager:info("Waiting for external read"),
 	    clocksi_interactive_tx_coord_fsm:wait_for_clock(Clock);
 	false ->
 	    {ok, MinSnapshotTime}
@@ -138,14 +138,15 @@ insert_op([{OldId,OldOp}|RestOld],NewOp,NewOpDeps,NewOpCT,NewOpDCID,Acc) ->
 %% Only keep the ops in the list that are from DCID and have committed in between the 
 %% given min and max times
 -spec trim_ops_from_dc([{op_num(),clocksi_payload()}],dcid(),clock_time(),clock_time(),[clocksi_payload()])
-		      -> [clocksi_payload()].
+		      -> [{op_num(),clocksi_payload()}].
 trim_ops_from_dc([],_DCID,_MinTime,_MaxTime,Acc) ->
     lists:reverse(Acc);
-trim_ops_from_dc([{_OpNum,Op = #clocksi_payload{commit_time = {DCID,Time}}}|Rest],DCID,MinTime,MaxTime,Acc)
-  when DCID == DCID, (Time >= MinTime), (Time =< MaxTime) ->
+trim_ops_from_dc([{OpNum,Op = #clocksi_payload{commit_time = {DCID,Time}}}|Rest],DCID,MinTime,MaxTime,Acc)
+  when DCID == DCID, (Time > MinTime), (Time =< MaxTime) ->
     %% Keep this op
-    trim_ops_from_dc(Rest,DCID,MinTime,MaxTime,[Op|Acc]);
-trim_ops_from_dc([_Op|Rest],DCID,MinTime,MaxTime,Acc) ->
+    trim_ops_from_dc(Rest,DCID,MinTime,MaxTime,[{OpNum,Op}|Acc]);
+trim_ops_from_dc([Op|Rest],DCID,MinTime,MaxTime,Acc) ->
+    lager:info("not keeping the op ~p", [Op]),
     trim_ops_from_dc(Rest,DCID,MinTime,MaxTime,Acc).
 
 -spec get_property(external_read_property, clocksi_readitem_fsm:read_property_list()) -> clocksi_readitem_fsm:external_read_property() | false.

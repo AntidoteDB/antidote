@@ -199,7 +199,11 @@ observe_dcs_sync(Descriptors) ->
 			      ok ->
 				  Value = vectorclock:get_clock_of_dc(DCID, SS),
 				  wait_for_stable_snapshot(DCID, Value),
-				  ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
+				  case DCID == dc_utilities:get_my_dc_id() of
+				      true -> ok;
+				      false ->
+					  ok = dc_meta_data_utilities:store_dc_descriptors([Desc])
+				  end;
 			      _ ->
 				  ok
 			  end

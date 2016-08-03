@@ -346,39 +346,45 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
 		     %% First time reading this key, store an empty snapshot in the cache
 		     BlankSS = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
 		     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new()),
-		     {BlankSS,ignore,true};
+		     {BlankSS,ignore};
 		 [{_, SnapshotDict}] ->
-		     case vector_orddict:get_smallest(MinTime, SnapshotDict) of
-			 {undefined, _IsF} ->
+		     case vector_orddict:get_smaller_from_id(DCID, MinTime, SnapshotDict) of
+			 undefined ->
+			     lager:info("no snapshot found"),
 			     {error, no_snapshot};
-			 {{SnapshotCommitTime, LatestSnapshot},IsFirst}->
-			     {LatestSnapshot,SnapshotCommitTime,IsFirst}
+			 {SnapshotCommitTime, LatestSnapshot} ->
+			     lager:info("Found the snapshot ~p", [{SnapshotCommitTime,LatestSnapshot}]),
+			     {LatestSnapshot,SnapshotCommitTime}
 		     end
 	     end,
     %% TOTO impement this
     SnapshotGetRespPrev = 
 	case Result of
 	    {error, no_snapshot} ->
+		lager:info("going to the log for the ops"),
 		LogId = log_utilities:get_logid_from_key(Key),
 		[Node] = log_utilities:get_preflist_from_key(Key),
 		MinSnapshotTime = vectorclock:set_clock_of_dc(DCID, MinTime, vectorclock:new()),
 		Res = logging_vnode:get_range(Node, LogId, MinSnapshotTime, SnapshotTime, Type, Key),
 		Res;
-	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
+	    {LatestSnapshot1,SnapshotCommitTime1} ->
 		case ets:lookup(OpsCache, Key) of
 		    [] ->
+			lager:info("no ops in the SS"),
 			#snapshot_get_response{number_of_ops = 0, ops_list = [],
 					       materialized_snapshot = LatestSnapshot1,
-					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1};
+					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false};
 		    [Tuple] ->
 			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
+			lager:info("found the ops in the SS ~p", [AllOps]),
 			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
 					       materialized_snapshot = LatestSnapshot1,
-					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
+					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false}
 		end
 	end,
     OpList = SnapshotGetRespPrev#snapshot_get_response.ops_list,
     MaxTime = vectorclock:get_clock_of_dc(DCID,SnapshotTime),
+    lager:info("The min ~p max ~p and diff ~p", [MinTime,MaxTime,(MaxTime - MinTime)]),
     {ok, partial_repli_utils:trim_ops_from_dc(OpList,DCID,MinTime,MaxTime,[])}.
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> true.

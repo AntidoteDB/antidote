@@ -120,6 +120,7 @@ read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
     %% Check if should perform the read externally
     case is_external(Key,PropertyList) of
 	{true, {ExDCID,ExPartition}} ->
+	    lager:info("Performing external read ~p", [{ExDCID,ExPartition}]),
 	    ok = partial_repli_utils:perform_external_read({ExDCID,ExPartition},Key,Type,Transaction,self()),
 	    partial_repli_utils:wait_for_external_read_resp();
 	false ->
@@ -280,7 +281,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     %% Check if wait for external read is necessary
-    {ok,_} = partial_repli_utils:check_wait_time(Transaction#transaction.snapshot_time,PropertyList),
+    {ok,_} = partial_repli_utils:check_wait_time(Transaction#transaction.vec_snapshot_time,PropertyList),
     case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
@@ -339,14 +340,12 @@ return_ops(Coordinator,Key,Type,Time,SnapshotTime,#state{mat_state=MatState}) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return({fsm,pid()} | {pid(),term()},key(),type(),#transaction{},[],#state{}) -> ok.
+-spec return({fsm,pid()} | {pid(),term()},key(),type(),#transaction{},read_property_list(),#state{}) -> ok.
 return(Coordinator,Key,Type,Transaction,PropertyList,
        #state{mat_state=MatState}) ->
-    %% TODO: Add support for read properties
-    PropertyList = [],
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, MatState) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, MatState) of
         {ok, Snapshot} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
