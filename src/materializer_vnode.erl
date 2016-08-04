@@ -30,6 +30,11 @@
 -define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
 -define(OPS_THRESHOLD, 50).
+%% Snapshots for non replicated keys arent generated
+%% After the following number of updates to non replicated
+%% keys are made, the following will force a fake snapshot
+%% to be generated, so that garbage collection is done
+-define(EXTERNAL_OP_SS_GEN, 5).
 %% The first 3 elements in operations list are meta-data
 %% First is the key
 %% Second is a tuple {current op list size, max op list size}
@@ -357,11 +362,10 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
 			     {LatestSnapshot,SnapshotCommitTime}
 		     end
 	     end,
-    %% TOTO impement this
     SnapshotGetRespPrev = 
 	case Result of
 	    {error, no_snapshot} ->
-		lager:info("going to the log for the ops"),
+		lager:info("going to the log for the ops!!!!!!!!!!!!!!!!! ~n ~n ~n ~n ~n ~n ~n ~n", []),
 		LogId = log_utilities:get_logid_from_key(Key),
 		[Node] = log_utilities:get_preflist_from_key(Key),
 		MinSnapshotTime = vectorclock:set_clock_of_dc(DCID, MinTime, vectorclock:new()),
@@ -376,7 +380,7 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false};
 		    [Tuple] ->
 			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
-			lager:info("found the ops in the SS ~p", [AllOps]),
+			lager:info("found the ops in the SS ~p", [length(AllOps)]),
 			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false}
@@ -385,7 +389,9 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
     OpList = SnapshotGetRespPrev#snapshot_get_response.ops_list,
     MaxTime = vectorclock:get_clock_of_dc(DCID,SnapshotTime),
     lager:info("The min ~p max ~p and diff ~p", [MinTime,MaxTime,(MaxTime - MinTime)]),
-    {ok, partial_repli_utils:trim_ops_from_dc(OpList,DCID,MinTime,MaxTime,[])}.
+    TrimmedOps = partial_repli_utils:trim_ops_from_dc(OpList,DCID,MinTime,MaxTime,[]),
+    lager:info("the size of the trimmed ops ~p", [length(TrimmedOps)]),
+    {ok, TrimmedOps}.
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> true.
 internal_store_ss(Key,Snapshot,CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
@@ -629,7 +635,11 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
 			       {3,1}),
     {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
     %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
-    case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
+    IsExternal = case clocksi_readitem_fsm:is_external(Key,[]) of
+		     false -> false;
+		     _ -> true
+		 end,
+    case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) or (IsExternal and ((NewId rem ?EXTERNAL_OP_SS_GEN) == 0)) of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
@@ -637,6 +647,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, [], true, State),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    {Length1,ListLen1} = ets:lookup_element(OpsCache, Key, 2),
+	    lager:info("Lengths after the gc ~p~n~n~n", [{Length1,ListLen1}]),
 	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length1+1,ListLen1}}]);
         false ->
 	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
