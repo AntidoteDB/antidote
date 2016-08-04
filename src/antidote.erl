@@ -524,7 +524,7 @@ gr_snapshot_read(ClientClock, Args) ->
             %% ST doesnot contain entry for local dc, hence explicitly 
             %% add it in snapshot time
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
-            clocksi_execute_tx(SnapshotTime, Args, [{update_clock,no_update_clock}]);
+            clocksi_execute_tx(SnapshotTime, Args, [{update_clock,false}]);
         false ->
             timer:sleep(10),
             gr_snapshot_read(ClientClock, Args)
