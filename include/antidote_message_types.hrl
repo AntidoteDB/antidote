@@ -15,6 +15,10 @@
 
 %% The number of bytes a parition id is in a message
 -define(PARTITION_BYTE_LENGTH, 20).
+-define(KEY_BYTE_LENGTH, 40).
+-define(TYPE_BYTE_LENGTH, 1).
+
+
 %% the number of bytes a message id is
 -define(REQUEST_ID_BYTE_LENGTH, 2).
 -define(REQUEST_ID_BIT_LENGTH, 16).

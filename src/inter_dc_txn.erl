@@ -23,16 +23,19 @@
 
 %% API
 -export([
-  from_ops/3,
+ from_ops/3,
   ping/3,
   is_local/1,
   req_id_to_bin/1,
-  ops_by_type/2,
   to_bin/1,
   from_bin/1,
   partition_to_bin/1,
   last_log_opid/1,
-  is_ping/1]).
+  is_ping/1,
+  get_key_sub/1,
+  get_partition_sub/1,
+  to_per_key_bin/1,
+  ops_by_type/2]).
 
 %% Functions
 
@@ -87,19 +90,47 @@ ops_by_type(#interdc_txn{log_records = Ops}, Type) ->
 to_bin(Txn = #interdc_txn{partition = P}) ->
   Prefix = partition_to_bin(P),
   Msg = term_to_binary(Txn),
-  <<Prefix/binary, Msg/binary>>.
+  Type = get_type_binary(fulltxn),
+  <<Type/binary, Prefix/binary, Msg/binary>>.
+
+-spec to_per_key_bin(#interdc_txn{}) -> [binary()].
+to_per_key_bin(Txn = #interdc_txn{log_records = Ops}) ->
+    lists:foldl(fun(Op = #log_record{log_operation = Payload}, Acc) ->
+			Type = Payload#log_operation.op_type,
+			case Type of
+			    update ->
+				CommitOp = lists:last(Ops),
+				NewTxn = Txn#interdc_txn{log_records = [Op,CommitOp]},
+				Key = Payload#log_operation.log_payload#update_log_payload.key,
+				Prefix = key_to_bin(Key),
+				Msg = term_to_binary(NewTxn),
+				BinaryType = get_type_binary(singlekey),
+				[<<BinaryType/binary, Prefix/binary, Msg/binary>> | Acc];
+			    _ ->
+				Acc
+			end
+		end, [], Ops).
+
+-spec get_type_binary(atom()) -> binary().
+get_type_binary(fulltxn) ->
+    <<0:(?TYPE_BYTE_LENGTH*8)>>;
+get_type_binary(singlekey) ->
+    <<1:(?TYPE_BYTE_LENGTH*8)>>.
 
 -spec from_bin(binary()) -> #interdc_txn{}.
 from_bin(Bin) ->
   L = byte_size(Bin),
-  Msg = binary_part(Bin, {?PARTITION_BYTE_LENGTH, L - ?PARTITION_BYTE_LENGTH}),
+  HeaderSize = ?TYPE_BYTE_LENGTH + ?PARTITION_BYTE_LENGTH,
+  Msg = binary_part(Bin, {HeaderSize, L - HeaderSize}),
   binary_to_term(Msg).
 
+%% Pad the binary to the given width, crash if the binary is bigger than
+%% the width
 -spec pad(non_neg_integer(), binary()) -> binary().
 pad(Width, Binary) ->
   case Width - byte_size(Binary) of
-    N when N =< 0 -> Binary;
-    N -> <<0:(N*8), Binary/binary>>
+    N when N == 0 -> Binary;
+    N when N > 0 -> <<0:(N*8), Binary/binary>>
   end.
 
 %% Takes a binary and makes it size width
@@ -126,3 +157,18 @@ partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigne
 req_id_to_bin(ReqId) ->
     pad_or_trim(?REQUEST_ID_BYTE_LENGTH, binary:encode_unsigned(ReqId)).
 			   
+-spec get_partition_sub(partition_id()) -> binary().
+get_partition_sub(Partition) ->
+    Type = get_type_binary(fulltxn),
+    PartitionBin = partition_to_bin(Partition),
+    <<Type/binary, PartitionBin/binary>>.
+
+-spec key_to_bin(term()) -> binary().
+key_to_bin(Key) ->
+    pad(?KEY_BYTE_LENGTH, term_to_binary(Key)).
+
+-spec get_key_sub(term()) -> binary().
+get_key_sub(Key) ->
+    Type = get_type_binary(singlekey),
+    KeyBin = key_to_bin(Key),
+    <<Type/binary, KeyBin/binary>>.

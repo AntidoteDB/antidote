@@ -63,10 +63,11 @@ get_address_list() ->
 
 -spec broadcast(#interdc_txn{}) -> ok.
 broadcast(Txn) ->
-  case catch gen_server:call(?MODULE, {publish, inter_dc_txn:to_bin(Txn)}) of
-    {'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
-    Normal -> Normal
-  end.
+    BinaryTxns = [inter_dc_txn:to_bin(Txn) | inter_dc_txn:to_per_key_bin(Txn)],
+    case catch gen_server:call(?MODULE, {publish_list, BinaryTxns}) of
+	{'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
+	Normal -> Normal
+    end.
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -78,7 +79,17 @@ init([]) ->
   lager:info("Publisher started on port ~p", [Port]),
   {ok, #state{socket = Socket}}.
 
-handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State}.
+handle_call({publish, Message}, _From, State) -> {reply, erlzmq:send(State#state.socket, Message), State};
+
+handle_call({publish_list, Messages}, _From, State) -> 
+    Res =
+	lists:foldl(fun(Message, Acc) ->
+			    case erlzmq:send(State#state.socket, Message) of
+				ok -> Acc;
+				Val -> Val
+			    end
+		    end, ok, Messages),
+    {reply, Res, State}.
 
 terminate(_Reason, State) -> erlzmq:close(State#state.socket).
 handle_cast(_Request, State) -> {noreply, State}.
