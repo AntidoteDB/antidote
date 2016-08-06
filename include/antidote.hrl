@@ -200,7 +200,7 @@
 %% The record is using during materialization to keep the
 %% state needed to materilze an object from the cache (or log)
 -record(snapshot_get_response, {
-	  ops_list :: [{op_num(),clocksi_payload()}],  %% list of new ops
+	  ops_list :: [{op_num(),clocksi_payload()}] | tuple(),  %% list of new ops
 	  number_of_ops :: non_neg_integer(), %% size of ops_list
 	  materialized_snapshot :: #materialized_snapshot{},  %% the previous snapshot to apply the ops to
 	  snapshot_time :: snapshot_time() | ignore,  %% The version vector time of the snapshot

@@ -39,6 +39,9 @@
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
 -define(RESIZE_THRESHOLD, 5).
+%% Only store the new SS if the following number of ops
+%% were applied to the previous SS
+-define(MIN_OP_STORE_SS, 5).
 %% Expected time to wait until the logging vnode is up
 -define(LOG_STARTUP_WAIT, 1000).
 
@@ -393,7 +396,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
 	    {ok, SnapshotGetResp#snapshot_get_response.materialized_snapshot#materialized_snapshot.value};
 	_Len ->
 	    case clocksi_materializer:materialize(Type, TxId, MinSnapshotTime, SnapshotGetResp) of
-		{ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
+		{ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
 		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
 		    %% for the given snapshot_time
 		    %% But is the snapshot not safe?
@@ -401,7 +404,8 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
 			ignore ->
 			    {ok, Snapshot};
 			_ ->
-			    case (NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot) orelse ShouldGc of
+			    case (NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot and
+				  (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
 				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
 				%% previous snapshot
 				true ->
