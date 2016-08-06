@@ -329,6 +329,8 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache
 
 -spec internal_store_ss(key(), snapshot(), snapshot_time(), cache_id(), cache_id(),boolean()) -> true.
 internal_store_ss(Key,Snapshot,CommitTime,OpsCache,SnapshotCache,ShouldGc) ->
+    {_,SS} = Snapshot,
+    lager:info("inserting ss ~p",[crdt_orset:value(SS)]),
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
 			   vector_orddict:new();
@@ -384,6 +386,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, OpsCache, SnapshotCache,ShouldGc
 	0 ->
 	    {ok, LatestSnapshot};
 	_Len ->
+	    print_ss_ops(LastOp, LatestSnapshot, Ops),
 	    case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, MinSnapshotTime, Ops, TxId) of
 		{ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
 		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
@@ -437,7 +440,7 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
             {CT, _S} = FirstOp,
 	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
 					     vectorclock:min([CT1, Acc])
-				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
+				     end, CT, vector_orddict:to_list(PrunedSnapshots)),    
 	    {Key,Length,OpId,ListLen,OpsDict} = case ets:lookup(OpsCache, Key) of
 						    [] ->
 							{Key, 0, 0, 0, []};
@@ -445,6 +448,11 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 							tuple_to_key(Tuple)
 						end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
+
+	    
+	    check_ss(PrunedSnapshots, PrunedOps),
+			       
+
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
 	    %% Check if the pruned ops are lager or smaller than the previous list size
 	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
@@ -470,8 +478,81 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 			 end,
 	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
 	false ->
+	    check_all_ss(SnapshotDict),
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
+
+
+-ifdef(TEST).
+
+print_ss_ops(_Id, _SS, _Ops) ->
+    ok.
+
+check_ss(_PrunedSnapshots, _PrunedOps) ->
+    ok.
+
+check_all_ss(_Snapshots) ->
+    ok.
+
+-else.
+
+print_ss_ops(Id, SS, Ops) ->
+    Elems = 
+	lists:foldl(fun({OpId, ClocksiPayload},Acc) ->
+			    {update, {add, {Elem,[_Token]}}} = ClocksiPayload#clocksi_payload.op_param,
+			    [{OpId,Elem}|Acc]
+		    end, [], Ops),
+    lager:info("generating ss from id ~w ss ~p with ops ~w", [Id, crdt_orset:value(SS), Elems]).
+
+
+check_all_ss(Snapshots) ->
+    lists:foldl(fun({_CT1,{Id,ST}}, Acc) ->
+			case ST of
+			    [] -> ok;
+			    _ ->
+				Max = lists:max(crdt_orset:value(ST)),
+				%% Check that the SS is valid
+				Elems = lists:sort((crdt_orset:value(ST))),
+				case Elems == lists:seq(1,Max) of
+				    true -> ok;
+				    false -> lager:info("Inserting a Bad SS!! max ~p, id ~w, ss ~w", [Max,Id,Elems])
+				end,
+				case Max < Acc of
+				    true -> Max;
+				    false -> Acc
+				end
+			end
+		end, 1000000000, vector_orddict:to_list(Snapshots)).
+
+check_ss(PrunedSnapshots, PrunedOps) ->
+    %% Get the min snapshot
+    SmallestMax = lists:foldl(fun({_CT1,{_Id,ST}}, Acc) ->
+				      Max = lists:max(crdt_orset:value(ST)),
+				      %% Check that the SS is valid
+				      Elems = lists:sort((crdt_orset:value(ST))),
+				      case Elems == lists:seq(1,Max) of
+					  true -> ok;
+					  false -> lager:info("Bad SS!! max ~p, ss ~p", [Max,Elems])
+				      end,
+				      case Max < Acc of
+					  true -> Max;
+					  false -> Acc
+				      end
+			      end, 1000000000, vector_orddict:to_list(PrunedSnapshots)),
+    %% Get the list of ops that are bigger
+    BiggerOps = 
+	lists:foldl(fun({_, {_, ClocksiPayload}},Acc) ->
+			    {update, {add, {Elem,[_Token]}}} = ClocksiPayload#clocksi_payload.op_param,
+			    case Elem >= SmallestMax of
+				true -> [Elem|Acc];
+				false -> Acc
+			    end
+		    end, [], PrunedOps),
+    Sorted = lists:sort(BiggerOps),
+    Sorted = lists:seq(lists:min(Sorted),lists:max(Sorted)),
+    lager:info("done gc, smallest max ~p, biggerops ~w", [SmallestMax,BiggerOps]).
+
+-endif.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
 -spec prune_ops({non_neg_integer(),[any(),...]}, snapshot_time())-> {non_neg_integer(),[any(),...]}.
@@ -483,10 +564,10 @@ prune_ops({_Len,OpsDict}, Threshold)->
 %% So can add a stop function to ordered_filter
 %% Or can have the filter function return a tuple, one vale for stopping
 %% one for including
-    Res = reverse_and_filter(fun({_OpId,Op}) ->
-				     OpCommitTime=Op#clocksi_payload.commit_time,
-				     (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
-			     end, OpsDict, ?FIRST_OP, []),
+    Res = do_filter(fun({_OpId,Op}) ->
+			 OpCommitTime=Op#clocksi_payload.commit_time,
+			 (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
+		 end, OpsDict, ?FIRST_OP, []),
     case Res of
 	{_,[]} ->
 	    [First|_Rest] = OpsDict,
@@ -514,15 +595,19 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 %% The elements in the list also include the location that they will be placed
 %% in the tuple in the ets table, this way the list can be used
 %% directly in the erlang:make_tuple function
--spec reverse_and_filter(fun(),list(),non_neg_integer(),list()) -> {non_neg_integer(),list()}.
-reverse_and_filter(_Fun,[],Id,Acc) ->
-    {Id-?FIRST_OP,Acc};
-reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
+-spec do_filter(fun(),list(),non_neg_integer(),list()) -> {non_neg_integer(),list()}.
+do_filter(_Fun,[],Id,Ops) ->
+    {_Id,OpsWithId} =
+	lists:foldl(fun(Op,{NewId,Acc}) ->
+			    {NewId+1,[{NewId,Op}|Acc]}
+		    end, {?FIRST_OP,[]}, Ops),
+    {Id-?FIRST_OP,OpsWithId};
+do_filter(Fun,[First|Rest],Id,Acc) ->
     case Fun(First) of
 	true ->
-	    reverse_and_filter(Fun,Rest,Id+1,[{Id,First}|Acc]);
+	    do_filter(Fun,Rest,Id+1,[First|Acc]);
 	false ->
-	    reverse_and_filter(Fun,Rest,Id,Acc)
+	    do_filter(Fun,Rest,Id,Acc)
     end.
 
 %% @doc Insert an operation and start garbage collection triggered by writes.

@@ -157,6 +157,10 @@ materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, MinSnaps
 	{ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole} ->
 	    case OpId - 1 =< LastOp of
 		true ->
+		    Opids = lists:map(fun({AOpId,_Op}) ->
+					      AOpId
+				      end, Rest),
+		    lager:info("skipping rest from opid ~w, lastop ~w, rest is ~w", [OpId,LastOp,Opids]),
 		    %% can skip the rest of the ops because they are already included in the SS
 		    materialize_intern(Type,NewOpList1,LastOp,NewHole,SnapshotCommitTime,
 				       MinSnapshotTime,[],TxId,NewLastOpCt,NewSS1);

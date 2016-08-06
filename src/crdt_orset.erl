@@ -205,6 +205,7 @@ add_elem(Elem,Token,ORDict) ->
         {ok, Tokens} ->
             case lists:member(Token, Tokens) of
                 true ->
+		    lager:info("ERROR INSERTING ~p,~p in ~p!!!!!!!!",[Token,Elem,ORDict]),
                     {ok, ORDict};
                 false ->
                     {ok, orddict:store(Elem, Tokens++[Token], ORDict)}
