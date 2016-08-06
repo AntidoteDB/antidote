@@ -53,6 +53,7 @@
 	 get_cache_name/2,
 	 store_ss/3,
          update/2,
+	 tuple_to_key/2,
 	 belongs_to_snapshot_op/3]).
 
 %% Callbacks
@@ -69,6 +70,8 @@
          encode_handoff_item/2,
          handle_coverage/4,
          handle_exit/3]).
+
+-type op_and_id() :: {non_neg_integer(),#clocksi_payload{}}.
 
 -record(state, {
 	  partition :: partition_id(),
@@ -440,9 +443,9 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
 	    {Key,Length,OpId,ListLen,OpsDict} = case ets:lookup(OpsCache, Key) of
 						    [] ->
-							{Key, 0, 0, 0, []};
+							{Key, 0, 0, 0, {}};
 						    [Tuple] ->
-							tuple_to_key(Tuple,true)
+							tuple_to_key(Tuple,false)
 						end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
@@ -468,38 +471,55 @@ snapshot_insert_gc(Key, SnapshotDict, SnapshotCache, OpsCache,ShouldGc)->
 					 end
 				 end
 			 end,
-	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
+	    NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]),
+	    true = ets:insert(OpsCache, NewTuple);
 	false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops({non_neg_integer(),[any(),...]}, snapshot_time())-> {non_neg_integer(),[any(),...]}.
-prune_ops({_Len,OpsDict}, Threshold)->
-%% should write custom function for this in the vector_orddict
-%% or have to just traverse the entire list?
-%% since the list is ordered, can just stop when all values of
-%% the op is smaller (i.e. not concurrent)
-%% So can add a stop function to ordered_filter
-%% Or can have the filter function return a tuple, one vale for stopping
-%% one for including
-    Res = reverse_and_filter(fun({_OpId,Op}) ->
-				     OpCommitTime=Op#clocksi_payload.commit_time,
-				     (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
-			     end, OpsDict, ?FIRST_OP, []),
-    case Res of
-	{_,[]} ->
-	    [First|_Rest] = OpsDict,
+-spec prune_ops({non_neg_integer(),tuple()}, snapshot_time())->
+		       {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
+prune_ops({Len,OpsTuple}, Threshold)->
+    %% should write custom function for this in the vector_orddict
+    %% or have to just traverse the entire list?
+    %% since the list is ordered, can just stop when all values of
+    %% the op is smaller (i.e. not concurrent)
+    %% So can add a stop function to ordered_filter
+    %% Or can have the filter function return a tuple, one vale for stopping
+    %% one for including
+    {NewSize,NewOps} = check_filter(fun({_OpId,Op}) ->
+					    OpCommitTime=Op#clocksi_payload.commit_time,
+					    (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
+				    end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
+    case NewSize of
+	0 ->
+	    First = element(?FIRST_OP+Len,OpsTuple),
 	    {1,[{?FIRST_OP,First}]};
-	_ ->
-	    Res
+	_ -> {NewSize,NewOps}
+    end.
+
+-spec check_filter(fun(({non_neg_integer(),#clocksi_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
+		   non_neg_integer(),tuple(),non_neg_integer(),[{non_neg_integer(),op_and_id()}]) ->
+			  {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
+check_filter(_Fun,Id,Last,_NewId,_Tuple,NewSize,NewOps) when (Id == Last) ->
+    {NewSize,NewOps};
+check_filter(Fun,Id,Last,NewId,Tuple,NewSize,NewOps) ->
+    io:format("the id ~w,~w",[Id,Last]),
+    Op = element(Id, Tuple),
+    case Fun(Op) of
+	true ->
+	    check_filter(Fun,Id+1,Last,NewId+1,Tuple,NewSize+1,[{NewId,Op}|NewOps]);
+	false ->
+	    check_filter(Fun,Id+1,Last,NewId,Tuple,NewSize,NewOps)
     end.
 
 %% This is an internal function used to convert the tuple stored in ets
 %% to a tuple and list usable by the materializer
 %% The second argument if true will convert the ops tuple to a list of ops
 %% Otherwise it will be kept as a tuple
--spec tuple_to_key(tuple(),boolean()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),list()}.
+-spec tuple_to_key(tuple(),boolean()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),
+					  [op_and_id()]|tuple()}.
 tuple_to_key(Tuple,ToList) ->
     Key = element(1, Tuple),
     {Length,ListLen} = element(2, Tuple),
@@ -516,27 +536,6 @@ tuple_to_key_int(Next,Next,_Tuple,Acc) ->
     Acc;
 tuple_to_key_int(Next,Last,Tuple,Acc) ->
     tuple_to_key_int(Next+1,Last,Tuple,[element(Next,Tuple)|Acc]).
-
-%% This is an internal function used to filter ops and reverse the list
-%% It returns a tuple where the first element is the lenght of the list returned
-%% The elements in the list also include the location that they will be placed
-%% in the tuple in the ets table, this way the list can be used
-%% directly in the erlang:make_tuple function
--spec reverse_and_filter(fun(),list(),non_neg_integer(),list()) -> {non_neg_integer(),list()}.
-reverse_and_filter(_Fun,[],Id,Ops) ->
-    %% Add the index to say what position the ops will be in the tuple
-    {_, OpsWithId} = 
-	lists:foldl(fun({_,Op},{NewId,Acc}) ->
-			    {NewId+1,[{NewId,Op}|Acc]}
-		    end, {?FIRST_OP,[]}, Ops),
-    {Id-?FIRST_OP,OpsWithId};
-reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
-    case Fun(First) of
-	true ->
-	    reverse_and_filter(Fun,Rest,Id+1,[{Id,First}|Acc]);
-	false ->
-	    reverse_and_filter(Fun,Rest,Id,Acc)
-    end.
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
