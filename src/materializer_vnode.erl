@@ -515,8 +515,13 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 %% in the tuple in the ets table, this way the list can be used
 %% directly in the erlang:make_tuple function
 -spec reverse_and_filter(fun(),list(),non_neg_integer(),list()) -> {non_neg_integer(),list()}.
-reverse_and_filter(_Fun,[],Id,Acc) ->
-    {Id-?FIRST_OP,Acc};
+reverse_and_filter(_Fun,[],Id,Ops) ->
+    %% Add the index to say what position the ops will be in the tuple
+    {_, OpsWithId} = 
+	lists:foldl(fun({_,Op},{NewId,Acc}) ->
+			    {NewId+1,[{NewId,Op}|Acc]}
+		    end, {?FIRST_OP,[]}, Ops),
+    {Id-?FIRST_OP,OpsWithId};
 reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
     case Fun(First) of
 	true ->
