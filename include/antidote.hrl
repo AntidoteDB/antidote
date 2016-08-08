@@ -73,6 +73,10 @@
 %% Version of log records being used
 -define(LOG_RECORD_VERSION, 0).
 
+%% If partial replication is enabled
+-define(IS_PARTIAL(),true).
+
+
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
 -record(commit_log_payload, {commit_time :: dc_and_commit_time(),

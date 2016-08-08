@@ -188,7 +188,6 @@ set_timer(First, State = #state{partition = Partition}) ->
 	    State1 = del_timer(State),
 	    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)}
     end.
-		
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.

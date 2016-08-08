@@ -15,8 +15,9 @@
 
 %% The number of bytes a parition id is in a message
 -define(PARTITION_BYTE_LENGTH, 20).
--define(KEY_BYTE_LENGTH, 40).
+-define(BUCKET_BYTE_LENGTH, 40).
 -define(TYPE_BYTE_LENGTH, 1).
+-define(TYPE_BIT_LENGTH, 8).
 
 
 %% the number of bytes a message id is
@@ -25,5 +26,11 @@
 
 %% Needed for dialyzer, must be the size of the request id bits plus the version bits
 -define(MESSAGE_HEADER_BIT_LENGTH, 32).
+
+%% These define the types of mesages that can be sent through the
+%% zmq subscriptions
+%% Either full transactions, or per-bucket updates transactions
+-define(FULL_TXN_SUB, 1).
+-define(SINGLE_BUCKET_SUB, 2).
 
 -type inter_dc_message_type() :: ?CHECK_UP_MSG | ?LOG_READ_MSG | ?OK_MSG | ?ERROR_MSG.

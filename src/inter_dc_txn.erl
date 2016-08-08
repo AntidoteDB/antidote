@@ -32,12 +32,14 @@
   partition_to_bin/1,
   last_log_opid/1,
   is_ping/1,
-  get_key_sub/1,
+  get_bucket_sub/2,
   get_partition_sub/1,
-  to_per_key_bin/1,
+  to_per_bucket_bin/1,
   ops_by_type/2]).
 
 %% Functions
+
+-type bucket_bin() :: undefined | {bucket,bucket()}.
 
 -spec from_ops([#log_record{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
 from_ops(Ops, Partition, PrevLogOpId) ->
@@ -93,36 +95,62 @@ to_bin(Txn = #interdc_txn{partition = P}) ->
   Type = get_type_binary(fulltxn),
   <<Type/binary, Prefix/binary, Msg/binary>>.
 
--spec to_per_key_bin(#interdc_txn{}) -> [binary()].
-to_per_key_bin(Txn = #interdc_txn{log_records = Ops}) ->
-    lists:foldl(fun(Op = #log_record{log_operation = Payload}, Acc) ->
-			Type = Payload#log_operation.op_type,
-			case Type of
-			    update ->
-				CommitOp = lists:last(Ops),
-				NewTxn = Txn#interdc_txn{log_records = [Op,CommitOp]},
-				Key = Payload#log_operation.log_payload#update_log_payload.key,
-				Prefix = key_to_bin(Key),
-				Msg = term_to_binary(NewTxn),
-				BinaryType = get_type_binary(singlekey),
-				[<<BinaryType/binary, Prefix/binary, Msg/binary>> | Acc];
-			    _ ->
-				Acc
-			end
-		end, [], Ops).
+%% Go through a full transaction, and seperate it into a list
+%% of per bucket transactions
+-spec to_per_bucket_bin(#interdc_txn{}) -> [binary()].
+to_per_bucket_bin(Txn = #interdc_txn{log_records = [], partition = Partition}) ->
+    %% This is a ping txn
+    PrefixPartition = partition_to_bin(Partition),
+    %% No bucket, so just use 0's
+    PrefixBucket = bucket_to_bin(undefined),
+    Msg = term_to_binary(Txn),
+    BinaryType = get_type_binary(singlebucket),
+    [<<BinaryType/binary, PrefixPartition/binary, PrefixBucket/binary, Msg/binary>>];
+to_per_bucket_bin(Txn = #interdc_txn{log_records = Ops, partition = Partition}) ->
+    DictBucket = 
+	lists:foldl(fun(Op = #log_record{log_operation = Payload}, Acc) ->
+			    Type = Payload#log_operation.op_type,
+			    case Type of
+				update ->
+				    Bucket = 
+					case Payload#log_operation.log_payload#update_log_payload.key of
+					    {_Key, Buck} ->
+						{bucket, Buck};
+					    _ ->
+						%% No bucket, so just use 0's
+						undefined
+					end,
+				    case dict:find(Bucket,Acc) of
+					{ok,List} ->
+					    dict:store(Bucket,[Op|List],Acc);
+					error ->
+					    dict:store(Bucket,[Op],Acc)
+				    end;
+				_ ->
+				    Acc
+			    end
+		    end, dict:new(), Ops),
+    CommitOp = lists:last(Ops),
+    dict:fold(fun(Bucket,List,Acc) ->
+		      NewTxn = Txn#interdc_txn{log_records = lists:reverse([CommitOp|List])},
+		      PrefixPartition = partition_to_bin(Partition),
+		      PrefixBucket = bucket_to_bin(Bucket),
+		      Msg = term_to_binary(NewTxn),
+		      BinaryType = get_type_binary(singlebucket),
+		      [<<BinaryType/binary, PrefixPartition/binary, PrefixBucket/binary, Msg/binary>> | Acc]
+	      end, [], DictBucket).
 
--spec get_type_binary(atom()) -> binary().
+-spec get_type_binary(fulltxn | singlebucket) -> <<_:?TYPE_BIT_LENGTH>>.
 get_type_binary(fulltxn) ->
-    <<0:(?TYPE_BYTE_LENGTH*8)>>;
-get_type_binary(singlekey) ->
-    <<1:(?TYPE_BYTE_LENGTH*8)>>.
+    <<?FULL_TXN_SUB>>;
+get_type_binary(singlebucket) ->
+    <<?SINGLE_BUCKET_SUB>>.
 
 -spec from_bin(binary()) -> #interdc_txn{}.
-from_bin(Bin) ->
-  L = byte_size(Bin),
-  HeaderSize = ?TYPE_BYTE_LENGTH + ?PARTITION_BYTE_LENGTH,
-  Msg = binary_part(Bin, {HeaderSize, L - HeaderSize}),
-  binary_to_term(Msg).
+from_bin(<<?FULL_TXN_SUB,_:(?PARTITION_BYTE_LENGTH*8),Rest/binary>>) ->
+    binary_to_term(Rest);
+from_bin(<<?SINGLE_BUCKET_SUB,_:(?PARTITION_BYTE_LENGTH*8),_:(?BUCKET_BYTE_LENGTH*8),Rest/binary>>) ->
+    binary_to_term(Rest).
 
 %% Pad the binary to the given width, crash if the binary is bigger than
 %% the width
@@ -163,12 +191,16 @@ get_partition_sub(Partition) ->
     PartitionBin = partition_to_bin(Partition),
     <<Type/binary, PartitionBin/binary>>.
 
--spec key_to_bin(term()) -> binary().
-key_to_bin(Key) ->
-    pad(?KEY_BYTE_LENGTH, term_to_binary(Key)).
+-spec bucket_to_bin(bucket_bin()) -> binary().
+bucket_to_bin(undefined) ->
+    %% No bucket, so just use 0's
+    pad(?BUCKET_BYTE_LENGTH, <<0>>);
+bucket_to_bin({bucket, Bucket}) ->
+    pad(?BUCKET_BYTE_LENGTH, term_to_binary(Bucket)).
 
--spec get_key_sub(term()) -> binary().
-get_key_sub(Key) ->
-    Type = get_type_binary(singlekey),
-    KeyBin = key_to_bin(Key),
-    <<Type/binary, KeyBin/binary>>.
+-spec get_bucket_sub(partition_id(),bucket_bin()) -> binary().
+get_bucket_sub(Partition,Bucket) ->
+    Type = get_type_binary(singlebucket),
+    PartitionBin = partition_to_bin(Partition),
+    BucketBin = bucket_to_bin(Bucket),
+    <<Type/binary, PartitionBin/binary, BucketBin/binary>>.
