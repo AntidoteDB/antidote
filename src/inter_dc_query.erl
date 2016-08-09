@@ -35,7 +35,7 @@
 
 %% API
 -export([
-  perform_request/5,
+  perform_request/7,
   add_dc/2,
   del_dc/1]).
 
@@ -65,10 +65,11 @@
 %%          the second is a #request_cache_entry{} record
 %%          Note that the function should not perform anywork, instead just send
 %%%         the work to another thread, otherwise it will block other messages
--spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(),#request_cache_entry{})->ok), pid() | {fsm, pid()})
+-spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary() | timeout, #request_cache_entry{})->ok),
+		      non_neg_integer() | infinity, term(), pid() | {fsm, pid()})
 		     -> ok | unknown_dc.
-perform_request(RequestType, PDCID, BinaryRequest, Func, Pid) ->
-    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func, Pid}).
+perform_request(RequestType, PDCID, BinaryRequest, Func, Timeout, ExtraState, Pid) ->
+    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func, Timeout, ExtraState, Pid}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
@@ -131,7 +132,7 @@ handle_call({del_dc, DCID}, _From, State) ->
     end;
 
 %% Handle an instruction to ask a remote DC.
-handle_call({any_request, RequestType, PDCID, BinaryRequest, Func, ReqPid}, _From, State=#state{req_id=ReqId}) ->
+handle_call({any_request, RequestType, PDCID, BinaryRequest, Func, Timeout, ExtraState, ReqPid}, _From, State=#state{req_id=ReqId}) ->
     {DCID, Partition} = PDCID,
     case dict:find(DCID, State#state.sockets) of
 	%% If socket found
@@ -151,8 +152,15 @@ handle_call({any_request, RequestType, PDCID, BinaryRequest, Func, ReqPid}, _Fro
 	    ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
 	    FullRequest = <<VersionBinary/binary,ReqIdBinary/binary,RequestType,BinaryRequest/binary>>,
 	    ok = erlzmq:send(Socket,FullRequest),
+	    Timer = case Timeout of
+			infinity ->
+			    undefined;
+			_ when is_integer(Timeout) ->
+			    erlang:send_after(Timeout, self(), {send_timeout, ReqIdBinary})
+		    end,
 	    RequestEntry = #request_cache_entry{request_type=RequestType,req_id_binary=ReqIdBinary,req_pid=ReqPid,
-						func=Func,pdcid={DCID,SendPartition},binary_req=FullRequest},
+						func=Func,pdcid={DCID,SendPartition},binary_req=FullRequest,
+						timer=Timer,extra_state=ExtraState},
 	    {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
 	%% If socket not found
 	_ -> {reply, unknown_dc, State}
@@ -171,7 +179,13 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
 	= binary_utilities:check_message_version(BinaryMsg),
     %% Be sure this is a request from this socket
     case ets:lookup(Table,ReqIdBinary) of
-	[{ReqIdBinary,CacheEntry=#request_cache_entry{request_type=RequestType,func=Func}}] ->
+	[{ReqIdBinary,CacheEntry=#request_cache_entry{request_type=RequestType,func=Func,timer=Timer}}] ->
+	    _ = case Timer of
+		    undefined ->
+			ok;
+		    _ when is_reference(Timer) ->
+			erlang:cancel_timer(Timer)
+		end,
 	    case RestMsg of
 		<<RequestType,RestBinary/binary>> ->
 		    Func(RestBinary,CacheEntry);
@@ -182,6 +196,19 @@ handle_info({zmq, _Socket, BinaryMsg, _Flags}, State=#state{unanswered_queries=T
 	    true = ets:delete(Table,ReqIdBinary);
 	[] ->
 	    lager:error("Got a bad (or repeated) request id: ~p", [ReqIdBinary])
+    end,
+    {noreply, State};
+
+%% Handles a timeout
+handle_info({send_timeout, ReqIdBinary}, State=#state{unanswered_queries=Table}) ->
+    case ets:lookup(Table,ReqIdBinary) of
+	[{ReqIdBinary,CacheEntry=#request_cache_entry{request_type=RequestType,func=Func}}] ->
+	    lager:info("Had a timeout on an external request, type: ~w", [RequestType]),
+	    %% Remove the request from the list of unanswered queries.
+	    Func(timeout,CacheEntry),
+	    true = ets:delete(Table,ReqIdBinary);
+	[] ->
+	    lager:error("Got a timeout for an already finished message: ~p", [ReqIdBinary])
     end,
     {noreply, State}.
 

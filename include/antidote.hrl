@@ -74,7 +74,7 @@
 -define(LOG_RECORD_VERSION, 0).
 
 %% If partial replication is enabled
--define(IS_PARTIAL(),true).
+-define(IS_PARTIAL(),false).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).

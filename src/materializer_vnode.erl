@@ -624,7 +624,7 @@ reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
 -spec op_insert_gc(key(), clocksi_payload(), #mat_state{}) -> true.
-op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
+op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache, partition = Partition})->
     case ets:member(OpsCache, Key) of
 	false ->
 	    ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,{0,?OPS_THRESHOLD}}]));
@@ -635,7 +635,8 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
 			       {3,1}),
     {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
     %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
-    IsExternal = case clocksi_readitem_fsm:is_external(Key,[]) of
+    %% TODO use the correct function for this
+    IsExternal = case clocksi_readitem_fsm:is_external(Key,[],Partition) of
 		     false -> false;
 		     _ -> true
 		 end,

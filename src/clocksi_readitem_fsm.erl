@@ -45,7 +45,7 @@
 %% States
 -export([read_data_item/5,
 	 async_read_data_item/6,
-	 is_external/2,
+	 is_external/3,
 	 get_ops/6,
 	 check_partition_ready/3,
 	 start_read_servers/2,
@@ -93,17 +93,20 @@ stop_read_servers(Partition, Count) ->
     stop_read_servers_internal(Addr, Partition, Count).
 
 %% TODO: implement this
-is_external({Key,_Bucket},PropList) ->
-    is_external(Key,PropList);
-is_external(<<"external",_/binary>>,[]) ->
+is_external({Key,_Bucket},PropList,Partition) ->
+    is_external(Key,PropList,Partition);
+is_external(<<"external",_/binary>>,[],Partition) ->
     case dc_meta_data_utilities:get_dc_descriptors() of
 	[] ->
 	    false;
 	Descs ->
-	    #descriptor{dcid=ExDCID,partition_num=PartitionNum,partition_list=PartitionList} = lists:nth(random:uniform(length(Descs)),Descs),
-	    {true, {ExDCID,lists:nth(random:uniform(PartitionNum),PartitionList)}}
+	    PDCIDs = 
+		lists:map(fun(#descriptor{dcid=ExDCID}) ->
+				  {ExDCID,Partition}
+			  end, Descs),
+	    {true, PDCIDs}
     end;
-is_external(_Key,_PropList) ->
+is_external(_Key,_PropList,_Partition) ->
     false.
 
 -spec get_ops(index_node(), key(), type(), clock_time(), snapshot_time(), tx()) -> {ok,[clocksi_payload()]} | {error, reason()}.
@@ -122,10 +125,16 @@ get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction) ->
 read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
     %% Check if should perform the read externally
     lager:info("the key to check if external ~p", [Key]),
-    case is_external(Key,PropertyList) of
-	{true, {ExDCID,ExPartition}} ->
-	    lager:info("Performing external read ~p", [{ExDCID,ExPartition}]),
-	    ok = partial_repli_utils:perform_external_read({ExDCID,ExPartition},Key,Type,Transaction,self()),
+    case is_external(Key,PropertyList,Partition) of
+	{true, PDCIDs} ->
+	    lager:info("Performing external read ~p", [PDCIDs]),
+	    Req = #external_read_request_state{
+		     dc_list = PDCIDs,
+		     key = Key,
+		     type = Type,
+		     transaction = Transaction,
+		     coordinator = self()},
+	    ok = partial_repli_utils:perform_external_read(Req),
 	    partial_repli_utils:wait_for_external_read_resp();
 	false ->
 	    try
@@ -143,10 +152,16 @@ read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
 async_read_data_item({Partition,Node},Key,Type,Transaction,PropertyList,Coordinator) ->
     %% Check if should perform the read externally
     lager:info("the key to check if external ASYNCCCC ~p", [Key]),
-    case is_external(Key,PropertyList) of
-	{true, {ExDCID, ExPartition}} ->
-	    lager:info("async external read!!!!"),
-	    ok = partial_repli_utils:perform_external_read({ExDCID,ExPartition},Key,Type,Transaction,Coordinator);
+    case is_external(Key,PropertyList,Partition) of
+	{true, PDCIDs} ->
+	    lager:info("async external read!!!! ~w", [PDCIDs]),
+	    Req = #external_read_request_state{
+		     dc_list = PDCIDs,
+		     key = Key,
+		     type = Type,
+		     transaction = Transaction,
+		     coordinator = Coordinator},
+	    ok = partial_repli_utils:perform_external_read(Req);
 	false ->
 	    gen_server:cast({global,generate_random_server_name(Node,Partition)},
 			    {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList})

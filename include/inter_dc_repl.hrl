@@ -40,6 +40,8 @@
 	  req_id_binary :: binary(),
 	  req_pid :: pid() | {fsm, pid()},
 	  pdcid :: pdcid(),
+	  timer :: reference(),
+	  extra_state :: term(),
 	  binary_req :: binary()
 	 }).
 
@@ -51,4 +53,11 @@
 	  request_id_num_binary :: binary(),
 	  local_pid :: pid()
 	 }).
-	  
+
+-record(external_read_request_state, {
+	  dc_list :: [pdcid()],
+	  key :: key(),
+	  type :: type(),
+	  transaction :: tx(),
+	  coordinator :: pid() | {fsm, pid()}
+	 }).

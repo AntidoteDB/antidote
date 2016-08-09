@@ -35,6 +35,7 @@
   get_bucket_sub/2,
   get_partition_sub/1,
   to_per_bucket_bin/1,
+  get_bucket_sub_for_partition/1,
   ops_by_type/2]).
 
 %% Functions
@@ -185,11 +186,16 @@ partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigne
 req_id_to_bin(ReqId) ->
     pad_or_trim(?REQUEST_ID_BYTE_LENGTH, binary:encode_unsigned(ReqId)).
 			   
--spec get_partition_sub(partition_id()) -> binary().
+-spec get_partition_sub(partition_id()) -> [binary(),...].
 get_partition_sub(Partition) ->
-    Type = get_type_binary(fulltxn),
-    PartitionBin = partition_to_bin(Partition),
-    <<Type/binary, PartitionBin/binary>>.
+    case ?IS_PARTIAL() of
+	false ->
+	    Type = get_type_binary(fulltxn),
+	    PartitionBin = partition_to_bin(Partition),
+	    [<<Type/binary, PartitionBin/binary>>];
+	true ->
+	    get_bucket_sub_for_partition(Partition)
+    end.
 
 -spec bucket_to_bin(bucket_bin()) -> binary().
 bucket_to_bin(undefined) ->
@@ -198,9 +204,24 @@ bucket_to_bin(undefined) ->
 bucket_to_bin({bucket, Bucket}) ->
     pad(?BUCKET_BYTE_LENGTH, term_to_binary(Bucket)).
 
+%% Returns the zmq subscription prefix for the
+%% given bucket/parition
 -spec get_bucket_sub(partition_id(),bucket_bin()) -> binary().
 get_bucket_sub(Partition,Bucket) ->
     Type = get_type_binary(singlebucket),
     PartitionBin = partition_to_bin(Partition),
     BucketBin = bucket_to_bin(Bucket),
     <<Type/binary, PartitionBin/binary, BucketBin/binary>>.
+
+%% Returns the zmq subscription prefix for all buckets
+%% replicated by this DC for a given parition
+-spec get_bucket_sub_for_partition(partition_id()) -> [binary(),...].
+get_bucket_sub_for_partition(Partition) ->
+    BucketList = replication_check:get_my_buckets(),
+    SubList = 
+	lists:map(fun(Bucket) ->
+			  get_bucket_sub(Partition,{bucket,Bucket})
+		  end, BucketList),
+    %% Always sub to all updates that dont have a bucket
+    [get_bucket_sub(Partition,undefined)|SubList].
+

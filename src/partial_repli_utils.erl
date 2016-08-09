@@ -21,33 +21,57 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
+-define(EXTERNAL_READ_TIMEOUT, 1000).
+
 -export([check_wait_time/2,
 	 replace_external_ops/2,
-	 perform_external_read/5,
+	 perform_external_read/1,
 	 deliver_external_read_resp/2,
 	 trim_ops_from_dc/5,
 	 wait_for_external_read_resp/0]).
 
--spec deliver_external_read_resp(binary(),#request_cache_entry{}) -> ok.
-deliver_external_read_resp(BinaryRep,RequestCacheEntry) ->
+-spec deliver_external_read_resp(binary() | timeout,#request_cache_entry{}) -> ok.
+deliver_external_read_resp(BinaryRep,RequestCacheEntry) when is_binary(BinaryRep) ->
     Coordinator = RequestCacheEntry#request_cache_entry.req_pid,
     case Coordinator of
 	{fsm, Sender} -> %% Return Type and Value directly here.
 	    gen_fsm:send_event(Sender, {external_read_resp, BinaryRep});
 	_ ->
 	    Coordinator ! {external_read_resp, BinaryRep}
+    end;
+deliver_external_read_resp(timeout,RequestCacheEntry =
+			       #request_cache_entry{extra_state = ReadReq}) ->
+    case ReadReq#external_read_request_state.dc_list of
+	[] ->
+	    Coordinator = RequestCacheEntry#request_cache_entry.req_pid,
+	    case Coordinator of
+		{fsm, Sender} -> %% Return Type and Value directly here.
+		    lager:info("no where to read, aboting the transaction"),
+		    gen_fsm:send_event(Sender, abort);
+		_ ->
+		    Coordinator ! {external_read_resp, {error, no_dcs}}
+	    end;
+	[_First|_Rest] ->
+	    ok = perform_external_read(ReadReq)
     end.
 
--spec wait_for_external_read_resp() -> {ok, snapshot()}.
+-spec wait_for_external_read_resp() -> {ok, snapshot()} | {error, no_dcs}.
 wait_for_external_read_resp() ->
     receive
 	{external_read_resp, BinaryRep} ->
 	    {external_read_rep, _Key, _Type, Snapshot} = binary_to_term(BinaryRep),
-	    {ok, Snapshot}
+	    {ok, Snapshot};
+	{error, no_dcs} ->
+	    {error, no_dcs}
     end.
 
--spec perform_external_read(pdcid(), key(), type(), tx(), pid() | {fsm, pid()}) -> ok | unknown_dc.
-perform_external_read({DCID,Partition},Key,Type,Transaction,Coordinator) ->
+-spec perform_external_read(#external_read_request_state{}) -> ok | unknown_dc.
+perform_external_read(Req = #external_read_request_state{
+			       dc_list = [{DCID,Partition}|Rest],
+			       key = Key,
+			       type = Type,
+			       transaction = Transaction,
+			       coordinator = Coordinator}) ->
     %% First check for any ops in this DC
     StartTime = Transaction#transaction.snapshot_time - ?EXTERNAL_READ_BACK_TIME,
     SnapshotTime = Transaction#transaction.vec_snapshot_time,
@@ -56,7 +80,8 @@ perform_external_read({DCID,Partition},Key,Type,Transaction,Coordinator) ->
     {ok, OpList} = clocksi_readitem_fsm:get_ops(IndexNode,Key,Type,StartTime,SnapshotTime,Transaction),
     Property = #external_read_property{from_dcid=dc_meta_data_utilities:get_my_dc_id(),included_ops=OpList,included_ops_time=StartTime},
     BinaryRequest = term_to_binary({external_read, Key, Type, Transaction, Property}),
-    inter_dc_query:perform_request(?EXTERNAL_READ_MSG, {DCID,Partition}, BinaryRequest,fun deliver_external_read_resp/2, Coordinator).
+    inter_dc_query:perform_request(?EXTERNAL_READ_MSG, {DCID,Partition}, BinaryRequest,fun deliver_external_read_resp/2, ?EXTERNAL_READ_TIMEOUT, 
+				   Req#external_read_request_state{dc_list=Rest}, Coordinator).
 
 %% This will wait for the dependencies of the external read request if needed
 -spec check_wait_time(snapshot_time(), clocksi_readitem_fsm:read_property_list()) ->

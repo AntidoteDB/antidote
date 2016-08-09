@@ -18,6 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(zmq_utils).
+%%-include_lib("erlzmq/include/erlzmq.hrl").
 
 -export([create_connect_socket/3, create_bind_socket/3, sub_filter/2, close_socket/1]).
 
@@ -49,8 +50,14 @@ connection_string({Ip, Port}) ->
   end,
   lists:flatten(io_lib:format("tcp://~s:~p", [IpString, Port])).
 
-sub_filter(Socket, Prefix) ->
-  erlzmq:setsockopt(Socket, subscribe, Prefix).
+-spec sub_filter(erlzmq:erlzmq_socket(),binary() | [binary()]) -> ok.
+sub_filter(Socket, Prefix) when is_binary(Prefix) ->
+    ok = erlzmq:setsockopt(Socket, subscribe, Prefix);
+sub_filter(Socket, PrefixList) when is_list(PrefixList) ->
+    lists:foreach(fun(Prefix) ->
+			  ok = erlzmq:setsockopt(Socket, subscribe, Prefix)
+		  end, PrefixList),
+    ok.
 
 close_socket(Socket) ->
   erlzmq:close(Socket).
