@@ -101,6 +101,7 @@ replace_external_ops(SnapshotGetResp, PropertyList) ->
 
 %% remove any ops that would be doubles from the list of ops from the external DC
 %% Note: The list of ops have the most recent ones on the left
+%% TODO: this needs to take a tuple now
 -spec remove_ops([{integer(),clocksi_payload()}],clock_time(),dcid(),[{integer(),clocksi_payload()}]) ->
 			[{integer(),clocksi_payload()}].		     
 remove_ops([],_IncludedOpsTime,_DCID,Acc) ->
