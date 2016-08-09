@@ -460,7 +460,13 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1};
 		    [Tuple] ->
-			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,false),
+			{Key,Length1,_OpId,_ListLen,AllOps} =
+			    case partial_repli_utils:check_should_convert_to_list_in_materializer(PropertyList) of
+				true ->
+				    tuple_to_key(Tuple,true);
+				false ->
+				    tuple_to_key(Tuple,false)
+			    end,
 			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}

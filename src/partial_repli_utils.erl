@@ -26,6 +26,7 @@
 	 perform_external_read/5,
 	 deliver_external_read_resp/2,
 	 trim_ops_from_dc/5,
+	 check_should_convert_to_list_in_materializer/1,
 	 wait_for_external_read_resp/0]).
 
 -spec deliver_external_read_resp(binary(),#request_cache_entry{}) -> ok.
@@ -76,11 +77,10 @@ check_wait_time(MinSnapshotTime, PropertyList) ->
 %% This method will place those in the list of ops to be materialized locally
 -spec replace_external_ops(#snapshot_get_response{}, clocksi_readitem_fsm:read_property_list()) ->
 				  #snapshot_get_response{}.
-replace_external_ops(SnapshotGetResp, PropertyList) ->
+replace_external_ops(SnapshotGetResp = #snapshot_get_response{ops_list = OldOps}, PropertyList) when is_list(OldOps) ->
     case get_property(external_read_property, PropertyList) of
 	ReadProp when is_record(ReadProp, external_read_property) ->
 	    %% First remove any possible duplicates
-	    OldOps = SnapshotGetResp#snapshot_get_response.ops_list,
 	    FromDC = ReadProp#external_read_property.from_dcid,
 	    IncludedOpsTime = ReadProp#external_read_property.included_ops_time,
 	    OldOpsRem = remove_ops(OldOps,IncludedOpsTime,FromDC,[]),
@@ -97,7 +97,12 @@ replace_external_ops(SnapshotGetResp, PropertyList) ->
 	    SnapshotGetResp#snapshot_get_response{ops_list = Ops, number_of_ops = length(Ops)};
 	false ->
 	    SnapshotGetResp
-    end.
+    end;
+replace_external_ops(SnapshotGetResp = #snapshot_get_response{ops_list = OldOps}, _PropertyList) when is_tuple(OldOps) ->
+    %% If it is a tuple, it means that a previous check saw that no ops needed to be replaced, so it wasnt converted
+    %% to a list
+    SnapshotGetResp.
+
 
 %% remove any ops that would be doubles from the list of ops from the external DC
 %% Note: The list of ops have the most recent ones on the left
@@ -152,3 +157,12 @@ trim_ops_from_dc([_Op|Rest],DCID,MinTime,MaxTime,Acc) ->
 -spec get_property(external_read_property, clocksi_readitem_fsm:read_property_list()) -> clocksi_readitem_fsm:external_read_property() | false.
 get_property(external_read_property, PropertyList) ->
     lists:keyfind(external_read_property,1,PropertyList).
+
+-spec check_should_convert_to_list_in_materializer(clocksi_readitem_fsm:read_property_list()) -> boolean().
+check_should_convert_to_list_in_materializer(PropertyList) ->
+    case get_property(external_read_property, PropertyList) of
+	#external_read_property{included_ops = [_|_]} ->
+	    true;
+	_ ->
+	    false
+    end.
