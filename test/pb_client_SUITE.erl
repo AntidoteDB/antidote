@@ -64,7 +64,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -79,7 +79,7 @@ all() -> [start_stop_test,
         update_counter_crdt_and_read_test,
         update_set_read_test,
         static_transaction_test].
-    
+
 start_stop_test(_Config) ->
     lager:info("Verifying pb connection..."),
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
@@ -91,7 +91,7 @@ start_stop_test(_Config) ->
 simple_transaction_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {pb_client_SUITE_simple_transaction_test, riak_dt_pncounter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     rpc:call(Node, antidote, commit_transaction, [TxId]).
@@ -100,7 +100,7 @@ simple_transaction_test(Config) ->
 read_write_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {pb_client_SUITE_read_write_test, riak_dt_pncounter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
@@ -110,7 +110,7 @@ read_write_test(Config) ->
 %% Single object rea
 get_empty_crdt_test(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {<<"key">>, riak_dt_pncounter, <<"bucket">>},
+    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, riak_dt_pncounter, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
@@ -118,7 +118,7 @@ get_empty_crdt_test(_Config) ->
     ?assertMatch(true, antidotec_counter:is_type(Val)).
 
 pb_test_counter_read_write(_Config) ->
-    Key = <<"key_read_write">>,
+    Key = <<"pb_client_SUITE_pb_test_counter_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
@@ -132,7 +132,7 @@ pb_test_counter_read_write(_Config) ->
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 pb_test_set_read_write(_Config) ->
-    Key = <<"key_read_write_set">>,
+    Key = <<"pb_client_SUITE_pb_test_set_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_orset, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
@@ -157,8 +157,8 @@ pb_empty_txn_clock_test(_Config) ->
 
 update_counter_crdt_test(_Config) ->
     lager:info("Verifying retrieval of updated counter CRDT..."),
-    Key = <<"key1">>,
-    Bucket = <<"bucket">>, 
+    Key = <<"pb_client_SUITE_update_counter_crdt_test">>,
+    Bucket = <<"bucket">>,
     Amount = 10,
     update_counter_crdt(Key, Bucket, Amount).
 
@@ -176,7 +176,7 @@ update_counter_crdt(Key, Bucket, Amount) ->
     pass.
 
 update_counter_crdt_and_read_test(_Config) ->
-    Key = <<"key2">>,
+    Key = <<"pb_client_SUITE_update_counter_crdt_and_read_test">>,
     Amount = 15,
     pass = update_counter_crdt(Key, <<"bucket">>, Amount),
     pass = get_crdt_check_value(Key, riak_dt_pncounter, <<"bucket">>, Amount).
@@ -194,7 +194,7 @@ get_crdt_check_value(Key, Type, Bucket, Expected) ->
     pass.
 
 update_set_read_test(_Config) ->
-    Key = <<"key_update_read_set">>,
+    Key = <<"pb_client_SUITE_update_set_read_test">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_orset, <<"bucket">>},
     Set = antidotec_set:new(),
@@ -217,7 +217,7 @@ update_set_read_test(_Config) ->
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 static_transaction_test(_Config) ->
-    Key = <<"key_static_update_read_set">>,
+    Key = <<"pb_client_SUITE_static_transaction_test">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_orset, <<"bucket">>},
     Set = antidotec_set:new(),
@@ -238,4 +238,4 @@ static_transaction_test(_Config) ->
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
-    
+
