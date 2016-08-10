@@ -5,7 +5,11 @@ test:
 
 systests: rel
 	mkdir -p logs
+ifdef SUITE
+	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -suite test/${SUITE}
+else
 	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -dir test
+endif
 
 docs:
 	${REBAR} doc skip_deps=true
