@@ -168,21 +168,23 @@ conditional_write_test_run(Nodes) ->
     Type = crdt_bcounter,
     Key = bcounter5,
 
-    rpc:call(FirstNode, antidote, append,
+    {ok, {_,_,AfterIncrement}} = rpc:call(FirstNode, antidote, append,
         [Key, Type, {{increment, 10}, r1}]),
 
+
     %% Start a transaction on the first node and perform a read operation.
-    {ok, TxId1} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    {ok, TxId1} = rpc:call(FirstNode, antidote, clocksi_istart_tx, [AfterIncrement]),
     {ok, _} = rpc:call(FirstNode, antidote, clocksi_iread, [TxId1, Key, Type]),
 
     %% Execute a transaction on the last node which performs a write operation.
-    {ok, TxId2} = rpc:call(LastNode, antidote, clocksi_istart_tx, []),
+    {ok, TxId2} = rpc:call(LastNode, antidote, clocksi_istart_tx, [AfterIncrement]),
     ok = rpc:call(LastNode, antidote, clocksi_iupdate,
              [TxId2, Key, Type, {{decrement, 3}, r1}]),
     CommitTime1 = rpc:call(LastNode, antidote, clocksi_iprepare, [TxId2]),
     ?assertMatch({ok, _}, CommitTime1),
     End1 = rpc:call(LastNode, antidote, clocksi_icommit, [TxId2]),
     ?assertMatch({ok, _}, End1),
+    {ok, {_,AfterTxn2}} = End1,
     %% Resume the first transaction and check that it fails.
     Result0 = rpc:call(FirstNode, antidote, clocksi_iupdate,
          [TxId1, Key, Type, {{decrement, 3}, r1}]),
@@ -190,6 +192,7 @@ conditional_write_test_run(Nodes) ->
     CommitTime2 = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
     ?assertEqual({aborted, TxId1}, CommitTime2),
     %% Test that the failed transaction didn't affect the `bcounter()'.
-    Result1 = rpc:call(FirstNode, antidote, read, [Key, Type]),
-    {ok, Counter1} = Result1,
+
+    Result1 = rpc:call(FirstNode, antidote, clocksi_read, [AfterTxn2, Key, Type]),
+    {ok, {_, [Counter1], _}} = Result1,
     ?assertEqual(7, crdt_bcounter:permissions(Counter1)).
