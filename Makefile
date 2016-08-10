@@ -9,7 +9,7 @@ compile:
 clean:
 	$(REBAR) clean
 
-distclean: clean devclean relclean cleanplt
+distclean: clean relclean #cleanplt
 	$(REBAR) clean --all
 
 rel:
@@ -24,7 +24,7 @@ relgentlerain: relclean cleantests rel
 relnocert: export NO_CERTIFICATION=true
 relnocert: relclean cleantests rel
 
-stage : 
+stage :
 	$(REBAR) release -d
 
 include tools.mk
