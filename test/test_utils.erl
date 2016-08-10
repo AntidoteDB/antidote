@@ -19,6 +19,9 @@
 %% -------------------------------------------------------------------
 
 -module(test_utils).
+-include_lib("eunit/include/eunit.hrl").
+
+-compile({parse_transform, lager_transform}).
 
 -export([at_init_testsuite/0,
          %get_cluster_members/1,
@@ -34,7 +37,9 @@
          start_suite/2,
          connect_dcs/1,
          partition_cluster/2,
-         heal_cluster/2]).
+         heal_cluster/2,
+         join_cluster/1,
+         set_up_clusters_common/1]).
 
 at_init_testsuite() ->
 %% this might help, might not...
@@ -66,9 +71,10 @@ pmap(F, L) ->
 
 wait_until(Fun, Retry, Delay) when Retry > 0 ->
     wait_until_result(Fun, true, Retry, Delay).
-   
+
 wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
     Res = Fun(),
+    lager:info("REs ~p", [Res]),
     case Res  of
         Result ->
             ok;
@@ -127,26 +133,26 @@ start_suite(Name, Config) ->
         {ok, Node} ->
             PrivDir = proplists:get_value(priv_dir, Config),
             NodeDir = filename:join([PrivDir, Node]),
-            
+
             ct:print("Node dir: ~p",[NodeDir]),
 
             ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir]),
             ok = rpc:call(Node, application, load, [lager]),
-            
+
             ok = rpc:call(Node, application, load, [riak_core]),
 
             PlatformDir = NodeDir ++ "/data/",
             RingDir = PlatformDir ++ "/ring/",
-            NumberOfVNodes = 2,
+            NumberOfVNodes = 4,
             filelib:ensure_dir(PlatformDir),
             filelib:ensure_dir(RingDir),
-            
+
             ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, NumberOfVNodes]),
-            
+
             ok = rpc:call(Node, application, set_env, [riak_core, platform_data_dir, PlatformDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, handoff_port, web_ports(Name) + 3]),
-            
+
             ok = rpc:call(Node, application, set_env, [riak_core, schema_dirs, ["../../_build/default/rel/antidote/lib/"]]),
 
             ok = rpc:call(Node, application, set_env, [riak_api, pb_port, web_ports(Name) + 2]),
@@ -189,7 +195,7 @@ heal_cluster(ANodes, BNodes) ->
 connect_dcs(Nodes) ->
   Clusters = [[Node] || Node <- Nodes],
   ct:pal("Connecting DC clusters..."),
-  
+
   lists:foreach(fun(Cluster) ->
               Node1 = hd(Cluster),
               ct:print("Waiting until vnodes start on node ~p", [Node1]),
@@ -229,7 +235,7 @@ wait_until_registered(Node, Name) ->
     Retry = 360000 div Delay,
     ok = wait_until(F, Retry, Delay),
     ok.
-    
+
 
 descriptors(Clusters) ->
   lists:map(fun(Cluster) ->
@@ -245,4 +251,202 @@ web_ports(dev1) ->
 web_ports(dev2) ->
     10025;
 web_ports(dev3) ->
-    10035.
+    10035;
+web_ports(dev4) ->
+    10045.
+
+%% Build clusters
+join_cluster(Nodes) ->
+    %% Ensure each node owns 100% of it's own ring
+    [?assertEqual([Node], owners_according_to(Node)) || Node <- Nodes],
+
+    %% Join nodes
+    [Node1|OtherNodes] = Nodes,
+    case OtherNodes of
+        [] ->
+            %% no other nodes, nothing to join/plan/commit
+            ok;
+        _ ->
+            %% ok do a staged join and then commit it, this eliminates the
+            %% large amount of redundant handoff done in a sequential join
+            [staged_join(Node, Node1) || Node <- OtherNodes],
+            plan_and_commit(Node1),
+            try_nodes_ready(Nodes, 3, 500)
+    end,
+
+    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
+
+    %% Ensure each node owns a portion of the ring
+    wait_until_nodes_agree_about_ownership(Nodes),
+    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)),
+    wait_until_ring_converged(Nodes),
+    wait_until(hd(Nodes),fun wait_init:check_ready/1),
+    ok.
+
+%% @doc Return a list of nodes that own partitions according to the ring
+%%      retrieved from the specified node.
+owners_according_to(Node) ->
+    case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
+        {ok, Ring} ->
+            lager:info("Ring ~p", [Ring]),
+            Owners = [Owner || {_Idx, Owner} <- riak_core_ring:all_owners(Ring)],
+            lager:info("Owners ~p", [lists:usort(Owners)]),
+            lists:usort(Owners);
+        {badrpc, _}=BadRpc ->
+            lager:info("Badrpc"),
+            BadRpc
+    end.
+
+%% @doc Have `Node' send a join request to `PNode'
+staged_join(Node, PNode) ->
+    timer:sleep(5000),
+    R = rpc:call(Node, riak_core, staged_join, [PNode]),
+    lager:info("[join] ~p to (~p): ~p", [Node, PNode, R]),
+    ?assertEqual(ok, R),
+    ok.
+
+plan_and_commit(Node) ->
+    timer:sleep(5000),
+    lager:info("planning and commiting cluster join"),
+    case rpc:call(Node, riak_core_claimant, plan, []) of
+        {error, ring_not_ready} ->
+            lager:info("plan: ring not ready"),
+            timer:sleep(5000),
+            maybe_wait_for_changes(Node),
+            plan_and_commit(Node);
+        {ok, _, _} ->
+            do_commit(Node)
+    end.
+do_commit(Node) ->
+    lager:info("Committing"),
+    case rpc:call(Node, riak_core_claimant, commit, []) of
+        {error, plan_changed} ->
+            lager:info("commit: plan changed"),
+            timer:sleep(100),
+            maybe_wait_for_changes(Node),
+            plan_and_commit(Node);
+        {error, ring_not_ready} ->
+            lager:info("commit: ring not ready"),
+            timer:sleep(100),
+            maybe_wait_for_changes(Node),
+            do_commit(Node);
+        {error,nothing_planned} ->
+            %% Assume plan actually committed somehow
+            ok;
+        ok ->
+            ok
+    end.
+
+  try_nodes_ready([Node1 | _Nodes], 0, _SleepMs) ->
+      lager:info("Nodes not ready after initial plan/commit, retrying"),
+      plan_and_commit(Node1);
+  try_nodes_ready(Nodes, N, SleepMs) ->
+      ReadyNodes = [Node || Node <- Nodes, is_ready(Node) =:= true],
+      case ReadyNodes of
+          Nodes ->
+              ok;
+          _ ->
+              timer:sleep(SleepMs),
+              try_nodes_ready(Nodes, N-1, SleepMs)
+      end.
+
+maybe_wait_for_changes(Node) ->
+    wait_until_no_pending_changes([Node]).
+
+%% @doc Given a list of nodes, wait until all nodes believe there are no
+%% on-going or pending ownership transfers.
+-spec wait_until_no_pending_changes([node()]) -> ok | fail.
+wait_until_no_pending_changes(Nodes) ->
+    lager:info("Wait until no pending changes on ~p", [Nodes]),
+    F = fun() ->
+                rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
+                {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
+                Changes = [ riak_core_ring:pending_changes(Ring) =:= [] || {ok, Ring} <- Rings ],
+                BadNodes =:= [] andalso length(Changes) =:= length(Nodes) andalso lists:all(fun(T) -> T end, Changes)
+        end,
+    ?assertEqual(ok, wait_until(F)),
+    ok.
+
+%% @doc Utility function used to construct test predicates. Retries the
+%%      function `Fun' until it returns `true', or until the maximum
+%%      number of retries is reached.
+wait_until(Fun) when is_function(Fun) ->
+    MaxTime = 600000, %% @TODO use config,
+        Delay = 1000, %% @TODO use config,
+        Retry = MaxTime div Delay,
+    wait_until(Fun, Retry, Delay).
+
+%% @doc Given a list of nodes, wait until all nodes are considered ready.
+%%      See {@link wait_until_ready/1} for definition of ready.
+wait_until_nodes_ready(Nodes) ->
+    lager:info("Wait until nodes are ready : ~p", [Nodes]),
+    [?assertEqual(ok, wait_until(Node, fun is_ready/1)) || Node <- Nodes],
+    ok.
+
+%% @private
+is_ready(Node) ->
+    case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
+        {ok, Ring} ->
+            case lists:member(Node, riak_core_ring:ready_members(Ring)) of
+                true -> true;
+                false -> {not_ready, Node}
+            end;
+        Other ->
+            Other
+    end.
+
+wait_until_nodes_agree_about_ownership(Nodes) ->
+    lager:info("Wait until nodes agree about ownership ~p", [Nodes]),
+    Results = [ wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
+    ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
+
+%% @doc Convenience wrapper for wait_until for the myriad functions that
+%% take a node as single argument.
+wait_until(Node, Fun) when is_atom(Node), is_function(Fun) ->
+    wait_until(fun() -> Fun(Node) end).
+
+wait_until_owners_according_to(Node, Nodes) ->
+  SortedNodes = lists:usort(Nodes),
+  F = fun(N) ->
+      owners_according_to(N) =:= SortedNodes
+  end,
+  ?assertEqual(ok, wait_until(Node, F)),
+  ok.
+
+%% @private
+is_ring_ready(Node) ->
+    case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
+        {ok, Ring} ->
+            riak_core_ring:ring_ready(Ring);
+        _ ->
+            false
+    end.
+
+%% @doc Given a list of nodes, wait until all nodes believe the ring has
+%%      converged (ie. `riak_core_ring:is_ready' returns `true').
+wait_until_ring_converged(Nodes) ->
+    lager:info("Wait until ring converged on ~p", [Nodes]),
+    [?assertEqual(ok, wait_until(Node, fun is_ring_ready/1)) || Node <- Nodes],
+    ok.
+
+%% Build clusters for all test suites.
+set_up_clusters_common(Config) ->
+   Cluster1 = pmap(fun(N) ->
+                  test_utils:start_suite(N, Config)
+          end, [dev1, dev2]),
+   Cluster2 =  pmap(fun(N) ->
+                  test_utils:start_suite(N, Config)
+              end, [dev3]),
+   Cluster3 = pmap(fun(N) ->
+                  test_utils:start_suite(N, Config)
+          end, [dev4]),
+   Clusters = [Cluster1, Cluster2, Cluster3],
+   %% Do not join cluster if it is already done
+   case owners_according_to(hd(Cluster1)) of % @TODO this is an adhoc check
+     Cluster1 -> ok; % No need to build Cluster
+     _ ->
+        [join_cluster(Cluster) || Cluster <- Clusters]
+   end,
+   Clusterheads = [hd(Cluster) || Cluster <- Clusters],
+   connect_dcs(Clusterheads),
+   [Cluster1, Cluster2, Cluster3].
