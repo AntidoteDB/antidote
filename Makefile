@@ -12,6 +12,10 @@ clean:
 distclean: clean relclean #cleanplt
 	$(REBAR) clean --all
 
+cleantests:
+	rm -f test/*.beam
+	rm -rf logs/
+
 rel:
 	$(REBAR) release --overlay_vars rel/vars.config
 
