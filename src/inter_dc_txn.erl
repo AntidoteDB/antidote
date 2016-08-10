@@ -42,22 +42,23 @@
 
 -type bucket_bin() :: undefined | {bucket,bucket()}.
 
--spec from_ops([#log_record{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
+-spec from_ops([#log_record{}], partition_id(), none | [{dcid(),#op_number{}}]) -> #interdc_txn{}.
 from_ops(Ops, Partition, PrevLogOpId) ->
-  LastOp = lists:last(Ops),
-  CommitPld = LastOp#log_record.log_operation,
-  commit = CommitPld#log_operation.op_type, %% sanity check
-  #commit_log_payload{commit_time = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_operation.log_payload,
-  #interdc_txn{
-    dcid = DCID,
-    partition = Partition,
-    prev_log_opid = PrevLogOpId,
-    log_records = Ops,
-    snapshot = SnapshotTime,
-    timestamp = CommitTime
-  }.
+    LastOp = lists:last(Ops),
+    CommitPld = LastOp#log_record.log_operation,
+    commit = CommitPld#log_operation.op_type, %% sanity check
+    #commit_log_payload{commit_time = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_operation.log_payload,
+    #interdc_txn{
+       dcid = DCID,
+       partition = Partition,
+       prev_log_opid = PrevLogOpId,
+       prev_log_op_id_dc = PrevLogOpIdDC,
+       log_records = Ops,
+       snapshot = SnapshotTime,
+       timestamp = CommitTime
+      }.
 
--spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
+-spec ping(partition_id(), [dcid(),#op_number{}] | none, non_neg_integer()) -> #interdc_txn{}.
 ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   dcid = dc_meta_data_utilities:get_my_dc_id(),
   partition = Partition,
@@ -67,15 +68,22 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   timestamp = Timestamp
 }.
 
--spec last_log_opid(#interdc_txn{}) -> #op_number{}.
+-spec last_log_opid(#interdc_txn{}) -> [{dcid(),#op_number{}].
 last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId}) ->
     case is_ping(Txn) of
 	true -> LogOpId;
 	false ->
-	    LastOp = lists:last(Ops),
-	    CommitPld = LastOp#log_record.log_operation,
-	    commit = CommitPld#log_operation.op_type, %% sanity check
-	    LastOp#log_record.op_number
+	    case ?IS_PARTIAL of
+		false ->
+		    LastOp = lists:last(Ops),
+		    CommitPld = LastOp#log_record.log_operation,
+		    commit = CommitPld#log_operation.op_type, %% sanity check
+		    LastOp#log_record.op_number;
+		true ->
+		    %% In partial the commit records dont store the opids (because 
+		    %% ordering is based on bucket ids)
+		    Op = lists:nth(length(Ops)-1,Ops),
+		    Op#log_record.op_number_dcid,
     end.
 
 -spec is_local(#interdc_txn{}) -> boolean().
@@ -202,6 +210,7 @@ bucket_to_bin(undefined) ->
     %% No bucket, so just use 0's
     pad(?BUCKET_BYTE_LENGTH, <<0>>);
 bucket_to_bin({bucket, Bucket}) ->
+    lager:info("bucket is ~p", [Bucket]),
     pad(?BUCKET_BYTE_LENGTH, term_to_binary(Bucket)).
 
 %% Returns the zmq subscription prefix for the

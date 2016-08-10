@@ -111,8 +111,9 @@ process_queue(DCID, {State, Acc}) ->
 -spec try_store(#state{}, #interdc_txn{}) -> {#state{}, boolean()}.
 try_store(State=#state{drop_ping = true}, #interdc_txn{log_records = []}) ->
     {State, true};
-try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = []}) ->
-    {update_clock(State, DCID, Timestamp), true};
+try_store(State, _Txn = #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = []}) ->
+    %% lager:info("got a ping ~w", [Txn]),
+    {update_clock(State, DCID, Timestamp, true), true};
 
 %% Store the normal transaction
 try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
@@ -121,6 +122,8 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
 
+    %% lager:info("got not a ping !!! ~w", [Txn]),
+
   %% Check if the current clock is greater than or equal to the dependency vector
   case vectorclock:ge(CurrentClock, Dependencies) of
 
@@ -128,7 +131,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% Still need to update the timestamp for that DC, up to 1 less than the
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
-    false -> {update_clock(State, DCID, Timestamp-1), false};
+    false -> {update_clock(State, DCID, Timestamp-1, false), false};
 
     %% If so, store the transaction
     true ->
@@ -140,7 +143,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
-      {update_clock(State, DCID, Timestamp), true}
+      {update_clock(State, DCID, Timestamp, false), true}
   end.
 
 handle_command({set_dependency_clock, Vector}, _Sender, State) ->
@@ -187,34 +190,38 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
   State#state{queues = dict:store(DCID, NewQueue, Queues)}.
 
 %% Update the clock value associated with the given DCID from the perspective of this partition.
--spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
-update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
-  %% Should we decrement the timestamp value by 1?
-  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
-
-  %% Check if the stable snapshot should be refreshed.
-  %% It's an optimization that reduces communication overhead during intensive updates at remote DCs.
-  %% This assumes that heartbeats/updates arrive on a regular basis,
-  %% and that there is always the next one arriving shortly.
-  %% This causes the stable_snapshot to tick more slowly, which is an expected behaviour.
-  Now = dc_utilities:now_millisec(),
-  NewLastUpdated = case Now > LastUpdated + ?VECTORCLOCK_UPDATE_PERIOD of
-    %% Stable snapshot was not updated for the defined period of time.
-    %% Push the changes and update the last_updated parameter to the current timestamp.
-    %% WARNING: this update must push the whole contents of the partition vectorclock,
-    %% not just the current DCID/Timestamp pair in the arguments.
-    %% Failure to do so may lead to a deadlock during the connection phase.
-    true ->
-
-      %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
-
-      Now;
-    %% Stable snapshot was recently updated, no need to do so.
-    false -> LastUpdated
-  end,
-
-  State#state{vectorclock = NewClock, last_updated = NewLastUpdated}.
+-spec update_clock(#state{}, dcid(), non_neg_integer(), boolean()) -> #state{}.
+update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp, IsPing) ->
+    %% Should we decrement the timestamp value by 1?
+    NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
+    IsPartial = ?IS_PARTIAL(),
+    %% In partial replication only the heartbeats update the stable time
+    NewLastUpdated =
+	case (IsPartial and IsPing) or not IsPartial of
+	    true ->
+		%% Check if the stable snapshot should be refreshed.
+		%% It's an optimization that reduces communication overhead during intensive updates at remote DCs.
+		%% This assumes that heartbeats/updates arrive on a regular basis,
+		%% and that there is always the next one arriving shortly.
+		%% This causes the stable_snapshot to tick more slowly, which is an expected behaviour.
+		Now = dc_utilities:now_millisec(),
+		case Now > LastUpdated + ?VECTORCLOCK_UPDATE_PERIOD of
+		    %% Stable snapshot was not updated for the defined period of time.
+		    %% Push the changes and update the last_updated parameter to the current timestamp.
+		    %% WARNING: this update must push the whole contents of the partition vectorclock,
+		    %% not just the current DCID/Timestamp pair in the arguments.
+		    %% Failure to do so may lead to a deadlock during the connection phase.
+		    true ->
+			%% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
+			ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),		
+			Now;
+		    %% Stable snapshot was recently updated, no need to do so.
+		    false -> LastUpdated
+		end;
+	    false ->
+		LastUpdated
+	end,
+    State#state{vectorclock = NewClock, last_updated = NewLastUpdated}.
 
 %% Get the current vectorclock from the perspective of this partition, with the updated entry for current DC.
 -spec get_partition_clock(#state{}) -> vectorclock().

@@ -74,7 +74,8 @@
 -define(LOG_RECORD_VERSION, 0).
 
 %% If partial replication is enabled
--define(IS_PARTIAL(),false).
+-define(IS_PARTIAL(),
+	application:get_env(antidote, partial, false)).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
@@ -104,8 +105,9 @@
 %% The way records are stored in the log.
 -record(log_record,{
 	  version :: non_neg_integer(), %% The version of the log record, for backwards compatability
-	  op_number :: #op_number{},
+	  %% op_number :: {dcid(),#op_number{}},
 	  bucket_op_number :: #op_number{},
+	  op_number_dcid :: [{dcid(),#op_number{}}], %% Opids per dcid (for partial replication)
 	  log_operation :: #log_operation{}}).
 
 %% Clock SI

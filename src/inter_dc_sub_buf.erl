@@ -86,11 +86,22 @@ process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buff
   process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
+-spec get_op_id(#interdc_txn{}) -> non_neg_integer().
+get_op_id(Txn) ->
+    case ?IS_PARTIAL() of
+	false ->
+	    Txn#interdc_txn.prev_log_opid#op_number.local;
+	true ->
+	    DCID = dc_meta_data_utilities:get_my_dc_id(),
+	    {DCID, Time} = lists:keyfind(DCID,1,Txn#interdc_txn.prev_log_opid_dc),
+	    Time
+    end.
+
 process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
-      TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
+      TxnLast = get_op_id(Txn),
       case cmp(TxnLast, Last) of
 
       %% If the received transaction is immediately after the last observed one

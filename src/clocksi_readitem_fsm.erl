@@ -124,10 +124,10 @@ get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction) ->
 -spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
     %% Check if should perform the read externally
-    lager:info("the key to check if external ~p", [Key]),
+    %% lager:info("the key to check if external ~p", [Key]),
     case is_external(Key,PropertyList,Partition) of
 	{true, PDCIDs} ->
-	    lager:info("Performing external read ~p", [PDCIDs]),
+	    %% lager:info("Performing external read ~p", [PDCIDs]),
 	    Req = #external_read_request_state{
 		     dc_list = PDCIDs,
 		     key = Key,
@@ -151,10 +151,10 @@ read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
 async_read_data_item({Partition,Node},Key,Type,Transaction,PropertyList,Coordinator) ->
     %% Check if should perform the read externally
-    lager:info("the key to check if external ASYNCCCC ~p", [Key]),
+    %% lager:info("the key to check if external ASYNCCCC ~p", [Key]),
     case is_external(Key,PropertyList,Partition) of
 	{true, PDCIDs} ->
-	    lager:info("async external read!!!! ~w", [PDCIDs]),
+	    %% lager:info("async external read!!!! ~w", [PDCIDs]),
 	    Req = #external_read_request_state{
 		     dc_list = PDCIDs,
 		     key = Key,

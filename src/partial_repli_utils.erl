@@ -23,13 +23,31 @@
 
 -define(EXTERNAL_READ_TIMEOUT, 1000).
 
--export([check_wait_time/2,
+-export([
+	 set_partial_rep/1,
+	 set_partial_rep_internal/1,
+	 check_wait_time/2,
 	 replace_external_ops/2,
 	 perform_external_read/1,
 	 deliver_external_read_resp/2,
 	 trim_ops_from_dc/5,
 	 check_should_convert_to_list_in_materializer/1,
 	 wait_for_external_read_resp/0]).
+
+-spec set_partial_rep(boolean()) -> ok.
+set_partial_rep(Value) ->
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    %% Update the environment varible on all nodes in the DC
+    lists:foreach(fun(Node) -> 
+			  ok = rpc:call(Node, partial_repli_utils, set_partial_rep_internal, [Value])
+		  end, Nodes).
+
+%% @doc internal function to set txn certification environment variable.
+-spec set_partial_rep_internal(boolean()) -> ok.
+set_partial_rep_internal(Value) ->
+    lager:info("setting partial replication ~p at ~p", [Value,node()]),
+    application:set_env(antidote,partial,Value).
+
 
 -spec deliver_external_read_resp(binary() | timeout,#request_cache_entry{}) -> ok.
 deliver_external_read_resp(BinaryRep,RequestCacheEntry) when is_binary(BinaryRep) ->
@@ -112,6 +130,11 @@ replace_external_ops(SnapshotGetResp = #snapshot_get_response{ops_list = OldOps}
 	    %% Next instert the external ops
 	    %% Note this is really expensive, but should expect the list of new ops to be short anyway
 	    lager:info("Modifying the op list for external read"),
+	    IdList = 
+		lists:map(fun({Id,_Op}) ->
+				  Id
+			  end, OldOpsRem),
+	    lager:info("The op id list: ~w", [IdList]),
 	    Ops =
 		lists:foldl(fun({NewId,NewOp},OldOpsAcc) ->
 				    lager:info("There is an op in the external read!!"),

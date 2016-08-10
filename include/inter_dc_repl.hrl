@@ -11,17 +11,18 @@
 -type socket_address() :: {inet:ip_address(), inet:port_number()}.
 -type zmq_socket() :: any().
 -type pdcid() :: {dcid(), partition_id()}.
--type log_opid() :: non_neg_integer().
+-type log_opid() :: pos_integer().
 
 -record(interdc_txn, {
- dcid :: dcid(),
- partition :: partition_id(),
- prev_log_opid :: #op_number{} | none, %% the value is *none* if the transaction is read directly from the log
- snapshot :: snapshot_time(),
- timestamp :: clock_time(),
- last_update_opid :: #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort)
- bucket :: bucket(),
- log_records :: [#log_record{}] %% if the OP list is empty, the message is a HEARTBEAT
+	  dcid :: dcid(),
+	  partition :: partition_id(),
+	  prev_log_opid_dc :: [{dcid(),#op_number{}}], %% for partial rep, the opid by per DC that replicates is
+	  prev_log_opid :: #op_number{} | none, %% the value is *none* if the transaction is read directly from the log
+	  snapshot :: snapshot_time(),
+	  timestamp :: clock_time(),
+	  last_update_opid :: #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort) THIS ISN'T USED???
+	  bucket :: bucket(),
+	  log_records :: [#log_record{}] %% if the OP list is empty, the message is a HEARTBEAT
 }).
 
 -record(descriptor, {

@@ -57,7 +57,7 @@
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
-  last_log_id :: #op_number{},
+  last_log_id :: [{dcid(),#op_number{}}] | undefined,
   timer :: any()
 }).
 
@@ -76,7 +76,7 @@ start_timer(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_s
 
 %% After restarting from failure, load the operation id of the last operation sent by this DC
 %% Otherwise the stable time won't advance as the receving DC will be thinking it is getting old messages
--spec update_last_log_id(partition_id(), #op_number{}) -> ok.
+-spec update_last_log_id(partition_id(), [dcid(),#op_number{}]) -> ok.
 update_last_log_id(Partition, OpId) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {update_last_log_id, OpId}).
 
 %% Send the stable time to this vnode, no transaction in the future will commit with a smaller time
@@ -92,7 +92,7 @@ init([Partition]) ->
   {ok, #state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
-    last_log_id = #op_number{},
+    last_log_id = undefined,
     timer = none
   }}.
 
