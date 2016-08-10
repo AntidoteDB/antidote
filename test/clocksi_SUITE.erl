@@ -56,16 +56,18 @@
 init_per_suite(Config) ->
     lager_common_test_backend:bounce(debug),
     test_utils:at_init_testsuite(),
-    
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2, dev3]),
 
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters), %% This test needs only one cluster
+    % Nodes = test_utils:pmap(fun(N) ->
+    %                 test_utils:start_suite(N, Config)
+    %         end, [dev1, dev2, dev3]),
+    % ok = test_utils:join_cluster(Nodes),
     % Check that the clocksi protocol is tested
     {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
 
-    test_utils:connect_dcs(Nodes),
+    %test_utils:connect_dcs(Nodes),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -73,7 +75,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
      Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -116,7 +118,7 @@ clocksi_test1(Config) ->
                     [
                      [{read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result11),
-    {ok, {_, ReadSet11, _}}=Result11, 
+    {ok, {_, ReadSet11, _}}=Result11,
     ?assertMatch([0], ReadSet11),
 
     %% Read what you wrote
@@ -127,7 +129,7 @@ clocksi_test1(Config) ->
                       {update, {Key2, Type, {increment, a}}},
                       {read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result2),
-    {ok, {_, ReadSet2, _}}=Result2, 
+    {ok, {_, ReadSet2, _}}=Result2,
     ?assertMatch([0,0], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
@@ -269,7 +271,7 @@ clocksi_test_prepare(Config) ->
 
     timer:sleep(3000),
 
-    {ok,TxIdRead}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),    
+    {ok,TxIdRead}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
 
     timer:sleep(3000),
 
@@ -282,7 +284,7 @@ clocksi_test_prepare(Config) ->
     ?assertEqual({ok, 1}, ReadResult1),
     CommitTime1=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
     ?assertMatch({ok, _}, CommitTime1),
-       
+
     spawn(?MODULE, spawn_com, [FirstNode, TxId]),
 
     ReadResultR=rpc:call(FirstNode, antidote, clocksi_iread,
@@ -291,7 +293,7 @@ clocksi_test_prepare(Config) ->
 
     End1=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
-    
+
     lager:info("Test prepare passed"),
     pass.
 
@@ -309,10 +311,10 @@ spawn_com(FirstNode, TxId) ->
     timer:sleep(3000),
     End1 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1).
-    
+
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
-%%      that updates only one partition. This type of txs use a only-one phase 
+%%      that updates only one partition. This type of txs use a only-one phase
 %%      commit.
 clocksi_test5(Config) ->
     Nodes = proplists:get_value(nodes, Config),
@@ -441,7 +443,7 @@ clocksi_test4(Config) ->
     FirstNode = hd(Nodes),
     Key1 = clocksi_test4_key1,
     Type = riak_dt_pncounter,
-    
+
     lager:info("Node1: ~p", [FirstNode]),
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
 
@@ -520,7 +522,7 @@ clocksi_test_read_wait(Config) ->
     Key1 = clocksi_test_read_wait_key1,
     %Actor1 = actor,
     Type = riak_dt_pncounter,
-    
+
     %% Start a new tx, update some key, and send prepare.
     FirstNode = hd(Nodes),
     LastNode = lists:last(Nodes),
@@ -541,10 +543,10 @@ clocksi_test_read_wait(Config) ->
     {ok, TxId2} = rpc:call(LastNode, antidote, clocksi_istart_tx, []),
     lager:info("Tx2 started with id : ~p", [TxId2]),
     Pid = spawn(?MODULE, spawn_read, [LastNode, TxId2, self(), Key1, Type]),
-    
+
     %% Delay first transaction
     timer:sleep(10000),
- 
+
     %% Commit the first tx.
     End1 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
     ?assertMatch({ok, _}, End1),
@@ -578,9 +580,9 @@ spawn_read(LastNode, TxId, Return, Key, Type) ->
 clocksi_test_certification_check(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
-        {ok, true} -> 
+        {ok, true} ->
             clocksi_test_certification_check_run(Nodes);
-        _ -> 
+        _ ->
             pass
     end.
 
@@ -588,12 +590,12 @@ clocksi_test_certification_check_run(Nodes) ->
     lager:info("clockSI_test_certification_check started"),
     Key1 = clockSI_test_certification_check_key1,
     Type = riak_dt_pncounter,
-    
+
     FirstNode = hd(Nodes),
     LastNode = lists:last(Nodes),
     lager:info("FirstNode: ~p", [FirstNode]),
     lager:info("LastNode: ~p", [LastNode]),
-    
+
     %% Start a new tx on first node, perform an update on some key.
     {ok,TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     lager:info("Tx1 Started, id : ~p", [TxId]),
@@ -632,20 +634,20 @@ clocksi_test_certification_check_run(Nodes) ->
 clocksi_multiple_test_certification_check(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
-        {ok, true} -> 
+        {ok, true} ->
             clocksi_multiple_test_certification_check_run(Nodes);
-        _ -> 
+        _ ->
             pass
     end.
 
-clocksi_multiple_test_certification_check_run(Nodes) ->    
+clocksi_multiple_test_certification_check_run(Nodes) ->
     lager:info("clockSI_multiple_test_certification_check started"),
-    
+
     Key1 = clocksi_multiple_test_certification_check_key1,
     Key2 = clocksi_multiple_test_certification_check_key2,
     Key3 = clocksi_multiple_test_certification_check_key3,
     Type = riak_dt_pncounter,
-    
+
     FirstNode = hd(Nodes),
     LastNode = lists:last(Nodes),
     lager:info("FirstNode: ~p", [FirstNode]),

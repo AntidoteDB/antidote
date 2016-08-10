@@ -43,18 +43,15 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2]),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     %Ensure that the gentlerain protocol is used
-    test_utils:pmap(fun(Node) -> 
-        rpc:call(Node, application, set_env, 
+    test_utils:pmap(fun(Node) ->
+        rpc:call(Node, application, set_env,
         [antidote, txn_prot, gr]) end, Nodes),
 
     %Check that indeed gentlerain is running
     {ok, gr} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
-    
-    test_utils:connect_dcs(Nodes),
 
     %% Check whether heartbeats from all replicas has received
     %% After this stable snapshot vectorclock contain entry for all DCs
@@ -69,7 +66,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -83,7 +80,7 @@ read_write_test(Config) ->
     Node = hd(Nodes),
     Bound_object = {key, riak_dt_pncounter, bucket},
     {ok, [0], _} = rpc:call(Node, antidote, read_objects, [ignore, {}, [Bound_object]]),
-    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{Bound_object, increment, 1}]]),    
+    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{Bound_object, increment, 1}]]),
     {ok, Res, _} = rpc:call(Node, antidote, read_objects, [ignore, {}, [Bound_object]]),
     ?assertMatch([1], Res).
 
@@ -101,7 +98,7 @@ read_multiple_test(Config) ->
 replication_test(Config) ->
     lager:info("Replication Test"),
     [Node1, Node2 | _] = proplists:get_value(nodes, Config),
-    
+
     O1 = {r1, riak_dt_pncounter, bucket},
     O2 = {r2, riak_dt_pncounter, bucket},
     %% Write to DC1

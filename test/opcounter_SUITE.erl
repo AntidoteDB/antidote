@@ -46,11 +46,8 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -58,7 +55,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -95,7 +92,7 @@ clocksi_test1(Config) ->
                     [
                      [{read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result11),
-    {ok, {_, ReadSet11, _}}=Result11, 
+    {ok, {_, ReadSet11, _}}=Result11,
     ?assertMatch([0], ReadSet11),
 
     %% Read what you wrote
@@ -106,7 +103,7 @@ clocksi_test1(Config) ->
                       {update, {Key2, Type, {increment, a}}},
                       {read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result2),
-    {ok, {_, ReadSet2, _}}=Result2, 
+    {ok, {_, ReadSet2, _}}=Result2,
     ?assertMatch([0,1], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
@@ -331,7 +328,7 @@ clocksi_test_read_wait(Config) ->
     lager:info("Tx2 started with id : ~p", [TxId1]),
     lager:info("Tx2 reading..."),
     Pid = spawn(?MODULE, spawn_read, [LastNode, TxId1, self(), Key, Type]),
-    
+
     %% Delay first transaction
     timer:sleep(100),
     %% Commit the first tx.

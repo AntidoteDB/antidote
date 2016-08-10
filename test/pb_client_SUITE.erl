@@ -52,11 +52,8 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -238,4 +235,3 @@ static_transaction_test(_Config) ->
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
-

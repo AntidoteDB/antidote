@@ -44,22 +44,19 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2]),
+    Clusters = test_utils:set_up_clusters_common(Config),
 
-    {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
+    {ok, Prot} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
 
-    test_utils:connect_dcs(Nodes),
-    [{nodes, Nodes}|Config].
+    [{clusters, Clusters}|Config].
 
 end_per_suite(Config) ->
     Config.
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -67,9 +64,10 @@ all() -> [simple_replication_test,
          multiple_keys_test,
          causality_test,
          atomicity_test].
-         
+
 simple_replication_test(Config) ->
-    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key = simple_replication_test,
     Type = riak_dt_gcounter,
@@ -99,7 +97,8 @@ simple_replication_test(Config) ->
     pass.
 
 multiple_keys_test(Config) ->
-    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Type = riak_dt_gcounter,
     Key = multiple_keys_test,
     lists:foreach( fun(_) ->
@@ -150,7 +149,8 @@ causality_test(Config) ->
     %% add element e to orset in one DC
     %% remove element e from other DC
     %% result set should not contain e
-    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Type = riak_dt_orset,
     Key = causality_test,
     %% Add two elements in DC1
@@ -180,12 +180,13 @@ causality_test(Config) ->
 %% This tests checks reads are atomic when replicated to other DCs
 %% TODO: need more deterministic test
 atomicity_test(Config) ->
-    [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Key1 = atomicity_test1,
     Key2 = atomicity_test2,
     Key3 = atomicity_test3,
     Type = riak_dt_gcounter,
-    
+
     Caller = self(),
     ContWrite = fun() ->
                         lists:foreach(

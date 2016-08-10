@@ -39,11 +39,8 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -51,7 +48,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -60,8 +57,8 @@ all() -> [mvreg_test].
 mvreg_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    
-    %Test 1: Assigning different values by the same actor; 
+
+    %Test 1: Assigning different values by the same actor;
     % last value should be returned when reading
     N = 10,
     ListIds = lists:seq(1, N),

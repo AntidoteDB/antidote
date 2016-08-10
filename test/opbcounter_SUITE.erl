@@ -41,11 +41,8 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -53,7 +50,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -146,7 +143,7 @@ transfer_test(Config) ->
     ?assertEqual({error, no_permissions}, Result1),
     %% Test transfered permissions enable the previous operation.
     Result2 = rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
-        [[{update, {Key, Type, {{transfer, 2, r2}, r1}}}, 
+        [[{update, {Key, Type, {{transfer, 2, r2}, r1}}},
         {update, {Key, Type, {{transfer, 3, r1}, r2}}}, {read, {Key, Type}}]]),
     ?assertMatch({ok, _}, Result2),
     {ok, {_, [Counter1], _}} = Result2,
@@ -157,11 +154,11 @@ transfer_test(Config) ->
 %% Tests the conditional write mechanism required for `generate_downstream()' and `update()' to be atomic.
 %% Such atomic execution is required for the correctness of `bcounter()' CRDT.
 conditional_write_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),    
+    Nodes = proplists:get_value(nodes, Config),
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
         {ok, true} ->
             conditional_write_test_run(Nodes);
-        _ -> 
+        _ ->
             pass
     end.
 
@@ -170,14 +167,14 @@ conditional_write_test_run(Nodes) ->
     LastNode = lists:last(Nodes),
     Type = crdt_bcounter,
     Key = bcounter5,
-    
+
     rpc:call(FirstNode, antidote, append,
         [Key, Type, {{increment, 10}, r1}]),
-    
+
     %% Start a transaction on the first node and perform a read operation.
     {ok, TxId1} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     {ok, _} = rpc:call(FirstNode, antidote, clocksi_iread, [TxId1, Key, Type]),
-    
+
     %% Execute a transaction on the last node which performs a write operation.
     {ok, TxId2} = rpc:call(LastNode, antidote, clocksi_istart_tx, []),
     ok = rpc:call(LastNode, antidote, clocksi_iupdate,

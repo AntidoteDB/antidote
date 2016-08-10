@@ -50,11 +50,8 @@ init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
     %lager_common_test_backend:bounce(debug),
     %% have the slave nodes monitor the runner node, so they can't outlive it
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 
@@ -75,7 +72,7 @@ all() ->
 
 append_test(Config) ->
     [Node | _Nodes] = proplists:get_value(nodes, Config),
-    
+
     %lager:info("Waiting until vnodes are started up"),
     %rt:wait_until(Node,fun wait_init:check_ready/1),
     %lager:info("Vnodes are started up"),
@@ -84,17 +81,17 @@ append_test(Config) ->
     {ok, _} = rpc:call(Node,
                            antidote, append,
                            [key1, riak_dt_gcounter, {increment, ucl}]),
-    
+
     ct:print("Starting write operation 2"),
     {ok, _} = rpc:call(Node,
                            antidote, append,
                            [key2, riak_dt_gcounter, {increment, ucl}]),
-    
+
     ct:print("Starting read operation 1"),
     {ok, 1} = rpc:call(Node,
                            antidote, read,
                            [key1, riak_dt_gcounter]),
-   
+
     ct:print("Starting read operation 2"),
     {ok, 1} = rpc:call(Node,
                            antidote, read,
@@ -119,9 +116,9 @@ append_failure_test(Config) ->
     %% Perform successful write and read.
     {ok, _} = rpc:call(First,
                            antidote, append, [Key, riak_dt_gcounter, {increment, ucl}]),
-    
+
     {ok, 1} = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
-   
+
     %% Partition the network: About to partition A from the other nodes
     test_utils:partition_cluster(A, Nodes -- A),
 

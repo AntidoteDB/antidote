@@ -47,13 +47,8 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    %lager_common_test_backend:bounce(debug),
-    %% have the slave nodes monitor the runner node, so they can't outlive it
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -83,7 +78,7 @@ dummy_test(Config) ->
   {ok,_} = rpc:call(Node2, antidote, append, [myKey2, crdt_pncounter, {increment, a}]),
 
   % Propagation of updates
-  F = fun() -> 
+  F = fun() ->
     rpc:call(Node2, antidote, read, [myKey2, crdt_pncounter])
     end,
   Delay = 100,
@@ -91,6 +86,3 @@ dummy_test(Config) ->
   ok = test_utils:wait_until_result(F, {ok, 3}, Retry, Delay),
 
   ok.
-
-
-

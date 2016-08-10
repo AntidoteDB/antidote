@@ -49,10 +49,8 @@
 init_per_suite(Config) ->
     lager_common_test_backend:bounce(debug),
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2]),
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -60,7 +58,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -78,19 +76,19 @@ log_test(Config) ->
             Node = lists:nth(Elem, Nodes),
             ct:print("Inc at node: ~p",[Node]),
 
-            {ok,_} = rpc:call(Node, antidote, append, 
+            {ok,_} = rpc:call(Node, antidote, append,
                                 [key1, crdt_pncounter, {increment, a}])
     end,
 
     lists:foreach(F, ListIds),
 
     FirstNode = hd(Nodes),
-    
-    G = fun() -> 
+
+    G = fun() ->
             rpc:call(FirstNode, antidote, read, [key1, crdt_pncounter])
         end,
     Delay = 1000,
     Retry = 360000 div Delay, %wait for max 1 min
     ok = test_utils:wait_until_result(G, {ok, NumWrites}, Retry, Delay),
-    
+
     pass.

@@ -40,11 +40,8 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -52,7 +49,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -61,7 +58,7 @@ all() -> [empty_set_test,
           remove_test].
 
 empty_set_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),    
+    Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Test1 started"),
     Type = crdt_orset,
@@ -78,7 +75,7 @@ empty_set_test(Config) ->
 
 
 add_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config), 
+    Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Add test started"),
     Type = crdt_orset,
@@ -107,12 +104,12 @@ add_test(Config) ->
 
 
 remove_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config), 
+    Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Remove started"),
     Type = crdt_orset,
     Key = key_remove,
-    
+
     Result1=rpc:call(FirstNode, antidote, clocksi_execute_int_tx,
                     [[{update, {Key, Type, {{add, a}, ucl}}}, {update, {Key, Type, {{add, b}, ucl}}}]]),
     ?assertMatch({ok, _}, Result1),

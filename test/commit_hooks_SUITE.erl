@@ -47,11 +47,8 @@
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
-    Nodes = test_utils:pmap(fun(N) ->
-                    test_utils:start_suite(N, Config)
-            end, [dev1, dev2, dev3]),
-
-    test_utils:connect_dcs(Nodes),
+    Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = hd(Clusters),
     [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
@@ -59,7 +56,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Config.
-    
+
 end_per_testcase(_, _) ->
     ok.
 
@@ -77,15 +74,15 @@ register_hook_test(Config) ->
     Response=rpc:call(Node, antidote, register_pre_hook,
                     [Bucket, hooks_module, hooks_function]),
     ?assertMatch({error, _}, Response),
-    
+
     ok=rpc:call(Node, antidote_hooks, register_post_hook,
                 [Bucket, antidote_hooks, test_commit_hook]),
-    Result1 = rpc:call(Node, antidote_hooks, get_hooks, 
+    Result1 = rpc:call(Node, antidote_hooks, get_hooks,
                        [post_commit, Bucket]),
     ?assertMatch({antidote_hooks, test_commit_hook}, Result1),
     ok=rpc:call(Node, antidote, unregister_hook,
                 [post_commit, Bucket]),
-    Result2 = rpc:call(Node, antidote_hooks, get_hooks, 
+    Result2 = rpc:call(Node, antidote_hooks, get_hooks,
                        [post_commit, Bucket]),
     ?assertMatch(undefined, Result2).
 
@@ -96,12 +93,12 @@ execute_hook_test(Config) ->
     Bucket = test_bucket,
     ok = rpc:call(Node, antidote, register_pre_hook,
                   [Bucket, antidote_hooks, test_increment_hook]),
-    
+
     Bound_object = {key, riak_dt_pncounter, Bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
     {ok, CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
-    
+
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
@@ -114,7 +111,7 @@ execute_post_hook_test(Config) ->
     Bucket = test_bucket2,
     ok = rpc:call(Node, antidote, register_post_hook,
                   [Bucket, antidote_hooks, test_post_hook]),
-    
+
     Bound_object = {key1, riak_dt_pncounter, Bucket},
     {ok, TxId} =  rpc:call(Node, antidote, start_transaction, [ignore, []]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
@@ -132,10 +129,10 @@ execute_prehooks_static_txn_test(Config) ->
     Bucket = test_bucket3,
     ok = rpc:call(Node, antidote, register_pre_hook,
                   [Bucket, antidote_hooks, test_increment_hook]),
-    
+
     Bound_object = {key3, riak_dt_pncounter, Bucket},
     {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
-    
+
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
@@ -147,10 +144,10 @@ execute_posthooks_static_txn_test(Config) ->
     Bucket = test_bucket4,
     ok = rpc:call(Node, antidote, register_post_hook,
                   [Bucket, antidote_hooks, test_post_hook]),
-    
+
     Bound_object = {key4, riak_dt_pncounter, Bucket},
     {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
-   
+
     CommitCount = {key4, riak_dt_pncounter, commitcount},
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[CommitCount], TxId2]),
