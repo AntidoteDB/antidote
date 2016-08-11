@@ -196,7 +196,7 @@ connect_dcs(Nodes) ->
   Clusters = [[Node] || Node <- Nodes],
   ct:pal("Connecting DC clusters..."),
 
-  lists:foreach(fun(Cluster) ->
+  pmap(fun(Cluster) ->
               Node1 = hd(Cluster),
               ct:print("Waiting until vnodes start on node ~p", [Node1]),
               wait_until_registered(Node1, inter_dc_pub),
@@ -210,19 +210,17 @@ connect_dcs(Nodes) ->
           end, Clusters),
     Descriptors = descriptors(Clusters),
     Res = [ok || _ <- Clusters],
-    lists:foreach(fun(Cluster) ->
+    pmap(fun(Cluster) ->
               Node = hd(Cluster),
               ct:print("Making node ~p observe other DCs...", [Node]),
               %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
               Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
           end, Clusters),
-    lists:foreach(fun(Cluster) ->
+    pmap(fun(Cluster) ->
               Node = hd(Cluster),
               ok = rpc:call(Node, inter_dc_manager, dc_successfully_started, [])
           end, Clusters),
     ct:pal("DC clusters connected!").
-
-
 
 % Waits until a certain registered name pops up on the remote node.
 wait_until_registered(Node, Name) ->
@@ -235,7 +233,6 @@ wait_until_registered(Node, Name) ->
     Retry = 360000 div Delay,
     ok = wait_until(F, Retry, Delay),
     ok.
-
 
 descriptors(Clusters) ->
   lists:map(fun(Cluster) ->
@@ -431,16 +428,15 @@ wait_until_ring_converged(Nodes) ->
 
 %% Build clusters for all test suites.
 set_up_clusters_common(Config) ->
-   Cluster1 = pmap(fun(N) ->
-                  test_utils:start_suite(N, Config)
-          end, [dev1, dev2]),
-   Cluster2 =  pmap(fun(N) ->
-                  test_utils:start_suite(N, Config)
-              end, [dev3]),
-   Cluster3 = pmap(fun(N) ->
-                  test_utils:start_suite(N, Config)
-          end, [dev4]),
-   Clusters = [Cluster1, Cluster2, Cluster3],
+   StartCluster = fun(Nodes) ->
+                      pmap(fun(N) ->
+                              test_utils:start_suite(N, Config)
+                           end, Nodes)
+                  end,
+   Clusters = pmap(fun(N) ->
+                  StartCluster(N)
+              end, [[dev1, dev2], [dev3], [dev4]]),
+   [Cluster1, Cluster2, Cluster3] = Clusters,
    %% Do not join cluster if it is already done
    case owners_according_to(hd(Cluster1)) of % @TODO this is an adhoc check
      Cluster1 -> ok; % No need to build Cluster
