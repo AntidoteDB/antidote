@@ -168,7 +168,8 @@ reset_my_dc_descriptor() ->
 -spec load_partition_meta_data() -> ok.
 load_partition_meta_data() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionNodeList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions(),
     Length = length(PartitionList),
     MyDCID = get_my_dc_id(),
     ok = set_dc_partitions(PartitionList, MyDCID),
@@ -176,7 +177,7 @@ load_partition_meta_data() ->
     ok = stable_meta_data_server:broadcast_meta_data({part,length}, Length),
     {_Len, IdPartitionList} = lists:foldl(fun(Partition,{PrevId,Acc}) ->
 						  {PrevId + 1, Acc ++ [{{part,PrevId},Partition}]}
-					  end, {1,[]}, PartitionList),
+					  end, {1,[]}, PartitionNodeList),
     ok = stable_meta_data_server:broadcast_meta_data_list(IdPartitionList).
 
 %% Gets the number of partitions at this DC
@@ -191,7 +192,7 @@ get_num_partitions() ->
     end.
 
 %% Get information about a partition based on it index
--spec get_partition_at_index(non_neg_integer()) -> term().
+-spec get_partition_at_index(non_neg_integer()) -> index_node().
 get_partition_at_index(Index) ->
     case stable_meta_data_server:read_meta_data({part,Index}) of
 	{ok, Partition} ->

@@ -29,113 +29,141 @@
 
 %% API
 -export([
-  new_state/1,
+  new_state/2,
   process/2]).
-
-%% State
--record(state, {
-  state_name :: normal | buffering,
-  pdcid :: pdcid(),
-  last_observed_opid :: non_neg_integer() | init,
-  queue :: queue()
-}).
 
 %%%% API --------------------------------------------------------------------+
 
-%% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
--spec new_state(pdcid()) -> #state{}.
-new_state(PDCID) -> #state{
+-spec new_state(pdcid(),partition_id()) -> #inter_dc_sub_buf{}.
+new_state(PDCID,LocalPartition) -> #inter_dc_sub_buf{
+  local_partition = LocalPartition,
   state_name = normal,
   pdcid = PDCID,
   last_observed_opid = init,
   queue = queue:new()
 }.
 
--spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #state{}) -> #state{}.
-process({txn, Txn}, State = #state{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
+-spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+process({txn, Txn=#interdc_txn{dcid=DCID, partition=Partition}},
+	State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}, local_partition = MyPartition}) ->
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
-    %% you can check for duplocates or lost messages
-    Result = try
-		 logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
-					 DCID, Partition)
-	     catch
-		 _:Reason ->
-		     lager:info("Error loading last opid from log: ~w, will retry", [Reason])
-	     end,
-    case Result of
-	{ok, OpId} ->
-	    lager:info("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
-	    process({txn, Txn}, State#state{last_observed_opid=OpId});
-	_ ->
-	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
+    %% you can check for duplicates or lost messages
+    %% Operations are orderd for each {DCID,Partition} by the origin DC
+    %% Assuming the partitioning scheme might be different at the local DC we have to check all local partitions
+    %% for the max updates from the sending DC, Partition pair
+    LocalPartitions = dc_meta_data_utilities:get_my_partitions_list(),
+    OpIds = 
+	lists:foldl(fun(LocalPartition,Acc) ->
+			    Result = 
+				try
+				    logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(LocalPartition),
+								DCID, Partition)
+				catch
+				    _:Reason ->
+					lager:info("Error loading last opid from log: ~w, will retry", [Reason]),
+					error
+				end,
+			    case Result of
+				{ok, OpId} when is_list(Acc) ->
+				    [OpId | Acc];
+				_ ->
+				    error
+			    end
+		    end, [], LocalPartitions),
+    case OpIds of
+	_ when is_list(OpIds) ->
+	    MaxOpId = lists:max(OpIds),
+	    lager:info("Loaded opid ~p from log for dc ~p, partition, ~p, at local partition ~p", [MaxOpId, DCID, Partition, MyPartition]),
+	    process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=MaxOpId});
+	error ->
+	    %%riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
+	    riak_core_vnode:send_command_after(1000, {txn, Txn}),
 	    State
     end;
-process({txn, Txn}, State = #state{state_name = normal}) -> process_queue(push(Txn, State));
-process({txn, Txn}, State = #state{state_name = buffering}) ->
-  lager:info("Buffering txn in ~p", [State#state.pdcid]),
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
+  lager:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
   push(Txn, State);
 
-process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buffering}) ->
-  ok = lists:foreach(fun deliver/1, Txns),
-  NewLast = case queue:peek(Queue) of
-    empty -> State#state.last_observed_opid;
-    {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
-  end,
-  NewState = State#state{last_observed_opid = NewLast},
-  process_queue(NewState).
+process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering, local_partition = LocalPartition}) ->
+    ok = lists:foreach(fun(Txn) -> deliver(Txn,LocalPartition) end, Txns),
+    NewLast = case queue:peek(Queue) of
+		  empty -> State#inter_dc_sub_buf.last_observed_opid;
+		  {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
+	      end,
+    NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
+    process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
--spec get_op_id(#interdc_txn{}) -> non_neg_integer().
-get_op_id(Txn) ->
+%% Returns the id of the last operation of the previous transaction
+-spec get_prev_op_id(#interdc_txn{}) -> non_neg_integer().
+get_prev_op_id(Txn) ->
     case ?IS_PARTIAL() of
 	false ->
 	    Txn#interdc_txn.prev_log_opid#op_number.local;
 	true ->
 	    DCID = dc_meta_data_utilities:get_my_dc_id(),
 	    {DCID, Time} = lists:keyfind(DCID,1,Txn#interdc_txn.prev_log_opid_dc),
-	    Time
+	    Time#op_number.local
     end.
 
-process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
+%% Returns the id of the last operation from this transaction
+-spec get_last_op_id(#interdc_txn{}) -> non_neg_integer().
+get_last_op_id(Txn) ->
+    {Id, DCIDList} = inter_dc_txn:last_log_opid(Txn),
+    case ?IS_PARTIAL() of
+	false ->
+	    Id#op_number.local;
+	true ->
+	    DCID = dc_meta_data_utilities:get_my_dc_id(),
+	    {DCID, Time} = lists:keyfind(DCID,1,DCIDList),
+	    Time#op_number.local
+    end.
+
+process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last, local_partition = LocalPartition}) ->
   case queue:peek(Queue) of
-    empty -> State#state{state_name = normal};
+    empty -> State#inter_dc_sub_buf{state_name = normal};
     {value, Txn} ->
-      TxnLast = get_op_id(Txn),
+      TxnLast = get_prev_op_id(Txn),
       case cmp(TxnLast, Last) of
 
       %% If the received transaction is immediately after the last observed one
         eq ->
-          deliver(Txn),
-          Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
-          process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
+          deliver(Txn,LocalPartition),
+          Max = get_last_op_id(Txn),
+          process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max});
 
       %% If the transaction seems to come after an unknown transaction, ask the remote log
         gt ->
           lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-		     [TxnLast, Last, State#state.pdcid]),
-          case query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
+		     [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
+          case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
             ok ->
-              State#state{state_name = buffering};
+              State#inter_dc_sub_buf{state_name = buffering};
             _ ->
               lager:warning("Failed to send log query to DC, will retry on next ping message"),
-              State#state{state_name = normal}
+              State#inter_dc_sub_buf{state_name = normal}
           end;
 
       %% If the transaction has an old value, drop it.
         lt ->
 	      lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
-	      process_queue(State#state{queue = queue:drop(Queue)})
+	      process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
       end
   end.
 
--spec deliver(#interdc_txn{}) -> ok.
-deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
+-spec deliver(#interdc_txn{},partition_id()) -> ok.
+deliver(Txn,LocalPartition) ->
+    PartTxnList = inter_dc_txn:to_local_txn_partition_list(LocalPartition,Txn),
+    lists:foreach(fun({Partition,ATxn}) ->
+			  inter_dc_dep_vnode:handle_transaction(ATxn,Partition,LocalPartition)
+		  end, PartTxnList).
 
 %% TODO: consider dropping messages if the queue grows too large.
 %% The lost messages would be then fetched again by the log_reader.
--spec push(#interdc_txn{}, #state{}) -> #state{}.
-push(Txn, State) -> State#state{queue = queue:in(Txn, State#state.queue)}.
+-spec push(#interdc_txn{}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_sub_buf.queue)}.
 
 %% Instructs the log reader to ask the remote DC for a given range of operations.
 %% Instead of a simple request/response with blocking, the result is delivered

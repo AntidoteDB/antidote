@@ -31,7 +31,7 @@
 
 %% API
 -export([
-  handle_transaction/1,
+  handle_transaction/3,
   set_dependency_clock/2]).
 
 %% VNode methods
@@ -64,8 +64,12 @@
 
 %% Passes the received transaction to the dependency buffer.
 %% At this point no message can be lost (the transport layer must ensure all transactions are delivered reliably).
--spec handle_transaction(#interdc_txn{}) -> ok.
-handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_local_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
+-spec handle_transaction(#interdc_txn{},partition_id(),partition_id()) -> ok.
+handle_transaction(Txn,Partition,LocalPartition) ->
+    case Partition == LocalPartition of
+	true -> dc_utilities:call_local_vnode_sync(Partition, inter_dc_dep_vnode_master, {txn, Txn});
+	false -> dc_utilities:call_vnode_sync(Partition, inter_dc_dep_vnode_master, {txn, Txn})
+    end.
 
 %% After restarting from failure, load the vectorclock of the max times of all the updates received from other DCs
 %% Otherwise new updates from other DCs will be blocked
@@ -125,12 +129,16 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% lager:info("got not a ping !!! ~w", [Txn]),
 
   %% Check if the current clock is greater than or equal to the dependency vector
+  %% TODO, this needs to be removed for partial rep, because it is all done
+  %% by the pings
   case vectorclock:ge(CurrentClock, Dependencies) of
 
     %% If not, the transaction will not be stored right now.
     %% Still need to update the timestamp for that DC, up to 1 less than the
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
+    %% TODO, this needs to be removed for partial rep, because it is all done
+    %% by the pings
     false -> {update_clock(State, DCID, Timestamp-1, false), false};
 
     %% If so, store the transaction

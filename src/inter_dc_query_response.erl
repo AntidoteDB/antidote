@@ -94,7 +94,7 @@ get_entries_internal(Partition, From, To) ->
   Logs = log_read_range(Partition, node(), From, To),
   Asm = log_txn_assembler:new_state(),
   {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
-  Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),
+  Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none, none) end, OpLists),
   %% This is done in order to ensure that we only send the transactions we committed.
   %% We can remove this once the read_log_range is reimplemented.
   lists:filter(fun inter_dc_txn:is_local/1, Txns).

@@ -16,7 +16,7 @@
 -record(interdc_txn, {
 	  dcid :: dcid(),
 	  partition :: partition_id(),
-	  prev_log_opid_dc :: [{dcid(),#op_number{}}], %% for partial rep, the opid by per DC that replicates is
+	  prev_log_opid_dc :: [{dcid(),#op_number{}}] | none, %% for partial rep, the opid by per DC that replicates is
 	  prev_log_opid :: #op_number{} | none, %% the value is *none* if the transaction is read directly from the log
 	  snapshot :: snapshot_time(),
 	  timestamp :: clock_time(),
@@ -62,3 +62,12 @@
 	  transaction :: tx(),
 	  coordinator :: pid() | {fsm, pid()}
 	 }).
+
+%% State for sub buff
+-record(inter_dc_sub_buf, {
+  local_partition :: partition_id(),
+  state_name :: normal | buffering,
+  pdcid :: pdcid(),
+  last_observed_opid :: non_neg_integer() | init,
+  queue :: queue()
+}).

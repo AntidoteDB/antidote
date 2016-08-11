@@ -105,7 +105,7 @@
 %% The way records are stored in the log.
 -record(log_record,{
 	  version :: non_neg_integer(), %% The version of the log record, for backwards compatability
-	  %% op_number :: {dcid(),#op_number{}},
+	  op_number :: #op_number{},
 	  bucket_op_number :: #op_number{},
 	  op_number_dcid :: [{dcid(),#op_number{}}], %% Opids per dcid (for partial replication)
 	  log_operation :: #log_operation{}}).

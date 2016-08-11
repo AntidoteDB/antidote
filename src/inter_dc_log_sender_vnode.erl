@@ -32,7 +32,7 @@
 %% API
 -export([
 	 send/2,
-	 update_last_log_id/2,
+	 update_last_log_id/3,
 	 start_timer/1,
 	 send_stable_time/2]).
 
@@ -57,7 +57,8 @@
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
-  last_log_id :: [{dcid(),#op_number{}}] | undefined,
+  last_log_id :: #op_number{} | undefined,
+  last_log_id_dc ::[{dcid(),#op_number{}}] | undefined,
   timer :: any()
 }).
 
@@ -76,8 +77,8 @@ start_timer(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_s
 
 %% After restarting from failure, load the operation id of the last operation sent by this DC
 %% Otherwise the stable time won't advance as the receving DC will be thinking it is getting old messages
--spec update_last_log_id(partition_id(), [dcid(),#op_number{}]) -> ok.
-update_last_log_id(Partition, OpId) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {update_last_log_id, OpId}).
+-spec update_last_log_id(partition_id(), #op_number{}, [{dcid(),#op_number{}}]) -> ok.
+update_last_log_id(Partition, OpId, OpIdDC) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {update_last_log_id, OpId, OpIdDC}).
 
 %% Send the stable time to this vnode, no transaction in the future will commit with a smaller time
 -spec send_stable_time(partition_id(), non_neg_integer()) -> ok.
@@ -93,6 +94,7 @@ init([Partition]) ->
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
     last_log_id = undefined,
+    last_log_id_dc = undefined,
     timer = none
   }}.
 
@@ -100,9 +102,9 @@ init([Partition]) ->
 handle_command({start_timer}, _Sender, State) ->
     {reply, ok, set_timer(true, State)};
 
-handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = Partition}) ->
-    lager:info("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
-    {reply, ok, State#state{last_log_id = OpId}};
+handle_command({update_last_log_id, OpId, OpIdDC}, _Sender, State = #state{partition = Partition}) ->
+    lager:info("Updating last log id at partition ~w to: ~w and ~w", [Partition, OpId, OpIdDC]),
+    {reply, ok, State#state{last_log_id = OpId, last_log_id_dc = OpIdDC}};
 
 %% Handle the new operation
 %% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
@@ -113,7 +115,7 @@ handle_command({log_event, LogRecord}, _Sender, State) ->
   State2 = case Result of
     %% If the transaction was collected
     {ok, Ops} ->
-      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
+      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id, State#state.last_log_id_dc),
       broadcast(State1, Txn);
     %% If the transaction is not yet complete
     none -> State1
@@ -192,9 +194,9 @@ set_timer(First, State = #state{partition = Partition}) ->
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State, Txn) ->
-  inter_dc_pub:broadcast(Txn),
-  Id = inter_dc_txn:last_log_opid(Txn),
-  State#state{last_log_id = Id}.
+    inter_dc_pub:broadcast(Txn),
+    {Id, IdDC} = inter_dc_txn:last_log_opid(Txn),
+    State#state{last_log_id = Id, last_log_id_dc = IdDC}.
 
 %% @doc Sends an async request to get the smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.

@@ -23,7 +23,7 @@
 
 %% API
 -export([
- from_ops/3,
+ from_ops/4,
   ping/3,
   is_local/1,
   req_id_to_bin/1,
@@ -35,15 +35,17 @@
   get_bucket_sub/2,
   get_partition_sub/1,
   to_per_bucket_bin/1,
+  to_local_txn_partition_list/2,
   get_bucket_sub_for_partition/1,
+  get_all_local_partitions/1,
   ops_by_type/2]).
 
 %% Functions
 
 -type bucket_bin() :: undefined | {bucket,bucket()}.
 
--spec from_ops([#log_record{}], partition_id(), none | [{dcid(),#op_number{}}]) -> #interdc_txn{}.
-from_ops(Ops, Partition, PrevLogOpId) ->
+-spec from_ops([#log_record{}], partition_id(), none | #op_number{},  none | [{dcid(),#op_number{}}]) -> #interdc_txn{}.
+from_ops(Ops, Partition, PrevLogOpId, PrevLogOpIdDC) ->
     LastOp = lists:last(Ops),
     CommitPld = LastOp#log_record.log_operation,
     commit = CommitPld#log_operation.op_type, %% sanity check
@@ -52,13 +54,13 @@ from_ops(Ops, Partition, PrevLogOpId) ->
        dcid = DCID,
        partition = Partition,
        prev_log_opid = PrevLogOpId,
-       prev_log_op_id_dc = PrevLogOpIdDC,
+       prev_log_opid_dc = PrevLogOpIdDC,
        log_records = Ops,
        snapshot = SnapshotTime,
        timestamp = CommitTime
       }.
 
--spec ping(partition_id(), [dcid(),#op_number{}] | none, non_neg_integer()) -> #interdc_txn{}.
+-spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
 ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   dcid = dc_meta_data_utilities:get_my_dc_id(),
   partition = Partition,
@@ -68,22 +70,82 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
   timestamp = Timestamp
 }.
 
--spec last_log_opid(#interdc_txn{}) -> [{dcid(),#op_number{}].
-last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId}) ->
+%% In case the partitioning scheme is different on the DC compared to
+%% where the transaction can from, might need to seperate the transaction
+-spec to_local_txn_partition_list(partition_id(),#interdc_txn{}) -> [{partition_id(),#interdc_txn{}}].
+to_local_txn_partition_list(LocalPartition,Txn = #interdc_txn{log_records = Ops}) ->
+    case ?IS_PARTIAL() of
+	false -> [{LocalPartition,Txn}];
+	true ->
+	    PartDict = 
+		lists:foldl(fun(LogOp = #log_record{log_operation = Payload}, Acc) ->
+				    Type = Payload#log_operation.op_type,
+				    case Type of
+					update ->
+					    UpdatePayload = Payload#log_operation.log_payload,
+					    Key = UpdatePayload#update_log_payload.key,
+					    %% TODO what about bucket??
+					    %% Bucket = UpdatePayload#update_log_payload.bucket,
+					    Preflist = log_utilities:get_preflist_from_key(Key),
+					    {Partition,_Node} = hd(Preflist),
+					    case dict:find(Partition,Acc) of
+						{ok,List} ->
+						    dict:store(Partition,[LogOp|List],Acc);
+						error ->
+						    dict:store(Partition,[LogOp],Acc)
+					    end;
+					_ ->
+					    Acc
+				    end
+			    end, dict:new(), Ops),
+	    CommitOp = lists:last(Ops),
+	    dict:fold(fun(Partition,List,Acc) ->
+			      NewTxn = Txn#interdc_txn{log_records = lists:reverse([CommitOp|List])},
+			      [{Partition,NewTxn}|Acc]
+		      end, [], PartDict)
+    end.
+
+%% Get all the partitions that this transaction updated at the local DC
+-spec get_all_local_partitions(#interdc_txn{}) -> [partition_id()].
+get_all_local_partitions(#interdc_txn{log_records = Ops}) ->
+    PartitionSet = 
+	lists:foldl(fun(#log_record{log_operation = LogOp},Acc) ->
+			    case LogOp#log_operation.op_type of
+				update ->
+				    UpdatePayload = LogOp#log_operation.log_payload,
+				    Key = UpdatePayload#update_log_payload.key,
+				    %% TODO what about bucket??
+				    %% Bucket = UpdatePayload#update_log_payload.bucket,
+				    Preflist = log_utilities:get_preflist_from_key(Key),
+				    {Partition,_Node} = hd(Preflist),
+				    sets:add_element(Partition,Acc);
+				_ ->
+				    Acc
+			    end
+		    end, sets:new(), Ops),
+    sets:to_list(PartitionSet).
+				
+-spec last_log_opid(#interdc_txn{}) -> {#op_number{}, [{dcid(),#op_number{}}]}.
+last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId, prev_log_opid_dc = DCLogOpId}) ->
     case is_ping(Txn) of
-	true -> LogOpId;
+	true ->
+	    {LogOpId, DCLogOpId};
 	false ->
-	    case ?IS_PARTIAL of
+	    case ?IS_PARTIAL() of
 		false ->
 		    LastOp = lists:last(Ops),
 		    CommitPld = LastOp#log_record.log_operation,
 		    commit = CommitPld#log_operation.op_type, %% sanity check
-		    LastOp#log_record.op_number;
+		    {LastOp#log_record.op_number, []};
 		true ->
+		    LastOp = lists:last(Ops),
+		    CommitPld = LastOp#log_record.log_operation,
+		    commit = CommitPld#log_operation.op_type, %% sanity check
 		    %% In partial the commit records dont store the opids (because 
 		    %% ordering is based on bucket ids)
 		    Op = lists:nth(length(Ops)-1,Ops),
-		    Op#log_record.op_number_dcid,
+		    {LastOp#log_record.op_number,Op#log_record.op_number_dcid}
+	    end
     end.
 
 -spec is_local(#interdc_txn{}) -> boolean().

@@ -717,7 +717,7 @@ wait_for_clock(Clock) ->
             %% No need to wait
             {ok, VecSnapshotTime};
         false ->
-	    lager:info("Waiting in interactive tx coord!!! vec time ~p, clock ~p", [VecSnapshotTime,Clock]),
+	    %% lager:info("Waiting in interactive tx coord!!! vec time ~p, clock ~p", [VecSnapshotTime,Clock]),
             %% wait for snapshot time to catch up with Client Clock
             timer:sleep(10),
             wait_for_clock(Clock)

@@ -300,10 +300,11 @@ handle_command({start_timer, undefined}, Sender, State) ->
     handle_command({start_timer, Sender}, Sender, State);
 handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_id_table=OpIdTable, recovered_vector=MaxVector}) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    %% TODO update this for partial!!!!!!!!!!!!!!!!
     OpId = get_op_id(OpIdTable,{[Partition],MyDCID}),
     IsReady = try
 		  ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
-		  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId),
+		  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId, []),
 		  ok = inter_dc_log_sender_vnode:start_timer(Partition),
 		  true
 	      catch
@@ -417,8 +418,8 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 			{NewOpId, []}
 		end,		    
             LogRecord = (log_utilities:generate_empty_log_record())#log_record{op_number_dcid = PartialOpIds,
-									       %% op_number = NewOpId,
-									       bucket_op_number = [{MyDCID,NewOpId}|NewBucketOpId],
+									       op_number = NewOpId,
+									       bucket_op_number = NewBucketOpId,
 									       log_operation = LogOperation},
             case insert_log_record(Log, LogId, LogRecord) of
                 {ok, NewOpId} ->
@@ -986,7 +987,7 @@ preflist_member(Partition,Preflist) ->
 
 -spec get_op_id_all_dcs(cache_id(), log_id(), bucket()) -> [{dcid(),#op_number{}}].
 get_op_id_all_dcs(ClockTable, LogId, Bucket) ->
-    DCIDs = dc_meta_data_utilities:get_dc_ids(),
+    DCIDs = dc_meta_data_utilities:get_dc_ids(false),
     lists:foldl(fun(DCID,Acc) ->
 		       case replication_check:is_replicated_at_dc(Bucket,DCID) of
 			   true ->

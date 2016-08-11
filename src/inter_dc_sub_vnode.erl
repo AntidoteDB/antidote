@@ -71,17 +71,17 @@ deliver_log_reader_resp(BinaryRep,_RequestCacheEntry) ->
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
-  Buf0 = get_buf(DCID, State),
-  Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
-  {noreply, set_buf(DCID, Buf1, State)};
+handle_command({txn, Txn = #interdc_txn{dcid = DCID, partition = Partition}}, _Sender, State) ->
+    Buf0 = get_buf({DCID,Partition}, State),
+    Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
+    {noreply, set_buf({DCID,Partition}, Buf1, State)};
 
 handle_command({log_reader_resp, BinaryRep}, _Sender, State) ->
   %% The binary reply is type {pdcid(), [#interdc_txn{}]}
-  {{DCID, _Partition}, Txns} = binary_to_term(BinaryRep),
-  Buf0 = get_buf(DCID, State),
+  {PDCID, Txns} = binary_to_term(BinaryRep),
+  Buf0 = get_buf(PDCID, State),
   Buf1 = inter_dc_sub_buf:process({log_reader_resp, Txns}, Buf0),
-  {noreply, set_buf(DCID, Buf1, State)}.
+  {noreply, set_buf(PDCID, Buf1, State)}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
@@ -96,13 +96,15 @@ terminate(_Reason, _ModState) -> ok.
 delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+-spec call(partition_id(), {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
 call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
-get_buf(DCID, State) ->
-  case dict:find(DCID, State#state.buffer_fsms) of
+-spec get_buf(pdcid(),#state{}) -> #inter_dc_sub_buf{}.
+get_buf(PDCID, State) ->
+  case dict:find(PDCID, State#state.buffer_fsms) of
     {ok, Buf} -> Buf;
-    error -> inter_dc_sub_buf:new_state({DCID, State#state.partition})
+    error -> inter_dc_sub_buf:new_state(PDCID, State#state.partition)
   end.
 
-set_buf(DCID, Buf, State) -> State#state{buffer_fsms = dict:store(DCID, Buf, State#state.buffer_fsms)}.
+-spec set_buf(pdcid(), #inter_dc_sub_buf{}, #state{}) -> #state{}.
+set_buf(PDCID, Buf, State) -> State#state{buffer_fsms = dict:store(PDCID, Buf, State#state.buffer_fsms)}.
