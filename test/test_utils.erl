@@ -164,11 +164,7 @@ start_suite(Name, Config) ->
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             Node;
-        {error, already_started, Node} ->
-            ct_slave:stop(Name),
-            wait_until_offline(Node),
-            start_suite(Name, Config);
-        {error, started_not_connected, Node} ->
+        {error, _, Node} ->
             ct_slave:stop(Name),
             wait_until_offline(Node),
             start_suite(Name, Config)
@@ -304,7 +300,7 @@ staged_join(Node, PNode) ->
 
 plan_and_commit(Node) ->
     timer:sleep(5000),
-    lager:info("planning and commiting cluster join"),
+    lager:info("planning and committing cluster join"),
     case rpc:call(Node, riak_core_claimant, plan, []) of
         {error, ring_not_ready} ->
             lager:info("plan: ring not ready"),
@@ -334,7 +330,7 @@ do_commit(Node) ->
             ok
     end.
 
-  try_nodes_ready([Node1 | _Nodes], 0, _SleepMs) ->
+try_nodes_ready([Node1 | _Nodes], 0, _SleepMs) ->
       lager:info("Nodes not ready after initial plan/commit, retrying"),
       plan_and_commit(Node1);
   try_nodes_ready(Nodes, N, SleepMs) ->
