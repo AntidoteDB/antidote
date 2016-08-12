@@ -96,7 +96,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}). 
+    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -478,6 +478,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
 reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
@@ -517,18 +518,18 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %% @doc clean_and_notify:
 %%      This function is used for cleanning the state a transaction
 %%      stores in the vnode while it is being procesed. Once a
-%%      transaction commits or aborts, it is necessary to clean the 
+%%      transaction commits or aborts, it is necessary to clean the
 %%      prepared record of a transaction T. There are three possibility
 %%      when trying to clean a record:
 %%      1. The record is prepared by T (with T's TxId).
-%%          If T is being committed, this is the normal. If T is being 
-%%          aborted, it means T successfully prepared here, but got 
+%%          If T is being committed, this is the normal. If T is being
+%%          aborted, it means T successfully prepared here, but got
 %%          aborted somewhere else.
 %%          In both cases, we should remove the record.
 %%      2. The record is empty.
 %%          This can only happen when T is being aborted. What can only
 %%          only happen is as follows: when T tried to prepare, someone
-%%          else has already prepared, which caused T to abort. Then 
+%%          else has already prepared, which caused T to abort. Then
 %%          before the partition receives the abort message of T, the
 %%          prepared transaction gets processed and the prepared record
 %%          is removed.
@@ -536,7 +537,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %%      3. The record is prepared by another transaction M.
 %%          This can only happen when T is being aborted. We can not
 %%          remove M's prepare record, so we should not do anything
-%%          either. 
+%%          either.
 clean_and_notify(TxId, Updates, #state{
     prepared_tx = PreparedTx, prepared_dict = PreparedDict}) ->
     ok = clean_prepared(PreparedTx, Updates, TxId),
@@ -571,7 +572,7 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
     case application:get_env(antidote, txn_cert) of
-        {ok, true} -> 
+        {ok, true} ->
         %io:format("AAAAH"),
         certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
         _  -> true
