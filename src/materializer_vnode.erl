@@ -156,7 +156,7 @@ load_ops(OpsDict, OpsCache, SnapshotCache) ->
 					    op_insert_gc(Key, Op, OpsCache, SnapshotCache)
 				    end, CommittedOps)
 	      end, true, OpsDict).
-				     
+
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
     case ets:info(get_cache_name(Partition, Name)) of
@@ -230,6 +230,7 @@ handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender,
 
 handle_command({update, Key, DownstreamOp}, _Sender,
                State = #state{ops_cache = OpsCache, snapshot_cache=SnapshotCache})->
+		lager:debug("Inserting update to cache ~p, ~p", [Key, DownstreamOp]),
     true = op_insert_gc(Key,DownstreamOp, OpsCache, SnapshotCache),
     {reply, ok, State};
 
@@ -556,7 +557,7 @@ op_insert_gc(Key, DownstreamOp, OpsCache, SnapshotCache)->
 
 -ifdef(TEST).
 
-%% @doc Testing belongs_to_snapshot returns true when a commit time 
+%% @doc Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time
 belongs_to_snapshot_test()->
 	CommitTime1a= 1,
@@ -661,10 +662,10 @@ large_list_test() ->
     lists:foreach(fun(Val) ->
 			  op_insert_gc(Key, generate_payload(10,11+Val,Res0,Val), OpsCache, SnapshotCache)
 		  end, lists:seq(1,1000)),
-    
+
     {ok, Res1000} = internal_read(Key, Type, vectorclock:from_list([{DC1,2000}]),ignore, OpsCache, SnapshotCache),
     ?assertEqual(1000, Type:value(Res1000)),
-    
+
     %% Now check everything is ok as the list shrinks from generating new snapshots
     lists:foreach(fun(Val) ->
     			  op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), OpsCache, SnapshotCache),
