@@ -399,16 +399,30 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
     lager:info("the size of the trimmed ops ~p", [length(TrimmedOps)]),
     {ok, TrimmedOps}.
 
--spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> true.
-internal_store_ss(Key,Snapshot,CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
+-spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
+internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
 			   vector_orddict:new();
 		       [{_, SnapshotDictA}] ->
 			   SnapshotDictA
 		   end,
-    SnapshotDict1 = vector_orddict:insert_bigger(CommitTime,Snapshot,SnapshotDict),
-    snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State).
+    %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
+    %% insert requests for the same snapshot could have occured
+    ShouldInsert = 
+	case vector_orddict:size(SnapshotDict) > 0 of
+	    true ->
+		{_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
+		((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
+	    false -> true
+	end,
+    case (ShouldInsert or ShouldGc)of
+	true ->
+	    SnapshotDict1 = vector_orddict:insert_bigger(CommitTime,Snapshot,SnapshotDict),
+	    snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State);
+	false ->
+	    false
+    end.
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
