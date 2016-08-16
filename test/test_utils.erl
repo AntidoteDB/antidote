@@ -437,8 +437,8 @@ set_up_clusters_common(Config) ->
    case owners_according_to(hd(Cluster1)) of % @TODO this is an adhoc check
      Cluster1 -> ok; % No need to build Cluster
      _ ->
-        [join_cluster(Cluster) || Cluster <- Clusters]
+        [join_cluster(Cluster) || Cluster <- Clusters],
+        Clusterheads = [hd(Cluster) || Cluster <- Clusters],
+        connect_dcs(Clusterheads)
    end,
-   Clusterheads = [hd(Cluster) || Cluster <- Clusters],
-   connect_dcs(Clusterheads),
    [Cluster1, Cluster2, Cluster3].
