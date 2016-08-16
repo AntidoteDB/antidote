@@ -104,6 +104,7 @@
 
 %% The way records are stored in the log.
 -record(log_record,{
+	  partition :: partition_id(),
 	  version :: non_neg_integer(), %% The version of the log record, for backwards compatability
 	  op_number :: #op_number{},
 	  bucket_op_number :: #op_number{},

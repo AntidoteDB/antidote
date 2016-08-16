@@ -418,6 +418,7 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 			{NewOpId, []}
 		end,		    
             LogRecord = (log_utilities:generate_empty_log_record())#log_record{op_number_dcid = PartialOpIds,
+									       partition = Partition,
 									       op_number = NewOpId,
 									       bucket_op_number = NewBucketOpId,
 									       log_operation = LogOperation},
@@ -484,7 +485,16 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
 					    BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
 					    #op_number{local = _BLocal, global = BGlobal} = BOpId,
 					    NewBOpId = BOpId#op_number{global = BGlobal + 1},
-					    true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable);
+					    true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable),
+					    
+					    %% Also update the opid for the DC that is comes from
+					    OpNumber = LogRecord#log_record.op_number,
+					    {_Node,OtherDCID} = OpNumber#op_number.node,
+					    true = update_ets_op_id({Partition,OtherDCID},OpNumber,OpIdTable),
+					    case ?IS_PARTIAL() of
+						true -> ok;
+						false -> ok
+					    end;
 					_ ->
 					    true
 				    end,
@@ -625,6 +635,8 @@ get_max_op_numbers([{LogId, LogRecord}|Rest],ClockTable,PrevMaxVector) ->
 	end,
     %% Update the total opid count
     true = update_ets_op_id({LogId,DCID},NewOp,ClockTable),
+    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    true = update_ets_op_id({LogId,MyDCID},NewOp,ClockTable),
     get_max_op_numbers(Rest,ClockTable,NewMaxVector).
 
 %% After appeded an operation to the log, increment the op id
