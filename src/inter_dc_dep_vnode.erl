@@ -126,7 +126,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
 
-    %% lager:info("got not a ping !!! ~w", [Txn]),
+    lager:info("got not a ping !!! ~w", [Txn]),
 
   %% Check if the current clock is greater than or equal to the dependency vector
   %% TODO, this needs to be removed for partial rep, because it is all done
@@ -139,10 +139,13 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% on a time up to this
     %% TODO, this needs to be removed for partial rep, because it is all done
     %% by the pings
-    false -> {update_clock(State, DCID, Timestamp-1, false), false};
+    false ->
+	  lager:info("not putting the txn in the log!!!!!!!!!!!!!"),
+	  {update_clock(State, DCID, Timestamp-1, false), false};
 
     %% If so, store the transaction
     true ->
+      lager:info("putting the txn in the log"),
       %% Put the operations in the log
       {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),

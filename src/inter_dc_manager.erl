@@ -194,7 +194,7 @@ observe_dcs_sync(Descriptors) ->
     DCs = lists:map(fun(DC) ->
 			    {observe_dc(DC), DC}
 		    end, Descriptors),
-    lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
+    lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID, partition_list = PartitionList}}) ->
 			  case Res of
 			      ok ->
 				  Value = vectorclock:get_clock_of_dc(DCID, SS),
@@ -202,6 +202,7 @@ observe_dcs_sync(Descriptors) ->
 				  case DCID == dc_utilities:get_my_dc_id() of
 				      true -> ok;
 				      false ->
+					  ok = dc_meta_data_utilities:set_dc_partitions(PartitionList, DCID),
 					  ok = dc_meta_data_utilities:store_dc_descriptors([Desc])
 				  end;
 			      _ ->

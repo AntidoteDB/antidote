@@ -72,6 +72,7 @@ init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 handle_command({txn, Txn = #interdc_txn{dcid = DCID, partition = Partition}}, _Sender, State) ->
+    %% lager:info("got a txn: ~p", [Txn]),
     Buf0 = get_buf({DCID,Partition}, State),
     Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
     {noreply, set_buf({DCID,Partition}, Buf1, State)};

@@ -77,8 +77,7 @@ process({txn, Txn=#interdc_txn{dcid=DCID, partition=Partition}},
 	    lager:info("Loaded opid ~p from log for dc ~p, partition, ~p, at local partition ~p", [MaxOpId, DCID, Partition, MyPartition]),
 	    process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=MaxOpId});
 	error ->
-	    %%riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
-	    riak_core_vnode:send_command_after(1000, {txn, Txn}),
+	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
 	    State
     end;
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
@@ -104,23 +103,39 @@ get_prev_op_id(Txn) ->
 	    Txn#interdc_txn.prev_log_opid#op_number.local;
 	true ->
 	    DCID = dc_meta_data_utilities:get_my_dc_id(),
-	    {DCID, Time} = lists:keyfind(DCID,1,Txn#interdc_txn.prev_log_opid_dc),
-	    Time#op_number.local
+	    lager:info("the list of prev op ids ~p and the op list", [Txn#interdc_txn.prev_log_opid_dc]),
+	    case lists:keyfind(DCID,1,Txn#interdc_txn.prev_log_opid_dc) of
+		{DCID, Time} ->
+		    Time#op_number.local;
+		false ->
+		    %% The DCs are not yet connected, so this should just be a new ping
+		    %% fail if not
+		    true = inter_dc_txn:is_ping(Txn),
+		    0
+	    end
     end.
 
 %% Returns the id of the last operation from this transaction
--spec get_last_op_id(#interdc_txn{}) -> non_neg_integer().
-get_last_op_id(Txn) ->
+-spec get_last_op_id(#interdc_txn{},non_neg_integer()) -> non_neg_integer().
+get_last_op_id(Txn,PrevLast) ->
     {Id, DCIDList} = inter_dc_txn:last_log_opid(Txn),
     case ?IS_PARTIAL() of
 	false ->
 	    Id#op_number.local;
 	true ->
 	    DCID = dc_meta_data_utilities:get_my_dc_id(),
-	    {DCID, Time} = lists:keyfind(DCID,1,DCIDList),
-	    Time#op_number.local
+	    case lists:keyfind(DCID,1,DCIDList) of
+		{DCID, Time} ->
+		    Time#op_number.local;
+		false ->
+		    %% The DCs are not yet connected, so this should just be a new ping
+		    %% fail if not
+		    true = inter_dc_txn:is_ping(Txn),
+		    PrevLast
+	    end
     end.
 
+-spec process_queue(#inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
 process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last, local_partition = LocalPartition}) ->
   case queue:peek(Queue) of
     empty -> State#inter_dc_sub_buf{state_name = normal};
@@ -131,7 +146,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
       %% If the received transaction is immediately after the last observed one
         eq ->
           deliver(Txn,LocalPartition),
-          Max = get_last_op_id(Txn),
+          Max = get_last_op_id(Txn,Last),
           process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max});
 
       %% If the transaction seems to come after an unknown transaction, ask the remote log

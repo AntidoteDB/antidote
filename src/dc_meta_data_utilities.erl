@@ -251,10 +251,15 @@ set_dc_partitions(PartitionList, DCID) ->
     ok = stable_meta_data_server:broadcast_meta_data({partition_meta_data,DCID}, {PartitionDict,PartitionTuple,NumPartitions}),
     ok = stable_meta_data_server:broadcast_meta_data({partition_dict,DCID}, PartitionDict),
     ok = stable_meta_data_server:broadcast_meta_data({partition_list,DCID}, PartitionList),
-    %% Add the new one to the list that doesnt include you
-    ok = stable_meta_data_server:broadcast_meta_data_merge(dc_list, DCID, fun ordsets:add_element/2, fun ordsets:new/0),
     %% Be sure your dc is in the list before adding the new one to the list that includes you
     _MyDCID = get_my_dc_id(),
+    %% Add the new one to the list that doesnt include you
+    case DCID == get_my_dc_id() of
+	false ->
+	    lager:info("adding dcid ~p", [DCID]),
+	    ok = stable_meta_data_server:broadcast_meta_data_merge(dc_list, DCID, fun ordsets:add_element/2, fun ordsets:new/0);
+	true -> ok
+    end,
     %% Add the new one to the list that includes you
     ok = stable_meta_data_server:broadcast_meta_data_merge(dc_list_w_me, DCID, fun ordsets:add_element/2, fun ordsets:new/0).
 

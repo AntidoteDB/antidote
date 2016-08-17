@@ -19,6 +19,10 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
 
+    %% Enable partial replication
+    ok = rpc:call(hd(Cluster1), partial_repli_utils, set_partial_rep, [true]),
+    ok = rpc:call(hd(Cluster2), partial_repli_utils, set_partial_rep, [true]),
+
     {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
 

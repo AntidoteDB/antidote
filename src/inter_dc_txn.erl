@@ -24,7 +24,7 @@
 %% API
 -export([
  from_ops/4,
-  ping/3,
+  ping/4,
   is_local/1,
   req_id_to_bin/1,
   to_bin/1,
@@ -60,11 +60,12 @@ from_ops(Ops, Partition, PrevLogOpId, PrevLogOpIdDC) ->
        timestamp = CommitTime
       }.
 
--spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
-ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
+-spec ping(partition_id(), #op_number{} | none, [{dcid(),#op_number{}}] | none, non_neg_integer()) -> #interdc_txn{}.
+ping(Partition, PrevLogOpId, PrevOpIdDC, Timestamp) -> #interdc_txn{
   dcid = dc_meta_data_utilities:get_my_dc_id(),
   partition = Partition,
   prev_log_opid = PrevLogOpId,
+  prev_log_opid_dc = PrevOpIdDC,
   log_records = [],
   snapshot = dict:new(),
   timestamp = Timestamp
@@ -74,7 +75,7 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
 %% where the transaction can from, might need to seperate the transaction
 -spec to_local_txn_partition_list(partition_id(),#interdc_txn{}) -> [{partition_id(),#interdc_txn{}}].
 to_local_txn_partition_list(LocalPartition,Txn = #interdc_txn{log_records = Ops}) ->
-    case ?IS_PARTIAL() of
+    case (?IS_PARTIAL() and (Ops /= [])) of
 	false -> [{LocalPartition,Txn}];
 	true ->
 	    PartDict = 
@@ -272,7 +273,7 @@ bucket_to_bin(undefined) ->
     %% No bucket, so just use 0's
     pad(?BUCKET_BYTE_LENGTH, <<0>>);
 bucket_to_bin({bucket, Bucket}) ->
-    lager:info("bucket is ~p", [Bucket]),
+    %% lager:info("bucket is ~p", [Bucket]),
     pad(?BUCKET_BYTE_LENGTH, term_to_binary(Bucket)).
 
 %% Returns the zmq subscription prefix for the
