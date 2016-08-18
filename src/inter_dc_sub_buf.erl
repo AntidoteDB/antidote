@@ -89,7 +89,7 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_
     ok = lists:foreach(fun(Txn) -> deliver(Txn,LocalPartition) end, Txns),
     NewLast = case queue:peek(Queue) of
 		  empty -> State#inter_dc_sub_buf.last_observed_opid;
-		  {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
+		  {value, Txn} -> get_prev_op_id(Txn)
 	      end,
     NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
     process_queue(NewState).
@@ -103,14 +103,14 @@ get_prev_op_id(Txn) ->
 	    Txn#interdc_txn.prev_log_opid#op_number.local;
 	true ->
 	    DCID = dc_meta_data_utilities:get_my_dc_id(),
-	    lager:info("the list of prev op ids ~p and the op list", [Txn#interdc_txn.prev_log_opid_dc]),
+	    %%lager:info("the list of prev op ids ~p and the op list", [Txn#interdc_txn.prev_log_opid_dc]),
 	    case lists:keyfind(DCID,1,Txn#interdc_txn.prev_log_opid_dc) of
 		{DCID, Time} ->
 		    Time#op_number.local;
 		false ->
 		    %% The DCs are not yet connected, so this should just be a new ping
 		    %% fail if not
-		    true = inter_dc_txn:is_ping(Txn),
+		    %% true = inter_dc_txn:is_ping(Txn),
 		    0
 	    end
     end.
@@ -130,7 +130,7 @@ get_last_op_id(Txn,PrevLast) ->
 		false ->
 		    %% The DCs are not yet connected, so this should just be a new ping
 		    %% fail if not
-		    true = inter_dc_txn:is_ping(Txn),
+		    %% true = inter_dc_txn:is_ping(Txn),
 		    PrevLast
 	    end
     end.
@@ -151,8 +151,8 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
       %% If the transaction seems to come after an unknown transaction, ask the remote log
         gt ->
-          lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-		     [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
+          lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p, is a ping ~p",
+		     [TxnLast, Last, State#inter_dc_sub_buf.pdcid, inter_dc_txn:is_ping(Txn)]),
           case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
             ok ->
               State#inter_dc_sub_buf{state_name = buffering};

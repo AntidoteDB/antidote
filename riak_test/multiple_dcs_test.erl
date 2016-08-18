@@ -23,10 +23,15 @@ confirm() ->
     ]),
 
     Clean = rt_config:get(clean_cluster, true),
-    [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
+    Clusters = rt:build_clusters([1,1,1]),
+    [Cluster1, Cluster2, Cluster3] = Clusters,
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
+
+    %% Enable partial replication
+    rt_config:set(partial,true),
+    ok = common:enable_partial_replication(Clusters),
 
     {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
@@ -35,14 +40,17 @@ confirm() ->
     simple_replication_test(Cluster1, Cluster2, Cluster3),
 
     [Cluster4, Cluster5, Cluster6] = common:clean_and_rebuild_clusters([Cluster1, Cluster2, Cluster3]),
+    ok = common:enable_partial_replication(Clusters),
     ok = common:setup_dc_manager([Cluster4, Cluster5, Cluster6], Clean),
     parallel_writes_test(Cluster4, Cluster5, Cluster6),
 
     [Cluster7, Cluster8, Cluster9] = common:clean_and_rebuild_clusters([Cluster4, Cluster5, Cluster6]),
+    ok = common:enable_partial_replication(Clusters),
     ok = common:setup_dc_manager([Cluster7, Cluster8, Cluster9], Clean),
     failure_test(Cluster7, Cluster8, Cluster9),
 
     [Cluster10, Cluster11, Cluster12] = common:clean_and_rebuild_clusters([Cluster7, Cluster8, Cluster9]),
+    ok = common:enable_partial_replication(Clusters),
     ok = common:setup_dc_manager([Cluster10, Cluster11, Cluster12], Clean),
     blocking_test(Cluster10, Cluster11, Cluster12),
 

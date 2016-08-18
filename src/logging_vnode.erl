@@ -286,8 +286,9 @@ init([Partition]) ->
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
-handle_command({get_op_id_all_dcs, Partition
-		 DCOpIds = get_op_id_all_dcs(OpIdTablePartial, [Partition], ?IS_PARTIAL()),
+%% handle_command({get_op_id_all_dcs, Partition
+%% 		DCOpIds = get_op_id_all_dcs(OpIdTablePartial, [Partition], ?IS_PARTIAL()),
+
 handle_command({get_op_id, DCID, Partition}, _Sender, State=#state{op_id_table = OpIdTable}) ->
     OpId = get_op_id(OpIdTable,{[Partition],DCID}),
     #op_number{local = Local, global = _Global} = OpId,
@@ -312,6 +313,8 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_
     DCOpIds = get_op_id_all_dcs(OpIdTablePartial, [Partition], ?IS_PARTIAL()),
     IsReady = try
 		  ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
+		  %% TODO: this is currently sending the last log id of all ops, but it should be sending
+		  %% the last log id of the last committed trans
 		  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId, DCOpIds),
 		  ok = inter_dc_log_sender_vnode:start_timer(Partition),
 		  true
@@ -405,28 +408,28 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
 
 	    %% all operations update the per log, operation id
-	    OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
-	    #op_number{local = Local, global = Global} = OpId,
-	    NewOpId = OpId#op_number{local =  Local + 1, global = Global + 1},
+	    OldOpId = get_op_id(OpIdTable, {LogId, MyDCID}),
+	    #op_number{local = OldLocal, global = OldGlobal} = OldOpId,
+	    NewOpId = OldOpId#op_number{local =  OldLocal + 1, global = OldGlobal + 1},
 	    true = update_ets_op_id({LogId,MyDCID},NewOpId,OpIdTable),
-	    {NewBucketOpId, PartialOpIds} = 
+	    {_OldBucketId, NewBucketOpId, _OldPartialOpIds, NewPartialOpIds} = 
 		case LogOperation#log_operation.op_type of
 		    update ->
 			%% update operations update the bucket id number to keep track
 			%% of the number of updates per bucket
 			Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
 			%% For partial rep, only update operations increment the log id for the other DCs
-			OtherDCOpIds = get_and_update_ets_opids_partial(LogId,Bucket,OpIdTablePartial),
+			{OldOtherDCOpIds,OtherDCOpIds} = get_and_update_ets_opids_partial(LogId,Bucket,OpIdTablePartial),
 			BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
-			#op_number{local = BLocal, global = BGlobal} = BOpId,
-			NewBOpId = BOpId#op_number{local = BLocal + 1, global = BGlobal + 1},
+			#op_number{local = OldBLocal, global = BGlobal} = BOpId,
+			NewBOpId = BOpId#op_number{local = OldBLocal + 1, global = BGlobal + 1},
 			true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable),
-			{NewBOpId, OtherDCOpIds};
+			{BOpId, NewBOpId, OldOtherDCOpIds, OtherDCOpIds};
 		    _ ->
 			%% Other operations just keep the old id
-			{NewOpId, []}
+			{NewOpId, NewOpId, [], []}
 		end,		    
-            LogRecord = (log_utilities:generate_empty_log_record())#log_record{op_number_dcid = PartialOpIds,
+            LogRecord = (log_utilities:generate_empty_log_record())#log_record{op_number_dcid = NewPartialOpIds,
 									       partition = Partition,
 									       op_number = NewOpId,
 									       bucket_op_number = NewBucketOpId,
@@ -438,12 +441,12 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 			true ->
 			    case disk_log:sync(Log) of
 				ok ->
-				    {reply, {ok, OpId}, State};
+				    {reply, {ok, OldOpId}, State};
 				{error, Reason} ->
 				    {reply, {error, Reason}, State}
 			    end;
 			false ->
-			    {reply, {ok, OpId}, State}
+			    {reply, {ok, OldOpId}, State}
 		    end;
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
@@ -699,20 +702,24 @@ update_ets_op_id(Key,NewOp,ClockTable) ->
 
 %% This keeps track of how many local updates have been sent to each external DC
 %% for this partition
--spec get_and_update_ets_opids_partial(log_id(),bucket(),cache_id()) -> [{dcid(),#op_number{}}].
+%% Returns a tuple of two lists of {dcid(),#op_number{}} paris.  The first list is the old opids
+%% the second list is the new ops ids (i.e. the old id plus 1)
+-spec get_and_update_ets_opids_partial(log_id(),bucket(),cache_id()) -> {[{dcid(),#op_number{}}],[{dcid(),#op_number{}}]}.
 get_and_update_ets_opids_partial(LogId,Bucket,OpIdTablePartial) ->
     IsPartial = ?IS_PARTIAL(),
     case IsPartial of
 	true ->
 	    DCOpIds = get_op_id_all_dcs_for_bucket(OpIdTablePartial, LogId, Bucket, IsPartial),
-	    lists:map(fun({OtherDCID,OtherOpId}) ->
-			      #op_number{local = OtherLocal, global = OtherGlobal} = OtherOpId,
-			      OtherNewOpId = OtherOpId#op_number{local = OtherLocal + 1, global = OtherGlobal + 1},
-			      true = update_ets_op_id({LogId,OtherDCID}, OtherNewOpId, OpIdTablePartial),
-			      {OtherDCID,OtherNewOpId}
-		      end, DCOpIds);
+	    NewDCOpIds = 
+		lists:map(fun({OtherDCID,OtherOpId}) ->
+				  #op_number{local = OtherLocal, global = OtherGlobal} = OtherOpId,
+				  OtherNewOpId = OtherOpId#op_number{local = OtherLocal + 1, global = OtherGlobal + 1},
+				  true = update_ets_op_id({LogId,OtherDCID}, OtherNewOpId, OpIdTablePartial),
+				  {OtherDCID,OtherNewOpId}
+			  end, DCOpIds),
+	    {DCOpIds,NewDCOpIds};
 	false ->
-	    []
+	    {[],[]}
     end.
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
@@ -1060,7 +1067,7 @@ get_op_id_all_dcs_for_bucket(ClockTable, LogId, Bucket, IsPartial) ->
     case IsPartial of
 	true ->
 	    DCIDs = dc_meta_data_utilities:get_dc_ids(false),
-	    lager:info("The dcs form the op ids ~p !!!!!!",[DCIDs]),
+	    %% lager:info("The dcs form the op ids ~p !!!!!!",[DCIDs]),
 	    lists:foldl(fun(DCID,Acc) ->
 				case replication_check:is_replicated_at_dc(Bucket,DCID) of
 				    true ->

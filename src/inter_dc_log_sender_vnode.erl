@@ -69,7 +69,8 @@
 %% and then the transaction will be broadcasted via interDC.
 %% WARNING: only LOCALLY COMMITED operations (not from remote DCs) should be sent to log_sender_vnode.
 -spec send(partition_id(), #log_record{}) -> ok.
-send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, LogRecord}).
+send(Partition, LogRecord) ->
+    dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, LogRecord}).
 
 %% Start the heartbeat timer
 -spec start_timer(partition_id()) -> ok.
@@ -104,7 +105,7 @@ handle_command({start_timer}, _Sender, State) ->
 
 handle_command({update_last_log_id, OpId, OpIdDC}, _Sender, State = #state{partition = Partition}) ->
     lager:info("Updating last log id at partition ~w to: ~w and ~w", [Partition, OpId, OpIdDC]),
-    {reply, ok, State#state{last_log_id = OpId, last_log_id_dc = OpIdDC}};
+    {reply, ok, State#state{last_log_id = OpId, last_log_id_dc = lists:keysort(1,OpIdDC)}};
 
 %% Handle the new operation
 %% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
@@ -116,11 +117,16 @@ handle_command({log_event, LogRecord}, _Sender, State) ->
 	case Result of
 	    %% If the transaction was collected
 	    {ok, Ops} ->
-		case State#state.last_log_id_dc	of
-		    [] ->
-			
-		Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id, ),
-		broadcast(State1, Txn);
+		Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State1#state.last_log_id, State1#state.last_log_id_dc),
+		case ?IS_PARTIAL() of
+		    false ->
+			broadcast(State1, Txn);
+		    true ->
+			Txns = inter_dc_txn:to_per_bucket(Txn),
+			lists:foldl(fun(NewTxn,NewState) ->
+					    broadcast(NewState,NewTxn)
+				    end, State1, Txns)
+		end;
 	    %% If the transaction is not yet complete
 	    none -> State1
 	end,
@@ -197,10 +203,22 @@ set_timer(First, State = #state{partition = Partition}) ->
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
-broadcast(State, Txn) ->
+broadcast(State = #state{last_log_id_dc = OldIdDC}, Txn) ->
     inter_dc_pub:broadcast(Txn),
     {Id, IdDC} = inter_dc_txn:last_log_opid(Txn),
-    State#state{last_log_id = Id, last_log_id_dc = IdDC}.
+    State#state{last_log_id = Id, last_log_id_dc = keep_max_dc_ids(OldIdDC,IdDC)}.
+
+%% This takes the largest dc op ids sent, it is used for partial replication
+%% since the new list might not contain all DCs if the transaction isn't replicated there
+-spec keep_max_dc_ids(undefined | [{dcid(),#op_number{}}],[{dcid(),#op_number{}}]) -> [{dcid(),#op_number{}}].
+keep_max_dc_ids(undefined,NewIdDC) ->
+    lists:keysort(1,NewIdDC);
+keep_max_dc_ids(OldIdDC,NewIdDC) ->
+    NewSorted = lists:keysort(1,NewIdDC),
+    orddict:merge(fun(_Key, V1, V2) ->
+			  true = (V1 >= V2), %% Sanity check
+			  V1
+		  end, NewSorted,OldIdDC).
 
 %% @doc Sends an async request to get the smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.

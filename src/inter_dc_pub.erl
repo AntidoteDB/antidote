@@ -63,16 +63,16 @@ get_address_list() ->
 
 -spec broadcast(#interdc_txn{}) -> ok.
 broadcast(Txn) ->
-    BinaryTxns =
+    BinaryTxn =
 	case ?IS_PARTIAL() of
 	    false ->
 		%% lager:info("not partial"),
-		[inter_dc_txn:to_bin(Txn)];
+		inter_dc_txn:to_bin(Txn);
 	    true ->
 		%% lager:info("is partial"),
-		inter_dc_txn:to_per_bucket_bin(Txn)
+		inter_dc_txn:to_bucket_bin(Txn)
 	end,
-    case catch gen_server:call(?MODULE, {publish_list, BinaryTxns}) of
+    case catch gen_server:call(?MODULE, {publish, BinaryTxn}) of
 	{'EXIT', _Reason} -> lager:warning("Failed to broadcast a transaction."); %% this can happen if a node is shutting down.
 	Normal -> Normal
     end.

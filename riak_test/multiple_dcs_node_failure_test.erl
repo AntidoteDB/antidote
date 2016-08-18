@@ -22,6 +22,8 @@ confirm() ->
 
     %% Be sure synchronous logging is enabled
     rt_config:set(sync_log,true),
+    %% Enable partial replication
+    rt_config:set(partial,true),
 
     [Cluster1, Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
     rt:wait_until_ring_converged(Cluster1),

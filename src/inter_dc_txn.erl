@@ -34,7 +34,8 @@
   is_ping/1,
   get_bucket_sub/2,
   get_partition_sub/1,
-  to_per_bucket_bin/1,
+  to_per_bucket/1,
+  to_bucket_bin/1,
   to_local_txn_partition_list/2,
   get_bucket_sub_for_partition/1,
   get_all_local_partitions/1,
@@ -167,18 +168,39 @@ to_bin(Txn = #interdc_txn{partition = P}) ->
   Type = get_type_binary(fulltxn),
   <<Type/binary, Prefix/binary, Msg/binary>>.
 
-%% Go through a full transaction, and seperate it into a list
-%% of per bucket transactions
--spec to_per_bucket_bin(#interdc_txn{}) -> [binary()].
-to_per_bucket_bin(Txn = #interdc_txn{log_records = [], partition = Partition}) ->
+-spec to_bucket_bin(#interdc_txn{}) -> binary().
+to_bucket_bin(Txn = #interdc_txn{log_records = [], partition = Partition}) ->
     %% This is a ping txn
     PrefixPartition = partition_to_bin(Partition),
     %% No bucket, so just use 0's
     PrefixBucket = bucket_to_bin(undefined),
     Msg = term_to_binary(Txn),
     BinaryType = get_type_binary(singlebucket),
-    [<<BinaryType/binary, PrefixPartition/binary, PrefixBucket/binary, Msg/binary>>];
-to_per_bucket_bin(Txn = #interdc_txn{log_records = Ops, partition = Partition}) ->
+    <<BinaryType/binary, PrefixPartition/binary, PrefixBucket/binary, Msg/binary>>;
+to_bucket_bin(Txn = #interdc_txn{log_records = [FirstOp|_RestOps], partition = Partition}) ->
+    Payload = FirstOp#log_record.log_operation,
+    update = Payload#log_operation.op_type, %% sanity check
+    Bucket = 
+	case Payload#log_operation.log_payload#update_log_payload.key of
+	    {_Key, Buck} ->
+		{bucket, Buck};
+	    _ ->
+		%% No bucket, so just use 0's
+		undefined
+	end,
+    PrefixPartition = partition_to_bin(Partition),
+    PrefixBucket = bucket_to_bin(Bucket),
+    Msg = term_to_binary(Txn),
+    BinaryType = get_type_binary(singlebucket),
+    <<BinaryType/binary, PrefixPartition/binary, PrefixBucket/binary, Msg/binary>>.
+
+%% Go through a full transaction, and seperate it into a list
+%% of per bucket transactions
+%% The list is sorted by op id with the smallest op id first
+-spec to_per_bucket(#interdc_txn{}) -> [#interdc_txn{}].
+to_per_bucket(Txn = #interdc_txn{log_records = []}) ->
+    [Txn];
+to_per_bucket(Txn = #interdc_txn{log_records = Ops}) ->
     DictBucket = 
 	lists:foldl(fun(Op = #log_record{log_operation = Payload}, Acc) ->
 			    Type = Payload#log_operation.op_type,
@@ -203,14 +225,16 @@ to_per_bucket_bin(Txn = #interdc_txn{log_records = Ops, partition = Partition}) 
 			    end
 		    end, dict:new(), Ops),
     CommitOp = lists:last(Ops),
-    dict:fold(fun(Bucket,List,Acc) ->
-		      NewTxn = Txn#interdc_txn{log_records = lists:reverse([CommitOp|List])},
-		      PrefixPartition = partition_to_bin(Partition),
-		      PrefixBucket = bucket_to_bin(Bucket),
-		      Msg = term_to_binary(NewTxn),
-		      BinaryType = get_type_binary(singlebucket),
-		      [<<BinaryType/binary, PrefixPartition/binary, PrefixBucket/binary, Msg/binary>> | Acc]
-	      end, [], DictBucket).
+    IdTxns = 
+	dict:fold(fun(_Bucket,List,Acc) ->
+			  [LastOp|_] = List,
+			  OpId = LastOp#log_record.op_number#op_number.local,
+			  NewTxn = Txn#interdc_txn{log_records = lists:reverse([CommitOp|List])},
+			  [{OpId,NewTxn}|Acc]
+		  end, [], DictBucket),
+    lists:map(fun({_OpId,Txn1}) ->
+		      Txn1
+	      end, lists:keysort(1,IdTxns)).
 
 -spec get_type_binary(fulltxn | singlebucket) -> <<_:?TYPE_BIT_LENGTH>>.
 get_type_binary(fulltxn) ->

@@ -22,8 +22,15 @@
 -export([
   clean_and_rebuild_clusters/1,
   clean_and_rebuild_clusters/2,
+  enable_partial_replication/1,
   just_clean_clusters/1,
   setup_dc_manager/2]).
+
+-spec enable_partial_replication([term()]) -> ok.
+enable_partial_replication(DCClusterList) ->
+    lists:foreach(fun(Cluster) ->
+			  ok = rpc:call(hd(Cluster), partial_repli_utils, set_partial_rep, [true])
+		  end, DCClusterList).
 
 %% It cleans the cluster and formes a new one with the same characteristic of the input one.
 %% In case the clean_cluster parameter is set to false in the riak_test configuration file
