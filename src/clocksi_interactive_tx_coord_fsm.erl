@@ -38,7 +38,7 @@
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
 -define(LOGGING_VNODE, mock_partition_fsm).
 -else.
--define(DC_UTIL, dc_utilities).
+-define(DC_UTIL, dc_meta_data_utilities).
 -define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
 -define(CLOCKSI_VNODE, clocksi_vnode).
@@ -51,7 +51,7 @@
 -export([start_link/2,
          start_link/1,
          start_link/3,
-	 start_link/4]).
+         start_link/4]).
 
 %% Callbacks
 -export([init/1,
@@ -66,7 +66,7 @@
 -export([create_transaction_record/5,
     start_tx/2,
     init_state/3,
-    perform_update/4,
+    perform_update/5,
     perform_read/4,
     execute_op/3,
     finish_op/3,
@@ -93,10 +93,10 @@
 
 start_link(From, Clientclock, UpdateClock, StayAlive) ->
     case StayAlive of
-	true ->
-	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
-	false ->
-	    gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+        true ->
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+        false ->
+            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
     end.
 
 start_link(From, Clientclock) ->
@@ -125,6 +125,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
     #tx_coord_state{
        transaction = undefined,
        updated_partitions=[],
+       client_ops=[],
        prepare_time=0,
        num_to_read=0,
        num_to_ack=0,
@@ -149,7 +150,7 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-				boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
+                                boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = random:seed(dc_utilities:now()),
@@ -167,16 +168,16 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
     DcId = ?DC_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     Name = case StayAlive of
-	       true ->
-		   case IsStatic of
-		       true ->
-			   clocksi_static_tx_coord_fsm:generate_name(From);
-		       false ->
-			   generate_name(From)
-		   end;
-	       false ->
-		   self()
-	   end,
+               true ->
+                   case IsStatic of
+                       true ->
+                           clocksi_static_tx_coord_fsm:generate_name(From);
+                       false ->
+                           generate_name(From)
+                   end;
+               false ->
+                   self()
+           end,
     TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
         vec_snapshot_time = SnapshotTime,
@@ -211,35 +212,46 @@ perform_singleitem_update(Key, Type, Params) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, []) of
-        {ok, DownstreamRecord} ->
-            Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
-            TxId = Transaction#transaction.txn_id,
-            LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
-            LogId = ?LOG_UTIL:get_logid_from_key(Key),
-            [Node] = Preflist,
-            case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                {ok, _} ->
-                    case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
-                        {committed, CommitTime} ->
-                            TxId = Transaction#transaction.txn_id,
-                            DcId = ?DC_UTIL:get_my_dc_id(),
-                            CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
-                            {ok, {TxId, [], CausalClock}};
-			abort ->
-			    {error, aborted};
-                        {error, Reason} ->
-                            {error, Reason}
+    %% Execute pre_commit_hook if any
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
+        {Key, Type, Params1} ->
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, []) of
+                {ok, DownstreamRecord} ->
+                    Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
+                    TxId = Transaction#transaction.txn_id,
+                    LogRecord = #log_record{tx_id = TxId, op_type = update,
+                                            op_payload = {Key, Type, DownstreamRecord}},
+                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+                    [Node] = Preflist,
+                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
+                        {ok, _} ->
+                            case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
+                                {committed, CommitTime} ->
+                                    %% Execute post commit hook
+                                    _Res = case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+                                               {error, Reason} ->
+                                                   lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                                               _ -> ok
+                                           end,
+                                    TxId = Transaction#transaction.txn_id,
+                                    DcId = ?DC_UTIL:get_my_dc_id(),
+                                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                                     DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                                    {ok, {TxId, [], CausalClock}};
+                                abort ->
+                                    {error, aborted};
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end;
+                        Error ->
+                            {error, Error}
                     end;
-                Error ->
-                    {error, Error}
+                {error, Reason} ->
+                    {error, Reason}
             end;
         {error, Reason} ->
             {error, Reason}
     end.
-
 
 perform_read(Args, Updated_partitions, Transaction, Sender) ->
     {Key, Type} = Args,
@@ -265,7 +277,7 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
     end.
 
 
-perform_update(Args, Updated_partitions, Transaction, Sender) ->
+perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
     {Key, Type, Param} = Args,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -275,56 +287,64 @@ perform_update(Args, Updated_partitions, Transaction, Sender) ->
                    {IndexNode, WS} ->
                        WS
                end,
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet) of
-        {ok, DownstreamRecord} ->
-            NewUpdatedPartitions = case WriteSet of
-                                       [] ->
-                                           [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
-                                       _ ->
-                                           lists:keyreplace(IndexNode, 1, Updated_partitions,
-							    {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
-                                   end,
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    gen_fsm:reply(Sender, ok)
-            end,
-            TxId = Transaction#transaction.txn_id,
-            LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
-            LogId = ?LOG_UTIL:get_logid_from_key(Key),
-            [Node] = Preflist,
-            case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                {ok, _} ->
-                    NewUpdatedPartitions;
-                Error ->
+
+    %% Execute pre_commit_hook if any
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
+        {Key, Type, Param1} ->
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet) of
+                {ok, DownstreamRecord} ->
+                    NewUpdatedPartitions =
+                        case WriteSet of
+                            [] ->
+                                [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
+                            _ ->
+                                lists:keyreplace(IndexNode, 1, Updated_partitions,
+                                                 {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
+                        end,
                     case Sender of
                         undefined ->
                             ok;
                         _ ->
-                            _Res = gen_fsm:reply(Sender, {error, Error})
+                            gen_fsm:reply(Sender, ok)
                     end,
-		    {error, Error}
+                    TxId = Transaction#transaction.txn_id,
+                    LogRecord = #log_record{tx_id = TxId, op_type = update,
+                                            op_payload = {Key, Type, DownstreamRecord}},
+                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+                    [Node] = Preflist,
+                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
+                        {ok, _} ->
+                            {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
+                        Error ->
+                            case Sender of
+                                undefined ->
+                                    ok;
+                                _ ->
+                                    _Res = gen_fsm:reply(Sender, {error, Error})
+                            end,
+                            {error, Error}
+                    end;
+                {error, Reason} ->
+                    case Sender of
+                        undefined ->
+                            ok;
+                        _ ->
+                            _Res = gen_fsm:reply(Sender, {error, Reason})
+                    end,
+                    {error, Reason}
             end;
         {error, Reason} ->
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    _Res = gen_fsm:reply(Sender, {error, Reason})
-            end,
             {error, Reason}
     end.
-
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 execute_op({OpType, Args}, Sender,
     SD0 = #tx_coord_state{transaction = Transaction,
-        updated_partitions = Updated_partitions
-    }) ->
+                          updated_partitions = Updated_partitions,
+                          client_ops = ClientOps
+                         }) ->
     case OpType of
         prepare ->
             case Args of
@@ -341,12 +361,13 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, ReadResult}, execute_op, SD0}
             end;
         update ->
-            case perform_update(Args, Updated_partitions, Transaction, Sender) of
+            case perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) of
                 {error, _Reason} ->
                     abort(SD0);
-                NewUpdatedPartitions ->
+                {NewUpdatedPartitions, NewClientOps} ->
                     {next_state, execute_op,
-                        SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions}}
+                        SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions,
+                                          client_ops = NewClientOps}}
             end
     end.
 
@@ -481,7 +502,7 @@ committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transacti
 
 %% @doc after receiving all prepare_times, send the commit message to all
 %%      updated partitions, and go to the "receive_committed" state.
-%%      This state expects other process to sen the commit message to 
+%%      This state expects other process to sen the commit message to
 %%      start the commit phase.
 committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
@@ -499,7 +520,7 @@ committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
 %% @doc after receiving all prepare_times, send the commit message to all
 %%      updated partitions, and go to the "receive_committed" state.
 %%      This state is used when no commit message from the client is
-%%      expected 
+%%      expected
 committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
     commit_time = Commit_time}) ->
@@ -526,10 +547,10 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
             {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
     end.
 
-%% @doc when an error occurs or an updated partition 
+%% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
 abort(SD0 = #tx_coord_state{transaction = Transaction,
-			    updated_partitions = UpdatedPartitions}) ->
+                            updated_partitions = UpdatedPartitions}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
@@ -541,15 +562,15 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
-				   updated_partitions = _UpdatedPartitions}) ->
+                                   updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort({prepared, _}, SD0 = #tx_coord_state{transaction = _Transaction,
-					   updated_partitions = _UpdatedPartitions}) ->
+                                           updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
-			       updated_partitions = _UpdatedPartitions}) ->
+                               updated_partitions = _UpdatedPartitions}) ->
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
@@ -570,12 +591,16 @@ receive_aborted(_, S0) ->
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, read_set = ReadSet,
-    state = TxState, commit_time = CommitTime, full_commit = FullCommit,
-    is_static = IsStatic, stay_alive = StayAlive}) ->
+reply_to_client(SD = #tx_coord_state
+                {from = From, transaction = Transaction, read_set = ReadSet,
+                 state = TxState, commit_time = CommitTime,
+                 full_commit = FullCommit,
+                 is_static = IsStatic, stay_alive = StayAlive,
+                 client_ops = ClientOps}) ->
     if undefined =/= From ->
-        TxId = Transaction#transaction.txn_id,
-        Reply = case TxState of
+            TxId = Transaction#transaction.txn_id,
+            Reply =
+                case TxState of
                     committed_read_only ->
                         case IsStatic of
                             false ->
@@ -584,9 +609,13 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                                 {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.vec_snapshot_time}}
                         end;
                     committed ->
+                        %% Execute post_commit_hooks
+                        _Result = execute_post_commit_hooks(ClientOps),
+                        %% TODO: What happens if commit hook fails?
                         DcId = ?DC_UTIL:get_my_dc_id(),
                         CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                            DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                                         DcId, CommitTime,
+                                         Transaction#transaction.vec_snapshot_time),
                         case IsStatic of
                             false ->
                                 {ok, {TxId, CausalClock}};
@@ -598,15 +627,25 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, rea
                     Reason ->
                         {TxId, Reason}
                 end,
-        _Res = gen_fsm:reply(From, Reply);
-        true -> ok
+            _Res = gen_fsm:reply(From, Reply);
+       true -> ok
     end,
     case StayAlive of
-	true ->
-	    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
-	false ->
-	    {stop, normal, SD}
+        true ->
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+        false ->
+            {stop, normal, SD}
     end.
+
+execute_post_commit_hooks(Ops) ->
+    lists:foreach(
+      fun({Key, Type, Update}) ->
+              case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
+                  {error, Reason} ->
+                      lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                  _ -> ok
+              end
+      end, lists:reverse(Ops)).
 
 %% =============================================================================
 
@@ -660,7 +699,6 @@ wait_for_clock(Clock) ->
             timer:sleep(10),
             wait_for_clock(Clock)
     end.
-
 
 -ifdef(TEST).
 
@@ -777,4 +815,3 @@ wait_for_clock_test() ->
 
 
 -endif.
-

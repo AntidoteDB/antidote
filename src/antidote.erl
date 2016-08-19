@@ -25,7 +25,7 @@
 -include("antidote.hrl").
 
 %% API for applications
--export([
+-export([ start/0, stop/0,
          start_transaction/2,
          start_transaction/3,
          read_objects/2,
@@ -38,7 +38,10 @@
          commit_transaction/1,
          create_bucket/2,
          create_object/3,
-         delete_object/1
+         delete_object/1,
+         register_pre_hook/3,
+         register_post_hook/3,
+         unregister_hook/2
         ]).
 
 %% ==========================================================
@@ -64,13 +67,18 @@
          clocksi_icommit/1]).
 %% ===========================================================
 
--type txn_properties() :: term(). %% TODO: Define
--type op_param() :: term(). %% TODO: Define
--type bound_object() :: {key(), type(), bucket()}.
-
 %% Public API
 
--spec start_transaction(Clock::snapshot_time(), Properties::txn_properties(), boolean())
+-spec start() -> {ok, _} | {error, term()}.
+start() ->
+  application:ensure_all_started(antidote).
+
+-spec stop() -> ok.
+stop() ->
+  application:stop(antidote).
+
+
+-spec start_transaction(Clock::snapshot_time() | ignore , Properties::txn_properties(), boolean())
                        -> {ok, txid()} | {error, reason()}.
 start_transaction(Clock, _Properties, KeepAlive) ->
     clocksi_istart_tx(Clock, KeepAlive).
@@ -102,8 +110,8 @@ commit_transaction(TxId) ->
 read_objects(Objects, TxId) ->
     %%TODO: Transaction co-ordinator handles multiple reads
     %% Executes each read as in a interactive transaction
-    Results = lists:map(fun({Key, Type, _Bucket}) ->
-                                case clocksi_iread(TxId, Key, Type) of
+    Results = lists:map(fun({Key, Type, Bucket}) ->
+                                case clocksi_iread(TxId, {Key, Bucket}, Type) of
                                     {ok, Res} ->
                                         Res;
                                     {error, _Reason} ->
@@ -115,18 +123,18 @@ read_objects(Objects, TxId) ->
         false -> {ok, Results}
     end.
 
--spec update_objects([{bound_object(), op(), op_param()}], txid())
+-spec update_objects([{bound_object(), op_name(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     %% Execute each update as in an interactive transaction
-    Results = lists:foldl(
-                fun({{Key, Type, _Bucket}, Op, OpParam}, Err) ->
-                        case clocksi_iupdate(TxId, Key, Type,
+    Results = lists:map(
+                fun({{Key, Type, Bucket}, Op, OpParam}) ->
+                        case clocksi_iupdate(TxId, {Key, Bucket}, Type,
                                              {Op, OpParam}) of
-                            ok -> Err;
+                            ok -> ok;
                             {error, Reason} ->
                                 lager:error("Update failed. Reason : ~p",[Reason]),
-                                [{error, Reason}| Err]
+                                error
                         end
                 end, [], Updates),
     case Results of
@@ -135,15 +143,15 @@ update_objects(Updates, TxId) ->
     end.
 
 %% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time(), term(), [{bound_object(), op(), op_param()}]) ->
+-spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}]) ->
                             {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
 
 update_objects(Clock, _Properties, Updates, StayAlive) ->
     Operations = lists:map(
-                   fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-                           {update, {Key, Type, {Op,OpParam}}}
+                   fun({{Key, Type, Bucket}, Op, OpParam}) ->
+                           {update, {{Key, Bucket}, Type, {Op,OpParam}}}
                    end,
                    Updates),
     SingleKey = case Operations of
@@ -176,8 +184,8 @@ read_objects(Clock, Properties, Objects) ->
 
 read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
-             fun({Key, Type, _Bucket}) ->
-                     {read, {Key, Type}}
+             fun({Key, Type, Bucket}) ->
+                     {read, {{Key,Bucket}, Type}}
              end,
              Objects),
     SingleKey = case Args of
@@ -239,6 +247,18 @@ create_object(_Key, _Type, _Bucket) ->
 delete_object({_Key, _Type, _Bucket}) ->
     %% TODO: Object deletion is not currently supported
     {error, operation_not_supported}.
+
+-spec register_post_hook(bucket(), module_name(), function_name()) -> ok | {error, function_not_exported}.
+register_post_hook(Bucket, Module, Function) ->
+    antidote_hooks:register_post_hook(Bucket, Module, Function).
+
+-spec register_pre_hook(bucket(), module_name(), function_name()) -> ok | {error, function_not_exported}.
+register_pre_hook(Bucket, Module, Function) ->
+    antidote_hooks:register_pre_hook(Bucket, Module, Function).
+
+-spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.
+unregister_hook(Prefix, Bucket) ->
+    antidote_hooks:unregister_hook(Prefix, Bucket).
 
 %% =============================================================================
 %% OLD API, We might still need them
@@ -444,7 +464,7 @@ gr_snapshot_read(ClientClock, Args) ->
     %% GST = scalar stable time
     %% VST = vector stable time with entries for each dc
     {ok, GST, VST} = vectorclock:get_scalar_stable_time(),
-    DcId = dc_utilities:get_my_dc_id(),
+    DcId = dc_meta_data_utilities:get_my_dc_id(),
     Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
     case Dt =< GST of
         true ->

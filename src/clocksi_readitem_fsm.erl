@@ -104,8 +104,7 @@ async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
 %%      Returns true if they have been, false otherwise.
 -spec check_servers_ready() -> boolean().
 check_servers_ready() ->
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_server_ready(PartitionList).
 
 -spec check_server_ready([index_node()]) -> boolean().
@@ -163,7 +162,7 @@ start_read_servers_internal(Node, Partition, Num) ->
 	    end,
 	    start_read_servers_internal(Node, Partition, Num)
     end.
-	    
+
 
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
@@ -239,6 +238,8 @@ check_prepared(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
     SnapshotTime = TxId#tx_id.snapshot_time,
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
+		lager:debug("Active Txns: ~p", [ActiveTxs]),
+		lager:debug("Key ~p, Required snapshot time: ~p", [Key, SnapshotTime]),
     check_prepared_list(Key,SnapshotTime,ActiveTxs).
 
 check_prepared_list(_Key,_SnapshotTime,[]) ->
@@ -293,4 +294,3 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 terminate(_Reason, _SD) ->
     ok.
-

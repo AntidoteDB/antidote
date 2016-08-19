@@ -1,100 +1,129 @@
--module(inter_dc_repl_test).
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2014 SyncFree Consortium.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 
--export([confirm/0]).
+-module(inter_dc_repl_SUITE).
 
+-compile({parse_transform, lager_transform}).
+
+%% common_test callbacks
+-export([%% suite/0,
+         init_per_suite/1,
+         end_per_suite/1,
+         init_per_testcase/2,
+         end_per_testcase/2,
+         all/0]).
+
+%% tests
+-export([simple_replication_test/1,
+         multiple_keys_test/1,
+         causality_test/1,
+         atomicity_test/1
+         ]).
+
+-include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("kernel/include/inet.hrl").
 
--define(HARNESS, (rt_config:get(rt_harness))).
 
-confirm() ->
-    NumVNodes = rt_config:get(num_vnodes, 8),
-    rt:update_app_config(all,[
-        {riak_core, [{ring_creation_size, NumVNodes}]}
-    ]),
+init_per_suite(Config) ->
+    test_utils:at_init_testsuite(),
+    Clusters = test_utils:set_up_clusters_common(Config),
 
-    Clean = rt_config:get(clean_cluster, true),
-
-    [Cluster1, Cluster2] = rt:build_clusters([1,1]),
-
-    rt:wait_until_ring_converged(Cluster1),
-    rt:wait_until_ring_converged(Cluster2),
-
-    {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
+    {ok, Prot} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
 
-    ok = common:setup_dc_manager([Cluster1, Cluster2], first_run),
-    simple_replication_test(Cluster1, Cluster2),
+    [{clusters, Clusters}|Config].
 
-    [Cluster3, Cluster4] = common:clean_and_rebuild_clusters([Cluster1, Cluster2]),
-    ok = common:setup_dc_manager([Cluster3, Cluster4], Clean),
-    multiple_keys_test(Cluster3, Cluster4),
+end_per_suite(Config) ->
+    Config.
 
-    [Cluster5, Cluster6] = common:clean_and_rebuild_clusters([Cluster3, Cluster4]),
-    ok = common:setup_dc_manager([Cluster5, Cluster6], Clean),
-    causality_test(Cluster5, Cluster6),
+init_per_testcase(_Case, Config) ->
+    Config.
 
-    [Cluster7, Cluster8] = common:clean_and_rebuild_clusters([Cluster5, Cluster6]),
-    ok = common:setup_dc_manager([Cluster7, Cluster8], Clean),
-    atomicity_test(Cluster7, Cluster8),
+end_per_testcase(_, _) ->
+    ok.
 
-    pass.
+all() -> [simple_replication_test,
+         multiple_keys_test,
+         causality_test,
+         atomicity_test].
 
-simple_replication_test(Cluster1, Cluster2) ->
-    Node1 = hd(Cluster1),
-    Node2 = hd(Cluster2),
+simple_replication_test(Config) ->
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+
     Key = simple_replication_test,
+    Type = riak_dt_gcounter,
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [Key, antidote_crdt_counter, {increment, 1}]),
+                            [Key, Type, {increment, ucl1}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [Key, antidote_crdt_counter, increment]),
+                            [Key, Type, {increment, ucl2}]),
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [Key, antidote_crdt_counter, increment]),
+                            [Key, Type, {increment, ucl3}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
     Result = rpc:call(Node1, antidote, read,
-                      [Key, antidote_crdt_counter]),
+                      [Key, Type]),
     ?assertEqual({ok, 3}, Result),
 
     ReadResult = rpc:call(Node2,
                           antidote, clocksi_read,
-                          [CommitTime, Key, antidote_crdt_counter]),
+                          [CommitTime, Key, Type]),
     {ok, {_,[ReadSet],_} }= ReadResult,
     ?assertEqual(3, ReadSet),
     lager:info("Simple replication test passed!"),
     pass.
 
-multiple_keys_test(Cluster1, Cluster2) ->
-    Node1 = hd(Cluster1),
-    Node2 = hd(Cluster2),
+multiple_keys_test(Config) ->
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    Type = riak_dt_gcounter,
     Key = multiple_keys_test,
     lists:foreach( fun(_) ->
-                           multiple_writes(Node1, Key, 1, 10)
+                           multiple_writes(Node1, Key, Type, 1, 10, rpl)
                    end,
                    lists:seq(1,10)),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [Key, antidote_crdt_counter, {increment, 1}]),
+                            [Key, Type, {increment, ucl1}]),
     ?assertMatch({ok, _}, WriteResult3),
-    {ok,{_,_,CommitTime}}=WriteResult3,
+    {ok,{_,_,CommitTime}} = WriteResult3,
 
-    Result1 = multiple_reads(Node1, Key, 1, 10, 10,CommitTime),
+    Result1 = multiple_reads(Node1, Key, Type, 1, 10, 10,CommitTime),
     ?assertEqual(length(Result1), 0),
-    Result2 = multiple_reads(Node2, Key, 1, 10, 10, CommitTime),
+    Result2 = multiple_reads(Node2, Key, Type, 1, 10, 10, CommitTime),
     ?assertEqual(length(Result2), 0),
     lager:info("Multiple key read-write test passed!"),
     pass.
 
-multiple_writes(Node, PreKey, Start, End)->
+multiple_writes(Node, PreKey, Type, Start, End, Actor)->
     F = fun(N, Acc) ->
                 Key = list_to_atom(atom_to_list(PreKey) ++ [N]),
                 case rpc:call(Node, antidote, append,
-                              [Key, antidote_crdt_counter,
-                               {increment, 1}]) of
+                              [Key, Type,
+                               {{increment, 1}, Actor}]) of
                     {ok, _} ->
                         Acc;
                     Other ->
@@ -103,10 +132,10 @@ multiple_writes(Node, PreKey, Start, End)->
         end,
     lists:foldl(F, [], lists:seq(Start, End)).
 
-multiple_reads(Node, PreKey, Start, End, Total, CommitTime) ->
+multiple_reads(Node, PreKey, Type, Start, End, Total, CommitTime) ->
     F = fun(N, Acc) ->
                 Key = list_to_atom(atom_to_list(PreKey) ++ [N]),
-                case rpc:call(Node, antidote, clocksi_read, [CommitTime, Key, antidote_crdt_counter]) of
+                case rpc:call(Node, antidote, clocksi_read, [CommitTime, Key, Type]) of
                     {error, _} ->
                         [{Key, error} | Acc];
                     {ok, {_,[Value],_}} ->
@@ -116,52 +145,53 @@ multiple_reads(Node, PreKey, Start, End, Total, CommitTime) ->
         end,
     lists:foldl(F, [], lists:seq(Start, End)).
 
-causality_test(Cluster1, Cluster2) ->
+causality_test(Config) ->
     %% add element e to orset in one DC
     %% remove element e from other DC
     %% result set should not contain e
-    Node1 = hd(Cluster1),
-    Node2 = hd(Cluster2),
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    Type = riak_dt_orset,
     Key = causality_test,
     %% Add two elements in DC1
     AddResult1 = rpc:call(Node1,
                           antidote, append,
-                          [Key, antidote_crdt_orset, {add, first}]),
+                          [Key, Type, {{add, first}, act1}]),
     ?assertMatch({ok, _}, AddResult1),
     AddResult2 = rpc:call(Node1,
                           antidote, append,
-                          [Key, antidote_crdt_orset, {add, second}]),
+                          [Key, Type, {{add, second}, act2}]),
     ?assertMatch({ok, _}, AddResult2),
-    {ok,{_,_,CommitTime}}=AddResult2,
+    {ok,{_,_,CommitTime}} = AddResult2,
 
     %% Remove one element from D2C
     RemoveResult = rpc:call(Node2,
                             antidote, clocksi_bulk_update,
                             [CommitTime,
-                             [{update, {Key, antidote_crdt_orset, {remove, first}}}
-                              ]
-                             ]),
+                             [{update, {Key, Type, {{remove, first}, act3}}}]]),
     ?assertMatch({ok, _}, RemoveResult),
     %% Read result
     Result = rpc:call(Node2, antidote, read,
-                      [Key, antidote_crdt_orset]),
+                      [Key, Type]),
     ?assertMatch({ok, [second]}, Result),
     lager:info("Causality test passed!"),
     pass.
 
 %% This tests checks reads are atomic when replicated to other DCs
 %% TODO: need more deterministic test
-atomicity_test(Cluster1, Cluster2) ->
-    Node1 = hd(Cluster1),
-    Node2 = hd(Cluster2),
+atomicity_test(Config) ->
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Key1 = atomicity_test1,
     Key2 = atomicity_test2,
     Key3 = atomicity_test3,
+    Type = riak_dt_gcounter,
+
     Caller = self(),
     ContWrite = fun() ->
                         lists:foreach(
                           fun(_) ->
-                                  atomic_write_txn(Node1, Key1, Key2, Key3)
+                                  atomic_write_txn(Node1, Key1, Key2, Key3, Type)
                           end, lists:seq(1,10)),
                         Caller ! writedone,
                         lager:info("Atomic writes done")
@@ -169,7 +199,7 @@ atomicity_test(Cluster1, Cluster2) ->
     ContRead = fun() ->
                        lists:foreach(
                          fun(_) ->
-                                 atomic_read_txn(Node2, Key1, Key2, Key3)
+                                 atomic_read_txn(Node2, Key1, Key2, Key3, Type)
                          end, lists:seq(1,20)),
                        Caller ! readdone,
                        lager:info("Atomic reads done")
@@ -185,18 +215,16 @@ atomicity_test(Cluster1, Cluster2) ->
             pass
     end.
 
-atomic_write_txn(Node, Key1, Key2, Key3) ->
-    Type = antidote_crdt_counter,
+atomic_write_txn(Node, Key1, Key2, Key3, Type) ->
     Result= rpc:call(Node, antidote, clocksi_bulk_update,
                      [
-                      [{update, {Key1, Type, {increment, 1}}},
-                       {update, {Key2, Type, {increment, 1}}},
-                       {update, {Key3, Type, {increment, 1}}}
+                      [{update, {Key1, Type, {increment, a}}},
+                       {update, {Key2, Type, {increment, a}}},
+                       {update, {Key3, Type, {increment, a}}}
                       ]]),
     ?assertMatch({ok, _}, Result).
 
-atomic_read_txn(Node, Key1, Key2, Key3) ->
-    Type = antidote_crdt_counter,
+atomic_read_txn(Node, Key1, Key2, Key3, Type) ->
     {ok,TxId} = rpc:call(Node, antidote, clocksi_istart_tx, []),
     {ok, R1} = rpc:call(Node, antidote, clocksi_iread,
                         [TxId, Key1, Type]),

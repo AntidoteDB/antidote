@@ -66,7 +66,8 @@
 -record (payload, {key:: key(), type :: type(), op_param, actor}).
 
 %% Used by the replication layer
--record(operation, {op_number, payload :: payload()}).
+-record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
+-record(operation, {op_number :: #op_number{}, payload :: payload()}).
 -type operation() :: #operation{}.
 -type vectorclock() :: vectorclock:vectorclock().
 
@@ -89,7 +90,7 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time :: snapshot_time(), 
+-record(tx_id, {snapshot_time :: snapshot_time(),
                 server_pid :: pid()}).
 -record(clocksi_payload, {key :: key(),
                           type :: type(),
@@ -125,15 +126,29 @@
 -type commit_time() ::  {dcid(), non_neg_integer()}.
 -type txid() :: #tx_id{}.
 -type clocksi_payload() :: #clocksi_payload{}.
--type dcid() :: term().
+-type dcid() :: 'undefined' | {_,_}.
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tid().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
+
+-type txn_properties() :: term().
+-type op_name() :: atom().
+-type op_param() :: term().
+-type bound_object() :: {key(), type(), bucket()}.
+
+-type module_name() :: atom().
+-type function_name() :: atom().
+
 -export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
               log/0, op_id/0, payload/0, operation/0, partition_id/0,
               type/0, snapshot/0, txid/0, tx/0,
-              bucket/0]).
+              bucket/0,
+              txn_properties/0,
+              op_param/0, op_name/0,
+              bound_object/0,
+              module_name/0,
+              function_name/0]).
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
 %% where:
@@ -151,6 +166,7 @@
           from :: {pid(), term()},
           transaction :: tx(),
           updated_partitions :: list(),
+          client_ops :: list(), % list of upstream updates, used for post commit hooks
           num_to_ack :: non_neg_integer(),
           num_to_read :: non_neg_integer(),
           prepare_time :: non_neg_integer(),

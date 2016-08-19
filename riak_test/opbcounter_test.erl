@@ -35,18 +35,18 @@ confirm() ->
     lager:info("Nodes: ~p", [Nodes]),
     new_bcounter_test(Nodes),
 
-    [Nodes1] = common:clean_clusters([Nodes]),
+    [Nodes1] = common:clean_and_rebuild_clusters([Nodes]),
     increment_test(Nodes),
 
-    [Nodes2] = common:clean_clusters([Nodes1]),
+    [Nodes2] = common:clean_and_rebuild_clusters([Nodes1]),
     decrement_test(Nodes2),
 
-    [Nodes3] = common:clean_clusters([Nodes2]),
+    [Nodes3] = common:clean_and_rebuild_clusters([Nodes2]),
     transfer_test(Nodes3),
 
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
         {ok, true} ->
-            [Nodes4] = common:clean_clusters([Nodes3]),
+            [Nodes4] = common:clean_and_rebuild_clusters([Nodes3]),
             conditional_write_test(Nodes4);
         _ -> 
             pass

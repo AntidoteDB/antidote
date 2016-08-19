@@ -31,7 +31,8 @@
 
 %% API
 -export([
-  handle_transaction/1]).
+  handle_transaction/1,
+  set_dependency_clock/2]).
 
 %% VNode methods
 -export([
@@ -65,6 +66,11 @@
 %% At this point no message can be lost (the transport layer must ensure all transactions are delivered reliably).
 -spec handle_transaction(#interdc_txn{}) -> ok.
 handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
+
+%% After restarting from failure, load the vectorclock of the max times of all the updates received from other DCs
+%% Otherwise new updates from other DCs will be blocked
+-spec set_dependency_clock(partition_id(), vectorclock()) -> ok.
+set_dependency_clock(Partition, Vector) -> dc_utilities:call_vnode_sync(Partition, inter_dc_dep_vnode_master, {set_dependency_clock, Vector}).
 
 %%%% VNode methods ----------------------------------------------------------+
 
@@ -127,8 +133,8 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% If so, store the transaction
     true ->
       %% Put the operations in the log
-      Payloads = [Op#operation.payload || Op <- Ops],
-      {ok, _} = logging_vnode:append_group(dc_utilities:partition_to_indexnode(Partition), [Partition], Payloads, false),
+      {ok, _} = logging_vnode:append_group(dc_utilities:partition_to_indexnode(Partition),
+					   [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
@@ -137,8 +143,11 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       {update_clock(State, DCID, Timestamp), true}
   end.
 
+handle_command({set_dependency_clock, Vector}, _Sender, State) ->
+    {reply, ok, State#state{vectorclock = Vector}};
+    
 handle_command({txn, Txn}, _Sender, State) ->
-  NewState = process_all_queues(push_txn(State, Txn)),
+    NewState = process_all_queues(push_txn(State, Txn)),
     {reply, ok, NewState};
 
 %% Tells the vnode to drop ping messages or not
@@ -211,7 +220,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
 -spec get_partition_clock(#state{}) -> vectorclock().
 get_partition_clock(State) ->
   %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
-  vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
+  vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
 -spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#clocksi_payload{}).

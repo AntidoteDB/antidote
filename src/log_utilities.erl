@@ -47,7 +47,6 @@ get_logid_from_key(Key) ->
 -spec get_preflist_from_key(key()) -> preflist().
 get_preflist_from_key(Key) ->
     ConvertedKey = convert_key(Key),
-    %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     get_primaries_preflist(ConvertedKey).
 
 %% @doc get_primaries_preflist returns the preflist with the primary
@@ -57,14 +56,9 @@ get_preflist_from_key(Key) ->
 %%
 -spec get_primaries_preflist(non_neg_integer()) -> preflist().
 get_primaries_preflist(Key)->
-    %{ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    %Itr = chashbin:iterator(Key, CHBin),
-    %{Primaries, _} = chashbin:itr_pop(?N, Itr),
-    %Primaries.
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
-    Pos = Key rem length(PartitionList) + 1,
-    [lists:nth(Pos, PartitionList)].
+    NumPartitions = dc_meta_data_utilities:get_num_partitions(),
+    Pos = Key rem NumPartitions + 1,
+    [dc_meta_data_utilities:get_partition_at_index(Pos)].
 
 get_my_node(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
