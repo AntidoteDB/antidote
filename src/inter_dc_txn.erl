@@ -29,6 +29,7 @@
   req_id_to_bin/1,
   to_bin/1,
   from_bin/1,
+  commit_opid/1,
   partition_to_bin/1,
   last_log_opid/1,
   is_ping/1,
@@ -127,6 +128,18 @@ get_all_local_partitions(#interdc_txn{log_records = Ops}) ->
 		    end, sets:new(), Ops),
     sets:to_list(PartitionSet).
 				
+-spec commit_opid(#interdc_txn{}) -> #op_number{}.
+commit_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId}) ->
+    case is_ping(Txn) of
+	true ->
+	    LogOpId;
+	false ->
+	    LastOp = lists:last(Ops),
+	    CommitPld = LastOp#log_record.log_operation,
+	    commit = CommitPld#log_operation.op_type, %% sanity check
+	    LastOp#log_record.op_number
+    end.
+
 -spec last_log_opid(#interdc_txn{}) -> {#op_number{}, [{dcid(),#op_number{}}]}.
 last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId, prev_log_opid_dc = DCLogOpId}) ->
     case is_ping(Txn) of

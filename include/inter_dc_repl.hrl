@@ -69,5 +69,6 @@
   state_name :: normal | buffering,
   pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer() | init,
+  last_observed_commit_ids :: {non_neg_integer(), non_neg_integer()} | init,
   queue :: queue()
 }).

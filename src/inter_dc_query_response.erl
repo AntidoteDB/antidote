@@ -62,8 +62,8 @@ init([Num]) ->
     {ok, #state{id=Num}}.
 
 handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
-    {read_log,Partition, From, To} = binary_to_term(BinaryQuery),
-    Entries = get_entries_internal(Partition,From,To),
+    {read_log,Partition, From, To, OpId, DCID} = binary_to_term(BinaryQuery),
+    Entries = get_entries_internal(Partition,From,To,OpId,DCID),
     BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(),Partition},Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary,BinaryResp/binary>>,
@@ -89,8 +89,9 @@ handle_call(_Info, _From, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
--spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
-get_entries_internal(Partition, From, To) ->
+-spec get_entries_internal(partition_id(), log_opid(), log_opid(), log_opid(), dcid()) -> [#interdc_txn{}].
+get_entries_internal(Partition, From, To, _OpId, _OtherDC) ->
+  %% TODO: Trim the query correctly for partial replication
   Logs = log_read_range(Partition, node(), From, To),
   Asm = log_txn_assembler:new_state(),
   {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),

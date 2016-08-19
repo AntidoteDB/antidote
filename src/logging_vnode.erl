@@ -50,6 +50,7 @@
          get_from_time/5,
 	 get_range/6,
 	 get_all/4,
+	 request_commit_op_id/2,
 	 request_bucket_op_id/4,
 	 request_op_id/3]).
 
@@ -72,7 +73,8 @@
 
 -record(state, {partition :: partition_id(),
 		logs_map :: dict(),
-		op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
+		op_id_table :: cache_id(), %% Stores the count of ops appended to each log
+		op_id_commit_table :: cache_id(), %% Stores the two last commit ids appended to the log
 		op_id_table_partial :: cache_id(), %% Store op count for number of ops sent to each DC (for partial replication)
 		recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
 	                                            %% of the last operation appended to this log, this value
@@ -223,6 +225,14 @@ request_op_id(IndexNode, DCID, Partition) ->
 					?LOGGING_MASTER,
 					infinity).
 
+%% @doc Gets the last id of operations and last two commit operations stored in the log for this DC
+-spec request_commit_op_id(index_node(), partition()) -> {ok, non_neg_integer(), {non_neg_integer(), non_neg_integer()}}.
+request_commit_op_id(IndexNode, Partition) ->
+    riak_core_vnode_master:sync_command(IndexNode, {get_commit_op_id,Partition},
+					?LOGGING_MASTER,
+					infinity).
+
+
 %% @doc Gets the last id of operations stored in the log for the given bucket from the given DCID
 -spec request_bucket_op_id(index_node(), dcid(), bucket(), partition()) -> {ok, non_neg_integer()}.
 request_bucket_op_id(IndexNode, DCID, Bucket, Partition) ->
@@ -264,10 +274,11 @@ init([Partition]) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     OpIdTable = ets:new(op_id_table, [set]),
+    OpIdCommitTable = ets:new(op_id_commit_table, [set]),
     OpIdTablePartial = ets:new(op_id_table_partial, [set]),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
     lager:info("Opening logs for partition ~w", [Partition]),
-    case open_logs(LogFile, Preflists, dict:new(), OpIdTable, OpIdTablePartial, vectorclock:new()) of
+    case open_logs(LogFile, Preflists, dict:new(), OpIdTable, OpIdCommitTable, OpIdTablePartial, vectorclock:new()) of
         {error, Reason} ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
@@ -277,6 +288,7 @@ init([Partition]) ->
                         logs_map=Map,
 			op_id_table_partial = OpIdTablePartial,
                         op_id_table=OpIdTable,
+			op_id_commit_table=OpIdCommitTable,
 			recovered_vector=MaxVector,
                         senders_awaiting_ack=dict:new(),
                         last_read=start}}
@@ -288,6 +300,15 @@ handle_command({hello}, _Sender, State) ->
 
 %% handle_command({get_op_id_all_dcs, Partition
 %% 		DCOpIds = get_op_id_all_dcs(OpIdTablePartial, [Partition], ?IS_PARTIAL()),
+
+handle_command({get_commit_op_id, Partition}, _Sender, State=#state{op_id_table = OpIdTable, op_id_commit_table = OpIdCommitTable}) ->
+    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    OpId = get_op_id(OpIdTable,{[Partition],MyDCID}),
+    {CommitId1,CommitId2} = get_commit_op_id(OpIdCommitTable,{[Partition],MyDCID}),
+    #op_number{local = Local, global = _Global} = OpId,
+    #op_number{local = CommitLocal1, global = _Global} = CommitId1,
+    #op_number{local = CommitLocal2, global = _Global} = CommitId2,
+    {reply, {ok, Local, {CommitLocal1,CommitLocal2}}, State};
 
 handle_command({get_op_id, DCID, Partition}, _Sender, State=#state{op_id_table = OpIdTable}) ->
     OpId = get_op_id(OpIdTable,{[Partition],DCID}),
@@ -401,6 +422,7 @@ handle_command({read_from, LogId, _From}, _Sender,
 handle_command({append, LogId, LogOperation, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
+		      op_id_commit_table=CommitOpIdTable,
 		      op_id_table_partial=OpIdTablePartial,
                       partition=Partition}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
@@ -425,8 +447,13 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 			NewBOpId = BOpId#op_number{local = OldBLocal + 1, global = BGlobal + 1},
 			true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable),
 			{BOpId, NewBOpId, OldOtherDCOpIds, OtherDCOpIds};
+		    commit ->
+			%% Update the commit id count
+			true = update_ets_commit_op_id({LogId,MyDCID},NewOpId,CommitOpIdTable),
+			%% Non-update operations just keep the old id
+			{NewOpId, NewOpId, [], []};
 		    _ ->
-			%% Other operations just keep the old id
+			%% Non-update operations just keep the old id
 			{NewOpId, NewOpId, [], []}
 		end,		    
             LogRecord = (log_utilities:generate_empty_log_record())#log_record{op_number_dcid = NewPartialOpIds,
@@ -618,32 +645,32 @@ update_from_op_id(MyDCID,FromDCID,#log_record{log_operation = LogOperation, part
 
 %% Gets the id of the last operation that was put in the log
 %% and the maximum vectorclock of the commited transactions stored in the log
--spec get_last_op_from_log(log_id(), disk_log:continuation() | start, cache_id(), cache_id(), vectorclock()) -> {eof, vectorclock()} | {error, term()}.
-get_last_op_from_log(Log, Continuation, OpIdTable, OpIdTablePartial, PrevMaxVector) ->
+-spec get_last_op_from_log(log_id(), disk_log:continuation() | start, cache_id(), cache_id(), cache_id(), vectorclock()) -> {eof, vectorclock()} | {error, term()}.
+get_last_op_from_log(Log, Continuation, OpIdTable, CommitOpIdTable, OpIdTablePartial, PrevMaxVector) ->
     case disk_log:chunk(Log, Continuation) of
 	eof ->
 	    {eof, PrevMaxVector};
 	{error, Reason} ->
 	    {error, Reason};
 	{NewContinuation, NewTerms} ->
-	    NewMaxVector = get_max_op_numbers(NewTerms,OpIdTable,OpIdTablePartial,PrevMaxVector),
-	    get_last_op_from_log(Log, NewContinuation,OpIdTable,OpIdTablePartial,NewMaxVector);
+	    NewMaxVector = get_max_op_numbers(NewTerms,OpIdTable,CommitOpIdTable,OpIdTablePartial,PrevMaxVector),
+	    get_last_op_from_log(Log, NewContinuation,OpIdTable,CommitOpIdTable,OpIdTablePartial,NewMaxVector);
 	{NewContinuation, NewTerms, BadBytes} ->
             case BadBytes > 0 of
                 true -> {error, bad_bytes};
                 false ->
-		    NewMaxVector = get_max_op_numbers(NewTerms,OpIdTable,OpIdTablePartial,PrevMaxVector),
-		    get_last_op_from_log(Log,NewContinuation,OpIdTable,OpIdTablePartial,NewMaxVector)
+		    NewMaxVector = get_max_op_numbers(NewTerms,OpIdTable,CommitOpIdTable,OpIdTablePartial,PrevMaxVector),
+		    get_last_op_from_log(Log,NewContinuation,OpIdTable,CommitOpIdTable,OpIdTablePartial,NewMaxVector)
 	    end
     end.
 
 %% This is called when the vnode starts and loads into the cache
 %% the id of the last operation appened to the log, so that new ops will
 %% be assigned corret ids (after crash and restart)
--spec get_max_op_numbers([{log_id(),#log_record{}}],cache_id(),cache_id(),vectorclock()) -> vectorclock().
-get_max_op_numbers([],_OpIdTable,_OpIdTablePartial,MaxVector) ->
+-spec get_max_op_numbers([{log_id(),#log_record{}}],cache_id(),cache_id(),cache_id(),vectorclock()) -> vectorclock().
+get_max_op_numbers([],_OpIdTable,_CommitOpIdTable,_OpIdTablePartial,MaxVector) ->
     MaxVector;
-get_max_op_numbers([{LogId,OldLogRecord}|Rest],OpIdTable,OpIdTablePartial,PrevMaxVector) ->
+get_max_op_numbers([{LogId,OldLogRecord}|Rest],OpIdTable,CommitOpIdTable,OpIdTablePartial,PrevMaxVector) ->
     LogRecord = log_utilities:check_log_record_version(OldLogRecord),
     #log_record{op_number = NewOp, bucket_op_number = NewBucketOp, log_operation = LogOperation}
 	= LogRecord,
@@ -655,6 +682,12 @@ get_max_op_numbers([{LogId,OldLogRecord}|Rest],OpIdTable,OpIdTablePartial,PrevMa
     NewMaxVector =
 	case OpType of
 	    commit ->
+		case DCID == MyDCID of
+		    true ->
+			%% Update the commit opid count
+			true = update_ets_commit_op_id({LogId,DCID},NewOp,CommitOpIdTable);
+		    false -> true
+		end,
 		#commit_log_payload{commit_time = {DCID, TxCommitTime}} = LogPayload,
 		vectorclock:set_clock_of_dc(DCID, TxCommitTime, PrevMaxVector);
 	    update ->
@@ -682,7 +715,7 @@ get_max_op_numbers([{LogId,OldLogRecord}|Rest],OpIdTable,OpIdTablePartial,PrevMa
 	    %% Update the count of ops of the external DC
 	    true = update_from_op_id(MyDCID,DCID,LogRecord,OpIdTable)
     end,
-    get_max_op_numbers(Rest,OpIdTable,OpIdTablePartial,NewMaxVector).
+    get_max_op_numbers(Rest,OpIdTable,CommitOpIdTable,OpIdTablePartial,NewMaxVector).
 
 %% After appeded an operation to the log, increment the op id
 -spec update_ets_op_id({log_id(),dcid()} | {log_id(),bucket(),dcid()}, #op_number{}, cache_id()) -> true.
@@ -695,6 +728,29 @@ update_ets_op_id(Key,NewOp,ClockTable) ->
 	    case ((Num > OldNum) or (GlobalNum > OldGlobal)) of
 		true ->
 		    ets:insert(ClockTable,{Key,NewOp});
+		false ->
+		    true
+	    end
+    end.
+
+%% After appeded a commit operation to the log, increment the op id
+-spec update_ets_commit_op_id({log_id(),dcid()} | {log_id(),bucket(),dcid()}, #op_number{}, cache_id()) -> true.
+update_ets_commit_op_id(Key,NewOp,ClockTable) ->
+    #op_number{local = Num, global = GlobalNum} = NewOp,
+    case ets:lookup(ClockTable,Key) of
+	[] ->
+	    ets:insert(ClockTable,{Key,{#op_number{local=0,global=0},NewOp}});
+	[{Key,{OldFirst,OldSecond}}] ->
+	    #op_number{local = OldNumFirst, global = OldGlobalFirst} = OldFirst,
+	    #op_number{local = OldNumSecond, global = OldGlobalSecond} = OldSecond,
+	    case ((Num > OldNumFirst) or (GlobalNum > OldGlobalFirst)) of
+		true ->
+		    case ((Num > OldNumSecond) or (GlobalNum > OldGlobalSecond)) of
+			true ->
+			    ets:insert(ClockTable,{Key,{OldSecond,NewOp}});
+			false ->
+			    ets:insert(ClockTable,{Key,{NewOp,OldSecond}})
+		    end;
 		false ->
 		    true
 	    end
@@ -957,10 +1013,10 @@ no_elements([LogId|Rest], Map) ->
 %%                               the log in the system. dict() type.
 %%                      MaxVector: The version vector time of the last
 %%                               operation appended to the logs
--spec open_logs(string(), [preflist()], dict(), cache_id(), cache_id(), vectorclock()) -> {dict(),vectorclock()} | {error, reason()}.
-open_logs(_LogFile, [], Map, _OpIdTable, _OpIdTablePartial, MaxVector) ->
+-spec open_logs(string(), [preflist()], dict(), cache_id(), cache_id(), cache_id(), vectorclock()) -> {dict(),vectorclock()} | {error, reason()}.
+open_logs(_LogFile, [], Map, _OpIdTable, _CommitOpIdTable, _OpIdTablePartial, MaxVector) ->
     {Map,MaxVector};
-open_logs(LogFile, [Next|Rest], Map, OpIdTable, OpIdTablePartial, MaxVector)->
+open_logs(LogFile, [Next|Rest], Map, OpIdTable, CommitOpIdTable, OpIdTablePartial, MaxVector)->
     PartitionList = log_utilities:remove_node_from_preflist(Next),
     PreflistString = string:join(
                        lists:map(fun erlang:integer_to_list/1, PartitionList), "-"),
@@ -970,12 +1026,12 @@ open_logs(LogFile, [Next|Rest], Map, OpIdTable, OpIdTablePartial, MaxVector)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2, OpIdTable, OpIdTablePartial, MaxVector);
+            open_logs(LogFile, Rest, Map2, OpIdTable, CommitOpIdTable, OpIdTablePartial, MaxVector);
         {repaired, Log, _, _} ->
-	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, OpIdTable, OpIdTablePartial, MaxVector),
+	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, OpIdTable, CommitOpIdTable, OpIdTablePartial, MaxVector),
             lager:info("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(OpIdTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
-            open_logs(LogFile, Rest, Map2, OpIdTable, OpIdTablePartial, NewMaxVector);
+            open_logs(LogFile, Rest, Map2, OpIdTable, CommitOpIdTable, OpIdTablePartial, NewMaxVector);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -1079,6 +1135,16 @@ get_op_id_all_dcs_for_bucket(ClockTable, LogId, Bucket, IsPartial) ->
 				end
 			end, [], DCIDs)
        %% false -> []
+    end.
+
+-spec get_commit_op_id(cache_id(), {log_id(),dcid()} | {log_id(),bucket(),dcid()}) -> {#op_number{},#op_number{}}.
+get_commit_op_id(ClockTable,{LogId,DCID}) ->
+    case ets:lookup(ClockTable,{LogId,DCID}) of
+	[] ->
+	    OpId = #op_number{node = {node(), DCID}, global = 0, local = 0},
+	    {OpId,OpId};
+	[{{LogId,DCID}, Val2}] ->
+	    Val2
     end.
 
 -spec get_op_id(cache_id(), {log_id(),dcid()} | {log_id(),bucket(),dcid()}) -> #op_number{}.
