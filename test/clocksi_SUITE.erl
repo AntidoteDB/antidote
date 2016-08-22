@@ -519,53 +519,51 @@ clocksi_test_read_time(Config) ->
 clocksi_test_read_wait(Config) ->
     Nodes = proplists:get_value(nodes, Config),
 
-    lager:info("Test read_wait started"),
     Key1 = clocksi_test_read_wait_key1,
     Type = antidote_crdt_counter,
     %% Start a new tx, update a key read_wait_test, and send prepare.
+
     FirstNode = hd(Nodes),
-    LastNode = lists:last(Nodes),
-    lager:info("Node1: ~p", [FirstNode]),
-    lager:info("LastNode: ~p", [LastNode]),
+    lager:info("FirstNode: ~p", [FirstNode]),
     {ok, TxId1} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     lager:info("Tx1 started, id : ~p", [TxId1]),
     WriteResult = rpc:call(FirstNode, antidote, clocksi_iupdate,
                          [TxId1, Key1, Type, {increment, 1}]),
+
     lager:info("Tx1 writing..."),
     ?assertEqual(ok, WriteResult),
     {ok, CommitTime1} = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
     lager:info("Tx1 sent prepare, assigned commitTime : ~p", [CommitTime1]),
     %% start a different tx and try to read key read_wait_test.
-    {ok,TxId2}=rpc:call(LastNode, antidote, clocksi_istart_tx,
+    {ok,TxId2}=rpc:call(FirstNode, antidote, clocksi_istart_tx,
                         []),
     lager:info("Tx2 Started, id : ~p", [TxId2]),
-    Pid = spawn(?MODULE, spawn_read, [LastNode, TxId2, self(), Key1, Type]),
+    Pid = spawn(?MODULE, spawn_read, [FirstNode, TxId2, self(), Key1, Type]),
     %% Delay first transaction
-    timer:sleep(1000),
-    %% commit the first tx.
-    End=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
-    ?assertMatch({ok, _}, End),
-    lager:info("Tx1 Committed."),
+    timer:sleep(2000),
+
+    %% Commit the first tx.
+    End1 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+    ?assertMatch({ok, _}, End1),
+    lager:info("Tx1 committed."),
 
     receive
         {Pid, ReadResult1} ->
             %%receive the read value
-            ?assertMatch({ok, 1}, ReadResult1),
-            lager:info("Tx2 Read value...~p", [ReadResult1])
-    end,
+            ?assertMatch({ok, 1}, ReadResult1)
+            end,
 
     %% prepare and commit the second transaction.
-    CommitTime2 = rpc:call(LastNode, antidote, clocksi_iprepare, [TxId2]),
+    CommitTime2 = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId2]),
     ?assertMatch({ok, _}, CommitTime2),
-    lager:info("Tx2 sent prepare, got commitTime=..., id : ~p", [CommitTime2]),
-    End2=rpc:call(LastNode, antidote, clocksi_icommit, [TxId2]),
+    lager:info("Tx2 sent prepare, got id : ~p", [CommitTime2]),
+    End2 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId2]),
     ?assertMatch({ok, _}, End2),
-    lager:info("Tx2 Committed."),
-    lager:info("Test read_wait passed"),
+    lager:info("Tx2 committed."),
     pass.
 
-spawn_read(LastNode, TxId, Return, Key, Type) ->
-    ReadResult = rpc:call(LastNode, antidote, clocksi_iread,
+spawn_read(Node, TxId, Return, Key, Type) ->
+    ReadResult = rpc:call(Node, antidote, clocksi_iread,
                         [TxId, Key, Type]),
     Return ! {self(), ReadResult}.
 
