@@ -70,18 +70,18 @@ simple_replication_test(Config) ->
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key = simple_replication_test,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [Key, Type, {increment, ucl1}]),
+                            [Key, Type, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [Key, Type, {increment, ucl2}]),
+                            [Key, Type, increment]),
     ?assertMatch({ok, _}, WriteResult2),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [Key, Type, {increment, ucl3}]),
+                            [Key, Type, increment]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}}=WriteResult3,
     Result = rpc:call(Node1, antidote, read,
@@ -99,7 +99,7 @@ simple_replication_test(Config) ->
 multiple_keys_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     Key = multiple_keys_test,
     lists:foreach( fun(_) ->
                            multiple_writes(Node1, Key, Type, 1, 10, rpl)
@@ -107,7 +107,7 @@ multiple_keys_test(Config) ->
                    lists:seq(1,10)),
     WriteResult3 = rpc:call(Node1,
                             antidote, append,
-                            [Key, Type, {increment, ucl1}]),
+                            [Key, Type, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult3),
     {ok,{_,_,CommitTime}} = WriteResult3,
 
@@ -123,7 +123,7 @@ multiple_writes(Node, PreKey, Type, Start, End, Actor)->
                 Key = list_to_atom(atom_to_list(PreKey) ++ [N]),
                 case rpc:call(Node, antidote, append,
                               [Key, Type,
-                               {{increment, 1}, Actor}]) of
+                               {increment, 1}]) of
                     {ok, _} ->
                         Acc;
                     Other ->
@@ -151,16 +151,16 @@ causality_test(Config) ->
     %% result set should not contain e
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Type = riak_dt_orset,
+    Type = antidote_crdt_orset,
     Key = causality_test,
     %% Add two elements in DC1
     AddResult1 = rpc:call(Node1,
                           antidote, append,
-                          [Key, Type, {{add, first}, act1}]),
+                          [Key, Type, {add, first}]),
     ?assertMatch({ok, _}, AddResult1),
     AddResult2 = rpc:call(Node1,
                           antidote, append,
-                          [Key, Type, {{add, second}, act2}]),
+                          [Key, Type, {add, second}]),
     ?assertMatch({ok, _}, AddResult2),
     {ok,{_,_,CommitTime}} = AddResult2,
 
@@ -168,7 +168,7 @@ causality_test(Config) ->
     RemoveResult = rpc:call(Node2,
                             antidote, clocksi_bulk_update,
                             [CommitTime,
-                             [{update, {Key, Type, {{remove, first}, act3}}}]]),
+                             [{update, {Key, Type, {remove, first}}}]]),
     ?assertMatch({ok, _}, RemoveResult),
     %% Read result
     Result = rpc:call(Node2, antidote, read,
@@ -185,7 +185,7 @@ atomicity_test(Config) ->
     Key1 = atomicity_test1,
     Key2 = atomicity_test2,
     Key3 = atomicity_test3,
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
 
     Caller = self(),
     ContWrite = fun() ->
@@ -218,9 +218,9 @@ atomicity_test(Config) ->
 atomic_write_txn(Node, Key1, Key2, Key3, Type) ->
     Result= rpc:call(Node, antidote, clocksi_bulk_update,
                      [
-                      [{update, {Key1, Type, {increment, a}}},
-                       {update, {Key2, Type, {increment, a}}},
-                       {update, {Key3, Type, {increment, a}}}
+                      [{update, {Key1, Type, {increment, 1}}},
+                       {update, {Key2, Type, {increment, 1}}},
+                       {update, {Key3, Type, {increment, 1}}}
                       ]]),
     ?assertMatch({ok, _}, Result).
 

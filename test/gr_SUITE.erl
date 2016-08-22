@@ -78,7 +78,7 @@ read_write_test(Config) ->
     lager:info("Single read write test"),
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {gr_rw_key, antidote_crdt_counter, bucket},
     {ok, [0], _} = rpc:call(Node, antidote, read_objects, [ignore, {}, [Bound_object]]),
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{Bound_object, increment, 1}]]),
     {ok, Res, _} = rpc:call(Node, antidote, read_objects, [ignore, {}, [Bound_object]]),
@@ -88,9 +88,9 @@ read_multiple_test(Config) ->
     lager:info("Snapshot read"),
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    O1 = {o1, riak_dt_pncounter, bucket},
+    O1 = {gr_read_mult_key1, antidote_crdt_counter, bucket},
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O1, increment, 1}]]),
-    O2 = {o2, riak_dt_pncounter, bucket},
+    O2 = {o2, antidote_crdt_counter, bucket},
     {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O2, increment, 1}]]),
     {ok, Res, _} = rpc:call(Node, antidote, read_objects, [CT, {}, [O1,O2]]),
     ?assertMatch([1,1], Res).
@@ -99,8 +99,8 @@ replication_test(Config) ->
     lager:info("Replication Test"),
     [Node1, Node2 | _] = proplists:get_value(nodes, Config),
 
-    O1 = {r1, riak_dt_pncounter, bucket},
-    O2 = {r2, riak_dt_pncounter, bucket},
+    O1 = {gr_repl_key1, antidote_crdt_counter, bucket},
+    O2 = {gr_repl_key2, antidote_crdt_counter, bucket},
     %% Write to DC1
     {ok, _CT1} = rpc:call(Node1, antidote, update_objects, [ignore, {}, [{O1, increment, 1}]]),
     %% Write to DC2

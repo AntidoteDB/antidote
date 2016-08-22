@@ -45,6 +45,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
+-define(TYPE, antidote_crdt_counter).
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
@@ -71,32 +72,35 @@ all() ->
     ].
 
 append_test(Config) ->
-    [Node | _Nodes] = proplists:get_value(nodes, Config),
-
-    %lager:info("Waiting until vnodes are started up"),
-    %rt:wait_until(Node,fun wait_init:check_ready/1),
-    %lager:info("Vnodes are started up"),
-
+    Nodes = proplists:get_value(nodes, Config),
+    Node = hd(Nodes),
     ct:print("Starting write operation 1"),
-    {ok, _} = rpc:call(Node,
+
+    WriteResult = rpc:call(Node,
                            antidote, append,
-                           [key1, riak_dt_gcounter, {increment, ucl}]),
+                           [append_key1, ?TYPE, increment]),
+    ?assertMatch({ok, _}, WriteResult),
 
     ct:print("Starting write operation 2"),
-    {ok, _} = rpc:call(Node,
+
+    WriteResult2 = rpc:call(Node,
                            antidote, append,
-                           [key2, riak_dt_gcounter, {increment, ucl}]),
+                           [append_key2, ?TYPE, increment]),
+    ?assertMatch({ok, _}, WriteResult2),
 
     ct:print("Starting read operation 1"),
-    {ok, 1} = rpc:call(Node,
+
+    ReadResult1 = rpc:call(Node,
                            antidote, read,
-                           [key1, riak_dt_gcounter]),
+                           [append_key1, ?TYPE]),
+    ?assertEqual({ok, 1}, ReadResult1),
 
     ct:print("Starting read operation 2"),
-    {ok, 1} = rpc:call(Node,
+
+    ReadResult2 = rpc:call(Node,
                            antidote, read,
-                           [key2, riak_dt_gcounter]),
-    ok.
+                           [append_key2, ?TYPE]),
+    ?assertEqual({ok, 1}, ReadResult2).
 
 append_failure_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
@@ -105,26 +109,31 @@ append_failure_test(Config) ->
 
     %% Identify preference list for a given key.
     Preflist = rpc:call(N, log_utilities, get_preflist_from_key, [Key]),
-    lager:info("Preference list: ~p", [Preflist]),
+    ct:print("Preference list: ~p", [Preflist]),
 
     NodeList = [Node || {_Index, Node} <- Preflist],
-    lager:info("Responsible nodes for key: ~p", [NodeList]),
+    ct:print("Responsible nodes for key: ~p", [NodeList]),
 
     {A, _} = lists:split(1, NodeList),
     First = hd(A),
 
     %% Perform successful write and read.
-    {ok, _} = rpc:call(First,
-                           antidote, append, [Key, riak_dt_gcounter, {increment, ucl}]),
+    WriteResult = rpc:call(First,
+                           antidote, append, [Key, ?TYPE, {increment, 1}]),
+    ct:print("WriteResult: ~p", [WriteResult]),
+    ?assertMatch({ok, _}, WriteResult),
 
-    {ok, 1} = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
+    ReadResult = rpc:call(First, antidote, read, [Key, ?TYPE]),
+    ct:print("ReadResult: ~p", [ReadResult]),
+    ?assertMatch({ok, 1}, ReadResult),
 
-    %% Partition the network: About to partition A from the other nodes
+    %% Partition the network.
+    lager:info("About to partition: ~p from: ~p", [A, Nodes -- A]),
     test_utils:partition_cluster(A, Nodes -- A),
 
     %% Heal the partition.
     test_utils:heal_cluster(A, Nodes -- A),
 
     %% Read after the partition has been healed.
-    {ok, 1} = rpc:call(First, antidote, read, [Key, riak_dt_gcounter]),
-    ok.
+    ReadResult3 = rpc:call(First, antidote, read, [Key, ?TYPE]),
+    ?assertMatch({ok, 1}, ReadResult3).

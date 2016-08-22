@@ -72,14 +72,16 @@ dummy_test(Config) ->
   %timer:sleep(10000),
   %application:set_env(antidote, txn_cert, true),
   %application:set_env(antidote, txn_prot, clocksi),
+  Key = antidote_key,
+  Type = antidote_crdt_counter,
 
-  {ok,_} = rpc:call(Node1, antidote, append, [myKey2, crdt_pncounter, {increment, a}]),
-  {ok,_} = rpc:call(Node1, antidote, append, [myKey2, crdt_pncounter, {increment, a}]),
-  {ok,_} = rpc:call(Node2, antidote, append, [myKey2, crdt_pncounter, {increment, a}]),
+  {ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
+  {ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
+  {ok,_} = rpc:call(Node2, antidote, append, [Key, Type, {increment, 1}]),
 
   % Propagation of updates
   F = fun() ->
-    rpc:call(Node2, antidote, read, [myKey2, crdt_pncounter])
+    rpc:call(Node2, antidote, read, [Key, Type])
     end,
   Delay = 100,
   Retry = 360000 div Delay, %wait for max 1 min

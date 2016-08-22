@@ -133,13 +133,13 @@ update_objects(Updates, TxId) ->
                                              {Op, OpParam}) of
                             ok -> ok;
                             {error, Reason} ->
-                                lager:error("Update failed. Reason : ~p",[Reason]),
+                                lager:debug("Update failed. Reason : ~p",[Reason]),
                                 error
                         end
-                end, [], Updates),
-    case Results of
-       [] -> ok;
-       [_H|_T] -> {error, {update_failed, Results}}
+                end, Updates),
+    case lists:member(error, Results) of
+       true -> {error, update_failed}; %% TODO: Capture the reason for error
+       false -> ok
     end.
 
 %% For static transactions: bulk updates and bulk reads
@@ -426,6 +426,7 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
+            lager:info("gen_fsm:sync_send ~p",[{CoordFsmPid, {update, {Key, Type, OpParams}}}]),
             case gen_fsm:sync_send_event(CoordFsmPid,
                                          {update, {Key, Type, OpParams}}, ?OP_TIMEOUT) of
                 ok -> ok;

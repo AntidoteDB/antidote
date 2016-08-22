@@ -141,11 +141,11 @@ test_commit_hook(Object) ->
     lager:info("Executing test commit hook"),
     {ok, Object}.
 
-test_increment_hook({{Key, Bucket}, riak_dt_pncounter, {{increment, 1}, A}}) ->
-    {ok, {{Key, Bucket}, riak_dt_pncounter, {{increment, 2}, A}}}.
+test_increment_hook({{Key, Bucket}, antidote_crdt_counter, {increment, 1}}) ->
+    {ok, {{Key, Bucket}, antidote_crdt_counter, {increment, 2}}}.
 
 test_post_hook({{Key, Bucket}, Type, OP}) ->
-    _Result = antidote:update_objects(ignore, [], [{{Key, riak_dt_pncounter, commitcount}, increment, 1}]),
+    _Result = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter, commitcount}, increment, 1}]),
     {ok, {{Key, Bucket}, Type, OP}}.
 
 -endif.

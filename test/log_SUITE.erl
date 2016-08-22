@@ -77,7 +77,7 @@ log_test(Config) ->
             ct:print("Inc at node: ~p",[Node]),
 
             {ok,_} = rpc:call(Node, antidote, append,
-                                [key1, crdt_pncounter, {increment, a}])
+                                [log_test_key1, antidote_crdt_counter, {increment, 1}])
     end,
 
     lists:foreach(F, ListIds),
@@ -85,7 +85,7 @@ log_test(Config) ->
     FirstNode = hd(Nodes),
 
     G = fun() ->
-            rpc:call(FirstNode, antidote, read, [key1, crdt_pncounter])
+            rpc:call(FirstNode, antidote, read, [log_test_key1, antidote_crdt_counter])
         end,
     Delay = 1000,
     Retry = 360000 div Delay, %wait for max 1 min
