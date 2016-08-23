@@ -62,8 +62,8 @@ init([Num]) ->
     {ok, #state{id=Num}}.
 
 handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
-    {read_log,Partition, From, To, OpId, DCID} = binary_to_term(BinaryQuery),
-    Entries = get_entries_internal(Partition,From,To,OpId,DCID),
+    {read_log,Partition, From, To, FirstOpId, LastOpId, DCID} = binary_to_term(BinaryQuery),
+    Entries = get_entries_internal(Partition,From,To,FirstOpId,LastOpId,DCID),
     BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(),Partition},Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary,BinaryResp/binary>>,
@@ -89,16 +89,44 @@ handle_call(_Info, _From, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
--spec get_entries_internal(partition_id(), log_opid(), log_opid(), log_opid(), dcid()) -> [#interdc_txn{}].
-get_entries_internal(Partition, From, To, _OpId, _OtherDC) ->
-  %% TODO: Trim the query correctly for partial replication
-  Logs = log_read_range(Partition, node(), From, To),
-  Asm = log_txn_assembler:new_state(),
-  {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
-  Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none, none) end, OpLists),
-  %% This is done in order to ensure that we only send the transactions we committed.
-  %% We can remove this once the read_log_range is reimplemented.
-  lists:filter(fun inter_dc_txn:is_local/1, Txns).
+-spec get_entries_internal(partition_id(), log_opid(), log_opid(), log_opid() | undefined, log_opid() | undefined, dcid()) -> [#interdc_txn{}].
+get_entries_internal(Partition, From, To, FirstOpId, LastOpId, OtherDC) ->
+    %% TODO: Trim the query correctly for partial replication
+    Logs = log_read_range(Partition, node(), From, To),
+    Asm = log_txn_assembler:new_state(),
+    {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
+    Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none, none) end, OpLists),
+    %% This is done in order to ensure that we only send the transactions we committed.
+    %% We can remove this once the read_log_range is reimplemented.
+    LocalTxns = lists:filter(fun inter_dc_txn:is_local/1, Txns),
+    case ?IS_PARTIAL() of
+	false ->
+	    LocalTxns;
+	true ->
+	    BucketTxns = lists:foldl(fun(Txn,Acc) ->
+					     Acc ++ inter_dc_txn:to_per_bucket(Txn)
+				     end, [], LocalTxns),
+	    %% Filter out only the replicated operations
+	    %% And the ones with the update op ids in the non-inclusive range from FirstOpId to LastOpId
+	    lists:filter(fun(Txn = #interdc_txn{log_records = [FirstOp|_RestOps]}) ->
+				 Payload = FirstOp#log_record.log_operation,
+				 update = Payload#log_operation.op_type, %% sanity check
+				 Bucket = 
+				     case Payload#log_operation.log_payload#update_log_payload.key of
+					 {_Key, Buck} ->
+					     {bucket, Buck};
+					 _ ->
+					     undefined
+				     end,
+				 case replication_check:is_replicated_at_dc(Bucket, OtherDC) of
+				     false -> false;
+				     true ->
+					 {_Id, DCIDList} = inter_dc_txn:last_log_opid(Txn),
+					 {OtherDC, Time} = lists:keyfind(OtherDC,1,DCIDList),
+					 (Time#op_number.local > FirstOpId) and (Time#op_number.local =< LastOpId)
+				 end
+			 end, BucketTxns)
+    end.
 
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
