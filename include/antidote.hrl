@@ -75,7 +75,7 @@
 
 %% If partial replication is enabled
 -define(IS_PARTIAL(),
-	application:get_env(antidote, partial, false)).
+	dc_meta_data_utilities:is_partial()).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).

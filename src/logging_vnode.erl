@@ -50,7 +50,7 @@
          get_from_time/5,
 	 get_range/6,
 	 get_all/4,
-	 request_commit_op_id/2,
+	 request_commit_op_id/3,
 	 request_bucket_op_id/4,
 	 request_op_id/3]).
 
@@ -226,9 +226,9 @@ request_op_id(IndexNode, DCID, Partition) ->
 					infinity).
 
 %% @doc Gets the last id of operations and last two commit operations stored in the log for this DC
--spec request_commit_op_id(index_node(), partition()) -> {ok, non_neg_integer(), {non_neg_integer(), non_neg_integer()}}.
-request_commit_op_id(IndexNode, Partition) ->
-    riak_core_vnode_master:sync_command(IndexNode, {get_commit_op_id,Partition},
+-spec request_commit_op_id(index_node(), dcid(), partition()) -> {ok, non_neg_integer(), {non_neg_integer(), non_neg_integer()}}.
+request_commit_op_id(IndexNode, DCID, Partition) ->
+    riak_core_vnode_master:sync_command(IndexNode, {get_commit_op_id,DCID,Partition},
 					?LOGGING_MASTER,
 					infinity).
 
@@ -301,13 +301,13 @@ handle_command({hello}, _Sender, State) ->
 %% handle_command({get_op_id_all_dcs, Partition
 %% 		DCOpIds = get_op_id_all_dcs(OpIdTablePartial, [Partition], ?IS_PARTIAL()),
 
-handle_command({get_commit_op_id, Partition}, _Sender, State=#state{op_id_table = OpIdTable, op_id_commit_table = OpIdCommitTable}) ->
-    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-    OpId = get_op_id(OpIdTable,{[Partition],MyDCID}),
-    {CommitId1,CommitId2} = get_commit_op_id(OpIdCommitTable,{[Partition],MyDCID}),
-    #op_number{local = Local, global = _Global} = OpId,
-    #op_number{local = CommitLocal1, global = _Global} = CommitId1,
-    #op_number{local = CommitLocal2, global = _Global} = CommitId2,
+handle_command({get_commit_op_id, DCID, Partition}, _Sender, State=#state{op_id_table = OpIdTable, op_id_commit_table = OpIdCommitTable}) ->
+    %% MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+    OpId = get_op_id(OpIdTable,{[Partition],DCID}),
+    {CommitId1,CommitId2} = get_commit_op_id(OpIdCommitTable,{[Partition],DCID}),
+    #op_number{local = Local} = OpId,
+    #op_number{local = CommitLocal1} = CommitId1,
+    #op_number{local = CommitLocal2} = CommitId2,
     {reply, {ok, Local, {CommitLocal1,CommitLocal2}}, State};
 
 handle_command({get_op_id, DCID, Partition}, _Sender, State=#state{op_id_table = OpIdTable}) ->
@@ -455,7 +455,7 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 		    _ ->
 			%% Non-update operations just keep the old id
 			{NewOpId, NewOpId, [], []}
-		end,		    
+		end,
             LogRecord = (log_utilities:generate_empty_log_record())#log_record{op_number_dcid = NewPartialOpIds,
 									       partition = Partition,
 									       op_number = NewOpId,

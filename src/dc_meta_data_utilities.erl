@@ -24,6 +24,7 @@
 -include("inter_dc_repl.hrl").
 
 -export([
+	 is_partial/0,
 	 dc_start_success/0,
 	 is_restart/0,
 	 store_meta_data_name/1,
@@ -71,6 +72,17 @@ store_meta_data_name(MetaDataName) ->
 -spec get_meta_data_name() -> {ok, atom()} | error.
 get_meta_data_name() ->
     stable_meta_data_server:read_meta_data(meta_data_name).
+
+-spec is_partial() -> boolean().
+is_partial() ->
+    case stable_meta_data_server:read_meta_data(is_partial) of
+	{ok, Bool} ->
+	    Bool;
+	error ->
+	    Partial = application:get_env(antidote, partial, false),
+	    ok = stable_meta_data_server:broadcast_meta_data(is_partial,Partial),
+	    Partial
+    end.
 
 %% Returns a tuple of three elements
 %% The first is a dict with all partitions for DCID, with key and value being the partition id

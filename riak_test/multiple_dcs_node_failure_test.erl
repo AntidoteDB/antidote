@@ -30,6 +30,8 @@ confirm() ->
     rt:wait_until_ring_converged(Cluster2),
     rt:wait_until_ring_converged(Cluster3),
 
+    ok = common:enable_partial_replication([Cluster1, Cluster2, Cluster3]),
+
     {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
 

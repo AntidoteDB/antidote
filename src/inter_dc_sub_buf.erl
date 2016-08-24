@@ -57,14 +57,14 @@ process({txn, Txn=#interdc_txn{dcid=DCID, partition=Partition}},
     Result = 
 	lists:foldl(fun(LocalPartition,{AccIds,AccCommitIds}) ->
 			    Result = 
-				try
-				    logging_vnode:request_commit_op_id(dc_utilities:partition_to_indexnode(LocalPartition),
-								       Partition)
-				catch
-				    _:Reason ->
-					lager:info("Error loading last opid from log: ~w, will retry", [Reason]),
-					error
-				end,
+				%% try
+				     logging_vnode:request_commit_op_id(dc_utilities:partition_to_indexnode(LocalPartition),
+				 				       DCID, Partition),
+				%% catch
+				%%     _:Reason ->
+				%% 	lager:info("Error loading last opid from log: ~w, will retry", [Reason]),
+				%% 	error
+				%% end,
 			    case Result of
 				{ok, OpId, CommitIdTuple} when is_list(AccIds) and is_list(AccCommitIds) ->
 				    {[OpId | AccIds], [CommitIdTuple | AccCommitIds]};
