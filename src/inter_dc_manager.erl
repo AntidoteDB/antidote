@@ -55,9 +55,10 @@ get_descriptor() ->
   }}.
 
 -spec observe_dc(#descriptor{}) -> ok | inter_dc_conn_err().
-observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
+observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders,
+			     partition_list = ExternalPartitions}) ->
     PartitionsNumLocal = dc_utilities:get_partitions_num(),
-    case PartitionsNumRemote == PartitionsNumLocal of
+    case (PartitionsNumRemote == PartitionsNumLocal) or ?IS_PARTIAL() of
 	false ->
 	    lager:error("Cannot observe remote DC: partition number mismatch"),
 	    {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
@@ -70,20 +71,31 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 		    %% Announce the new publisher addresses to all subscribers in this DC.
 		    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
 		    %% But we want to balance the work, so all nodes take part in subscribing.
-		    Nodes = dc_utilities:get_my_dc_nodes(),
-		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc)
+		    Nodes = lists:sort(dc_utilities:get_my_dc_nodes()),
+		    %% Get the partitions that are different from this DC to the other DC
+		    %% and assign them in a deterministic way to nodes here
+		    MyPartitions = dc_meta_data_utilities:get_my_partitions_list(),
+		    DifferentPartitions = lists:subtract(ExternalPartitions,MyPartitions),
+		    NodePartitionDict = 
+			lists:foldl(fun(Partition,{[FirstNode|RestNode],AccDict}) ->
+					    {RestNode ++ [FirstNode], dict:append(FirstNode,Partition,AccDict)}
+				    end, dict:new(), DifferentPartitions),
+		    connect_nodes(Nodes, NodePartitionDict, DCID, LogReaders, Publishers, Desc)
 	    end
     end.
 
--spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
-connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc) ->
+-spec connect_nodes([node()], dict(), dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
+connect_nodes([], _MyNodes, _DCID, _LogReaders, _Publishers, _Desc) ->
     ok;
-connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc) ->
+connect_nodes([Node|Rest], NodePartitionDict, DCID, LogReaders, Publishers, Desc) ->
     case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
 	ok ->
-	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
+	    OtherPart = case dict:find(Node,NodePartitionDict) of
+			    {ok,Value} -> Value;
+			    error -> [] end,
+	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers, OtherPart], ?COMM_TIMEOUT) of
 		ok ->
-		    connect_nodes(Rest, DCID, LogReaders, Publishers, Desc);
+		    connect_nodes(Rest, NodePartitionDict, DCID, LogReaders, Publishers, Desc);
 		_ ->
 		    lager:error("Unable to connect to publisher ~p", [DCID]),
 		    ok = forget_dc(Desc),
