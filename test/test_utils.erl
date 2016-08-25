@@ -34,8 +34,8 @@
          wait_until_disconnected/2,
          wait_until_connected/2,
          wait_until_registered/2,
-         start_suite/2,
-         connect_dcs/1,
+         start_node/2,
+         connect_cluster/1,
          partition_cluster/2,
          heal_cluster/2,
          join_cluster/1,
@@ -74,8 +74,7 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
 
 wait_until_result(Fun, Result, Retry, Delay) when Retry > 0 ->
     Res = Fun(),
-    lager:info("REs ~p", [Res]),
-    case Res  of
+    case Res of
         Result ->
             ok;
         _ when Retry == 1 ->
@@ -120,7 +119,7 @@ wait_until_connected(Node1, Node2) ->
                 pong == rpc:call(Node1, net_adm, ping, [Node2])
         end, 60*2, 500).
 
-start_suite(Name, Config) ->
+start_node(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [
@@ -163,11 +162,13 @@ start_suite(Name, Config) ->
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
+            ct:print("Node ~p started",[Node]),
+
             Node;
         {error, _, Node} ->
             ct_slave:stop(Name),
             wait_until_offline(Node),
-            start_suite(Name, Config)
+            start_node(Name, Config)
     end.
 
 partition_cluster(ANodes, BNodes) ->
@@ -188,7 +189,7 @@ heal_cluster(ANodes, BNodes) ->
          [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
     ok.
 
-connect_dcs(Nodes) ->
+connect_cluster(Nodes) ->
   Clusters = [[Node] || Node <- Nodes],
   ct:pal("Connecting DC clusters..."),
 
@@ -196,8 +197,9 @@ connect_dcs(Nodes) ->
               Node1 = hd(Cluster),
               ct:print("Waiting until vnodes start on node ~p", [Node1]),
               wait_until_registered(Node1, inter_dc_pub),
-              wait_until_registered(Node1, inter_dc_log_reader_response),
-              wait_until_registered(Node1, inter_dc_log_reader_query),
+              rt:wait_until_registered(Node1, inter_dc_query_receive_socket),
+              rt:wait_until_registered(Node1, inter_dc_query_response_sup),
+              rt:wait_until_registered(Node1, inter_dc_query),
               wait_until_registered(Node1, inter_dc_sub),
               wait_until_registered(Node1, meta_data_sender_sup),
               wait_until_registered(Node1, meta_data_manager_sup),
@@ -227,8 +229,7 @@ wait_until_registered(Node, Name) ->
         end,
     Delay = rt_retry_delay(),
     Retry = 360000 div Delay,
-    ok = wait_until(F, Retry, Delay),
-    ok.
+    wait_until(F, Retry, Delay).
 
 descriptors(Clusters) ->
   lists:map(fun(Cluster) ->
@@ -424,13 +425,13 @@ wait_until_ring_converged(Nodes) ->
 
 %% Build clusters for all test suites.
 set_up_clusters_common(Config) ->
-   StartCluster = fun(Nodes) ->
+   StartDCs = fun(Nodes) ->
                       pmap(fun(N) ->
-                              test_utils:start_suite(N, Config)
+                              start_node(N, Config)
                            end, Nodes)
                   end,
    Clusters = pmap(fun(N) ->
-                  StartCluster(N)
+                  StartDCs(N)
               end, [[dev1, dev2], [dev3], [dev4]]),
    [Cluster1, Cluster2, Cluster3] = Clusters,
    %% Do not join cluster if it is already done
@@ -439,6 +440,6 @@ set_up_clusters_common(Config) ->
      _ ->
         [join_cluster(Cluster) || Cluster <- Clusters],
         Clusterheads = [hd(Cluster) || Cluster <- Clusters],
-        connect_dcs(Clusterheads)
+        connect_cluster(Clusterheads)
    end,
    [Cluster1, Cluster2, Cluster3].

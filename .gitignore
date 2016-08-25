@@ -16,3 +16,8 @@ logs/
 tags
 rel/vars/*.config
 rebar.lock
+docs/_site/
+docs/.sass-cache/
+docs/.jekyll-metadata
+docs/_pdf
+docs/.idea/

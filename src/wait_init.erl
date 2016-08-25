@@ -57,8 +57,14 @@ check_ready(Node) ->
 		true ->
 		    case rpc:call(Node,materializer_vnode,check_tables_ready,[]) of
 			true ->
-			    lager:info("Node ~w is ready! ~n", [Node]),
-			    true;
+			    case rpc:call(Node,stable_meta_data_server,check_tables_ready,[]) of
+				true ->
+				    lager:info("Node ~w is ready! ~n", [Node]),
+				    true;
+				false ->
+				    lager:info("Node ~w is not ready ~n", [Node]),
+				    false
+			    end;
 			false ->
 			    lager:info("Node ~w is not ready ~n", [Node]),
 			    false

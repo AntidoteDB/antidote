@@ -367,7 +367,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
         [{Key, _Type, {_Op, _Actor}} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
+            LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
             %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
@@ -442,9 +442,9 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
                     NewPrepare = now_microsec(dc_utilities:now()),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
-                    LogRecord = #log_record{tx_id = TxId,
+                    LogRecord = #log_operation{tx_id = TxId,
                         op_type = prepare,
-                        op_payload = NewPrepare},
+                        log_payload = #prepare_log_payload{prepare_time = NewPrepare}},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
                     Result = logging_vnode:append(Node, LogId, LogRecord),
@@ -484,10 +484,10 @@ reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Act
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
     DcId = dc_meta_data_utilities:get_my_dc_id(),
-    LogRecord = #log_record{tx_id = TxId,
-        op_type = commit,
-        op_payload = {{DcId, TxCommitTime},
-            Transaction#transaction.vec_snapshot_time}},
+    LogRecord = #log_operation{tx_id = TxId,
+			    op_type = commit,
+			    log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
+							     snapshot_time = Transaction#transaction.vec_snapshot_time}},
     case Updates of
         [{Key, _Type, {_Op, _Param}} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of
@@ -583,11 +583,11 @@ certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
 certification_with_check(_, [], _, _) ->
     true;
 certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
-    SnapshotTime = TxId#tx_id.snapshot_time,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
     {Key, _, _} = H,
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
-            case CommitTime > SnapshotTime of
+            case CommitTime > TxLocalStartTime of
                 true ->
                     false;
                 false ->
@@ -607,8 +607,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
             end
     end.
 
-check_prepared(TxId, PreparedTx, Key) ->
-    _SnapshotTime = TxId#tx_id.snapshot_time,
+check_prepared(_TxId, PreparedTx, Key) ->
     case ets:lookup(PreparedTx, Key) of
         [] ->
             true;
@@ -617,7 +616,7 @@ check_prepared(TxId, PreparedTx, Key) ->
     end.
 
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
-    Transaction :: tx(), TxCommitTime :: {term(), term()}) ->
+    Transaction :: tx(), TxCommitTime :: non_neg_integer()) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     DcId = dc_meta_data_utilities:get_my_dc_id(),

@@ -31,6 +31,7 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-define(DC_META_UTIL, mock_partition_fsm).
 -define(DC_UTIL, mock_partition_fsm).
 -define(VECTORCLOCK, mock_partition_fsm).
 -define(LOG_UTIL, mock_partition_fsm).
@@ -38,7 +39,8 @@
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
 -define(LOGGING_VNODE, mock_partition_fsm).
 -else.
--define(DC_UTIL, dc_meta_data_utilities).
+-define(DC_META_UTIL, dc_meta_data_utilities).
+-define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
 -define(LOG_UTIL, log_utilities).
 -define(CLOCKSI_VNODE, clocksi_vnode).
@@ -165,7 +167,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
                                          {ok, ClientClock}
                                  end
                          end,
-    DcId = ?DC_UTIL:get_my_dc_id(),
+    DcId = ?DC_META_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     Name = case StayAlive of
                true ->
@@ -178,7 +180,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
                false ->
                    self()
            end,
-    TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
+    TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
         vec_snapshot_time = SnapshotTime,
         txn_id = TransactionId},
@@ -219,8 +221,8 @@ perform_singleitem_update(Key, Type, Params) ->
                 {ok, DownstreamRecord} ->
                     Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_record{tx_id = TxId, op_type = update,
-                                            op_payload = {Key, Type, DownstreamRecord}},
+                    LogRecord = #log_operation{tx_id = TxId, op_type = update,
+					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
                     case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
@@ -234,7 +236,7 @@ perform_singleitem_update(Key, Type, Params) ->
                                                _ -> ok
                                            end,
                                     TxId = Transaction#transaction.txn_id,
-                                    DcId = ?DC_UTIL:get_my_dc_id(),
+                                    DcId = ?DC_META_UTIL:get_my_dc_id(),
                                     CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                                                      DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                                     {ok, {TxId, [], CausalClock}};
@@ -287,7 +289,6 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
                    {IndexNode, WS} ->
                        WS
                end,
-
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
         {Key, Type, Param1} ->
@@ -308,8 +309,8 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
                             gen_fsm:reply(Sender, ok)
                     end,
                     TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_record{tx_id = TxId, op_type = update,
-                                            op_payload = {Key, Type, DownstreamRecord}},
+                    LogRecord = #log_operation{tx_id = TxId, op_type = update,
+					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
                     case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
@@ -612,7 +613,7 @@ reply_to_client(SD = #tx_coord_state
                         %% Execute post_commit_hooks
                         _Result = execute_post_commit_hooks(ClientOps),
                         %% TODO: What happens if commit hook fails?
-                        DcId = ?DC_UTIL:get_my_dc_id(),
+                        DcId = ?DC_META_UTIL:get_my_dc_id(),
                         CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                                          DcId, CommitTime,
                                          Transaction#transaction.vec_snapshot_time),
@@ -681,8 +682,8 @@ get_snapshot_time(ClientClock) ->
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
     Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
-    {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
-    DcId = ?DC_UTIL:get_my_dc_id(),
+    {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
+    DcId = ?DC_META_UTIL:get_my_dc_id(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
     {ok, SnapshotTime}.
 
