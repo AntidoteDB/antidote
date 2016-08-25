@@ -45,7 +45,7 @@ get_descriptor() ->
   ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
   Nodes = dc_utilities:get_my_dc_nodes(),
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
-  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_log_reader_response, get_address_list, []) end, Nodes),
+  LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_receive_socket, get_address_list, []) end, Nodes),
   {ok, #descriptor{
     dcid = dc_meta_data_utilities:get_my_dc_id(),
     partition_num = dc_utilities:get_partitions_num(),
@@ -78,7 +78,7 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc) ->
     ok;
 connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc) ->
-    case rpc:call(Node, inter_dc_log_reader_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
+    case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
 	ok ->
 	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
 		ok ->
@@ -188,7 +188,7 @@ observe_dcs(Descriptors) -> lists:map(fun observe_dc/1, Descriptors).
 
 -spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
-    {ok, SS} = vectorclock:get_stable_snapshot(),
+    {ok, SS} = dc_utilities:get_stable_snapshot(),
     DCs = lists:map(fun(DC) ->
 			    {observe_dc(DC), DC}
 		    end, Descriptors),
@@ -216,7 +216,7 @@ forget_dc(#descriptor{dcid = DCID}) ->
     false ->
       lager:info("Forgetting DC ~p", [DCID]),
       Nodes = dc_utilities:get_my_dc_nodes(),
-      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_log_reader_query, del_dc, [DCID]) end, Nodes),
+      lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_query, del_dc, [DCID]) end, Nodes),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
   end.
 
@@ -244,7 +244,7 @@ wait_for_stable_snapshot(DCID, MinValue) ->
   case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
     false ->
-      {ok, SS} = vectorclock:get_stable_snapshot(),
+      {ok, SS} = dc_utilities:get_stable_snapshot(),
       Value = vectorclock:get_clock_of_dc(DCID, SS),
       case Value > MinValue of
         true ->

@@ -32,6 +32,7 @@
 
 %% API
 -export([
+	 check_tables_ready/0,
 	 sync_meta_data/0,
 	 broadcast_meta_data/2,
 	 broadcast_meta_data_list/1,
@@ -56,6 +57,15 @@
 -spec start_link() -> {ok,pid()} | ignore | {error,term()}.
 start_link() ->
     gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [], []).
+
+-spec check_tables_ready() -> boolean().
+check_tables_ready() ->
+    case ets:info(?TABLE_NAME) of
+	undefined ->
+	    false;
+	_ ->
+	    true
+    end.
 
 %% Reads the value of a key stored in the table
 -spec read_meta_data(term()) -> {ok, term()} | error.
