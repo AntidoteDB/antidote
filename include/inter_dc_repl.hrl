@@ -72,3 +72,9 @@
   last_observed_commit_ids :: {non_neg_integer(), non_neg_integer()} | init,
   queue :: queue()
 }).
+
+%% Ping strcuture for partial replication
+-record(partial_ping, {
+	  partition_dcid_op_list :: [{partition_id(), [{dcid(), #op_number{}}]}],
+	  time :: clock_time()
+	 }).

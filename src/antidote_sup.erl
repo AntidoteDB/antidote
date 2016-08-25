@@ -82,6 +82,7 @@ init(_Args) ->
     InterDcLogReaderRMaster = ?CHILD(inter_dc_query_receive_socket, worker, []),
     InterDcLogSenderMaster = ?VNODE(inter_dc_log_sender_vnode_master, inter_dc_log_sender_vnode),
 
+    StableTimeCollector = ?CHILD(stable_time_collector, worker, []),
     
     MetaDataManagerSup = {meta_data_manager_sup,
 			  {meta_data_manager_sup, start_link, [stable]},
@@ -115,6 +116,7 @@ init(_Args) ->
        InterDcLogReaderQMaster,
        InterDcLogReaderRMaster,
        InterDcLogSenderMaster,
+       StableTimeCollector,
        StableMetaData,
        MetaDataManagerSup,
        MetaDataSenderSup,

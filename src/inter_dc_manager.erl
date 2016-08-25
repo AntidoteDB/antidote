@@ -130,6 +130,7 @@ start_bg_processes(MetaDataName) ->
     ok = dc_meta_data_utilities:store_meta_data_name(MetaDataName),
     %% Start the timers sending the heartbeats
     lager:info("Starting heartbeat sender timers"),
+    ok = stable_time_collector:start_timer(),
     Responses = dc_utilities:bcast_vnode_sync(logging_vnode_master, {start_timer,undefined}),
     %% Be sure they all started ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->
@@ -171,6 +172,7 @@ check_node_restart() ->
 	    ok = meta_data_sender:start(MetaDataName),
 	    %% Start the timers sending the heartbeats
 	    lager:info("Starting heartbeat sender timers"),
+	    ok = stable_time_collector:start_timer(),
 	    Responses = dc_utilities:bcast_my_vnode_sync(logging_vnode_master, {start_timer,undefined}),
 	    %% Be sure they all started ok, crash otherwise
 	    ok = lists:foreach(fun({_, ok}) ->

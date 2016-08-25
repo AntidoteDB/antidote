@@ -59,6 +59,7 @@
   buffer, %% log_tx_assembler:state
   last_log_id :: #op_number{} | undefined,
   last_log_id_dc ::[{dcid(),#op_number{}}] | undefined,
+  partial_server :: atom(),
   timer :: any()
 }).
 
@@ -96,6 +97,7 @@ init([Partition]) ->
     buffer = log_txn_assembler:new_state(),
     last_log_id = undefined,
     last_log_id_dc = undefined,
+    partial_server = stable_time_collector:get_registered_name(),
     timer = none
   }}.
 
@@ -133,8 +135,17 @@ handle_command({log_event, LogRecord}, _Sender, State) ->
     {noreply, State2};
 
 handle_command({stable_time, Time}, _Sender, State) ->
-    PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, State#state.last_log_id_dc, Time),
-    {noreply, set_timer(broadcast(State, PingTxn))};
+    NewState =
+	case ?IS_PARTIAL() of
+	    false ->
+		PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, State#state.last_log_id_dc, Time),
+		broadcast(State, PingTxn);
+	    true ->
+		stable_time_collector:update_partition_count(
+		  State#state.partial_server, State#state.partition, State#state.last_log_id_dc, Time),
+		State
+	end,
+    {noreply, set_timer(NewState)};
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};

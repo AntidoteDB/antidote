@@ -22,6 +22,7 @@
 
 -export([
   get_my_dc_id/0,
+  dc_id_to_atom/1,
   get_my_dc_nodes/0,
   call_vnode_sync/3,
   bcast_vnode_sync/2,
@@ -59,6 +60,16 @@
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:cluster_name(Ring).
+
+-spec dc_id_to_atom(dcid()) -> atom().
+dc_id_to_atom(DCID) ->
+    %% TODO is this always the structre of a DCID?
+    %% We are using riak_core_ring:cluster_name(Ring) whose spec says it can return anything
+    case DCID of
+	undefined -> undefined;
+	{Name,Tuple} when is_atom(Name) and is_tuple(Tuple) ->
+	    Name
+    end.
 
 %% Returns the list of all node addresses in the cluster.
 -spec get_my_dc_nodes() -> [node()].
