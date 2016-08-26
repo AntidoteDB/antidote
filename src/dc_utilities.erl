@@ -25,10 +25,11 @@
   get_my_dc_nodes/0,
   call_vnode_sync/3,
   bcast_vnode_sync/2,
-  bcast_my_vnode_sync/2,	 
+  bcast_my_vnode_sync/2,
   partition_to_indexnode/1,
   call_vnode/3,
   call_local_vnode/3,
+  call_local_vnode_sync/3,
   get_all_partitions/0,
   get_all_partitions_nodes/0,
   bcast_vnode/2,
@@ -39,7 +40,10 @@
   get_partitions_num/0,
   check_staleness/0,
   check_registered/1,
-  check_registered_global/1,	 
+  get_scalar_stable_time/0,
+  get_partition_snapshot/1,
+  get_stable_snapshot/0,
+  check_registered_global/1,
   now/0,
   now_microsec/0,
   now_millisec/0]).
@@ -128,6 +132,10 @@ call_vnode(Partition, VMaster, Request) ->
 call_local_vnode(Partition, VMaster, Request) ->
     riak_core_vnode_master:command({Partition, node()}, Request, VMaster).
 
+-spec call_local_vnode_sync(partition_id(), atom(), any()) -> any().
+call_local_vnode_sync(Partition, VMaster, Request) ->
+    riak_core_vnode_master:sync_command({Partition, node()}, Request, VMaster).
+
 %% Sends the same (synchronous) command to all vnodes of a given type.
 -spec bcast_vnode_sync(atom(), any()) -> any().
 bcast_vnode_sync(VMaster, Request) ->
@@ -188,7 +196,7 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
     end.
 
 %% Loops until all vnodes of a given type are running
-%% on the local phyical node from which this was funciton called  
+%% on the local phyical node from which this was funciton called
 -spec ensure_local_vnodes_running_master(atom()) -> ok.
 ensure_local_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
@@ -206,7 +214,7 @@ ensure_all_vnodes_running_master(VnodeType) ->
 -spec check_staleness() -> ok.
 check_staleness() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
-    {ok, SS} = vectorclock:get_stable_snapshot(),
+    {ok, SS} = get_stable_snapshot(),
     dict:fold(fun(DcId,Time,_Acc) ->
 		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
 		      ok
@@ -217,10 +225,87 @@ check_staleness() ->
 check_registered(Name) ->
     case whereis(Name) of
 	undefined ->
+      lager:info("Wait for ~p to register", [Name]),
 	    timer:sleep(100),
 	    check_registered(Name);
 	_ ->
 	    ok
+    end.
+
+%% @doc get_stable_snapshot: Returns stable snapshot time
+%% in the current DC. stable snapshot time is the snapshot available at
+%% in all partitions
+-spec get_stable_snapshot() -> {ok, snapshot_time()}.
+get_stable_snapshot() ->
+    case meta_data_sender:get_merged_data(stable) of
+        undefined ->
+	    %% The snapshot isn't realy yet, need to wait for startup
+	    timer:sleep(10),
+	    get_stable_snapshot();
+	SS ->
+            case application:get_env(antidote, txn_prot) of
+                {ok, clocksi} ->
+                    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+                    %% to riak core meta-data) otherwise will have to change this
+                    {ok, SS};
+                {ok, gr} ->
+                    %% For gentlerain use the same format as clocksi
+                    %% But, replicate GST to all entries in the dict
+                    StableSnapshot = SS,
+                    case dict:size(StableSnapshot) of
+                        0 ->
+                            {ok, StableSnapshot};
+                        _ ->
+                            ListTime = dict:fold(
+                                         fun(_Key, Value, Acc) ->
+                                                 [Value | Acc ]
+                                         end, [], StableSnapshot),
+                            GST = lists:min(ListTime),
+                            {ok, dict:map(
+                                   fun(_K, _V) ->
+                                           GST
+                                   end,
+                                   StableSnapshot)}
+                    end
+            end
+    end.
+
+-spec get_partition_snapshot(partition_id()) -> snapshot_time().
+get_partition_snapshot(Partition) ->
+  case meta_data_sender:get_meta_dict(stable,Partition) of
+	  undefined ->
+	    %% The partition isn't ready yet, wait for startup
+	    timer:sleep(10),
+	    get_partition_snapshot(Partition);
+	SS ->
+	    SS
+    end.
+
+%% Returns the minimum value in the stable vector snapshot time
+%% Useful for gentlerain protocol.
+-spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
+get_scalar_stable_time() ->
+    {ok, StableSnapshot} = get_stable_snapshot(),
+    %% dict:is_empty/1 is not available, hence using dict:size/1
+    %% to check whether it is empty
+    case dict:size(StableSnapshot) of
+        0 ->
+            %% This case occur when updates from remote replicas has not yet received
+            %% or when there are no remote replicas
+            %% Since with current setup there is no mechanism
+            %% to distinguish these, we assume the second case
+            Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
+            {ok, Now, StableSnapshot};
+        _ ->
+            %% This is correct only if stablesnapshot has entries for
+            %% all DCs. Inorder to check that we need to configure the
+            %% number of DCs in advance, which is not possible now.
+            ListTime = dict:fold(
+                         fun(_Key, Value, Acc) ->
+                                 [Value | Acc ]
+                         end, [], StableSnapshot),
+            GST = lists:min(ListTime),
+            {ok, GST, StableSnapshot}
     end.
 
 %% Loops until a process with the given name is registered globally

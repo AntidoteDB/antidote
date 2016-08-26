@@ -45,10 +45,16 @@
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
+    Nodes = lists:flatten(Clusters),
+    
+    %Ensure that the clocksi protocol is used
+    test_utils:pmap(fun(Node) ->
+        rpc:call(Node, application, set_env,
+        [antidote, txn_prot, clocksi]) end, Nodes),
 
-    {ok, Prot} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
-    ?assertMatch(clocksi, Prot),
-
+    %Check that indeed clocksi is running
+    {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
+   
     [{clusters, Clusters}|Config].
 
 end_per_suite(Config) ->

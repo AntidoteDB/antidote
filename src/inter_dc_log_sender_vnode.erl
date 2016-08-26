@@ -67,8 +67,8 @@
 %% The transaction will be buffered until all the operations in a transaction are collected,
 %% and then the transaction will be broadcasted via interDC.
 %% WARNING: only LOCALLY COMMITED operations (not from remote DCs) should be sent to log_sender_vnode.
--spec send(partition_id(), #operation{}) -> ok.
-send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
+-spec send(partition_id(), #log_record{}) -> ok.
+send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, LogRecord}).
 
 %% Start the heartbeat timer
 -spec start_timer(partition_id()) -> ok.
@@ -105,9 +105,10 @@ handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = P
     {reply, ok, State#state{last_log_id = OpId}};
 
 %% Handle the new operation
-handle_command({log_event, Operation}, _Sender, State) ->
+%% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
+handle_command({log_event, LogRecord}, _Sender, State) ->
   %% Use the txn_assembler to check if the complete transaction was collected.
-  {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
+  {Result, NewBufState} = log_txn_assembler:process(LogRecord, State#state.buffer),
   State1 = State#state{buffer = NewBufState},
   State2 = case Result of
     %% If the transaction was collected

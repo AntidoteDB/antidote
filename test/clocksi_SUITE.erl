@@ -534,11 +534,12 @@ clocksi_test_read_wait(Config) ->
     ?assertEqual(ok, WriteResult),
     {ok, CommitTime1} = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
     lager:info("Tx1 sent prepare, assigned commitTime : ~p", [CommitTime1]),
-    %% start a different tx and try to read key read_wait_test.
-    {ok,TxId2}=rpc:call(FirstNode, antidote, clocksi_istart_tx,
-                        []),
-    lager:info("Tx2 Started, id : ~p", [TxId2]),
+
+    %% Start a different tx and try to read the key
+    {ok, TxId2} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    lager:info("Tx2 started with id : ~p", [TxId2]),
     Pid = spawn(?MODULE, spawn_read, [FirstNode, TxId2, self(), Key1, Type]),
+
     %% Delay first transaction
     timer:sleep(2000),
 
@@ -553,7 +554,7 @@ clocksi_test_read_wait(Config) ->
             ?assertMatch({ok, 1}, ReadResult1)
             end,
 
-    %% prepare and commit the second transaction.
+    %% Prepare and commit the second transaction.
     CommitTime2 = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId2]),
     ?assertMatch({ok, _}, CommitTime2),
     lager:info("Tx2 sent prepare, got id : ~p", [CommitTime2]),
