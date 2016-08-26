@@ -20,15 +20,6 @@
 -module(clocksi_materializer).
 -include("antidote.hrl").
 
-%% The first 3 elements in operations list are meta-data
-%% First is the key
-%% Second is a tuple {current op list size, max op list size}
-%% Thrid is a counter that assigns each op 1 larger than the previous
-%% Fourth is where the list of ops start
-%% TODO FIX HERE
--define(FIRST_OP, 4).
-
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -144,7 +135,7 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 integer(),
 			 snapshot_time() | ignore,
 			 snapshot_time(),
-			 [{integer(),clocksi_payload()}] | tuple(), %% fix here to also be tuple
+			 [{integer(),clocksi_payload()}] | tuple(),
 			 txid() | ignore, 
 			 snapshot_time() | ignore,
 			 boolean(),

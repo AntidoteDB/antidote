@@ -30,12 +30,6 @@
 -define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
 -define(OPS_THRESHOLD, 50).
-%% The first 3 elements in operations list are meta-data
-%% First is the key
-%% Second is a tuple {current op list size, max op list size}
-%% Thrid is a counter that assigns each op 1 larger than the previous
-%% Fourth is where the list of ops start
--define(FIRST_OP, 4).
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
 -define(RESIZE_THRESHOLD, 5).
@@ -524,6 +518,11 @@ prune_ops({Len,OpsTuple}, Threshold)->
 	_ -> {NewSize,NewOps}
     end.
 
+%% This function will go through a tuple of operations, filtering out the operations
+%% that are out of date (given by the input function Fun), and returning a list
+%% of the remaining operations and the size of that list
+%% It is used during garbage collection to filter out operations that are older than any
+%% of the cached snapshots
 -spec check_filter(fun(({non_neg_integer(),#clocksi_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
 		   non_neg_integer(),tuple(),non_neg_integer(),[{non_neg_integer(),op_and_id()}]) ->
 			  {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
