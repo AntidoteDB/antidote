@@ -16,3 +16,8 @@ doc/
 log/
 tags
 rel/vars/*.config
+docs/_site/
+docs/.sass-cache/
+docs/.jekyll-metadata
+docs/_pdf
+docs/.idea/
