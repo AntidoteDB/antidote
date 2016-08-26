@@ -52,7 +52,7 @@ entries:
     output: web, pdf
     folderitems:
 
-  - title: Protocol Buffer
+    - title: Protocol Buffer
       url: /api.html
       output: web, pdf
 
