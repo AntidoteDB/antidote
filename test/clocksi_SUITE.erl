@@ -523,9 +523,7 @@ clocksi_test_read_wait(Config) ->
 
     %% Start a new tx, update some key, and send prepare.
     FirstNode = hd(Nodes),
-    LastNode = lists:last(Nodes),
     lager:info("FirstNode: ~p", [FirstNode]),
-    lager:info("LastNode: ~p", [LastNode]),
     {ok, TxId1} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     lager:info("Tx1 started with id : ~p", [TxId1]),
 
@@ -538,9 +536,9 @@ clocksi_test_read_wait(Config) ->
     lager:info("Tx1 sent prepare, assigned commitTime : ~p", [CommitTime1]),
 
     %% Start a different tx and try to read the key
-    {ok, TxId2} = rpc:call(LastNode, antidote, clocksi_istart_tx, []),
+    {ok, TxId2} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     lager:info("Tx2 started with id : ~p", [TxId2]),
-    Pid = spawn(?MODULE, spawn_read, [LastNode, TxId2, self(), Key1, Type]),
+    Pid = spawn(?MODULE, spawn_read, [FirstNode, TxId2, self(), Key1, Type]),
 
     %% Delay first transaction
     timer:sleep(2000),
@@ -553,14 +551,14 @@ clocksi_test_read_wait(Config) ->
     receive
         {Pid, ReadResult1} ->
             %%receive the read value
-            ?assertMatch({ok, 1}, ReadResult1)    
+            ?assertMatch({ok, 1}, ReadResult1)
             end,
 
     %% Prepare and commit the second transaction.
-    CommitTime2 = rpc:call(LastNode, antidote, clocksi_iprepare, [TxId2]),
+    CommitTime2 = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId2]),
     ?assertMatch({ok, _}, CommitTime2),
     lager:info("Tx2 sent prepare, got id : ~p", [CommitTime2]),
-    End2 = rpc:call(LastNode, antidote, clocksi_icommit, [TxId2]),
+    End2 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId2]),
     ?assertMatch({ok, _}, End2),
     lager:info("Tx2 committed."),
     pass.
