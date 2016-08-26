@@ -44,7 +44,7 @@
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
-    Nodes = hd(Clusters),
+    Nodes = lists:flatten(Clusters),
     %Ensure that the gentlerain protocol is used
     test_utils:pmap(fun(Node) ->
         rpc:call(Node, application, set_env,
