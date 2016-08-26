@@ -124,7 +124,7 @@ multiple_keys_test(Config) ->
     lager:info("Multiple key read-write test passed!"),
     pass.
 
-multiple_writes(Node, PreKey, Type, Start, End, Actor)->
+multiple_writes(Node, PreKey, Type, Start, End, _Actor)->
     F = fun(N, Acc) ->
                 Key = list_to_atom(atom_to_list(PreKey) ++ [N]),
                 case rpc:call(Node, antidote, append,
