@@ -13,12 +13,18 @@
 -type pdcid() :: {dcid(), partition_id()}.
 -type log_opid() :: pos_integer().
 
+%% Ping strcuture for partial replication
+-record(partial_ping, {
+	  partition_dcid_op_list :: [{partition_id(), [{dcid(), #op_number{}}]}],
+	  time :: clock_time()
+	 }).
+
 -record(interdc_txn, {
 	  dcid :: dcid(),
 	  partition :: partition_id(),
-	  prev_log_opid_dc :: [{dcid(),#op_number{}}] | none, %% for partial rep, the opid by per DC that replicates is
+	  prev_log_opid_dc :: [{dcid(),#op_number{}}] | #partial_ping{} | none, %% for partial rep, the opid by per DC that replicates is
 	  prev_log_opid :: #op_number{} | none, %% the value is *none* if the transaction is read directly from the log
-	  snapshot :: snapshot_time(),
+	  snapshot :: snapshot_time() | none,
 	  timestamp :: clock_time(),
 	  last_update_opid :: #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort) THIS ISN'T USED???
 	  bucket :: bucket(),
@@ -72,9 +78,3 @@
   last_observed_commit_ids :: {non_neg_integer(), non_neg_integer()} | init,
   queue :: queue()
 }).
-
-%% Ping strcuture for partial replication
--record(partial_ping, {
-	  partition_dcid_op_list :: [{partition_id(), [{dcid(), #op_number{}}]}],
-	  time :: clock_time()
-	 }).

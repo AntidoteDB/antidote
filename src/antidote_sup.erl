@@ -116,8 +116,8 @@ init(_Args) ->
        InterDcLogReaderQMaster,
        InterDcLogReaderRMaster,
        InterDcLogSenderMaster,
-       StableTimeCollector,
        StableMetaData,
        MetaDataManagerSup,
        MetaDataSenderSup,
+       StableTimeCollector,
        LogResponseReaderSup]}}.

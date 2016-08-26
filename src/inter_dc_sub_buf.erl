@@ -45,7 +45,9 @@ new_state(PDCID,LocalPartition) -> #inter_dc_sub_buf{
 }.
 
 -spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
-process({txn, Txn=#interdc_txn{dcid=DCID, partition=Partition}},
+%%process({txn, Txn=#interdc_txn{dcid=DCID, partition=Partition}},
+%% TODO decide how to match partitions
+process({txn, Txn=#interdc_txn{dcid=DCID}},
 	State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}, local_partition = MyPartition}) ->
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
@@ -92,7 +94,7 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_
     ok = lists:foreach(fun(Txn) -> deliver(Txn,LocalPartition) end, Txns),
     NewLast = case queue:peek(Queue) of
 		  empty -> State#inter_dc_sub_buf.last_observed_opid;
-		  {value, Txn} -> get_prev_op_id(Txn)
+		  {value, Txn} -> get_prev_op_id(Txn,LocalPartition)
 	      end,
     NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
     process_queue(NewState).
@@ -123,15 +125,25 @@ get_max_commit_ids(CommitIdTuples) ->
     {MaxPrev, MaxCommit}.
 				    
 %% Returns the id of the last operation of the previous transaction
--spec get_prev_op_id(#interdc_txn{}) -> log_opid().
-get_prev_op_id(Txn) ->
+-spec get_prev_op_id(#interdc_txn{},partition_id()) -> log_opid().
+get_prev_op_id(Txn,Partition) ->
     case ?IS_PARTIAL() of
 	false ->
 	    Txn#interdc_txn.prev_log_opid#op_number.local;
 	true ->
 	    DCID = dc_meta_data_utilities:get_my_dc_id(),
+	    DCOpList = 
+		case inter_dc_txn:is_ping(Txn) of
+		    false -> Txn#interdc_txn.prev_log_opid_dc;
+		    true ->
+			PartialPing = Txn#interdc_txn.prev_log_opid_dc,
+			case lists:keyfind(Partition,1,PartialPing#partial_ping.partition_dcid_op_list) of
+			    {Partition, OpList} -> OpList;
+			    false -> []
+			end
+		end,
 	    %%lager:info("the list of prev op ids ~p and the op list", [Txn#interdc_txn.prev_log_opid_dc]),
-	    case lists:keyfind(DCID,1,Txn#interdc_txn.prev_log_opid_dc) of
+	    case lists:keyfind(DCID,1,DCOpList) of
 		{DCID, Time} ->
 		    Time#op_number.local;
 		false ->
@@ -169,21 +181,34 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
     case queue:peek(Queue) of
 	empty -> State#inter_dc_sub_buf{state_name = normal};
 	{value, Txn} ->
-	    TxnLast = get_prev_op_id(Txn),
+	    case inter_dc_txn:is_ping(Txn) of
+		true ->
+		    lager:info("got a ping at partition ~w", [LocalPartition]);
+		false -> ok
+	    end,
+	    TxnLast = get_prev_op_id(Txn,LocalPartition),
 	    case cmp(TxnLast, Last) of
 		
 		%% If the received transaction is immediately after the last observed one
 		eq ->
 		    deliver(Txn,LocalPartition),
-		    Max = get_last_op_id(Txn,Last),
-		    MaxCommit = (inter_dc_txn:commit_opid(Txn))#op_number.local,
-		    NewCommitIds = 
-			case MaxCommit > CommitLast2 of
-			    true -> {CommitLast2,MaxCommit};
-			    false -> {CommitLast1,CommitLast2}
+		    %% TODO, fix how this happens for ping in partial
+		    NewState = 
+			case inter_dc_txn:is_ping(Txn) of
+			    false ->
+				Max = get_last_op_id(Txn,Last),
+				MaxCommit = (inter_dc_txn:commit_opid(Txn))#op_number.local,
+				NewCommitIds = 
+				    case MaxCommit > CommitLast2 of
+					true -> {CommitLast2,MaxCommit};
+					false -> {CommitLast1,CommitLast2}
+				    end,
+				State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max,
+						       last_observed_commit_ids = NewCommitIds};
+			    true ->
+				State#inter_dc_sub_buf{queue = queue:drop(Queue)}
 			end,
-		    process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max,
-							 last_observed_commit_ids = NewCommitIds});
+		    process_queue(NewState);
 		
 		%% If the transaction seems to come after an unknown transaction, ask the remote log
 		gt ->
@@ -207,11 +232,12 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
 -spec get_log_range_query_ids(#interdc_txn{},#inter_dc_sub_buf{}) -> {log_opid(),log_opid(),log_opid() | undefined, log_opid() | undefined}.
 get_log_range_query_ids(Txn,#inter_dc_sub_buf{
+			       local_partition = LocalPartition,
 			       last_observed_opid = OpId,
 			       last_observed_commit_ids = {CommitTime1,CommitTime2}}) ->
     case ?IS_PARTIAL() of
 	false ->
-	    {OpId + 1, get_prev_op_id(Txn), undefined, undefined};
+	    {OpId + 1, get_prev_op_id(Txn,LocalPartition), undefined, undefined};
 	true ->
 	    %% In partial replication request the missing ops from
 	    %% the previous commit operation id, to the commit id
@@ -219,8 +245,9 @@ get_log_range_query_ids(Txn,#inter_dc_sub_buf{
 	    %% The third argument is the id of the last update operation
 	    %% that was received, the fourth is the id of the last update
 	    %% operation of the current transaction
+	    %% TODO, how to get last commit when ping in partial?
 	    MaxCommit = (inter_dc_txn:commit_opid(Txn))#op_number.local,
-	    MaxOpId = get_prev_op_id(Txn),
+	    MaxOpId = get_prev_op_id(Txn,LocalPartition),
 	    case MaxCommit > CommitTime2 of
 		true -> {CommitTime2,MaxCommit,OpId,MaxOpId};
 		false -> {CommitTime1,CommitTime2,OpId,MaxOpId}

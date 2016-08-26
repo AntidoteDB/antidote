@@ -47,6 +47,8 @@
 
 %% State
 -record(state, {
+	  ready :: boolean(),
+	  partition :: partition_id(),
 	  partition_op_count :: cache_id(),
 	  partition_time :: cache_id(),
 	  timer :: any()
@@ -79,10 +81,16 @@ get_registered_name() ->
 start_link() ->
     gen_server:start_link({global, get_registered_name()}, ?MODULE, [], []).
 
-init([]) -> {ok, #state{timer = none,
-			partition_op_count = ets:new(partition_op_count,[set]),
-			partition_time = ets:new(partition_time, [set])}}.
+init([]) ->
+    [Partition|_Rest] = dc_utilities:get_my_partitions(),
+    {ok, #state{timer = none,
+		ready = false,
+		partition = Partition,
+		partition_op_count = ets:new(partition_op_count,[set]),
+		partition_time = ets:new(partition_time, [set])}}.
 
+handle_cast({update_partition_count, Partition, DCIDOpList, Time}, State = #state{ready=false}) ->
+    handle_cast({update_partition_count, Partition, DCIDOpList, Time}, State#state{ready=true});
 handle_cast({update_partition_count, Partition, DCIDOpList, Time}, State) ->
     update_partition_count_internal(Partition, DCIDOpList, Time, State),
     {noreply, State}.
@@ -92,15 +100,17 @@ update_partition_count_internal(Partition, DCIDOpList, Time,
     true = ets:insert(OpTable, {Partition, DCIDOpList}),
     true = ets:insert(TimeTable, {Partition, Time}).
 
-handle_info(ping, State) ->
+handle_info(ping, State = #state{partition = Partition}) ->
     Ping = create_ping(State),
-    %% TODO change this to the correct format
-    inter_dc_pub:broadcast(Ping),
+    Txn = inter_dc_txn:partial_ping(Partition, Ping),
+    inter_dc_pub:broadcast(Txn),
     {noreply, set_timer(State)};
 handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec create_ping(#state{}) -> #partial_ping{}.
+create_ping(#state{ready=false}) ->
+    #partial_ping{partition_dcid_op_list = [], time = 0};
 create_ping(#state{partition_op_count = OpTable, partition_time = TimeTable}) ->
     PartitionDCIDOpList = ets:tab2list(OpTable),
     [{_Partition,FirstTime}|Rest] = ets:tab2list(TimeTable),

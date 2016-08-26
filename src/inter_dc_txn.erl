@@ -23,7 +23,8 @@
 
 %% API
 -export([
- from_ops/4,
+  from_ops/4,
+  partial_ping/2,
   ping/4,
   is_local/1,
   req_id_to_bin/1,
@@ -60,6 +61,18 @@ from_ops(Ops, Partition, PrevLogOpId, PrevLogOpIdDC) ->
        log_records = Ops,
        snapshot = SnapshotTime,
        timestamp = CommitTime
+      }.
+
+-spec partial_ping(partition_id(), #partial_ping{}) -> #interdc_txn{}.
+partial_ping(Partition, PartialPing) ->
+    #interdc_txn{
+       dcid = dc_meta_data_utilities:get_my_dc_id(),
+       partition = Partition,
+       prev_log_opid = none,
+       prev_log_opid_dc = PartialPing,
+       log_records = [],
+       snapshot = none,
+       timestamp = PartialPing#partial_ping.time
       }.
 
 -spec ping(partition_id(), #op_number{} | none, [{dcid(),#op_number{}}] | none, non_neg_integer()) -> #interdc_txn{}.
