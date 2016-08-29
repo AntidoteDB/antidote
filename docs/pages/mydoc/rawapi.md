@@ -10,8 +10,51 @@ folder: mydoc
 
 This page describes the raw API of Antidote. These are erlang methods and clients can invoke these API methods via RPC. A better way for client applications to interact with Antidote is to use the [protocol buffer interface](/api.html).
 
-Antidote API
------------
+CRDTs
+------
+
+Antidote has a library of crdts. The interface of these CRDTs specify what are the operations and the parameters that can be given in update_objects method. Here we specify the supported {operation(), op_param()} pair for each of the supported crdts. The first item in the tuple indicates the update operation and the second item indicates the parameters to the update operation.
+
+##### antidote_crdt_counter #####
+    {increment, integer}
+    {decrement, integer()}
+
+##### antidote_crdt_orset #####
+    {add, term()}
+    {remove, term()}
+    {add_all, [term()]}
+    {remove_all, [term()]}
+
+##### antidote_crdt_gset #####
+    {add, {term(), actor()}}
+    {remove, {term(), actor()}}
+    {add_all, {[term()], actor()}}
+    {remove_all, {[term()], actor()}}
+
+##### antidote_crdt_lwwreg #####
+    {assign, {term(), non_neg_integer()}}
+    {assign, term()}.
+
+##### antidote_crdt_map #####
+    {update, {[map_field_update() | map_field_op()], actorordot()}}.
+
+    -type actorordot() :: riak_dt:actor() | riak_dt:dot().
+    -type map_field_op() ::  {remove, field()}.
+    -type map_field_update() :: {update, field(), crdt_op()}.
+    -type crdt_op() :: term(). %% Valid riak_dt updates
+    -type field() :: term()
+
+##### antidote_crdt_mvreg #####
+    {assign, {term(), non_neg_integer()}}
+    {assign, term()}
+    {propagate, {term(), non_neg_integer()}}
+
+##### antidote_crdt_rga #####
+    {addRight, {any(), non_neg_integer()}}
+    {remove, non_neg_integer()}
+
+API
+----
 
 A unit of operation in Antidote is a transaction. A client should first start a transaction, then read and/or update multiple objects, and then commit the transaction.
 
@@ -59,45 +102,3 @@ In static transaction, client can issue a single call with either update to mult
     {ok, CT1} = rpc:call(Node, antidote, update_objects, [ignore, [], [{CounterObj, increment, 1}]]),
     {ok, Result, CT2} = rpc:call(Node, antidote, read_objects, [CT1, [], [CounterObj, SetObj]]),
     [CounterVal, SetVal] = Result.
-
-### Antidote CRDTs ###
-
-Antidote has a library of crdts. The interface of these CRDTs specify what are the operations and the parameters that can be given in update_objects method. Here we specify the supported {operation(), op_param()} pair for each of the supported crdts.
-
-##### antidote_crdt_counter #####
-    {increment, integer}
-    {decrement, integer()}
-
-##### antidote_crdt_orset #####
-    {add, term()}
-    {remove, term()}
-    {add_all, [term()]}
-    {remove_all, [term()]}
-
-##### antidote_crdt_gset #####
-    {add, {term(), actor()}}
-    {remove, {term(), actor()}}
-    {add_all, {[term()], actor()}}
-    {remove_all, {[term()], actor()}}
-
-##### antidote_crdt_lwwreg #####
-    {assign, {term(), non_neg_integer()}}
-    {assign, term()}.
-
-##### antidote_crdt_map #####
-    {update, {[map_field_update() | map_field_op()], actorordot()}}.
-
-    -type actorordot() :: riak_dt:actor() | riak_dt:dot().
-    -type map_field_op() ::  {remove, field()}.
-    -type map_field_update() :: {update, field(), crdt_op()}.
-    -type crdt_op() :: term(). %% Valid riak_dt updates
-    -type field() :: term()
-
-##### antidote_crdt_mvreg #####
-    {assign, {term(), non_neg_integer()}}
-    {assign, term()}
-    {propagate, {term(), non_neg_integer()}}
-
-##### antidote_crdt_rga #####
-    {addRight, {any(), non_neg_integer()}}
-    {remove, non_neg_integer()}
