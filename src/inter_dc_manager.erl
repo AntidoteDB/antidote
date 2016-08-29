@@ -104,7 +104,7 @@ start_bg_processes(MetaDataName) ->
     ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(materializer_vnode_master),
-    lists:foreach(fun(Node) -> 
+    lists:foreach(fun(Node) ->
 			  true = wait_init:wait_ready(Node),
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
@@ -152,6 +152,11 @@ check_node_restart() ->
 	    wait_init:wait_ready(MyNode),
 	    ok = dc_utilities:check_registered(meta_data_sender_sup),
 	    ok = dc_utilities:check_registered(meta_data_manager_sup),
+      ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
+      ok = dc_utilities:check_registered(inter_dc_sub),
+      ok = dc_utilities:check_registered(inter_dc_pub),
+      ok = dc_utilities:check_registered(inter_dc_query_response_sup),
+      ok = dc_utilities:check_registered(inter_dc_query),
 	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
 	    {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
 	    ok = meta_data_sender:start(MetaDataName),
@@ -231,7 +236,7 @@ drop_ping(DropPing) ->
     %% Be sure they all returned ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->
 			       ok
-		       end, Responses).    
+		       end, Responses).
 
 %%%%%%%%%%%%%
 %% Utils

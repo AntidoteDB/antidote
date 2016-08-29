@@ -309,6 +309,8 @@ handle_command({read, LogId}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
+	    %% TODO should continue reading with the continuation??
+            ok = disk_log:sync(Log),
            {Continuation, Ops} = 
                 case disk_log:chunk(Log, start) of
                     {C, O} -> {C,O};
@@ -336,6 +338,7 @@ handle_command({read_from, LogId, _From}, _Sender,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
+	    %% TODO should continue reading with the continuation??
             {Continuation, Ops} = 
                 case disk_log:chunk(Log, Lastread) of
                     {error, Reason} -> {error, Reason};
@@ -494,6 +497,7 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
     #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
+            ok = disk_log:sync(Log),
             case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
@@ -524,6 +528,7 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 	       #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
+            ok = disk_log:sync(Log),
 	    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};

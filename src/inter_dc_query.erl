@@ -94,7 +94,7 @@ handle_call({add_dc, DCID, LogReaders}, _From, State) ->
 			    case connect_to_node(AddressList) of
 				{ok, Socket} ->
 				    DCPartitionDict = 
-					case dict:find(DCID,State#state.sockets) of
+					case dict:find(DCID,AccState#state.sockets) of
 					    {ok, Val} ->
 						Val;
 					    error ->
