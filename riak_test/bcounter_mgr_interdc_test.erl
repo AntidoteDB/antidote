@@ -22,19 +22,21 @@ confirm() ->
 
     _Clean = rt_config:get(clean_cluster, true),
 
-    [[NodeDC1]=Cluster1, [NodeDC2]=Cluster2] = rt:build_clusters([1,1]),
+    [[NodeDC1]=Cluster1, [NodeDC2]=Cluster2, Cluster3] = rt:build_clusters([1,1,1]),
 
     rt:wait_until_ring_converged(Cluster1),
     rt:wait_until_ring_converged(Cluster2),
+    rt:wait_until_ring_converged(Cluster3),
+
 
     {ok, Prot} = rpc:call(hd(Cluster1), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
 
     ok = common:setup_dc_manager([Cluster1, Cluster2], first_run),
 
-    %read_empty(NodeDC1, empty_key),
-    %test_dec_success(NodeDC1, NodeDC2, key1, actor1),
-    %test_dec_fail(NodeDC1, NodeDC2, key2, actor1),
+    read_empty(NodeDC1, empty_key),
+    test_dec_success(NodeDC1, NodeDC2, key1, actor1),
+    test_dec_fail(NodeDC1, NodeDC2, key2, actor1),
     test_dec_multi_success(NodeDC1, NodeDC2, key3, actor1),
     pass.
 
@@ -77,21 +79,14 @@ test_dec_fail(DC1, DC2, Key, Actor) ->
     Result = execute_op(DC2, decrement, Key, 5, Actor),
     ?assertEqual({error, no_permissions}, Result).
 
+%Assume that requests timeout is less than 1 second.
 test_dec_multi_success(DC1, DC2, Key, Actor) ->
     {ok, _} = execute_op(DC1, increment, Key, 10, Actor),
+    timer:sleep(1000),
     _Result = execute_op(DC2, decrement, Key, 5, Actor),
-    timer:sleep(4000),
-    %FIXME: Operation always fails... It seems that transfer
-    %is only processed after the second attemp, independently
-    %of the timer.
-    Result2 = execute_op(DC2, decrement, Key, 5, Actor),
-    lager:info("RESULT2 ~p", [Result2]),
-    timer:sleep(4000),
-    Result3 = execute_op(DC2, decrement, Key, 5, Actor),
-    lager:info("RESULT3 ~p", [Result3]),
-    timer:sleep(4000).
-    %check_read(DC1, Key, 5, CommitTime),
-    %check_read(DC2, Key, 5, CommitTime).
+    timer:sleep(1000),
+    {ok, CommitTime}  = execute_op(DC2, decrement, Key, 5, Actor),
+    check_read(DC2, Key, 5, CommitTime).
 
 
 

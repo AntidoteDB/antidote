@@ -70,6 +70,11 @@
 -define(SAFE_TIME, true).
 %% Version of log records being used
 -define(LOG_RECORD_VERSION, 0).
+%% Bounded counter manager parameters.
+-define(GRACE_PERIOD, 1000000). % in Microseconds
+-define(REQUEST_TIMEOUT, 500000). % In Microseconds
+-define(TRANSFER_FREQ, 100). %in Milliseconds
+
 
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
