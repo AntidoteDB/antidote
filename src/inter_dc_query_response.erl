@@ -76,7 +76,12 @@ handle_info(_Info, State) ->
 
 -spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
 get_entries_internal(Partition, From, To) ->
-  Logs = log_read_range(Partition, node(), From, To),
+  Node = case lists:member(Partition,dc_utilities:get_my_partitions()) of
+	     true -> node();
+	     false ->
+		 log_utilities:get_my_node(Partition)
+	 end,
+  Logs = log_read_range(Partition, Node, From, To),
   Asm = log_txn_assembler:new_state(),
   {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
   Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),

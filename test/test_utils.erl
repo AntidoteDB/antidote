@@ -160,7 +160,7 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, load, [antidote]),
             ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
-
+	    
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             ct:print("Node ~p started",[Node]),
 
@@ -207,6 +207,7 @@ connect_cluster(Nodes) ->
               ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
           end, Clusters),
     Descriptors = descriptors(Clusters),
+    ct:print("the clusters ~w", [Clusters]),
     Res = [ok || _ <- Clusters],
     pmap(fun(Cluster) ->
               Node = hd(Cluster),
@@ -253,7 +254,6 @@ web_ports(dev4) ->
 join_cluster(Nodes) ->
     %% Ensure each node owns 100% of it's own ring
     [?assertEqual([Node], owners_according_to(Node)) || Node <- Nodes],
-
     %% Join nodes
     [Node1|OtherNodes] = Nodes,
     case OtherNodes of

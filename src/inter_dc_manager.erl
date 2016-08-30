@@ -25,6 +25,9 @@
 %% Public API
 %% ===================================================================
 
+-define(DC_CONNECT_RETRIES,5).
+-define(DC_CONNECT_RETY_SLEEP,1000).
+
 -export([
   get_descriptor/0,
   start_bg_processes/1,
@@ -70,28 +73,32 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 		    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
 		    %% But we want to balance the work, so all nodes take part in subscribing.
 		    Nodes = dc_utilities:get_my_dc_nodes(),
-		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc)
+		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES)
 	    end
     end.
 
--spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
-connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc) ->
+-spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}, non_neg_integer()) ->
+			   ok | {error, connection_error}.
+connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
-connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc) ->
+connect_nodes(_Nodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->
+    ok = forget_dc(Desc),
+    {error, connection_error};    
+connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
     case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
 	ok ->
 	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
 		ok ->
-		    connect_nodes(Rest, DCID, LogReaders, Publishers, Desc);
+		    connect_nodes(Rest, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES);
 		_ ->
+		    timer:sleep(?DC_CONNECT_RETY_SLEEP),
 		    lager:error("Unable to connect to publisher ~p", [DCID]),
-		    ok = forget_dc(Desc),
-		    {error, connection_error}
+		    connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
 	    end;
 	_ ->
+	    timer:sleep(?DC_CONNECT_RETY_SLEEP),
 	    lager:error("Unable to connect to log reader ~p", [DCID]),
-	    ok = forget_dc(Desc),
-	    {error, connection_error}
+	    connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
     end.
 
 %% This should not be called untilt the local dc's ring is merged
