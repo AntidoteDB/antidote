@@ -249,7 +249,7 @@ check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
 			    ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key,TxLocalStartTime,PreparedCache,Partition) ->
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
-    check_prepared_list(Key,TxLocalStartTime,ActiveTxs).
+    check_prepared_list(Key, TxLocalStartTime, ActiveTxs).
 
 -spec check_prepared_list(key(),clock_time(),[{txid(),clock_time()}]) ->
 				 ready | {not_ready, ?SPIN_WAIT}.
@@ -307,4 +307,3 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 terminate(_Reason, _SD) ->
     ok.
-

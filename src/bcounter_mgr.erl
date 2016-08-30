@@ -47,6 +47,8 @@
 
 -record(state, {req_queue, last_transfers, transfer_timer}).
 -define(LOG_UTIL, log_utilities).
+-define(DATA_TYPE, antidote_crdt_bcounter).
+
 
 
 %% ===================================================================
@@ -61,18 +63,19 @@ init([]) ->
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
     {ok, #state{req_queue=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new()}}.
 
-generate_downstream(Key, {{decrement, _}=Operation, _Actor}, BCounter) ->
-    gen_server:call(?MODULE, {consume, Key, Operation, BCounter});
+generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
+    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    gen_server:call(?MODULE, {consume, Key, {decrement, {V,MyDCId}}, BCounter});
 
-generate_downstream(Key, {{increment, _}=Operation, _Actor}, BCounter) ->
-    gen_server:call(?MODULE, {generate, Key, Operation, BCounter});
+generate_downstream(_Key, {increment, {Amount, _}}, BCounter) ->
+    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    ?DATA_TYPE:downstream({increment, {Amount, MyDCId}}, BCounter);
 
-generate_downstream(_Key, {Operation, _Actor}, BCounter) ->
-    MyId = dc_meta_data_utilities:get_my_dc_id(),
-    crdt_bcounter:generate_downstream(Operation, MyId, BCounter).
+generate_downstream(_Key, {transfer, {Amount, To, From}}, BCounter) ->
+    ?DATA_TYPE:downstream({transfer, {Amount, To, From}}, BCounter).
 
-process_transfer({transfer, Operation}) ->
-    gen_server:cast(?MODULE, {transfer, Operation}).
+process_transfer({transfer, TransferOp}) ->
+    gen_server:cast(?MODULE, {transfer, TransferOp}).
 
 %% ===================================================================
 %% Callbacks
@@ -80,19 +83,20 @@ process_transfer({transfer, Operation}) ->
 
 handle_cast({transfer, {Key,Amount,Requester}}, #state{last_transfers=LT}=State) ->
     NewLT = cancel_consecutive_req(LT, ?GRACE_PERIOD),
+    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     case can_process(Key, Requester, NewLT) of
         true ->
-            antidote:append(Key, crdt_bcounter, {{transfer, Amount, Requester}, dc}),
+            antidote:append(Key, ?DATA_TYPE, {transfer, {Amount, Requester, MyDCId}}),
             {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:now(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
     end.
 
-handle_call({_IncOrDec, Key, {_,Amount}=Operation, BCounter}, _From, #state{req_queue=RQ}=State) ->
-    MyId = dc_meta_data_utilities:get_my_dc_id(),
-    case crdt_bcounter:generate_downstream(Operation, MyId, BCounter) of
+handle_call({consume, Key, {Op,{Amount,_}}, BCounter}, _From, #state{req_queue=RQ}=State) ->
+    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    case ?DATA_TYPE:generate_downstream_check({Op,Amount}, MyDCId, BCounter, Amount) of
         {error, no_permissions} = FailedResult ->
-            Available = crdt_bcounter:local_permissions(MyId, BCounter),
+            Available = ?DATA_TYPE:localPermissions(MyDCId, BCounter),
             UpdtQueue=queue_request(Key, Amount - Available, RQ),
             {reply, FailedResult, State#state{req_queue=UpdtQueue}};
         Result ->
@@ -140,8 +144,8 @@ queue_request(Key, Amount, RequestsQueue) ->
 request_remote(0, _Key) -> 0;
 
 request_remote(RequiredSum, Key) ->
-    MyId = dc_meta_data_utilities:get_my_dc_id(),
-    {ok,Obj} = antidote:read(Key, crdt_bcounter),
+    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    {ok,Obj} = antidote:read(Key, ?DATA_TYPE),
     PrefList= pref_list(Obj),
     lists:foldl(
       fun({RemoteId, AvailableRemotely}, Remaining0) ->
@@ -151,26 +155,26 @@ request_remote(RequiredSum, Key) ->
                                       true -> Remaining0;
                                       false -> AvailableRemotely
                                   end,
-                      do_request(MyId, RemoteId, Key, ToRequest),
+                      do_request(MyDCId, RemoteId, Key, ToRequest),
                       Remaining0 - ToRequest;
                   _ -> Remaining0
               end
       end, RequiredSum, PrefList).
 
-do_request(MyId, RemoteId, Key, Amount) ->
+do_request(MyDCId, RemoteId, Key, Amount) ->
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     {LocalPartition, _} = hd(Preflist),
     BinaryMsg = term_to_binary({request_permissions,
-                                {transfer, {Key, Amount, MyId}}, LocalPartition, MyId, RemoteId}),
+                                {transfer, {Key, Amount, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
     inter_dc_query:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
                                    BinaryMsg, fun bcounter_mgr:request_response/2).
 
 %% Orders the reservation of each DC, from high to low.
 pref_list(Obj) ->
-    MyId = dc_meta_data_utilities:get_my_dc_id(),
+    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     OtherDCDescriptors = dc_meta_data_utilities:get_dc_descriptors(),
     OtherDCIds = lists:foldl(fun(#descriptor{dcid=Id}, IdsList) ->
-                                     case Id == MyId of
+                                     case Id == MyDCId of
                                          true -> IdsList;
                                          false -> [Id | IdsList]
                                      end
@@ -178,7 +182,7 @@ pref_list(Obj) ->
     lists:sort(
       fun({_, A}, {_, B}) -> A =< B end,
       lists:foldl(fun(Id, Accum) ->
-                          Permissions = crdt_bcounter:local_permissions(Id, Obj),
+                          Permissions = ?DATA_TYPE:localPermissions(Id, Obj),
                           [{Id, Permissions} | Accum]
                   end, [], OtherDCIds)).
 
@@ -200,8 +204,8 @@ clear_pending_req(LastRequests, Period) ->
                    end , LastRequests).
 
 can_process(Key, Requester, LastTransfers) ->
-    MyId = dc_meta_data_utilities:get_my_dc_id(),
-    case Requester == MyId of
+    MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    case Requester == MyDCId of
         false ->
             case orddict:find({Key, Requester}, LastTransfers) of
                 {ok, _Timeout} ->
