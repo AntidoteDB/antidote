@@ -77,7 +77,7 @@ simple_replication_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
-    Key1 = simple_replication_test,
+    Key1 = simple_replication_test_dc,
     Type = antidote_crdt_counter,
     
     WriteResult1 = rpc:call(Node1,
@@ -261,7 +261,6 @@ failure_test(Config) ->
 
     %% NODE3 comes back
     [ok, ok] = rpc:call(Node3, inter_dc_manager, observe_dcs_sync, [[D1, D2]]),
-    timer:sleep(5000),
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
                            [CommitTime, Key, Type]),

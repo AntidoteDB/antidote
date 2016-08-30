@@ -160,7 +160,7 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, load, [antidote]),
             ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
-
+	    
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             ct:print("Node ~p started",[Node]),
 

@@ -84,11 +84,12 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new(), req_id = 1, unanswered_queries = ets:new(queries,[set])}}.
 
 %% Handle the instruction to add a new DC.
-handle_call({add_dc, DCID, LogReaders}, _From, State) ->
+handle_call({add_dc, DCID, LogReaders}, _From, OldState) ->
     %% Create a socket and store it
     %% The DC will contain a list of ip/ports each with a list of partition ids loacated at each node
     %% This will connect to each node and store in the cache the list of partitions located at each node
     %% so that a request goes directly to the node where the needed partition is located
+    {_,State} = del_dc(DCID, OldState),
     {Result,NewState} =
 	lists:foldl(fun({PartitionList,AddressList}, {ResultAcc,AccState}) ->
 			    case connect_to_node(AddressList) of
@@ -122,13 +123,8 @@ handle_call({add_dc, DCID, LogReaders}, _From, State) ->
 
 %% Remove a DC. Unanswered queries are left untouched.
 handle_call({del_dc, DCID}, _From, State) ->
-    case dict:find(DCID, State#state.sockets) of
-	{ok, DCPartitionDict} ->
-	    ok = close_dc_sockets(DCPartitionDict),
-	    {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
-	error ->
-	    {reply, ok, State}
-    end;
+    {_, NewState} = del_dc(DCID, State),
+    {reply, ok, NewState};
 
 %% Handle an instruction to ask a remote DC.
 handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
@@ -193,6 +189,15 @@ terminate(_Reason, State) ->
 
 handle_cast(_Request, State) -> {noreply, State}.
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
+
+del_dc(DCID, State) ->
+    case dict:find(DCID, State#state.sockets) of
+	{ok, DCPartitionDict} ->
+	    ok = close_dc_sockets(DCPartitionDict),
+	    {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+	error ->
+	    {ok, State}
+    end.
 
 %% Saves the request in the state, so it can be resent if the DC was disconnected.
 req_sent(ReqIdBinary, RequestEntry, State=#state{unanswered_queries=Table,req_id=OldReq}) ->

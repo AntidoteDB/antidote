@@ -311,17 +311,11 @@ handle_command({read, LogId}, _Sender,
         {ok, Log} ->
 	    %% TODO should continue reading with the continuation??
             ok = disk_log:sync(Log),
-           {Continuation, Ops} = 
-                case disk_log:chunk(Log, start) of
-                    {C, O} -> {C,O};
-                    {C, O, _} -> {C,O};
-                    eof -> {eof, []}
-                end,
+	    {Continuation,Ops} = read_internal(Log,start,[]),
             case Continuation of
                 error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State#state{last_read=start}};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-            end;
+                eof -> {reply, {ok, Ops}, State}
+	    end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -392,6 +386,10 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 		end,		    
             LogRecord = (log_utilities:generate_empty_log_record())#log_record{
 			  op_number = NewOpId, bucket_op_number = NewBucketOpId, log_operation = LogOperation},
+	    case Local > 162 of
+		true -> lager:info("appending log ~w", [LogRecord]);
+		false -> ok
+	    end,
             case insert_log_record(Log, LogId, LogRecord) of
                 {ok, NewOpId} ->
 		    inter_dc_log_sender_vnode:send(Partition, LogRecord),
@@ -541,6 +539,21 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
+
+-spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(),clocksi_payload()}]) ->
+			   {error | eof, [{non_neg_integer(),clocksi_payload()}]}.
+read_internal(_Log, error, Ops) ->
+    {error, Ops};
+read_internal(_Log, eof, Ops) ->
+    {eof, Ops};
+read_internal(Log, Continuation, Ops) ->
+    {NewContinuation, NewOps} = 
+	case disk_log:chunk(Log, Continuation) of
+	    {C, O} -> {C,O};
+	    {C, O, _} -> {C,O};
+	    eof -> {eof, []}
+	end,
+    read_internal(Log, NewContinuation, Ops ++ NewOps).
 
 -spec reverse_and_add_op_id([clocksi_payload()],non_neg_integer(),[{non_neg_integer(),clocksi_payload()}]) ->
 				   [{non_neg_integer(),clocksi_payload()}].
@@ -856,6 +869,8 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
                 app_helper:get_env(riak_core, platform_data_dir), LogId),
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
+	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
+            lager:info("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
