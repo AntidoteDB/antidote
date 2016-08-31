@@ -78,6 +78,7 @@ cluster_failure_test(Config) ->
 
     Key1 = cluster_failure_test,
     Type = antidote_crdt_counter,
+
     
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
@@ -99,8 +100,6 @@ cluster_failure_test(Config) ->
     %% Kill and restart a node an be sure everyhing works
     ct:print("Killing and restarting node ~w", [Node1]),
     [Node1] = test_utils:kill_and_restart_nodes([Node1],Config),
-
-    %%rt:wait_until(Node1, fun wait_init:check_ready/1),
 
     ct:print("Done append in Node1"),
     ReadResult2 = rpc:call(Node3,
@@ -273,7 +272,7 @@ update_during_cluster_failure_test(Config) ->
 
     %% Kill a node
     ct:print("Killing node ~w", [Node1]),
-    [Node1] = test_utils:kill_nodes([Node1]),
+    [Node1] = test_utils:brutal_kill_nodes([Node1]),
 
     %% Be sure the other DC works while the node is down
     WriteResult3a = rpc:call(Node2,

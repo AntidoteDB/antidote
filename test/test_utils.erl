@@ -38,6 +38,7 @@
          connect_cluster/1,
 	 kill_and_restart_nodes/2,
 	 kill_nodes/1,
+	 brutal_kill_nodes/1,
 	 restart_nodes/2,
          partition_cluster/2,
          heal_cluster/2,
@@ -124,8 +125,22 @@ wait_until_connected(Node1, Node2) ->
 
 -spec kill_and_restart_nodes([node()], [tuple()]) -> [node()].
 kill_and_restart_nodes(NodeList, Config) ->
-    NewNodeList = kill_nodes(NodeList),
+    NewNodeList = brutal_kill_nodes(NodeList),
     restart_nodes(NewNodeList, Config).
+
+%% when you just can't wait
+-spec brutal_kill_nodes([node()]) -> [node()].
+brutal_kill_nodes(NodeList) ->
+    lists:map(fun(Node) ->
+		      lager:info("Killing node ~p", [Node]),
+		      OSPidToKill = rpc:call(Node, os, getpid, []),
+		      %% try a normal kill first, but set a timer to
+		      %% kill -9 after 5 seconds just in case
+		      rpc:cast(Node, timer, apply_after,
+			       [5000, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
+		      rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
+		      Node
+	      end, NodeList).
 
 -spec kill_nodes([node()]) -> [node()].
 kill_nodes(NodeList) ->
