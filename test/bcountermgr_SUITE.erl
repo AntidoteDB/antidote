@@ -32,7 +32,9 @@
 -export([new_bcounter_test/1,
          test_dec_success/1,
          test_dec_fail/1,
-         test_dec_multi_success/1]).
+         test_dec_multi_success0/1,
+         test_dec_multi_success1/1
+        ]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -70,7 +72,8 @@ all() -> [
          new_bcounter_test,
          test_dec_success,
          test_dec_fail,
-         test_dec_multi_success
+         test_dec_multi_success0,
+         test_dec_multi_success1
         ].
 
 %% Tests creating a new `bcounter()'.
@@ -99,13 +102,9 @@ test_dec_fail(Config) ->
     {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor),
     _ForcePropagation = read(Node2, Key, CommitTime),
     Result0 = execute_op(Node2, decrement, Key, 5, Actor),
-    timer:sleep(1000),
-    Result1 = execute_op(Node2, decrement, Key, 5, Actor),
-    ?assertEqual({error, no_permissions}, Result0),
-    ?assertEqual({error, no_permissions}, Result1).
+    ?assertEqual({error, no_permissions}, Result0).
 
-
-test_dec_multi_success(Config) ->
+test_dec_multi_success0(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Actor = dc,
@@ -113,9 +112,26 @@ test_dec_multi_success(Config) ->
     {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor),
     _ForcePropagation = read(Node2, Key, CommitTime),
     _Result = execute_op(Node2, decrement, Key, 5, Actor),
-    timer:sleep(1000),
+    timer:sleep(1500),
     {ok, _}  = execute_op(Node2, decrement, Key, 5, Actor),
     check_read(Node2, Key, 5, CommitTime).
+
+test_dec_multi_success1(Config) ->
+    Clusters = proplists:get_value(clusters, Config),
+    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    Actor = dc,
+    Key = bcounter5,
+    {ok, CommitTime0} = execute_op(Node1, increment, Key, 10, Actor),
+    _ForcePropagation0 = read(Node2, Key, CommitTime0),
+    _Result0 = execute_op(Node2, decrement, Key, 5, Actor),
+    timer:sleep(1500),
+    {ok, CommitTime1}  = execute_op(Node2, decrement, Key, 5, Actor),
+    _ForcePropagation1 = read(Node1, Key, CommitTime1),
+    {error, no_permissions} = execute_op(Node1, decrement, Key, 6, Actor),
+    timer:sleep(1500),
+    {error, no_permissions} = execute_op(Node1, decrement, Key, 6, Actor),
+    check_read(Node2, Key, 5, CommitTime1),
+    check_read(Node1, Key, 5, CommitTime1).
 
 %%Auxiliary functions.
 execute_op(Node, Op, Key, Amount, Actor) ->

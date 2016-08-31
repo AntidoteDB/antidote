@@ -88,9 +88,8 @@ handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
     {noreply, State#state{next = blankmsg, id=Id}};
 handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
     {noreply, State#state{next=getmsg}};
-handle_info({zmq, Socket, BinaryMsg, Flags}, State=#state{id=Id,next=getmsg}) ->
+handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id,next=getmsg}) ->
     %% Decode the message
-    lager:info("got the followoing ~p and ~p and ~p", [Socket,BinaryMsg,Flags]),
     {ReqId,RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
     %% Create a response
     QueryState = #inter_dc_query_state{zmq_id = Id,
