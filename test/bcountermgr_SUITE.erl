@@ -46,13 +46,13 @@ init_per_suite(Config) ->
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = lists:flatten(Clusters),
 
-    %Ensure that the clocksi protocol is used
+    %Ensure that write operations are certified
     test_utils:pmap(fun(Node) ->
         rpc:call(Node, application, set_env,
-        [antidote, txn_prot, clocksi]) end, Nodes),
+        [antidote, txn_cert, true]) end, Nodes),
 
-    %Check that indeed clocksi is running
-    {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
+    %Check that indeed transactions certification is turned on
+    {ok, true} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_cert]),
 
     [{clusters, Clusters}|Config].
 
@@ -98,8 +98,12 @@ test_dec_fail(Config) ->
     Key = bcounter3,
     {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor),
     _ForcePropagation = read(Node2, Key, CommitTime),
-    Result = execute_op(Node2, decrement, Key, 5, Actor),
-    ?assertEqual({error, no_permissions}, Result).
+    Result0 = execute_op(Node2, decrement, Key, 5, Actor),
+    timer:sleep(1000),
+    Result1 = execute_op(Node2, decrement, Key, 5, Actor),
+    ?assertEqual({error, no_permissions}, Result0),
+    ?assertEqual({error, no_permissions}, Result1).
+
 
 test_dec_multi_success(Config) ->
     Clusters = proplists:get_value(clusters, Config),
