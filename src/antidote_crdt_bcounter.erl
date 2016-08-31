@@ -8,7 +8,7 @@
 %% @doc
 %% An operation based implementation of the bounded counter CRDT.
 %% This counter is able to maintain a non-negative value by
-%% explicitly exchanging permissions to execute decrement operations. 
+%% explicitly exchanging permissions to execute decrement operations.
 %% All operations on this CRDT are monotonic and do not keep extra tombstones.
 %% @end
 
@@ -27,7 +27,8 @@
           to_binary/1,
           from_binary/1,
           is_operation/1,
-          require_state_downstream/1
+          require_state_downstream/1,
+          generate_downstream_check/4
         ]).
 
 %% API
@@ -44,7 +45,7 @@
 -opaque bcounter() :: {orddict:orddict(),orddict:orddict()}.
 -type binary_bcounter() :: binary().
 -type bcounter_op() :: bcounter_anon_op() | bcounter_src_op().
--type bcounter_anon_op() :: {transfer, {pos_integer(), id(), id()}} | 
+-type bcounter_anon_op() :: {transfer, {pos_integer(), id(), id()}} |
     {increment, {pos_integer(), id()}} | {decrement, {pos_integer(), id()}}.
 -type bcounter_src_op() :: {bcounter_anon_op(), id()}.
 -opaque id() :: term. %% A replica's identifier.
@@ -56,46 +57,46 @@ new() ->
 
 %% @doc Return the available permissions of replica `Id' in a `bcounter()'.
 -spec localPermissions(id(),bcounter()) -> non_neg_integer().
-localPermissions(Id,{P,D}) -> 
+localPermissions(Id,{P,D}) ->
     Received = lists:foldl(
                  fun(
                    {_,V},Acc) ->
-                         Acc + V 
+                         Acc + V
                  end,
                  0, orddict:filter(
                       fun(
                         {_,To},_) when To == Id ->
-                              true; 
+                              true;
                          (_,_) ->
-                              false 
+                              false
                       end, P)),
     Granted  = lists:foldl(
                  fun
                      ({_,V},Acc) ->
-                         Acc + V 
+                         Acc + V
                  end, 0, orddict:filter(
                            fun
                                ({From,To},_) when From == Id andalso To /= Id ->
                                    true;
                                (_,_) ->
-                                   false 
+                                   false
                            end, P)),
     case orddict:find(Id,D) of
-        {ok, Decrements} -> 
+        {ok, Decrements} ->
             Received - Granted - Decrements;
-        error -> 
+        error ->
             Received - Granted
     end.
 
 %% @doc Return the total available permissions in a `bcounter()'.
 -spec permissions(bcounter()) -> non_neg_integer().
-permissions({P,D}) -> 
+permissions({P,D}) ->
     TotalIncrements = orddict:fold(
                         fun
                             ({K,K},V,Acc) ->
-                                V + Acc; 
+                                V + Acc;
                             (_,_,Acc) ->
-                                Acc 
+                                Acc
                         end, 0, P),
     TotalDecrements = orddict:fold(
                         fun
@@ -146,15 +147,15 @@ update({{transfer, V,To},From}, Counter) ->
     transfer(From,To,V,Counter).
 
 %% Add a given amount of permissions to a replica.
-increment(Id,V,{P,D}) -> 
+increment(Id,V,{P,D}) ->
     {ok,{orddict:update_counter({Id,Id},V,P),D}}.
 
 %% Consume a given amount of permissions from a replica.
-decrement(Id,V,{P,D}) -> 
+decrement(Id,V,{P,D}) ->
     {ok, {P,orddict:update_counter(Id,V,D)}}.
 
 %% Transfer a given amount of permissions from one replica to another.
-transfer(From,To,V,{P,D}) -> 
+transfer(From,To,V,{P,D}) ->
     {ok, {orddict:update_counter({From,To},V,P),D}}.
 
 %% doc Return the binary representation of a `bcounter()'.
@@ -221,7 +222,7 @@ localPermisisons_test() ->
     ?assertEqual(10, localPermissions(r1,Counter1)),
     %% Test nonexistent replica.
     ?assertEqual(0, localPermissions(r2,Counter1)).
-    
+
 %% Tests decrement operations.
 decrement_test() ->
     Counter0 = new(),
