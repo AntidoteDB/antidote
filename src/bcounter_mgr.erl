@@ -63,17 +63,26 @@ init([]) ->
     Timer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
     {ok, #state{req_queue=orddict:new(), transfer_timer=Timer, last_transfers=orddict:new()}}.
 
+%% @doc Processes a decrement operation for a bounded counter.
+%% If the operation is unsafe (i.e. the value of the counter can go
+%% below 0), operation fails, otherwhise a downstream for the decrement
+%% is generated.
 generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     gen_server:call(?MODULE, {consume, Key, {decrement, {V,MyDCId}}, BCounter});
 
+%% @doc Processes an increment operation for the bounded counter.
+%% Operation is always safe.
 generate_downstream(_Key, {increment, {Amount, _}}, BCounter) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     ?DATA_TYPE:downstream({increment, {Amount, MyDCId}}, BCounter);
 
+%% @doc Processes a trasfer operation between two owners of the
+%% counter.
 generate_downstream(_Key, {transfer, {Amount, To, From}}, BCounter) ->
     ?DATA_TYPE:downstream({transfer, {Amount, To, From}}, BCounter).
 
+%% @doc Handles a remote transfer request.
 process_transfer({transfer, TransferOp}) ->
     gen_server:cast(?MODULE, {transfer, TransferOp}).
 
