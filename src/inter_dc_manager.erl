@@ -151,6 +151,9 @@ check_node_restart() ->
 	true ->
 	    lager:info("This node was previously configured, will restart from previous config"),
 	    MyNode = node(),
+	    %% Load any env variables
+	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
+	    ok = dc_meta_data_utilities:load_env_meta_data(),
 	    %% Ensure vnodes are running and meta_data
 	    ok = dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
 	    ok = dc_utilities:ensure_local_vnodes_running_master(clocksi_vnode_master),
@@ -159,12 +162,11 @@ check_node_restart() ->
 	    wait_init:wait_ready(MyNode),
 	    ok = dc_utilities:check_registered(meta_data_sender_sup),
 	    ok = dc_utilities:check_registered(meta_data_manager_sup),
-      ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
-      ok = dc_utilities:check_registered(inter_dc_sub),
-      ok = dc_utilities:check_registered(inter_dc_pub),
-      ok = dc_utilities:check_registered(inter_dc_query_response_sup),
-      ok = dc_utilities:check_registered(inter_dc_query),
-	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
+	    ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
+	    ok = dc_utilities:check_registered(inter_dc_sub),
+	    ok = dc_utilities:check_registered(inter_dc_pub),
+	    ok = dc_utilities:check_registered(inter_dc_query_response_sup),
+	    ok = dc_utilities:check_registered(inter_dc_query),
 	    {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
 	    ok = meta_data_sender:start(MetaDataName),
 	    %% Start the timers sending the heartbeats

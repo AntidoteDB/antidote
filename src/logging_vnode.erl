@@ -35,7 +35,6 @@
 -export([start_vnode/1,
 	 is_sync_log/0,
 	 set_sync_log/1,
-	 set_sync_log_internal/1,
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
@@ -210,7 +209,7 @@ request_bucket_op_id(IndexNode, DCID, Bucket, Partition) ->
 %%      Uses environment variable "sync_log" set in antidote.app.src
 -spec is_sync_log() -> boolean().
 is_sync_log() ->
-    application:get_env(antidote,sync_log,false).
+    dc_meta_data_utilities:get_env_meta_data(sync_log,false).
 
 %% @doc Takes as input a boolean to set whether or not items will
 %%      be logged synchronously at this DC (sends a broadcast to update
@@ -219,17 +218,7 @@ is_sync_log() ->
 %%      If false, items will be logged asynchronously
 -spec set_sync_log(boolean()) -> ok.
 set_sync_log(Value) ->
-    Nodes = dc_utilities:get_my_dc_nodes(),
-    %% Update the environment varible on all nodes in the DC
-    lists:foreach(fun(Node) -> 
-			  ok = rpc:call(Node, logging_vnode, set_sync_log_internal, [Value])
-		  end, Nodes).
-
-%% @doc internal function to set syncrounous logging environment variable.
--spec set_sync_log_internal(boolean()) -> ok.
-set_sync_log_internal(Value) ->
-    lager:info("setting sync log ~p at ~p", [Value,node()]),
-    application:set_env(antidote,sync_log,Value).
+    dc_meta_data_utilities:store_env_meta_data(sync_log,Value).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -566,6 +555,7 @@ reverse_and_add_op_id([Next|Rest],Id,Acc) ->
 %% and the maximum vectorclock of the commited transactions stored in the log
 -spec get_last_op_from_log(log_id(), disk_log:continuation() | start, cache_id(), vectorclock()) -> {eof, vectorclock()} | {error, term()}.
 get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
+    ok = disk_log:sync(Log),
     case disk_log:chunk(Log, Continuation) of
 	eof ->
 	    {eof, PrevMaxVector};
