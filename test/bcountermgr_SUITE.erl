@@ -33,7 +33,8 @@
          test_dec_success/1,
          test_dec_fail/1,
          test_dec_multi_success0/1,
-         test_dec_multi_success1/1
+         test_dec_multi_success1/1,
+         conditional_write_test_run/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -41,6 +42,7 @@
 -include_lib("kernel/include/inet.hrl").
 
 -define(TYPE, antidote_crdt_bcounter).
+-define(RETRY_COUNT, 5).
 
 
 init_per_suite(Config) ->
@@ -56,7 +58,8 @@ init_per_suite(Config) ->
     %Check that indeed transactions certification is turned on
     {ok, true} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_cert]),
 
-    [{clusters, Clusters}|Config].
+    [{nodes, Nodes},
+     {clusters, Clusters}|Config].
 
 
 end_per_suite(Config) ->
@@ -73,7 +76,8 @@ all() -> [
          test_dec_success,
          test_dec_fail,
          test_dec_multi_success0,
-         test_dec_multi_success1
+         test_dec_multi_success1,
+         conditional_write_test_run
         ].
 
 %% Tests creating a new `bcounter()'.
@@ -81,8 +85,7 @@ new_bcounter_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Key = bcounter1_mgr,
-    Result = read(Node1, Key),
-    {ok, {_, [Obj], _CommitTime}} = Result,
+    {ok, Obj} = read(Node1, Key),
     ?assertEqual(0, ?TYPE:permissions(Obj)).
 
 test_dec_success(Config) ->
@@ -100,8 +103,8 @@ test_dec_fail(Config) ->
     Actor = dc,
     Key = bcounter3_mgr,
     {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor),
-    _ForcePropagation = read(Node2, Key, CommitTime),
-    Result0 = execute_op(Node2, decrement, Key, 5, Actor),
+    _ForcePropagation = read_si(Node2, Key, CommitTime),
+    Result0 = execute_op_success(Node2, decrement, Key, 5, Actor, 0),
     ?assertEqual({error, no_permissions}, Result0).
 
 test_dec_multi_success0(Config) ->
@@ -109,46 +112,75 @@ test_dec_multi_success0(Config) ->
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Actor = dc,
     Key = bcounter4_mgr,
-    {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor),
-    _ForcePropagation = read(Node2, Key, CommitTime),
-    _Result = execute_op(Node2, decrement, Key, 5, Actor),
-    timer:sleep(1500),
-    {ok, _}  = execute_op(Node2, decrement, Key, 5, Actor),
-    check_read(Node2, Key, 5, CommitTime).
+    {ok, _} = execute_op(Node1, increment, Key, 10, Actor),
+    {ok, CommitTime} = execute_op(Node2, decrement, Key, 5, Actor),
+    check_read(Node1, Key, 5, CommitTime).
 
 test_dec_multi_success1(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Actor = dc,
     Key = bcounter5_mgr,
-    {ok, CommitTime0} = execute_op(Node1, increment, Key, 10, Actor),
-    _ForcePropagation0 = read(Node2, Key, CommitTime0),
-    _Result0 = execute_op(Node2, decrement, Key, 5, Actor),
-    timer:sleep(1500),
-    {ok, CommitTime1}  = execute_op(Node2, decrement, Key, 5, Actor),
-    _ForcePropagation1 = read(Node1, Key, CommitTime1),
+    {ok, _} = execute_op(Node1, increment, Key, 10, Actor),
+    {ok, _} = execute_op(Node2, decrement, Key, 5, Actor),
     {error, no_permissions} = execute_op(Node1, decrement, Key, 6, Actor),
-    timer:sleep(1500),
-    {error, no_permissions} = execute_op(Node1, decrement, Key, 6, Actor),
-    check_read(Node2, Key, 5, CommitTime1),
-    check_read(Node1, Key, 5, CommitTime1).
+    {ok, Obj} = read(Node1, Key),
+    ?assertEqual(5, ?TYPE:permissions(Obj)).
+
+conditional_write_test_run(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    [Node1, Node2 | _OtherNodes] = Nodes,
+    Type = antidote_crdt_bcounter,
+    Key = bcounter6_mgr,
+
+    {ok, {_,_,AfterIncrement}} = rpc:call(Node1, antidote, append,
+        [Key, Type, {increment, {10, r1}}]),
+
+    %% Start a transaction on the first node and perform a read operation.
+    {ok, TxId1} = rpc:call(Node1, antidote, clocksi_istart_tx, [AfterIncrement]),
+    {ok, _} = rpc:call(Node1, antidote, clocksi_iread, [TxId1, Key, Type]),
+    %% Execute a transaction on the last node which performs a write operation.
+    {ok, TxId2} = rpc:call(Node2, antidote, clocksi_istart_tx, [AfterIncrement]),
+    ok = rpc:call(Node2, antidote, clocksi_iupdate,
+             [TxId2, Key, Type, {decrement, {3, r1}}]),
+    CommitTime1 = rpc:call(Node2, antidote, clocksi_iprepare, [TxId2]),
+    ?assertMatch({ok, _}, CommitTime1),
+    End1 = rpc:call(Node2, antidote, clocksi_icommit, [TxId2]),
+    ?assertMatch({ok, _}, End1),
+    {ok, {_,AfterTxn2}} = End1,
+    %% Resume the first transaction and check that it fails.
+    Result0 = rpc:call(Node1, antidote, clocksi_iupdate,
+         [TxId1, Key, Type, {decrement, {3, r1}}]),
+    ?assertEqual(ok, Result0),
+    CommitTime2 = rpc:call(Node1, antidote, clocksi_iprepare, [TxId1]),
+    ?assertEqual({aborted, TxId1}, CommitTime2),
+    %% Test that the failed transaction didn't affect the `bcounter()'.
+    Result1 = rpc:call(Node1, antidote, clocksi_read, [AfterTxn2, Key, Type]),
+    {ok, {_, [Counter1], _}} = Result1,
+    ?assertEqual(7, antidote_crdt_bcounter:permissions(Counter1)).
+
+execute_op(Node, Op, Key, Amount, Actor) ->
+    execute_op_success(Node, Op, Key, Amount, Actor, ?RETRY_COUNT).
 
 %%Auxiliary functions.
-execute_op(Node, Op, Key, Amount, Actor) ->
+execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
     Result = rpc:call(Node, antidote, append,
                       [Key, ?TYPE, {Op, {Amount,Actor}}]),
     case Result of
         {ok, {_,_,CommitTime}} -> {ok, CommitTime};
-        Error -> Error
+        Error when Try == 0 -> Error;
+        _ ->
+            timer:sleep(1000),
+            execute_op_success(Node, Op, Key, Amount, Actor, Try -1)
     end.
 
 read(Node, Key) ->
-    rpc:call(Node, antidote, clocksi_read, [Key, ?TYPE]).
+    rpc:call(Node, antidote, read, [Key, ?TYPE]).
 
-read(Node, Key, CommitTime) ->
+read_si(Node, Key, CommitTime) ->
     rpc:call(Node, antidote, clocksi_read, [CommitTime, Key, ?TYPE]).
 
 check_read(Node, Key, Expected, CommitTime) ->
-    {ok, {_, [Obj], _}} = read(Node, Key, CommitTime),
+    {ok, {_, [Obj], _}} = read_si(Node, Key, CommitTime),
     ?assertEqual(Expected, ?TYPE:permissions(Obj)).
 
