@@ -25,7 +25,7 @@
   get_my_dc_nodes/0,
   call_vnode_sync/3,
   bcast_vnode_sync/2,
-  bcast_my_vnode_sync/2,	 
+  bcast_my_vnode_sync/2,
   partition_to_indexnode/1,
   call_vnode/3,
   call_local_vnode/3,
@@ -43,7 +43,7 @@
   get_scalar_stable_time/0,
   get_partition_snapshot/1,
   get_stable_snapshot/0,
-  check_registered_global/1,	 
+  check_registered_global/1,
   now/0,
   now_microsec/0,
   now_millisec/0]).
@@ -196,7 +196,7 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
     end.
 
 %% Loops until all vnodes of a given type are running
-%% on the local phyical node from which this was funciton called  
+%% on the local phyical node from which this was funciton called
 -spec ensure_local_vnodes_running_master(atom()) -> ok.
 ensure_local_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
@@ -225,6 +225,7 @@ check_staleness() ->
 check_registered(Name) ->
     case whereis(Name) of
 	undefined ->
+      lager:info("Wait for ~p to register", [Name]),
 	    timer:sleep(100),
 	    check_registered(Name);
 	_ ->
@@ -243,7 +244,7 @@ get_stable_snapshot() ->
 	    get_stable_snapshot();
 	SS ->
             case application:get_env(antidote, txn_prot) of
-                {ok, clocksi} -> 
+                {ok, clocksi} ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
                     %% to riak core meta-data) otherwise will have to change this
                     {ok, SS};
@@ -252,15 +253,15 @@ get_stable_snapshot() ->
                     %% But, replicate GST to all entries in the dict
                     StableSnapshot = SS,
                     case dict:size(StableSnapshot) of
-                        0 -> 
+                        0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            ListTime = dict:fold( 
+                            ListTime = dict:fold(
                                          fun(_Key, Value, Acc) ->
                                                  [Value | Acc ]
                                          end, [], StableSnapshot),
                             GST = lists:min(ListTime),
-                            {ok, dict:map( 
+                            {ok, dict:map(
                                    fun(_K, _V) ->
                                            GST
                                    end,
@@ -283,12 +284,12 @@ get_partition_snapshot(Partition) ->
 %% Returns the minimum value in the stable vector snapshot time
 %% Useful for gentlerain protocol.
 -spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
-get_scalar_stable_time() ->   
+get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
     %% dict:is_empty/1 is not available, hence using dict:size/1
     %% to check whether it is empty
     case dict:size(StableSnapshot) of
-        0 -> 
+        0 ->
             %% This case occur when updates from remote replicas has not yet received
             %% or when there are no remote replicas
             %% Since with current setup there is no mechanism
@@ -297,9 +298,9 @@ get_scalar_stable_time() ->
             {ok, Now, StableSnapshot};
         _ ->
             %% This is correct only if stablesnapshot has entries for
-            %% all DCs. Inorder to check that we need to configure the 
+            %% all DCs. Inorder to check that we need to configure the
             %% number of DCs in advance, which is not possible now.
-            ListTime = dict:fold( 
+            ListTime = dict:fold(
                          fun(_Key, Value, Acc) ->
                                  [Value | Acc ]
                          end, [], StableSnapshot),
