@@ -182,6 +182,9 @@ receive_prepared({prepared, ReceivedPrepareTime},
     end;
 
 %% When receiving external reads
+receive_prepared({external_read_resp, {error, dcs_remain, Req}}, S0) ->
+    ok = partial_repli_utils:perform_external_read(Req),
+    {next_state, receive_prepared, S0};
 receive_prepared({external_read_resp, BinaryRep}, S0) ->
     {external_read_rep, Key, Type, Snapshot} = binary_to_term(BinaryRep),
     receive_prepared({ok, {Key, Type, Snapshot}}, S0);
@@ -226,6 +229,9 @@ receive_prepared(timeout, S0) ->
     {next_state, abort, S0, 0}.
 
 %% When receiving external reads
+single_committing({external_read_resp, {error, dcs_remain, Req}}, S0) ->
+    ok = partial_repli_utils:perform_external_read(Req),
+    {next_state, single_committing, S0};
 single_committing({external_read_resp, BinaryRep}, S0) ->
     {external_read_rep, Key, Type, Snapshot} = binary_to_term(BinaryRep),
     single_committing({ok, {Key, Type, Snapshot}}, S0);

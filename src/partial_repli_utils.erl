@@ -60,9 +60,9 @@ deliver_external_read_resp(BinaryRep,RequestCacheEntry) when is_binary(BinaryRep
     end;
 deliver_external_read_resp(timeout,RequestCacheEntry =
 			       #request_cache_entry{extra_state = ReadReq}) ->
+    Coordinator = RequestCacheEntry#request_cache_entry.req_pid,
     case ReadReq#external_read_request_state.dc_list of
 	[] ->
-	    Coordinator = RequestCacheEntry#request_cache_entry.req_pid,
 	    case Coordinator of
 		{fsm, Sender} -> %% Return Type and Value directly here.
 		    lager:info("no where to read, aboting the transaction"),
@@ -71,16 +71,25 @@ deliver_external_read_resp(timeout,RequestCacheEntry =
 		    Coordinator ! {external_read_resp, {error, no_dcs}}
 	    end;
 	[_First|_Rest] ->
-	    ok = perform_external_read(ReadReq)
+	    %% Tell the coordinator to retry with the new readreq state at another DC
+	    case Coordinator of
+		{fsm, Sender} ->
+		    gen_fsm:send_event(Sender, {external_read_resp, {error, dcs_remain, ReadReq}});
+		_ ->
+		    Coordinator ! {external_read_resp, {error, dcs_remain, ReadReq}}
+	    end
     end.
 
 -spec wait_for_external_read_resp() -> {ok, snapshot()} | {error, no_dcs}.
 wait_for_external_read_resp() ->
     receive
-	{external_read_resp, BinaryRep} ->
+	{external_read_resp, BinaryRep} when is_binary(BinaryRep) ->
 	    {external_read_rep, _Key, _Type, Snapshot} = binary_to_term(BinaryRep),
 	    {ok, Snapshot};
-	{error, no_dcs} ->
+	{external_read_resp, {error, dcs_remain, ReadReq}} ->
+	    ok = perform_external_read(ReadReq),
+	    wait_for_external_read_resp();
+	{external_read_resp, {error, no_dcs}} ->
 	    {error, no_dcs}
     end.
 
