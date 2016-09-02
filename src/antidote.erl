@@ -25,7 +25,7 @@
 -include("antidote.hrl").
 
 %% API for applications
--export([
+-export([ start/0, stop/0,
          start_transaction/2,
          start_transaction/3,
          read_objects/2,
@@ -78,6 +78,15 @@
 
 %% Public API
 
+-spec start() -> {ok, _} | {error, term()}.
+start() ->
+  application:ensure_all_started(antidote).
+
+-spec stop() -> ok.
+stop() ->
+  application:stop(antidote).
+
+
 -spec start_transaction(Clock::snapshot_time() | ignore , Properties::txn_properties(), boolean())
                        -> {ok, txid()} | {error, reason()}.
 start_transaction(Clock, Properties, KeepAlive) ->
@@ -126,22 +135,20 @@ read_objects(Objects, TxId) ->
 -spec update_objects([{bound_object(), op_name(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    %% TODO: How to generate Actor,
-    %% Actor ID must be removed from crdt update interface
-    Actor = TxId,
     %% Execute each update as in an interactive transaction
     Results = lists:map(
                 fun({{Key, Type, Bucket}, Op, OpParam}) ->
                         case clocksi_iupdate(TxId, {Key, Bucket}, Type,
-                                             {{Op, OpParam}, Actor}) of
+                                             {Op, OpParam}) of
                             ok -> ok;
-                            {error, _Reason} ->
+                            {error, Reason} ->
+                                lager:debug("Update failed. Reason : ~p",[Reason]),
                                 error
                         end
                 end, Updates),
     case lists:member(error, Results) of
-        true -> {error, read_failed}; %% TODO: Capture the reason for error
-        false -> ok
+       true -> {error, update_failed}; %% TODO: Capture the reason for error
+       false -> ok
     end.
 
 %% For static transactions: bulk updates and bulk reads
@@ -151,21 +158,20 @@ update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
 
 update_objects(Clock, Properties, Updates, StayAlive) ->
-    Actor = actor, %% TODO: generate unique actors
     Operations = lists:map(
                    fun({{Key, Type, Bucket}, Op, OpParam}) ->
-                           {update, {{Key, Bucket}, Type, {{Op,OpParam}, Actor}}}
+                           {update, {{Key, Bucket}, Type, {Op,OpParam}}}
                    end,
                    Updates),
     SingleKey = case Operations of
                     [_O] -> %% Single key update
-                        case Clock of 
+                        case Clock of
                             ignore -> true;
                             _ -> false
                         end;
                     [_H|_T] -> false
                 end,
-    case SingleKey of 
+    case SingleKey of
         true ->  %% if single key, execute the fast path
             [{update, {K, T, Op}}] = Operations,
             case append(K, T, Op, Properties) of
@@ -193,7 +199,7 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
              Objects),
     SingleKey = case Args of
                     [_O] -> %% Single key update
-                        case Clock of 
+                        case Clock of
                             ignore -> true;
                             _ -> false
                         end;
@@ -297,7 +303,7 @@ register_post_hook(Bucket, Module, Function) ->
 register_pre_hook(Bucket, Module, Function) ->
     antidote_hooks:register_pre_hook(Bucket, Module, Function).
 
--spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.    
+-spec unregister_hook(pre_commit | post_commit, bucket()) -> ok.
 unregister_hook(Prefix, Bucket) ->
     antidote_hooks:unregister_hook(Prefix, Bucket).
 
@@ -305,19 +311,18 @@ unregister_hook(Prefix, Bucket) ->
 %% OLD API, We might still need them
 
 
-append(Key, Type, {OpParams, Actor}) ->
-    append(Key, Type, {OpParams, Actor}, []).
+append(Key, Type, OpParams) ->
+    append(Key, Type, OpParams, []).
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}, list()) ->
+-spec append(key(), type(), op(), list()) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {OpParams, Actor}, Properties) ->
+append(Key, Type, OpParams, Properties) ->
     case materializer:check_operations([{update,
-                                         {Key, Type, {OpParams, Actor}}}]) of
-        ok ->
-            clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_update(Key, Type,{OpParams,Actor}, Properties);
+                                         {Key, Type, OpParams}}]) of
+        ok -> clocksi_interactive_tx_coord_fsm:
+		  perform_singleitem_update(Key, Type, OpParams, Properties);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -521,7 +526,7 @@ gr_snapshot_read(ClientClock, Args) ->
         true ->
             %% Set all entries in snapshot as GST
             ST = dict:map(fun(_,_) -> GST end, VST),
-            %% ST doesnot contain entry for local dc, hence explicitly 
+            %% ST doesnot contain entry for local dc, hence explicitly
             %% add it in snapshot time
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
             clocksi_execute_tx(SnapshotTime, Args, [{update_clock,false}]);

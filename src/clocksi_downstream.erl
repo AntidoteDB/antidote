@@ -30,30 +30,14 @@
     Type :: type(), Update :: {op(), actor()}, list()) ->
     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
-    {Op, Actor} = Update,
+    %% TODO: Check if read can be omitted for some types and ops
     case clocksi_vnode:read_data_item(Node,
-        Transaction,
-        Key,
-        Type,
-        WriteSet) of
+                                      Transaction,
+                                      Key,
+                                      Type,
+                                      WriteSet) of
         {ok, Snapshot} ->
-            TypeString = lists:flatten(io_lib:format("~p", [Type])),
-            case string:str(TypeString, "riak_dt") of
-                0 -> %% dealing with an op_based crdt
-                    case Type:generate_downstream(Op, Actor, Snapshot) of
-                        {ok, OpParam} ->
-                            {ok, {update, OpParam}};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
-                1 -> %% dealing with a state_based crdt
-                    case Type:update(Op, Actor, Snapshot) of
-                        {ok, NewState} ->
-                            {ok, {merge, NewState}};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end
-            end;
+            Type:downstream(Update, Snapshot);            
         {error, Reason} ->
             {error, Reason}
     end.

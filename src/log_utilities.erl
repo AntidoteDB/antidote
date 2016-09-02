@@ -62,6 +62,7 @@ get_primaries_preflist(Key)->
     Pos = Key rem NumPartitions + 1,
     [dc_meta_data_utilities:get_partition_at_index(Pos)].
 
+-spec get_my_node(partition_id()) -> node().
 get_my_node(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:index_owner(Ring, Partition).

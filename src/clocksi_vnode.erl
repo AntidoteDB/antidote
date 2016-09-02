@@ -381,7 +381,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
     #state{partition = _Partition} = State) ->
     TxId = Transaction#transaction.txn_id,
     case Updates of
-        [{Key, _Type, {_Op, _Actor}} | _Rest] ->
+        [{Key, _Type,  _Update} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
@@ -453,7 +453,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
     case certification_check(Transaction, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
-                [{Key, _, {_Op, _Actor}} | _] ->
+                [{Key, _Type, _Update} | _] ->
 		    TxId = Transaction#transaction.txn_id,
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = now_microsec(dc_utilities:now()),
@@ -475,7 +475,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
-set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) ->
+set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
@@ -492,9 +492,10 @@ set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) 
 
 reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
-reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
+reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
@@ -505,7 +506,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 			    log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
 							     snapshot_time = Transaction#transaction.vec_snapshot_time}},
     case Updates of
-        [{Key, _Type, {_Op, _Param}} | _Rest] ->
+        [{Key, _Type, _Update} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of
 		{ok, true} ->
 		    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
@@ -534,18 +535,18 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %% @doc clean_and_notify:
 %%      This function is used for cleanning the state a transaction
 %%      stores in the vnode while it is being procesed. Once a
-%%      transaction commits or aborts, it is necessary to clean the 
+%%      transaction commits or aborts, it is necessary to clean the
 %%      prepared record of a transaction T. There are three possibility
 %%      when trying to clean a record:
 %%      1. The record is prepared by T (with T's TxId).
-%%          If T is being committed, this is the normal. If T is being 
-%%          aborted, it means T successfully prepared here, but got 
+%%          If T is being committed, this is the normal. If T is being
+%%          aborted, it means T successfully prepared here, but got
 %%          aborted somewhere else.
 %%          In both cases, we should remove the record.
 %%      2. The record is empty.
 %%          This can only happen when T is being aborted. What can only
 %%          only happen is as follows: when T tried to prepare, someone
-%%          else has already prepared, which caused T to abort. Then 
+%%          else has already prepared, which caused T to abort. Then
 %%          before the partition receives the abort message of T, the
 %%          prepared transaction gets processed and the prepared record
 %%          is removed.
@@ -553,7 +554,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %%      3. The record is prepared by another transaction M.
 %%          This can only happen when T is being aborted. We can not
 %%          remove M's prepare record, so we should not do anything
-%%          either. 
+%%          either.
 clean_and_notify(TxId, Updates, #state{
     prepared_tx = PreparedTx, prepared_dict = PreparedDict}) ->
     ok = clean_prepared(PreparedTx, Updates, TxId),
@@ -566,7 +567,7 @@ clean_and_notify(TxId, Updates, #state{
 
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
-clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
+clean_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];

@@ -25,6 +25,9 @@
 %% Public API
 %% ===================================================================
 
+-define(DC_CONNECT_RETRIES,5).
+-define(DC_CONNECT_RETY_SLEEP,1000).
+
 -export([
   get_descriptor/0,
   start_bg_processes/1,
@@ -80,14 +83,17 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 			lists:foldl(fun(Partition,{[FirstNode|RestNode],AccDict}) ->
 					    {RestNode ++ [FirstNode], dict:append(FirstNode,Partition,AccDict)}
 				    end, dict:new(), DifferentPartitions),
-		    connect_nodes(Nodes, NodePartitionDict, DCID, LogReaders, Publishers, Desc)
+		    connect_nodes(Nodes, NodePartitionDict, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES)
 	    end
     end.
 
--spec connect_nodes([node()], dict(), dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
-connect_nodes([], _MyNodes, _DCID, _LogReaders, _Publishers, _Desc) ->
+-spec connect_nodes([node()], dict(), dcid(), [socket_address()], [socket_address()], #descriptor{}, non_neg_integer()) -> ok | {error, connection_error}.
+connect_nodes([], _MyNodes, _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
-connect_nodes([Node|Rest], NodePartitionDict, DCID, LogReaders, Publishers, Desc) ->
+connect_nodes(_Nodes, _MyNodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->
+    ok = forget_dc(Desc),
+    {error, connection_error};    
+connect_nodes([Node|Rest], NodePartitionDict, DCID, LogReaders, Publishers, Desc, Retries) ->
     case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
 	ok ->
 	    OtherPart = case dict:find(Node,NodePartitionDict) of
@@ -95,16 +101,16 @@ connect_nodes([Node|Rest], NodePartitionDict, DCID, LogReaders, Publishers, Desc
 			    error -> [] end,
 	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers, OtherPart], ?COMM_TIMEOUT) of
 		ok ->
-		    connect_nodes(Rest, NodePartitionDict, DCID, LogReaders, Publishers, Desc);
+		    connect_nodes(Rest, NodePartitionDict, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES);
 		_ ->
+		    timer:sleep(?DC_CONNECT_RETY_SLEEP),
 		    lager:error("Unable to connect to publisher ~p", [DCID]),
-		    ok = forget_dc(Desc),
-		    {error, connection_error}
+		    connect_nodes([Node|Rest], NodePartitionDict, DCID, LogReaders, Publishers, Desc, Retries - 1)
 	    end;
 	_ ->
+	    timer:sleep(?DC_CONNECT_RETY_SLEEP),
 	    lager:error("Unable to connect to log reader ~p", [DCID]),
-	    ok = forget_dc(Desc),
-	    {error, connection_error}
+	    connect_nodes([Node|Rest], NodePartitionDict, DCID, LogReaders, Publishers, Desc, Retries - 1)
     end.
 
 %% This should not be called untilt the local dc's ring is merged
@@ -117,7 +123,7 @@ start_bg_processes(MetaDataName) ->
     ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(materializer_vnode_master),
-    lists:foreach(fun(Node) -> 
+    lists:foreach(fun(Node) ->
 			  true = wait_init:wait_ready(Node),
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
@@ -159,6 +165,9 @@ check_node_restart() ->
 	true ->
 	    lager:info("This node was previously configured, will restart from previous config"),
 	    MyNode = node(),
+	    %% Load any env variables
+	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
+	    ok = dc_meta_data_utilities:load_env_meta_data(),
 	    %% Ensure vnodes are running and meta_data
 	    ok = dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
 	    ok = dc_utilities:ensure_local_vnodes_running_master(clocksi_vnode_master),
@@ -167,7 +176,11 @@ check_node_restart() ->
 	    wait_init:wait_ready(MyNode),
 	    ok = dc_utilities:check_registered(meta_data_sender_sup),
 	    ok = dc_utilities:check_registered(meta_data_manager_sup),
-	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
+	    ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
+	    ok = dc_utilities:check_registered(inter_dc_sub),
+	    ok = dc_utilities:check_registered(inter_dc_pub),
+	    ok = dc_utilities:check_registered(inter_dc_query_response_sup),
+	    ok = dc_utilities:check_registered(inter_dc_query),
 	    {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
 	    ok = meta_data_sender:start(MetaDataName),
 	    %% Start the timers sending the heartbeats
@@ -252,7 +265,7 @@ drop_ping(DropPing) ->
     %% Be sure they all returned ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->
 			       ok
-		       end, Responses).    
+		       end, Responses).
 
 %%%%%%%%%%%%%
 %% Utils

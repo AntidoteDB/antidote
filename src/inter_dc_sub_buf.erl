@@ -181,11 +181,11 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
     case queue:peek(Queue) of
 	empty -> State#inter_dc_sub_buf{state_name = normal};
 	{value, Txn} ->
-	    case inter_dc_txn:is_ping(Txn) of
-		true ->
-		    lager:info("got a ping at partition ~w", [LocalPartition]);
-		false -> ok
-	    end,
+	    %% case inter_dc_txn:is_ping(Txn) of
+	    %% 	true ->
+	    %% 	    lager:info("got a ping at partition ~w", [LocalPartition]);
+	    %% 	false -> ok
+	    %% end,
 	    TxnLast = get_prev_op_id(Txn,LocalPartition),
 	    case cmp(TxnLast, Last) of
 		

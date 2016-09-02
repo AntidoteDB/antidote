@@ -79,10 +79,11 @@ get_registered_name() ->
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() ->
-    gen_server:start_link({global, get_registered_name()}, ?MODULE, [], []).
+    gen_server:start_link({local,?MODULE}, ?MODULE, [], []).
 
 init([]) ->
     [Partition|_Rest] = dc_utilities:get_my_partitions(),
+    _ = global:register_name(get_registered_name(),self()),
     {ok, #state{timer = none,
 		ready = false,
 		partition = Partition,

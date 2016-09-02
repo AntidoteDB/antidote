@@ -34,10 +34,12 @@
 -export([
 	 check_tables_ready/0,
 	 sync_meta_data/0,
+	 broadcast_meta_data_env/2,
 	 broadcast_meta_data/2,
 	 broadcast_meta_data_list/1,
 	 broadcast_meta_data_merge/4,
 	 generate_server_name/1,
+	 read_all_meta_data/0,
 	 read_meta_data/1]).
 	 
 %% Internal API
@@ -77,6 +79,10 @@ read_meta_data(Key) ->
 	    {ok, Value}
     end.
 
+-spec read_all_meta_data() -> [tuple()].
+read_all_meta_data() ->
+    ets:tab2list(?TABLE_NAME).
+
 %% Tells each node in the DC to broadcast all its entries to all other DCs
 -spec sync_meta_data() -> ok.
 sync_meta_data() ->
@@ -90,15 +96,24 @@ sync_meta_data() ->
 broadcast_meta_data_list(KeyValueList) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, KeyValueList})
+			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, KeyValueList, false})
 		       end, NodeList).    
+
+%% Broadcasts a key, value pair to all nodes in the DC
+-spec broadcast_meta_data_env({env, atom()}, term()) -> ok.
+broadcast_meta_data_env(Key, Value) ->
+    broadcast_meta_data_internal(Key, Value, true).
 
 %% Broadcasts a key, value pair to all nodes in the DC
 -spec broadcast_meta_data(term(), term()) -> ok.
 broadcast_meta_data(Key, Value) ->
+    broadcast_meta_data_internal(Key, Value, false).
+
+-spec broadcast_meta_data_internal(term(), term(), boolean()) -> ok.
+broadcast_meta_data_internal(Key, Value, IsEnv) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, [{Key, Value}]})
+			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, [{Key, Value}], IsEnv})
 		       end, NodeList).    
 
 %% Broadcasts a key, value pair to all nodes in the DC
@@ -141,7 +156,14 @@ init([]) ->
 handle_cast(_Info, State) ->
     {noreply, State}.
 
-handle_call({update_meta_data, KeyValueList}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
+handle_call({update_meta_data, KeyValueList, IsEnv}, _Sender, State = #state{table = Table, dets_table = DetsTable}) ->
+    case IsEnv of
+	true ->
+	    lists:foreach(fun({{env,Key}, Val}) ->
+				  application:set_env(antidote,Key,Val)
+			  end, KeyValueList);
+	false -> ok
+    end,
     true = ets:insert(Table, KeyValueList),
     ok = dets:insert(DetsTable, KeyValueList),
     ok = dets:sync(DetsTable),

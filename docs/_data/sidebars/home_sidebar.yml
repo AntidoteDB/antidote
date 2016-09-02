@@ -50,7 +50,15 @@ entries:
 
   - title: API
     output: web, pdf
-    url: /API.html
+    folderitems:
+
+    - title: Raw API
+      url: /rawapi.html
+      output: web, pdf
+
+    - title: Protocol Buffer
+      url: /api.html
+      output: web, pdf
 
   - title: Release Notes
     output: web, pdf

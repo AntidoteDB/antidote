@@ -61,13 +61,13 @@ decode(Code, Bin) ->
         #apbstaticupdateobjects{} ->
             {ok, Msg, {"antidote.staticupdateobjects",<<>>}};
         #apbstaticreadobjects{} ->
-            {ok, Msg, {"antidote.staticreadobjects",<<>>}};
-        #apbgetobjects{} ->
-            {ok, Msg, {"antidote.getobjects",<<>>}};
-        #apbgetlogoperations{} ->
-            {ok, Msg, {"antidote.getlogoperations",<<>>}};
-	#apbjsonrequest{} ->
-            {ok, Msg, {"antidote.jsonrequest",<<>>}}
+            {ok, Msg, {"antidote.staticreadobjects",<<>>}}
+        %% #apbgetobjects{} ->
+        %%     {ok, Msg, {"antidote.getobjects",<<>>}};
+        %% #apbgetlogoperations{} ->
+        %%     {ok, Msg, {"antidote.getlogoperations",<<>>}};
+	%% #apbjsonrequest{} ->
+        %%     {ok, Msg, {"antidote.jsonrequest",<<>>}}
     end.
 
 %% @doc encode/1 callback. Encodes an outgoing response message.
@@ -76,8 +76,12 @@ encode(Message) ->
 
 process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
         State) ->
-    Clock = antidote_pb_codec:decode(vectorclock,BClock),
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    %%Clock = antidote_pb_codec:decode(vectorclock,BClock),
+    Clock = binary_to_term(BClock),
+    Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
+		     {} -> [];
+		     Other -> Other
+		 end,
     process({start_transaction, Clock, Properties, proto_buf}, State);
 
 process({start_transaction, Clock, Properties, ReplyType}, State) ->
@@ -190,8 +194,12 @@ process(#apbstaticupdateobjects{
            transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            updates=BUpdates},
         State) ->
-    Clock = antidote_pb_codec:decode(vectorclock,BClock),
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    %%Clock = antidote_pb_codec:decode(vectorclock,BClock),
+    Clock = binary_to_term(BClock),
+    Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
+		     {} -> [];
+		     Other -> Other
+		 end,
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
@@ -216,8 +224,12 @@ process(#apbstaticreadobjects{
            transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            objects=BoundObjects},
         State) ->
-    Clock = antidote_pb_codec:decode(vectorclock,BClock),
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    %%Clock = antidote_pb_codec:decode(vectorclock,BClock),
+    Clock = binary_to_term(BClock),
+    Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
+		     {} -> [];
+		     Other -> Other
+		 end,
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
@@ -239,17 +251,17 @@ process({static_read_objects,Clock,Properties,Objects,ReplyType},State) ->
              State}
     end;
 
-%% For legion clients
-process(#apbjsonrequest{value=JValue},State) ->
-    lager:info("The json binary request is ~p",[JValue]),
-    Req = antidote_pb_codec:decode_json(jsx:decode(JValue,[{labels,atom}])),
-    process(Req,State);
+%% %% For legion clients
+%% process(#apbjsonrequest{value=JValue},State) ->
+%%     lager:info("The json binary request is ~p",[JValue]),
+%%     Req = antidote_pb_codec:decode_json(jsx:decode(JValue,[{labels,atom}])),
+%%     process(Req,State);
 
-process(#apbgetobjects{boundobjects=BoundObjects},State) ->
-    Objects = lists:map(fun(O) ->
-                                antidote_pb_codec:decode(bound_object, O) end,
-                        BoundObjects),
-    process({get_objects,Objects,proto_buf},State);
+%% process(#apbgetobjects{boundobjects=BoundObjects},State) ->
+%%     Objects = lists:map(fun(O) ->
+%%                                 antidote_pb_codec:decode(bound_object, O) end,
+%%                         BoundObjects),
+%%     process({get_objects,Objects,proto_buf},State);
 
 process({get_objects,Objects,Type},State) ->
     ReplyType = case Type of
@@ -270,16 +282,16 @@ process({get_objects,Objects,Type},State) ->
 	    end,
     {reply, Reply, State};
 
-process(#apbgetlogoperations{timestamps=BClocks,boundobjects=BoundObjects}, State) ->
-    Objects =
-	lists:map(fun(O) ->
-			  antidote_pb_codec:decode(bound_object, O)
-		  end, BoundObjects),
-    Clocks =
-	lists:map(fun(C) ->
-			  antidote_pb_codec:decode(vectorclock, C)
-		  end, BClocks),
-    process({get_log_operations,Objects,Clocks,proto_buf},State);
+%% process(#apbgetlogoperations{timestamps=BClocks,boundobjects=BoundObjects}, State) ->
+%%     Objects =
+%% 	lists:map(fun(O) ->
+%% 			  antidote_pb_codec:decode(bound_object, O)
+%% 		  end, BoundObjects),
+%%     Clocks =
+%% 	lists:map(fun(C) ->
+%% 			  antidote_pb_codec:decode(vectorclock, C)
+%% 		  end, BClocks),
+%%     process({get_log_operations,Objects,Clocks,proto_buf},State);
 
 process({get_log_operations,Objects,Clocks,Type},State) ->
     ReplyType = case Type of

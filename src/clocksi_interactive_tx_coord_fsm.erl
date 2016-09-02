@@ -356,6 +356,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
                     {error, Reason}
             end;
         {error, Reason} ->
+            lager:debug("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason}
     end.
 
@@ -385,7 +386,7 @@ execute_op({OpType, Args}, Sender,
         update ->
             case perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) of
                 {error, _Reason} ->
-                    abort(SD0);
+                    abort(SD0#tx_coord_state{from = Sender});
                 {NewUpdatedPartitions, NewClientOps} ->
                     {next_state, execute_op,
                         SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions,
