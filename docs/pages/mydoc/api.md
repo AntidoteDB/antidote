@@ -21,7 +21,9 @@ A client should first start a transaction, then read and/or update multiple obje
 All transaction functions take as first parameter the process identifier (pid) of the local Antidote proxy. 
 Calling `antidotec_pb_socket:start(?ADDRESS, ?PORT)` starts this proxy and returns its pid.
 
-* `start_transaction(Pid::term(), Timestamp::term(), TxnProperties::term())
+### Start a transaction
+
+  * `start_transaction(Pid::term(), Timestamp::term(), TxnProperties::term())
         -> {ok, TxnId::term()} | {error, Reason::term()}`
 
   This function starts a new transaction and returns a transaction identifier.
@@ -31,34 +33,26 @@ Calling `antidotec_pb_socket:start(?ADDRESS, ?PORT)` starts this proxy and retur
   Currently, only one property is supported:  `static = true` starts a static transaction, 
   while `static = false` initiates an interactive transaction (default).
 
-  Example usage:
+#### Example
 
-  ```erlang
-        %% If there is no dependency information available or required, 
-        %% pass ignore as clock value.
-        Clock = term_to_binary(ignore),
-        %% Initiate a static transaction
-        {ok, TxId} = antidotec_pb:start_transaction(Pid, Clock, [{static=true}]). 
-  ```
+```erlang
+    %% If there is no dependency information available or required, 
+    %% pass ignore as clock value.
+    Clock = term_to_binary(ignore),
+    %% Initiate a static transaction
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, Clock, [{static=true}]). 
+```
 
-* `read_objects (Pid, [bound_object], transaction_descriptor) --> {ok, Values}`
-
-  reads a set of keys.
-  Example:
-
-  ```erlang
-        {ok, [Val1, Val2]} = antidotec_pb:read_objects(Pid, [O1, O2], TxId),
-        Value = antidotec_counter:value(Val1). %% Assuming O1 is of type counter
-  ```
-
-* `update_objects(Pid::term(), Updates::[{term(), term(), term()}], TxId::term()) -> ok | {error, term()}`
-
-  The `update` function takes a set of object with the operations and corresponding parameters as list of triples. 
-  More on data types and operations can be found [here](#pb_datatypes) .
+### Reading and updating objects
+  * `read_objects(Pid::term(), Objects::[term()], TxId::term()) -> {ok, [term()]}  | {error, term()}` reads a set of keys.
   
-  Example:
+  * `update_objects(Pid::term(), Updates::[{term(), term(), term()}], TxId::term()) -> ok | {error, term()}` 
+   takes a set of object with the operations and corresponding parameters as list of triples. 
+   More on data types and operations can be found [here](#pb_datatypes).
+  
+####  Example
 
-  ```erlang
+```erlang
     %% Information on key, type, and bucket
     KeyInfo = {Key, antidote_crdt_counter, <<"bucket">>},
     %% Create a new counter update proxy locally
@@ -66,7 +60,15 @@ Calling `antidotec_pb_socket:start(?ADDRESS, ?PORT)` starts this proxy and retur
     %% Increment the counter by 1
     Obj = antidotec_counter:increment(1, Cntr),
     ok = antidotec_pb:update_objects(Pid, antidotec_counter:to_ops(KeyInfor, Obj), TxId).
-  ```
+
+    Obj1 = {Key1, antidote_crdt_counter, <<"bucket">>},
+    Obj2 = {Key2, antidote_crdt_counter, <<"bucket">>},
+    %% Read values of two objects
+    {ok, [Val1, Val2]} = antidotec_pb:read_objects(Pid, [Obj1, Obj2], TxId),
+    Value = antidotec_counter:value(Val1). %% assuming Obj1 is of type counter
+```
+
+### Finalizing a transaction
 
   * `commit_transaction(Pid::term(), TxId::term()}) -> {ok, term()} | {error, term()}`
   
@@ -74,13 +76,13 @@ Calling `antidotec_pb_socket:start(?ADDRESS, ?PORT)` starts this proxy and retur
   All updates then performed against the stored data.
   These modifications are observable by later transactions that are (transitively) dependent on this transaction.
 
-* `abort_transaction(Pid::term(), TxId::term()) -> ok`
+  * `abort_transaction(Pid::term(), TxId::term()) -> ok`
 
   Transactions can be stopped and canceled by calling `abort_transaction`.
   All updates for this transaction are then revoked.
 
 
-### Example
+#### Example
 The following code snippet increments two counters atomically.
 
 ```erlang
