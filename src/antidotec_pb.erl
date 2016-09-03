@@ -31,7 +31,7 @@
 -define(TIMEOUT, 10000).
 
 -spec start_transaction(Pid::term(), TimeStamp::term(), TxnProperties::term())
-        -> {ok,{interactive,term()} | {static,{term(),term()}}} | {error, term()}.
+        -> {ok, {interactive, term()} | {static, {term(), term()}}} | {error, term()}.
 start_transaction(Pid, TimeStamp, TxnProperties) ->
     case is_static(TxnProperties) of
         true -> 
@@ -89,7 +89,7 @@ commit_transaction(Pid, {static, _TxId}) ->
              {ok, CommitTime}
     end.
 
-%%-spec update_objects(Pid::term(), Updates::[{bound_object(), op(), op_parm()}], TxId::term()) -> ok | {error, term()}.
+-spec update_objects(Pid::term(), Updates::[{term(), term(), term()}], TxId::term()) -> ok | {error, term()}.
 update_objects(Pid, Updates, {interactive, TxId}) ->
     EncMsg = antidote_pb_codec: encode(update_objects, {Updates, TxId}),
     Result = antidotec_pb_socket: call_infinity(Pid,{req, EncMsg, ?TIMEOUT}),
@@ -119,10 +119,10 @@ update_objects(Pid, Updates, {static, TxId}) ->
             end
     end.
             
-
+-spec read_objects(Pid::term(), Objects::[term()], TxId::term()) -> {ok, [term()]}  | {error, term()}.
 read_objects(Pid, Objects, {interactive, TxId}) ->
     EncMsg = antidote_pb_codec:encode(read_objects, {Objects, TxId}),
-    Result = antidotec_pb_socket:call_infinity(Pid,{req, EncMsg, ?TIMEOUT}),
+    Result = antidotec_pb_socket:call_infinity(Pid, {req, EncMsg, ?TIMEOUT}),
     case Result of
         {error, timeout} -> {error, timeout};
         _ ->
