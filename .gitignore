@@ -1,0 +1,3 @@
+.local_dialyzer_plt
+deps/
+ebin/
