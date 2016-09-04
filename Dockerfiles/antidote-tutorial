@@ -11,9 +11,11 @@ RUN cd /tmp && \
     cd otp_src_R16B03 && \
     ./configure && \
     make && \
-    make install
-
-CMD cd /opt && \
+    make install && \
+    cd /opt && \
     git clone https://github.com/SyncFree/antidote.git && \
     cd antidote && \
-    DEBUG=1 make
+    make && \
+    make rel
+
+CMD /opt/antidote/_build/default/rel/antidote/bin/antidote console
