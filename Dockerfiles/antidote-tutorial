@@ -1,0 +1,16 @@
+FROM ubuntu:xenial
+
+MAINTAINER Christopher Meiklejohn <christopher.meiklejohn@gmail.com>
+
+RUN cd /tmp && \
+    apt-get update && \
+    apt-get -y install wget build-essential make gcc ruby-dev git expect gnuplot && \
+    apt-get -y install libncurses5-dev libssl-dev && \
+    wget http://erlang.org/download/otp_src_R16B03.tar.gz && \
+    tar zxvf otp_src_R16B03.tar.gz && \
+    cd otp_src_R16B03 && \
+    ./configure && \
+    make && \
+    make install
+
+CMD cd /opt
