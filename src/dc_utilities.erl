@@ -99,7 +99,7 @@ get_all_partitions() ->
 	[I || {I, _} <- Nodes]
     catch
 	_Ex:Res ->
-	    lager:info("Error loading partition names: ~p, will retry", [Res]),
+	    lager:debug("Error loading partition names: ~p, will retry", [Res]),
 	    get_all_partitions()
     end.
 
@@ -113,7 +113,7 @@ get_all_partitions_nodes() ->
 	Nodes = chash:nodes(CHash)
     catch
 	_Ex:Res ->
-	    lager:info("Error loading partition-node names ~p, will retry", [Res]),
+	    lager:debug("Error loading partition-node names ~p, will retry", [Res]),
 	    get_all_partitions_nodes()
     end.
 
@@ -176,7 +176,7 @@ ensure_all_vnodes_running(VnodeType) ->
     case Partitions == Running of
         true -> ok;
         false ->
-            lager:info("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
+            lager:debug("Waiting for vnode ~p: required ~p, spawned ~p", [VnodeType, Partitions, Running]),
             timer:sleep(250),
             ensure_all_vnodes_running(VnodeType)
     end.
@@ -199,7 +199,7 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
 	  end,
     case Err of
 	true ->
-	    lager:info("Vnode not up retrying, ~p, ~p", [VMaster,P]),
+	    lager:debug("Vnode not up retrying, ~p, ~p", [VMaster,P]),
 	    timer:sleep(1000),
 	    bcast_vnode_check_up(VMaster,Request,[P|Rest]);
 	false ->
@@ -236,7 +236,7 @@ check_staleness() ->
 check_registered(Name) ->
     case whereis(Name) of
 	undefined ->
-      lager:info("Wait for ~p to register", [Name]),
+      lager:debug("Wait for ~p to register", [Name]),
 	    timer:sleep(100),
 	    check_registered(Name);
 	_ ->

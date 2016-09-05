@@ -22,7 +22,6 @@ entries:
   - title: Overview
     output: web, pdf
     folderitems:
-
     - title: Get started
       url: /index.html
       output: web, pdf
@@ -41,22 +40,22 @@ entries:
       output: web, pdf
 
   - title: Installation
+    url: /install.html
     output: web, pdf
-    folderitems:
 
-    - title: Installing Antidote on Mac
-      url: /install_on_mac.html
-      output: web, pdf
+  - title: Configuration
+    url: /config.html
+    output: web, pdf
 
   - title: API
     output: web, pdf
     folderitems:
 
-    - title: Raw API
+    - title: Native API
       url: /rawapi.html
       output: web, pdf
 
-    - title: Protocol Buffer
+    - title: Protocol Buffer API
       url: /api.html
       output: web, pdf
 

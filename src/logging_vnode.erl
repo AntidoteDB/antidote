@@ -266,13 +266,12 @@ init([Partition]) ->
     OpIdCommitTable = ets:new(op_id_commit_table, [set]),
     OpIdTablePartial = ets:new(op_id_table_partial, [set]),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
-    lager:info("Opening logs for partition ~w", [Partition]),
+    lager:debug("Opening logs for partition ~w", [Partition]),
     case open_logs(LogFile, Preflists, dict:new(), OpIdTable, OpIdCommitTable, OpIdTablePartial, vectorclock:new()) of
         {error, Reason} ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
         {Map,MaxVector} ->
-	    lager:info("Done opening logs for partition ~w", [Partition]),
             {ok, #state{partition=Partition,
                         logs_map=Map,
 			op_id_table_partial = OpIdTablePartial,
@@ -330,7 +329,7 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_
 		  true
 	      catch
 		  _:Reason ->
-		      lager:info("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
+		      lager:debug("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
 		      false
 	      end,
     case IsReady of
@@ -1030,12 +1029,12 @@ open_logs(LogFile, [Next|Rest], Map, OpIdTable, CommitOpIdTable, OpIdTablePartia
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
 	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, OpIdTable, CommitOpIdTable, OpIdTablePartial, MaxVector),
-            lager:info("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(OpIdTable), dict:to_list(NewMaxVector)]),
+	    lager:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(OpIdTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, OpIdTable, CommitOpIdTable, OpIdTablePartial, MaxVector);
         {repaired, Log, _, _} ->
 	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, OpIdTable, CommitOpIdTable, OpIdTablePartial, MaxVector),
-            lager:info("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(OpIdTable), dict:to_list(NewMaxVector)]),
+            lager:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(OpIdTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, OpIdTable, CommitOpIdTable, OpIdTablePartial, NewMaxVector);
         {error, Reason} ->

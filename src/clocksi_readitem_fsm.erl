@@ -115,8 +115,8 @@ get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction) ->
 	gen_server:call({global,generate_random_server_name(Node,Partition)},
 			{get_ops,Key,Type,Time,SnapshotTime,Transaction},infinity)
     catch
-	_:Reason ->
-	    lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+        _:Reason ->
+            lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
 	    check_server_ready([{Partition,Node}]),
 	    get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction)
     end.
@@ -222,7 +222,7 @@ start_read_servers_internal(Node, Partition, Num) ->
     {error,{already_started, _}} ->
 	    start_read_servers_internal(Node, Partition, Num-1);
 	Err ->
-	    lager:info("Unable to start clocksi read server for ~w, will retry", [Err]),
+	    lager:debug("Unable to start clocksi read server for ~w, will retry", [Err]),
 	    try
 		gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
 	    catch

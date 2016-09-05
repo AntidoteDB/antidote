@@ -37,7 +37,11 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
                                       Type,
                                       WriteSet) of
         {ok, Snapshot} ->
-            Type:downstream(Update, Snapshot);            
-        {error, Reason} ->
-            {error, Reason}
+            case Type of
+                antidote_crdt_bcounter -> %% bcounter data-type.
+                    bcounter_mgr:generate_downstream(Key,Update,Snapshot);
+                _ ->
+                    Type:downstream(Update, Snapshot)
+            end;
+        {error, Reason} -> {error, Reason}
     end.

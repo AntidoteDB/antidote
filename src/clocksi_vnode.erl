@@ -263,7 +263,7 @@ open_table(Partition) ->
 		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
 	_ ->
 	    %% Other vnode hasn't finished closing tables
-	    lager:info("Unable to open ets table in clocksi vnode, retrying"),
+	    lager:debug("Unable to open ets table in clocksi vnode, retrying"),
 	    timer:sleep(100),
 	    try
 		ets:delete(get_cache_name(Partition, prepared))
@@ -310,7 +310,6 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    %lager:info("Trying to prepare ~w,WS ~w", [Transaction, WriteSet]),
     PrepareTime = now_microsec(dc_utilities:now()),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of

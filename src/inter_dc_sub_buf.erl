@@ -79,7 +79,7 @@ process({txn, Txn=#interdc_txn{dcid=DCID}},
 	{OpIds,CommitIdTuples} when is_list(OpIds) and is_list(CommitIdTuples) ->
 	    MaxOpId = lists:max(OpIds),
 	    MaxCommitIdTuple = get_max_commit_ids(CommitIdTuples),
-	    lager:info("Loaded opid ~p from log for dc ~p, partition, ~p, at local partition ~p", [MaxOpId, DCID, Partition, MyPartition]),
+	    lager:debug("Loaded opid ~p from log for dc ~p, partition, ~p, at local partition ~p", [MaxOpId, DCID, Partition, MyPartition]),
 	    process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=MaxOpId,last_observed_commit_ids=MaxCommitIdTuple});
 	{error,error} ->
 	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
@@ -181,14 +181,8 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
     case queue:peek(Queue) of
 	empty -> State#inter_dc_sub_buf{state_name = normal};
 	{value, Txn} ->
-	    %% case inter_dc_txn:is_ping(Txn) of
-	    %% 	true ->
-	    %% 	    lager:info("got a ping at partition ~w", [LocalPartition]);
-	    %% 	false -> ok
-	    %% end,
 	    TxnLast = get_prev_op_id(Txn,LocalPartition),
 	    case cmp(TxnLast, Last) of
-		
 		%% If the received transaction is immediately after the last observed one
 		eq ->
 		    deliver(Txn,LocalPartition),
@@ -209,7 +203,6 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 				State#inter_dc_sub_buf{queue = queue:drop(Queue)}
 			end,
 		    process_queue(NewState);
-		
 		%% If the transaction seems to come after an unknown transaction, ask the remote log
 		gt ->
 		    lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p, is a ping ~p",
@@ -225,7 +218,12 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 		
 		%% If the transaction has an old value, drop it.
 		lt ->
-		    lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
+		    case ?IS_PARTIAL() and inter_dc_txn:is_ping(Txn) of
+			true ->
+			    deliver(Txn,LocalPartition);
+			false ->
+			    lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last])
+		    end,
 		    process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
 	    end
     end.
