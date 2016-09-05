@@ -44,8 +44,12 @@ entries:
     output: web, pdf
 
   - title: Configuration
-    url: /config.html
     output: web, pdf
+    folderitems:
+
+    - title: Configuration
+      url: /config.html
+      output: web, pdf
 
   - title: API
     output: web, pdf
