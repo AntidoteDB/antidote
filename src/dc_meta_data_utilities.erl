@@ -58,7 +58,7 @@ get_env_meta_data(Name, Default) ->
 	{ok, Value} -> Value;
 	error ->
 	    Val = application:get_env(antidote,Name,Default),
-	    ok = stable_meta_data:broadcast_meta_data_env({env,Name}, Val),
+	    ok = stable_meta_data_server:broadcast_meta_data_env({env,Name}, Val),
 	    Val
     end.
 

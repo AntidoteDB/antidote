@@ -102,6 +102,8 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id,next=getmsg}) -
 	    ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
 	<<?EXTERNAL_READ_MSG,QueryBinary/binary>> ->
 	    ok = inter_dc_query_response:perform_external_read(QueryBinary,QueryState#inter_dc_query_state{request_type=?EXTERNAL_READ_MSG});
+	<<?BCOUNTER_REQUEST,RequestBinary/binary>> ->
+	    ok = inter_dc_query_response:request_permissions(RequestBinary,QueryState#inter_dc_query_state{request_type=?BCOUNTER_REQUEST});
 	%% TODO: Handle other types of requests
 	_ ->
 	    ErrorBinary = term_to_binary(bad_request),
@@ -127,7 +129,7 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec finish_send_response(<<_:8,_:_*8>>,binary(),binary(),erlzmq:erlzmq_socket()) -> ok. 
+-spec finish_send_response(<<_:8,_:_*8>>,binary(),binary(),erlzmq:erlzmq_socket()) -> ok.
 finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message

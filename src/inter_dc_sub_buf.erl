@@ -61,11 +61,11 @@ process({txn, Txn}, State = #state{last_observed_opid = init, pdcid = {DCID, Par
 					 DCID, Partition)
 	     catch
 		 _:Reason ->
-		     lager:info("Error loading last opid from log: ~w, will retry", [Reason])
+		     lager:debug("Error loading last opid from log: ~w, will retry", [Reason])
 	     end,
     case Result of
 	{ok, OpId} ->
-	    lager:info("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
+	    lager:debug("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
 	    process({txn, Txn}, State#state{last_observed_opid=OpId});
 	_ ->
 	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),

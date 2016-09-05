@@ -64,7 +64,10 @@
 %%          It should take two arguments the first is the binary response,
 %%          the second is a #request_cache_entry{} record
 %%          Note that the function should not perform anywork, instead just send
-%%%         the work to another thread, otherwise it will block other messages
+%%          the work to another thread, otherwise it will block other messages
+%%    Pid is a process that will be stored in the #request_cache_entry{}
+%%          that will be sent to Func.  This for example can be the id of the process
+%%          who sent the request if the same process wants to handle the reply
 -spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(),#request_cache_entry{})->ok), pid() | {fsm, pid()})
 		     -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func, Pid) ->

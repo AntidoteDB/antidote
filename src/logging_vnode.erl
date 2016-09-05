@@ -253,13 +253,12 @@ init([Partition]) ->
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     OpIdTable = ets:new(op_id_table, [set]),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
-    lager:info("Opening logs for partition ~w", [Partition]),
+    lager:debug("Opening logs for partition ~w", [Partition]),
     case open_logs(LogFile, Preflists, dict:new(), OpIdTable, vectorclock:new()) of
         {error, Reason} ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
         {Map,MaxVector} ->
-	    lager:info("Done opening logs for partition ~w", [Partition]),
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         op_id_table=OpIdTable,
@@ -296,7 +295,7 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_
 		  true
 	      catch
 		  _:Reason ->
-		      lager:info("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
+		      lager:debug("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
 		      false
 	      end,
     case IsReady of
@@ -399,10 +398,6 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 		end,		    
             LogRecord = (log_utilities:generate_empty_log_record())#log_record{
 			  op_number = NewOpId, bucket_op_number = NewBucketOpId, log_operation = LogOperation},
-	    case Local > 162 of
-		true -> lager:info("appending log ~w", [LogRecord]);
-		false -> ok
-	    end,
             case insert_log_record(Log, LogId, LogRecord) of
                 {ok, NewOpId} ->
 		    inter_dc_log_sender_vnode:send(Partition, LogRecord),
@@ -891,12 +886,12 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
 	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            lager:info("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
+            lager:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
 	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            lager:info("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
+            lager:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, NewMaxVector);
         {error, Reason} ->
