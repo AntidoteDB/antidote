@@ -88,9 +88,8 @@ handle_info({zmq, _Socket, Id, [rcvmore]}, State=#state{next=getid}) ->
     {noreply, State#state{next = blankmsg, id=Id}};
 handle_info({zmq, _Socket, <<>>, [rcvmore]}, State=#state{next=blankmsg}) ->
     {noreply, State#state{next=getmsg}};
-handle_info({zmq, Socket, BinaryMsg, Flags}, State=#state{id=Id,next=getmsg}) ->
+handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id,next=getmsg}) ->
     %% Decode the message
-    lager:info("got the followoing ~p and ~p and ~p", [Socket,BinaryMsg,Flags]),
     {ReqId,RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
     %% Create a response
     QueryState = #inter_dc_query_state{zmq_id = Id,
@@ -101,6 +100,8 @@ handle_info({zmq, Socket, BinaryMsg, Flags}, State=#state{id=Id,next=getmsg}) ->
 	    ok = inter_dc_query_response:get_entries(QueryBinary,QueryState#inter_dc_query_state{request_type=?LOG_READ_MSG});
 	<<?CHECK_UP_MSG>> ->
 	    ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
+    <<?BCOUNTER_REQUEST,RequestBinary/binary>> ->
+        ok = inter_dc_query_response:request_permissions(RequestBinary,QueryState#inter_dc_query_state{request_type=?BCOUNTER_REQUEST});
 	%% TODO: Handle other types of requests
 	_ ->
 	    ErrorBinary = term_to_binary(bad_request),
@@ -126,7 +127,7 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec finish_send_response(<<_:8,_:_*8>>,binary(),binary(),erlzmq:erlzmq_socket()) -> ok. 
+-spec finish_send_response(<<_:8,_:_*8>>,binary(),binary(),erlzmq:erlzmq_socket()) -> ok.
 finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     %% Must send a response in 3 parts with ZMQ
     %% 1st Id, 2nd empty binary, 3rd the binary message

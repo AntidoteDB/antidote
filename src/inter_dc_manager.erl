@@ -25,6 +25,9 @@
 %% Public API
 %% ===================================================================
 
+-define(DC_CONNECT_RETRIES,5).
+-define(DC_CONNECT_RETY_SLEEP,1000).
+
 -export([
   get_descriptor/0,
   start_bg_processes/1,
@@ -70,28 +73,32 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 		    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
 		    %% But we want to balance the work, so all nodes take part in subscribing.
 		    Nodes = dc_utilities:get_my_dc_nodes(),
-		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc)
+		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES)
 	    end
     end.
 
--spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}) -> ok | {error, connection_error}.
-connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc) ->
+-spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}, non_neg_integer()) ->
+			   ok | {error, connection_error}.
+connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
-connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc) ->
+connect_nodes(_Nodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->
+    ok = forget_dc(Desc),
+    {error, connection_error};    
+connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
     case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
 	ok ->
 	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
 		ok ->
-		    connect_nodes(Rest, DCID, LogReaders, Publishers, Desc);
+		    connect_nodes(Rest, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES);
 		_ ->
+		    timer:sleep(?DC_CONNECT_RETY_SLEEP),
 		    lager:error("Unable to connect to publisher ~p", [DCID]),
-		    ok = forget_dc(Desc),
-		    {error, connection_error}
+		    connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
 	    end;
 	_ ->
+	    timer:sleep(?DC_CONNECT_RETY_SLEEP),
 	    lager:error("Unable to connect to log reader ~p", [DCID]),
-	    ok = forget_dc(Desc),
-	    {error, connection_error}
+	    connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
     end.
 
 %% This should not be called untilt the local dc's ring is merged
@@ -144,6 +151,9 @@ check_node_restart() ->
 	true ->
 	    lager:info("This node was previously configured, will restart from previous config"),
 	    MyNode = node(),
+	    %% Load any env variables
+	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
+	    ok = dc_meta_data_utilities:load_env_meta_data(),
 	    %% Ensure vnodes are running and meta_data
 	    ok = dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
 	    ok = dc_utilities:ensure_local_vnodes_running_master(clocksi_vnode_master),
@@ -152,12 +162,11 @@ check_node_restart() ->
 	    wait_init:wait_ready(MyNode),
 	    ok = dc_utilities:check_registered(meta_data_sender_sup),
 	    ok = dc_utilities:check_registered(meta_data_manager_sup),
-      ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
-      ok = dc_utilities:check_registered(inter_dc_sub),
-      ok = dc_utilities:check_registered(inter_dc_pub),
-      ok = dc_utilities:check_registered(inter_dc_query_response_sup),
-      ok = dc_utilities:check_registered(inter_dc_query),
-	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
+	    ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
+	    ok = dc_utilities:check_registered(inter_dc_sub),
+	    ok = dc_utilities:check_registered(inter_dc_pub),
+	    ok = dc_utilities:check_registered(inter_dc_query_response_sup),
+	    ok = dc_utilities:check_registered(inter_dc_query),
 	    {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
 	    ok = meta_data_sender:start(MetaDataName),
 	    %% Start the timers sending the heartbeats

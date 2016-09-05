@@ -426,7 +426,6 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
-            lager:info("gen_fsm:sync_send ~p",[{CoordFsmPid, {update, {Key, Type, OpParams}}}]),
             case gen_fsm:sync_send_event(CoordFsmPid,
                                          {update, {Key, Type, OpParams}}, ?OP_TIMEOUT) of
                 ok -> ok;

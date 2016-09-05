@@ -101,7 +101,7 @@ handle_command({start_timer}, _Sender, State) ->
     {reply, ok, set_timer(true, State)};
 
 handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = Partition}) ->
-    lager:info("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
+    lager:debug("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
     {reply, ok, State#state{last_log_id = OpId}};
 
 %% Handle the new operation

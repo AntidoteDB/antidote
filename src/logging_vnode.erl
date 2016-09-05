@@ -35,7 +35,6 @@
 -export([start_vnode/1,
 	 is_sync_log/0,
 	 set_sync_log/1,
-	 set_sync_log_internal/1,
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
@@ -210,7 +209,7 @@ request_bucket_op_id(IndexNode, DCID, Bucket, Partition) ->
 %%      Uses environment variable "sync_log" set in antidote.app.src
 -spec is_sync_log() -> boolean().
 is_sync_log() ->
-    application:get_env(antidote,sync_log,false).
+    dc_meta_data_utilities:get_env_meta_data(sync_log,false).
 
 %% @doc Takes as input a boolean to set whether or not items will
 %%      be logged synchronously at this DC (sends a broadcast to update
@@ -219,17 +218,7 @@ is_sync_log() ->
 %%      If false, items will be logged asynchronously
 -spec set_sync_log(boolean()) -> ok.
 set_sync_log(Value) ->
-    Nodes = dc_utilities:get_my_dc_nodes(),
-    %% Update the environment varible on all nodes in the DC
-    lists:foreach(fun(Node) -> 
-			  ok = rpc:call(Node, logging_vnode, set_sync_log_internal, [Value])
-		  end, Nodes).
-
-%% @doc internal function to set syncrounous logging environment variable.
--spec set_sync_log_internal(boolean()) -> ok.
-set_sync_log_internal(Value) ->
-    lager:info("setting sync log ~p at ~p", [Value,node()]),
-    application:set_env(antidote,sync_log,Value).
+    dc_meta_data_utilities:store_env_meta_data(sync_log,Value).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -240,13 +229,12 @@ init([Partition]) ->
     GrossPreflists = riak_core_ring:all_preflists(Ring, ?N),
     OpIdTable = ets:new(op_id_table, [set]),
     Preflists = lists:filter(fun(X) -> preflist_member(Partition, X) end, GrossPreflists),
-    lager:info("Opening logs for partition ~w", [Partition]),
+    lager:debug("Opening logs for partition ~w", [Partition]),
     case open_logs(LogFile, Preflists, dict:new(), OpIdTable, vectorclock:new()) of
         {error, Reason} ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
         {Map,MaxVector} ->
-	    lager:info("Done opening logs for partition ~w", [Partition]),
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         op_id_table=OpIdTable,
@@ -283,7 +271,7 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_
 		  true
 	      catch
 		  _:Reason ->
-		      lager:info("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
+		      lager:debug("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
 		      false
 	      end,
     case IsReady of
@@ -309,17 +297,13 @@ handle_command({read, LogId}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-           {Continuation, Ops} = 
-                case disk_log:chunk(Log, start) of
-                    {C, O} -> {C,O};
-                    {C, O, _} -> {C,O};
-                    eof -> {eof, []}
-                end,
+	    %% TODO should continue reading with the continuation??
+            ok = disk_log:sync(Log),
+	    {Continuation,Ops} = read_internal(Log,start,[]),
             case Continuation of
                 error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State#state{last_read=start}};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-            end;
+                eof -> {reply, {ok, Ops}, State}
+	    end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -336,6 +320,7 @@ handle_command({read_from, LogId, _From}, _Sender,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
+	    %% TODO should continue reading with the continuation??
             {Continuation, Ops} = 
                 case disk_log:chunk(Log, Lastread) of
                     {error, Reason} -> {error, Reason};
@@ -494,6 +479,7 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
     #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
+            ok = disk_log:sync(Log),
             case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
@@ -524,6 +510,7 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 	       #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
+            ok = disk_log:sync(Log),
 	    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
@@ -537,6 +524,21 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
+-spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(),clocksi_payload()}]) ->
+			   {error | eof, [{non_neg_integer(),clocksi_payload()}]}.
+read_internal(_Log, error, Ops) ->
+    {error, Ops};
+read_internal(_Log, eof, Ops) ->
+    {eof, Ops};
+read_internal(Log, Continuation, Ops) ->
+    {NewContinuation, NewOps} = 
+	case disk_log:chunk(Log, Continuation) of
+	    {C, O} -> {C,O};
+	    {C, O, _} -> {C,O};
+	    eof -> {eof, []}
+	end,
+    read_internal(Log, NewContinuation, Ops ++ NewOps).
+
 -spec reverse_and_add_op_id([clocksi_payload()],non_neg_integer(),[{non_neg_integer(),clocksi_payload()}]) ->
 				   [{non_neg_integer(),clocksi_payload()}].
 reverse_and_add_op_id([],_Id,Acc) ->
@@ -548,6 +550,7 @@ reverse_and_add_op_id([Next|Rest],Id,Acc) ->
 %% and the maximum vectorclock of the commited transactions stored in the log
 -spec get_last_op_from_log(log_id(), disk_log:continuation() | start, cache_id(), vectorclock()) -> {eof, vectorclock()} | {error, term()}.
 get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
+    ok = disk_log:sync(Log),
     case disk_log:chunk(Log, Continuation) of
 	eof ->
 	    {eof, PrevMaxVector};
@@ -851,11 +854,13 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
                 app_helper:get_env(riak_core, platform_data_dir), LogId),
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
+	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
+            lager:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
 	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            lager:info("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
+            lager:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, NewMaxVector);
         {error, Reason} ->

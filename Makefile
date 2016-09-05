@@ -32,3 +32,8 @@ stage :
 	$(REBAR) release -d
 
 include tools.mk
+
+tutorial:
+	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
+	docker run -t -i cmeiklejohn/antidote-tutorial
+

@@ -30,15 +30,12 @@
 -define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
 -define(OPS_THRESHOLD, 50).
-%% The first 3 elements in operations list are meta-data
-%% First is the key
-%% Second is a tuple {current op list size, max op list size}
-%% Thrid is a counter that assigns each op 1 larger than the previous
-%% Fourth is where the list of ops start
--define(FIRST_OP, 4).
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
 -define(RESIZE_THRESHOLD, 5).
+%% Only store the new SS if the following number of ops
+%% were applied to the previous SS
+-define(MIN_OP_STORE_SS, 5).
 %% Expected time to wait until the logging vnode is up
 -define(LOG_STARTUP_WAIT, 1000).
 
@@ -53,6 +50,7 @@
 	 get_cache_name/2,
 	 store_ss/3,
          update/2,
+	 tuple_to_key/2,
 	 belongs_to_snapshot_op/3]).
 
 %% Callbacks
@@ -69,6 +67,8 @@
          encode_handoff_item/2,
          handle_coverage/4,
          handle_exit/3]).
+
+-type op_and_id() :: {non_neg_integer(),#clocksi_payload{}}.
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -159,7 +159,7 @@ open_table(Partition, Name) ->
 		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
 	_ ->
 	    %% Other vnode hasn't finished closing tables
-	    lager:info("Unable to open ets table in materializer vnode, retrying"),
+	    lager:debug("Unable to open ets table in materializer vnode, retrying"),
 	    timer:sleep(100),
 	    try
 		ets:delete(get_cache_name(Partition, Name))
@@ -233,7 +233,7 @@ handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
     IsReady = try
 		  case load_from_log_to_tables(Partition, State) of
 		      ok ->
-			  lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
+		          lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
 			  true;
 		      {error, not_ready} ->
 			  false;
@@ -243,7 +243,7 @@ handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
 		  end
 	      catch
 		  _:Reason1 ->
-		      lager:info("Error loading from log ~w, will retry", [Reason1]),
+		      lager:debug("Error loading from log ~w, will retry", [Reason1]),
 		      false
 	      end,
     ok = case IsReady of
@@ -316,16 +316,30 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> true.
-internal_store_ss(Key,Snapshot,CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
+-spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
+internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
 			   vector_orddict:new();
 		       [{_, SnapshotDictA}] ->
 			   SnapshotDictA
 		   end,
-    SnapshotDict1 = vector_orddict:insert_bigger(CommitTime,Snapshot,SnapshotDict),
-    snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State).
+    %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
+    %% insert requests for the same snapshot could have occured
+    ShouldInsert = 
+	case vector_orddict:size(SnapshotDict) > 0 of
+	    true ->
+		{_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
+		((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
+	    false -> true
+	end,
+    case (ShouldInsert or ShouldGc)of
+	true ->
+	    SnapshotDict1 = vector_orddict:insert_bigger(CommitTime,Snapshot,SnapshotDict),
+	    snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State);
+	false ->
+	    false
+    end.
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
@@ -378,7 +392,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1};
 		    [Tuple] ->
-			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple),
+			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,false),
 			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
@@ -390,7 +404,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
 	    {ok, SnapshotGetResp#snapshot_get_response.materialized_snapshot#materialized_snapshot.value};
 	_Len ->
 	    case clocksi_materializer:materialize(Type, TxId, MinSnapshotTime, SnapshotGetResp) of
-		{ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
+		{ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
 		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
 		    %% for the given snapshot_time
 		    %% But is the snapshot not safe?
@@ -398,7 +412,8 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
 			ignore ->
 			    {ok, Snapshot};
 			_ ->
-			    case (NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot) orelse ShouldGc of
+			    case (NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot and
+				  (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
 				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
 				%% previous snapshot
 				true ->
@@ -447,13 +462,13 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
 				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
 	    {Key,Length,OpId,ListLen,OpsDict} = case ets:lookup(OpsCache, Key) of
 						    [] ->
-							{Key, 0, 0, 0, []};
+							{Key, 0, 0, 0, {}};
 						    [Tuple] ->
-							tuple_to_key(Tuple)
+							tuple_to_key(Tuple,false)
 						end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-	    %% Check if the pruned ops are lager or smaller than the previous list size
+	    %% Check if the pruned ops are larger or smaller than the previous list size
 	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
 	    %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
 	    NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
@@ -475,62 +490,75 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
 					 end
 				 end
 			 end,
-	    true = ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]));
+	    NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]),
+	    true = ets:insert(OpsCache, NewTuple);
 	false ->
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops({non_neg_integer(),[any(),...]}, snapshot_time())-> {non_neg_integer(),[any(),...]}.
-prune_ops({_Len,OpsDict}, Threshold)->
-%% should write custom function for this in the vector_orddict
-%% or have to just traverse the entire list?
-%% since the list is ordered, can just stop when all values of
-%% the op is smaller (i.e. not concurrent)
-%% So can add a stop function to ordered_filter
-%% Or can have the filter function return a tuple, one vale for stopping
-%% one for including
-    Res = reverse_and_filter(fun({_OpId,Op}) ->
-				     OpCommitTime=Op#clocksi_payload.commit_time,
-				     (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
-			     end, OpsDict, ?FIRST_OP, []),
-    case Res of
-	{_,[]} ->
-	    [First|_Rest] = OpsDict,
+-spec prune_ops({non_neg_integer(),tuple()}, snapshot_time())->
+		       {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
+prune_ops({Len,OpsTuple}, Threshold)->
+    %% should write custom function for this in the vector_orddict
+    %% or have to just traverse the entire list?
+    %% since the list is ordered, can just stop when all values of
+    %% the op is smaller (i.e. not concurrent)
+    %% So can add a stop function to ordered_filter
+    %% Or can have the filter function return a tuple, one vale for stopping
+    %% one for including
+    {NewSize,NewOps} = check_filter(fun({_OpId,Op}) ->
+					    OpCommitTime=Op#clocksi_payload.commit_time,
+					    (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
+				    end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
+    case NewSize of
+	0 ->
+	    First = element(?FIRST_OP+Len,OpsTuple),
 	    {1,[{?FIRST_OP,First}]};
-	_ ->
-	    Res
+	_ -> {NewSize,NewOps}
+    end.
+
+%% This function will go through a tuple of operations, filtering out the operations
+%% that are out of date (given by the input function Fun), and returning a list
+%% of the remaining operations and the size of that list
+%% It is used during garbage collection to filter out operations that are older than any
+%% of the cached snapshots
+-spec check_filter(fun(({non_neg_integer(),#clocksi_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
+		   non_neg_integer(),tuple(),non_neg_integer(),[{non_neg_integer(),op_and_id()}]) ->
+			  {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
+check_filter(_Fun,Id,Last,_NewId,_Tuple,NewSize,NewOps) when (Id == Last) ->
+    {NewSize,NewOps};
+check_filter(Fun,Id,Last,NewId,Tuple,NewSize,NewOps) ->
+    Op = element(Id, Tuple),
+    case Fun(Op) of
+	true ->
+	    check_filter(Fun,Id+1,Last,NewId+1,Tuple,NewSize+1,[{NewId,Op}|NewOps]);
+	false ->
+	    check_filter(Fun,Id+1,Last,NewId,Tuple,NewSize,NewOps)
     end.
 
 %% This is an internal function used to convert the tuple stored in ets
 %% to a tuple and list usable by the materializer
--spec tuple_to_key(tuple()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),list()}.
-tuple_to_key(Tuple) ->
+%% The second argument if true will convert the ops tuple to a list of ops
+%% Otherwise it will be kept as a tuple
+-spec tuple_to_key(tuple(),boolean()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),
+					  [op_and_id()]|tuple()}.
+tuple_to_key(Tuple,ToList) ->
     Key = element(1, Tuple),
     {Length,ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
-    Ops = tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]),
+    Ops = 
+	case ToList of
+	    true ->
+		tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]);
+	    false ->
+		Tuple
+	end,
     {Key,Length,OpId,ListLen,Ops}.
 tuple_to_key_int(Next,Next,_Tuple,Acc) ->
     Acc;
 tuple_to_key_int(Next,Last,Tuple,Acc) ->
     tuple_to_key_int(Next+1,Last,Tuple,[element(Next,Tuple)|Acc]).
-
-%% This is an internal function used to filter ops and reverse the list
-%% It returns a tuple where the first element is the lenght of the list returned
-%% The elements in the list also include the location that they will be placed
-%% in the tuple in the ets table, this way the list can be used
-%% directly in the erlang:make_tuple function
--spec reverse_and_filter(fun(),list(),non_neg_integer(),list()) -> {non_neg_integer(),list()}.
-reverse_and_filter(_Fun,[],Id,Acc) ->
-    {Id-?FIRST_OP,Acc};
-reverse_and_filter(Fun,[First|Rest],Id,Acc) ->
-    case Fun(First) of
-	true ->
-	    reverse_and_filter(Fun,Rest,Id+1,[{Id,First}|Acc]);
-	false ->
-	    reverse_and_filter(Fun,Rest,Id,Acc)
-    end.
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD

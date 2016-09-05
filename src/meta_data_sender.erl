@@ -130,7 +130,6 @@ put_meta_dict(Name,Partition, Dict, Func) ->
 			 _ ->
 			     Func(Dict, get_meta_dict(Name,Partition))
 		     end,
-	    %% lager:info("put partition ~p, dict ~p", [Partition,dict:to_list(Dict)]),
 	    true = ets:insert(get_name(Name,?META_TABLE_NAME), {Partition, Result}),
 	    ok
     end.
@@ -283,7 +282,6 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 	    {NodeList,PartitionList,WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
 	    RemoteDict = dict:from_list(ets:tab2list(get_name(Name,?REMOTE_META_TABLE_NAME))),
 	    LocalDict = dict:from_list(ets:tab2list(get_name(Name,?META_TABLE_NAME))),
-	    %% lager:info("node ~p partition ~p will change ~p remote ~p, local ~p", [NodeList,PartitionList,WillChange,dict:to_list(RemoteDict),dict:to_list(LocalDict)]),
 	    %% Be sure that you are only checking active nodes
 	    %% This isnt the most efficent way to do this because are checking the list
 	    %% of nodes and partitions every time to see if any have been removed/added
@@ -334,7 +332,6 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 			{RemoteDict,LocalDict}
 		end,
 	    LocalMerged = MergeFunc(NewLocal),
-	    %% lager:info("newlocal ~p newremote ~p localmerged ~p", [dict:to_list(NewLocal),dict:to_list(NewRemote),dict:to_list(LocalMerged)]),
 	    {WillChange,dict:store(local_merged, LocalMerged, NewRemote)}
     end.
 

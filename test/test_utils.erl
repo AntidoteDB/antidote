@@ -36,6 +36,10 @@
          wait_until_registered/2,
          start_node/2,
          connect_cluster/1,
+	 kill_and_restart_nodes/2,
+	 kill_nodes/1,
+	 brutal_kill_nodes/1,
+	 restart_nodes/2,
          partition_cluster/2,
          heal_cluster/2,
          join_cluster/1,
@@ -119,6 +123,49 @@ wait_until_connected(Node1, Node2) ->
                 pong == rpc:call(Node1, net_adm, ping, [Node2])
         end, 60*2, 500).
 
+-spec kill_and_restart_nodes([node()], [tuple()]) -> [node()].
+kill_and_restart_nodes(NodeList, Config) ->
+    NewNodeList = brutal_kill_nodes(NodeList),
+    restart_nodes(NewNodeList, Config).
+
+%% when you just can't wait
+-spec brutal_kill_nodes([node()]) -> [node()].
+brutal_kill_nodes(NodeList) ->
+    lists:map(fun(Node) ->
+		      lager:info("Killing node ~p", [Node]),
+		      OSPidToKill = rpc:call(Node, os, getpid, []),
+		      %% try a normal kill first, but set a timer to
+		      %% kill -9 after 5 seconds just in case
+		      rpc:cast(Node, timer, apply_after,
+			       [5000, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
+		      rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
+		      Node
+	      end, NodeList).
+
+-spec kill_nodes([node()]) -> [node()].
+kill_nodes(NodeList) ->
+	lists:map(fun(Node) ->
+			  %% Crash if stoping fails
+			  {ok, Name1} = ct_slave:stop(get_node_name(Node)),
+			  Name1
+		  end, NodeList).
+
+-spec restart_nodes([node()], [tuple()]) -> [node()].
+restart_nodes(NodeList, Config) ->
+    pmap(fun(Node) ->
+		 start_node(get_node_name(Node), Config),
+		 ct:print("Waiting until vnodes are restarted at node ~w", [Node]),
+		 wait_until_ring_converged([Node]),
+		 wait_until(Node,fun wait_init:check_ready/1),
+		 Node
+	 end, NodeList).
+
+-spec get_node_name(node()) -> atom().
+get_node_name(NodeAtom) ->
+    Node = atom_to_list(NodeAtom),
+    {match, [{Pos,_Len}]} = re:run(Node,"@"),
+    list_to_atom(string:substr(Node,1,Pos)).
+
 start_node(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     %% have the slave nodes monitor the runner node, so they can't outlive it
@@ -160,12 +207,13 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, load, [antidote]),
             ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
-
+	    
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
             ct:print("Node ~p started",[Node]),
 
             Node;
-        {error, _, Node} ->
+        {error, Reason, Node} ->
+	    ct:print("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
             ct_slave:stop(Name),
             wait_until_offline(Node),
             start_node(Name, Config)
@@ -207,6 +255,7 @@ connect_cluster(Nodes) ->
               ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
           end, Clusters),
     Descriptors = descriptors(Clusters),
+    ct:print("the clusters ~w", [Clusters]),
     Res = [ok || _ <- Clusters],
     pmap(fun(Cluster) ->
               Node = hd(Cluster),
@@ -253,7 +302,6 @@ web_ports(dev4) ->
 join_cluster(Nodes) ->
     %% Ensure each node owns 100% of it's own ring
     [?assertEqual([Node], owners_according_to(Node)) || Node <- Nodes],
-
     %% Join nodes
     [Node1|OtherNodes] = Nodes,
     case OtherNodes of

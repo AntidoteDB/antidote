@@ -26,6 +26,7 @@
 
 -export([start_link/1,
 	 get_entries/2,
+     request_permissions/2,
 	 generate_server_name/1]).
 -export([init/1,
 	 handle_cast/2,
@@ -35,7 +36,7 @@
 	 code_change/3]).
 
 -record(state, {
-	  id :: non_neg_integer()}).	  
+	  id :: non_neg_integer()}).
 
 %% ===================================================================
 %% Public API
@@ -48,6 +49,10 @@ start_link(Num) ->
 -spec get_entries(binary(),#inter_dc_query_state{}) -> ok.
 get_entries(BinaryQuery,QueryState) ->
     ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
+
+-spec request_permissions(binary(),#inter_dc_query_state{}) -> ok.
+request_permissions(BinaryRequest,QueryState) ->
+    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions,BinaryRequest,QueryState}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -65,6 +70,13 @@ handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
     ok = inter_dc_query_receive_socket:send_response(FullResponse,QueryState),
     {noreply, State};
 
+handle_cast({request_permissions,BinaryRequest,QueryState}, State) ->
+    {request_permissions, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
+    BinaryResp = BinaryRequest,
+    ok = bcounter_mgr:process_transfer(Operation),
+    ok = inter_dc_query_receive_socket:send_response(BinaryResp,QueryState),
+    {noreply, State};
+
 handle_cast(_Info, State) ->
     {noreply, State}.
 
@@ -76,7 +88,12 @@ handle_info(_Info, State) ->
 
 -spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
 get_entries_internal(Partition, From, To) ->
-  Logs = log_read_range(Partition, node(), From, To),
+  Node = case lists:member(Partition,dc_utilities:get_my_partitions()) of
+	     true -> node();
+	     false ->
+		 log_utilities:get_my_node(Partition)
+	 end,
+  Logs = log_read_range(Partition, Node, From, To),
   Asm = log_txn_assembler:new_state(),
   {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),
   Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),

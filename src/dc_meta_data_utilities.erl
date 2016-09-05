@@ -6,6 +6,9 @@
 -export([
 	 dc_start_success/0,
 	 is_restart/0,
+	 load_env_meta_data/0,
+	 get_env_meta_data/2,
+	 store_env_meta_data/2,
 	 store_meta_data_name/1,
 	 get_meta_data_name/0,
 	 get_dc_partitions_detailed/1,
@@ -43,6 +46,34 @@ is_restart() ->
 -spec store_meta_data_name(atom()) -> ok.
 store_meta_data_name(MetaDataName) ->
     stable_meta_data_server:broadcast_meta_data(meta_data_name, MetaDataName).
+
+%% For loading enviroment varialbes
+-spec get_env_meta_data(atom(),term()) -> atom().
+get_env_meta_data(Name, Default) ->
+    case stable_meta_data_server:read_meta_data({env, Name}) of
+	{ok, Value} -> Value;
+	error ->
+	    Val = application:get_env(antidote,Name,Default),
+	    ok = stable_meta_data_server:broadcast_meta_data_env({env,Name}, Val),
+	    Val
+    end.
+
+%% Load all envoriment variables from disk
+%% Should be run on node restart
+-spec load_env_meta_data() -> ok.
+load_env_meta_data() ->
+    lists:foreach(fun({Key,Val}) ->
+			  case Key of
+			      {env, Name} ->
+				  application:set_env(antidote,Name,Val);
+			      _ -> ok
+			  end
+		  end, stable_meta_data_server:read_all_meta_data()).
+
+%% Store an enviroment variable on disk
+-spec store_env_meta_data(atom(),term()) -> ok.
+store_env_meta_data(Name, Value) ->
+    stable_meta_data_server:broadcast_meta_data_env({env, Name}, Value).
 
 -spec get_meta_data_name() -> {ok, atom()} | error.
 get_meta_data_name() ->
