@@ -1,109 +1,131 @@
 ---
-title: API
+title: Protocol Buffer API
 last_updated: August 25, 2016
 tags: [api]
-summary: ""
 sidebar: mydoc_sidebar
 permalink: api.html
 folder: mydoc
 ---
 
-Client applications can access Antidote using [protocol buffer](https://developers.google.com/protocol-buffers/) interface.
-
-Here we describe the Erlang client for Antidote's protocol buffer interface. To use the client library, add [antidote_pb](https://github.com/SyncFree/antidote_pb) to your application's rebar dependencies.
-
-Antidote API
------------
-
-A unit of operation in Antidote is a transaction. A client should first start a transaction, then read and/or update multiple objects, and then commit the transaction.
-
-### Interface for transactions ###
-
-* start\_transaction (Pid, timestamp, properties) --> transaction\_descriptor
-
-  starts a new transaction and returns a transaction_descriptor which is a transaction identifier to be used with further operations of the transaction. timestamp provides the causality information. properties is a list of configurable parameters for the transaction. Currently only property supported which specifies to use static or interactive transactions.
-Example:
-
-        Clock = term_to_binary(ignore), %% First time there is no clock information
-        {ok, TxId} = antidotec_pb:start_transaction(Pid, Clock, [{static=true}]). %% Use static transactions
-
-* read\_objects (Pid, [bound\_object], transaction\_descriptor) --> {ok, Vals}
-
-  reads a set of keys.
-  Example:
-
-        {ok, [Val1, Val2]} = antidotec_pb:read_objects(Pid, [O1, O2], TxId),
-        Value = antidotec_counter:value(Val1). %% Assuming O1 is of type counter
-
-* update\_objects (Pid, [{bound\_object, operation, op_parameters}], transaction\_descriptor) -> ok
-
-  update a set of object with the specified operations. operation is any allowed (upstream) operation on the crdt type for bound\_object, op\_parameters are parameters to the operation.
-  Example:
-
-           Obj = antidotec_counter:increment(1, antidotec_counter:new()),
-           ok = antidotec_pb:update_objects(Pid,
-                                        antidotec_counter:to_ops(BObj, Obj),
-                                        TxId).
-
-* abort\_transaction (Pid, transaction_descriptor)
-  aborts a transaction
-
-* commit\_transaction (Pid, transaction_descriptor) --> {ok,timestamp} OR aborted
+Clients can interact with the Antidote data store using a [protocol buffer](https://developers.google.com/protocol-buffers/) interface.
+Here we describe the Erlang client for Antidote's protocol buffer interface. 
+{% include note.html content="If you want to use this interface, you need to add [antidote_pb](https://github.com/SyncFree/antidote_pb) to your application's rebar dependencies." %}
 
 
-Example
--------
+## Transactions
 
+A unit of operation in Antidote is a transaction. 
+A client should first start a transaction, then read and/or update multiple objects, and finally commit the transaction.
+
+All transaction functions take as first parameter the process identifier (pid) of the local Antidote proxy. 
+Calling `antidotec_pb_socket:start(?ADDRESS, ?PORT)` starts this proxy and returns its pid.
+
+### Start a transaction
+
+  * `start_transaction(Pid::term(), Timestamp::term(), TxnProperties::term())
+        -> {ok, TxnId::term()} | {error, Reason::term()}`
+
+  This function starts a new transaction and returns a transaction identifier.
+  This transaction identifier can be used to mark all further operations of this transaction. 
+  The `Timestamp` provides the causality information, that is, the dependency information regarding other transactions. 
+  Via `TxnProperties` you can pass a list of configuration parameters. 
+  Currently, only one property is supported:  `static = true` starts a static transaction, 
+  while `static = false` initiates an interactive transaction (default).
+
+#### Example
+
+```erlang
+    %% If there is no dependency information available or required, 
+    %% pass ignore as clock value.
+    Clock = term_to_binary(ignore),
+    %% Initiate a static transaction
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, Clock, [{static=true}]). 
+```
+
+### Reading and updating objects
+  * `read_objects(Pid::term(), Objects::[term()], TxId::term()) -> {ok, [term()]}  | {error, term()}` reads a set of keys.
+  
+  * `update_objects(Pid::term(), Updates::[{term(), term(), term()}], TxId::term()) -> ok | {error, term()}` 
+   takes a set of object with the operations and corresponding parameters as list of triples. 
+   More on data types and operations can be found [here](#pb_datatypes).
+  
+####  Example
+
+```erlang
+    %% Information on key, type, and bucket
+    KeyInfo = {Key, antidote_crdt_counter, <<"bucket">>},
+    %% Create a new counter update proxy locally
+    Cntr = antidotec_counter:new(0),
+    %% Increment the counter by 1
+    Obj = antidotec_counter:increment(1, Cntr),
+    ok = antidotec_pb:update_objects(Pid, antidotec_counter:to_ops(KeyInfor, Obj), TxId).
+
+    Obj1 = {Key1, antidote_crdt_counter, <<"bucket">>},
+    Obj2 = {Key2, antidote_crdt_counter, <<"bucket">>},
+    %% Read values of two objects
+    {ok, [Val1, Val2]} = antidotec_pb:read_objects(Pid, [Obj1, Obj2], TxId),
+    Value = antidotec_counter:value(Val1). %% assuming Obj1 is of type counter
+```
+
+### Finalizing a transaction
+
+  * `commit_transaction(Pid::term(), TxId::term()}) -> {ok, term()} | {error, term()}`
+  
+  To end a transaction, it has to be committed.
+  All updates then performed against the stored data.
+  These modifications are observable by later transactions that are (transitively) dependent on this transaction.
+
+  * `abort_transaction(Pid::term(), TxId::term()) -> ok`
+
+  Transactions can be stopped and canceled by calling `abort_transaction`.
+  All updates for this transaction are then revoked.
+
+
+#### Example
+The following code snippet increments two counters atomically.
+
+```erlang
     %% Starts pb socket
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
 
     Counter1 = {Key1, antidote_crdt_counter, Bucket},
     Counter2 = {Key2, antidote_crdt_counter, Bucket},
-    Obj = antidotec_counter:increment(Amount, antidotec_counter:new()),
+    LocalObj = antidotec_counter:increment(Amount, antidotec_counter:new(0)),
+
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
-    ok = antidotec_pb:update_objects(Pid,
-                                     antidotec_counter:to_ops(Counter1, Obj),
-                                     TxId),
-    ok = antidotec_pb:update_objects(Pid,
-                                     antidotec_counter:to_ops(Counter2, Obj),
-                                     TxId),
+    ok = antidotec_pb:update_objects(Pid, antidotec_counter:to_ops(Counter1, LocalObj),TxId),
+    ok = antidotec_pb:update_objects(Pid, antidotec_counter:to_ops(Counter2, LocalObj),TxId),
     {ok, TimeStamp} = antidotec_pb:commit_transaction(Pid, TxId),
+    
     %% Use TimeStamp for subsequent transactions if required
-    {ok, TxId2} = antidotec_pb:start_transaction(Pid, TimeStamp, [{static=true}]),
+    {ok, TxId2} = antidotec_pb:start_transaction(Pid, TimeStamp, {}),
     ...
     ...
 
     %% Close pb socket
     _Disconnected = antidotec_pb_socket:stop(Pid),
+```
 
-Data Types
-----------
-Antidote support many high level replicated data types. Protocol buffer interface currently supports counter and sets. There are more data types supported by Antidote. (See [antidote_crdts](https://github.com/deepthidevaki/antidote_crdt)).
+## Data Types {#pb_datatypes}
 
-### antidotec_counter ###
+Antidote supports several replicated data types (more information at [antidote_crdts](https://github.com/SyncFree/antidote_crdt)).
+However, the protocol buffer interface currently supports only counters and sets.
 
-This is the client side representation of replicated counter.
-It provides following interface:
+### Counter
 
-* new
-* increment
-* decrement
-* to_ops
+The client side representation of replicated counter `antidote_counter` provides the following interface:
 
-  The local operations (increment/decrement) must be converted to right format using this method before sending it to Antidote via antidotec_pb:update_object/3.
+* `new(integer()) -> antidotec_counter()` creates a local proxy (with an initial value). 
+* `increment(integer(), antidotec_counter()) -> antidotec_counter()` increments the local proxy by the specified value.
+* `decrement(integer(), antidotec_counter()) -> antidotec_counter()` decrements the local proxy by the specified value.
+* `to_ops(term(), antidotec_counter()) -> [term()]` converts the local operations to right format for sending it to Antidote via `antidotec_pb:update_object/3`.
+* `value(antidotec_counter()) -> integer()` returns an integer representing the current local value of the counter.
 
-* value
+### Set
 
-  Returns an integer representing the current value of the counter.
+Similar to the counter, we have a client side representation of an replicated OR-set. The `antidotec_set` provides following interface:
 
-### antidotec_set ###
-
-This is the client side representation of replicated OR-set. It provides following interface:
-
-* new
-* add
-* remove
-* to_ops
-* value
-
-  Returns a list of elements which are in the set.
+* `new/1` creates a local proxy with some initial value.
+* `add/2, remove/2` insert and remove elements from the set.
+* `to_ops/2` converts the local operations to right format for sending it to Antidote via `antidotec_pb:update_object/3`.
+* `value/1` returns a set representing the current local value of the replicated set, that is a list of elements which are in the set.
