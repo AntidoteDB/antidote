@@ -233,6 +233,7 @@ handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
     IsReady = try
 		  case load_from_log_to_tables(Partition, State) of
 		      ok ->
+		          lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
 			  true;
 		      {error, not_ready} ->
 			  false;
