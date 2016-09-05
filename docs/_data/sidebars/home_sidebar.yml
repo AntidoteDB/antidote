@@ -51,11 +51,11 @@ entries:
     output: web, pdf
     folderitems:
 
-    - title: Raw API
+    - title: Native API
       url: /rawapi.html
       output: web, pdf
 
-    - title: Protocol Buffer
+    - title: Protocol Buffer API
       url: /api.html
       output: web, pdf
 

@@ -1,8 +1,7 @@
 ---
-title: API
+title: Protocol Buffer API
 last_updated: August 25, 2016
 tags: [api]
-summary: ""
 sidebar: mydoc_sidebar
 permalink: api.html
 folder: mydoc

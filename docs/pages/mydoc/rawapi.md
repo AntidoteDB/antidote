@@ -1,14 +1,13 @@
 ---
-title: API
+title: Nativ Erlang API
 last_updated: August 29, 2016
 tags: [api]
-summary: ""
 sidebar: mydoc_sidebar
 permalink: rawapi.html
 folder: mydoc
 ---
 
-This page describes the raw API of Antidote. Clients can invoke these functions via RPC. 
+This page describes the native Erlang API of Antidote. Clients can invoke these functions via RPC. 
 A more convenient but restricted way for client applications to interact with Antidote is the [protocol buffer interface](/api.html).
 
 ## CRDTs
@@ -57,7 +56,6 @@ The first element in the tuple specifies the update operation, and the second it
     {remove, non_neg_integer()}
 
 ## Transactions
-----
 
 A unit of operation in Antidote is a transaction. 
 A client should first start a transaction, then read and/or update several objects, and finally commit the transaction.
