@@ -70,6 +70,14 @@
 -define(SAFE_TIME, true).
 %% Version of log records being used
 -define(LOG_RECORD_VERSION, 0).
+%% Bounded counter manager parameters.
+%% Period during which transfer requests from the same DC to the same key are ignored.
+-define(GRACE_PERIOD, 1000000). % in Microseconds
+%% Time to forget a pending request.
+-define(REQUEST_TIMEOUT, 500000). % In Microseconds
+%% Frequency at which manager requests remote resources.
+-define(TRANSFER_FREQ, 100). %in Milliseconds
+
 %% The definition "FIRST_OP" is used by the materializer.
 %% The materialzer caches a tuple for each key containing
 %% information about the state of operations performed on that key.
@@ -218,7 +226,7 @@
 	 }).
 
 %% This record keeps the state of the materializer vnode
-%% It is defined here as it is also used by the 
+%% It is defined here as it is also used by the
 %% clocksi_read_item_fsm as pointers to the materializer's ets caches
 -record(mat_state, {
 	  partition :: partition_id(),

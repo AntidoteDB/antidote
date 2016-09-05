@@ -26,6 +26,7 @@
 
 -export([start_link/1,
 	 get_entries/2,
+     request_permissions/2,
 	 generate_server_name/1]).
 -export([init/1,
 	 handle_cast/2,
@@ -35,7 +36,7 @@
 	 code_change/3]).
 
 -record(state, {
-	  id :: non_neg_integer()}).	  
+	  id :: non_neg_integer()}).
 
 %% ===================================================================
 %% Public API
@@ -48,6 +49,10 @@ start_link(Num) ->
 -spec get_entries(binary(),#inter_dc_query_state{}) -> ok.
 get_entries(BinaryQuery,QueryState) ->
     ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
+
+-spec request_permissions(binary(),#inter_dc_query_state{}) -> ok.
+request_permissions(BinaryRequest,QueryState) ->
+    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions,BinaryRequest,QueryState}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -63,6 +68,13 @@ handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary,BinaryResp/binary>>,
     ok = inter_dc_query_receive_socket:send_response(FullResponse,QueryState),
+    {noreply, State};
+
+handle_cast({request_permissions,BinaryRequest,QueryState}, State) ->
+    {request_permissions, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
+    BinaryResp = BinaryRequest,
+    ok = bcounter_mgr:process_transfer(Operation),
+    ok = inter_dc_query_receive_socket:send_response(BinaryResp,QueryState),
     {noreply, State};
 
 handle_cast(_Info, State) ->
