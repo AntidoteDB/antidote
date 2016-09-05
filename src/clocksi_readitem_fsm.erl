@@ -93,7 +93,7 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
 			{perform_read,Key,Type,Transaction},infinity)
     catch
         _:Reason ->
-            lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+            lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
 	    check_server_ready([{Partition,Node}]),
             read_data_item({Partition,Node},Key,Type,Transaction)
     end.
