@@ -50,7 +50,7 @@ wait_ready(Node) ->
 %% except it takes as input a sinlge physical node instead of a list
 -spec check_ready(node()) -> boolean().
 check_ready(Node) ->
-    lager:info("Checking if node ~w is ready ~n", [Node]),
+    lager:debug("Checking if node ~w is ready ~n", [Node]),
     case rpc:call(Node,clocksi_vnode,check_tables_ready,[]) of
 	true ->
 	    case rpc:call(Node,clocksi_readitem_fsm,check_servers_ready,[]) of
@@ -59,21 +59,21 @@ check_ready(Node) ->
 			true ->
 			    case rpc:call(Node,stable_meta_data_server,check_tables_ready,[]) of
 				true ->
-				    lager:info("Node ~w is ready! ~n", [Node]),
+				    lager:debug("Node ~w is ready! ~n", [Node]),
 				    true;
 				false ->
-				    lager:info("Node ~w is not ready ~n", [Node]),
+				    lager:debug("Node ~w is not ready ~n", [Node]),
 				    false
 			    end;
 			false ->
-			    lager:info("Node ~w is not ready ~n", [Node]),
+			    lager:debug("Node ~w is not ready ~n", [Node]),
 			    false
 		    end;
 		false ->
-		    lager:info("Checking if node ~w is ready ~n", [Node]),
+		    lager:debug("Checking if node ~w is ready ~n", [Node]),
 		    false
 	    end;
 	false ->
-	    lager:info("Checking if node ~w is ready ~n", [Node]),
+	    lager:debug("Checking if node ~w is ready ~n", [Node]),
 	    false
     end.                
