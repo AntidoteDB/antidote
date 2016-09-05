@@ -115,6 +115,7 @@ init([Partition]) ->
     SnapshotCache = open_table(Partition, snapshot_cache),
     IsReady = case application:get_env(antidote,recover_from_log) of
 		  {ok, true} ->
+		      lager:info("Checking for logs to init materializer ~p", [Partition]),
 		      riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
 		      false;
 		  _ ->
