@@ -159,7 +159,7 @@ open_table(Partition, Name) ->
 		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
 	_ ->
 	    %% Other vnode hasn't finished closing tables
-	    lager:info("Unable to open ets table in materializer vnode, retrying"),
+	    lager:debug("Unable to open ets table in materializer vnode, retrying"),
 	    timer:sleep(100),
 	    try
 		ets:delete(get_cache_name(Partition, Name))
@@ -233,7 +233,7 @@ handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
     IsReady = try
 		  case load_from_log_to_tables(Partition, State) of
 		      ok ->
-			  lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
+		          lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
 			  true;
 		      {error, not_ready} ->
 			  false;
@@ -243,7 +243,7 @@ handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
 		  end
 	      catch
 		  _:Reason1 ->
-		      lager:info("Error loading from log ~w, will retry", [Reason1]),
+		      lager:debug("Error loading from log ~w, will retry", [Reason1]),
 		      false
 	      end,
     ok = case IsReady of
@@ -468,7 +468,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
 						end,
             {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-	    %% Check if the pruned ops are lager or smaller than the previous list size
+	    %% Check if the pruned ops are larger or smaller than the previous list size
 	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
 	    %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
 	    NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
