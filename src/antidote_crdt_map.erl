@@ -41,7 +41,6 @@
           require_state_downstream/1
         ]).
 
--type map() :: riak_dt:riak_dt_map().
 
 -type map_op() :: {update, {[map_field_update() | map_field_op()], actorordot()}}.
 -type actorordot() :: riak_dt:actor() | riak_dt:dot().
@@ -57,7 +56,7 @@ new() ->
 value(Map) ->
     ?RIAK_MODULE:value(Map).
 
--spec downstream(map_op(), map()) -> {ok, term()}.
+-spec downstream(map_op(), riak_dt:riak_dt_map()) -> {ok, term()}.
 downstream({Op, {OpParam, Actor}}, State) ->
     {ok, S0} = ?RIAK_MODULE:update({Op, OpParam}, Actor, State),
     {ok, {merge, S0}}.
