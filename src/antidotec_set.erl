@@ -38,9 +38,9 @@
         ]).
 
 -record(antidote_set, {
-          set :: set(),
-          adds :: set(),
-          rems :: set()
+          set :: sets:set(),
+          adds :: sets:set(),
+          rems :: sets:set()
          }).
 
 -export_type([antidote_set/0]).
