@@ -234,7 +234,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 -spec check_clock(key(),clock_time(),ets:tid(),partition_id()) ->
 			 {not_ready, clock_time()} | ready.
 check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
-    Time = clocksi_vnode:now_microsec(dc_utilities:now()),
+    Time = dc_utilities:now_microsec(),
     case TxLocalStartTime > Time of
         true ->
 	    {not_ready, (TxLocalStartTime - Time) div 1000 +1};

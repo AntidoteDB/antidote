@@ -682,7 +682,7 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
-    Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
+    Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
     DcId = ?DC_META_UTIL:get_my_dc_id(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
@@ -811,7 +811,7 @@ get_snapshot_time_test() ->
 wait_for_clock_test() ->
     {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
     ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime)),
-    VecClock = clocksi_vnode:now_microsec(dc_utilities:now()),
+    VecClock = dc_utilities:now_microsec(),
     {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
     ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime2)).
 
