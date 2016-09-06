@@ -50,6 +50,7 @@ get_descriptor() ->
   Publishers = lists:map(fun(Node) -> rpc:call(Node, inter_dc_pub, get_address_list, []) end, Nodes),
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_receive_socket, get_address_list, []) end, Nodes),
   {ok, #descriptor{
+    bucket_sub_list = partial_repli_utils:get_buckets(),
     dcid = dc_meta_data_utilities:get_my_dc_id(),
     partition_list = dc_meta_data_utilities:get_my_partitions_list(),
     partition_num = dc_utilities:get_partitions_num(),
@@ -136,7 +137,9 @@ start_bg_processes(MetaDataName) ->
     ok = dc_meta_data_utilities:store_meta_data_name(MetaDataName),
     %% Start the timers sending the heartbeats
     lager:info("Starting heartbeat sender timers"),
-    ok = stable_time_collector:start_timer(),
+    lists:foreach(fun(Node) ->
+			  ok = rpc:call(Node, stable_time_collector, start_timer, [])
+		  end, Nodes),
     Responses = dc_utilities:bcast_vnode_sync(logging_vnode_master, {start_timer,undefined}),
     %% Be sure they all started ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->

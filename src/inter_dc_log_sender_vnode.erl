@@ -53,12 +53,13 @@
   terminate/2,
   delete/1]).
 
+
 %% Vnode state
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
   last_log_id :: #op_number{} | undefined,
-  last_log_id_dc ::[{dcid(),#op_number{}}] | undefined,
+  last_log_id_dc ::[{dcid(),#dc_last_ops{}}] | undefined,
   partial_server :: atom(),
   timer :: any()
 }).
@@ -97,7 +98,7 @@ init([Partition]) ->
     buffer = log_txn_assembler:new_state(),
     last_log_id = undefined,
     last_log_id_dc = undefined,
-    partial_server = stable_time_collector:get_registered_name(),
+    partial_server = undefined,
     timer = none
   }}.
 
@@ -107,7 +108,11 @@ handle_command({start_timer}, _Sender, State) ->
 
 handle_command({update_last_log_id, OpId, OpIdDC}, _Sender, State = #state{partition = Partition}) ->
     lager:debug("Updating last log id at partition ~w to: ~w and ~w", [Partition, OpId, OpIdDC]),
-    {reply, ok, State#state{last_log_id = OpId, last_log_id_dc = lists:keysort(1,OpIdDC)}};
+    DcLastOps = 
+        lists:map(fun({DCID,OpNum}) ->
+			  {DCID, #dc_last_ops{last_update_id = OpNum, last_commit_id = OpNum}}
+		  end, lists:keysort(1,OpIdDC)),
+    {reply, ok, State#state{last_log_id = OpId, last_log_id_dc = DcLastOps}};
 
 %% Handle the new operation
 %% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
@@ -134,6 +139,8 @@ handle_command({log_event, LogRecord}, _Sender, State) ->
 	end,
     {noreply, State2};
 
+handle_command({stable_time, Time}, _Sender, State = #state{partial_server = undefined}) ->
+    handle_command({stable_time, Time}, _Sender, State#state{partial_server=stable_time_collector:get_registered_name()});
 handle_command({stable_time, Time}, _Sender, State) ->
     NewState =
 	case ?IS_PARTIAL() of
@@ -216,19 +223,25 @@ set_timer(First, State = #state{partition = Partition}) ->
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State = #state{last_log_id_dc = OldIdDC}, Txn) ->
     inter_dc_pub:broadcast(Txn),
-    {Id, IdDC} = inter_dc_txn:last_log_opid(Txn),
-    State#state{last_log_id = Id, last_log_id_dc = keep_max_dc_ids(OldIdDC,IdDC)}.
+    {Id, NewIdDC} = inter_dc_txn:last_log_opid(Txn),
+    CommitOpId = inter_dc_txn:commit_opid(Txn),
+    State#state{last_log_id = Id, last_log_id_dc = keep_max_dc_ids(OldIdDC,NewIdDC,CommitOpId)}.
 
 %% This takes the largest dc op ids sent, it is used for partial replication
 %% since the new list might not contain all DCs if the transaction isn't replicated there
--spec keep_max_dc_ids(undefined | [{dcid(),#op_number{}}],[{dcid(),#op_number{}}]) -> [{dcid(),#op_number{}}].
-keep_max_dc_ids(undefined,NewIdDC) ->
-    lists:keysort(1,NewIdDC);
-keep_max_dc_ids(OldIdDC,NewIdDC) ->
+-spec keep_max_dc_ids(undefined | [{dcid(),#dc_last_ops{}}],[{dcid(),#op_number{}}],#op_number{}) -> [{dcid(),#dc_last_ops{}}].
+keep_max_dc_ids(undefined,NewIdDC,NewCommitId) ->
+    Sorted = lists:keysort(1,NewIdDC),
+    lists:map(fun({DCID,OpNum}) ->
+		      {DCID, #dc_last_ops{last_update_id = OpNum, last_commit_id = NewCommitId}}
+	      end, Sorted);
+keep_max_dc_ids(OldIdDC,NewIdDC,NewCommitId) ->
     NewSorted = lists:keysort(1,NewIdDC),
-    orddict:merge(fun(_Key, V1, V2) ->
-			  true = (V1 >= V2), %% Sanity check
-			  V1
+    orddict:merge(fun(_DCID, NewUpdateId, #dc_last_ops{last_update_id = LastUpdateId,
+						       last_commit_id = LastCommitId}) ->
+			  true = (NewUpdateId >= LastUpdateId), %% Sanity check
+			  true = (NewCommitId >= LastCommitId), %% Sanity check
+			  #dc_last_ops{last_update_id = NewUpdateId, last_commit_id = NewCommitId}
 		  end, NewSorted,OldIdDC).
 
 %% @doc Sends an async request to get the smallest snapshot time of active transactions.

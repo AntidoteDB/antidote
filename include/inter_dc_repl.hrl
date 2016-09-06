@@ -15,7 +15,7 @@
 
 %% Ping strcuture for partial replication
 -record(partial_ping, {
-	  partition_dcid_op_list :: [{partition_id(), [{dcid(), #op_number{}}]}],
+	  partition_dcid_op_list :: [{partition_id(), [{dcid(), #dc_last_ops{}}]}],
 	  time :: clock_time()
 	 }).
 
@@ -32,6 +32,7 @@
 }).
 
 -record(descriptor, {
+ bucket_sub_list :: [bucket()],
  dcid :: dcid(),
  partition_list :: [partition_id()],
  partition_num :: non_neg_integer(),

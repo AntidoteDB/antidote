@@ -131,10 +131,15 @@ get_prev_op_id(Txn,Partition) ->
 	false ->
 	    Txn#interdc_txn.prev_log_opid#op_number.local;
 	true ->
+	    %% In partial replication the previous op id is
+	    %% the last update operation from the previous transaction
+	    %% (i.e. it doesn't include the prepare and commit ids)
 	    DCID = dc_meta_data_utilities:get_my_dc_id(),
 	    DCOpList = 
 		case inter_dc_txn:is_ping(Txn) of
-		    false -> Txn#interdc_txn.prev_log_opid_dc;
+		    false -> 
+			lager:info("the txn ~w", [Txn]),
+			Txn#interdc_txn.prev_log_opid_dc;
 		    true ->
 			PartialPing = Txn#interdc_txn.prev_log_opid_dc,
 			case lists:keyfind(Partition,1,PartialPing#partial_ping.partition_dcid_op_list) of
@@ -144,8 +149,10 @@ get_prev_op_id(Txn,Partition) ->
 		end,
 	    %%lager:info("the list of prev op ids ~p and the op list", [Txn#interdc_txn.prev_log_opid_dc]),
 	    case lists:keyfind(DCID,1,DCOpList) of
-		{DCID, Time} ->
+		{DCID, #dc_last_ops{last_update_id = Time}} ->
 		    Time#op_number.local;
+		{DCID, #op_number{local = Local}} ->
+		    Local;
 		false ->
 		    %% The DCs are not yet connected, so this should just be a new ping
 		    %% fail if not
@@ -244,7 +251,17 @@ get_log_range_query_ids(Txn,#inter_dc_sub_buf{
 	    %% that was received, the fourth is the id of the last update
 	    %% operation of the current transaction
 	    %% TODO, how to get last commit when ping in partial?
-	    MaxCommit = (inter_dc_txn:commit_opid(Txn))#op_number.local,
+	    MaxCommit =
+		case inter_dc_txn:is_ping(Txn) of
+		    false ->
+			(inter_dc_txn:commit_opid(Txn))#op_number.local;
+		    true ->
+			PartialPing = Txn#interdc_txn.prev_log_opid_dc,
+			{LocalPartition, DCOpList} = lists:keyfind(LocalPartition,1,PartialPing#partial_ping.partition_dcid_op_list),
+			DCID = dc_meta_data_utilities:get_my_dc_id(),
+			{DCID, #dc_last_ops{last_commit_id = Time}} = lists:keyfind(DCID,1,DCOpList),
+			Time#op_number.local
+		end,
 	    MaxOpId = get_prev_op_id(Txn,LocalPartition),
 	    case MaxCommit > CommitTime2 of
 		true -> {CommitTime2,MaxCommit,OpId,MaxOpId};

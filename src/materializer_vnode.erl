@@ -663,10 +663,9 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache, partiti
 			       {3,1}),
     {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
     %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
-    %% TODO use the correct function for this
-    IsExternal = case clocksi_readitem_fsm:is_external(Key,[],Partition) of
+    IsExternal = case partial_repli_utils:is_external(Key,Partition) of
 		     false -> false;
-		     _ -> true
+		     {true,_} -> true
 		 end,
     case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) or (IsExternal and ((NewId rem ?EXTERNAL_OP_SS_GEN) == 0)) of
         true ->

@@ -136,7 +136,7 @@ get_entries_internal(Partition, From, To, FirstOpId, LastOpId, OtherDC) ->
 					 _ ->
 					     undefined
 				     end,
-				 case replication_check:is_replicated_at_dc(Bucket, OtherDC) of
+				 case partial_repli_utils:is_replicated_at_dc(Bucket, OtherDC) of
 				     false -> false;
 				     true ->
 					 {_Id, DCIDList} = inter_dc_txn:last_log_opid(Txn),

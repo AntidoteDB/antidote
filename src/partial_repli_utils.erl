@@ -24,8 +24,13 @@
 -define(EXTERNAL_READ_TIMEOUT, 1000).
 
 -export([
-	 set_partial_rep/1,
-	 set_partial_rep_internal/1,
+	 is_replicated_at_dc/2,
+	 get_replica_dcs/1,
+	 get_buckets/0,
+	 set_buckets/1,
+	 is_external/2,
+	 is_partial/0,
+	 set_partial/1,
 	 check_wait_time/2,
 	 replace_external_ops/2,
 	 perform_external_read/1,
@@ -34,20 +39,95 @@
 	 check_should_convert_to_list_in_materializer/1,
 	 wait_for_external_read_resp/0]).
 
--spec set_partial_rep(boolean()) -> ok.
-set_partial_rep(Value) ->
-    Nodes = dc_utilities:get_my_dc_nodes(),
-    %% Update the environment varible on all nodes in the DC
-    lists:foreach(fun(Node) -> 
-			  ok = rpc:call(Node, partial_repli_utils, set_partial_rep_internal, [Value])
-		  end, Nodes).
+%% -spec set_partial_rep(boolean()) -> ok.
+%% set_partial_rep(Value) ->
+%%     Nodes = dc_utilities:get_my_dc_nodes(),
+%%     %% Update the environment varible on all nodes in the DC
+%%     lists:foreach(fun(Node) -> 
+%% 			  ok = rpc:call(Node, partial_repli_utils, set_partial_rep_internal, [Value])
+%% 		  end, Nodes).
 
-%% @doc internal function to set txn certification environment variable.
--spec set_partial_rep_internal(boolean()) -> ok.
-set_partial_rep_internal(Value) ->
-    lager:info("setting partial replication ~p at ~p", [Value,node()]),
-    application:set_env(antidote,partial,Value).
+%% %% @doc internal function to set txn certification environment variable.
+%% -spec set_partial_rep_internal(boolean()) -> ok.
+%% set_partial_rep_internal(Value) ->
+%%     lager:info("setting partial replication ~p at ~p", [Value,node()]),
+%%     application:set_env(antidote,partial,Value).
 
+%% Check to see if a {key,bucket} is replicated at this DC
+%% If it is returns false
+%% If it isn't returns true and a list of DC,Partition tuples where it is replicated
+-spec is_external({key(),bucket()} | key(), partition_id()) ->
+			 {true, [pdcid()]} | false.
+is_external(KeyBucket,Partition) ->
+    is_external(KeyBucket,Partition,?IS_PARTIAL()).
+
+-spec is_external({key(),bucket()} | key(), partition_id(), boolean()) ->
+			 {true, [pdcid()]} | false.
+is_external(_KeyBucket,_Partition,false) ->
+    false;
+is_external({_Key,undefined},_Partition,_IsPartial) ->
+    false;
+is_external({_Key,Bucket},Partition,_IsPartial) ->
+    case lists:member(Bucket,get_buckets()) of
+	false ->
+	    DCBucketList =
+		dict:fold(fun(DCID,BucketList,Acc) ->
+				  case lists:member(Bucket,BucketList) of
+				      true -> [{DCID,Partition}|Acc];
+				      false -> Acc
+				  end
+			  end, [], dc_meta_data_utilities:get_dc_bucket_subs()),
+	    {true, DCBucketList};
+	true ->
+	    false
+    end;
+is_external(_Key,_Partition,_IsPartial) ->
+    false.
+
+-spec is_replicated_at_dc({key(),bucket()} | key(), dcid()) -> boolean().
+is_replicated_at_dc({_Key,undefined},_DCID) ->
+    true;
+is_replicated_at_dc({_Key,Bucket},DCID) ->
+    {ok,Buckets} = dict:find(DCID,dc_meta_data_utilities:get_dc_bucket_subs()),
+    lists:member(Bucket,Buckets);
+is_replicated_at_dc(_Key,_DCID) ->
+    true.
+
+-spec get_replica_dcs({key(),bucket()} | key()) -> [dcid()].
+get_replica_dcs({_Key,undefined}) ->
+    get_replica_dcs(undefined);
+get_replica_dcs({_Key,Bucket}) ->
+    dict:fold(fun(DCID,BucketList,Acc) ->
+		      case lists:member(Bucket,BucketList) of
+			  true -> [DCID|Acc];
+			  false -> Acc
+		      end
+	      end, [], dc_meta_data_utilities:get_dc_bucket_subs());
+get_replica_dcs(_Key) ->
+    dict:fold(fun(DCID,_BucketList,Acc) ->
+		      [DCID|Acc]
+	      end, [], dc_meta_data_utilities:get_dc_bucket_subs()).
+
+-spec get_buckets() -> [bucket()].
+get_buckets() ->
+    case stable_meta_data_server:read_meta_data(bucket_list) of
+	{ok, List} ->
+	    List;
+	error ->
+	    []
+    end.
+
+-spec set_buckets([bucket()]) -> ok.
+set_buckets(BucketList) ->
+    ok = stable_meta_data_server:broadcast_meta_data(bucket_list, BucketList).
+
+-spec is_partial() -> boolean().
+is_partial() ->
+    dc_meta_data_utilities:get_env_meta_data(is_partial,false).
+
+-spec set_partial(boolean()) -> ok.
+set_partial(Partial) ->
+    dc_meta_data_utilities:store_env_meta_data(is_partial, Partial).
 
 -spec deliver_external_read_resp(binary() | timeout,#request_cache_entry{}) -> ok.
 deliver_external_read_resp(BinaryRep,RequestCacheEntry) when is_binary(BinaryRep) ->

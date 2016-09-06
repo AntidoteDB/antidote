@@ -18,6 +18,8 @@
 %%
 %% -------------------------------------------------------------------
 
+-define(PARTIAL,true).
+
 -module(test_utils).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -488,6 +490,11 @@ set_up_clusters_common(Config) ->
      _ ->
         [join_cluster(Cluster) || Cluster <- Clusters],
         Clusterheads = [hd(Cluster) || Cluster <- Clusters],
+	%% Set partial replication if needed
+	Partial = proplists:get_value(partial,Config,?PARTIAL),
+	lists:foreach(fun(Head) ->
+			      ok = rpc:call(Head, partial_repli_utils, set_partial, [Partial])
+		      end, Clusterheads),
         connect_cluster(Clusterheads)
    end,
    [Cluster1, Cluster2, Cluster3].

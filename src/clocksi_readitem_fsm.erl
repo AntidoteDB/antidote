@@ -45,7 +45,6 @@
 %% States
 -export([read_data_item/5,
 	 async_read_data_item/6,
-	 is_external/3,
 	 get_ops/6,
 	 check_partition_ready/3,
 	 start_read_servers/2,
@@ -92,23 +91,6 @@ stop_read_servers(Partition, Count) ->
     Addr = node(),
     stop_read_servers_internal(Addr, Partition, Count).
 
-%% TODO: implement this
-is_external({Key,_Bucket},PropList,Partition) ->
-    is_external(Key,PropList,Partition);
-is_external(<<"external",_/binary>>,[],Partition) ->
-    case dc_meta_data_utilities:get_dc_descriptors() of
-	[] ->
-	    false;
-	Descs ->
-	    PDCIDs = 
-		lists:map(fun(#descriptor{dcid=ExDCID}) ->
-				  {ExDCID,Partition}
-			  end, Descs),
-	    {true, PDCIDs}
-    end;
-is_external(_Key,_PropList,_Partition) ->
-    false.
-
 -spec get_ops(index_node(), key(), type(), clock_time(), snapshot_time(), tx()) -> {ok,[clocksi_payload()]} | {error, reason()}.
 get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction) ->
     try
@@ -125,9 +107,9 @@ get_ops({Partition,Node},Key,Type,Time,SnapshotTime,Transaction) ->
 read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
     %% Check if should perform the read externally
     %% lager:info("the key to check if external ~p", [Key]),
-    case is_external(Key,PropertyList,Partition) of
+    case partial_repli_utils:is_external(Key,Partition) of
 	{true, PDCIDs} ->
-	    %% lager:info("Performing external read ~p", [PDCIDs]),
+	    lager:info("Performing external read ~p", [PDCIDs]),
 	    Req = #external_read_request_state{
 		     dc_list = PDCIDs,
 		     key = Key,
@@ -152,9 +134,9 @@ read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
 async_read_data_item({Partition,Node},Key,Type,Transaction,PropertyList,Coordinator) ->
     %% Check if should perform the read externally
     %% lager:info("the key to check if external ASYNCCCC ~p", [Key]),
-    case is_external(Key,PropertyList,Partition) of
+    case partial_repli_utils:is_external(Key,Partition) of
 	{true, PDCIDs} ->
-	    %% lager:info("async external read!!!! ~w", [PDCIDs]),
+	    lager:info("async external read!!!! ~w", [PDCIDs]),
 	    Req = #external_read_request_state{
 		     dc_list = PDCIDs,
 		     key = Key,

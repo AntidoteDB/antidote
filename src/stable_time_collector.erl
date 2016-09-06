@@ -21,6 +21,12 @@
 %% InterDC subscriber - connects to remote PUB sockets and listens to a defined subset of messages.
 %% The messages are filter based on a binary prefix.
 
+%% Global can be true or false, if true
+%% then there is one of these processes per DC
+%% otherwise there is one per node
+-define(GLOBAL(), 
+	dc_meta_data_utilities:get_env_meta_data(is_global,false)).
+
 -module(stable_time_collector).
 -behaviour(gen_server).
 -include("antidote.hrl").
@@ -57,24 +63,29 @@
 %%%% API --------------------------------------------------------------------+
 
 
--spec update_partition_count(atom(), partition_id(),[{dcid(),#op_number{}}],clock_time()) -> ok.
+-spec update_partition_count(atom() | {global, atom()}, partition_id(),[{dcid(),#dc_last_ops{}}],clock_time()) -> ok.
 update_partition_count(ServerName, Partition, DCIDOpList, Time) ->
-    gen_server:cast({global, ServerName}, {update_partition_count, Partition, DCIDOpList, Time}).
+    gen_server:cast(ServerName, {update_partition_count, Partition, DCIDOpList, Time}).
 
--spec get_ping(atom()) -> #partial_ping{}.
+-spec get_ping(atom() | {global,atom()}) -> #partial_ping{}.
 get_ping(ServerName) ->
-    gen_server:call({global, ServerName}, get_ping).
+    gen_server:call(ServerName, get_ping).
 
 %% Start the heartbeat timer
 -spec start_timer() -> ok.
-start_timer() -> 
-    gen_server:call({global, get_registered_name()}, start_timer).
+start_timer() ->
+    gen_server:call(?MODULE, start_timer).
 
--spec get_registered_name() -> atom().
+-spec get_registered_name() -> atom() | {global, atom()}.
 get_registered_name() ->
-    DCID = dc_meta_data_utilities:get_my_dc_id(),
-    DCIDatom = dc_utilities:dc_id_to_atom(DCID),
-    list_to_atom(atom_to_list(stc) ++ atom_to_list(DCIDatom)).
+    case ?GLOBAL() of
+	true ->
+	    DCID = dc_meta_data_utilities:get_my_dc_id(),
+	    DCIDatom = dc_utilities:dc_id_to_atom(DCID),
+	    Name = list_to_atom(atom_to_list(stc) ++ atom_to_list(DCIDatom)),
+	    {global, Name};
+	false -> ?MODULE
+    end.
 
 %%%% Server methods ---------------------------------------------------------+
 
@@ -83,7 +94,6 @@ start_link() ->
 
 init([]) ->
     [Partition|_Rest] = dc_utilities:get_my_partitions(),
-    _ = global:register_name(get_registered_name(),self()),
     {ok, #state{timer = none,
 		ready = false,
 		partition = Partition,
@@ -104,6 +114,7 @@ update_partition_count_internal(Partition, DCIDOpList, Time,
 handle_info(ping, State = #state{partition = Partition}) ->
     Ping = create_ping(State),
     Txn = inter_dc_txn:partial_ping(Partition, Ping),
+    lager:info("sending ping at node ~w", [node()]),
     inter_dc_pub:broadcast(Txn),
     {noreply, set_timer(State)};
 handle_info(_Info, State) ->
@@ -126,6 +137,13 @@ create_ping(#state{partition_op_count = OpTable, partition_time = TimeTable}) ->
     
 %% Start the timer
 handle_call(start_timer, _Sender, State) ->
+    case ?GLOBAL() of
+	true ->
+	    {global,Name} = get_registered_name(),
+	    _ = global:register_name(Name,self()),
+	    ok;
+	false -> ok
+    end,
     {reply, ok, set_timer(State)};
 				
 handle_call(get_ping, _From, State) ->

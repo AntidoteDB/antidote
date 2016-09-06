@@ -413,7 +413,6 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
 	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-
 	    %% all operations update the per log, operation id
 	    OldOpId = get_op_id(OpIdTable, {LogId, MyDCID}),
 	    #op_number{local = OldLocal, global = OldGlobal} = OldOpId,
@@ -636,6 +635,7 @@ update_from_op_id(MyDCID,FromDCID,#log_record{log_operation = LogOperation, part
 	    case LogOperation#log_operation.op_type of
 		update ->
 		    %% Assume static DC configuration for now
+		    lager:info("the list ~w", [OpNumDCID]),
 		    {MyDCID,OtherOpNum} = lists:keyfind(MyDCID, 1, OpNumDCID),
 		    true = update_ets_op_id({[Partition],FromDCID},OtherOpNum,OpIdTable);
 		_ ->
@@ -877,13 +877,18 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, Co
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
 	    NewCommittedOpsDict = 
-		lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
+		lists:foldl(fun(#update_log_payload{key = KeyInternal, bucket = BucketInternal, type = Type, op = Op}, Acc) ->
 				    case (check_min_time(SnapshotTime,MinSnapshotTime) andalso
 					  check_max_time(SnapshotTime,MaxSnapshotTime)) of
 					true ->
+					    KeyInternal1 =
+						case BucketInternal of
+						    undefined -> KeyInternal;
+						    Bucket -> {KeyInternal,Bucket}
+						end,
 					    CommittedDownstreamOp =
 						#clocksi_payload{
-						   key = KeyInternal,
+						   key = KeyInternal1,
 						   type = Type,
 						   op_param = Op,
 						   snapshot_time = SnapshotTime,
@@ -1127,19 +1132,14 @@ get_op_id_all_dcs(ClockTable, LogId, IsPartial) ->
 get_op_id_all_dcs_for_bucket(ClockTable, LogId, Bucket, IsPartial) ->
     case IsPartial of
 	true ->
-	    DCIDs = dc_meta_data_utilities:get_dc_ids(false),
+	    RepDCIDs = partial_repli_utils:get_replica_dcs({nokey,Bucket}),
 	    %% lager:info("The dcs form the op ids ~p !!!!!!",[DCIDs]),
 	    lists:foldl(fun(DCID,Acc) ->
-				case replication_check:is_replicated_at_dc(Bucket,DCID) of
-				    true ->
-					OpNum = 
-					    get_op_id(ClockTable,{LogId,DCID}),
-					[{DCID,OpNum}|Acc];
-				    false ->
-					Acc
-				end
-			end, [], DCIDs)
-       %% false -> []
+				OpNum = 
+				    get_op_id(ClockTable,{LogId,DCID}),
+				[{DCID,OpNum}|Acc]
+			end, [], RepDCIDs)
+	    %% false -> []
     end.
 
 -spec get_commit_op_id(cache_id(), {log_id(),dcid()} | {log_id(),bucket(),dcid()}) -> {#op_number{},#op_number{}}.

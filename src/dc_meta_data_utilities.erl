@@ -24,7 +24,7 @@
 -include("inter_dc_repl.hrl").
 
 -export([
-	 is_partial/0,
+	 get_dc_bucket_subs/0,
 	 dc_start_success/0,
 	 is_restart/0,
 	 load_env_meta_data/0,
@@ -103,17 +103,6 @@ store_env_meta_data(Name, Value) ->
 -spec get_meta_data_name() -> {ok, atom()} | error.
 get_meta_data_name() ->
     stable_meta_data_server:read_meta_data(meta_data_name).
-
--spec is_partial() -> boolean().
-is_partial() ->
-    case stable_meta_data_server:read_meta_data(is_partial) of
-	{ok, Bool} ->
-	    Bool;
-	error ->
-	    Partial = application:get_env(antidote, partial, false),
-	    ok = stable_meta_data_server:broadcast_meta_data(is_partial,Partial),
-	    Partial
-    end.
 
 %% Returns a tuple of three elements
 %% The first is a dict with all partitions for DCID, with key and value being the partition id
@@ -249,7 +238,15 @@ get_partition_at_index(Index) ->
 -spec store_dc_descriptors([#descriptor{}]) -> ok.
 store_dc_descriptors(Descriptors) ->
     stable_meta_data_server:broadcast_meta_data_merge(external_descriptors, Descriptors, fun desc_merge_func/2, fun dict:new/0),
+    stable_meta_data_server:broadcast_meta_data_merge(external_buckets, Descriptors, fun bucket_merge_func/2, fun dict:new/0),
     stable_meta_data_server:broadcast_meta_data_merge(all_descriptors, Descriptors, fun desc_merge_func/2, fun dict:new/0).
+
+%% Internal function for merging the list of dc descriptors to only store their bucket lists
+-spec bucket_merge_func([#descriptor{}], dict()) -> dict().
+bucket_merge_func(DescList, PrevDict) ->
+    lists:foldl(fun(#descriptor{dcid = DCID, bucket_sub_list = BucketList}, Acc) ->
+			dict:store(DCID, BucketList, Acc)
+		end, PrevDict, DescList).
 
 %% Internal function for merging the list of dc descriptors
 -spec desc_merge_func([#descriptor{}], dict()) -> dict().
@@ -257,6 +254,13 @@ desc_merge_func(DescList, PrevDict) ->
     lists:foldl(fun(Desc = #descriptor{dcid = DCID}, Acc) ->
 			dict:store(DCID, Desc, Acc)
 		end, PrevDict, DescList).
+
+-spec get_dc_bucket_subs() -> dict().
+get_dc_bucket_subs() ->
+    case stable_meta_data_server:read_meta_data(external_buckets) of
+	{ok, Dict} -> Dict;
+	error -> dict:new()
+    end.
 
 %% Gets the list of external dc descriptors
 -spec get_dc_descriptors() -> [#descriptor{}].

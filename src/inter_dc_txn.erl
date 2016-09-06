@@ -47,7 +47,7 @@
 
 -type bucket_bin() :: undefined | {bucket,bucket()}.
 
--spec from_ops([#log_record{}], partition_id(), none | #op_number{},  none | [{dcid(),#op_number{}}]) -> #interdc_txn{}.
+-spec from_ops([#log_record{}], partition_id(), none | #op_number{},  none | [{dcid(),#dc_last_ops{}}]) -> #interdc_txn{}.
 from_ops(Ops, Partition, PrevLogOpId, PrevLogOpIdDC) ->
     LastOp = lists:last(Ops),
     CommitPld = LastOp#log_record.log_operation,
@@ -339,7 +339,7 @@ get_bucket_sub(Partition,Bucket) ->
 %% replicated by this DC for a given parition
 -spec get_bucket_sub_for_partition(partition_id()) -> [binary(),...].
 get_bucket_sub_for_partition(Partition) ->
-    BucketList = replication_check:get_my_buckets(),
+    BucketList = partial_repli_utils:get_buckets(),
     SubList = 
 	lists:map(fun(Bucket) ->
 			  get_bucket_sub(Partition,{bucket,Bucket})

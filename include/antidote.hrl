@@ -58,7 +58,7 @@
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
 -define(META_DATA_SLEEP, 1000).
-%% This is how old operations from the local DC should be included for an external real
+%% This is how old operations from the local DC should be included for an external read
 -define(EXTERNAL_READ_BACK_TIME, ((?META_DATA_SLEEP + ?HEARTBEAT_PERIOD) * 1000)).
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
@@ -93,7 +93,7 @@
 
 %% If partial replication is enabled
 -define(IS_PARTIAL(),
-	dc_meta_data_utilities:is_partial()).
+	partial_repli_utils:is_partial()).
 
 
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
@@ -251,3 +251,9 @@
 				 from_dcid :: dcid(),
 				 included_ops :: [{op_num(),clocksi_payload()}],
 				 included_ops_time :: clock_time()}).
+
+%% For partial replication to track the operation ordering between DCs
+-record(dc_last_ops, {
+	  last_update_id :: #op_number{},
+	  last_commit_id :: #op_number{}
+	 }).

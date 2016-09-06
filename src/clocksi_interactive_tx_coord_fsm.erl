@@ -227,6 +227,16 @@ perform_singleitem_operation(Key, Type, ReturnType, Properties) ->
             {ok, ReadResult, CommitTime}
     end.
 
+-spec generate_update_log_payload({key(),bucket()} | key(), type(), op()) -> #update_log_payload{}.
+generate_update_log_payload(Key,Type,DownstreamRecord) ->
+    {Key1,Bucket1} = 
+	case Key of
+	    {K,B} -> {K,B};
+	    _ -> {Key,undefined}
+	end,
+    #update_log_payload{key = Key1, bucket = Bucket1, type = Type, op = DownstreamRecord}.
+		
+
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
@@ -243,7 +253,7 @@ perform_singleitem_update(Key, Type, Params, Properties) ->
                     Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
-					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
+					       log_payload = generate_update_log_payload(Key,Type,DownstreamRecord)},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
                     case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
@@ -331,7 +341,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
                     end,
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
-					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
+					    log_payload = generate_update_log_payload(Key,Type,DownstreamRecord)},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
                     case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
