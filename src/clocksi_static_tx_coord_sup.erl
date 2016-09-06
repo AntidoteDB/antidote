@@ -34,8 +34,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_fsm(Args) ->
-    _Res = random:seed(dc_utilities:now()),
-    Random = random:uniform(?NUM_SUP),
+    _Res = rand:seed(exsplus, erlang:timestamp()),
+    Random = rand:uniform(?NUM_SUP),
     Module = generate_module_name(Random),
     supervisor:start_child(Module, Args).
 

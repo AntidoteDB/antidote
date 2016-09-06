@@ -186,7 +186,7 @@ generate_server_name(Node, Partition, Id) ->
 
 -spec generate_random_server_name(node(), partition_id()) -> atom().
 generate_random_server_name(Node, Partition) ->
-    generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
+    generate_server_name(Node, Partition, rand:uniform(?READ_CONCURRENCY)).
 
 init([Partition, Id]) ->
     Addr = node(),
