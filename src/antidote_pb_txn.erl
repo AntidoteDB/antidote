@@ -24,7 +24,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--behaviour(riak_api_pb_service).
+% TODO 19 restore module definition for new version
+% -behaviour(riak_api_pb_service).
 
 -include_lib("riak_pb/include/antidote_pb.hrl").
 -include("antidote.hrl").
