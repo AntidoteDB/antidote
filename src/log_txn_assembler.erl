@@ -32,7 +32,7 @@
 
 %% State
 -record(state, {
-  op_buffer :: dict()
+  op_buffer :: dict:dict()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -51,7 +51,7 @@ process(LogRecord, State) ->
     _ -> {none, State#state{op_buffer = dict:store(TxId, NewTxnBuf, State#state.op_buffer)}}
   end.
 
--spec process_all([#log_record{}],#state{op_buffer::'undefined' | dict()}) -> {[[#log_record{}]],#state{}}.
+-spec process_all([#log_record{}],#state{op_buffer::'undefined' | dict:dict()}) -> {[[#log_record{}]],#state{}}.
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
 
 -spec process_all([#log_record{}], [[#log_record{}]], #state{}) -> {[[#log_record{}]], #state{}}.
@@ -66,7 +66,7 @@ process_all([H|T], Acc, State) ->
 
 %%%% Methods ----------------------------------------------------------------+
 
--spec find_or_default(#tx_id{}, any(), dict()) -> any().
+-spec find_or_default(#tx_id{}, any(), dict:dict()) -> any().
 find_or_default(Key, Default, Dict) ->
   case dict:find(Key, Dict) of
     {ok, Val} -> Val;
