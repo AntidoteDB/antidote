@@ -48,11 +48,11 @@ start_link(Num) ->
 
 -spec get_entries(binary(),#inter_dc_query_state{}) -> ok.
 get_entries(BinaryQuery,QueryState) ->
-    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
+    ok = gen_server:cast(generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
 
 -spec request_permissions(binary(),#inter_dc_query_state{}) -> ok.
 request_permissions(BinaryRequest,QueryState) ->
-    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions,BinaryRequest,QueryState}).
+    ok = gen_server:cast(generate_server_name(rand:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions,BinaryRequest,QueryState}).
 
 %% ===================================================================
 %% gen_server callbacks

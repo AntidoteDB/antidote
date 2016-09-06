@@ -77,7 +77,7 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
     {_, Port} = get_address(),
     Socket = zmq_utils:create_bind_socket(xrep, true, Port),
-    _Res = random:seed(dc_utilities:now()),
+    _Res = rand:seed(exsplus, erlang:timestamp()),
     lager:info("Log reader started on port ~p", [Port]),
     {ok, #state{socket = Socket,next=getid}}.
 
