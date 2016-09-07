@@ -111,14 +111,17 @@
 	  tx_id :: txid(),
 	  op_type :: update | prepare | commit | abort | noop,
 	  log_payload :: #commit_log_payload{}| #update_log_payload{} | #abort_log_payload{} | #prepare_log_payload{}}).
--record(op_number, {node :: {node(),dcid()}, global :: non_neg_integer(), local :: non_neg_integer()}).
+-record(op_number, {
+  node :: undefined | {node(),dcid()},
+  global :: undefined | non_neg_integer(),
+  local :: undefined | non_neg_integer()}).
 
 %% The way records are stored in the log.
 -record(log_record,{
 	  version :: non_neg_integer(), %% The version of the log record, for backwards compatability
-	  op_number :: #op_number{},
-	  bucket_op_number :: #op_number{},
-	  log_operation :: #log_operation{}}).
+	  op_number :: undefined | #op_number{},
+	  bucket_op_number :: undefined | #op_number{},
+	  log_operation :: undefined | #log_operation{}}).
 
 %% Clock SI
 
@@ -134,7 +137,7 @@
 -define(CLOCKSI_TIMEOUT, 1000).
 
 -record(transaction, {snapshot_time :: snapshot_time(),
-                      server_pid :: pid(),
+                      server_pid :: undefined|pid(),
                       vec_snapshot_time,
                       txn_id :: txid()}).
 
@@ -157,7 +160,7 @@
 -type op_num() :: non_neg_integer().
 -type op_id() :: {op_num(), node()}.
 -type payload() :: term().
--type partition_id()  :: non_neg_integer().
+-type partition_id()  :: non_neg_integer() | ets:tid().
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
@@ -198,18 +201,18 @@
 %%----------------------------------------------------------------------
 
 -record(tx_coord_state, {
-          from :: {pid(), term()},
-          transaction :: tx(),
+          from :: undefined | {pid(), term()},
+          transaction :: undefined | tx(),
           updated_partitions :: list(),
           client_ops :: list(), % list of upstream updates, used for post commit hooks
           num_to_ack :: non_neg_integer(),
           num_to_read :: non_neg_integer(),
           prepare_time :: clock_time(),
-          commit_time :: clock_time(),
+          commit_time :: undefined | clock_time(),
           commit_protocol :: term(),
           state :: active | prepared | committing | committed | undefined
                  | aborted | committed_read_only,
-          operations :: list(),
+          operations :: undefined | list(),
           read_set :: list(),
           is_static :: boolean(),
           full_commit :: boolean(),
@@ -230,6 +233,6 @@
 %% clocksi_read_item_fsm as pointers to the materializer's ets caches
 -record(mat_state, {
 	  partition :: partition_id(),
-	  ops_cache :: cache_id(),
-	  snapshot_cache :: cache_id(),
-	  is_ready :: boolean()}).
+	  ops_cache :: atom() | cache_id(),
+	  snapshot_cache :: atom() | cache_id(),
+	  is_ready :: undefined | boolean()}).

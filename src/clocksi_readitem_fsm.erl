@@ -52,7 +52,7 @@
 -record(state, {partition :: partition_id(),
 		id :: non_neg_integer(),
 		mat_state :: #mat_state{},
-		prepared_cache :: cache_id(),
+		prepared_cache :: atom() | cache_id(),
 		self :: atom()}).
 
 %% TODO: allow properties for reads

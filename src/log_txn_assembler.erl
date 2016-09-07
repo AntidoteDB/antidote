@@ -32,7 +32,7 @@
 
 %% State
 -record(state, {
-  op_buffer :: dict:dict()
+  op_buffer :: undefined | dict:dict()
 }).
 
 %%%% API --------------------------------------------------------------------+
