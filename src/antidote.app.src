@@ -21,7 +21,6 @@
                   bear,
                   edown,
                   mochiweb,
-                  neotoma,
                   parse_trans
                  ]},
   {mod, { antidote_app, []}},
