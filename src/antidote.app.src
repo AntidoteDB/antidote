@@ -14,14 +14,7 @@
                   antidote_utils,
                   riak_dt,
                   antidote_pb,
-                  setup,
-                  cuttlefish,
-                  erlzmq,
-                  getopt,
-                  bear,
-                  edown,
-                  mochiweb,
-                  parse_trans
+                  erlzmq
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables
