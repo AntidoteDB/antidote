@@ -28,7 +28,7 @@
 
 %% API
 -export([
-  deliver_txn/1,
+  deliver_txn/2,
   deliver_log_reader_resp/2]).
 
 %% Vnode methods
@@ -50,38 +50,46 @@
 
 %% State
 -record(state, {
-  partition :: non_neg_integer(),
+  partition :: partition_id(),
   buffer_fsms :: dict() %% dcid -> buffer
 }).
 
 %%%% API --------------------------------------------------------------------+
 
--spec deliver_txn(#interdc_txn{}) -> ok.
-deliver_txn(Txn = #interdc_txn{prev_log_opid_dc = #partial_ping{}}) ->
-    _ = dc_utilities:bcast_vnode(inter_dc_sub_vnode_master, {partial_ping, Txn}),
+-spec deliver_txn(#interdc_txn{}, {dict(),partition_id()}) -> ok.
+deliver_txn(Txn = #interdc_txn{prev_log_opid_dc = #partial_ping{}}, {_MyNodePartitions,_DefaultPartition}) ->
+    _ = dc_utilities:bcast_my_vnode(inter_dc_sub_vnode_master, {partial_ping, Txn}),
     ok;
-deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
+deliver_txn(Txn = #interdc_txn{partition=FromPartition}, {MyNodePartitions,DefaultPartition}) ->
+    %% TODO: better way to choose partition for transaction from a partition
+    %% that doesn't exist at this DC
+    Partition = 
+	case dict:is_key(FromPartition, MyNodePartitions) of
+	    true -> FromPartition;
+	    false -> DefaultPartition
+	end,
+    call(Partition, {txn, Txn}).
 
 %% This function is called with the response from the log request operations request
 %% when some messages were lost
 -spec deliver_log_reader_resp(binary(),#request_cache_entry{}) -> ok.
-deliver_log_reader_resp(BinaryRep,_RequestCacheEntry) ->
-    <<Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, RestBinary/binary>> = BinaryRep,
-    call(Partition, {log_reader_resp, RestBinary}).
+deliver_log_reader_resp(BinaryRep,#request_cache_entry{extra_state = LocalPartition}) ->
+    <<_ExternalPartition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, RestBinary/binary>> = BinaryRep,
+    call(LocalPartition, {log_reader_resp, RestBinary}).
 
 %%%% VNode methods ----------------------------------------------------------+
 
 init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({partial_ping, Txn = #interdc_txn{dcid = DCID, prev_log_opid_dc = PartialPing}}, _Sender, State) ->
+handle_command({partial_ping, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
     %% TODO, this should only be for partitions that are subbed by this node
     NewState =
-	lists:foldl(fun({Partition,_DCOpList},AccState) ->
+	lists:foldl(fun(Partition,AccState) ->
 			    Buf0 = get_buf({DCID,Partition}, AccState),
 			    Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
 			    set_buf({DCID,Partition},Buf1,AccState)
-		    end, State, PartialPing#partial_ping.partition_dcid_op_list),
+		    end, State, [State#state.partition]),
     {noreply, NewState};
 
 handle_command({txn, Txn = #interdc_txn{dcid = DCID, partition = Partition}}, _Sender, State) ->

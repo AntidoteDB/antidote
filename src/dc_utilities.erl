@@ -34,6 +34,7 @@
   get_all_partitions/0,
   get_all_partitions_nodes/0,
   bcast_vnode/2,
+  bcast_my_vnode/2,
   get_my_partitions/0,
   ensure_all_vnodes_running/1,
   ensure_local_vnodes_running_master/1,
@@ -164,6 +165,12 @@ bcast_my_vnode_sync(VMaster, Request) ->
 -spec bcast_vnode(atom(), any()) -> any().
 bcast_vnode(VMaster, Request) ->
     lists:map(fun(P) -> {P, call_vnode(P, VMaster, Request)} end, get_all_partitions()).
+
+%% Sends the same (asynchronous) command to all vnodes of a given type
+%% located on the physical node from which this method is called
+-spec bcast_my_vnode(atom(), any()) -> any().
+bcast_my_vnode(VMaster, Request) ->
+    lists:map(fun(P) -> {P, call_vnode(P, VMaster, Request)} end, get_my_partitions()).
 
 %% Checks if all vnodes of a particular type are running.
 %% The method uses riak_core methods to perform the check and was

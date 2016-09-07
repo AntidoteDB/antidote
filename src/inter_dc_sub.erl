@@ -45,6 +45,7 @@
 
 %% State
 -record(state, {
+  my_node_partitions :: {dict(),partition_id()}, %% Partition -> Partition
   sockets :: dict() % DCID -> socket
 }).
 
@@ -83,11 +84,18 @@ handle_call({del_dc, DCID}, _From, State) ->
     {reply, Resp, NewState}.
 
 %% handle an incoming interDC transaction from a remote node.
+handle_info({zmq, Socket, BinaryMsg, Flags}, State = #state{my_node_partitions = undefined}) ->
+    MyPartitions = dc_utilities:get_my_partitions(),
+    MyPartDict =
+	lists:foldl(fun(Par, Acc) ->
+			   dict:store(Par,Par,Acc)
+		   end, dict:new(), MyPartitions),
+    handle_info({zmq, Socket, BinaryMsg, Flags}, State#state{my_node_partitions={MyPartDict,hd(MyPartitions)}});
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   %% decode the message
   Msg = inter_dc_txn:from_bin(BinaryMsg),
   %% deliver the message to an appropriate vnode
-  ok = inter_dc_sub_vnode:deliver_txn(Msg),
+  ok = inter_dc_sub_vnode:deliver_txn(Msg, State#state.my_node_partitions),
   {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.

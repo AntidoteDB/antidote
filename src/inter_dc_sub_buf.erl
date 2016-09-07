@@ -90,11 +90,11 @@ process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
   lager:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
   push(Txn, State);
 
-process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering, local_partition = LocalPartition}) ->
+process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, pdcid={_DCID,Partition}, state_name = buffering, local_partition = LocalPartition}) ->
     ok = lists:foreach(fun(Txn) -> deliver(Txn,LocalPartition) end, Txns),
     NewLast = case queue:peek(Queue) of
 		  empty -> State#inter_dc_sub_buf.last_observed_opid;
-		  {value, Txn} -> get_prev_op_id(Txn,LocalPartition)
+		  {value, Txn} -> get_prev_op_id(Txn,Partition)
 	      end,
     NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
     process_queue(NewState).
@@ -138,7 +138,6 @@ get_prev_op_id(Txn,Partition) ->
 	    DCOpList = 
 		case inter_dc_txn:is_ping(Txn) of
 		    false -> 
-			lager:info("the txn ~w", [Txn]),
 			Txn#interdc_txn.prev_log_opid_dc;
 		    true ->
 			PartialPing = Txn#interdc_txn.prev_log_opid_dc,
@@ -183,12 +182,13 @@ get_last_op_id(Txn,PrevLast) ->
 
 -spec process_queue(#inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
 process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last,
+					pdcid = {_DCID,Partition},
 					last_observed_commit_ids = {CommitLast1,CommitLast2},
 					local_partition = LocalPartition}) ->
     case queue:peek(Queue) of
 	empty -> State#inter_dc_sub_buf{state_name = normal};
 	{value, Txn} ->
-	    TxnLast = get_prev_op_id(Txn,LocalPartition),
+	    TxnLast = get_prev_op_id(Txn,Partition),
 	    case cmp(TxnLast, Last) of
 		%% If the received transaction is immediately after the last observed one
 		eq ->
@@ -215,7 +215,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 		    lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p, is a ping ~p",
 			       [TxnLast, Last, State#inter_dc_sub_buf.pdcid, inter_dc_txn:is_ping(Txn)]),
 		    {QueryBegin,QueryEnd,QueryFirstOp,QueryLastOp} = get_log_range_query_ids(Txn,State),
-		    case query(State#inter_dc_sub_buf.pdcid, QueryBegin, QueryEnd, QueryFirstOp, QueryLastOp) of
+		    case query(State#inter_dc_sub_buf.pdcid, QueryBegin, QueryEnd, QueryFirstOp, QueryLastOp, LocalPartition) of
 			ok ->
 			    State#inter_dc_sub_buf{state_name = buffering};
 			_ ->
@@ -237,12 +237,12 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 
 -spec get_log_range_query_ids(#interdc_txn{},#inter_dc_sub_buf{}) -> {log_opid(),log_opid(),log_opid() | undefined, log_opid() | undefined}.
 get_log_range_query_ids(Txn,#inter_dc_sub_buf{
-			       local_partition = LocalPartition,
+			       pdcid = {_DCID, Partition},
 			       last_observed_opid = OpId,
 			       last_observed_commit_ids = {CommitTime1,CommitTime2}}) ->
     case ?IS_PARTIAL() of
 	false ->
-	    {OpId + 1, get_prev_op_id(Txn,LocalPartition), undefined, undefined};
+	    {OpId + 1, get_prev_op_id(Txn,Partition), undefined, undefined};
 	true ->
 	    %% In partial replication request the missing ops from
 	    %% the previous commit operation id, to the commit id
@@ -257,12 +257,12 @@ get_log_range_query_ids(Txn,#inter_dc_sub_buf{
 			(inter_dc_txn:commit_opid(Txn))#op_number.local;
 		    true ->
 			PartialPing = Txn#interdc_txn.prev_log_opid_dc,
-			{LocalPartition, DCOpList} = lists:keyfind(LocalPartition,1,PartialPing#partial_ping.partition_dcid_op_list),
+			{Partition, DCOpList} = lists:keyfind(Partition,1,PartialPing#partial_ping.partition_dcid_op_list),
 			DCID = dc_meta_data_utilities:get_my_dc_id(),
 			{DCID, #dc_last_ops{last_commit_id = Time}} = lists:keyfind(DCID,1,DCOpList),
 			Time#op_number.local
 		end,
-	    MaxOpId = get_prev_op_id(Txn,LocalPartition),
+	    MaxOpId = get_prev_op_id(Txn,Partition),
 	    case MaxCommit > CommitTime2 of
 		true -> {CommitTime2,MaxCommit,OpId,MaxOpId};
 		false -> {CommitTime1,CommitTime2,OpId,MaxOpId}
@@ -284,12 +284,12 @@ push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_
 %% Instructs the log reader to ask the remote DC for a given range of operations.
 %% Instead of a simple request/response with blocking, the result is delivered
 %% asynchronously to inter_dc_sub_vnode.
--spec query(pdcid(), log_opid(), log_opid(), log_opid() | undefined, log_opid() | undefined) -> ok | unknown_dc.
-query({DCID,Partition}, From, To, FirstOp, LastOp) ->
+-spec query(pdcid(), log_opid(), log_opid(), log_opid() | undefined, log_opid() | undefined, partition_id()) -> ok | unknown_dc.
+query({DCID,Partition}, From, To, FirstOp, LastOp, MyPartition) ->
     MyDC = dc_meta_data_utilities:get_my_dc_id(),
     BinaryRequest = term_to_binary({read_log, Partition, From, To, FirstOp, LastOp, MyDC}),
     inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2,
-				   infinity, none, self()).
+				   infinity, MyPartition, self()).
 
 cmp(A, B) when A > B -> gt;
 cmp(A, B) when B > A -> lt;

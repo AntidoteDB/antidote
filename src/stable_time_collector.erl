@@ -114,7 +114,6 @@ update_partition_count_internal(Partition, DCIDOpList, Time,
 handle_info(ping, State = #state{partition = Partition}) ->
     Ping = create_ping(State),
     Txn = inter_dc_txn:partial_ping(Partition, Ping),
-    lager:info("sending ping at node ~w", [node()]),
     inter_dc_pub:broadcast(Txn),
     {noreply, set_timer(State)};
 handle_info(_Info, State) ->

@@ -66,10 +66,8 @@ broadcast(Txn) ->
     BinaryTxn =
 	case ?IS_PARTIAL() of
 	    false ->
-		lager:info("not partial"),
 		inter_dc_txn:to_bin(Txn);
 	    true ->
-		lager:info("is partial"),
 		inter_dc_txn:to_bucket_bin(Txn)
 	end,
     case catch gen_server:call(?MODULE, {publish, BinaryTxn}) of

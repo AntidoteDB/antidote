@@ -229,6 +229,7 @@ broadcast(State = #state{last_log_id_dc = OldIdDC}, Txn) ->
 
 %% This takes the largest dc op ids sent, it is used for partial replication
 %% since the new list might not contain all DCs if the transaction isn't replicated there
+%% TODO this is done really poorly currently
 -spec keep_max_dc_ids(undefined | [{dcid(),#dc_last_ops{}}],[{dcid(),#op_number{}}],#op_number{}) -> [{dcid(),#dc_last_ops{}}].
 keep_max_dc_ids(undefined,NewIdDC,NewCommitId) ->
     Sorted = lists:keysort(1,NewIdDC),
@@ -236,8 +237,11 @@ keep_max_dc_ids(undefined,NewIdDC,NewCommitId) ->
 		      {DCID, #dc_last_ops{last_update_id = OpNum, last_commit_id = NewCommitId}}
 	      end, Sorted);
 keep_max_dc_ids(OldIdDC,NewIdDC,NewCommitId) ->
-    NewSorted = lists:keysort(1,NewIdDC),
-    orddict:merge(fun(_DCID, NewUpdateId, #dc_last_ops{last_update_id = LastUpdateId,
+    NewSorted = 
+	lists:map(fun({DCID,OpNum}) ->
+			  {DCID, #dc_last_ops{last_update_id = OpNum, last_commit_id = NewCommitId}}
+		  end, lists:keysort(1,NewIdDC)),
+    orddict:merge(fun(_DCID, #dc_last_ops{last_update_id = NewUpdateId}, #dc_last_ops{last_update_id = LastUpdateId,
 						       last_commit_id = LastCommitId}) ->
 			  true = (NewUpdateId >= LastUpdateId), %% Sanity check
 			  true = (NewCommitId >= LastCommitId), %% Sanity check
