@@ -98,25 +98,70 @@ process_all_queues(State = #state{queues = Queues}) ->
 
 %% Tries to process as many elements in the queue as possible.
 %% Returns the new state and the number of processed elements
-process_queue(DCID, {State, Acc}) ->
-  Queue = dict:fetch(DCID, State#state.queues),
-  case queue:peek(Queue) of
-    empty -> {State, Acc};
-    {value, Txn} ->
-      {NewState, Success} = try_store(State, Txn),
-      case Success of
-        false -> {NewState, Acc};
-        true -> process_queue(DCID, {pop_txn(NewState, DCID), Acc + 1}) %% remove the just-applied txn and retry
-    end
-  end.
+-spec process_queue(dcid(),{#state{},non_neg_integer()}) -> {#state{},non_neg_integer()}.
+process_queue(DCID, {State, PrevCount}) ->
+    AllQueues = State#state.queues,
+    {Queue1,Queue2} = dict:fetch(DCID, AllQueues),
+    {NewQueue1,Count1,MaxTime,NewState1} =
+	process_txn(Queue1,0,none,State),
+    {NewQueue2,Count2,NewState2} =
+	process_ping(Queue2,0,MaxTime,NewState1),
+    Processed = Count1 + Count2,
+    case Processed > 0 of
+	true -> 
+	    {NewState2#state{queues = dict:store(DCID, {NewQueue1,NewQueue2}, AllQueues)}, Processed + PrevCount};
+	false -> {NewState2, PrevCount}
+    end.
+
+-spec process_ping(queue(), non_neg_integer(), none | non_neg_integer(), #state{}) ->
+			  {queue(), non_neg_integer(), #state{}}.
+process_ping(Queue, Count, MaxTime, State) ->
+    case queue:peek(Queue) of
+	empty -> {Queue, Count, State};
+	{value, Txn} ->
+	    {NewState, Success} = try_store_ping(State, Txn, MaxTime),
+	    case Success of
+		true -> process_ping(pop_queue(Queue),Count+1,MaxTime,NewState);
+		false -> {Queue,Count,NewState}
+	    end
+    end.
+
+-spec process_txn(queue(), non_neg_integer(), none | non_neg_integer(), #state{}) ->
+			 {queue(), non_neg_integer(), none | non_neg_integer(), #state{}}.
+process_txn(Queue, Count, MaxTime, State) ->
+    case queue:peek(Queue) of
+	empty -> {Queue, Count, MaxTime, State};
+	{value, Txn} ->
+	    {NewState, Success} = try_store(State, Txn),
+	    case Success of
+		true -> process_txn(pop_queue(Queue),Count+1,MaxTime,NewState);
+		{false, NewMaxTime} -> {Queue,Count,NewMaxTime,NewState}
+	    end
+    end.
+
+-spec pop_queue(queue()) -> queue().
+pop_queue(Queue) ->
+    {_, NewQueue} = queue:out(Queue),
+    NewQueue.
+
+-spec try_store_ping(#state{}, #interdc_txn{}, none | non_neg_integer()) ->
+			    {#state{}, boolean()}.
+try_store_ping(State=#state{drop_ping = true}, #interdc_txn{log_records = []}, _MaxTime) ->
+    {State, true};
+try_store_ping(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = []}, MaxTime) ->
+    case (MaxTime /= none) and (Timestamp >= MaxTime) of
+	false ->
+	    lager:info("storing time from ping ~w, dcid ~w", [Timestamp,DCID]),
+	    {update_clock(State, DCID, Timestamp, true), true};
+	true -> {State, false}
+    end.
 
 %% Store the heartbeat message.
 %% This is not a true transaction, so its dependencies are always satisfied.
--spec try_store(#state{}, #interdc_txn{}) -> {#state{}, boolean()}.
+-spec try_store(#state{}, #interdc_txn{}) -> {#state{}, true | {false, non_neg_integer()}}.
 try_store(State=#state{drop_ping = true}, #interdc_txn{log_records = []}) ->
     {State, true};
 try_store(State, _Txn = #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = []}) ->
-    %% lager:info("got a ping ~w", [Txn]),
     {update_clock(State, DCID, Timestamp, true), true};
 
 %% Store the normal transaction
@@ -140,12 +185,13 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% TODO, this needs to be removed for partial rep, because it is all done
     %% by the pings
     false ->
-	  lager:info("not putting the txn in the log!!!!!!!!!!!!!"),
-	  {update_clock(State, DCID, Timestamp-1, false), false};
+	  lager:info("not putting the txn in the log, timestamp ~w!!!!!!!!!!!!!, ~w", [Timestamp,DCID]),
+	  {update_clock(State, DCID, Timestamp-1, false), {false,Timestamp}};
 
     %% If so, store the transaction
     true ->
       %% Put the operations in the log
+	  lager:info("putting in the log the txn!!! timestamp ~w", [Timestamp]),
       {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),
 
@@ -186,18 +232,27 @@ delete(State) -> {ok, State}.
 -spec push_txn(#state{}, #interdc_txn{}) -> #state{}.
 push_txn(State = #state{queues = Queues}, Txn = #interdc_txn{dcid = DCID}) ->
   DCID = Txn#interdc_txn.dcid,
-  Queue = case dict:find(DCID, Queues) of
-    {ok, Q} -> Q;
-    error -> queue:new()
+  IsPing = inter_dc_txn:is_ping(Txn),
+  %% In partial rep we use 2 queues, the first for txns, the second for pings
+  %% This is because the pings aren't ordered with the transactions
+  %% The ping queue is processed after the txns
+  %% In full replication they are all in a sinlge queue
+  {Queue1,Queue2} = case dict:find(DCID, Queues) of
+    {ok, {Q1,Q2}} -> {Q1,Q2};
+    error -> {queue:new(),queue:new()}
   end,
-  NewQueue = queue:in(Txn, Queue),
-  State#state{queues = dict:store(DCID, NewQueue, Queues)}.
+  {NewQueue1,NewQueue2} = 
+	case IsPing and ?IS_PARTIAL() of
+	    true -> {Queue1,queue:in(Txn, Queue2)};
+	    false -> {queue:in(Txn,Queue1),Queue2}
+	end,
+  State#state{queues = dict:store(DCID, {NewQueue1,NewQueue2}, Queues)}.
 
-%% Remove one transaction from the chosen queue in the state.
-pop_txn(State = #state{queues = Queues}, DCID) ->
-  Queue = dict:fetch(DCID, Queues),
-  NewQueue = queue:drop(Queue),
-  State#state{queues = dict:store(DCID, NewQueue, Queues)}.
+%% %% Remove one transaction from the chosen queue in the state.
+%% pop_txn(State = #state{queues = Queues}, DCID) ->
+%%   Queue = dict:fetch(DCID, Queues),
+%%   NewQueue = queue:drop(Queue),
+%%   State#state{queues = dict:store(DCID, NewQueue, Queues)}.
 
 %% Update the clock value associated with the given DCID from the perspective of this partition.
 -spec update_clock(#state{}, dcid(), non_neg_integer(), boolean()) -> #state{}.

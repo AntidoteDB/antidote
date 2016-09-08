@@ -45,7 +45,8 @@
 
 %% State
 -record(state, {
-  my_node_partitions :: {dict(),partition_id()}, %% Partition -> Partition
+  partition_match :: dict(), %% DCID -> {dict,dict} of local partitions matched with external partitions (for partial rep when DCs have different partitions) two dicts because one is the inverse of the other
+  my_node_partitions :: dict(), %% Partition -> Partition
   sockets :: dict() % DCID -> socket
 }).
 
@@ -61,7 +62,7 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 %%%% Server methods ---------------------------------------------------------+
 
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
-init([]) -> {ok, #state{sockets = dict:new()}}.
+init([]) -> {ok, #state{sockets = dict:new(), partition_match = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers, OtherPartitions}, _From, OldState) ->
     case ?IS_PARTIAL() of
@@ -74,7 +75,16 @@ handle_call({add_dc, DCID, Publishers, OtherPartitions}, _From, OldState) ->
 	{ok, Sockets} ->
 	    %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
 	    %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
-	    {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets)}};
+	    MyPartitions = dc_utilites:get_my_partitions(),
+	    MyPartitionDict = lists:foldl(fun(P,Acc) ->
+						  dict:store(P,[],Acc)
+					  end, dict:new(), MyPartitions),
+	    {PartitionMatch,ReversePartitionMatch, _} = 
+		lists:foldl(fun(Partition,{PartDict,ReversePartDict,[MyFirst|MyRest]}) ->
+				    {dict:store(Partition,MyFirst,PartDict),dict:append(MyFirst,Partition,ReversePartDict),MyRest++[MyFirst]}
+			    end, {dict:new(),MyPartitionDict,MyPartitions}, OtherPartitions),
+	    {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets),
+				    partition_match = dict:store(DCID,{PartitionMatch,ReversePartitionMatch},State#state.partition_match)}};
 	connection_error ->
 	    {reply, error, State}
     end;
@@ -90,12 +100,12 @@ handle_info({zmq, Socket, BinaryMsg, Flags}, State = #state{my_node_partitions =
 	lists:foldl(fun(Par, Acc) ->
 			   dict:store(Par,Par,Acc)
 		   end, dict:new(), MyPartitions),
-    handle_info({zmq, Socket, BinaryMsg, Flags}, State#state{my_node_partitions={MyPartDict,hd(MyPartitions)}});
+    handle_info({zmq, Socket, BinaryMsg, Flags}, State#state{my_node_partitions=MyPartDict});
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
   %% decode the message
   Msg = inter_dc_txn:from_bin(BinaryMsg),
   %% deliver the message to an appropriate vnode
-  ok = inter_dc_sub_vnode:deliver_txn(Msg, State#state.my_node_partitions),
+  ok = inter_dc_sub_vnode:deliver_txn(Msg, State#state.my_node_partitions, State#state.partition_match),
   {noreply, State}.
 
 handle_cast(_Request, State) -> {noreply, State}.
@@ -108,7 +118,8 @@ del_dc(DCID, State) ->
     case dict:find(DCID, State#state.sockets) of
 	{ok, Sockets} ->
 	    lists:foreach(fun zmq_utils:close_socket/1, Sockets),
-	    {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+	    {ok, State#state{sockets = dict:erase(DCID, State#state.sockets),
+			     partition_match = dict:erase(DCID, State#state.partition_match)}};
 	error ->
 	    {ok, State}
     end.
@@ -137,6 +148,7 @@ connect_to_node([Address|Rest], OtherPartitions) ->
     ok = erlzmq:setsockopt(Socket1, rcvtimeo, ?ZMQ_TIMEOUT),
     ok = zmq_utils:sub_filter(Socket1, <<>>),
     Res = erlzmq:recv(Socket1),
+    MyPartitions = dc_utilities:get_my_partitions(),
     ok = zmq_utils:close_socket(Socket1),
     case Res of
 	{ok, _} ->
@@ -146,7 +158,8 @@ connect_to_node([Address|Rest], OtherPartitions) ->
 	    lists:foreach(fun(P) ->
 				  %% Make the socket subscribe to messages prefixed with the given partition number
 				  ok = zmq_utils:sub_filter(Socket, inter_dc_txn:get_partition_sub(P))
-			  end, dc_utilities:get_my_partitions() ++ OtherPartitions),
+			  end, MyPartitions ++ OtherPartitions),
+	    %% Be sure you have a buffer to receive txns from all external partitions
 	    {ok, Socket};
 	_ ->
 	    connect_to_node(Rest, OtherPartitions)

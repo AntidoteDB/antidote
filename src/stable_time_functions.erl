@@ -45,7 +45,7 @@ get_min_time(Dict) ->
 	dict:fold(fun(NodeId, NodeDict, {Acc1,Undefined}) ->
 			  case NodeDict of
 			      undefined ->
-				  lager:debug("missing a time for node ~p", [NodeId]),
+				  lager:error("missing a time for node ~p", [NodeId]),
 				  {Acc1,true};
 			      _ ->
 				  RetDict =

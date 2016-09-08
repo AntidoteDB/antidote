@@ -28,7 +28,7 @@
 
 %% API
 -export([
-  deliver_txn/2,
+  deliver_txn/3,
   deliver_log_reader_resp/2]).
 
 %% Vnode methods
@@ -50,23 +50,29 @@
 
 %% State
 -record(state, {
+  ping_count :: dict(),
   partition :: partition_id(),
   buffer_fsms :: dict() %% dcid -> buffer
 }).
 
 %%%% API --------------------------------------------------------------------+
 
--spec deliver_txn(#interdc_txn{}, {dict(),partition_id()}) -> ok.
-deliver_txn(Txn = #interdc_txn{prev_log_opid_dc = #partial_ping{}}, {_MyNodePartitions,_DefaultPartition}) ->
-    _ = dc_utilities:bcast_my_vnode(inter_dc_sub_vnode_master, {partial_ping, Txn}),
+-spec deliver_txn(#interdc_txn{}, dict(), dict()) -> ok.
+deliver_txn(Txn = #interdc_txn{dcid = DCID, prev_log_opid_dc = #partial_ping{}}, _MyNodePartitions, DictPartitionMatch) ->
+    {_PartitionMatch,PartitionMatchReverse} = dict:fetch(DCID, DictPartitionMatch),
+    ok = dict:fold(fun(LocalP,ExternalPList,ok) ->
+			 call(LocalP, {send_partial_ping, Txn, ExternalPList})
+		 end, ok, PartitionMatchReverse),
+    %% TODO, this should also be broadcast to all nodes (to the inter_dc_sub process) in the local DC
     ok;
-deliver_txn(Txn = #interdc_txn{partition=FromPartition}, {MyNodePartitions,DefaultPartition}) ->
-    %% TODO: better way to choose partition for transaction from a partition
-    %% that doesn't exist at this DC
+deliver_txn(Txn = #interdc_txn{dcid = DCID, partition=FromPartition}, MyNodePartitions, DictPartitionMatch) ->
+    {PartitionMatch,_ReversePartitionMatch} = dict:fetch(DCID, DictPartitionMatch),
     Partition = 
 	case dict:is_key(FromPartition, MyNodePartitions) of
 	    true -> FromPartition;
-	    false -> DefaultPartition
+	    false ->
+		%% For knowing what partition to send to if it comes from a partition that doesn't exist at this DC
+		dict:fetch(FromPartition,dict:fetch(DCID, PartitionMatch))
 	end,
     call(Partition, {txn, Txn}).
 
@@ -79,31 +85,31 @@ deliver_log_reader_resp(BinaryRep,#request_cache_entry{extra_state = LocalPartit
 
 %%%% VNode methods ----------------------------------------------------------+
 
-init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
+init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new(), ping_count = dict:new()}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
-handle_command({partial_ping, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
+handle_command({send_partial_ping, Txn = #interdc_txn{dcid = DCID}, ExternalPList}, _Sender, State) ->
     %% TODO, this should only be for partitions that are subbed by this node
     NewState =
 	lists:foldl(fun(Partition,AccState) ->
 			    Buf0 = get_buf({DCID,Partition}, AccState),
-			    Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
-			    set_buf({DCID,Partition},Buf1,AccState)
-		    end, State, [State#state.partition]),
+			    {Buf1,PingList} = inter_dc_sub_buf:process({txn, Txn}, Buf0),
+			    set_buf({DCID,Partition},Buf1,PingList,AccState)
+		    end, State, [State#state.partition|ExternalPList]),
     {noreply, NewState};
 
 handle_command({txn, Txn = #interdc_txn{dcid = DCID, partition = Partition}}, _Sender, State) ->
     %% lager:info("got a txn: ~p", [Txn]),
     Buf0 = get_buf({DCID,Partition}, State),
-    Buf1 = inter_dc_sub_buf:process({txn, Txn}, Buf0),
-    {noreply, set_buf({DCID,Partition}, Buf1, State)};
+    {Buf1,PingList} = inter_dc_sub_buf:process({txn, Txn}, Buf0),
+    {noreply, set_buf({DCID,Partition}, Buf1, PingList, State)};
 
 handle_command({log_reader_resp, BinaryRep}, _Sender, State) ->
   %% The binary reply is type {pdcid(), [#interdc_txn{}]}
   {PDCID, Txns} = binary_to_term(BinaryRep),
   Buf0 = get_buf(PDCID, State),
-  Buf1 = inter_dc_sub_buf:process({log_reader_resp, Txns}, Buf0),
-  {noreply, set_buf(PDCID, Buf1, State)}.
+  {Buf1,PingList} = inter_dc_sub_buf:process({log_reader_resp, Txns}, Buf0),
+  {noreply, set_buf(PDCID, Buf1, PingList, State)}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> {stop, not_implemented, State}.
 handle_exit(_Pid, _Reason, State) -> {noreply, State}.
@@ -118,7 +124,7 @@ terminate(_Reason, _ModState) -> ok.
 delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--spec call(partition_id(), {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
+-spec call(partition_id(), {send_partial_ping, #interdc_txn{}, [partition_id]} | {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
 call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
 -spec get_buf(pdcid(),#state{}) -> #inter_dc_sub_buf{}.
@@ -128,5 +134,25 @@ get_buf(PDCID, State) ->
     error -> inter_dc_sub_buf:new_state(PDCID, State#state.partition)
   end.
 
--spec set_buf(pdcid(), #inter_dc_sub_buf{}, #state{}) -> #state{}.
-set_buf(PDCID, Buf, State) -> State#state{buffer_fsms = dict:store(PDCID, Buf, State#state.buffer_fsms)}.
+-spec set_buf(pdcid(), #inter_dc_sub_buf{}, [#interdc_txn{}],  #state{}) -> #state{}.
+set_buf({DCID,Partition}, Buf, PingList, State) ->
+    PingDict = case dict:find(DCID, State#state.ping_count) of
+		   {ok, Value} -> Value;
+		   error -> dict:new()
+	       end,
+    %% TODO make right number
+    Blah = 1,
+    TimeToSendPing = Blah - 1,
+    NewPingDict = 
+	lists:foldl(fun(Ping,Acc) ->
+			    case dict:find(Ping, Acc) of
+				{ok, TimeToSendPing} ->
+				    %% send ping
+				    dict:erase(Ping,Acc);
+				{ok, _Val} ->
+				    dict:update_counter(Ping, 1, Acc);
+				error ->
+				    dict:update_counter(Ping, 1, Acc)
+			    end
+		    end, PingDict, PingList),
+    State#state{buffer_fsms = dict:store({DCID,Partition}, Buf, State#state.buffer_fsms), ping_count = dict:store(DCID, NewPingDict, State#state.ping_count)}.

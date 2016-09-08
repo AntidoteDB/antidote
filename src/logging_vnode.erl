@@ -635,7 +635,7 @@ update_from_op_id(MyDCID,FromDCID,#log_record{log_operation = LogOperation, part
 	    case LogOperation#log_operation.op_type of
 		update ->
 		    %% Assume static DC configuration for now
-		    lager:info("the list ~w", [OpNumDCID]),
+		    %%lager:info("the list ~w", [OpNumDCID]),
 		    {MyDCID,OtherOpNum} = lists:keyfind(MyDCID, 1, OpNumDCID),
 		    true = update_ets_op_id({[Partition],FromDCID},OtherOpNum,OpIdTable);
 		_ ->

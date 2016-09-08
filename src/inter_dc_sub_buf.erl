@@ -44,7 +44,7 @@ new_state(PDCID,LocalPartition) -> #inter_dc_sub_buf{
   queue = queue:new()
 }.
 
--spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+-spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #inter_dc_sub_buf{}) -> {#inter_dc_sub_buf{},[#interdc_txn{}]}.
 %%process({txn, Txn=#interdc_txn{dcid=DCID, partition=Partition}},
 %% TODO decide how to match partitions
 process({txn, Txn=#interdc_txn{dcid=DCID}},
@@ -83,12 +83,12 @@ process({txn, Txn=#interdc_txn{dcid=DCID}},
 	    process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=MaxOpId,last_observed_commit_ids=MaxCommitIdTuple});
 	{error,error} ->
 	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
-	    State
+	    {State, []}
     end;
-process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State),[]);
 process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
   lager:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
-  push(Txn, State);
+  {push(Txn, State),[]};
 
 process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, pdcid={_DCID,Partition}, state_name = buffering, local_partition = LocalPartition}) ->
     ok = lists:foreach(fun(Txn) -> deliver(Txn,LocalPartition) end, Txns),
@@ -97,7 +97,7 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, pdcid=
 		  {value, Txn} -> get_prev_op_id(Txn,Partition)
 	      end,
     NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
-    process_queue(NewState).
+    process_queue(NewState,[]).
 
 %%%% Methods ----------------------------------------------------------------+
 
@@ -180,22 +180,29 @@ get_last_op_id(Txn,PrevLast) ->
 	    end
     end.
 
--spec process_queue(#inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+-spec process_queue(#inter_dc_sub_buf{},[#interdc_txn{}]) -> {#inter_dc_sub_buf{},[#interdc_txn{}]}.
 process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last,
 					pdcid = {_DCID,Partition},
 					last_observed_commit_ids = {CommitLast1,CommitLast2},
-					local_partition = LocalPartition}) ->
+					local_partition = LocalPartition},Acc) ->
     case queue:peek(Queue) of
-	empty -> State#inter_dc_sub_buf{state_name = normal};
+	empty -> {State#inter_dc_sub_buf{state_name = normal},Acc};
 	{value, Txn} ->
 	    TxnLast = get_prev_op_id(Txn,Partition),
 	    case cmp(TxnLast, Last) of
 		%% If the received transaction is immediately after the last observed one
 		eq ->
-		    deliver(Txn,LocalPartition),
-		    %% TODO, fix how this happens for ping in partial
+		    IsPing = inter_dc_txn:is_ping(Txn),
+		    NewAcc = 
+			case IsPing and ?IS_PARTIAL() of
+			    true ->
+				[Txn] ++ Acc;
+			    false ->
+				ok = deliver(Txn,LocalPartition),
+				Acc
+			end,
 		    NewState = 
-			case inter_dc_txn:is_ping(Txn) of
+			case IsPing of
 			    false ->
 				Max = get_last_op_id(Txn,Last),
 				MaxCommit = (inter_dc_txn:commit_opid(Txn))#op_number.local,
@@ -209,7 +216,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 			    true ->
 				State#inter_dc_sub_buf{queue = queue:drop(Queue)}
 			end,
-		    process_queue(NewState);
+		    process_queue(NewState,NewAcc);
 		%% If the transaction seems to come after an unknown transaction, ask the remote log
 		gt ->
 		    lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p, is a ping ~p",
@@ -217,21 +224,23 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 		    {QueryBegin,QueryEnd,QueryFirstOp,QueryLastOp} = get_log_range_query_ids(Txn,State),
 		    case query(State#inter_dc_sub_buf.pdcid, QueryBegin, QueryEnd, QueryFirstOp, QueryLastOp, LocalPartition) of
 			ok ->
-			    State#inter_dc_sub_buf{state_name = buffering};
+			    {State#inter_dc_sub_buf{state_name = buffering},Acc};
 			_ ->
 			    lager:warning("Failed to send log query to DC, will retry on next ping message"),
-			    State#inter_dc_sub_buf{state_name = normal}
+			    {State#inter_dc_sub_buf{state_name = normal},Acc}
 		    end;
 		
 		%% If the transaction has an old value, drop it.
 		lt ->
-		    case ?IS_PARTIAL() and inter_dc_txn:is_ping(Txn) of
-			true ->
-			    deliver(Txn,LocalPartition);
-			false ->
-			    lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last])
-		    end,
-		    process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
+		    NewAcc = 
+			case ?IS_PARTIAL() and inter_dc_txn:is_ping(Txn) of
+			    true ->
+				[Txn] ++ Acc;
+			    false ->
+				lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
+				Acc
+			end,
+		    process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)},NewAcc)
 	    end
     end.
 
