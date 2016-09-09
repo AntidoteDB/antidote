@@ -103,10 +103,10 @@ simple_transaction_test(Node) ->
 
 
 read_write_test(Node) ->
-    Bound_object = {key, riak_dt_pncounter, bucket},
+    Bound_object = {key_read_write_test, riak_dt_pncounter, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
-    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
+    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, {increment, actor}}], TxId]),
     rpc:call(Node, antidote, finish_transaction, [TxId]).
 
 
@@ -125,7 +125,7 @@ pb_test_counter_read_write(_Node) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_pncounter, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
-    ok = antidotec_pb:update_objects(Pid, [{Bound_object, increment, 1}], TxId),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object, {increment, actor}}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
     {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
@@ -139,7 +139,7 @@ pb_test_set_read_write(_Node) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, riak_dt_orset, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
-    ok = antidotec_pb:update_objects(Pid, [{Bound_object, add, "a"}], TxId),
+    ok = antidotec_pb:update_objects(Pid, [{Bound_object, {add, "a"}, actor}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
     {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),

@@ -382,10 +382,9 @@ clocksi_tx_noclock_test(Nodes) ->
         [Key, riak_dt_pncounter]),
     {ok, {_, ReadSet1, _}}= ReadResult1,
     ?assertMatch([1], ReadSet1),
-
-
-    Operation = {{Key, Type, bucket}, increment, 1},
-
+    
+    Operation = {{Key, Type, bucket}, {increment, actor}},
+    lager:info("About to execute Operation: ~p", [Operation]),
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     ok = rpc:call(FirstNode, antidote, update_objects,
         [[Operation], TxId1]),
@@ -412,9 +411,9 @@ clocksi_multiple_key_update_read_test(Nodes) ->
     Key1 = clocksi_multiple_key_update_read_test_key1,
     Key2 = clocksi_multiple_key_update_read_test_key2,
     Key3 = clocksi_multiple_key_update_read_test_key3,
-    Operation1 = {{Key1, Type, bucket}, increment, 1},
-    Operation2 = {{Key2, Type, bucket}, increment, 1},
-    Operation3 = {{Key3, Type, bucket}, increment, 1},
+    Operation1 = {{Key1, Type, bucket}, {increment, actor1}},
+    Operation2 = {{Key2, Type, bucket}, {increment, actor2}},
+    Operation3 = {{Key3, Type, bucket}, {increment, actor3}},
 
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     ok = rpc:call(FirstNode, antidote, update_objects,

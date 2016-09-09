@@ -163,12 +163,11 @@ update_objects(Updates, TxId) ->
 %%    lager:info("gonna start multiple updates: ~p", [Updates]),
 
     {_, _, CoordFsmPid} = TxId,
-    Actor = TxId,
-    NewObjects = lists:map(fun({{Key, Type, _Bucket}, Op, OpParam}) ->
-        case materializer:check_operations([{update, {Key, Type, {{Op, OpParam}, Actor}}}]) of
+    NewObjects = lists:map(fun({{Key, Type, _Bucket}, Op}) ->
+        case materializer:check_operations([{update, {Key, Type, Op}}]) of
             ok ->
 %%                lager:info("check ok!"),
-                {Key, Type, {{Op, OpParam}, Actor}};
+                {Key, Type, Op};
             {error, _Reason} ->
 %%                lager:info("check WRONG!"),
                     {error, type_check}
@@ -304,10 +303,9 @@ delete_object({_Key, _Type, _Bucket}) ->
 %%      object stored at some key.
 -spec append(key(), type(), {op(),term()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-
-append(Key, Type, {{Op, OpParam}, _Actor}) ->
+append(Key, Type, Op) ->
     {ok, TxId} = start_transaction(ignore, []),
-    ok = update_objects([{{Key, Type, bucket}, Op, OpParam}], TxId),
+    ok = update_objects([{{Key, Type, bucket}, Op}], TxId),
     {ok, CommitTime} = commit_transaction(TxId),
     {ok, {TxId, [], CommitTime}}.
 
