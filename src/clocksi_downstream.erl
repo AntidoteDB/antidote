@@ -27,7 +27,7 @@
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
-    Type :: type(), Update :: op(), list(), orddict()) ->
+    Type :: type(), Update :: {op(), actor(), list(), orddict()) ->
     {error, _} | {ok, {merge, _} | {update, _}, _}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet) ->
     {Op, Actor} = Update,
@@ -40,23 +40,31 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalR
              end,
     case Result of
         {Snapshot, SnapshotCommitParams} ->
-            TypeString = lists:flatten(io_lib:format("~p", [Type])),
-            case string:str(TypeString, "riak_dt") of
-                0 -> %% dealing with an op_based crdt
-                    case Type:generate_downstream(Op, Actor, Snapshot) of
-                        {ok, OpParam} ->
-                            {ok, {update, OpParam}, SnapshotCommitParams};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
-                1 -> %% dealing with a state_based crdt
-                    case Type:update(Op, Actor, Snapshot) of
-                        {ok, NewState} ->
-                            {ok, {merge, NewState}, SnapshotCommitParams};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end
+%%            ALE PREV CODE
+%%            TypeString = lists:flatten(io_lib:format("~p", [Type])),
+%%            case string:str(TypeString, "riak_dt") of
+%%                0 -> %% dealing with an op_based crdt
+%%                    case Type:generate_downstream(Op, Actor, Snapshot) of
+%%                        {ok, OpParam} ->
+%%                            {ok, {update, OpParam}, SnapshotCommitParams};
+%%                        {error, Reason} ->
+%%                            {error, Reason}
+%%                    end;
+%%                1 -> %% dealing with a state_based crdt
+%%                    case Type:update(Op, Actor, Snapshot) of
+%%                        {ok, NewState} ->
+%%                            {ok, {merge, NewState}, SnapshotCommitParams};
+%%                        {error, Reason} ->
+%%                            {error, Reason}
+%%                    end
+%%            end;
+            case Type of
+                antidote_crdt_bcounter -> %% bcounter data-type.
+                    bcounter_mgr:generate_downstream(Key,Update,Snapshot);
+                _ ->
+                    Type:downstream(Update, Snapshot)
             end;
+            
         {error, R} ->
             {error, R} %% {error, Reason} is returned here.
     end.

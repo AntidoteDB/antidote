@@ -32,6 +32,7 @@
 -ifdef(TEST).
 -define(APPLICATION, mock_partition_fsm).
 -include_lib("eunit/include/eunit.hrl").
+-define(DC_META_UTIL, mock_partition_fsm).
 -define(DC_UTIL, mock_partition_fsm).
 -define(VECTORCLOCK, mock_partition_fsm).
 -define(LOG_UTIL, mock_partition_fsm).
@@ -39,6 +40,7 @@
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
 -define(LOGGING_VNODE, mock_partition_fsm).
 -else.
+-define(DC_META_UTIL, dc_meta_data_utilities).
 -define(APPLICATION, application).
 -define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
@@ -51,10 +53,9 @@
 
 %% API
 -export([start_link/2,
-    start_tx/2,
-    start_link/1,
-    start_link/3,
-    start_link/4]).
+         start_link/1,
+         start_link/3,
+         start_link/4]).
 
 %% Callbacks
 -export([init/1,
@@ -66,9 +67,10 @@
     stop/1]).
 
 %% States
--export([create_transaction_record/6,
-    init_state/4,
-    perform_update/3,
+-export([create_transaction_record/5,
+    start_tx/2,
+    init_state/3,
+    perform_update/5,
     perform_read/4,
     execute_op/3,
 receive_read_objects_result/2,
@@ -105,8 +107,8 @@ start_link(From, Clientclock, UpdateClock, StayAlive) ->
 start_link(From, Clientclock) ->
     start_link(From, Clientclock, update_clock).
 
-start_link(From, Clientclock, UpdateClock) ->
-    start_link(From, Clientclock, UpdateClock, false).
+start_link(From,Clientclock,UpdateClock) ->
+    start_link(From,Clientclock,UpdateClock,false).
 
 start_link(From) ->
     start_link(From, ignore, update_clock).
@@ -130,7 +132,8 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
     #tx_coord_state{
        transactional_protocol = Protocol,
         transaction = undefined,
-        updated_partitions = [],
+	    client_ops=[],
+	    updated_partitions = [],
         prepare_time = 0,
         num_to_read = 0,
         num_to_ack = 0,
@@ -156,7 +159,7 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction = Transaction, num_to_read = 0}.
+    SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
   boolean(), pid() | undefined, boolean(), atom()) -> {transaction(), txid() | {error, term()}}.
@@ -204,7 +207,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
 %%                ->
             DcId = ?DC_UTIL:get_my_dc_id(),
             LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
-            TransactionId = #tx_id{snapshot_time = LocalClock, server_pid = Name},
+            TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
 
             Transaction = #transaction{snapshot_clock = LocalClock,
                 transactional_protocol = Protocol,
@@ -220,7 +223,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()}.
+-spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
 %%    todo: there should be a better way to get the Protocol.
     {ok, Protocol} = application:get_env(antidote, txn_prot),
@@ -241,7 +244,7 @@ perform_singleitem_read(Key, Type) ->
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Key, Type, Params) ->
+perform_singleitem_update(Key, Type, Params1) ->
     {ok, Protocol} = application:get_env(antidote, txn_prot),
     {Transaction, TxId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -249,7 +252,10 @@ perform_singleitem_update(Key, Type, Params) ->
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
     %% todo: another for logging, and finally one for single commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, [], []) of
+	%% Execute pre_commit_hook if any
+	case antidote_hooks:execute_pre_commit_hook(Key, Type, Params1) of
+		{Key, Type, Params} ->
+	case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, [], []) of
         {ok, DownstreamRecord, CommitRecordParameters} ->
             Updated_partition =
                 case Transaction#transaction.transactional_protocol of
@@ -259,14 +265,20 @@ perform_singleitem_update(Key, Type, Params) ->
                                     Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                                         [{IndexNode, [{Key, Type, DownstreamRecord}]}]
                                 end,
-            LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
+	        LogRecord = #log_operation{tx_id = TxId, op_type = update,
+		        log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
             case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
                 ok ->
                     case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
                         {committed, CommitTime} ->
+	                        %% Execute post commit hook
+	                        _Res = case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+		                        {error, Reason} ->
+			                        lager:info("Post commit hook failed. Reason ~p", [Reason]);
+		                        _ -> ok
+	                        end,
                             DcId = ?DC_UTIL:get_my_dc_id(),
                             SnapshotVC =
                                 case Transaction#transaction.transactional_protocol of
@@ -289,7 +301,10 @@ perform_singleitem_update(Key, Type, Params) ->
             end;
         {error, Reason} ->
             {error, Reason}
-    end.
+    end;
+		{error, Reason} ->
+			{error, Reason}
+	end.
 
 perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
@@ -313,7 +328,7 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
             ReadResult
     end.
 perform_update(UpdateArgs, Sender, CoordState) ->
-    {Key, Type, Param} = UpdateArgs,
+    {Key, Type, Param1} = UpdateArgs,
 %%    lager:info("updating with the following paramaters: ~p~n",[Param]),
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
     Transaction = CoordState#tx_coord_state.transaction,
@@ -328,6 +343,8 @@ perform_update(UpdateArgs, Sender, CoordState) ->
                    {IndexNode, WS} ->
                        WS
                end,
+	case antidote_hooks:execute_pre_commit_hook(Key, Type, Param1) of
+		{Key, Type, Param} ->
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
     %% todo: another for logging, and finally one (or two) for  commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
@@ -362,8 +379,8 @@ perform_update(UpdateArgs, Sender, CoordState) ->
                     gen_fsm:reply(Sender, ok)
             end,
             TxId = Transaction#transaction.txn_id,
-            LogRecord = #log_record{tx_id = TxId, op_type = update,
-                op_payload = {Key, Type, DownstreamRecord}},
+	        LogRecord = #log_operation{tx_id = TxId, op_type = update,
+		        log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
             [Node] = Preflist,
             case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
@@ -393,8 +410,11 @@ perform_update(UpdateArgs, Sender, CoordState) ->
                     _Res = gen_fsm:reply(Sender, {error, Reason})
             end,
             {error, Reason}
-    end.
-
+    end;
+		{error, Reason} ->
+			lager:debug("Execute pre-commit hook failed ~p", [Reason]),
+			{error, Reason}
+	end.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
@@ -450,7 +470,6 @@ execute_op({OpType, Args}, Sender,
                 NewCoordinatorState ->
                     {next_state, execute_op, NewCoordinatorState}
             end
-
     end.
 
 receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
@@ -688,7 +707,7 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
 %% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
 abort(SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = UpdatedPartitions}) ->
+                            updated_partitions = UpdatedPartitions}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
@@ -700,15 +719,15 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
-    updated_partitions = _UpdatedPartitions}) ->
+                                   updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort({prepared, _}, SD0 = #tx_coord_state{transaction = _Transaction,
-    updated_partitions = _UpdatedPartitions}) ->
+                                           updated_partitions = _UpdatedPartitions}) ->
     abort(SD0);
 
 abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
-    updated_partitions = _UpdatedPartitions}) ->
+                               updated_partitions = _UpdatedPartitions}) ->
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
@@ -731,7 +750,7 @@ receive_aborted(_, S0) ->
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_read_set = ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
-    is_static = IsStatic, stay_alive = StayAlive}) ->
+    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case Transaction#transaction.transactional_protocol of
@@ -745,7 +764,10 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
                                         {ok, {TxId, lists:reverse(ReturnReadSet), Transaction#transaction.snapshot_vc}}
                                 end;
                             committed ->
-                                DcId = ?DC_UTIL:get_my_dc_id(),
+	                            %% Execute post_commit_hooks
+	                            _Result = execute_post_commit_hooks(ClientOps),
+	                            %% TODO: What happens if commit hook fails?
+                                DcId = ?DC_META_UTIL:get_my_dc_id(),
                                 CausalClock = ?VECTORCLOCK:set_clock_of_dc(
                                     DcId, CommitTime, Transaction#transaction.snapshot_vc),
                                 case IsStatic of
@@ -791,8 +813,8 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
                         end
 
                 end,
-        _Res = gen_fsm:reply(From, Reply);
-        true -> ok
+            _Res = gen_fsm:reply(From, Reply);
+       true -> ok
     end,
     case StayAlive of
         true ->
@@ -800,6 +822,16 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
         false ->
             {stop, normal, SD}
     end.
+
+execute_post_commit_hooks(Ops) ->
+    lists:foreach(
+      fun({Key, Type, Update}) ->
+              case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
+                  {error, Reason} ->
+                      lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                  _ -> ok
+              end
+      end, lists:reverse(Ops)).
 
 %% =============================================================================
 
@@ -834,15 +866,11 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
-%%    Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
-    Now = clocksi_vnode:now_microsec(dc_utilities:now()),
-%%    Now = clocksi_vnode:now_microsec(dc_utilities:now()) + random:uniform(35000) - 17500,
-    DcId = ?DC_UTIL:get_my_dc_id(),
-    {ok, VecSnapshotTime} = ?VECTORCLOCK:get_stable_snapshot(),
+    Now = clocksi_vnode:now_microsec(dc_utilities:now()) - ?OLD_SS_MICROSEC,
+    {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
+    DcId = ?DC_META_UTIL:get_my_dc_id(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
     {ok, SnapshotTime}.
-
-
 
 
 -spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
@@ -858,7 +886,6 @@ wait_for_clock(Clock) ->
             timer:sleep(3),
             wait_for_clock(Clock)
     end.
-
 
 -ifdef(TEST).
 
@@ -963,17 +990,10 @@ downstream_fail_test(Pid) ->
 
 
 get_snapshot_time_test() ->
-%%    {ok, SnapshotTime} = get_snapshot_time(),
-%%    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)).
     {ok, SnapshotTime} = get_snapshot_time(),
     ?assertMatch([{mock_dc, _}], SnapshotTime).
 
 wait_for_clock_test() ->
-%%    {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
-%%    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)),
-%%    VecClock = clocksi_vnode:now_microsec(dc_utilities:now()),
-%%    {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
-%%    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime2)).
     {ok, SnapshotTime} = wait_for_clock([{mock_dc, 10}]),
     ?assertMatch([{mock_dc, _}], SnapshotTime),
     VecClock = clocksi_vnode:now_microsec(dc_utilities:now()),
@@ -982,4 +1002,3 @@ wait_for_clock_test() ->
 
 
 -endif.
-

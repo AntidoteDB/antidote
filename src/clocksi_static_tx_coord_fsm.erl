@@ -124,7 +124,8 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 			    _ ->
 				    case Operation of
 				        {update, {Key, Type, OpParams}} ->
-					        case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},undefined, Acc) of
+					        case clocksi_interactive_tx_coord_fsm:perform_update(
+						        {Key,Type,OpParams},undefined, Acc) of
 					            {error,Reason} ->
                                     {error, Reason};
 					            NewUpdatedPartitions ->

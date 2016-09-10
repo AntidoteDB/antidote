@@ -130,7 +130,6 @@ put_meta_dict(Name,Partition, Dict, Func) ->
 			 _ ->
 			     Func(Dict, get_meta_dict(Name,Partition))
 		     end,
-	    %% lager:info("put partition ~p, vectorclock ~p", [Partition,vectorclock:to_list(Dict)]),
 	    true = ets:insert(get_name(Name,?META_TABLE_NAME), {Partition, Result}),
 	    ok
     end.
@@ -267,80 +266,76 @@ terminate(_Reason, _SN, _SD) ->
 
 -spec get_meta_data(atom(), fun((vectorclock()) -> vectorclock()), boolean()) -> {true, vectorclock()} | false.
 get_meta_data(Name, MergeFunc, CheckNodes) ->
-	TablesReady = case ets:info(get_name(Name, ?REMOTE_META_TABLE_NAME)) of
-					  undefined ->
-						  false;
-					  _ ->
-						  case ets:info(get_name(Name, ?META_TABLE_NAME)) of
-							  undefined ->
-								  false;
-							  _ ->
-								  true
-						  end
-				  end,
-	case TablesReady of
-		false ->
-			false;
-		true ->
-			{NodeList, PartitionList, WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
-		RemoteDict = vectorclock:from_list(ets:tab2list(get_name(Name,?REMOTE_META_TABLE_NAME))),
-		LocalDict = vectorclock:from_list(ets:tab2list(get_name(Name,?META_TABLE_NAME))),
-%%			RemoteDict = ets:tab2list(get_name(Name, ?REMOTE_META_TABLE_NAME)),
-%%			LocalDict = ets:tab2list(get_name(Name, ?META_TABLE_NAME)),
-			%% lager:info("node ~p partition ~p will change ~p remote ~p, local ~p", [NodeList,PartitionList,WillChange,vectorclock:to_list(RemoteDict),vectorclock:to_list(LocalDict)]),
-			%% Be sure that you are only checking active nodes
-			%% This isnt the most efficent way to do this because are checking the list
-			%% of nodes and partitions every time to see if any have been removed/added
-			%% This is only done if the ring is expected to change, but should be done
-			%% differently (check comment in get_node_and_partition_list())
-			{NewRemote, NewLocal} =
-				case CheckNodes of
-					true ->
-						{NewDict, NodeErase} =
-							lists:foldl(fun(NodeId, {Acc, Acc2}) ->
-								AccNew = case vectorclock:find(NodeId, RemoteDict) of
-											 {ok, Val} ->
-												 vectorclock:store(NodeId, Val, Acc);
-											 error ->
-												 %% Put a record in the ets table because there is none for this node
-												 meta_data_manager:add_new_meta_data(Name, NodeId),
-												 vectorclock:store(NodeId, undefined, Acc)
-										 end,
-								Acc2New = vectorclock:erase(NodeId, Acc2),
-								{AccNew, Acc2New}
-										end, {vectorclock:new(), RemoteDict}, NodeList),
-						%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
-						vectorclock:fold(fun(NodeId, _Val, _Acc) ->
-							ok = meta_data_manager:remove_node(Name, NodeId)
-										 end, ok, NodeErase),
-
-						%% Be sure that you are only checking local partitions
-						{NewLocalDict, PartitionErase} =
-							lists:foldl(fun(PartitionId, {Acc, Acc2}) ->
-								AccNew = case vectorclock:find(PartitionId, LocalDict) of
-											 {ok, Val} ->
-												 vectorclock:store(PartitionId, Val, Acc);
-											 error ->
-												 %% Put a record in the ets table because there is none for this partition
-												 ets:insert_new(get_name(Name, ?META_TABLE_NAME), {PartitionId, vectorclock:new()}),
-												 vectorclock:store(PartitionId, undefined, Acc)
-										 end,
-								Acc2New = vectorclock:erase(PartitionId, Acc2),
-								{AccNew, Acc2New}
-										end, {vectorclock:new(), LocalDict}, PartitionList),
-						%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
-						vectorclock:fold(fun(PartitionId, _Val, _Acc) ->
-							ok = remove_partition(Name, PartitionId)
-										 end, ok, PartitionErase),
-
-						{NewDict, NewLocalDict};
-					false ->
-						{RemoteDict, LocalDict}
-				end,
-			LocalMerged = MergeFunc(NewLocal),
-			%% lager:info("newlocal ~p newremote ~p localmerged ~p", [vectorclock:to_list(NewLocal),vectorclock:to_list(NewRemote),vectorclock:to_list(LocalMerged)]),
-			{WillChange, vectorclock:store(local_merged, LocalMerged, NewRemote)}
-	end.
+    TablesReady = case ets:info(get_name(Name,?REMOTE_META_TABLE_NAME)) of
+		      undefined ->
+			  false;
+		      _ ->
+			  case ets:info(get_name(Name,?META_TABLE_NAME)) of
+			      undefined ->
+				  false;
+			      _ ->
+				  true
+			  end
+		  end,
+    case TablesReady of
+	false ->
+	    false;
+	true ->
+	    {NodeList,PartitionList,WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
+	    RemoteDict = dict:from_list(ets:tab2list(get_name(Name,?REMOTE_META_TABLE_NAME))),
+	    LocalDict = dict:from_list(ets:tab2list(get_name(Name,?META_TABLE_NAME))),
+	    %% Be sure that you are only checking active nodes
+	    %% This isnt the most efficent way to do this because are checking the list
+	    %% of nodes and partitions every time to see if any have been removed/added
+	    %% This is only done if the ring is expected to change, but should be done
+	    %% differently (check comment in get_node_and_partition_list())
+	    {NewRemote,NewLocal} =
+		case CheckNodes of
+		    true ->
+			{NewDict,NodeErase} =
+			    lists:foldl(fun(NodeId,{Acc,Acc2}) ->
+						AccNew = case vectorclock:find(NodeId, RemoteDict) of
+							     {ok, Val} ->
+                                     vectorclock:store(NodeId,Val,Acc);
+							     error ->
+								 %% Put a record in the ets table because there is none for this node
+								 meta_data_manager:add_new_meta_data(Name,NodeId),
+                                 vectorclock:store(NodeId,undefined,Acc)
+							 end,
+						Acc2New = vectorclock:erase(NodeId,Acc2),
+						{AccNew,Acc2New}
+					end, {vectorclock:new(),RemoteDict}, NodeList),
+			%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
+                vectorclock:fold(fun(NodeId,_Val,_Acc) ->
+					  ok = meta_data_manager:remove_node(Name, NodeId)
+				  end,ok,NodeErase),
+			
+			%% Be sure that you are only checking local partitions
+			{NewLocalDict,PartitionErase} =
+			    lists:foldl(fun(PartitionId,{Acc,Acc2}) ->
+						AccNew = case vectorclock:find(PartitionId, LocalDict) of
+							     {ok, Val} ->
+                                 vectorclock:store(PartitionId,Val,Acc);
+							     error ->
+								 %% Put a record in the ets table because there is none for this partition
+								 ets:insert_new(get_name(Name,?META_TABLE_NAME),{PartitionId,dict:new()}),
+                                     vectorclock:store(PartitionId,undefined,Acc)
+							 end,
+						Acc2New = vectorclock:erase(PartitionId,Acc2),
+						{AccNew,Acc2New}
+					end, {vectorclock:new(),LocalDict}, PartitionList),
+			%% Should remove nodes (and partitions) that no longer exist in this ring/phys node
+                vectorclock:fold(fun(PartitionId,_Val,_Acc) ->
+					  ok = remove_partition(Name,PartitionId)
+				  end,ok,PartitionErase),
+			
+			{NewDict,NewLocalDict};
+		    false ->
+			{RemoteDict,LocalDict}
+		end,
+	    LocalMerged = MergeFunc(NewLocal),
+	    {WillChange,vectorclock:store(local_merged, LocalMerged, NewRemote)}
+    end.
 
 -spec update_stable(vectorclock(), vectorclock(), fun((term(),term()) -> boolean())) -> {boolean(),vectorclock()}.
 update_stable(LastResult,NewDict,UpdateFunc) ->
