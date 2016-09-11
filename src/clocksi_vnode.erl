@@ -381,7 +381,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
             [Node] = log_utilities:get_preflist_from_key(Key),
             LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
             %% ALE PREV CODE
-            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
+%%            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
             %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
@@ -502,7 +502,7 @@ commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
     LogRecord = #log_operation{tx_id = TxId,
 			    op_type = commit,
 			    log_payload = #commit_log_payload{commit_time = {DcId, CommitTime},
-							     snapshot_time = SnapshotVC}},
+							     causal_dependencies=SnapshotVC}},
     case Updates of
         [{Key, _Type, _Update} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of

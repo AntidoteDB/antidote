@@ -25,7 +25,7 @@
 -endif.
 
 -export([new/1,
-         materialize/4,
+         materialize/3,
          materialize_eager/3]).
 
 %% @doc Creates an empty CRDT for a given type.
@@ -98,19 +98,18 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 
 
 -spec materialize(type(),
-		  txid() | ignore,
-		  snapshot_time() | ignore,
+		  transaction() | ignore,
 		  #snapshot_get_response{}
 		 ) ->
 			 {ok, snapshot(), integer(), snapshot_time() | ignore,
 			  boolean(), non_neg_integer()} | {error, reason()}.
-materialize(Type, TxId, Transaction,
+materialize(Type, Transaction,
 	    #snapshot_get_response{snapshot_time = SnapshotCommitTime, ops_list = Ops,
 				   materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = Snapshot}}) ->
     FirstId = get_first_id(Ops),
     {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
 	materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, Transaction,
-			   Ops, TxId, SnapshotCommitTime,false,0),
+			   Ops, SnapshotCommitTime,false,0),
     case apply_operations(Type, Snapshot, 0, OpList) of
 	{ok, NewSS, Count} ->
 	    {ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};
@@ -165,9 +164,8 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 integer(),
 			 integer(),
              snapshot_time() | {snapshot_time(), snapshot_time()} | ignore,
-			 snapshot_time(),
+			 transaction(),
 			 [{integer(),operation_payload()}] | tuple(),
-			 txid() | ignore,
 			 snapshot_time() | ignore,
 			 boolean(),
 			 non_neg_integer()) ->
@@ -245,7 +243,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
 %%      is a boolean that is true if the operation was already included in the previous snapshot,
 %%      false otherwise.  The thrid element is the snapshot time of the last operation to
 %%      be applied to the snapshot
--spec is_op_in_snapshot(txid(), operation_payload(), dc_and_commit_time(), snapshot_time(), snapshot_time(),
+-spec is_op_in_snapshot(operation_payload(), dc_and_commit_time(), snapshot_time(), transaction(),
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
 is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSnapshotCommitParams, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
@@ -397,18 +395,19 @@ materializer_missing_dc_test() ->
     Type = antidote_crdt_counter,
     PNCounter = new(Type),
     ?assertEqual(0,Type:value(PNCounter)),
+	
     Op1 = #operation_payload{key = abc, type = Type,
                            op_param = {{increment,1}, actor1}},
-	    dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1}])},
+	    dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1}]),
     Op2 = #operation_payload{key = abc, type = Type,
                            op_param = {{increment,1}, actor2}},
-	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}])},
+	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}]),
     Op3 = #operation_payload{key = abc, type = Type,
                            op_param = {{increment,1}, actor3}},
-	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{2,1}])},
+	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{2,1}]),
     Op4 = #operation_payload{key = abc, type = Type,
                            op_param = {{increment,1}, actor4}},
-	    dc_and_commit_time = {1, 3}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}])},
+	    dc_and_commit_time = {1, 3}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}]),
     Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
@@ -447,13 +446,13 @@ materializer_clocksi_concurrent_test() ->
     ?assertEqual(0,Type:value(PNCounter)),
     Op1 = #operation_payload{key = abc, type = Type,
                            op_param = {{increment,2}, actor1}},
-	    dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1},{2,1}])},
+	    dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1},{2,1}]),
     Op2 = #operation_payload{key = abc, type = Type,
                            op_param = {{increment,1}, actor1}},
-	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2},{2,1}])},
+	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2},{2,1}]),
     Op3 = #operation_payload{key = abc, type = Type,
                            op_param = {{increment,1}, actor1}},
-	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{1,1},{2,1}])},
+	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{1,1},{2,1}]),
 
     Ops = [{3,Op2},{2,Op3},{1,Op1}],
     {ok, PNCounter2, 3, CommitTime2, _Keep} = materialize_intern(Type,
@@ -512,7 +511,9 @@ is_op_in_snapshot_test() ->
                            op_param = {increment,2},
                            commit_time = {dc1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{dc1,1}])},
     OpCT1 = {dc1, 1},
-    OpCT1SS = vectorclock:from_list([OpCT1]),
+	OpCT1SS = vectorclock:from_list([OpCT1]),
+	ST1 = vectorclock:from_list([{dc1, 2}]),
+	ST2 = vectorclock:from_list([{dc1, 0}]),
 	Tx1 = #transaction{snapshot_vc = ST1, transactional_protocol = clocksi, txn_id = 2},
 	Tx2 = #transaction{snapshot_vc = ST2, transactional_protocol = clocksi, txn_id = 2},
 	?assertEqual({true,false,OpCT1SS}, is_op_in_snapshot(Op1, OpCT1, OpCT1SS, Tx1, ignore,ignore)),

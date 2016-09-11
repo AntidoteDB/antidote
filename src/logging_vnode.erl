@@ -171,11 +171,11 @@ asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
 %%-spec get(index_node(), key(), transaction(), term(), key()) ->
 %%		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
 
-get(IndexNode, LogId, Transaction, Type, Key) ->
+%%get(IndexNode, LogId, Transaction, Type, Key) ->
 %% It returns a #log_get_response{} record which is defined in antidote.hrl
 -spec get(index_node(), key(), transaction(), term(), key()) ->
 		 #snapshot_get_response{} | {error, term()}.
-get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
+get(IndexNode, LogId, Transaction, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
 					{get, LogId, Transaction, Type, Key},
 					?LOGGING_MASTER,
@@ -486,7 +486,7 @@ handle_command({get, LogId, Transaction, Type, Key}, _Sender,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
-            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
+            case get_ops_from_log(Log, {key, Key}, start, Transaction, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 {eof, CommittedOpsForKeyDict} ->
@@ -627,10 +627,10 @@ update_ets_op_id(Key,NewOp,ClockTable) ->
 %% 		       dict:dict(txid(),[any_log_payload()]), dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}]), load_all | load_per_chunk) ->
 %%  			      {disk_log:continuation(), dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}
 %%  				  | {error, reason()} | {eof, dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}.
--spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(), dict(), dict(), load_all | load_per_chunk) ->
+-spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, transaction(), dict(), dict(), load_all | load_per_chunk) ->
 			      {disk_log:continuation(), dict(), dict()}
 				  | {error, reason()} | {eof, dict()}.
-get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
+get_ops_from_log(Log, Key, Continuation, Transaction, Ops, CommittedOpsDict, LoadAll) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
 	    {eof, finish_op_load(CommittedOpsDict)};
@@ -678,7 +678,7 @@ finish_op_load(CommittedOpsDict) ->
 			   dict(),dict()) -> {dict(),dict()}.
 filter_terms_for_key([], _Key, _Transaction, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
-filter_terms_for_key([{_,LogRecord}|T], Key, _Transaction, Ops, CommittedOpsDict) ->
+filter_terms_for_key([{_,LogRecord}|T], Key, Transaction, Ops, CommittedOpsDict) ->
     #log_record{log_operation = LogOperation} = log_utilities:check_log_record_version(LogRecord),
     #log_operation{tx_id = TxId, op_type = OpType, log_payload = OpPayload} = LogOperation,
     case OpType of

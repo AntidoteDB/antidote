@@ -41,7 +41,7 @@ from_ops(Ops, Partition, PrevLogOpId) ->
   LastOp = lists:last(Ops),
   CommitPld = LastOp#log_record.log_operation,
   commit = CommitPld#log_operation.op_type, %% sanity check
-  #commit_log_payload{commit_time = {DCID, CommitTime}, causal_dependencies = CausalDependencies} = CommitPld#log_operation.log_payload,
+  #commit_log_payload{commit_time= {DCID, CommitTime}, causal_dependencies = CausalDependencies} = CommitPld#log_operation.log_payload,
   #interdc_txn{
     dcid = DCID,
     partition = Partition,
@@ -52,11 +52,12 @@ from_ops(Ops, Partition, PrevLogOpId) ->
   }.
 
 -spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
-ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
+ping(Partition, PrevLogOpId, Timestamp) ->
+	#interdc_txn{
   dcid = dc_meta_data_utilities:get_my_dc_id(),
   partition = Partition,
   prev_log_opid = PrevLogOpId,
-  operations = [],
+		log_records = [],
   causal_dependencies = vectorclock:new(),
   timestamp = Timestamp
 }.

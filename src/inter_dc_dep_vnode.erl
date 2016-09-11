@@ -137,7 +137,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
 					   [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
-      ClockSiOps = updates_to_clocksi_payloads(Txn),
+      ClockSiOps = updates_to_operation_payloads(Txn),
 
 %%      Todo: fix this dirty patch
       Transaction = #transaction{
@@ -226,17 +226,17 @@ get_partition_clock(State) ->
   vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
--spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#operation_payload{}).
-updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, causal_dependencies = CausalDependencies}) ->
+-spec updates_to_operation_payloads(#interdc_txn{}) -> list(#operation_payload{}).
+updates_to_operation_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, causal_dependencies = CausalDependencies}) ->
   lists:map(fun(#log_record{log_operation = LogRecord}) ->
     #update_log_payload{key = Key, type = Type, op = Op} = LogRecord#log_operation.log_payload,
-    #clocksi_payload{
+    #operation_payload{
       key = Key,
       type = Type,
       op_param = Op,
       snapshot_vc = CausalDependencies,
       dependency_vc = CausalDependencies,
-      dc_and_commit_time = {DCID, CommitTime},
+      dc_and_commit_time = {DCID, CommitTime}
         
         %% ALE PREV CODE
         %% txid =  LogRecord#log_record.tx_id

@@ -22,6 +22,7 @@
 	last_update_opid :: #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort)
 	bucket :: bucket(),
 	log_records :: [#log_record{}] %% if the OP list is empty, the message is a HEARTBEAT}).
+}).
 
 -record(descriptor, {
  dcid :: dcid(),

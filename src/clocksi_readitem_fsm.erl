@@ -255,7 +255,7 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
 
             Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
                 TxId = Transaction#transaction.txn_id,
-                T_TS = TxId#tx_id.snapshot_time,
+                T_TS = TxId#tx_id.local_start_time,
                 case T_TS > Time of
                 true ->
                     % lager:info("Waiting... Reason: clock skew"),
@@ -272,7 +272,7 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
 	ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
+    SnapshotTime = TxId#tx_id.local_start_time,
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
     check_prepared_list(Key,SnapshotTime,ActiveTxs).
 

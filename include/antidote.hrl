@@ -92,7 +92,7 @@
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
 -record(commit_log_payload, {commit_time :: dc_and_commit_time(),
-			     snapshot_time :: snapshot_time()
+			     causal_dependencies :: snapshot_time()
 			    }).
 
 -record(update_log_payload, {key :: key(),
@@ -133,8 +133,6 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(tx_id, {snapshot_time :: snapshot_time(),
-    server_pid :: pid()}).
 -record(operation_payload, {
     key :: key(),
     type :: type(),
@@ -186,11 +184,11 @@
 -type bucket() :: term().
 -type snapshot() :: term().
 -type orddict() :: orddict().
--type snapshot_time() :: vectorclock:vectorclock().
+%%-type snapshot_time() :: vectorclock:vectorclock().
 -type commit_time() :: {dcid(), non_neg_integer()}.
--type txid() :: #tx_id{} | ignore.
+%%-type txid() :: #tx_id{} | ignore.
 -type operation_payload() :: #operation_payload{}.
--type dcid() :: term().
+%%-type dcid() :: term().
 -type transaction() :: #transaction{}.
 %-type physics_tx() :: #physics_transaction{}.
 
