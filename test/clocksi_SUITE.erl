@@ -64,6 +64,12 @@ init_per_suite(Config) ->
     %         end, [dev1, dev2, dev3]),
     % ok = test_utils:join_cluster(Nodes),
     % Check that the clocksi protocol is tested
+    
+    test_utils:pmap(fun(Node) ->
+        rpc:call(Node, application, set_env,
+            [antidote, txn_prot, clocksi]) end, Nodes),
+    
+    %Check that indeed clocksi is running
     {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
     ?assertMatch(clocksi, Prot),
 

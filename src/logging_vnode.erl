@@ -711,7 +711,7 @@ handle_update(TxId, OpPayload,  T, Key, Transaction, Ops, CommittedOpsDict) ->
 %% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
 -spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
 handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict) ->
-    #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
+    #commit_log_payload{commit_time = {DcId, TxCommitTime}, causal_dependencies = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
             MinSnapshotTime = case Transaction of
