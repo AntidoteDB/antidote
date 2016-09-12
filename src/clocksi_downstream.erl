@@ -28,7 +28,7 @@
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
   Type :: type(), Update :: {op(), actor()}, list(), orddict()) ->
-{error, _} | {ok, {merge, _} | {update, _}, _}.
+	{ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet)->
 	%%    {Op, Actor} = Update,
 	Result=case orddict:find(Key, InternalReadSet) of
@@ -43,25 +43,9 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalR
 			end
 	end,
 	case Result of
+		{error, R}->
+			{error, R}; %% {error, Reason} is returned here.
 		{Snapshot, SnapshotCommitParams}->
-			%%            ALE PREV CODE
-			%%            TypeString = lists:flatten(io_lib:format("~p", [Type])),
-			%%            case string:str(TypeString, "riak_dt") of
-			%%                0 -> %% dealing with an op_based crdt
-			%%                    case Type:generate_downstream(Op, Actor, Snapshot) of
-			%%                        {ok, OpParam} ->
-			%%                            {ok, {update, OpParam}, SnapshotCommitParams};
-			%%                        {error, Reason} ->
-			%%                            {error, Reason}
-			%%                    end;
-			%%                1 -> %% dealing with a state_based crdt
-			%%                    case Type:update(Op, Actor, Snapshot) of
-			%%                        {ok, NewState} ->
-			%%                            {ok, {merge, NewState}, SnapshotCommitParams};
-			%%                        {error, Reason} ->
-			%%                            {error, Reason}
-			%%                    end
-			%%            end;
 			NewSnapshot=case Type of
 				antidote_crdt_bcounter->
 					%% bcounter data-type.
@@ -69,7 +53,5 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalR
 				_->
 					Type:downstream(Update, Snapshot)
 			end,
-			{NewSnapshot, SnapshotCommitParams};
-		{error, R}->
-			{error, R} %% {error, Reason} is returned here.
+			{NewSnapshot, SnapshotCommitParams}
 	end.
