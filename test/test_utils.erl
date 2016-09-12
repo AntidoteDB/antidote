@@ -250,7 +250,7 @@ connect_cluster(Nodes) ->
               wait_until_registered(Node1, inter_dc_query_receive_socket),
               wait_until_registered(Node1, inter_dc_query_response_sup),
               wait_until_registered(Node1, inter_dc_query),
-              wait_until_registered(Node1, inter_dc_sub),
+	      %% wait_until_registered(Node1, inter_dc_sub),
               wait_until_registered(Node1, meta_data_sender_sup),
               wait_until_registered(Node1, meta_data_manager_sup),
               ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable]),

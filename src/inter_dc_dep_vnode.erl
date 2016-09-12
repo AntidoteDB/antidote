@@ -37,6 +37,7 @@
 %% VNode methods
 -export([
   init/1,
+  broadcast_ping_local/2,
   start_vnode/1,
   handle_command/3,
   handle_coverage/4,
@@ -70,6 +71,12 @@ handle_transaction(Txn,Partition,LocalPartition) ->
 	true -> dc_utilities:call_local_vnode_sync(Partition, inter_dc_dep_vnode_master, {txn, Txn});
 	false -> dc_utilities:call_vnode_sync(Partition, inter_dc_dep_vnode_master, {txn, Txn})
     end.
+
+broadcast_ping_local(Txn,LocalPartitions) ->
+    %% ping can be sent non-blocking since we will get another one if lost
+    lists:foreach(fun(Partition) ->
+			  dc_utilitles:call_local_vnode(Partition, inter_dc_dep_vnode_master, {ping, Txn})
+		  end, LocalPartitions).
 
 %% After restarting from failure, load the vectorclock of the max times of all the updates received from other DCs
 %% Otherwise new updates from other DCs will be blocked
@@ -151,7 +158,6 @@ try_store_ping(State=#state{drop_ping = true}, #interdc_txn{log_records = []}, _
 try_store_ping(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = []}, MaxTime) ->
     case (MaxTime /= none) and (Timestamp >= MaxTime) of
 	false ->
-	    lager:info("storing time from ping ~w, dcid ~w", [Timestamp,DCID]),
 	    {update_clock(State, DCID, Timestamp, true), true};
 	true -> {State, false}
     end.
@@ -171,8 +177,6 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
   Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
 
-    %%lager:info("got not a ping !!! ~w", [Txn]),
-
   %% Check if the current clock is greater than or equal to the dependency vector
   %% TODO, this needs to be removed for partial rep, because it is all done
   %% by the pings
@@ -191,7 +195,6 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% If so, store the transaction
     true ->
       %% Put the operations in the log
-	  lager:info("putting in the log the txn!!! timestamp ~w", [Timestamp]),
       {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),
 
@@ -208,6 +211,10 @@ handle_command({set_dependency_clock, Vector}, _Sender, State) ->
 handle_command({txn, Txn}, _Sender, State) ->
     NewState = process_all_queues(push_txn(State, Txn)),
     {reply, ok, NewState};
+
+handle_command({ping, Txn}, _Sender, State) ->
+    NewState = process_all_queues(push_txn(State, Txn)),
+    {noreply, NewState};
 
 %% Tells the vnode to drop ping messages or not
 %% Used for debugging

@@ -29,7 +29,9 @@
 %% API
 -export([
   add_dc/3,
-  del_dc/1
+  del_dc/1,
+  check_registered/1,
+  generate_server_name/1
 ]).
 
 %% Server methods
@@ -45,7 +47,9 @@
 
 %% State
 -record(state, {
+  node_list :: [atom()], %% names of all the inter_dc_subs processes at this DC
   partition_match :: dict(), %% DCID -> {dict,dict} of local partitions matched with external partitions (for partial rep when DCs have different partitions) two dicts because one is the inverse of the other
+  my_partitions :: [partition_id()],
   my_node_partitions :: dict(), %% Partition -> Partition
   sockets :: dict() % DCID -> socket
 }).
@@ -54,14 +58,22 @@
 
 %% TODO: persist added DCs in case of a node failure, reconnect on node restart.
 -spec add_dc(dcid(), [socket_address()], [partition_id()]) -> ok.
-add_dc(DCID, Publishers, OtherPartitions) -> gen_server:call(?MODULE, {add_dc, DCID, Publishers, OtherPartitions}, ?COMM_TIMEOUT).
+add_dc(DCID, Publishers, OtherPartitions) -> gen_server:call({global,generate_server_name(node())}, {add_dc, DCID, Publishers, OtherPartitions}, ?COMM_TIMEOUT).
 
 -spec del_dc(dcid()) -> ok.
-del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
+del_dc(DCID) -> gen_server:call({global,generate_server_name(node())}, {del_dc, DCID}, ?COMM_TIMEOUT).
+
+-spec check_registered(node()) -> ok.
+check_registered(Node) ->
+    dc_utilities:check_registered_global(generate_server_name(Node)).
+
+-spec generate_server_name(atom()) -> atom().
+generate_server_name(Node) ->
+    list_to_atom(atom_to_list(subserver) ++ atom_to_list(Node)).
 
 %%%% Server methods ---------------------------------------------------------+
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link() -> gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new(), partition_match = dict:new()}}.
 
 handle_call({add_dc, DCID, Publishers, OtherPartitions}, _From, OldState) ->
@@ -75,7 +87,7 @@ handle_call({add_dc, DCID, Publishers, OtherPartitions}, _From, OldState) ->
 	{ok, Sockets} ->
 	    %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
 	    %% optimizing traffic between nodes inside a DC. That could save a tiny bit of bandwidth after node failure.
-	    MyPartitions = dc_utilites:get_my_partitions(),
+	    MyPartitions = dc_utilities:get_my_partitions(),
 	    MyPartitionDict = lists:foldl(fun(P,Acc) ->
 						  dict:store(P,[],Acc)
 					  end, dict:new(), MyPartitions),
@@ -83,7 +95,7 @@ handle_call({add_dc, DCID, Publishers, OtherPartitions}, _From, OldState) ->
 		lists:foldl(fun(Partition,{PartDict,ReversePartDict,[MyFirst|MyRest]}) ->
 				    {dict:store(Partition,MyFirst,PartDict),dict:append(MyFirst,Partition,ReversePartDict),MyRest++[MyFirst]}
 			    end, {dict:new(),MyPartitionDict,MyPartitions}, OtherPartitions),
-	    {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets),
+	    {reply, ok, State#state{sockets = dict:store(DCID, Sockets, State#state.sockets), my_partitions = MyPartitions,
 				    partition_match = dict:store(DCID,{PartitionMatch,ReversePartitionMatch},State#state.partition_match)}};
 	connection_error ->
 	    {reply, error, State}
@@ -95,20 +107,41 @@ handle_call({del_dc, DCID}, _From, State) ->
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, Socket, BinaryMsg, Flags}, State = #state{my_node_partitions = undefined}) ->
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    MyNode = node(),
+    NodeNames = 
+	lists:foldl(fun(Node,Acc) ->
+			    case Node of
+				MyNode -> Acc;
+				_ -> [generate_server_name(Node)|Acc]
+			    end
+		    end, [], Nodes),
     MyPartitions = dc_utilities:get_my_partitions(),
     MyPartDict =
 	lists:foldl(fun(Par, Acc) ->
 			   dict:store(Par,Par,Acc)
 		   end, dict:new(), MyPartitions),
-    handle_info({zmq, Socket, BinaryMsg, Flags}, State#state{my_node_partitions=MyPartDict});
+    handle_info({zmq, Socket, BinaryMsg, Flags}, State#state{my_node_partitions=MyPartDict, my_partitions = MyPartitions, node_list = NodeNames});
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
-  %% decode the message
-  Msg = inter_dc_txn:from_bin(BinaryMsg),
-  %% deliver the message to an appropriate vnode
-  ok = inter_dc_sub_vnode:deliver_txn(Msg, State#state.my_node_partitions, State#state.partition_match),
-  {noreply, State}.
+    %% decode the message
+    Msg = inter_dc_txn:from_bin(BinaryMsg),
+    %% deliver the message to an appropriate vnode
+    ok = inter_dc_sub_vnode:deliver_txn(Msg, State#state.my_node_partitions, State#state.partition_match),
+    case Msg#interdc_txn.prev_log_opid_dc of
+	#partial_ping{} ->
+	    lists:foreach(fun(NodeName) ->
+				  gen_server:cast({global,NodeName}, {ping, Msg})
+			  end, State#state.node_list);
+	_ ->
+	    ok
+    end,
+    {noreply, State}.
 
+handle_cast({ping, Txn}, State) ->
+    ok = inter_dc_sub_vnode:deliver_txn(Txn, State#state.my_node_partitions, State#state.partition_match),
+    {noreply, State};
 handle_cast(_Request, State) -> {noreply, State}.
+
 code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
   F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,

@@ -67,12 +67,11 @@ end_per_testcase(_, _) ->
     ok.
 
 all() -> 
-    %% [simple_replication_test,
-    %%  failure_test,
-    %%  blocking_test,
-    %%  parallel_writes_test,
-    %%  replicated_set_test].
-    [simple_replication_test].
+    [simple_replication_test,
+     failure_test,
+     blocking_test,
+     parallel_writes_test,
+     replicated_set_test].
 
 simple_replication_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),

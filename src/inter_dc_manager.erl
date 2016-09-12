@@ -129,6 +129,7 @@ start_bg_processes(MetaDataName) ->
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
 			  ok = rpc:call(Node, dc_utilities, check_registered_global, [stable_meta_data_server:generate_server_name(Node)]),
+			  ok = rpc:call(Node, dc_utilities, check_registered_global, [inter_dc_sub:generate_server_name(Node)]),
 			  ok = rpc:call(Node, meta_data_sender, start, [MetaDataName]) end, Nodes),
     %% Load the internal meta-data
     _MyDCId = dc_meta_data_utilities:reset_my_dc_id(),
@@ -180,7 +181,8 @@ check_node_restart() ->
 	    ok = dc_utilities:check_registered(meta_data_sender_sup),
 	    ok = dc_utilities:check_registered(meta_data_manager_sup),
 	    ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
-	    ok = dc_utilities:check_registered(inter_dc_sub),
+	    %%ok = dc_utilities:check_registered(inter_dc_sub),
+	    ok = dc_utilities:check_registered_global(inter_dc_sub:generate_server_name(MyNode)),
 	    ok = dc_utilities:check_registered(inter_dc_pub),
 	    ok = dc_utilities:check_registered(inter_dc_query_response_sup),
 	    ok = dc_utilities:check_registered(inter_dc_query),

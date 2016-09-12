@@ -73,6 +73,7 @@
 %% State for sub buff
 -record(inter_dc_sub_buf, {
   local_partition :: partition_id(),
+  external_partition_count :: non_neg_integer(),
   state_name :: normal | buffering,
   pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer() | init,

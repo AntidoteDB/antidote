@@ -29,15 +29,16 @@
 
 %% API
 -export([
-  new_state/2,
+  new_state/3,
   process/2]).
 
 %%%% API --------------------------------------------------------------------+
 
--spec new_state(pdcid(),partition_id()) -> #inter_dc_sub_buf{}.
-new_state(PDCID,LocalPartition) -> #inter_dc_sub_buf{
+-spec new_state(pdcid(),partition_id(),non_neg_integer()) -> #inter_dc_sub_buf{}.
+new_state(PDCID,LocalPartition,ExternalPartitionCount) -> #inter_dc_sub_buf{
   local_partition = LocalPartition,
   state_name = normal,
+  external_partition_count = ExternalPartitionCount,
   pdcid = PDCID,
   last_observed_opid = init,
   last_observed_commit_ids = init,

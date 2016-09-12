@@ -66,7 +66,7 @@ deliver_txn(Txn = #interdc_txn{dcid = DCID, prev_log_opid_dc = #partial_ping{}},
     %% TODO, this should also be broadcast to all nodes (to the inter_dc_sub process) in the local DC
     ok;
 deliver_txn(Txn = #interdc_txn{dcid = DCID, partition=FromPartition}, MyNodePartitions, DictPartitionMatch) ->
-    {PartitionMatch,_ReversePartitionMatch} = dict:fetch(DCID, DictPartitionMatch),
+    {PartitionMatch,PartitionMatchReverse} = dict:fetch(DCID, DictPartitionMatch),
     Partition = 
 	case dict:is_key(FromPartition, MyNodePartitions) of
 	    true -> FromPartition;
@@ -74,7 +74,7 @@ deliver_txn(Txn = #interdc_txn{dcid = DCID, partition=FromPartition}, MyNodePart
 		%% For knowing what partition to send to if it comes from a partition that doesn't exist at this DC
 		dict:fetch(FromPartition,dict:fetch(DCID, PartitionMatch))
 	end,
-    call(Partition, {txn, Txn}).
+    call(Partition, {txn, Txn, dict:fetch(Partition,PartitionMatchReverse)}).
 
 %% This function is called with the response from the log request operations request
 %% when some messages were lost
@@ -92,15 +92,15 @@ handle_command({send_partial_ping, Txn = #interdc_txn{dcid = DCID}, ExternalPLis
     %% TODO, this should only be for partitions that are subbed by this node
     NewState =
 	lists:foldl(fun(Partition,AccState) ->
-			    Buf0 = get_buf({DCID,Partition}, AccState),
+			    Buf0 = get_buf({DCID,Partition}, ExternalPList, AccState),
 			    {Buf1,PingList} = inter_dc_sub_buf:process({txn, Txn}, Buf0),
 			    set_buf({DCID,Partition},Buf1,PingList,AccState)
 		    end, State, [State#state.partition|ExternalPList]),
     {noreply, NewState};
 
-handle_command({txn, Txn = #interdc_txn{dcid = DCID, partition = Partition}}, _Sender, State) ->
+handle_command({txn, Txn = #interdc_txn{dcid = DCID, partition = Partition}, ExternalPList}, _Sender, State) ->
     %% lager:info("got a txn: ~p", [Txn]),
-    Buf0 = get_buf({DCID,Partition}, State),
+    Buf0 = get_buf({DCID,Partition}, ExternalPList, State),
     {Buf1,PingList} = inter_dc_sub_buf:process({txn, Txn}, Buf0),
     {noreply, set_buf({DCID,Partition}, Buf1, PingList, State)};
 
@@ -124,35 +124,50 @@ terminate(_Reason, _ModState) -> ok.
 delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--spec call(partition_id(), {send_partial_ping, #interdc_txn{}, [partition_id]} | {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
+-spec call(partition_id(), {send_partial_ping, #interdc_txn{}, [partition_id()]} | {txn, #interdc_txn{}, [partition_id()]} | {log_reader_resp, binary()}) -> ok.
 call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
 -spec get_buf(pdcid(),#state{}) -> #inter_dc_sub_buf{}.
 get_buf(PDCID, State) ->
+    {ok, Buf} = dict:find(PDCID, State#state.buffer_fsms),
+    Buf.
+
+-spec get_buf(pdcid(),[partition_id()],#state{}) -> #inter_dc_sub_buf{}.
+get_buf(PDCID, ExternalPList, State) ->
   case dict:find(PDCID, State#state.buffer_fsms) of
     {ok, Buf} -> Buf;
-    error -> inter_dc_sub_buf:new_state(PDCID, State#state.partition)
+    error -> inter_dc_sub_buf:new_state(PDCID, State#state.partition, length(ExternalPList))
   end.
 
--spec set_buf(pdcid(), #inter_dc_sub_buf{}, [#interdc_txn{}],  #state{}) -> #state{}.
+-spec set_buf(pdcid(), #inter_dc_sub_buf{}, [#interdc_txn{}], #state{}) -> #state{}.
 set_buf({DCID,Partition}, Buf, PingList, State) ->
     PingDict = case dict:find(DCID, State#state.ping_count) of
 		   {ok, Value} -> Value;
 		   error -> dict:new()
 	       end,
-    %% TODO make right number
-    Blah = 1,
-    TimeToSendPing = Blah - 1,
+    %% All partitions count is the number of partitions from the external DC that
+    %% this local node is responsible for replicating.
+    %% When each of them has confirmed a ping has received all dependencies, then
+    %% that ping can be used to update the stable time
+    AllPartitionsCount = Buf#inter_dc_sub_buf.external_partition_count,
     NewPingDict = 
 	lists:foldl(fun(Ping,Acc) ->
 			    case dict:find(Ping, Acc) of
-				{ok, TimeToSendPing} ->
+				{ok, AllPartitionsCount} ->
 				    %% send ping
+				    inter_dc_dep_vnode:handle_transaction(Ping,State#state.partition,State#state.partition),
 				    dict:erase(Ping,Acc);
 				{ok, _Val} ->
 				    dict:update_counter(Ping, 1, Acc);
 				error ->
-				    dict:update_counter(Ping, 1, Acc)
+				    case AllPartitionsCount of
+					0 ->
+					    %% send ping
+					    inter_dc_dep_vnode:handle_transaction(Ping,State#state.partition,State#state.partition),
+					    dict:erase(Ping,Acc);
+					_ ->
+					    dict:update_counter(Ping, 1, Acc)
+				    end
 			    end
 		    end, PingDict, PingList),
     State#state{buffer_fsms = dict:store({DCID,Partition}, Buf, State#state.buffer_fsms), ping_count = dict:store(DCID, NewPingDict, State#state.ping_count)}.
