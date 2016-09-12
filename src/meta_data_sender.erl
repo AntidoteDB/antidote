@@ -282,8 +282,8 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 	    false;
 	true ->
 	    {NodeList,PartitionList,WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
-	    RemoteDict = dict:from_list(ets:tab2list(get_name(Name,?REMOTE_META_TABLE_NAME))),
-	    LocalDict = dict:from_list(ets:tab2list(get_name(Name,?META_TABLE_NAME))),
+	    RemoteDict = vectorclock:from_list(ets:tab2list(get_name(Name,?REMOTE_META_TABLE_NAME))),
+	    LocalDict = vectorclock:from_list(ets:tab2list(get_name(Name,?META_TABLE_NAME))),
 	    %% Be sure that you are only checking active nodes
 	    %% This isnt the most efficent way to do this because are checking the list
 	    %% of nodes and partitions every time to see if any have been removed/added

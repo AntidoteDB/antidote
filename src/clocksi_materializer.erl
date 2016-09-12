@@ -104,18 +104,18 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 			 {ok, snapshot(), integer(), snapshot_time() | ignore,
 			  boolean(), non_neg_integer()} | {error, reason()}.
 materialize(Type, Transaction,
-	    #snapshot_get_response{snapshot_time = SnapshotCommitTime, ops_list = Ops,
-				   materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = Snapshot}}) ->
-    FirstId = get_first_id(Ops),
-    {ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
-	materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, Transaction,
-			   Ops, SnapshotCommitTime,false,0),
-    case apply_operations(Type, Snapshot, 0, OpList) of
-	{ok, NewSS, Count} ->
-	    {ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};
-	{error, Reason} ->
-	    {error, Reason}
-    end.
+  #snapshot_get_response{snapshot_time=SnapshotCommitTime, ops_list=Ops,
+	  materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}})->
+	FirstId=get_first_id(Ops),
+	{ok, OpList, NewLastOp, LastOpCt, IsNewSS}=
+		materialize_intern(Type, [], LastOp, FirstId, SnapshotCommitTime, Transaction,
+			Ops, SnapshotCommitTime, false, 0),
+	case apply_operations(Type, Snapshot, 0, OpList) of
+		{ok, NewSS, Count}->
+			{ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};
+		{error, Reason}->
+			{error, Reason}
+	end.
 
 %% @doc Applies a list of operations to a snapshot
 %%      Input:
@@ -149,9 +149,8 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 %%      not included in the new snapshot that is currently being generated, it should be initialised to the
 %%      id of the first op in OpList
 %%      SnapshotCommitTime: The time used to describe the intitial state of the CRDT given in Snapshot
-%%      MinSnapshotTime: The threshold time given by the reading transaction
+%%      Transaction: tx record that contains the threshold time given by the reading transaction
 %%      Ops: The list of operations to apply in causal order
-%%      TxId: The Id of the transaction requesting the snapshot
 %%      LastOpCommitTime: The snapshot time of the last operation in the list of operations to apply
 %%      NewSS: Boolean that is true if any operations should be applied, fale otherwise.  Should start as false.
 %%      Output: A tuple with 4 elements or an error.  The first element of the tuple is the atom ok.
@@ -170,20 +169,22 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 boolean(),
 			 non_neg_integer()) ->
 				{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean()}.
-materialize_intern(_Type, OpList, _LastOp, FirstHole, _SnapshotCommitTime, _Transaction, [], LastOpCt, NewSS, _Location) ->
-    {ok, OpList, FirstHole, LastOpCt, NewSS};
 
-materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, Transaction, [{OpId,Op}|Rest], LastOpCt, NewSS, Location) ->
-    materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, Location + 1);
+materialize_intern(_Type, OutputOpList, _LastOp, FirstHole, _SnapshotCommitTime, _Transaction, [], LastOpCt, NewSS, _Location) ->
+    {ok, OutputOpList, FirstHole, LastOpCt, NewSS};
 
-materialize_intern(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, Transaction, TupleOps, LastOpCt, NewSS, Location) ->
+materialize_intern(Type, OpList, OutputOpList, FirstHole, SnapshotCommitTime, Transaction, [{OpId,Op}|Rest], LastOpCt, NewSS, Location) ->
+    materialize_intern_perform(Type, OpList, OutputOpList, FirstHole, SnapshotCommitTime, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, Location + 1);
+
+materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId,
+                    InitialSnapshotCommitTime, Transaction, TupleOps, OutputSnapshotCT, DidGenerateNewSnapshot, Location) ->
     {Length,_ListLen} = element(2, TupleOps),
     case Length == Location of
 	true ->
-	    {ok, OpList, FirstHole, LastOpCt, NewSS};
+	    {ok, OpList, OutputFirstNotIncludedOperationId, OutputSnapshotCT, DidGenerateNewSnapshot};
 	false ->
-	    materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, Transaction,
-				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, LastOpCt, NewSS, Location + 1)
+	    materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId, InitialSnapshotCommitTime, Transaction,
+				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCT, DidGenerateNewSnapshot, Location + 1)
     end.
 	    
 materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, Location) ->
@@ -316,17 +317,17 @@ materializer_clocksi_test()->
     PNCounter = new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     %%  need to add the snapshot time for these for the test to pass
-	Op1 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update,{{increment,2},1}},
+	Op1 = #operation_payload{key = abc, type = Type,
+		op_param = {increment,2},
 		dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc =vectorclock:from_list([{1,1}])},
-	Op2 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update,{{increment,1},1}},
+	Op2 = #operation_payload{key = abc, type = Type,
+		op_param = {increment,1},
 		dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc =vectorclock:from_list([{1,2}])},
-	Op3 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update,{{increment,1},1}},
+	Op3 = #operation_payload{key = abc, type = Type,
+		op_param = {increment,1},
 		dc_and_commit_time = {1, 3}, txid = 3, snapshot_vc =vectorclock:from_list([{1,3}])},
-	Op4 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update,{{increment,2},1}},
+	Op4 = #operation_payload{key = abc, type = Type,
+		op_param = {increment,2},
 		dc_and_commit_time = {1, 4}, txid = 4, snapshot_vc =vectorclock:from_list([{1,4}])},
 	
 	Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
@@ -334,18 +335,18 @@ materializer_clocksi_test()->
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
 				materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = PNCounter}},
     {ok, PNCounter2, 3, CommitTime2, _SsSave, _} = materialize(Type,
-							    ignore, #transaction{snapshot_vc = vectorclock:from_list([{1, 3}]),
+							    #transaction{snapshot_vc = vectorclock:from_list([{1, 3}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
 							    SS),
     ?assertEqual({4, vectorclock:from_list([{1,3}])}, {Type:value(PNCounter2), CommitTime2}),
     {ok, PNcounter3, 4, CommitTime3, _SsSave1, _} = materialize(Type,
-							     ignore, #transaction{snapshot_vc = vectorclock:from_list([{1, 4}]),
+							     #transaction{snapshot_vc = vectorclock:from_list([{1, 4}]),
 		    txn_id = ignore, transactional_protocol = clocksi}, SS),
 	
 	?assertEqual({6, vectorclock:from_list([{1,4}])}, {Type:value(PNcounter3), CommitTime3}),
 
     {ok, PNcounter4, 4,CommitTime4, _SsSave2, _} = materialize(Type,
-							    ignore, #transaction{snapshot_vc = vectorclock:from_list([{1, 7}]),
+							    #transaction{snapshot_vc = vectorclock:from_list([{1, 7}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
 							    SS),
     ?assertEqual({6, vectorclock:from_list([{1,4}])}, {Type:value(PNcounter4), CommitTime4}).
@@ -358,24 +359,24 @@ materializer_missing_op_test() ->
     Type = antidote_crdt_counter,
     PNCounter = new(Type),
     ?assertEqual(0,Type:value(PNCounter)),
-	Op1 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update, {{increment,1}, actor1}},
-		dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc =vectorclock:from_list([{1,1},{2,1}])},
-	Op2 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update, {{increment,1}, actor2}},
-		dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc =vectorclock:from_list([{1,2},{2,1}])},
-	Op3 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update, {{increment,1}, actor3}},
-		dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc =vectorclock:from_list([{1,1},{2,1}])},
-	Op4 = #operation_payload{key = abc, type = crdt_pncounter,
-		op_param = {update, {{increment,1}, actor4}},
-		dc_and_commit_time = {1, 3}, txid = 2, snapshot_vc =vectorclock:from_list([{1,2},{2,1}])},
-	Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
+    Op1 = #operation_payload{key = abc, type = Type,
+                           op_param = {increment,1},
+                           dc_and_commit_time= {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1},{2,1}])},
+    Op2 = #operation_payload{key = abc, type = Type,
+                           op_param = {increment,1},
+	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2},{2,1}])},
+    Op3 = #operation_payload{key = abc, type = Type,
+                           op_param = {increment,1},
+	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{1,1},{2,1}])},
+    Op4 = #operation_payload{key = abc, type = Type,
+                           op_param = {increment,1},
+	    dc_and_commit_time = {1, 3}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2},{2,1}])},
+    Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
 				materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = PNCounter}},
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave, _} = materialize(Type,
-								 ignore, #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
+								 #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
 								 SS),
     ?assertEqual({3, vectorclock:from_list([{1,3},{2,1}])}, {Type:value(PNCounter2), CommitTime2}),
@@ -383,7 +384,7 @@ materializer_missing_op_test() ->
     SS2 = #snapshot_get_response{snapshot_time = CommitTime2, ops_list = Ops,
 				materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = PNCounter2}},
     {ok, PNCounter3, 4, CommitTime3, _SsSave, _} = materialize(Type,
-							    ignore, #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
+							    #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
 							    SS2),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {Type:value(PNCounter3), CommitTime3}).
@@ -395,25 +396,24 @@ materializer_missing_dc_test() ->
     Type = antidote_crdt_counter,
     PNCounter = new(Type),
     ?assertEqual(0,Type:value(PNCounter)),
-	
     Op1 = #operation_payload{key = abc, type = Type,
-                           op_param = {{increment,1}, actor1}},
-	    dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1}]),
+                           op_param = {increment,1},
+                           dc_and_commit_time= {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1}])},
     Op2 = #operation_payload{key = abc, type = Type,
-                           op_param = {{increment,1}, actor2}},
-	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}]),
+                           op_param = {increment,1},
+                           dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}])},
     Op3 = #operation_payload{key = abc, type = Type,
-                           op_param = {{increment,1}, actor3}},
-	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{2,1}]),
+                           op_param = {increment,1},
+                           dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{2,1}])},
     Op4 = #operation_payload{key = abc, type = Type,
-                           op_param = {{increment,1}, actor4}},
-	    dc_and_commit_time = {1, 3}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}]),
+                           op_param = {increment,1},
+                           dc_and_commit_time = {1, 3}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2}])},
     Ops = [{4,Op4},{3,Op3},{2,Op2},{1,Op1}],
 
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
 				materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = PNCounter}},
     {ok, PNCounterA, LastOpA, CommitTimeA, _SsSave, _} = materialize(Type,
-								  ignore, #transaction{snapshot_vc = vectorclock:from_list([{1,3}]),
+								  #transaction{snapshot_vc = vectorclock:from_list([{1,3}]),
 txn_id = ignore, transactional_protocol = clocksi},
 								  SS),
     ?assertEqual({3, vectorclock:from_list([{1,3}])}, {Type:value(PNCounterA), CommitTimeA}),
@@ -421,13 +421,13 @@ txn_id = ignore, transactional_protocol = clocksi},
     SS2 = #snapshot_get_response{snapshot_time = CommitTimeA, ops_list = Ops,
 				materialized_snapshot = #materialized_snapshot{last_op_id = LastOpA, value = PNCounterA}},
     {ok, PNCounterB, 4, CommitTimeB, _SsSave, _} = materialize(Type,
-							    ignore, #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
+							    #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
 txn_id = ignore, transactional_protocol = clocksi},
 							    SS2),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {Type:value(PNCounterB), CommitTimeB}),
     
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave, _} = materialize(Type,
-								 ignore, #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
+								 #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
 txn_id = ignore, transactional_protocol = clocksi},
 								 SS),
     ?assertEqual({3, vectorclock:from_list([{1,3}])}, {Type:value(PNCounter2), CommitTime2}),
@@ -435,7 +435,7 @@ txn_id = ignore, transactional_protocol = clocksi},
     SS3 = #snapshot_get_response{snapshot_time = CommitTime2, ops_list = Ops,
 				materialized_snapshot = #materialized_snapshot{last_op_id = LastOp, value = PNCounter2}},
     {ok, PNCounter3, 4, CommitTime3, _SsSave, _} = materialize(Type,
-							    ignore, #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
+							    #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
 txn_id = ignore, transactional_protocol = clocksi},
 							    SS3),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {Type:value(PNCounter3), CommitTime3}).
@@ -445,14 +445,14 @@ materializer_clocksi_concurrent_test() ->
     PNCounter = new(Type),
     ?assertEqual(0,Type:value(PNCounter)),
     Op1 = #operation_payload{key = abc, type = Type,
-                           op_param = {{increment,2}, actor1}},
-	    dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1},{2,1}]),
+                           op_param = {increment,2},
+	    dc_and_commit_time = {1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{1,1},{2,1}])},
     Op2 = #operation_payload{key = abc, type = Type,
-                           op_param = {{increment,1}, actor1}},
-	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2},{2,1}]),
+                           op_param = {increment,1},
+	    dc_and_commit_time = {1, 2}, txid = 2, snapshot_vc=vectorclock:from_list([{1,2},{2,1}])},
     Op3 = #operation_payload{key = abc, type = Type,
-                           op_param = {{increment,1}, actor1}},
-	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{1,1},{2,1}]),
+                           op_param = {increment,1},
+	    dc_and_commit_time = {2, 2}, txid = 3, snapshot_vc=vectorclock:from_list([{1,1},{2,1}])},
 
     Ops = [{3,Op2},{2,Op3},{1,Op1}],
     {ok, PNCounter2, 3, CommitTime2, _Keep} = materialize_intern(Type,
@@ -466,14 +466,17 @@ materializer_clocksi_concurrent_test() ->
 	
     SS = #snapshot_get_response{snapshot_time = ignore, ops_list = Ops,
 				materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = Snapshot}},
-    {ok, PNcounter3, 1, CommitTime3, _SsSave1, _} = materialize(Type, ignore,
-                                   vectorclock:from_list([{1,2},{2,1}]), SS),
+    {ok, PNcounter3, 1, CommitTime3, _SsSave1, _} = materialize(Type,
+	    #transaction{snapshot_vc = vectorclock:from_list([{1,2},{2,1}]),
+		    txn_id = ignore, transactional_protocol = clocksi}, SS),
     ?assertEqual({3, vectorclock:from_list([{1,2},{2,1}])}, {Type:value(PNcounter3), CommitTime3}),
-    {ok, PNcounter4, 2, CommitTime4, _SsSave2, _} = materialize(Type, ignore,
-                                   vectorclock:from_list([{1,1},{2,2}]), SS),
+    {ok, PNcounter4, 2, CommitTime4, _SsSave2, _} = materialize(Type,
+	    #transaction{snapshot_vc = vectorclock:from_list([{1,1},{2,2}]),
+		    txn_id = ignore, transactional_protocol = clocksi}, SS),
     ?assertEqual({3, vectorclock:from_list([{1,1},{2,2}])}, {Type:value(PNcounter4), CommitTime4}),
-    {ok, PNcounter5, 1, CommitTime5, _SsSave3, _} = materialize(Type, ignore,
-                                   vectorclock:from_list([{1,1},{2,1}]), SS),
+    {ok, PNcounter5, 1, CommitTime5, _SsSave3, _} = materialize(Type,
+	    #transaction{snapshot_vc = vectorclock:from_list([{1,1},{2,1}]),
+		    txn_id = ignore, transactional_protocol = clocksi}, SS),
     ?assertEqual({2, vectorclock:from_list([{1,1},{2,1}])}, {Type:value(PNcounter5), CommitTime5}).
 
 %% @doc Testing gcounter with empty update log
@@ -507,9 +510,9 @@ materializer_eager_clocksi_test()->
 
 is_op_in_snapshot_test() ->
     Type = antidote_crdt_counter,
-    Op1 = #clocksi_payload{key = abc, type = Type,
+    Op1 = #operation_payload{key = abc, type = Type,
                            op_param = {increment,2},
-                           commit_time = {dc1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{dc1,1}])},
+                           dc_and_commit_time= {dc1, 1}, txid = 1, snapshot_vc=vectorclock:from_list([{dc1,1}])},
     OpCT1 = {dc1, 1},
 	OpCT1SS = vectorclock:from_list([OpCT1]),
 	ST1 = vectorclock:from_list([{dc1, 2}]),

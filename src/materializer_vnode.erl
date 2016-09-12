@@ -333,7 +333,7 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 %%---------------- Internal Functions -------------------%%
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
-internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},SnapshotParams,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
+internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},SnapshotParams,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
     Protocol = application:get_env(antidote, txn_prot),
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
@@ -352,7 +352,7 @@ internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},Sn
 	end,
     case (ShouldInsert or ShouldGc)of
 	true ->
-	    SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams,Snapshot,SnapshotDict, Protocol),
+	    SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams,Snapshot,SnapshotDict),
 	    snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State, Protocol);
 	false ->
 	    false
@@ -459,8 +459,10 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
     Protocol = Transaction#transaction.transactional_protocol,
     case ets:lookup(OpsCache, Key) of
         [] ->
-            {LatestCompatSnapshot, SnapshotCommitParams} = create_empty_snapshot(Transaction, Type),
-            {ok, {LatestCompatSnapshot, SnapshotCommitParams}};
+	        %% this happens when the first operation arrives to que materializer.
+	        {NewMaterializedSnapshotRecord, SnapshotCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
+	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
+            {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
             {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
             {UpdatedTxnRecord, TempCommitParameters} = case Protocol of
@@ -476,23 +478,27 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
                              %% First time reading this key, store an empty snapshot in the cache
-                             BlankSS = {0, clocksi_materializer:new(Type)},
+	                         {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
                              case TxnId of %%Why do we need this?
                                  Txid1 when ((Txid1 == eunit_test) orelse (Txid1 == no_txn_inserting_from_log)) ->
-                                     internal_store_ss(Key, BlankSS, vectorclock:new(), MatState, false);
+                                     internal_store_ss(Key, BlankSSRecord, BlankSSCommitParams, false, MatState);
                                  _ ->
-                                     materializer_vnode:store_ss(Key, BlankSS, vectorclock:new())
+                                     materializer_vnode:store_ss(Key, BlankSSRecord, BlankSSCommitParams)
                              end,
-                             {BlankSS, ignore, true};
+                             {BlankSSRecord, ignore, true};
                          [{_, SnapshotDict}] ->
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
                                  {undefined, _IsF} ->
                                      {error, no_snapshot};
-                                 {{LS, SCP}, IsF} ->
-                                     {LS, SCP, IsF}
+                                 {{SCP, LS}, IsF} ->
+	                                 case is_record(LS, materialized_snapshot) of
+		                                 true -> {LS, SCP, IsF};
+		                                 false -> {error, bad_returned_record}
+	                                 end
+                                     
                              end
                      end,
-            {Length, Ops, {LastOp, LatestSnapshot}, SnapshotCommitTime, IsFirst} =
+	        SnapshotGetResponse =
                 case Result of
                     {error, no_snapshot} ->
                         lager:info("no snapshot in the cache for key: ~p",[Key]),
@@ -500,17 +506,25 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                         [Node] = log_utilities:get_preflist_from_key(Key),
                         Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
                         Res;
-%%                        {0, {error, no_snapshot}, {foo, foo}, foo, foo};
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
-                        {Len, OperationsForKey, LatestSnapshot1, SnapshotCommitTime1, IsFirst1}
+	                    #snapshot_get_response{number_of_ops = Len, ops_list = OperationsForKey,
+		                    materialized_snapshot = LatestSnapshot1,
+		                    snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
                 end,
-            case Length of
+            case SnapshotGetResponse#snapshot_get_response.number_of_ops of
                 0 ->
-                            {ok, {LatestSnapshot, SnapshotCommitTime}};
+                            {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot,
+	                              SnapshotGetResponse#snapshot_get_response.snapshot_time}};
 %%                    lager:info("materializer_vnode: line 489 IS THIS POSSIBLE?"),
                 _ ->
-                    case clocksi_materializer:materialize(Type, LatestSnapshot, LastOp, SnapshotCommitTime, UpdatedTxnRecord, Ops) of
-                        {ok, Snapshot, NewLastOp, CommitTime, NewSS} ->
+	
+	
+%%	                {snapshot_time=SnapshotCommitTime, ops_list=Ops,
+%%		                materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}}
+	                
+	                
+                    case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse) of
+                        {ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                             %% for the given snapshot_time
                             %% But is the snapshot not safe?
@@ -518,15 +532,17 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                 ignore ->
                                     {ok, {Snapshot, CommitTime}};
                                 _ ->
-                                    case (NewSS and IsFirst) orelse ShouldGc of
+                                    case (NewSS and SnapshotGetResponse#snapshot_get_response.is_newest_snapshot and
+                                    (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
                                         %% previous snapshot
                                         true ->
                                             case TxnId of
                                                 Txid when ((Txid == eunit_test) orelse (Txid == no_txn_inserting_from_log)) ->
-                                                    internal_store_ss(Key, {NewLastOp, Snapshot}, CommitTime, MatState, ShouldGc);
+                                                    internal_store_ss(Key, #materialized_snapshot{last_op_id=NewLastOp, value=Snapshot},
+	                                                    CommitTime, ShouldGc, MatState);
                                                 _ ->
-                                                    store_ss(Key, {NewLastOp, Snapshot}, CommitTime)
+                                                    store_ss(Key, #materialized_snapshot{last_op_id=NewLastOp, value=Snapshot}, CommitTime)
                                             end;
                                         _ ->
                                             ok
@@ -564,7 +580,7 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
-    case vector_orddict:is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+    case is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
         true ->
             FinalReadVC = case ReadVC of
                               ignore -> %% newest operation in the list.
@@ -591,7 +607,20 @@ define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadT
 %%%%            {{_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
 %%            {_Lenght, _CommittedOpsForKey} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
 %%    end.
-create_empty_snapshot(Transaction, Type) ->
+
+
+is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
+	case ((CommitTimeLowbound == undefined) or (DepUpbound == undefined) or
+		(CommitTimeLowbound == []) or (DepUpbound == [])) of
+		true ->
+			true;
+		false ->
+			%%            lager:info("CommitClock= ~p~n CommitTimeLowbound= ~p~n, DepClock = ~p~n, DepUpbound = ~p~n",
+			%%                [CommitClock,CommitTimeLowbound, DepClock, DepUpbound]),
+			vectorclock:ge(CommitClock, CommitTimeLowbound) and vectorclock:le(DepClock, DepUpbound)
+	end.
+
+create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
             ReadTime = clocksi_vnode:now_microsec(now()),
@@ -686,7 +715,7 @@ prune_ops({Len,OpsTuple}, Threshold, Protocol)->
                              _ -> Op#operation_payload.snapshot_vc
                          end,
 	    {DcId,CommitTime} = Op#operation_payload.dc_and_commit_time,
-	    CommitVC = vector_clock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
+	    CommitVC = vectorclock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
         (op_not_already_in_snapshot(Threshold,CommitVC))
 				    end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
     case NewSize of
@@ -823,7 +852,7 @@ belongs_to_snapshot_test()->
 %% @doc This tests to make sure when garbage collection happens, no updates are lost
 gc_test() ->
     MatState = #mat_state{ops_cache= ets:new(ops_cache, [set]),
-    snapshot_cache= ets:new(snapshot_cache, [set])},
+                          snapshot_cache= ets:new(snapshot_cache, [set])},
     Key = mycount,
     DC1 = 1,
     Type = antidote_crdt_counter,
@@ -906,7 +935,7 @@ large_list_test() ->
 		snapshot_cache= ets:new(snapshot_cache, [set])},
 	Key = mycount,
 	DC1 = 1,
-	Type = riak_dt_gcounter,
+	Type = antidote_crdt_counter,
 	
 	%% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
 	{ok, {Res0, _}} = internal_read(Key, Type,
@@ -969,8 +998,8 @@ seq_write_test() ->
                                      dc_and_commit_time= {DC1, 15},
                                      txid = 1
                                     },
-    op_insert_gc(Key,DownstreamOp1, MatState),
-    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]),
+    op_insert_gc(Key,DownstreamOp1, MatState, #transaction{txn_id = eunit_test}),
+    {ok, {Res1, _}} = internal_read(Key, Type,
 	    #transaction{txn_id = eunit_test,
 		    transactional_protocol = clocksi,
 		    snapshot_vc = vectorclock:from_list([{DC1, 16}])},
@@ -1006,10 +1035,10 @@ multipledc_write_test() ->
 
 
     %% Insert one increment in DC1
-	{ok,Op1} = Type:update(increment, a, S1),
+	{ok,Op1} = Type:downstream({increment,1},S1),
 	DownstreamOp1 = #operation_payload{key = Key,
 		type = Type,
-		op_param = {merge, Op1},
+		op_param = Op1,
 		snapshot_vc = vectorclock:from_list([{DC2,0}, {DC1,10}]),
 		dc_and_commit_time = {DC1, 15},
 		txid = 1
@@ -1020,9 +1049,9 @@ multipledc_write_test() ->
 	?assertEqual(1, Type:value(Res1)),
 	
 	%% Insert second increment in other DC
-	{ok,Op2} = Type:update(increment, b, Res1),
+	{ok,Op2} = Type:downstream({increment,1},S1),
 	DownstreamOp2 = DownstreamOp1#operation_payload{
-		op_param = {merge, Op2},
+		op_param = Op2,
 		snapshot_vc =vectorclock:from_list([{DC2,16}, {DC1,16}]),
 		dc_and_commit_time = {DC2,20},
 		txid=2},
@@ -1041,16 +1070,16 @@ concurrent_write_test() ->
 	MatState = #mat_state{ops_cache= ets:new(ops_cache, [set]),
 		snapshot_cache= ets:new(snapshot_cache, [set])},
 	Key = mycount,
-	Type = riak_dt_gcounter,
+	Type = antidote_crdt_counter,
 	DC1 = local,
 	DC2 = remote,
 	S1 = Type:new(),
 	
 	%% Insert one increment in DC1
-	{ok,Op1} = Type:update(increment, a, S1),
+	{ok,Op1} = Type:downstream({increment,1},S1),
 	DownstreamOp1 = #operation_payload{key = Key,
 		type = Type,
-		op_param = {merge, Op1},
+		op_param = Op1,
 		snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,0}]),
 		dc_and_commit_time = {DC2, 1},
 		txid = 1
@@ -1061,10 +1090,10 @@ concurrent_write_test() ->
 	?assertEqual(1, Type:value(Res1)),
 	
 	%% Another concurrent increment in other DC
-	{ok, Op2} = Type:update(increment, b, S1),
+	{ok, Op2} = Type:downstream({increment,1},S1),
 	DownstreamOp2 = #operation_payload{ key = Key,
 		type = Type,
-		op_param = {merge, Op2},
+		op_param = Op2,
 		snapshot_vc =vectorclock:from_list([{DC1,0}, {DC2,0}]),
 		dc_and_commit_time = {DC1, 1},
 		txid=2},
