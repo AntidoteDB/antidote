@@ -67,10 +67,10 @@
     stop/1]).
 
 %% States
--export([create_transaction_record/5,
+-export([create_transaction_record/6,
     start_tx/2,
-    init_state/3,
-    perform_update/5,
+    init_state/4,
+    perform_update/3,
     perform_read/4,
     execute_op/3,
 receive_read_objects_result/2,
@@ -184,7 +184,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                 dep_upbound = vectorclock:new(),
                 commit_time_lowbound = vectorclock:new()},
             Now = clocksi_vnode:now_microsec(dc_utilities:now()),
-            TransactionId = #tx_id{snapshot_time = Now, server_pid = Name},
+            TransactionId = #tx_id{local_start_time= Now, server_pid = Name},
             Transaction = #transaction{
                 transactional_protocol = Protocol,
                 physics_read_metadata = PhysicsReadMetadata,

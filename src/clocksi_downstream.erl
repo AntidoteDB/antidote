@@ -27,44 +27,49 @@
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
-    Type :: type(), Update :: {op(), actor(), list(), orddict()) ->
-    {error, _} | {ok, {merge, _} | {update, _}, _}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet) ->
-    {Op, Actor} = Update,
-    Result = case orddict:find(Key, InternalReadSet) of
-                 {ok, {S, SCP}} -> {S, SCP};
-                 error -> case clocksi_vnode:read_data_item(Node, Transaction, Key, Type, WriteSet) of
-                              {ok, {S, SCP}} -> {S, SCP};
-                              {error, _Reason} -> {error, _Reason}
-                          end
-             end,
-    case Result of
-        {Snapshot, SnapshotCommitParams} ->
-%%            ALE PREV CODE
-%%            TypeString = lists:flatten(io_lib:format("~p", [Type])),
-%%            case string:str(TypeString, "riak_dt") of
-%%                0 -> %% dealing with an op_based crdt
-%%                    case Type:generate_downstream(Op, Actor, Snapshot) of
-%%                        {ok, OpParam} ->
-%%                            {ok, {update, OpParam}, SnapshotCommitParams};
-%%                        {error, Reason} ->
-%%                            {error, Reason}
-%%                    end;
-%%                1 -> %% dealing with a state_based crdt
-%%                    case Type:update(Op, Actor, Snapshot) of
-%%                        {ok, NewState} ->
-%%                            {ok, {merge, NewState}, SnapshotCommitParams};
-%%                        {error, Reason} ->
-%%                            {error, Reason}
-%%                    end
-%%            end;
-            case Type of
-                antidote_crdt_bcounter -> %% bcounter data-type.
-                    bcounter_mgr:generate_downstream(Key,Update,Snapshot);
-                _ ->
-                    Type:downstream(Update, Snapshot)
-            end;
-            
-        {error, R} ->
-            {error, R} %% {error, Reason} is returned here.
-    end.
+  Type :: type(), Update :: {op(), actor()}, list(), orddict()) ->
+{error, _} | {ok, {merge, _} | {update, _}, _}.
+generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet)->
+	%%    {Op, Actor} = Update,
+	Result=case orddict:find(Key, InternalReadSet) of
+		{ok, {S, SCP}}->
+			{S, SCP};
+		error->
+			case clocksi_vnode:read_data_item(Node, Transaction, Key, Type, WriteSet) of
+				{ok, {S, SCP}}->
+					{S, SCP};
+				{error, _Reason}->
+					{error, _Reason}
+			end
+	end,
+	case Result of
+		{Snapshot, SnapshotCommitParams}->
+			%%            ALE PREV CODE
+			%%            TypeString = lists:flatten(io_lib:format("~p", [Type])),
+			%%            case string:str(TypeString, "riak_dt") of
+			%%                0 -> %% dealing with an op_based crdt
+			%%                    case Type:generate_downstream(Op, Actor, Snapshot) of
+			%%                        {ok, OpParam} ->
+			%%                            {ok, {update, OpParam}, SnapshotCommitParams};
+			%%                        {error, Reason} ->
+			%%                            {error, Reason}
+			%%                    end;
+			%%                1 -> %% dealing with a state_based crdt
+			%%                    case Type:update(Op, Actor, Snapshot) of
+			%%                        {ok, NewState} ->
+			%%                            {ok, {merge, NewState}, SnapshotCommitParams};
+			%%                        {error, Reason} ->
+			%%                            {error, Reason}
+			%%                    end
+			%%            end;
+			NewSnapshot=case Type of
+				antidote_crdt_bcounter->
+					%% bcounter data-type.
+					bcounter_mgr:generate_downstream(Key, Update, Snapshot);
+				_->
+					Type:downstream(Update, Snapshot)
+			end,
+			{NewSnapshot, SnapshotCommitParams};
+		{error, R}->
+			{error, R} %% {error, Reason} is returned here.
+	end.
