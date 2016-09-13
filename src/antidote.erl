@@ -282,9 +282,9 @@ unregister_hook(Prefix, Bucket) ->
 %%      object stored at some key.
 -spec append(key(), type(), {op_name(),op_param()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, {Op, Param}) ->
+append(Key, Type, Op) ->
     {ok, TxId} = start_transaction(ignore, []),
-    Response = update_objects([{{Key, Type, bucket}, Op, Param}], TxId),
+    Response = update_objects([{{Key, Type, bucket}, Op}], TxId),
     {ok, CommitTime} = commit_transaction(TxId),
     case Response of
         {error, Reason} -> {error, Reason};
