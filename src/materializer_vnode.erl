@@ -68,7 +68,7 @@
          handle_coverage/4,
          handle_exit/3]).
 
--type op_and_id() :: {non_neg_integer(),#operation_payload{}}.
+-type op_and_id() :: {non_neg_integer(),operation_payload()}.
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -584,6 +584,12 @@ define_snapshot_vc_for_transaction(Transaction, OperationList) ->
     LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
     define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore, OperationList).
 
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, _FullOpList) ->
+%%    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+%%    TxDepUpBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%    lager:info("Transaction: ~n~p~n OperationList: ~n~p", [_Transaction, FullOpList]),
+%%    lager:info("TxCTLowBound: ~n~p~n TxDepUpBound: ~n~p", [TxCTLowBound, TxDepUpBound]),
+    no_compatible_operation_found;
 define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ReadVC, FullOpList) ->
     [{_OpId, Op} | Rest] = OperationList,
     TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
@@ -742,7 +748,7 @@ prune_ops({Len,OpsTuple}, Threshold, Protocol)->
 %% of the remaining operations and the size of that list
 %% It is used during garbage collection to filter out operations that are older than any
 %% of the cached snapshots
--spec check_filter(fun(({non_neg_integer(),#operation_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
+-spec check_filter(fun(({non_neg_integer(),operation_payload()}) -> boolean()), non_neg_integer(), non_neg_integer(),
 		   non_neg_integer(),tuple(),non_neg_integer(),[{non_neg_integer(),op_and_id()}]) ->
 			  {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
 check_filter(_Fun,Id,Last,_NewId,_Tuple,NewSize,NewOps) when (Id == Last) ->
@@ -783,7 +789,7 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), operation_payload(), #mat_state{}, transaction() | no_txn) -> true.
+-spec op_insert_gc(key(), operation_payload(), #mat_state{}, transaction() | no_txn) -> ok|{error, reason()}.
 op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transaction)->
     case ets:member(OpsCache, Key) of
 	false ->

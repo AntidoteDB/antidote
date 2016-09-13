@@ -226,7 +226,7 @@ get_partition_clock(State) ->
   vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
--spec updates_to_operation_payloads(#interdc_txn{}) -> list(#operation_payload{}).
+-spec updates_to_operation_payloads(#interdc_txn{}) -> list(operation_payload()).
 updates_to_operation_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, causal_dependencies = CausalDependencies}) ->
   lists:map(fun(#log_record{log_operation = LogRecord}) ->
     #update_log_payload{key = Key, type = Type, op = Op} = LogRecord#log_operation.log_payload,
