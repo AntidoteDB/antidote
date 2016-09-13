@@ -280,7 +280,7 @@ get_partition_snapshot(Partition) ->
 	    timer:sleep(10),
 	    get_partition_snapshot(Partition);
 	SS ->
-		vectorclock:from_dict(SS)
+	    vectorclock:from_dict(SS)
     end.
 
 %% Returns the minimum value in the stable vector snapshot time

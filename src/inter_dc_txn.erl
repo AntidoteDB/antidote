@@ -38,18 +38,21 @@
 
 -spec from_ops([#log_record{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
 from_ops(Ops, Partition, PrevLogOpId) ->
+	lager:info("creating interdc_txn to send from ops: ~n~p ",[Ops]),
   LastOp = lists:last(Ops),
   CommitPld = LastOp#log_record.log_operation,
   commit = CommitPld#log_operation.op_type, %% sanity check
   #commit_log_payload{commit_time= {DCID, CommitTime}, causal_dependencies = CausalDependencies} = CommitPld#log_operation.log_payload,
-  #interdc_txn{
+  InterDCTxn=#interdc_txn{
     dcid = DCID,
     partition = Partition,
     prev_log_opid = PrevLogOpId,
     causal_dependencies = CausalDependencies,
     log_records = Ops,
     timestamp = CommitTime
-  }.
+  },
+	lager:info("created interdc_txn to send from ops: ~n~p ",[InterDCTxn]),
+	InterDCTxn.
 
 -spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
 ping(Partition, PrevLogOpId, Timestamp) ->

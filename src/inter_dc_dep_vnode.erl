@@ -128,9 +128,9 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% Still need to update the timestamp for that DC, up to 1 less than the
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
-    false -> lager:info("could not store trasaction yet: ~n~p",[Txn]),
-             {update_clock(State, DCID, Timestamp-1), false};
-
+    false ->
+      lager:info("could not store trasaction yet: ~n~p",[Txn]),
+      {update_clock(State, DCID, Timestamp-1), false};
     %% If so, store the transaction
     true ->
       lager:info("stored remote trasaction : ~n~p",[Txn]),

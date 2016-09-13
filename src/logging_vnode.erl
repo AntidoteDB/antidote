@@ -538,8 +538,8 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
--spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(),clocksi_payload()}]) ->
-			   {error | eof, [{non_neg_integer(),clocksi_payload()}]}.
+-spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(),operation_payload()}]) ->
+			   {error | eof, [{non_neg_integer(),operation_payload()}]}.
 read_internal(_Log, error, Ops) ->
     {error, Ops};
 read_internal(_Log, eof, Ops) ->
@@ -553,8 +553,8 @@ read_internal(Log, Continuation, Ops) ->
 	end,
     read_internal(Log, NewContinuation, Ops ++ NewOps).
 
--spec reverse_and_add_op_id([clocksi_payload()],non_neg_integer(),[{non_neg_integer(),clocksi_payload()}]) ->
-				   [{non_neg_integer(),clocksi_payload()}].
+-spec reverse_and_add_op_id([operation_payload()],non_neg_integer(),[{non_neg_integer(),operation_payload()}]) ->
+				   [{non_neg_integer(),operation_payload()}].
 reverse_and_add_op_id([],_Id,Acc) ->
     Acc;
 reverse_and_add_op_id([Next|Rest],Id,Acc) ->

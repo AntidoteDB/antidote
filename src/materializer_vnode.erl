@@ -453,6 +453,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 internal_read(Key, Type, Transaction, State) ->
     internal_read(Key, Type, Transaction, State,false).
 internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
+	lager:info("called : ~p",[Transaction]),
 	OpsCache = MatState#mat_state.ops_cache,
 	SnapshotCache = MatState#mat_state.snapshot_cache,
     TxnId = Transaction#transaction.txn_id,
@@ -822,6 +823,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 						        DownstreamOp#operation_payload.snapshot_vc
 				        end}
 	        end,
+	        lager:info("calling internal read: ~p",[Transaction]),
 	        case internal_read(Key, Type, NewTransaction, State, true) of
 		        {ok, _} ->
 			        %% Have to get the new ops dict because the interal_read can change it
