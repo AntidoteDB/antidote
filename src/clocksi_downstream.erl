@@ -56,7 +56,7 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalR
 			case NewSnapshot of
 				{ok, FinalSnapshot}->
 					{ok, FinalSnapshot, SnapshotCommitParams};
-				{error, Reason}->
-					{error, Reason}
+				{error, Reason1}->
+					{error, Reason1}
 			end
 	end.
