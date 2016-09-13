@@ -186,10 +186,10 @@
 -type orddict() :: orddict().
 %%-type snapshot_time() :: vectorclock:vectorclock().
 -type commit_time() :: {dcid(), non_neg_integer()}.
-%%-type txid() :: #tx_id{} | ignore.
+-type txid() :: #tx_id{} | ignore |no_txn_inserting_from_log.
 -type operation_payload() :: #operation_payload{}.
 %%-type dcid() :: term().
--type transaction() :: #transaction{}.
+-type transaction() :: #transaction{} | .
 %-type physics_tx() :: #physics_transaction{}.
 
 -type tx() :: #transaction{}.
@@ -247,7 +247,7 @@
     | aborted | committed_read_only,
     operations :: list(),
     internal_read_set :: orddict(),
-    return_read_set :: list(),
+    return_accumulator :: list() | ok | {error, reason()},
     is_static :: boolean(),
     full_commit :: boolean(),
     stay_alive :: boolean(),

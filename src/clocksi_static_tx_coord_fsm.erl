@@ -135,9 +135,9 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
                             Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                             IndexNode = hd(Preflist),
 					        ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                            NumToRead = Acc#tx_coord_state.num_to_reply +1,
+                            NumToRead = Acc#tx_coord_state.num_to_read +1,
                             ReadSet = Acc#tx_coord_state.return_accumulator,
-                            Acc#tx_coord_state{num_to_reply =NumToRead, return_accumulator=[Key|ReadSet]}
+                            Acc#tx_coord_state{num_to_read =NumToRead, return_accumulator=[Key|ReadSet]}
 				    end
 			end
 		end,
@@ -158,7 +158,7 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 %%      of the received prepare_time).
 receive_prepared({prepared, ReceivedPrepareTime},
                  S0=#tx_coord_state{num_to_ack=NumToAck,
-                           num_to_reply =NumToRead,
+                           num_to_read =NumToRead,
                            transaction=Transaction,
                            updated_partitions=UpdatedPartitions,
                            prepare_time=PrepareTime}) ->
@@ -182,7 +182,7 @@ receive_prepared({prepared, ReceivedPrepareTime},
     end;
 
 receive_prepared({ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}},
-                 S0=#tx_coord_state{num_to_reply =NumToRead,
+                 S0=#tx_coord_state{num_to_read =NumToRead,
                             return_accumulator=ReadSet,
                             commit_time=CommitTime,
                             transaction=Transaction,
@@ -207,12 +207,12 @@ receive_prepared({ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}},
                                S0#tx_coord_state{num_to_ack=NumToCommit, return_accumulator=lists:reverse(ReadSet1), state=committing}}
                     end;
                 _ ->
-                    {next_state, receive_prepared, S0#tx_coord_state{num_to_reply = NumToRead-1,
+                    {next_state, receive_prepared, S0#tx_coord_state{num_to_read = NumToRead-1,
                             return_accumulator=ReadSet1}}
             end;
         _ ->
             {next_state, receive_prepared,
-             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_reply = NumToRead-1}}
+             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_read = NumToRead-1}}
     end;
 
 receive_prepared(abort, S0) ->
@@ -222,7 +222,7 @@ receive_prepared(timeout, S0) ->
     {next_state, abort, S0, 0}.
 
 single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
-                            num_to_reply =NumToRead,
+                            num_to_read =NumToRead,
                             return_accumulator=ReadSet,
                             num_to_ack=NumToAck}) ->
     %%TODO: type is hard-coded..
@@ -235,15 +235,15 @@ single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
                     clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed,
                     return_accumulator=lists:reverse(ReadSet1)});
                 _ ->
-                    {next_state, single_committing, S0#tx_coord_state{num_to_reply = NumToRead-1,
+                    {next_state, single_committing, S0#tx_coord_state{num_to_read = NumToRead-1,
                             return_accumulator=ReadSet1}}
             end;
         _ ->
             {next_state, single_committing,
-             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_reply = NumToRead-1}}
+             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_read = NumToRead-1}}
     end;
 
-single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit, num_to_reply =NumToRead}) ->
+single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit, num_to_read =NumToRead}) ->
     case FullCommit of
 	false ->
 	    gen_fsm:reply(From, {ok, CommitTime}),

@@ -280,17 +280,20 @@ unregister_hook(Prefix, Bucket) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}) ->
+-spec append(key(), type(), {op_name(),op_param()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, Op) ->
+append(Key, Type, {Op, Param}) ->
     {ok, TxId} = start_transaction(ignore, []),
-    ok = update_objects([{{Key, Type, bucket}, Op}], TxId),
+    Response = update_objects([{{Key, Type, bucket}, Op, Param}], TxId),
     {ok, CommitTime} = commit_transaction(TxId),
-    {ok, {TxId, [], CommitTime}}.
+    case Response of
+        {error, Reason} -> {error, Reason};
+        ok -> {ok, {TxId, [], CommitTime}}
+    end.
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
--spec read(key(), type()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
+-spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
     {ok, TxId} = start_transaction(ignore, []),
     {ok, [Val]} = read_objects([{Key, Type, bucket}], TxId),
@@ -317,7 +320,10 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
     {ok, TxId} = start_transaction(Clock, [UpdateClock], KeepAlive),
     ReadSet = execute_ops(Operations, TxId, []),
     {ok, CommitTime} = commit_transaction(TxId),
-    {ok, {TxId, ReadSet, CommitTime}}.
+    case ReadSet of
+        {error, Reason} -> {error, Reason};
+        _ -> {ok, {TxId, ReadSet, CommitTime}}
+    end.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->
     clocksi_execute_tx(Clock, Operations, UpdateClock, false).

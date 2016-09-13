@@ -123,9 +123,9 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), #log_operation{}, pid()) -> ok.
-asyn_append(Preflist, Log, LogOperation, Sender) ->
-    riak_core_vnode_master:command(Preflist,
+-spec asyn_append(index_node(), key(), #log_operation{}, pid()) -> ok.
+asyn_append(IndexNode, Log, LogOperation, Sender) ->
+    riak_core_vnode_master:command(IndexNode,
                                    {append, Log, LogOperation},
                                    {fsm, undefined, self(), false, Sender},
                                    ?LOGGING_MASTER).
