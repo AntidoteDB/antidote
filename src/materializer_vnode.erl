@@ -789,7 +789,7 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), operation_payload(), #mat_state{}, transaction() | no_txn) -> ok|{error, reason()}.
+-spec op_insert_gc(key(), operation_payload(), #mat_state{}, transaction() | no_txn_inserting_from_log) -> ok | {error, {op_gc_error, reason()}}.
 op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transaction)->
     case ets:member(OpsCache, Key) of
 	false ->

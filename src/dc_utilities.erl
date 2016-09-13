@@ -242,9 +242,11 @@ get_stable_snapshot() ->
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),
 	    get_stable_snapshot();
-	SS ->
+	    SSDict ->
+		    SS=vectorclock:from_dict(SSDict),
+		    lager:info("stable snapshot is ~p",[SS]),
             case application:get_env(antidote, txn_prot) of
-                {ok, clocksi} ->
+	            {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
                     %% to riak core meta-data) otherwise will have to change this
                     {ok, SS};
@@ -278,7 +280,7 @@ get_partition_snapshot(Partition) ->
 	    timer:sleep(10),
 	    get_partition_snapshot(Partition);
 	SS ->
-	    SS
+		vectorclock:from_dict(SS)
     end.
 
 %% Returns the minimum value in the stable vector snapshot time

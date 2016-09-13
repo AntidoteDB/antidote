@@ -164,7 +164,7 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 integer(),
              snapshot_time() | {snapshot_time(), snapshot_time()} | ignore,
 			 transaction(),
-			 [{integer(),operation_payload()}] | tuple(),
+			 [{integer(),operation_payload()}],
 			 snapshot_time() | ignore,
 			 boolean(),
 			 non_neg_integer()) ->

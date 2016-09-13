@@ -128,16 +128,19 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% Still need to update the timestamp for that DC, up to 1 less than the
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
-    false -> {update_clock(State, DCID, Timestamp-1), false};
+    false -> lager:info("could not store trasaction yet: ~n~p",[Txn]),
+             {update_clock(State, DCID, Timestamp-1), false};
 
     %% If so, store the transaction
     true ->
+      lager:info("stored remote trasaction : ~n~p",[Txn]),
       %% Put the operations in the log
       {ok, _} = logging_vnode:append_group({Partition,node()},
-					   [Partition], Ops, false),
+        [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_operation_payloads(Txn),
+      lager:info("got this operations from tx: : ~n~p",[ClockSiOps]),
 
 %%      Todo: fix this dirty patch
       Transaction = #transaction{
@@ -210,7 +213,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
     true ->
 
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
+      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, vectorclock:to_dict(NewClock)),
 
       Now;
     %% Stable snapshot was recently updated, no need to do so.

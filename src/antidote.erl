@@ -127,7 +127,7 @@ read_objects(Objects, TxId) ->
                  end
     end.
 
--spec update_objects([{bound_object(), op_name(), op_param()}], txid())
+-spec update_objects([{bound_object(), term()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
 %%    lager:info("gonna start multiple updates: ~p", [Updates]),
@@ -280,7 +280,7 @@ unregister_hook(Prefix, Bucket) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op_name(),op_param()}) ->
+-spec append(key(), type(), term()) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(Key, Type, Op) ->
     {ok, TxId} = start_transaction(ignore, []),
