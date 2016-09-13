@@ -40,38 +40,38 @@ update_func_min(Last,Time) ->
     end.
 
 %% This assumes the dicts being sent have all DCs
-get_min_time(VectorClock) ->
-	{MinDict, FoundUndefined} =
-		vectorclock:fold(fun(NodeId, NodeDict, {Acc1, Undefined}) ->
-			case NodeDict of
-				undefined ->
-					lager:info("missing a time for node ~p", [NodeId]),
-					{Acc1, true};
-				_ ->
-					RetDict =
-						vectorclock:fold(fun(DcId, Time, Acc2) ->
+get_min_time(Dict) ->
+    {MinDict,FoundUndefined} =
+	vectorclock:fold(fun(NodeId, NodeDict, {Acc1,Undefined}) ->
+			  case NodeDict of
+			      undefined ->
+				  lager:debug("missing a time for node ~p", [NodeId]),
+				  {Acc1,true};
+			      _ ->
+				  RetDict =
+				      vectorclock:fold(fun(DcId, Time, Acc2) ->
 							PrevTime = case vectorclock:find(DcId, Acc2) of
-										   {ok, Val} ->
-											   Val;
-										   error ->
-											   Time
-									   end,
+								       {ok, Val} ->
+									   Val;
+								       error ->
+									   Time
+								   end,
 							case PrevTime >= Time of
-								true ->
-									vectorclock:store(DcId, Time, Acc2);
-								false ->
-									vectorclock:store(DcId, PrevTime, Acc2)
+							    true ->
+								vectorclock:store(DcId, Time, Acc2);
+							    false ->
+								vectorclock:store(DcId, PrevTime, Acc2)
 							end
-										 end, Acc1, NodeDict),
-					{RetDict, Undefined}
-			end
-						 end, {vectorclock:new(), false}, VectorClock),
-	%% This means we didn't get updated from all nodes/paritions so 0 is the stable time
-	case FoundUndefined of
-		true ->
-			vectorclock:fold(fun(NodeId, _Val, Acc) ->
-				vectorclock:store(NodeId, 0, Acc)
-							 end, vectorclock:new(), MinDict);
-		false ->
-			MinDict
-	end.
+						end, Acc1, NodeDict),
+				  {RetDict,Undefined}
+			  end
+		  end, {vectorclock:new(),false}, Dict),
+    %% This means we didn't get updated from all nodes/paritions so 0 is the stable time
+    case FoundUndefined of
+	true ->
+	    vectorclock:fold(fun(NodeId, _Val, Acc) ->
+			      vectorclock:store(NodeId,0,Acc)
+		      end, vectorclock:new(), MinDict);
+	false ->
+	    MinDict
+    end.

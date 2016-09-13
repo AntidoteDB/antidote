@@ -215,7 +215,7 @@ ensure_all_vnodes_running_master(VnodeType) ->
 check_staleness() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     {ok, SS} = get_stable_snapshot(),
-    dict:fold(fun(DcId,Time,_Acc) ->
+    vectorclock:fold(fun(DcId,Time,_Acc) ->
 		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
 		      ok
 	      end, ok, SS).
@@ -252,16 +252,16 @@ get_stable_snapshot() ->
                     %% For gentlerain use the same format as clocksi
                     %% But, replicate GST to all entries in the dict
                     StableSnapshot = SS,
-                    case dict:size(StableSnapshot) of
+                    case vectorclock:size(StableSnapshot) of
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            ListTime = dict:fold(
+                            ListTime = vectorclock:fold(
                                          fun(_Key, Value, Acc) ->
                                                  [Value | Acc ]
                                          end, [], StableSnapshot),
                             GST = lists:min(ListTime),
-                            {ok, dict:map(
+                            {ok, vectorclock:map(
                                    fun(_K, _V) ->
                                            GST
                                    end,
@@ -288,7 +288,7 @@ get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
     %% dict:is_empty/1 is not available, hence using dict:size/1
     %% to check whether it is empty
-    case dict:size(StableSnapshot) of
+    case vectorclock:size(StableSnapshot) of
         0 ->
             %% This case occur when updates from remote replicas has not yet received
             %% or when there are no remote replicas
@@ -300,7 +300,7 @@ get_scalar_stable_time() ->
             %% This is correct only if stablesnapshot has entries for
             %% all DCs. Inorder to check that we need to configure the
             %% number of DCs in advance, which is not possible now.
-            ListTime = dict:fold(
+            ListTime = vectorclock:fold(
                          fun(_Key, Value, Acc) ->
                                  [Value | Acc ]
                          end, [], StableSnapshot),
