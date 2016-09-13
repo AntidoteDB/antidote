@@ -179,10 +179,11 @@ single_commit_sync([{Node, WriteSet}], Transaction) ->
 
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
-commit(ListofNodes, TxId, CommitTime) ->
+commit(ListofNodes, Transaction, CommitParams) ->
+%%    lager:info("vnode commit with params: ~p",[CommitParams]),
     lists:foldl(fun({Node, WriteSet}, _Acc) ->
         riak_core_vnode_master:command(Node,
-            {commit, TxId, CommitTime, WriteSet},
+            {commit, Transaction, CommitParams, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
                 end, ok, ListofNodes).
@@ -349,17 +350,19 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
 %% TODO: sending empty writeset to clocksi_downstream_generatro
 %% Just a workaround, need to delete downstream_generator_vnode
 %% eventually.
-handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
+handle_command({commit, Transaction, TxCommitParams, Updates}, _Sender,
   #state{partition = _Partition,
       committed_tx = CommittedTx
   } = State) ->
-    CommitParams = case Transaction#transaction.transactional_protocol of
-                       physics ->
-                           SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-                           {TxCommitTime, SnapshotDepVC};
-                       Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
-                           {TxCommitTime, Transaction#transaction.snapshot_vc}
-                   end,
+    CommitParams =
+%%        case Transaction#transaction.transactional_protocol of
+%%                       physics ->
+%%%%                           SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+                           TxCommitParams,
+%%                       Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
+%%                           {TxCommitParams, Transaction#transaction.snapshot_vc}
+%%                   end,
+%%    lager:info("these are the commit params: ~p~n", [CommitParams]),
     Result = commit(Transaction, CommitParams, Updates, CommittedTx, State),
     case Result of
         {ok, committed, NewPreparedDict} ->

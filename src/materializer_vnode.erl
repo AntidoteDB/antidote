@@ -464,17 +464,30 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
             {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
-            {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
-            {UpdatedTxnRecord, TempCommitParameters} = case Protocol of
-                                                           physics ->
-                                                               case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
-                                                                   _ ->
-                                                                       OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey),
-                                                                       {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams}
-                                                               end;
-                                                           Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-                                                               {Transaction, empty}
-                                                       end,
+	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple),
+	        {UpdatedTxnRecord, TempCommitParameters} =
+		        case Protocol of
+			        physics ->
+				        case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
+					        _ ->
+						        case define_snapshot_vc_for_transaction(Transaction, OperationsForKey) of
+							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
+								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
+							        no_operation_to_define_snapshot ->
+								        lager:info("there no_operation_to_define_snapshot"),
+								        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+								        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
+							        no_compatible_operation_found ->
+								        case length(OperationsForKey) of 1 ->
+									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
+									        _->  {error, no_compatible_operation_found}
+								        end
+						        end
+				        end;
+			        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+				        {Transaction, empty}
+		        end,
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
                              %% First time reading this key, store an empty snapshot in the cache
@@ -566,34 +579,33 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %% the protocol uses the commit time of the operation as the "snapshot time"
 %% of this particular read, whithin the transaction.
 define_snapshot_vc_for_transaction(_Transaction, []) ->
-    no_compatible_operation_found;
+    no_operation_to_define_snapshot;
 define_snapshot_vc_for_transaction(Transaction, OperationList) ->
-    LocalDCReadTime = clocksi_vnode:now_microsec(now()),
-    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore).
+    LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
+    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore, OperationList).
 
-define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC) ->
-    no_compatible_operation_found;
-define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadTime, ReadVC) ->
-    {_OpId, Op} = Operation,
+define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ReadVC, FullOpList) ->
+    [{_OpId, Op} | Rest] = OperationList,
     TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
     TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
-    case is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
-        true ->
-            FinalReadVC = case ReadVC of
-                              ignore -> %% newest operation in the list.
-                                  OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
-                                  vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationDependencyVC);
-                              _ ->
-                                  ReadVC
-                          end,
-            {OperationCommitVC, OperationDependencyVC, FinalReadVC};
-        false ->
-            NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
-            define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC)
-    end.
+	FinalReadVC = case ReadVC of
+		ignore -> %% newest operation in the list.
+			LocalDC = dc_utilities:get_my_dc_id(),
+			OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
+			vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
+		_ ->
+			ReadVC
+	end,
+	case vector_orddict:is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+		true ->
+			{OperationCommitVC, OperationDependencyVC, FinalReadVC};
+		false ->
+			NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
+			define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC, FullOpList)
+	end.
 
 %%%% Todo: Future: Implement the following function for a causal snapshot
 %%get_all_operations_from_log_for_key(Key, Type, Transaction) ->
@@ -623,7 +635,7 @@ is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
 create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
-            ReadTime = clocksi_vnode:now_microsec(now()),
+            ReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
             MyDc = dc_utilities:get_my_dc_id(),
             ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
             {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
@@ -797,7 +809,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 					        physics ->
 						        case DownstreamOp#operation_payload.dependency_vc of
 							        [] ->
-								        vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(now()), []);
+								        vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), []);
 							        DepVC -> DepVC
 						        end;
 					        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
@@ -816,7 +828,8 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 			        {error, {op_gc_error, Reason}}
 	        end;
         false ->
-	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
+	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}]),
+        ok
     end.
 
 -ifdef(TEST).

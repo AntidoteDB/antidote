@@ -38,7 +38,7 @@
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
-         asyn_append/3,
+         asyn_append/4,
          append/3,
          append_commit/3,
          append_group/4,
@@ -123,11 +123,11 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), #log_operation{}) -> ok.
-asyn_append(Preflist, Log, LogOperation) ->
+-spec asyn_append(preflist(), key(), #log_operation{}, pid()) -> ok.
+asyn_append(Preflist, Log, LogOperation, Sender) ->
     riak_core_vnode_master:command(Preflist,
                                    {append, Log, LogOperation},
-                                   {fsm, undefined, self(), ?SYNC_LOG},
+                                   {fsm, undefined, self(), false, Sender},
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation payload
@@ -352,11 +352,11 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%
 %% -spec handle_command({append, log_id(), #log_operation{}, boolean()}, pid(), #state{}) ->
 %%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
-handle_command({append, LogId, LogOperation, Sync}, _Sender,
+handle_command({append, LogId, LogOperation, Sync}, Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
+	{Reply, NewState}=case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
 	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
 	    %% all operations update the per log, operation id
@@ -387,19 +387,27 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 			true ->
 			    case disk_log:sync(Log) of
 				ok ->
-				    {reply, {ok, OpId}, State};
+				    {{ok, OpId}, State};
 				{error, Reason} ->
-				    {reply, {error, Reason}, State}
+				    {{error, Reason}, State}
 			    end;
 			false ->
-			    {reply, {ok, OpId}, State}
+			    {{ok, OpId}, State}
 		    end;
                 {error, Reason} ->
-                    {reply, {error, Reason}, State}
+                    {{error, Reason}, State}
             end;
         {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+            {{error, Reason}, State}
+    end,
+	case Sender of
+		ignore ->
+			{reply, Reply, NewState};
+		_ ->
+			gen_fsm:send_event(Sender, Reply),
+			{noreply, NewState}
+	end;
+
 
 %% Currently this should be only used for external operations
 %% That already have their operation id numbers assigned
@@ -720,7 +728,7 @@ handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict) ->
                                   _ ->
                                       Transaction#transaction.snapshot_vc
                               end,
-	    NewCommittedOpsDict = 
+	    NewCommittedOpsDict =
 		lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
 				    case ((MinSnapshotTime == undefined) orelse
 									   (not vectorclock:gt(SnapshotTime, MinSnapshotTime))) of

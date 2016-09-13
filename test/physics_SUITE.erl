@@ -400,17 +400,27 @@ clocksi_tx_noclock_test(Config) ->
                            [Key, antidote_crdt_counter]),
     {ok, {_, ReadSet1, _}}= ReadResult1,
     ?assertMatch([1], ReadSet1),
-
-    FirstNode = hd(Nodes),
-    WriteResult1 = rpc:call(FirstNode, antidote, clocksi_bulk_update,
-                            [[{update, {Key, Type, increment}}]]),
-    ?assertMatch({ok, _}, WriteResult1),
-    ReadResult2= rpc:call(FirstNode, antidote, clocksi_read,
-                          [Key, antidote_crdt_counter]),
-    {ok, {_, ReadSet2, _}}=ReadResult2,
-    ?assertMatch([2], ReadSet2),
-    lager:info("clocksi_tx_noclock_test passed"),
-    pass.
+    
+    Operation = {{Key, Type, bucket}, {increment, actor}},
+    lager:info("About to execute Operation: ~p", [Operation]),
+    {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ok = rpc:call(FirstNode, antidote, update_objects,
+        [[Operation], TxId1]),
+    CommitTime1=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
+    ?assertMatch({ok, _}, CommitTime1),
+    End1=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+    ?assertMatch({ok, _}, End1),
+  
+    
+    {ok,TxId2}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    ReadResult2=rpc:call(FirstNode, antidote, clocksi_iread,
+        [TxId2, Key, antidote_crdt_counter]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId2]),
+    {ok, _}=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId2]),
+	{ok, {_, ReadSet2, _}}=ReadResult2,
+	?assertMatch([2], ReadSet2),
+	lager:info("clocksi_tx_noclock_test passed"),
+	pass.
 
 %% @doc The following function tests that ClockSI can run both a single
 %%      read and a bulk-update tx.
@@ -437,25 +447,27 @@ clocksi_single_key_update_read_test(Config) ->
 %% @doc Verify that multiple reads/writes are successful.
 clocksi_multiple_key_update_read_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
-    Firstnode = hd(Nodes),
+    FirstNode = hd(Nodes),
     Type = antidote_crdt_counter,
     Key1 = clocksi_multiple_key_update_read_test_key1,
     Key2 = clocksi_multiple_key_update_read_test_key2,
     Key3 = clocksi_multiple_key_update_read_test_key3,
-    Ops = [{update, {Key1, Type, {increment,1}}},
-           {update, {Key2, Type, {increment,10}}},
-           {update,{Key3, Type, increment}}
+    Ops = [{update, {{Key1, Type, bucket}, {increment,1}}},
+           {update, {{Key2, Type, bucket}, {increment,10}}},
+           {update,{{Key3, Type, bucket}, increment}}
           ],
-    Writeresult = rpc:call(Firstnode, antidote, clocksi_bulk_update,
-                           [Ops]),
-    ?assertMatch({ok,{_Txid, _Readset, _Committime}}, Writeresult),
-    {ok,{_Txid, _Readset, Committime}} = Writeresult,
-    {ok,{_,[ReadResult1],_}} = rpc:call(Firstnode, antidote, clocksi_read,
-                                        [Committime, Key1, Type]),
-    {ok,{_,[ReadResult2],_}} = rpc:call(Firstnode, antidote, clocksi_read,
-                                        [Committime, Key2, Type]),
-    {ok,{_,[ReadResult3],_}} = rpc:call(Firstnode, antidote, clocksi_read,
-                                        [Committime, Key3, Type]),
+	{ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+	ok = rpc:call(FirstNode, antidote, update_objects,
+		[Ops, TxId1]),
+	{ok, _}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
+	{ok, CommitTime}=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+	
+    {ok,{_,[ReadResult1],_}} = rpc:call(FirstNode, antidote, clocksi_read,
+                                        [CommitTime, Key1, Type]),
+    {ok,{_,[ReadResult2],_}} = rpc:call(FirstNode, antidote, clocksi_read,
+                                        [CommitTime, Key2, Type]),
+    {ok,{_,[ReadResult3],_}} = rpc:call(FirstNode, antidote, clocksi_read,
+                                        [CommitTime, Key3, Type]),
     ?assertMatch(ReadResult1,1),
     ?assertMatch(ReadResult2,10),
     ?assertMatch(ReadResult3,1),
@@ -487,7 +499,7 @@ clocksi_test4(Config) ->
     lager:info("Test 4 passed."),
     pass.
 
-%% @doc The following function tests that ClockSI waits, when reading,
+%% @doc The following function tests that Physics does not waits, when reading,
 %%      for a tx that has updated an element that it wants to read and
 %%      has a smaller TxId, but has not yet committed.
 clocksi_test_read_time(Config) ->
