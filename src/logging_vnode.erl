@@ -123,9 +123,9 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), #log_operation{}) -> ok.
-asyn_append(Preflist, Log, LogOperation) ->
-    riak_core_vnode_master:command(Preflist,
+-spec asyn_append(index_node(), key(), #log_operation{}) -> ok.
+asyn_append(IndexNode, Log, LogOperation) ->
+    riak_core_vnode_master:command(IndexNode,
                                    {append, Log, LogOperation},
                                    {fsm, undefined, self(), ?SYNC_LOG},
                                    ?LOGGING_MASTER).
@@ -530,8 +530,8 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
--spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(),clocksi_payload()}]) ->
-			   {error | eof, [{non_neg_integer(),clocksi_payload()}]}.
+-spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(),operation_payload()}]) ->
+			   {error | eof, [{non_neg_integer(),operation_payload()}]}.
 read_internal(_Log, error, Ops) ->
     {error, Ops};
 read_internal(_Log, eof, Ops) ->
@@ -545,8 +545,8 @@ read_internal(Log, Continuation, Ops) ->
 	end,
     read_internal(Log, NewContinuation, Ops ++ NewOps).
 
--spec reverse_and_add_op_id([clocksi_payload()],non_neg_integer(),[{non_neg_integer(),clocksi_payload()}]) ->
-				   [{non_neg_integer(),clocksi_payload()}].
+-spec reverse_and_add_op_id([operation_payload()],non_neg_integer(),[{non_neg_integer(),operation_payload()}]) ->
+				   [{non_neg_integer(),operation_payload()}].
 reverse_and_add_op_id([],_Id,Acc) ->
     Acc;
 reverse_and_add_op_id([Next|Rest],Id,Acc) ->
@@ -627,7 +627,7 @@ update_ets_op_id(Key,NewOp,ClockTable) ->
 %% 		       dict:dict(txid(),[any_log_payload()]), dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}]), load_all | load_per_chunk) ->
 %%  			      {disk_log:continuation(), dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}
 %%  				  | {error, reason()} | {eof, dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}.
--spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, transaction(), dict(), dict(), load_all | load_per_chunk) ->
+-spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, transaction() | undefined, dict(), dict(), load_all | load_per_chunk) ->
 			      {disk_log:continuation(), dict(), dict()}
 				  | {error, reason()} | {eof, dict()}.
 get_ops_from_log(Log, Key, Continuation, Transaction, Ops, CommittedOpsDict, LoadAll) ->
@@ -674,7 +674,7 @@ finish_op_load(CommittedOpsDict) ->
 %% -spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
 %% 			   dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])) ->
 %% 				  {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])}.
--spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
+-spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),transaction(),
 			   dict(),dict()) -> {dict(),dict()}.
 filter_terms_for_key([], _Key, _Transaction, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
@@ -694,7 +694,7 @@ filter_terms_for_key([{_,LogRecord}|T], Key, Transaction, Ops, CommittedOpsDict)
 %% -spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
 %% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
 %% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
+-spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), transaction() | undefined, dict(),dict()) -> {dict(),dict()}.
 handle_update(TxId, OpPayload,  T, Key, Transaction, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
     case (Key == {key, Key1}) or (Key == undefined) of
@@ -709,7 +709,7 @@ handle_update(TxId, OpPayload,  T, Key, Transaction, Ops, CommittedOpsDict) ->
 %% -spec handle_update(txid(), #commit_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
 %% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
 %% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict(),dict()) -> {dict(),dict()}.
+-spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), transaction() | undefined, dict(),dict()) -> {dict(),dict()}.
 handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, causal_dependencies = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of

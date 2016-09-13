@@ -74,6 +74,7 @@
     perform_read/4,
     execute_op/3,
 receive_read_objects_result/2,
+    receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -268,36 +269,33 @@ perform_singleitem_update(Key, Type, Params1) ->
 	        LogRecord = #log_operation{tx_id = TxId, op_type = update,
 		        log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
             LogId = ?LOG_UTIL:get_logid_from_key(Key),
-            [Node] = Preflist,
-            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
-                ok ->
-                    case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
-                        {committed, CommitTime} ->
-	                        %% Execute post commit hook
-	                        _Res = case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
-		                        {error, Reason} ->
-			                        lager:info("Post commit hook failed. Reason ~p", [Reason]);
-		                        _ -> ok
-	                        end,
-                            DcId = ?DC_UTIL:get_my_dc_id(),
-                            SnapshotVC =
-                                case Transaction#transaction.transactional_protocol of
-                                    physics ->
-                                        {_CommitVC, DepVC, _ReadTime} = CommitRecordParameters,
-                                        DepVC;
-                                    Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-                                        Transaction#transaction.snapshot_vc
-                                end,
-                            CausalClock = vectorclock:set_clock_of_dc(
-                                DcId, CommitTime, SnapshotVC),
-                            {ok, {TxId, [], CausalClock}};
-                        abort ->
-                            {error, aborted};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
-                Error ->
-                    {error, Error}
+            [Node]=Preflist,
+            ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord),
+            case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
+                {committed, CommitTime}->
+                    %% Execute post commit hook
+                    _Res=case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+                        {error, Reason}->
+                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                        _->
+                            ok
+                    end,
+                    DcId=?DC_UTIL:get_my_dc_id(),
+                    SnapshotVC=
+                        case Transaction#transaction.transactional_protocol of
+                            physics->
+                                {_CommitVC, DepVC, _ReadTime}=CommitRecordParameters,
+                                DepVC;
+                            Protocol when ((Protocol==clocksi)or(Protocol==gr))->
+                                Transaction#transaction.snapshot_vc
+                        end,
+                    CausalClock=vectorclock:set_clock_of_dc(
+                        DcId, CommitTime, SnapshotVC),
+                    {ok, {TxId, [], CausalClock}};
+                abort->
+                    {error, aborted};
+                {error, Reason}->
+                    {error, Reason}
             end;
         {error, Reason} ->
             {error, Reason}
@@ -378,31 +376,21 @@ perform_update(UpdateArgs, Sender, CoordState) ->
                 _ ->
                     gen_fsm:reply(Sender, ok)
             end,
-            TxId = Transaction#transaction.txn_id,
-	        LogRecord = #log_operation{tx_id = TxId, op_type = update,
-		        log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
-            LogId = ?LOG_UTIL:get_logid_from_key(Key),
-            [Node] = Preflist,
-            case ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord) of
-                ok ->
-%%                    {ok, _} ->
-                    State1 = case TransactionalProtocol of
-                                 physics ->
-                                     update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
-                                 Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                     CoordState
-                             end,
-                    State1#tx_coord_state{updated_partitions = NewUpdatedPartitions};
-                Error ->
-                    case Sender of
-                        undefined ->
-                            ok;
-                        _ ->
-                            _Res = gen_fsm:reply(Sender, {error, Error})
-                    end,
-                    {error, Error}
-            end;
-        {error, Reason} ->
+            TxId=Transaction#transaction.txn_id,
+            LogRecord=#log_operation{tx_id=TxId, op_type=update,
+                log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
+            LogId=?LOG_UTIL:get_logid_from_key(Key),
+            [Node]=Preflist,
+            ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord),
+            State1=case TransactionalProtocol of
+                physics->
+                    update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
+                Protocol when ((Protocol==gr)or(Protocol==clocksi))->
+                    CoordState
+            end,
+            State1#tx_coord_state{updated_partitions=NewUpdatedPartitions};
+    
+        {error, Reason}->
             case Sender of
                 undefined ->
                     ok;

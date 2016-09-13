@@ -141,12 +141,13 @@
     dependency_vc :: vectorclock(),
     dc_and_commit_time :: commit_time(),
     txid :: txid()}).
+
 -record(transaction, {
     snapshot_clock :: snapshot_time(),
     transactional_protocol :: atom(),
     server_pid :: pid(),
     snapshot_vc :: vectorclock(),
-    txn_id :: txid(),
+    txn_id :: txid() | no_txn_inserting_from_log,
     physics_read_metadata :: physics_read_metadata()}).
 
 
@@ -170,7 +171,7 @@
 -type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
 -type crdt() :: term().
 -type val() :: term().
--type reason() :: atom().
+-type reason() :: term().
 %%chash:index_as_int() is the same as riak_core_apl:index().
 %%If it is changed in the future this should be fixed also.
 -type index_node() :: {chash:index_as_int(), node()}.
@@ -261,7 +262,7 @@
 %% The record is using during materialization to keep the
 %% state needed to materilze an object from the cache (or log)
 -record(snapshot_get_response, {
-	  ops_list :: [{op_num(),clocksi_payload()}] | tuple(),  %% list of new ops
+	  ops_list :: [{op_num(),operation_payload()}] | tuple(),  %% list of new ops
 	  number_of_ops :: non_neg_integer(), %% size of ops_list
 	  materialized_snapshot :: #materialized_snapshot{},  %% the previous snapshot to apply the ops to
 	  snapshot_time :: snapshot_time() | ignore,  %% The version vector time of the snapshot

@@ -37,7 +37,7 @@ new(Type) ->
 %% Each update operation has an id number that is one larger than
 %% the previous.  This function takes as input that tuple and returns the id number of the first update
 %% operation (i.e. the one with the largest id)
--spec get_first_id([{non_neg_integer(),#clocksi_payload{}}] | tuple()) ->
+-spec get_first_id([{non_neg_integer(),#operation_payload{}}] | tuple()) ->
 			  non_neg_integer().
 get_first_id([]) ->
     0;
@@ -164,7 +164,7 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 integer(),
              snapshot_time() | {snapshot_time(), snapshot_time()} | ignore,
 			 transaction(),
-			 [{integer(),operation_payload()}] | tuple(),
+			 [{integer(),operation_payload()}],
 			 snapshot_time() | ignore,
 			 boolean(),
 			 non_neg_integer()) ->

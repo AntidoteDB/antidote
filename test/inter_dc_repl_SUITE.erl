@@ -68,10 +68,10 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> [simple_replication_test,
-         multiple_keys_test,
-         causality_test,
-         atomicity_test].
+all() -> [simple_replication_test].
+%%         multiple_keys_test,
+%%         causality_test,
+%%         atomicity_test].
 
 simple_replication_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
@@ -96,6 +96,7 @@ simple_replication_test(Config) ->
                       [Key, Type]),
     ?assertEqual({ok, 3}, Result),
 
+    lager:info("starting read with clock: ~p",[CommitTime]),
     ReadResult = rpc:call(Node2,
                           antidote, clocksi_read,
                           [CommitTime, Key, Type]),

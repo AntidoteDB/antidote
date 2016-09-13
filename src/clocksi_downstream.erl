@@ -28,7 +28,7 @@
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
   Type :: type(), Update :: {op(), actor()}, list(), orddict()) ->
-	{ok, op()} | {error, atom()}.
+	{ok, op(), vectorclock()|{vectorclock(), vectorclock()}} | {error, reason()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet)->
 	%%    {Op, Actor} = Update,
 	Result=case orddict:find(Key, InternalReadSet) of
@@ -53,5 +53,10 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalR
 				_->
 					Type:downstream(Update, Snapshot)
 			end,
-			{NewSnapshot, SnapshotCommitParams}
+			case NewSnapshot of
+				{ok, FinalSnapshot}->
+					{ok, FinalSnapshot, SnapshotCommitParams};
+				{error, Reason}->
+					{error, Reason}
+			end
 	end.

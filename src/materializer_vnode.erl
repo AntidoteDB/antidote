@@ -453,6 +453,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 internal_read(Key, Type, Transaction, State) ->
     internal_read(Key, Type, Transaction, State,false).
 internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
+	lager:info("called : ~p",[Transaction]),
 	OpsCache = MatState#mat_state.ops_cache,
 	SnapshotCache = MatState#mat_state.snapshot_cache,
     TxnId = Transaction#transaction.txn_id,
@@ -771,7 +772,7 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), operation_payload(), #mat_state{}, transaction() | no_txn) -> true.
+-spec op_insert_gc(key(), operation_payload(), #mat_state{}, transaction() | no_txn_inserting_from_log) -> ok | {error, {op_gc_error, reason()}}.
 op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transaction)->
     case ets:member(OpsCache, Key) of
 	false ->
@@ -792,7 +793,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 			        #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc,
 				        transactional_protocol = Protocol, txn_id = no_txn_inserting_from_log};
 		        _ ->
-			        Transaction#transaction{txn_id = no_txn_inserting_from_log,
+			        Transaction#transaction{
 				        snapshot_vc = case Transaction#transaction.transactional_protocol of
 					        physics ->
 						        case DownstreamOp#operation_payload.dependency_vc of
@@ -804,6 +805,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 						        DownstreamOp#operation_payload.snapshot_vc
 				        end}
 	        end,
+	        lager:info("calling internal read: ~p",[Transaction]),
 	        case internal_read(Key, Type, NewTransaction, State, true) of
 		        {ok, _} ->
 			        %% Have to get the new ops dict because the interal_read can change it
@@ -816,7 +818,8 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 			        {error, {op_gc_error, Reason}}
 	        end;
         false ->
-	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
+	        true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}]),
+            ok
     end.
 
 -ifdef(TEST).
