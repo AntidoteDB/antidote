@@ -214,7 +214,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
     true ->
 
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, vectorclock:to_dict(NewClock)),
+      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
 
       Now;
     %% Stable snapshot was recently updated, no need to do so.
@@ -230,7 +230,7 @@ get_partition_clock(State) ->
   vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of clocksi_payload ops.
--spec updates_to_operation_payloads(#interdc_txn{}) -> list(#operation_payload{}).
+-spec updates_to_operation_payloads(#interdc_txn{}) -> list(operation_payload()).
 updates_to_operation_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, causal_dependencies = CausalDependencies}) ->
   lists:map(fun(#log_record{log_operation = LogRecord}) ->
     #update_log_payload{key = Key, type = Type, op = Op} = LogRecord#log_operation.log_payload,

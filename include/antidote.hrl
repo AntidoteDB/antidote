@@ -137,7 +137,7 @@
     key :: key(),
     type :: type(),
     op_param :: op(),
-    snapshot_vc :: snapshot_time(),
+    snapshot_vc :: vectorclock(),
     dependency_vc :: vectorclock(),
     dc_and_commit_time :: commit_time(),
     txid :: txid()}).
@@ -187,10 +187,10 @@
 -type orddict() :: orddict().
 %%-type snapshot_time() :: vectorclock:vectorclock().
 -type commit_time() :: {dcid(), non_neg_integer()}.
-%%-type txid() :: #tx_id{} | ignore.
+%%-type txid() :: #tx_id{} | ignore |no_txn_inserting_from_log.
 -type operation_payload() :: #operation_payload{}.
 %%-type dcid() :: term().
--type transaction() :: #transaction{}.
+-type transaction() :: #transaction{} | undefined.
 %-type physics_tx() :: #physics_transaction{}.
 
 -type tx() :: #transaction{}.
@@ -248,14 +248,13 @@
     | aborted | committed_read_only,
     operations :: list(),
     internal_read_set :: orddict(),
-    return_read_set :: list(),
+    return_accumulator :: list() | ok | {error, reason()},
     is_static :: boolean(),
     full_commit :: boolean(),
     stay_alive :: boolean(),
     %% The following are needed by the physics protocol
     %% Should I create a new tx_coord_record?
-    version_min :: clock_value() | undefined,
-    keys_access_time :: orddict()
+    version_max :: vectorclock()
 }).
 
 

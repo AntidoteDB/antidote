@@ -38,8 +38,8 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalR
 			case clocksi_vnode:read_data_item(Node, Transaction, Key, Type, WriteSet) of
 				{ok, {S, SCP}}->
 					{S, SCP};
-				{error, _Reason}->
-					{error, _Reason}
+				{error, Reason}->
+					{error, Reason}
 			end
 	end,
 	case Result of
@@ -56,7 +56,7 @@ generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalR
 			case NewSnapshot of
 				{ok, FinalSnapshot}->
 					{ok, FinalSnapshot, SnapshotCommitParams};
-				{error, Reason}->
-					{error, Reason}
+				{error, Reason1}->
+					{error, Reason1}
 			end
 	end.

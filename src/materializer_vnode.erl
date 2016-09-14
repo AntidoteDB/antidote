@@ -68,7 +68,7 @@
          handle_coverage/4,
          handle_exit/3]).
 
--type op_and_id() :: {non_neg_integer(),#operation_payload{}}.
+-type op_and_id() :: {non_neg_integer(),operation_payload()}.
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -465,17 +465,30 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
             {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
-            {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
-            {UpdatedTxnRecord, TempCommitParameters} = case Protocol of
-                                                           physics ->
-                                                               case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
-                                                                   _ ->
-                                                                       OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} = define_snapshot_vc_for_transaction(Transaction, OperationsForKey),
-                                                                       {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams}
-                                                               end;
-                                                           Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-                                                               {Transaction, empty}
-                                                       end,
+	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
+	        {UpdatedTxnRecord, TempCommitParameters} =
+		        case Protocol of
+			        physics ->
+				        case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
+					        _ ->
+						        case define_snapshot_vc_for_transaction(Transaction, OperationsForKey) of
+							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
+								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
+							        no_operation_to_define_snapshot ->
+								        lager:info("there no_operation_to_define_snapshot"),
+								        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+								        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
+							        no_compatible_operation_found ->
+								        case length(OperationsForKey) of 1 ->
+									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
+									        _->  {error, no_compatible_operation_found}
+								        end
+						        end
+				        end;
+			        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+				        {Transaction, empty}
+		        end,
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
                              %% First time reading this key, store an empty snapshot in the cache
@@ -567,34 +580,39 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %% the protocol uses the commit time of the operation as the "snapshot time"
 %% of this particular read, whithin the transaction.
 define_snapshot_vc_for_transaction(_Transaction, []) ->
-    no_compatible_operation_found;
+    no_operation_to_define_snapshot;
 define_snapshot_vc_for_transaction(Transaction, OperationList) ->
-    LocalDCReadTime = clocksi_vnode:now_microsec(now()),
-    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore).
+    LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
+    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore, OperationList).
 
-define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC) ->
+define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, _FullOpList) ->
+%%    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+%%    TxDepUpBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%    lager:info("Transaction: ~n~p~n OperationList: ~n~p", [_Transaction, FullOpList]),
+%%    lager:info("TxCTLowBound: ~n~p~n TxDepUpBound: ~n~p", [TxCTLowBound, TxDepUpBound]),
     no_compatible_operation_found;
-define_snapshot_vc_for_transaction(Transaction, [Operation | Rest], LocalDCReadTime, ReadVC) ->
-    {_OpId, Op} = Operation,
+define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ReadVC, FullOpList) ->
+    [{_OpId, Op} | Rest] = OperationList,
     TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
     TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
     OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
-    case is_causally_compatible(OperationCommitVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
-        true ->
-            FinalReadVC = case ReadVC of
-                              ignore -> %% newest operation in the list.
-                                  OPCommitVCLocalDC = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), OperationCommitVC),
-                                  vectorclock:set_clock_of_dc(OperationDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationDependencyVC);
-                              _ ->
-                                  ReadVC
-                          end,
-            {OperationCommitVC, OperationDependencyVC, FinalReadVC};
-        false ->
-            NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
-            define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC)
-    end.
+	FinalReadVC = case ReadVC of
+		ignore -> %% newest operation in the list.
+			LocalDC = dc_utilities:get_my_dc_id(),
+			OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
+			vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
+		_ ->
+			ReadVC
+	end,
+	case is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+		true ->
+			{OperationCommitVC, OperationDependencyVC, FinalReadVC};
+		false ->
+			NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
+			define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC, FullOpList)
+	end.
 
 %%%% Todo: Future: Implement the following function for a causal snapshot
 %%get_all_operations_from_log_for_key(Key, Type, Transaction) ->
@@ -624,7 +642,7 @@ is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
 create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
-            ReadTime = clocksi_vnode:now_microsec(now()),
+            ReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
             MyDc = dc_utilities:get_my_dc_id(),
             ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
             {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
@@ -731,7 +749,7 @@ prune_ops({Len,OpsTuple}, Threshold, Protocol)->
 %% of the remaining operations and the size of that list
 %% It is used during garbage collection to filter out operations that are older than any
 %% of the cached snapshots
--spec check_filter(fun(({non_neg_integer(),#operation_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
+-spec check_filter(fun(({non_neg_integer(),operation_payload()}) -> boolean()), non_neg_integer(), non_neg_integer(),
 		   non_neg_integer(),tuple(),non_neg_integer(),[{non_neg_integer(),op_and_id()}]) ->
 			  {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
 check_filter(_Fun,Id,Last,_NewId,_Tuple,NewSize,NewOps) when (Id == Last) ->
@@ -793,12 +811,12 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 			        #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc,
 				        transactional_protocol = Protocol, txn_id = no_txn_inserting_from_log};
 		        _ ->
-			        Transaction#transaction{
+			        Transaction#transaction{txn_id = no_txn_inserting_from_log,
 				        snapshot_vc = case Transaction#transaction.transactional_protocol of
 					        physics ->
 						        case DownstreamOp#operation_payload.dependency_vc of
 							        [] ->
-								        vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(now()), []);
+								        vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), []);
 							        DepVC -> DepVC
 						        end;
 					        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
@@ -818,8 +836,8 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 			        {error, {op_gc_error, Reason}}
 	        end;
         false ->
-	        true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}]),
-            ok
+	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}]),
+        ok
     end.
 
 -ifdef(TEST).
@@ -1126,6 +1144,46 @@ read_nonexisting_key_test() ->
 	{ok, {ReadResult, _}} = internal_read(key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{dc1,1}, {dc2,0}])}, MatState),
 	?assertEqual(0, Type:value(ReadResult)).
+
+is_causally_compatible_test() ->
+	
+	DepUpBound = [{dc1, 1}, {dc2, 2}],
+	RTLowBound = [{dc1, 5}, {dc2, 10}],
+	
+	OpDepVC1 = [{dc1, 2}, {dc2, 3}],
+	OpCommitVC1 = [{dc1, 5}, {dc2, 10}],
+	
+	false = is_causally_compatible(OpCommitVC1, RTLowBound, OpDepVC1, DepUpBound),
+	
+	OpDepVC2 = [{dc1, 1}, {dc2, 2}],
+	OpCommitVC2 = [{dc1, 5}, {dc2, 10}],
+	
+	true = is_causally_compatible(OpCommitVC2, RTLowBound, OpDepVC2, DepUpBound),
+	
+	OpDepVC3 = [],
+	OpCommitVC3 = [{dc1, 5}, {dc2, 10}],
+	
+	true = is_causally_compatible(OpCommitVC3, RTLowBound, OpDepVC3, DepUpBound),
+	
+	OpDepVC4 = [],
+	OpCommitVC4 = [{dc1, 4}, {dc2, 10}],
+	
+	false = is_causally_compatible(OpCommitVC4, RTLowBound, OpDepVC4, DepUpBound),
+	true = is_causally_compatible(OpCommitVC4, [], OpDepVC4, []),
+	
+	
+	DepUpBound2 = [{dc1, 1}, {dc2, 2}],
+	RTLowBound2 = [{dc1, 1}, {dc2, 2}],
+	
+	OpDepVC21 = [{dc1, 1}, {dc2, 2}],
+	OpCommitVC21 = [{dc1, 4}, {dc2, 10}],
+	
+	true = is_causally_compatible(OpCommitVC21, RTLowBound2, OpDepVC21, DepUpBound2),
+	
+	OpDepVC22 = [{dc1, 1}, {dc2, 2}],
+	OpCommitVC22 = [{dc1, 0}, {dc2, 10}],
+	
+	false = is_causally_compatible(OpCommitVC22, RTLowBound2, OpDepVC22, DepUpBound2).
 
 -endif.
    

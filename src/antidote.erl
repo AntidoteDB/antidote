@@ -127,23 +127,30 @@ read_objects(Objects, TxId) ->
                  end
     end.
 
--spec update_objects([{bound_object(), op_name(), op_param()}], txid())
+-spec update_objects([{bound_object(), term()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    %% Execute each update as in an interactive transaction
-    Results = lists:map(
-                fun({{Key, Type, Bucket}, Op, OpParam}) ->
-                        case clocksi_iupdate(TxId, {Key, Bucket}, Type,
-                                             {Op, OpParam}) of
-                            ok -> ok;
-                            {error, Reason} ->
-                                lager:debug("Update failed. Reason : ~p",[Reason]),
-                                error
-                        end
-                end, Updates),
-    case lists:member(error, Results) of
-       true -> {error, update_failed}; %% TODO: Capture the reason for error
-       false -> ok
+%%    lager:info("gonna start multiple updates: ~p", [Updates]),
+
+    {_, _, CoordFsmPid} = TxId,
+    NewObjects = lists:map(fun({{Key, Type, _Bucket}, Op}) ->
+        case materializer:check_operations([{update, {Key, Type, Op}}]) of
+            ok ->
+%%                lager:info("check ok!"),
+                {Key, Type, Op};
+            {error, _Reason} ->
+%%                lager:info("check WRONG!"),
+                    {error, type_check}
+        end
+                           end, Updates),
+    case lists:member({error, type_check}, NewObjects) of
+        true -> {error, type_check};
+        false ->
+%%            lager:info("gonna start multiple updates: ~p", [NewObjects]),
+            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, NewObjects}, ?OP_TIMEOUT) of
+                ok-> ok;
+                {error, Reason} -> {error, Reason}
+            end
     end.
 
 %% For static transactions: bulk updates and bulk reads
@@ -273,30 +280,25 @@ unregister_hook(Prefix, Bucket) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), {op(),term()}) ->
+-spec append(key(), type(), term()) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, OpParams) ->
-    case materializer:check_operations([{update,
-                                         {Key, Type, OpParams}}]) of
-        ok ->
-            clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_update(Key, Type, OpParams);
-        {error, Reason} ->
-            {error, Reason}
+append(Key, Type, Op) ->
+    {ok, TxId} = start_transaction(ignore, []),
+    Response = update_objects([{{Key, Type, bucket}, Op}], TxId),
+    {ok, CommitTime} = commit_transaction(TxId),
+    case Response of
+        {error, Reason} -> {error, Reason};
+        ok -> {ok, {TxId, [], CommitTime}}
     end.
 
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
--spec read(key(), type()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
+-spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
-        ok ->
-            {ok, Val, _CommitTime} = clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_read(Key,Type),
-            {ok, Val};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    {ok, TxId} = start_transaction(ignore, []),
+    {ok, [Val]} = read_objects([{Key, Type, bucket}], TxId),
+    {ok, _CommitTime} = commit_transaction(TxId),
+    {ok, Val}.
 
 
 %% Clock SI API
@@ -315,30 +317,12 @@ read(Key, Type) ->
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()],snapshot_time(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
-    case materializer:check_operations(Operations) of
-        {error, Reason} ->
-            {error, Reason};
-        ok ->
-	    TxPid = case KeepAlive of
-			true ->
-			    whereis(clocksi_static_tx_coord_fsm:generate_name(self()));
-			false ->
-			    undefined
-		    end,
-	    CoordPid = case TxPid of
-			   undefined ->
-			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock, KeepAlive]),
-			       CoordFsmPid;
-			   TxPid ->
-			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, UpdateClock}),
-			       TxPid
-		       end,
-	    case gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT) of
-		{aborted, Info} ->
-		    {error, {aborted, Info}};
-		Other ->
-		    Other
-	    end
+    {ok, TxId} = start_transaction(Clock, [UpdateClock], KeepAlive),
+    ReadSet = execute_ops(Operations, TxId, []),
+    {ok, CommitTime} = commit_transaction(TxId),
+    case ReadSet of
+        {error, Reason} -> {error, Reason};
+        _ -> {ok, {TxId, ReadSet, CommitTime}}
     end.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->

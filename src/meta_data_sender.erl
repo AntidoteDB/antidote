@@ -192,10 +192,12 @@ get_merged_data(Name) ->
 		undefined ->
 			dict:new();
 		_ ->
-			case ets:lookup(get_name(Name,?META_TABLE_STABLE_NAME), merged_data) of
+			case ets:lookup(get_name(Name, ?META_TABLE_STABLE_NAME), merged_data) of
+%%				undefined -> dict:new();
 				[] ->
 					dict:new();
 				[{merged_data, Other}] ->
+%%		    dict:to_list(Other)
 					Other
 			end
 	end.
@@ -221,20 +223,20 @@ send_meta_data(start, _Sender, State) ->
 	{reply, ok, send_meta_data, State#state{should_check_nodes=true}, ?META_DATA_SLEEP}.
 
 send_meta_data(timeout, State = #state{last_result = LastResult,
-	update_function = UpdateFunction,
-	merge_function = MergeFunction,
-	name = Name,
-	should_check_nodes = CheckNodes}) ->
-	{WillChange,Dict} = get_meta_data(Name, MergeFunction, CheckNodes),
-	NodeList = ?GET_NODE_LIST(),
-	LocalMerged = dict:fetch(local_merged,Dict),
-	MyNode = node(),
-	ok = lists:foreach(fun(Node) ->
-		ok = meta_data_manager:send_meta_data(Name,Node,MyNode,LocalMerged)
-	end, NodeList),
-	MergedDict = MergeFunction(Dict),
-	{NewBool, NewResult} = update_stable(LastResult,MergedDict,UpdateFunction),
-	Store = case NewBool of
+				       update_function = UpdateFunction,
+				       merge_function = MergeFunction,
+				       name = Name,
+				       should_check_nodes = CheckNodes}) ->
+    {WillChange,Dict} = get_meta_data(Name, MergeFunction, CheckNodes),
+    NodeList = ?GET_NODE_LIST(),
+    LocalMerged = dict:fetch(local_merged,Dict),
+    MyNode = node(),
+    ok = lists:foreach(fun(Node) ->
+			       ok = meta_data_manager:send_meta_data(Name,Node,MyNode,LocalMerged)
+		       end, NodeList),
+    MergedDict = MergeFunction(Dict),
+    {NewBool, NewResult} = update_stable(LastResult,MergedDict,UpdateFunction),
+    Store = case NewBool of
 		true ->
 			true = ets:insert(get_name(Name,?META_TABLE_STABLE_NAME), {merged_data, NewResult}),
 			NewResult;
@@ -337,20 +339,20 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 
 -spec update_stable(dict(), dict(), fun((term(),term()) -> boolean())) -> {boolean(),dict()}.
 update_stable(LastResult,NewDict,UpdateFunc) ->
-	dict:fold(fun(DcId, Time, {Bool,Acc}) ->
-		Last = case dict:find(DcId, LastResult) of
-			{ok, Val} ->
-				Val;
-			error ->
-				undefined
-		end,
-		case UpdateFunc(Last,Time) of
-			true ->
-				{true,dict:store(DcId, Time, Acc)};
-			false ->
-				{Bool,Acc}
-		end
-	end, {false,LastResult}, NewDict).
+    dict:fold(fun(DcId, Time, {Bool,Acc}) ->
+		      Last = case dict:find(DcId, LastResult) of
+				 {ok, Val} ->
+				     Val;
+				 error ->
+				     undefined
+			     end,
+		      case UpdateFunc(Last,Time) of
+			  true ->
+			      {true,dict:store(DcId, Time, Acc)};
+			  false ->
+			      {Bool,Acc}
+		      end
+	      end, {false,LastResult}, NewDict).
 
 -spec get_node_list() -> [node()].
 get_node_list() ->

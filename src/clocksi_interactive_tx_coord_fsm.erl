@@ -74,7 +74,7 @@
     perform_read/4,
     execute_op/3,
 receive_read_objects_result/2,
-%%    receive_logging_responses/2,
+    receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -89,7 +89,7 @@ receive_read_objects_result/2,
     abort/1,
     abort/2,
     perform_singleitem_read/2,
-    perform_singleitem_update/3,
+%%    perform_singleitem_update/3,
     reply_to_client/1,
     generate_name/1]).
 
@@ -136,18 +136,19 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
 	    client_ops=[],
 	    updated_partitions = [],
         prepare_time = 0,
+        commit_time = 0,
         num_to_read = 0,
         num_to_ack = 0,
-        operations = undefined,
+        operations = [],
         from = undefined,
         full_commit = FullCommit,
         is_static = IsStatic,
-        return_read_set = [],
+        return_accumulator= [],
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         %% The following are needed by the physics protocol
-        version_min = undefined,
-        keys_access_time = orddict:new()
+        version_max = vectorclock:new()
+%%        keys_access_time = orddict:new()
     }.
 
 -spec generate_name(pid()) -> atom().
@@ -244,67 +245,67 @@ perform_singleitem_read(Key, Type) ->
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Key, Type, Params1)->
-    {ok, Protocol}=application:get_env(antidote, txn_prot),
-    {Transaction, TxId}=create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
-    Preflist=log_utilities:get_preflist_from_key(Key),
-    IndexNode=hd(Preflist),
-    %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
-    %% todo: another for logging, and finally one for single commit.
-    %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
-    %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params1) of
-        {Key, Type, Params}->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, [], []) of
-                {ok, DownstreamRecord, CommitRecordParameters}->
-                    Updated_partition=
-                        case Transaction#transaction.transactional_protocol of
-                            physics->
-                                {DownstreamRecordCommitVC, _, _}=CommitRecordParameters,
-                                [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamRecordCommitVC}}]}];
-                            Protocol when ((Protocol==gr)or(Protocol==clocksi))->
-                                [{IndexNode, [{Key, Type, DownstreamRecord}]}]
-                        end,
-                    LogRecord=#log_operation{tx_id=TxId, op_type=update,
-                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
-                    LogId=?LOG_UTIL:get_logid_from_key(Key),
-                    [Node]=Preflist,
-                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                        {ok, _}->
-                            case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
-                                {committed, CommitTime}->
-                                    %% Execute post commit hook
-                                    _Res=case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
-                                        {error, Reason}->
-                                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
-                                        _->
-                                            ok
-                                    end,
-                                    DcId=?DC_UTIL:get_my_dc_id(),
-                                    SnapshotVC=
-                                        case Transaction#transaction.transactional_protocol of
-                                            physics->
-                                                {_CommitVC, DepVC, _ReadTime}=CommitRecordParameters,
-                                                DepVC;
-                                            Protocol when ((Protocol==clocksi)or(Protocol==gr))->
-                                                Transaction#transaction.snapshot_vc
-                                        end,
-                                    CausalClock=vectorclock:set_clock_of_dc(
-                                        DcId, CommitTime, SnapshotVC),
-                                    {ok, {TxId, [], CausalClock}};
-                                abort->
-                                    {error, aborted}
-                            end;
-                        {error, Reason}->
-                            {error, Reason}
-                    end;
-                {error, Reason}->
-                    {error, Reason}
-            end;
-        {error, Reason}->
-            {error, Reason}
-    end.
+%%-spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+%%perform_singleitem_update(Key, Type, Params1)->
+%%    {ok, Protocol}=application:get_env(antidote, txn_prot),
+%%    {Transaction, TxId}=create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
+%%    Preflist=log_utilities:get_preflist_from_key(Key),
+%%    IndexNode=hd(Preflist),
+%%    %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
+%%    %% todo: another for logging, and finally one for single commit.
+%%    %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
+%%    %% Execute pre_commit_hook if any
+%%    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params1) of
+%%        {Key, Type, Params}->
+%%            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, [], []) of
+%%                {ok, DownstreamRecord, CommitRecordParameters}->
+%%                    Updated_partition=
+%%                        case Transaction#transaction.transactional_protocol of
+%%                            physics->
+%%                                {DownstreamRecordCommitVC, _, _}=CommitRecordParameters,
+%%                                [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamRecordCommitVC}}]}];
+%%                            Protocol when ((Protocol==gr)or(Protocol==clocksi))->
+%%                                [{IndexNode, [{Key, Type, DownstreamRecord}]}]
+%%                        end,
+%%                    LogRecord=#log_operation{tx_id=TxId, op_type=update,
+%%                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
+%%                    LogId=?LOG_UTIL:get_logid_from_key(Key),
+%%                    [Node]=Preflist,
+%%                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
+%%                        {ok, _}->
+%%                            case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
+%%                                {committed, CommitTime}->
+%%                                    %% Execute post commit hook
+%%                                    _Res=case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+%%                                        {error, Reason}->
+%%                                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
+%%                                        _->
+%%                                            ok
+%%                                    end,
+%%                                    DcId=?DC_UTIL:get_my_dc_id(),
+%%                                    SnapshotVC=
+%%                                        case Transaction#transaction.transactional_protocol of
+%%                                            physics->
+%%                                                {_CommitVC, DepVC, _ReadTime}=CommitRecordParameters,
+%%                                                DepVC;
+%%                                            Protocol when ((Protocol==clocksi)or(Protocol==gr))->
+%%                                                Transaction#transaction.snapshot_vc
+%%                                        end,
+%%                                    CausalClock=vectorclock:set_clock_of_dc(
+%%                                        DcId, CommitTime, SnapshotVC),
+%%                                    {ok, {TxId, [], CausalClock}};
+%%                                abort->
+%%                                    {error, aborted}
+%%                            end;
+%%                        {error, Reason}->
+%%                            {error, Reason}
+%%                    end;
+%%                {error, Reason}->
+%%                    {error, Reason}
+%%            end;
+%%        {error, Reason}->
+%%            {error, Reason}
+%%    end.
 
 perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
@@ -348,67 +349,57 @@ perform_update(UpdateArgs, Sender, CoordState) ->
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
     %% todo: another for logging, and finally one (or two) for  commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
-    case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
-        {ok, DownstreamRecord, SnapshotParameters} ->
-%%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n",[DownstreamRecord, _SnapshotParameters]),
-            NewUpdatedPartitions =
-                case TransactionalProtocol of
-                    physics->
-%%                        lager:info("SnapshotParameters ~p",[SnapshotParameters]),
-                        {DownstreamOpCommitVC, _DepVC, _ReadTimeVC} = SnapshotParameters,
-                        case WriteSet of
-                            [] ->
-                                [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]} | UpdatedPartitions];
-                            _ ->
-                                lists:keyreplace(IndexNode, 1, UpdatedPartitions,
-                                    {IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}} | WriteSet]})
-                        end;
-                    Prot when ((Prot == gr) or (Prot == clocksi))->
-                        case WriteSet of
-                            [] ->
-                                [{IndexNode, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
-                            _ ->
-                                lists:keyreplace(IndexNode, 1, UpdatedPartitions,
-                                    {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
-                        end
-                end,
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    gen_fsm:reply(Sender, ok)
-            end,
-            TxId=Transaction#transaction.txn_id,
-            LogRecord=#log_operation{tx_id=TxId, op_type=update,
-                log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
-            LogId=?LOG_UTIL:get_logid_from_key(Key),
-            [Node]=Preflist,
-            ?LOGGING_VNODE:append(Node, LogId, LogRecord),
-            State1=case TransactionalProtocol of
-                physics->
-                    update_causal_snapshot_state(CoordState, SnapshotParameters, Key);
-                Protocol when ((Protocol==gr)or(Protocol==clocksi))->
-                    CoordState
-            end,
-            State1#tx_coord_state{updated_partitions=NewUpdatedPartitions};
-    
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
+                {ok, DownstreamRecord, SnapshotParameters}->
+                    %%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
+                    State1=case TransactionalProtocol of
+                        physics->
+                            %%                        lager:info("SnapshotParameters ~p",[SnapshotParameters]),
+                            {DownstreamOpCommitVC, _DepVC, _ReadTimeVC}=SnapshotParameters,
+                            case WriteSet of
+                                []->
+                                    NewUpdatedPartitions=[{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]}|UpdatedPartitions],
+                                    %%                                     update_causal_snapshot_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key);
+                                    CoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions};
+                                _->
+                                    NewUpdatedPartitions=lists:keyreplace(IndexNode, 1, UpdatedPartitions,
+                                        {IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}|WriteSet]}),
+                                    CoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions}
+                            end;
+                        Prot when ((Prot==gr)or(Prot==clocksi))->
+                            case WriteSet of
+                                []->
+                                    NewUpdatedPartitions=[{IndexNode, [{Key, Type, DownstreamRecord}]}|UpdatedPartitions],
+                                    CoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions};
+                                _->
+                                    NewUpdatedPartitions=lists:keyreplace(IndexNode, 1, UpdatedPartitions,
+                                        {IndexNode, [{Key, Type, DownstreamRecord}|WriteSet]}),
+                                    CoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions}
+                            end
+                    end,
+                    TxId=Transaction#transaction.txn_id,
+                    LogRecord=#log_operation{tx_id=TxId, op_type=update,
+                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
+                    LogId=?LOG_UTIL:get_logid_from_key(Key),
+                    [Node]=Preflist,
+                    ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()),
+                    State1;
+                
+                {error, Reason}->
+                    {error, Reason}
+            end;
         {error, Reason}->
-            case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    _Res = gen_fsm:reply(Sender, {error, Reason})
-            end,
+            lager:debug("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason}
-    end;
-		{error, Reason} ->
-			lager:debug("Execute pre-commit hook failed ~p", [Reason]),
-			{error, Reason}
-	end.
+    end.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
+
+execute_op({update, Args}, Sender, SD0) ->
+    execute_op({update_objects, [Args]}, Sender, SD0);
+
 execute_op({OpType, Args}, Sender,
   SD0 = #tx_coord_state{transaction = Transaction,
       updated_partitions = Updated_partitions
@@ -437,34 +428,72 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set = InternalReadSet}}
             end;
         read_objects ->
+            NewTransaction = case Transaction#transaction.transactional_protocol of
+                physics ->
+                    case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == [] of
+                        true ->
+                            PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), vectorclock:new()),
+                            PhysicsMetadata = #physics_read_metadata{dep_upbound = PhysicsClock, commit_time_lowbound = PhysicsClock},
+                            Transaction#transaction{physics_read_metadata = PhysicsMetadata};
+                        false ->
+                            Transaction
+                    end;
+                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                    Transaction
+            end,
             ExecuteReads = fun({Key, Type}, Acc) ->
                 Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                 IndexNode = hd(Preflist),
-                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                ReadSet = Acc#tx_coord_state.return_read_set,
-                Acc#tx_coord_state{return_read_set = [Key | ReadSet]}
+                ok = clocksi_vnode:async_read_data_item(IndexNode, NewTransaction, Key, Type),
+                ReadSet = Acc#tx_coord_state.return_accumulator,
+                Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
                            end,
-            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_read_set = []}, Args),
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
             {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
-        update ->
-            case perform_update(Args, Sender, SD0) of
-                {error, _Reason} ->
-                    abort(SD0);
-                NewCoordinatorState ->
-                    {next_state, execute_op, NewCoordinatorState}
-            end;
         update_objects ->
-            case perform_update(Args, Sender, SD0) of
-                {error, _Reason} ->
-                    abort(SD0);
-                NewCoordinatorState ->
-                    {next_state, execute_op, NewCoordinatorState}
+            ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc) ->
+                Result = perform_update({Key, Type, UpdateParams}, Sender, Acc),
+                case Result of
+                    {error, Reason} ->
+                        Acc#tx_coord_state{return_accumulator= {error, Reason}};
+                    NewCoordinatorState ->
+                        NewCoordinatorState#tx_coord_state{num_to_read = NewCoordinatorState#tx_coord_state.num_to_read +1}
+                end
+                             end,
+            NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
+            case NewCoordState#tx_coord_state.num_to_read > 0 of
+                true ->
+                    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
+                false ->
+                    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
             end
     end.
 
+receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
+    return_accumulator= ReturnAcc}) ->
+    NewAcc = case Response of
+                 {error, Reason} -> {error, Reason};
+                 {ok, _OpId} -> ReturnAcc;
+                 timeout -> ReturnAcc
+             end,
+    case NumToReply > 1 of
+        false ->
+            gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
+            case (NewAcc == ok) of
+                true ->
+                    {next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}};
+                false ->
+                    abort(S0)
+            end;
+        true ->
+            {next_state, receive_logging_responses,
+                S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
+    end.
+
+
 receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
   S0 = #tx_coord_state{num_to_read = NumToRead,
-      return_read_set = ReadSet,
+      return_accumulator= ReadSet,
       internal_read_set = InternalReadSet,
       transactional_protocol = TransactionalProtocol}) ->
 %%    lager:info("got result !!! ~p ", [{ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}}]),
@@ -485,7 +514,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
             {next_state, execute_op, SD1#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
         _ ->
             {next_state, receive_read_objects_result,
-                SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_read_set = ReadSet1, num_to_read = NumToRead - 1}}
+                SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
     end.
 
 
@@ -494,29 +523,48 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
 %% @doc Used by the causal snapshot for physics
 %%      Updates the state of a transaction coordinator
 %%      for maintaining the causal snapshot metadata
-update_causal_snapshot_state(State, ReadMetadata, Key) ->
-    Transaction = State#tx_coord_state.transaction,
-    {CommitVC, DepVC, ReadTime} = ReadMetadata,
-%%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTime = ~p~n",[CommitVC, DepVC, ReadTime]),
-    KeysAccessTime = State#tx_coord_state.keys_access_time,
-    VersionMin = State#tx_coord_state.version_min,
-    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
-    NewVersionMin = min(VersionMin, CommitVC),
-    CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-    DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-    ReadTimeVC = case CommitVC == ignore of
-                     true ->
-                         ignore;
-                     false ->
-                         vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
-                 end,
-    NewTransaction = Transaction#transaction{
-        physics_read_metadata = #physics_read_metadata{
-            %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
-            dep_upbound = vectorclock:min_vc(ReadTimeVC, DepUpbound),
-            commit_time_lowbound = vectorclock:max_vc(DepVC, CommitTimeLowbound)}},
-    State#tx_coord_state{keys_access_time = NewKeysAccessTime,
-        version_min = NewVersionMin, transaction = NewTransaction}.
+update_causal_snapshot_state(State, ReadMetadata, _Key) ->
+    {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
+    case CommitVC of
+        [] ->
+            State;
+        _ ->
+            Transaction = State#tx_coord_state.transaction,
+            %%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTimeVC = ~p~n",[CommitVC, DepVC, ReadTimeVC]),
+%%    KeysAccessTime = State#tx_coord_state.keys_access_time,
+            VersionMax = State#tx_coord_state.version_max,
+%%    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
+            NewVersionMax = vectorclock:max_vc(VersionMax, CommitVC),
+            CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+            DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%    ReadTimeVC = case CommitVC == ignore of
+%%                     true ->
+%%                         ignore;
+%%                     false ->
+%%                         vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
+%%                 end,
+            NewDepUpB = vectorclock:min_vc(ReadTimeVC, DepUpbound),
+            NewCTLowB = vectorclock:max_vc(DepVC, CommitTimeLowbound),
+
+            case NewDepUpB < NewCTLowB of
+                true ->
+                    lager:info("PROBLEM! "),
+                    lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+                    lager:info("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+                    lager:info("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+                    lager:info("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]);
+                false ->
+                    move_on
+            end,
+            NewTransaction = Transaction#transaction{
+                physics_read_metadata = #physics_read_metadata{
+                    %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
+                    dep_upbound = NewDepUpB,
+                    commit_time_lowbound = NewCTLowB}},
+            State#tx_coord_state{
+%%        keys_access_time = NewKeysAccessTime,
+                version_max = NewVersionMax, transaction = NewTransaction}
+    end.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes
@@ -578,29 +626,37 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
     commit_protocol = CommitProtocol, full_commit = FullCommit,
     from = From, prepare_time = PrepareTime,
     transaction = Transaction,
+    version_max = DependencyVC,
     updated_partitions = Updated_partitions}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
+    PrepareParams = case Transaction#transaction.transactional_protocol of
+                        physics ->
+                            {MaxPrepareTime, DependencyVC};
+                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                            {MaxPrepareTime, tyler_broke_this}
+                    end,
     case NumToAck of 1 ->
         case CommitProtocol of
             two_phase ->
                 case FullCommit of
                     true ->
-                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
+
+                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
                         {next_state, receive_committed,
                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
                     false ->
-                        gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                        gen_fsm:reply(From, {ok, PrepareParams}),
                         {next_state, committing_2pc,
                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
                 end;
             _ ->
                 case FullCommit of
                     true ->
-                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
+                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
                         {next_state, receive_committed,
                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
                     false ->
-                        gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                        gen_fsm:reply(From, {ok, PrepareParams}),
                         {next_state, committing,
                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
                 end
@@ -653,13 +709,14 @@ committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transacti
 %%      start the commit phase.
 committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
-    commit_time = Commit_time}) ->
+    commit_time = Commit_time,
+    version_max = DependencyVC}) ->
     NumToAck = length(Updated_partitions),
     case NumToAck of
         0 ->
             reply_to_client(SD0#tx_coord_state{state = committed_read_only, from = Sender});
         _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, DependencyVC}),
             {next_state, receive_committed,
                 SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
@@ -670,13 +727,14 @@ committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
 %%      expected
 committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     updated_partitions = Updated_partitions,
-    commit_time = Commit_time}) ->
+    commit_time = Commit_time,
+    version_max = DependencyVC}) ->
     NumToAck = length(Updated_partitions),
     case NumToAck of
         0 ->
             reply_to_client(SD0#tx_coord_state{state = committed_read_only, from = Sender});
         _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, DependencyVC}),
             {next_state, receive_committed,
                 SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
@@ -738,7 +796,7 @@ receive_aborted(_, S0) ->
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_read_set = ReturnReadSet,
+reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator= ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
     is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps}) ->
     if undefined =/= From ->
