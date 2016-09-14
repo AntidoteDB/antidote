@@ -74,7 +74,7 @@
     perform_read/4,
     execute_op/3,
 receive_read_objects_result/2,
-    receive_logging_responses/2,
+%%    receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -245,64 +245,66 @@ perform_singleitem_read(Key, Type) ->
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Key, Type, Params1) ->
-    {ok, Protocol} = application:get_env(antidote, txn_prot),
-    {Transaction, TxId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
+perform_singleitem_update(Key, Type, Params1)->
+    {ok, Protocol}=application:get_env(antidote, txn_prot),
+    {Transaction, TxId}=create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
+    Preflist=log_utilities:get_preflist_from_key(Key),
+    IndexNode=hd(Preflist),
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
     %% todo: another for logging, and finally one for single commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
-	%% Execute pre_commit_hook if any
-	case antidote_hooks:execute_pre_commit_hook(Key, Type, Params1) of
-		{Key, Type, Params} ->
-	case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, [], []) of
-        {ok, DownstreamRecord, CommitRecordParameters} ->
-            Updated_partition =
-                case Transaction#transaction.transactional_protocol of
-                                    physics ->
-                                        {DownstreamRecordCommitVC, _, _} = CommitRecordParameters,
-                                        [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamRecordCommitVC}}]}];
-                                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                                        [{IndexNode, [{Key, Type, DownstreamRecord}]}]
-                                end,
-	        LogRecord = #log_operation{tx_id = TxId, op_type = update,
-		        log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
-            LogId = ?LOG_UTIL:get_logid_from_key(Key),
-            [Node]=Preflist,
-            ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord),
-            case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
-                {committed, CommitTime}->
-                    %% Execute post commit hook
-                    _Res=case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
-                        {error, Reason}->
-                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
-                        _->
-                            ok
-                    end,
-                    DcId=?DC_UTIL:get_my_dc_id(),
-                    SnapshotVC=
+    %% Execute pre_commit_hook if any
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params1) of
+        {Key, Type, Params}->
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params, [], []) of
+                {ok, DownstreamRecord, CommitRecordParameters}->
+                    Updated_partition=
                         case Transaction#transaction.transactional_protocol of
                             physics->
-                                {_CommitVC, DepVC, _ReadTime}=CommitRecordParameters,
-                                DepVC;
-                            Protocol when ((Protocol==clocksi)or(Protocol==gr))->
-                                Transaction#transaction.snapshot_vc
+                                {DownstreamRecordCommitVC, _, _}=CommitRecordParameters,
+                                [{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamRecordCommitVC}}]}];
+                            Protocol when ((Protocol==gr)or(Protocol==clocksi))->
+                                [{IndexNode, [{Key, Type, DownstreamRecord}]}]
                         end,
-                    CausalClock=vectorclock:set_clock_of_dc(
-                        DcId, CommitTime, SnapshotVC),
-                    {ok, {TxId, [], CausalClock}};
-                abort->
-                    {error, aborted};
+                    LogRecord=#log_operation{tx_id=TxId, op_type=update,
+                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
+                    LogId=?LOG_UTIL:get_logid_from_key(Key),
+                    [Node]=Preflist,
+                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
+                        {ok, _}->
+                            case ?CLOCKSI_VNODE:single_commit_sync(Updated_partition, Transaction) of
+                                {committed, CommitTime}->
+                                    %% Execute post commit hook
+                                    _Res=case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+                                        {error, Reason}->
+                                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                                        _->
+                                            ok
+                                    end,
+                                    DcId=?DC_UTIL:get_my_dc_id(),
+                                    SnapshotVC=
+                                        case Transaction#transaction.transactional_protocol of
+                                            physics->
+                                                {_CommitVC, DepVC, _ReadTime}=CommitRecordParameters,
+                                                DepVC;
+                                            Protocol when ((Protocol==clocksi)or(Protocol==gr))->
+                                                Transaction#transaction.snapshot_vc
+                                        end,
+                                    CausalClock=vectorclock:set_clock_of_dc(
+                                        DcId, CommitTime, SnapshotVC),
+                                    {ok, {TxId, [], CausalClock}};
+                                abort->
+                                    {error, aborted}
+                            end;
+                        {error, Reason}->
+                            {error, Reason}
+                    end;
                 {error, Reason}->
                     {error, Reason}
             end;
-        {error, Reason} ->
+        {error, Reason}->
             {error, Reason}
-    end;
-		{error, Reason} ->
-			{error, Reason}
-	end.
+    end.
 
 perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
@@ -381,7 +383,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
                 log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
             LogId=?LOG_UTIL:get_logid_from_key(Key),
             [Node]=Preflist,
-            ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord),
+            ?LOGGING_VNODE:append(Node, LogId, LogRecord),
             State1=case TransactionalProtocol of
                 physics->
                     update_causal_snapshot_state(CoordState, SnapshotParameters, Key);

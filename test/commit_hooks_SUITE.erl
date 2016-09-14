@@ -118,7 +118,8 @@ execute_post_hook_test(Config) ->
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
     {ok, CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
 
-    CommitCount = {post_hook_key, antidote_crdt_counter, commitcount},
+%%    CommitCount = {post_hook_key, antidote_crdt_counter, commitcount},
+    CommitCount = {post_hook_key, antidote_crdt_counter, Bucket},
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[CommitCount], TxId2]),
     rpc:call(Node, antidote, commit_transaction, [TxId2]),
@@ -132,7 +133,7 @@ execute_prehooks_static_txn_test(Config) ->
                   [Bucket, antidote_hooks, test_increment_hook]),
 
     Bound_object = {prehook_key, antidote_crdt_counter, Bucket},
-    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),open
 
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId2]),

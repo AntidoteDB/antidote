@@ -166,14 +166,17 @@ parallel_writes_test(Config) ->
                 {ok, CT2} ->
                 receive
                     {ok, CT3} ->
-                        Time = orddict:merge(fun(_K, T1,T2) ->
+                        TimeDict = dict:merge(fun(_K, T1,T2) ->
                                                   max(T1,T2)
                                           end,
-                                          CT3, orddict:merge(
+                                          vectorclock:to_dict(CT3), dict:merge(
                                                  fun(_K, T1,T2) ->
                                                          max(T1,T2)
                                                  end,
-                                                 CT1, CT2)),
+                                vectorclock:to_dict(CT1), vectorclock:to_dict(CT2))),
+                        
+                        Time = vectorclock:from_dict(TimeDict),
+                        
                         ReadResult1 = rpc:call(Node1,
                            antidote, clocksi_read,
                            [Time, Key, Type]),

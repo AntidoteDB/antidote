@@ -244,7 +244,7 @@ get_stable_snapshot() ->
 	    get_stable_snapshot();
 	    SSDict ->
 		    SS=vectorclock:from_dict(SSDict),
-		    lager:info("stable snapshot is ~p",[SS]),
+%%		    lager:info("stable snapshot is ~p",[SS]),
             case application:get_env(antidote, txn_prot) of
 	            {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access

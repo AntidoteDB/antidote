@@ -129,22 +129,23 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
     false ->
-      lager:info("could not store trasaction yet: ~n~p",[Txn]),
+%%      lager:info("could not store trasaction yet: ~n~p",[Txn]),
       {update_clock(State, DCID, Timestamp-1), false};
     %% If so, store the transaction
     true ->
-      lager:info("stored remote trasaction : ~n~p",[Txn]),
+%%      lager:info("stored remote trasaction : ~n~p",[Txn]),
       %% Put the operations in the log
       {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_operation_payloads(Txn),
-      lager:info("got this operations from tx: : ~n~p",[ClockSiOps]),
+%%      lager:info("got this operations from tx: : ~n~p",[ClockSiOps]),
 
 %%      Todo: fix this dirty patch
+      {ok, Protocol} = application:get_env(antidote, txn_prot),
       Transaction = #transaction{
-        transactional_protocol = application:get_env(antidote, txn_prot)},
+        transactional_protocol = Protocol},
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#operation_payload.key, Op, Transaction) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.
