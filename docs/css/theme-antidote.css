@@ -104,3 +104,12 @@ li.sidebarTitle {
     margin-left: 5px;
 
 }
+
+.navbar-brand {
+    padding-top: 3px;
+    padding-bottom: 0px;
+}
+
+.navbar-brand > img {
+    height: 42px;
+}
