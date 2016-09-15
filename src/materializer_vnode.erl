@@ -453,19 +453,21 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 internal_read(Key, Type, Transaction, State) ->
     internal_read(Key, Type, Transaction, State,false).
 internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
-%%	lager:info("called : ~p",[Transaction]),
+	lager:debug("called : ~p",[Transaction]),
 	OpsCache = MatState#mat_state.ops_cache,
 	SnapshotCache = MatState#mat_state.snapshot_cache,
     TxnId = Transaction#transaction.txn_id,
     Protocol = Transaction#transaction.transactional_protocol,
     case ets:lookup(OpsCache, Key) of
         [] ->
-	        %% this happens when the first operation arrives to que materializer.
+	        lager:debug("Cache for Key ~p is empty",[Key]),
 	        {NewMaterializedSnapshotRecord, SnapshotCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
 	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
+	        lager:debug("internal read returning: ",[{ok, {NewSnapshot, SnapshotCommitParams}}]),
             {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
 	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
+	        lager:debug("got this ope in opscache ~p ~n~p",[OpsCache, OperationsForKey]),
 	        {UpdatedTxnRecord, TempCommitParameters} =
 		        case Protocol of
 			        physics ->
@@ -475,7 +477,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
 								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
 							        no_operation_to_define_snapshot ->
-								        lager:info("there no_operation_to_define_snapshot"),
+								        lager:debug("there no_operation_to_define_snapshot"),
 								        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 								        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
 							        no_compatible_operation_found ->
@@ -489,8 +491,10 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 			        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
 				        {Transaction, empty}
 		        end,
+	        lager:debug("about to lookup snapshots"),
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
+	                         lager:debug("this is empty, storing empty snapshot"),
                              %% First time reading this key, store an empty snapshot in the cache
 	                         {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
                              case TxnId of %%Why do we need this?
@@ -794,6 +798,7 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transaction)->
     case ets:member(OpsCache, Key) of
 	false ->
+		lager:debug("inserting key: ~p",[Key]),
 	    ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,{0,?OPS_THRESHOLD}}]));
 	true ->
 	    ok
@@ -811,7 +816,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 			        #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc,
 				        transactional_protocol = Protocol, txn_id = no_txn_inserting_from_log};
 		        _ ->
-			        Transaction#transaction{txn_id = no_txn_inserting_from_log,
+			        Transaction#transaction{
 				        snapshot_vc = case Transaction#transaction.transactional_protocol of
 					        physics ->
 						        case DownstreamOp#operation_payload.dependency_vc of

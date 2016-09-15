@@ -128,12 +128,18 @@ append_failure_test(Config) ->
     ?assertMatch({ok, 1}, ReadResult),
 
     %% Partition the network.
-    lager:info("About to partition: ~p from: ~p", [A, Nodes -- A]),
+    ct:print("About to partition: ~p from: ~p", [A, Nodes -- A]),
     test_utils:partition_cluster(A, Nodes -- A),
+    ct:print("done"),
+    ct:print("About to heal partition: ~p from: ~p", [A, Nodes -- A]),
 
     %% Heal the partition.
     test_utils:heal_cluster(A, Nodes -- A),
+    ct:print("done"),
 
+    
+    
     %% Read after the partition has been healed.
     ReadResult3 = rpc:call(First, antidote, read, [Key, ?TYPE]),
+    ct:print("ReadResult3: ~p", [ReadResult3]),
     ?assertMatch({ok, 1}, ReadResult3).

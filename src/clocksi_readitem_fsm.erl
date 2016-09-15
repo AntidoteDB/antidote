@@ -100,6 +100,7 @@ read_data_item({Partition, Node}, Key, Type, Transaction) ->
 
 -spec async_read_data_item(index_node(), key(), type(), transaction(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, Coordinator) ->
+	lager:debug("got async read op"),
     gen_server:cast({global, generate_random_server_name(Node, Partition)},
         {perform_read_cast, Coordinator, Key, Type, Transaction}).
 
@@ -214,14 +215,17 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
 				   ok.
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+	lager:debug("gonna start reading internal"),
     %% TODO: Add support for read properties
     PropertyList = [],
     case check_clock(Key,Transaction,PreparedCache,Partition) of
 	{not_ready,Time} ->
+		lager:debug("waiting for clock to catch up"),
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
+		lager:debug("clock ready"),
 	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
     end.
 

@@ -124,10 +124,9 @@ read(Node, Log) ->
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
 -spec asyn_append(index_node(), key(), #log_operation{}, pid()) -> ok.
-asyn_append(IndexNode, Log, LogOperation, Sender) ->
+asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
     riak_core_vnode_master:command(IndexNode,
-                                   {append, Log, LogOperation},
-                                   {fsm, undefined, self(), ?SYNC_LOG, Sender},
+                                   {append, Log, LogOperation, false, ReplyTo},
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation payload
@@ -352,10 +351,15 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%
 %% -spec handle_command({append, log_id(), #log_operation{}, boolean()}, pid(), #state{}) ->
 %%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
-handle_command({append, LogId, LogOperation, Sync}, Sender,
+handle_command({append, LogId, LogOperation, Sync}, Sender, State)->
+	handle_command({append, LogId, LogOperation, Sync, ignore}, Sender, State);
+
+
+handle_command({append, LogId, LogOperation, Sync, ReplyTo}, _S,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition}=State) ->
+	lager:debug("Gonna log this:~n~p",[{{LogId, LogOperation, Sync}, ReplyTo}]),
 	{Reply, NewState}=case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
 	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
@@ -400,11 +404,13 @@ handle_command({append, LogId, LogOperation, Sync}, Sender,
         {error, Reason} ->
             {{error, Reason}, State}
     end,
-	case Sender of
+	case ReplyTo of
 		ignore ->
+			lager:debug("just reply: ~p ~n to Sender ~p",[Reply, ReplyTo]),
 			{reply, Reply, NewState};
 		_ ->
-			gen_fsm:send_event(Sender, Reply),
+			lager:debug("Sending this reply: ~p ~n to Sender ~p",[Reply, ReplyTo]),
+			gen_fsm:send_event(ReplyTo, Reply),
 			{noreply, NewState}
 	end;
 
@@ -876,12 +882,12 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
 	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            lager:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
+            lager:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), NewMaxVector]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
 	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
-            lager:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
+            lager:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), NewMaxVector]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, NewMaxVector);
         {error, Reason} ->

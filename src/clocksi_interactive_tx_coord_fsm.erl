@@ -429,6 +429,7 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set = InternalReadSet}}
             end;
         read_objects ->
+            lager:debug("got to read: ~p", [Args]),
             NewTransaction = case Transaction#transaction.transactional_protocol of
                 physics ->
                     case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == [] of
@@ -445,6 +446,7 @@ execute_op({OpType, Args}, Sender,
             ExecuteReads = fun({Key, Type}, Acc) ->
                 Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                 IndexNode = hd(Preflist),
+                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
                 ok = clocksi_vnode:async_read_data_item(IndexNode, NewTransaction, Key, Type),
                 ReadSet = Acc#tx_coord_state.return_accumulator,
                 Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
@@ -461,14 +463,18 @@ execute_op({OpType, Args}, Sender,
                     {error, Reason} ->
                         Acc#tx_coord_state{return_accumulator= {error, Reason}};
                     NewCoordinatorState ->
-                        NewCoordinatorState#tx_coord_state{num_to_read = NewCoordinatorState#tx_coord_state.num_to_read +1}
+                        NewNumToRead = NewCoordinatorState#tx_coord_state.num_to_read,
+                        lager:debug("Updated Number of responses expected: ~p",[NewNumToRead+1]),
+                        NewCoordinatorState#tx_coord_state{num_to_read =  NewNumToRead+1}
                 end
                              end,
             NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
             case NewCoordState#tx_coord_state.num_to_read > 0 of
                 true ->
+                    lager:debug("num_to_read > 0"),
                     {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
                 false ->
+                    lager:debug("num_to_read <= 0"),
                     {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
             end
     end.

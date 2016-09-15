@@ -86,13 +86,14 @@ dummy_test(Config) ->
   {ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
   {ok,_} = rpc:call(Node2, antidote, append, [Key, Type, {increment, 1}]),
 	ct:print("Done."),
-
+	
+	Result1 = rpc:call(Node1, antidote, read, [Key, Type]),
+	ct:print("Reading node 1 returned this value: ~p",[Result1]),
 	
   % Propagation of updates
   F = fun() ->
-	  ct:print("Reading [~p, ~p]",[Key, Type]),
-    rpc:call(Node2, antidote, read, [Key, Type]),
-	  ct:print("Done")
+    Result = rpc:call(Node2, antidote, read, [Key, Type])
+%%	  ct:print("Reading node 2 returned this value: ~p",[Result])
 end,
   Delay = 100,
   Retry = 360000 div Delay, %wait for max 1 min

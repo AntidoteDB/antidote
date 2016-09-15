@@ -112,8 +112,10 @@ read_objects(Objects, TxId) ->
     NewObjects = lists:map(fun({Key, Type, Bucket}) ->
         case materializer:check_operations([{read, {Key, Type}}]) of
             ok ->
+                lager:debug("passed type checking"),
                 {{Key, Bucket}, Type};
             {error, _Reason} ->
+                lager:debug("typing problem, chceck your ops! "),
                 {error, type_check}
         end
                            end, Objects),
@@ -121,6 +123,7 @@ read_objects(Objects, TxId) ->
         true -> {error, type_check};
         false ->
 %%            lager:info("gonna start multiple reads: ~p", [NewObjects]),
+            lager:debug("sending read_op to the coord "),
             case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
                      {ok, Res} -> {ok, Res};
                      {error, Reason} -> {error, Reason}
@@ -133,11 +136,11 @@ update_objects(Updates, TxId) ->
     lager:info("gonna start multiple updates: ~p", [Updates]),
 
     {_, _, CoordFsmPid} = TxId,
-    NewObjects = lists:map(fun({{Key, Type, _Bucket}, Op}) ->
-        case materializer:check_operations([{update, {Key, Type, Op}}]) of
+    NewObjects = lists:map(fun({{Key, Type, Bucket}, Op}) ->
+        case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
             ok ->
                 lager:info("check ok!"),
-                {Key, Type, Op};
+                {{Key, Bucket}, Type, Op};
             {error, _Reason} ->
                 lager:info("check WRONG!"),
                     {error, type_check}
@@ -299,6 +302,7 @@ append(Key, Type, Op) ->
 -spec read(key(), type()) -> {ok, val()} | {error, reason()}.
 read(Key, Type) ->
     {ok, TxId} = start_transaction(ignore, []),
+    lager:debug("gonna read objects ~p",[{Key, Type, bucket}]),
     {ok, [Val]} = read_objects([{Key, Type, bucket}], TxId),
     {ok, _CommitTime} = commit_transaction(TxId),
     {ok, Val}.
