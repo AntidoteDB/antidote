@@ -133,7 +133,7 @@ execute_prehooks_static_txn_test(Config) ->
                   [Bucket, antidote_hooks, test_increment_hook]),
 
     Bound_object = {prehook_key, antidote_crdt_counter, Bucket},
-    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),open
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
 
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [CT, []]),
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId2]),

@@ -73,7 +73,6 @@ handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_local_v
 set_dependency_clock(Partition, Vector) -> dc_utilities:call_local_vnode_sync(Partition, inter_dc_dep_vnode_master, {set_dependency_clock, Vector}).
 
 %%%% VNode methods ----------------------------------------------------------+
-
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   StableSnapshot = vectorclock:new(),
@@ -214,7 +213,7 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
     true ->
 
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
+      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, vectorclock:to_dict(NewClock)),
 
       Now;
     %% Stable snapshot was recently updated, no need to do so.

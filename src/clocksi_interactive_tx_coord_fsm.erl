@@ -328,7 +328,7 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
         {ok, ReadResult} ->
             ReadResult
     end.
-perform_update(UpdateArgs, Sender, CoordState) ->
+perform_update(UpdateArgs, _Sender, CoordState) ->
     {Key, Type, Param1} = UpdateArgs,
 %%    lager:info("updating with the following paramaters: ~p~n",[Param]),
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
@@ -398,6 +398,7 @@ perform_update(UpdateArgs, Sender, CoordState) ->
 %%       to execute the next operation.
 
 execute_op({update, Args}, Sender, SD0) ->
+    lager:debug("got execute update"),
     execute_op({update_objects, [Args]}, Sender, SD0);
 
 execute_op({OpType, Args}, Sender,
@@ -451,8 +452,11 @@ execute_op({OpType, Args}, Sender,
             NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
             {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
         update_objects ->
+            lager:debug("got update call with params: ~p",[Args]),
             ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc) ->
+                lager:debug("Executing this update: ~p",[{Key, Type, UpdateParams}]),
                 Result = perform_update({Key, Type, UpdateParams}, Sender, Acc),
+                lager:debug("got result: ~p",[Result]),
                 case Result of
                     {error, Reason} ->
                         Acc#tx_coord_state{return_accumulator= {error, Reason}};
@@ -471,6 +475,7 @@ execute_op({OpType, Args}, Sender,
 
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
     return_accumulator= ReturnAcc}) ->
+    lager:debug("Waiting for log responses, missing: ~p",NumToReply),
     NewAcc = case Response of
                  {error, Reason} -> {error, Reason};
                  {ok, _OpId} -> ReturnAcc;

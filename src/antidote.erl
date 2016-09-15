@@ -130,23 +130,23 @@ read_objects(Objects, TxId) ->
 -spec update_objects([{bound_object(), term()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-%%    lager:info("gonna start multiple updates: ~p", [Updates]),
+    lager:info("gonna start multiple updates: ~p", [Updates]),
 
     {_, _, CoordFsmPid} = TxId,
     NewObjects = lists:map(fun({{Key, Type, _Bucket}, Op}) ->
         case materializer:check_operations([{update, {Key, Type, Op}}]) of
             ok ->
-%%                lager:info("check ok!"),
+                lager:info("check ok!"),
                 {Key, Type, Op};
             {error, _Reason} ->
-%%                lager:info("check WRONG!"),
+                lager:info("check WRONG!"),
                     {error, type_check}
         end
                            end, Updates),
     case lists:member({error, type_check}, NewObjects) of
         true -> {error, type_check};
         false ->
-%%            lager:info("gonna start multiple updates: ~p", [NewObjects]),
+            lager:info("gonna start multiple updates: ~p", [NewObjects]),
             case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, NewObjects}, ?OP_TIMEOUT) of
                 ok-> ok;
                 {error, Reason} -> {error, Reason}
@@ -284,7 +284,10 @@ unregister_hook(Prefix, Bucket) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(Key, Type, Op) ->
     {ok, TxId} = start_transaction(ignore, []),
+    lager:debug("rinning an update: ~p",[{Key, Type, Op}]),
     Response = update_objects([{{Key, Type, bucket}, Op}], TxId),
+    lager:debug("got this response ~p",[Response]),
+    
     {ok, CommitTime} = commit_transaction(TxId),
     case Response of
         {error, Reason} -> {error, Reason};

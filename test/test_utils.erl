@@ -192,7 +192,12 @@ start_node(Name, Config) ->
             NumberOfVNodes = 4,
             filelib:ensure_dir(PlatformDir),
             filelib:ensure_dir(RingDir),
-
+	
+	        ok = rpc:call(Node, application, set_env, [lager, handlers, [
+		        {lager_console_backend, debug},
+		        {lager_file_backend, [{file, "log/console.log"}, {level, debug}]}
+	        ]]),
+	        
             ok = rpc:call(Node, application, set_env, [riak_core, riak_state_dir, RingDir]),
             ok = rpc:call(Node, application, set_env, [riak_core, ring_creation_size, NumberOfVNodes]),
 
