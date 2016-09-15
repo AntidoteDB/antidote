@@ -14,7 +14,9 @@ Welcome to the Antidote repository, the reference platform of the [SyncFree Euro
 
 About Antidote
 -----------------
+
 ### Purpose ###
+
 Antidote is an in-development distributed CRDT key-value store written in Erlang with [Riak Core](https://github.com/basho/riak_core) that is intended to provide the following features:
 
 * Partitioning
