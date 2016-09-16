@@ -113,3 +113,11 @@ li.sidebarTitle {
 .navbar-brand > img {
     height: 42px;
 }
+
+.text-primary {
+    color: #333;
+}
+
+.fa-inverse {
+    color: #87aaa3;
+}
