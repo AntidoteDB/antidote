@@ -15,6 +15,8 @@
 -define(ZMQ_TIMEOUT, 5000).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
+-define(GLOBAL_BUCKET, antidote_bucket).
+
 
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
