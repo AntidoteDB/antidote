@@ -39,7 +39,7 @@ entries:
       output: web, pdf
 
   - title: Installation
-    url: /install.html
+    url: /setup.html
     output: web, pdf
 
   - title: Configuration
