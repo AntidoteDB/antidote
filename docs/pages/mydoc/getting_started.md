@@ -7,11 +7,9 @@ sidebar: mydoc_sidebar
 permalink: getting_started.html
 ---
 
-# A quick tour through AntidoteDB
-
 To experiment with AntidoteDB, we provide a ready-to-use environment as a Docker container.
 
-### Prerequisite: Docker
+# Prerequisite: Docker
 
 Download and install the Docker software from [<http://www.docker.com>](<http://www.docker.com>) for your platform.
 After it is installed, you can issue docker commands from a shell to run and manage containers.
@@ -23,9 +21,9 @@ The following command pulls the tutorial from the Docker Hub and spawns an Erlan
 You can interact with the datastore now on the shell.
 In the following, we will do a tour together now.
 
-## A bookstore app
+# A bookstore app
 
-### Storing and retrieving objects
+## Storing and retrieving objects
 
 Add user information for Michel
 
