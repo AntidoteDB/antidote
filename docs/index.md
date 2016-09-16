@@ -35,53 +35,64 @@ Transactions, and provable absence of data corruption due to concurrency.
 
 
 <div class="row">
-        <div class="col-lg-12">
-            <h2 class="page-header"></h2>
-        </div>
-        <div class="col-lg-12">
-
-            <ul id="myTab" class="nav nav-tabs nav-justified">
-                <li class="active"><a href="#service-one" data-toggle="tab"><i class="fa fa-tree"></i> CRDTs </a>
-                </li>
-                <li class=""><a href="#service-two" data-toggle="tab"><i class="fa fa-car"></i> Highly Available Transactions </a>
-                </li>
-                <li class=""><a href="#service-three" data-toggle="tab"><i class="fa fa-support"></i> Geo-replication </a>
-                </li>
-            </ul>
-
-            <div id="myTabContent" class="tab-content">
-                <div class="tab-pane fade active in" id="service-one">
-                    <h4>CRDTs</h4>
-                    <p>Antidote supports high-level replicated data types such as
-                       counters, sets, maps, and sequences that are designed to work correctly in the
-                       presence of concurrent updates and partial failures.
-                    </p>
-                </div>
-                <div class="tab-pane fade" id="service-two">
-                    <h4>Highly Available Transactions</h4>
-                    <p>In some cases, the application needs to maintain
-                    some relation between updates to different objects. For example, in a social
-                    networking application, a reply to some post should be visible to a user only after
-                    s/he observed the post. Antidote maintains such relations by providing causal
-                    consistency across all replicas and atomic multi-object updates. Thus, programmers
-                    can program their application on top of Antidote without worrying about the
-                    inconsistencies arising due to concurrent updates in different replicas.</p>
-                </div>
-                <div class="tab-pane fade" id="service-three">
-                    <h4>Geo-replication</h4>
-                    <p>Antidote is designed to run on multiple servers in geo-distributed
-                    locations. To provide fast responses to read and write requests, Antidote automatically
-                    replicates data in different locations and serves the requests from the nearest
-                    location without contacting a remote server. It provides continuous functioning
+         <div class="col-lg-12">
+             <h2 class="page-header">Characteristics</h2>
+         </div>
+         <div class="col-md-3 col-sm-6">
+             <div class="panel panel-default text-center">
+                 <div class="panel-heading">
+                     <span class="fa-stack fa-5x">
+                           <i class="fa fa-circle fa-stack-2x text-primary"></i>
+                           <i class="fa fa-database fa-stack-1x fa-inverse"></i>
+                     </span>
+                 </div>
+                 <div class="panel-body">
+                     <h4>CRDTs</h4>
+                     <p>High-level replicated data types that are designed to work correctly in the
+                       presence of concurrent updates and partial failures.</p>
+                     <a href="rawapi.html" class="btn btn-primary">Learn More</a>
+                 </div>
+             </div>
+         </div>
+         <div class="col-md-3 col-sm-6">
+             <div class="panel panel-default text-center">
+                 <div class="panel-heading">
+                     <span class="fa-stack fa-5x">
+                           <i class="fa fa-circle fa-stack-2x text-primary"></i>
+                           <i class="fa fa-graduation-cap fa-stack-1x fa-inverse"></i>
+                     </span>
+                 </div>
+                 <div class="panel-body">
+                     <h4>Highly Available Transactions (HATs)</h4>
+                     <p>In some cases, the application needs to maintain
+                    some relation between updates to different objects. AntidoteDB provides causal
+                    consistency across all replicas, snapshot reads and atomic multi-object updates.</p>
+                     <a href="rawapi.html" class="btn btn-primary">Learn More</a>
+                 </div>
+             </div>
+         </div>
+         <div class="col-md-3 col-sm-6">
+             <div class="panel panel-default text-center">
+                 <div class="panel-heading">
+                     <span class="fa-stack fa-5x">
+                           <i class="fa fa-circle fa-stack-2x text-primary"></i>
+                           <i class="fa fa-globe fa-stack-1x fa-inverse"></i>
+                     </span>
+                 </div>
+                 <div class="panel-body">
+                     <h4>Geo-replication</h4>
+                     <p>Designed to run on multiple servers in
+                    locations distributed world-wide. It provides continuous functioning
                     even when there are failures or network partition.</p>
-                </div>
-            </div>
-
-        </div>
-    </div>
+                     <a href="architecture.html" class="btn btn-primary">Learn More</a>
+                 </div>
+             </div>
+         </div>
+</div>
 
 
 ## Where academia meets industry ##
+
 AntidoteDB is an artifact of the [SyncFree Project](https://syncfree.lip6.fr/).
 It incorporates cutting-edge research results on distributed systems and modern data stores, meeting for your needs!
 
@@ -94,10 +105,6 @@ AntidoteDB is the first to provide all of these features in one data store:
 *  Partial Replication
 
 Hint: Some features are still experimental and are not available on the master branch.
-
-## Architecture ##
-
-Information about Antidote's layered design can be found in the following [Google Doc](https://docs.google.com/document/d/1SNnmAtx5FrcNgEMdNQkKlfzYc1tqziaV2lQ6g9IQyzs/edit#heading=h.ze32da2pga2f)
 
 
 {% include links.html %}

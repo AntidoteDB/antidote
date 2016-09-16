@@ -2,8 +2,7 @@
 
 entries:
 - title: sidebar
-  product: Antidote
-  version: 0.0.1
+#  product: Antidote
   folders:
 
   - title:
@@ -23,17 +22,17 @@ entries:
     output: web, pdf
     folderitems:
     - title: Get started
-      url: /index.html
+      url: /getting_started.html
       output: web, pdf
       type: homepage
 
-    - title: Supported features
-      url: /supported_features.html
+    - title: Architecture
+      url: /architecture.html
       output: web, pdf
 
-    - title: About the team
-      url: /about.html
-      output: web, pdf
+#    - title: About the team
+#      url: /about.html
+#      output: web, pdf
 
     - title: Support
       url: /support.html

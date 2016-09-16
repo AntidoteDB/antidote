@@ -1,5 +1,5 @@
 ---
-title: Nativ Erlang API
+title: Native Erlang API
 last_updated: August 29, 2016
 tags: [api]
 sidebar: mydoc_sidebar

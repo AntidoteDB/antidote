@@ -7,35 +7,52 @@ permalink: getting_started.html
 summary: These brief overview will give you a first taste of Antidote.
 ---
 
-Using Antidote
---------------
+# Quickstart
+
+To experiment with the Antidote system, we provide a ready-to-use environment as a Docker container.
+
+### Prerequisite: Docker
+
+Download and install the Docker software from [<http://www.docker.com>](<http://www.docker.com>) for your platform. 
+After it is installed, you can issue docker commands from a shell to run and manage containers.
+
+The following command pulls the tutorial from the Docker Hub and spawns an Erlang shell:
+
+    docker run -t -i cmeiklejohn/antidote-tutorial
+
+
+# Building Antidote releases
 
 ### Prerequisites ###
 
-* An UNIX-like OS
-* [Erlang R16B02](https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang)
+*  An UNIX-like OS
+*  [Erlang R16B02](https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang)
 
 ### Getting Antidote ###
 
+The source code is available open-source at [Github](https://github.com/SyncFree/antidote).
+
+You can clone it to your machine via
+
     git clone git@github.com:SyncFree/antidote.git
 
-### Building Antidote ###
+### Building a single node cluster ###
 
-#### Single Node Cluster ###
+Antidote uses rebar3 for building releases. 
 
     make rel
 
-Rebar will now pull all the dependencies it needs from github, and build
-the application, and make an erlang "release" of a single node.  If all
+Rebar3 will now pull all the dependencies it needs from Github, and build
+the application, and make an Erlang "release" of a single node.  If all
 went well (if it didn't, send an email to the SyncFree tech mailing
-list), then you should be able to start a node of `antidote`.
+list), then you should be able to start a node:
 
     15:55:05:antidote $ _build/default/rel/antidote/bin/antidote console
     (elided)
     Eshell V5.10.3  (abort with ^G)
     (antidote@127.0.0.1)1>
 
-Again `Ctrl-g` and `q` to quit the shell and stop the node.
+Type `Ctrl-g` and `q` to quit the shell and stop the node.
 
 <!-- #### Multi-Node Cluster TODO:
 
