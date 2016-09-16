@@ -32,7 +32,33 @@ Cure also allows applications to pack reads and writes to multiple objects in a
 transaction. The transactions together with causal consistency helps to read and
 update more than one object in a consistent manner.
 
-Information about Antidote's layered design can be found in the following [Google Doc](https://docs.google.com/document/d/1SNnmAtx5FrcNgEMdNQkKlfzYc1tqziaV2lQ6g9IQyzs/edit#heading=h.ze32da2pga2f)
+{% include image.html file="architecture.png" %}
+
+Each partition in AntidoteDB mainly consists of the following four components:
+### Log
+This module implements a log-based persistent
+  layer. Updates are stored in a log, which is persisted to disk for
+  durability. The module also internally maintains a cache layer in order to make
+  accesses to the log faster.
+
+### Materializer
+This module is responsible for generating and caching
+  the object versions requested by
+  clients. It is placed between the log and the 
+    transaction manager modules. To avoid
+   system degredation over time it
+   incorporates some pruning mechanisms.
+
+### Transaction Manager
+This module implements the
+  transaction protocol. It receives client's requests, executes
+  and coordinates transactions, and replies back to clients. 
+
+### InterDC Replication 
+This module is in charge of fetching
+  updates from the log, and propagating them to other data
+  centers. Communication is done partition-wise.
+
 
 
 {% include links.html %}

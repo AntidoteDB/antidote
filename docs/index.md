@@ -1,11 +1,15 @@
 ---
-title: AntidoteDB - A cloud scale key-value database
+title: 
 keywords: homepage
 tags: [index]
 toc: false
 sidebar: mydoc_sidebar
 permalink: index.html
 ---
+
+{% include image.html file="company_logo_big.png" %}
+
+# AntidoteDB - A cloud scale key-value database
 
 *  Your cloud-scale application must be highly available?
 *  You need to serve millions of customers around the world with low latency responses?
