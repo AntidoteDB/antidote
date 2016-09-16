@@ -9,14 +9,14 @@ permalink: index.html
 
 {% include image.html file="company_logo_big.png" %}
 
-# AntidoteDB - A cloud scale key-value database
+# A planet-scale, available, transactional database with strong semantics
 
 *  Your cloud-scale application must be highly available?
 *  You need to serve millions of customers around the world with low latency responses?
 *  You are tired of fixing inconsistencies in your key-value store?
 
 
-## Why AntidoteDB? ##
+## Why Antidote? ##
 
 Traditional databases provide
 strong guarantees but are slow and unavailable under failures and network partition.
@@ -31,7 +31,7 @@ For example, consider that your application stores a counter which counts the
 number of ads displayed to a user. For scalability, the database replicates all data in
 different locations. What will be the value of the counter, when it is incremented at
 two locations at the same time? As an application programmer, you have to detect
-such concurrent updates and resolve conflicting modifications. AntidoteDB provides
+such concurrent updates and resolve conflicting modifications. Antidote provides
 features that aid programmers to write correct applications, while having the same
 performance and horizontal scalability as AP/NoSQL, from a single machine to
 geo-replicated deployments, with the added guarantees of Causal Highly-Available
@@ -69,7 +69,7 @@ Transactions, and provable absence of data corruption due to concurrency.
                  <div class="panel-body">
                      <h4>Highly Available Transactions (HATs)</h4>
                      <p>In some cases, the application needs to maintain
-                    some relation between updates to different objects. AntidoteDB provides causal
+                    some relation between updates to different objects. Antidote provides causal
                     consistency across all replicas, snapshot reads and atomic multi-object updates.</p>
                      <a href="rawapi.html" class="btn btn-primary">Learn More</a>
                  </div>
@@ -97,10 +97,10 @@ Transactions, and provable absence of data corruption due to concurrency.
 
 ## Where academia meets industry ##
 
-AntidoteDB is an artifact of the [SyncFree Project](https://syncfree.lip6.fr/).
+Antidote is an artifact of the [SyncFree Project](https://syncfree.lip6.fr/).
 It incorporates cutting-edge research results on distributed systems and modern data stores, meeting for your needs!
 
-AntidoteDB is the first to provide all of these features in one data store:
+Antidote is the first to provide all of these features in one data store:
 
 *  Transactional Causal+ Consistency
 *  Replication across DCs
