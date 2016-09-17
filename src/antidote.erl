@@ -138,7 +138,7 @@ update_objects(Updates, TxId) ->
     lager:info("gonna start multiple updates: ~p", [Updates]),
 
     {_, _, CoordFsmPid} = TxId,
-    NewObjects = lists:map(fun(Update) ->
+    Operations= lists:map(fun(Update) ->
         {Key, Type, Bucket, Op} =case Update of
             {{K, T, B}, O} -> {K, T, B, O};
             {{K, T, B}, O, P} -> {K, T, B, {O, P}}
@@ -152,11 +152,11 @@ update_objects(Updates, TxId) ->
                     {error, type_check}
         end
                            end, Updates),
-    case lists:member({error, type_check}, NewObjects) of
+    case lists:member({error, type_check}, Operations) of
         true -> {error, type_check};
         false ->
-            lager:info("gonna start multiple updates: ~p", [NewObjects]),
-            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, NewObjects}, ?OP_TIMEOUT) of
+            lager:info("gonna start multiple updates: ~p", [Operations]),
+            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
                 ok-> ok;
                 {error, Reason} -> {error, Reason}
             end
@@ -170,9 +170,12 @@ update_objects(Clock, Properties, Updates) ->
 update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
-    Operations = lists:map(
-                   fun({{Key, Type, Bucket}, Op, OpParam}) ->
-                           {update, {{Key, Bucket}, Type, {Op,OpParam}}}
+    Operations = lists:map(fun(Update) ->
+        {Key, Type, Bucket, Op} =case Update of
+            {{K, T, B}, O} -> {K, T, B, O};
+            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
+                end,
+                           {update, {{Key, Bucket}, Type, Op}}
                    end,
                    Updates),
     SingleKey = case Operations of

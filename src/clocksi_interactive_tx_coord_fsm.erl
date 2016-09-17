@@ -929,6 +929,7 @@ get_snapshot_time() ->
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
     DcId = ?DC_META_UTIL:get_my_dc_id(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
+    lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
     {ok, SnapshotTime}.
 
 

@@ -202,14 +202,18 @@ observe_dcs(Descriptors) -> lists:map(fun observe_dc/1, Descriptors).
 
 -spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
+	lager:debug("Observing DCs with descriptiors: ~p", [Descriptors]),
     {ok, SS} = dc_utilities:get_stable_snapshot(),
+	lager:debug("Stable snapshot is: ~p",[SS]),
     DCs = lists:map(fun(DC) ->
 			    {observe_dc(DC), DC}
 		    end, Descriptors),
+	lager:debug("Observed DCs: ~p",[DCs]),
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
 			  case Res of
 			      ok ->
 				  Value = vectorclock:get_clock_of_dc(DCID, SS),
+				      lager:info("clock for DC ~p is ~p", [DCID, Value]),
 				  wait_for_stable_snapshot(DCID, Value),
 				  ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
 			      _ ->

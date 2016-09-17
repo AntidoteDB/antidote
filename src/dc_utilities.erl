@@ -244,7 +244,7 @@ get_stable_snapshot() ->
 	    get_stable_snapshot();
 	    SSDict ->
 		    SS=vectorclock:from_dict(SSDict),
-%%		    lager:info("stable snapshot is ~p",[SS]),
+		    lager:debug("stable snapshot is ~p",[SS]),
             case application:get_env(antidote, txn_prot) of
 	            {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
@@ -263,11 +263,13 @@ get_stable_snapshot() ->
                                                  [Value | Acc ]
                                          end, [], StableSnapshot),
                             GST = lists:min(ListTime),
-                            {ok, vectorclock:map(
+                            ReturnSS = vectorclock:map(
                                    fun(_K, _V) ->
                                            GST
                                    end,
-                                   StableSnapshot)}
+                                   StableSnapshot),
+	                        lager:info("Computed GR stable snapshot: ~p",[ReturnSS]),
+	                        {ok, ReturnSS}
                     end
             end
     end.
@@ -280,6 +282,7 @@ get_partition_snapshot(Partition) ->
 	    timer:sleep(10),
 	    get_partition_snapshot(Partition);
 	SS ->
+		lager:info("got this partition metadata_dict, coverting to vector clock",[SS]),
 	    vectorclock:from_dict(SS)
     end.
 
@@ -288,7 +291,8 @@ get_partition_snapshot(Partition) ->
 -spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
-    %% dict:is_empty/1 is not available, hence using dict:size/1
+	lager:info("STABLE SNAPSHOT GR IS: ",[StableSnapshot]),
+	%% dict:is_empty/1 is not available, hence using dict:size/1
     %% to check whether it is empty
     case vectorclock:size(StableSnapshot) of
         0 ->
