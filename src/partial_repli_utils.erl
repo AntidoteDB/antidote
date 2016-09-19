@@ -21,9 +21,10 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--define(EXTERNAL_READ_TIMEOUT, 1000).
+-define(EXTERNAL_READ_TIMEOUT, 5000).
 
 -export([
+	 check_external_read_in_materializer/1,
 	 is_replicated_at_dc/2,
 	 get_replica_dcs/1,
 	 get_buckets/0,
@@ -218,15 +219,8 @@ replace_external_ops(SnapshotGetResp = #snapshot_get_response{ops_list = OldOps}
 	    OldOpsRem = remove_ops(OldOps,IncludedOpsTime,FromDC,[]),
 	    %% Next instert the external ops
 	    %% Note this is really expensive, but should expect the list of new ops to be short anyway
-	    lager:info("Modifying the op list for external read"),
-	    IdList = 
-		lists:map(fun({Id,_Op}) ->
-				  Id
-			  end, OldOpsRem),
-	    lager:info("The op id list: ~w", [IdList]),
 	    Ops =
 		lists:foldl(fun({NewId,NewOp},OldOpsAcc) ->
-				    lager:info("There is an op in the external read!!"),
 				    NewOpDeps = NewOp#clocksi_payload.snapshot_time,
 				    {FromDC,NewOpCT} = NewOp#clocksi_payload.commit_time,
 				    insert_op(OldOpsAcc,{NewId,NewOp},NewOpDeps,NewOpCT,FromDC,[])
@@ -299,6 +293,15 @@ get_property(external_read_property, PropertyList) ->
 check_should_convert_to_list_in_materializer(PropertyList) ->
     case get_property(external_read_property, PropertyList) of
 	#external_read_property{included_ops = [_|_]} ->
+	    true;
+	_ ->
+	    false
+    end.
+
+-spec check_external_read_in_materializer(clocksi_readitem_fsm:read_property_list()) -> boolean().
+check_external_read_in_materializer(PropertyList) ->
+    case get_property(external_read_property, PropertyList) of
+	#external_read_property{} ->
 	    true;
 	_ ->
 	    false

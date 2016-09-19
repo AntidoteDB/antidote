@@ -355,10 +355,8 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
 		 [{_, SnapshotDict}] ->
 		     case vector_orddict:get_smaller_from_id(DCID, MinTime, SnapshotDict) of
 			 undefined ->
-			     lager:info("no snapshot found"),
 			     {error, no_snapshot};
 			 {SnapshotCommitTime, LatestSnapshot} ->
-			     lager:info("Found the snapshot ~p", [{SnapshotCommitTime,LatestSnapshot}]),
 			     {LatestSnapshot,SnapshotCommitTime}
 		     end
 	     end,
@@ -374,13 +372,11 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
 	    {LatestSnapshot1,SnapshotCommitTime1} ->
 		case ets:lookup(OpsCache, Key) of
 		    [] ->
-			lager:info("no ops in the SS"),
 			#snapshot_get_response{number_of_ops = 0, ops_list = [],
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false};
 		    [Tuple] ->
 			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,true),
-			lager:info("found the ops in the SS ~p", [length(AllOps)]),
 			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false}
@@ -388,9 +384,7 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
 	end,
     OpList = SnapshotGetRespPrev#snapshot_get_response.ops_list,
     MaxTime = vectorclock:get_clock_of_dc(DCID,SnapshotTime),
-    lager:info("The min ~p max ~p and diff ~p", [MinTime,MaxTime,(MaxTime - MinTime)]),
     TrimmedOps = partial_repli_utils:trim_ops_from_dc(OpList,DCID,MinTime,MaxTime,[]),
-    lager:info("the size of the trimmed ops ~p", [length(TrimmedOps)]),
     {ok, TrimmedOps}.
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
@@ -430,15 +424,21 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
     %%     3rd is a boolean that is true if the snapshot returned is the most recent one in the cache
     %% or on failure the tuple is
     %%    {error, no_snapshot}
+    IsExternal = partial_repli_utils:check_external_read_in_materializer(PropertyList),
     Result = case ets:lookup(SnapshotCache, Key) of
 		 [] ->
 		     %% First time reading this key, store an empty snapshot in the cache
 		     BlankSS = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
-		     case TxId of
-			 ignore ->
-			     internal_store_ss(Key,BlankSS,vectorclock:new(),false,State);
-			 _ ->
-			     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
+		     case IsExternal of
+			 false ->
+			     case TxId of
+				 ignore ->
+				     internal_store_ss(Key,BlankSS,vectorclock:new(),false,State);
+				 _ ->
+				     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
+			     end;
+			 true ->
+			     ok
 		     end,
 		     {BlankSS,ignore,true};
 		 [{_, SnapshotDict}] ->
@@ -497,10 +497,10 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
 			ignore ->
 			    {ok, Snapshot};
 			_ ->
-			    case (NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot and
-				  (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
+			    case ((NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot and
+				  (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc) and (not IsExternal) of
 				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
-				%% previous snapshot
+				%% previous snapshot				
 				true ->
 				    case TxId of
 					ignore ->
@@ -596,11 +596,13 @@ prune_ops({Len,OpsTuple}, Threshold)->
 					    OpCommitTime=Op#clocksi_payload.commit_time,
 					    (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
 				    end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
-    case NewSize of
-	0 ->
+    case OpsTuple of
+	{} -> {NewSize,NewOps};
+	_ when NewSize > 0 ->
+	    {NewSize,NewOps};
+	_ when NewSize == 0 ->
 	    First = element(?FIRST_OP+Len,OpsTuple),
-	    {1,[{?FIRST_OP,First}]};
-	_ -> {NewSize,NewOps}
+	    {1,[{?FIRST_OP,First}]}
     end.
 
 %% This function will go through a tuple of operations, filtering out the operations
@@ -645,7 +647,8 @@ tuple_to_key(Tuple,ToList) ->
 tuple_to_key_int(Next,Next,_Tuple,Acc) ->
     lists:reverse(Acc);
 tuple_to_key_int(Next,Last,Tuple,Acc) ->
-    tuple_to_key_int(Next+1,Last,Tuple,[element(Next,Tuple)|Acc]).
+    Val = element(Next,Tuple),
+    tuple_to_key_int(Next+1,Last,Tuple,[Val|Acc]).
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD

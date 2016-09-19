@@ -108,16 +108,6 @@ read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
     %% Check if should perform the read externally
     %% lager:info("the key to check if external ~p", [Key]),
     case partial_repli_utils:is_external(Key,Partition) of
-	{true, PDCIDs} ->
-	    lager:info("Performing external read ~p", [PDCIDs]),
-	    Req = #external_read_request_state{
-		     dc_list = PDCIDs,
-		     key = Key,
-		     type = Type,
-		     transaction = Transaction,
-		     coordinator = self()},
-	    ok = partial_repli_utils:perform_external_read(Req),
-	    partial_repli_utils:wait_for_external_read_resp();
 	false ->
 	    try
 		gen_server:call({global,generate_random_server_name(Node,Partition)},
@@ -127,7 +117,17 @@ read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
 		    lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
 		    check_server_ready([{Partition,Node}]),
 		    read_data_item({Partition,Node},Key,Type,Transaction,PropertyList)
-	    end
+	    end;
+	{true, PDCIDs} ->
+	    lager:info("Performing external read ~p", [PDCIDs]),
+	    Req = #external_read_request_state{
+		     dc_list = PDCIDs,
+		     key = Key,
+		     type = Type,
+		     transaction = Transaction,
+		     coordinator = self()},
+	    ok = partial_repli_utils:perform_external_read(Req),
+	    partial_repli_utils:wait_for_external_read_resp()
     end.
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.

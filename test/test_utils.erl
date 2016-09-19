@@ -37,10 +37,11 @@
          wait_until_connected/2,
          wait_until_registered/2,
          start_node/2,
-         connect_cluster/1,
+         connect_cluster/2,
 	 kill_and_restart_nodes/2,
 	 kill_nodes/1,
 	 brutal_kill_nodes/1,
+	 finish_cluster_setup/1,
 	 restart_nodes/2,
          partition_cluster/2,
          heal_cluster/2,
@@ -239,7 +240,7 @@ heal_cluster(ANodes, BNodes) ->
          [{Node1, Node2} || Node1 <- ANodes, Node2 <- BNodes]),
     ok.
 
-connect_cluster(Nodes) ->
+connect_cluster(Config, Nodes) ->
   Clusters = [[Node] || Node <- Nodes],
   ct:pal("Connecting DC clusters..."),
 
@@ -256,6 +257,7 @@ connect_cluster(Nodes) ->
               ok = rpc:call(Node1, inter_dc_manager, start_bg_processes, [stable]),
               ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
           end, Clusters),
+    setup_partial(Config),
     Descriptors = descriptors(Clusters),
     ct:print("the clusters ~w", [Clusters]),
     Res = [ok || _ <- Clusters],
@@ -482,19 +484,37 @@ set_up_clusters_common(Config) ->
                   end,
    Clusters = pmap(fun(N) ->
                   StartDCs(N)
-              end, [[dev1, dev2], [dev3], [dev4]]),
-   [Cluster1, Cluster2, Cluster3] = Clusters,
+              end, [[dev1, dev2], [dev3], [dev4]]).
+
+finish_cluster_setup(Config) ->
    %% Do not join cluster if it is already done
+   Clusters = proplists:get_value(clusters, Config),
+   [Cluster1, Cluster2, Cluster3] = Clusters,
    case owners_according_to(hd(Cluster1)) of % @TODO this is an adhoc check
      Cluster1 -> ok; % No need to build Cluster
      _ ->
         [join_cluster(Cluster) || Cluster <- Clusters],
         Clusterheads = [hd(Cluster) || Cluster <- Clusters],
 	%% Set partial replication if needed
-	Partial = proplists:get_value(partial,Config,?PARTIAL),
-	lists:foreach(fun(Head) ->
-			      ok = rpc:call(Head, partial_repli_utils, set_partial, [Partial])
-		      end, Clusterheads),
-        connect_cluster(Clusterheads)
+        connect_cluster(Config, Clusterheads)
    end,
    [Cluster1, Cluster2, Cluster3].
+
+setup_partial(Config) ->
+    Clusters = proplists:get_value(clusters, Config),
+    Clusterheads = [hd(Cluster) || Cluster <- Clusters],
+    Partial = proplists:get_value(partial,Config,?PARTIAL),
+    lists:foreach(fun(Head) ->
+			  ok = rpc:call(Head, partial_repli_utils, set_partial, [Partial])
+		  end, Clusterheads),
+    case Partial of
+	true ->
+	    case proplists:lookup(buckets, Config) of
+		{buckets, ClusterBuckets} ->
+		    lists:foreach(fun({Cluster,Buckets}) ->
+					  ok = rpc:call(hd(Cluster), partial_repli_utils, set_buckets, [Buckets])
+				  end, ClusterBuckets);
+		none -> ok
+	    end;
+	false -> ok
+    end.

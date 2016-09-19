@@ -31,10 +31,9 @@
          all/0]).
 
 %% tests
--export([simple_replication_test/1,
-         multiple_keys_test/1,
-         causality_test/1,
-         atomicity_test/1
+-export([simple_external_read_test/1,
+	 parallel_external_read_test/1,
+	 to_log_external_read_test/1
          ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -45,8 +44,16 @@
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
+    NumClusters = lists:zip(lists:seq(1,length(Clusters)),Clusters),
+    Buckets = 
+	lists:map(fun({Num,Cluster}) ->
+			  {Cluster,[list_to_binary("bucket-partial-suite" ++ integer_to_list(Num))]}
+		  end, NumClusters),
+    NewConfig = [{clusters, Clusters}, {buckets, Buckets} | Config],
+    test_utils:finish_cluster_setup(NewConfig),
+
     Nodes = lists:flatten(Clusters),
-    
+
     %Ensure that the clocksi protocol is used
     test_utils:pmap(fun(Node) ->
         rpc:call(Node, application, set_env,
@@ -55,7 +62,7 @@ init_per_suite(Config) ->
     %Check that indeed clocksi is running
     {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
    
-    [{clusters, Clusters}|Config].
+    NewConfig.
 
 end_per_suite(Config) ->
     Config.
@@ -81,19 +88,20 @@ all() -> [simple_external_read_test,
 %% because the sabilisation mechanism takes some time])
 simple_external_read_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
-    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    [Node1 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key = <<"external_simple_read">>,
+    Bucket = <<"bucket-partial-suite2">>,
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [Key, antidote_crdt_counter, {increment, ucl1}]),
+                            [{Key,Bucket}, antidote_crdt_counter, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [Key, antidote_crdt_counter, {increment, ucl2}]),
+                            [{Key,Bucket}, antidote_crdt_counter, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult2),
     Result = rpc:call(Node1, antidote, read,
-                      [Key, antidote_crdt_counter]),
+                      [{Key,Bucket}, antidote_crdt_counter]),
     ?assertEqual({ok, 2}, Result),
 
     lager:info("Simple external read test passed!"),
@@ -104,20 +112,20 @@ simple_external_read_test(Config) ->
 %% read path
 parallel_external_read_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
-    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    [Node1 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key1 = <<"external_parallel_read1">>,
-    Bucket = <<"bucket">>,
     Key2 = <<"external_parallel_read2">>,
+    Bucket = <<"bucket-partial-suite2">>,
     BObj1 = {Key1, antidote_crdt_counter, Bucket},
     BObj2 = {Key2, antidote_crdt_counter, Bucket},
     WriteResult1 = rpc:call(Node1,
                             antidote, append,
-                            [{Key1,Bucket}, antidote_crdt_counter, {increment, ucl1}]),
+                            [{Key1,Bucket}, antidote_crdt_counter, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult1),
     WriteResult2 = rpc:call(Node1,
                             antidote, append,
-                            [{Key2,Bucket}, antidote_crdt_counter, {increment, ucl2}]),
+                            [{Key2,Bucket}, antidote_crdt_counter, {increment, 1}]),
     ?assertMatch({ok, _}, WriteResult2),
     {ok,{_,_,CommitTime}}=WriteResult2,
     Result = rpc:call(Node1, antidote, read_objects,
@@ -137,20 +145,21 @@ parallel_external_read_test(Config) ->
 %% will not be blocked at the external DC
 to_log_external_read_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
-    [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    [FirstNode | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Type = antidote_crdt_counter,
     Key = <<"external_log_read">>,
-    increment_counter(FirstNode, Key, 10),
+    Bucket = <<"bucket-partial-suite2">>,
+    increment_counter(FirstNode, {Key,Bucket}, 10),
     {ok, TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    increment_counter(FirstNode, Key, 100),
-    %% old read value is 0
+    increment_counter(FirstNode, {Key,Bucket}, 100),
+    %% old read value is 10
     {ok, ReadResult1} = rpc:call(FirstNode,
-        antidote, clocksi_iread, [TxId, Key, Type]),
+        antidote, clocksi_iread, [TxId, {Key,Bucket}, Type]),
     ?assertEqual(10, ReadResult1),
     %% most recent read value is 15
     {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode,
-        antidote, clocksi_read, [Key, Type]),
+        antidote, clocksi_read, [{Key,Bucket}, Type]),
     ?assertEqual(110, ReadResult2),
     lager:info("External read to log test passed"),
     pass.
@@ -160,6 +169,6 @@ increment_counter(_FirstNode, _Key, 0) ->
     ok;
 increment_counter(FirstNode, Key, N) ->
     WriteResult = rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [[{update, {Key, antidote_crdt_counter, {increment, a}}}]]),
+        [[{update, {Key, antidote_crdt_counter, {increment, 1}}}]]),
     ?assertMatch({ok, _}, WriteResult),
     increment_counter(FirstNode, Key, N - 1).

@@ -207,12 +207,13 @@ to_bucket_bin(Txn = #interdc_txn{log_records = [FirstOp|_RestOps], partition = P
     Payload = FirstOp#log_record.log_operation,
     update = Payload#log_operation.op_type, %% sanity check
     Bucket = 
-	case Payload#log_operation.log_payload#update_log_payload.key of
-	    {_Key, Buck} ->
-		{bucket, Buck};
-	    _ ->
+	case Payload#log_operation.log_payload#update_log_payload.bucket of
+	    undefined ->
 		%% No bucket, so just use 0's
-		undefined
+		undefined;
+	    Buck ->
+		lager:info("have a bucket txn ~w", [Buck]),
+		{bucket, Buck}
 	end,
     PrefixPartition = partition_to_bin(Partition),
     PrefixBucket = bucket_to_bin(Bucket),
@@ -233,12 +234,13 @@ to_per_bucket(Txn = #interdc_txn{log_records = Ops}) ->
 			    case Type of
 				update ->
 				    Bucket = 
-					case Payload#log_operation.log_payload#update_log_payload.key of
-					    {_Key, Buck} ->
-						{bucket, Buck};
-					    _ ->
+					case Payload#log_operation.log_payload#update_log_payload.bucket of
+					    undefined ->
 						%% No bucket, so just use 0's
-						undefined
+						undefined;
+					    Buck ->
+						lager:info("have a bucket txn ~w", [Buck]),
+						{bucket, Buck}
 					end,
 				    case dict:find(Bucket,Acc) of
 					{ok,List} ->
@@ -342,6 +344,7 @@ get_bucket_sub_for_partition(Partition) ->
     BucketList = partial_repli_utils:get_buckets(),
     SubList = 
 	lists:map(fun(Bucket) ->
+			  lager:info("sub to buckets ~w, ~w", [Bucket,Partition]),
 			  get_bucket_sub(Partition,{bucket,Bucket})
 		  end, BucketList),
     %% Always sub to all updates that dont have a bucket
