@@ -167,6 +167,7 @@ get_node_name(NodeAtom) ->
     list_to_atom(string:substr(Node,1,Pos)).
 
 start_node(Name, Config) ->
+	ct:print("Starting node : ~p",[Name]),
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
     %% have the slave nodes monitor the runner node, so they can't outlive it
     NodeConfig = [

@@ -242,9 +242,9 @@ get_stable_snapshot() ->
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),
 	    get_stable_snapshot();
-	    SSDict ->
-		    SS=vectorclock:from_dict(SSDict),
-		    lager:debug("stable snapshot is ~p",[SS]),
+	    SS ->
+%%		    SS=vectorclock:from_dict(SSDict),
+%%		    lager:debug("stable snapshot is ~p",[SS]),
             case application:get_env(antidote, txn_prot) of
 	            {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
@@ -282,8 +282,9 @@ get_partition_snapshot(Partition) ->
 	    timer:sleep(10),
 	    get_partition_snapshot(Partition);
 	SS ->
-		lager:info("got this partition metadata_dict, coverting to vector clock",[SS]),
-	    vectorclock:from_dict(SS)
+		lager:debug("got this partition metadata_dict, coverting to vector clock",[SS]),
+%%	    vectorclock:from_dict(SS)
+        SS
     end.
 
 %% Returns the minimum value in the stable vector snapshot time

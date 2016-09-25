@@ -268,14 +268,14 @@ is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSna
             %% IncludeInSnapshot is true if the op should be included in the snapshot
             %% NewTime is the updated vectorclock of the snapshot that includes Op
             {IncludeInSnapshot, NewTime} =
-                orddict:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
+                vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
                     Res1 = case compat(OpCommitVC, OpBaseSnapshot, Transaction) of
                                false ->
                                    false;
                                true ->
                                    Acc
                            end,
-                    Res2 = orddict:update(DcIdOp, fun(Val) ->
+                    Res2 = vectorclock:update(DcIdOp, fun(Val) ->
                         case TimeOp > Val of
                             true ->
                                 TimeOp;

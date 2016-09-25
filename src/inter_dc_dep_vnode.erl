@@ -196,7 +196,7 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
 -spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
 update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
-  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
+  NewVectorClock= vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
 
   %% Check if the stable snapshot should be refreshed.
   %% It's an optimization that reduces communication overhead during intensive updates at remote DCs.
@@ -213,14 +213,14 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
     true ->
 
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, vectorclock:to_dict(NewClock)),
+      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewVectorClock),
 
       Now;
     %% Stable snapshot was recently updated, no need to do so.
     false -> LastUpdated
   end,
 
-  State#state{vectorclock = NewClock, last_updated = NewLastUpdated}.
+  State#state{vectorclock =NewVectorClock, last_updated = NewLastUpdated}.
 
 %% Get the current vectorclock from the perspective of this partition, with the updated entry for current DC.
 -spec get_partition_clock(#state{}) -> vectorclock().

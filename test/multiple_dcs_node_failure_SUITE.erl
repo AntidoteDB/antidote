@@ -299,7 +299,8 @@ update_during_cluster_failure_test(Config) ->
     %@todo:implement vectorclock:merge correctly.
     TimeDict = dict:merge(fun(_K, T1,T2) ->
 			      max(T1,T2)
-		      end, vectorclock:to_dict(CommitTime), vectorclock:to_dict(CommitTime3a)),
+%%		      end, vectorclock:to_dict(CommitTime), vectorclock:to_dict(CommitTime3a)),
+		      end, CommitTime, CommitTime3a),
     Time = vectorclock:from_dict(TimeDict),
 
     ReadResult2a = rpc:call(Node1,
