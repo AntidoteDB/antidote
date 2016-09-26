@@ -337,6 +337,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
     InternalReadSet = CoordState#tx_coord_state.internal_read_set,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
+    ClientOps = CoordState#tx_coord_state.client_ops,
 %%    Add the vnode to the updated partitions, if not already there.
     WriteSet = case lists:keyfind(IndexNode, 1, UpdatedPartitions) of
                    false ->
@@ -383,7 +384,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
                     LogId=?LOG_UTIL:get_logid_from_key(Key),
                     [Node]=Preflist,
                     ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()),
-                    State1;
+                    State1#tx_coord_state{client_ops = [{Key, Type, Param} | ClientOps]};
                 
                 {error, Reason}->
                     {error, Reason}
@@ -481,7 +482,7 @@ execute_op({OpType, Args}, Sender,
 
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
     return_accumulator= ReturnAcc}) ->
-    lager:debug("Waiting for log responses, missing: ~p",NumToReply),
+    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
     NewAcc = case Response of
                  {error, Reason} -> {error, Reason};
                  {ok, _OpId} -> ReturnAcc;

@@ -42,6 +42,7 @@
 -include_lib("kernel/include/inet.hrl").
 
 -define(TYPE, antidote_crdt_bcounter).
+-define(ANTIDOTE_BUCKET, antidote_bucket).
 -define(RETRY_COUNT, 5).
 
 
@@ -168,6 +169,14 @@ execute_op(Node, Op, Key, Amount, Actor) ->
 
 %%Auxiliary functions.
 execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
+    Bound_object = {Key, ?TYPE, ?ANTIDOTE_BUCKET},
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    ct:print("Txid ~p", [TxId]),
+    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, Op, {Amount, Actor}}], TxId]),
+    {ok, _CT} = rpc:call(Node, antidote, commit_transaction, [TxId]).
+    
+    
+    
     Result = rpc:call(Node, antidote, append,
                       [Key, ?TYPE, {Op, {Amount,Actor}}]),
     case Result of
