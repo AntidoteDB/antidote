@@ -72,12 +72,12 @@ end_per_testcase(_, _) ->
     ok.
 
 all() -> [
-%%         new_bcounter_test,
-%%         test_dec_success,
-         test_dec_fail
-%%         test_dec_multi_success0,
-%%         test_dec_multi_success1,
-%%         conditional_write_test_run
+         new_bcounter_test,
+         test_dec_success,
+         test_dec_fail,
+         test_dec_multi_success0,
+         test_dec_multi_success1,
+         conditional_write_test_run
         ].
 
 %% Tests creating a new `bcounter()'.
