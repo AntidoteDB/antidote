@@ -249,7 +249,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
 is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSnapshotCommitParams, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
-    OpCommitVC = vectorclock:create_commit_vector_clock(OpDc, OpCommitTime, OpBaseSnapshot),
+    OpCommitVC = vectorclock:set_clock_of_dc(OpDc, OpCommitTime, OpBaseSnapshot),
     case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitParams, OpCommitVC) or
         (Transaction#transaction.txn_id == Op#operation_payload.txid) of
         true ->
@@ -268,14 +268,14 @@ is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSna
             %% IncludeInSnapshot is true if the op should be included in the snapshot
             %% NewTime is the updated vectorclock of the snapshot that includes Op
             {IncludeInSnapshot, NewTime} =
-                vectorclock:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
+                dict:fold(fun(DcIdOp, TimeOp, {Acc, PrevTime3}) ->
                     Res1 = case compat(OpCommitVC, OpBaseSnapshot, Transaction) of
                                false ->
                                    false;
                                true ->
                                    Acc
                            end,
-                    Res2 = vectorclock:update(DcIdOp, fun(Val) ->
+                    Res2 = dict:update(DcIdOp, fun(Val) ->
                         case TimeOp > Val of
                             true ->
                                 TimeOp;

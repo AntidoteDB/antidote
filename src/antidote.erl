@@ -126,7 +126,7 @@ read_objects(Objects, TxId) ->
             lager:debug("sending read_op to the coord "),
             case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
                      {ok, Res} ->
-                         lager:debug("~nGOT THIS READ RESPONSE: ~P~n~n ",[Res]),
+                         lager:debug("~n GOT THIS READ RESPONSE: ~p~n~n ",[Res]),
                          {ok, Res};
                      {error, Reason} -> {error, Reason}
                  end
@@ -216,7 +216,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
              end,
              Objects),
     SingleKey = case Args of
-                    [_O] -> %% Single key update
+                    [_O] -> %% Single key read
                         case Clock of
                             ignore -> true;
                             _ -> false
@@ -225,11 +225,11 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                 end,
     case SingleKey of
         true -> %% Execute the fast path
-            [{read, {Key, Type}}] = Args,
-            case materializer:check_operations([{read, {Key, Type}}]) of
+            [{read, {KeyBucket, Type}}] = Args,
+            case materializer:check_operations([{read, {KeyBucket, Type}}]) of
                 ok ->
                     {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
-                        perform_singleitem_read(Key,Type),
+                        perform_singleitem_read(KeyBucket,Type),
                     {ok, [Val], CommitTime};
                 {error, Reason} ->
                     {error, Reason}
@@ -294,10 +294,15 @@ unregister_hook(Prefix, Bucket) ->
 %%      object stored at some key.
 -spec append(key(), type(), term()) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, Op) ->
+append(KeyOrKeyBucket, Type, Op) ->
+    {Key, Bucket} = case KeyOrKeyBucket of
+        {K, B} -> {K, B};
+        KeyOnly -> {KeyOnly, ?GLOBAL_BUCKET}
+    end,
+        
     {ok, TxId} = start_transaction(ignore, []),
-    lager:debug("rinning an update: ~p",[{Key, Type, Op}]),
-    Response = update_objects([{{Key, Type, ?GLOBAL_BUCKET}, Op}], TxId),
+    lager:debug("rinning an update: ~p",[{{Key, Bucket}, Type, Op}]),
+    Response = update_objects([{{Key, Type, Bucket}, Op}], TxId),
     lager:debug("got this response ~p",[Response]),
     {ok, CommitTime} = commit_transaction(TxId),
     case Response of
@@ -308,10 +313,14 @@ append(Key, Type, Op) ->
 %% @doc The read/2 function returns the current value for the CRDT
 %%      object stored at some key.
 -spec read(key(), type()) -> {ok, val()} | {error, reason()}.
-read(Key, Type) ->
+read(KeyOrKeyBucket, Type) ->
+    {Key, Bucket} = case KeyOrKeyBucket of
+        {K,B}->{K,B};
+        KeyOnly->{KeyOnly, ?GLOBAL_BUCKET}
+    end,
     {ok, TxId} = start_transaction(ignore, []),
-    lager:debug("gonna read objects ~p",[{Key, Type, ?GLOBAL_BUCKET}]),
-    {ok, [Val]} = read_objects([{Key, Type, ?GLOBAL_BUCKET}], TxId),
+    lager:debug("gonna read objects ~p",[{Key, Type, Bucket}]),
+    {ok, [Val]} = read_objects([{Key, Type, Bucket}], TxId),
     {ok, _CommitTime} = commit_transaction(TxId),
     {ok, Val}.
 
@@ -462,7 +471,7 @@ clocksi_full_icommit({_, _, CoordFsmPid})->
         {ok,_PrepareTime} ->
             gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT);
         Msg ->
-            Msg
+            {error, Msg}
     end.
 
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
@@ -502,6 +511,10 @@ execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
         {error, Reason} ->
             {error, Reason}
     end;
-execute_ops([{read, {Key, Type}}|Rest], TxId, ReadSet) ->
-    {ok, [Value]} = read_objects([{Key, Type, ?GLOBAL_BUCKET}], TxId),
+execute_ops([{read, {KeyOrKeyBucket, Type}}|Rest], TxId, ReadSet) ->
+    {Key,Bucket} = case KeyOrKeyBucket of
+        {K,B} -> {K,B};
+        KeyOnly -> {KeyOnly, ?GLOBAL_BUCKET}
+    end,
+    {ok, [Value]} = read_objects([{Key, Type, Bucket}], TxId),
     execute_ops(Rest, TxId, [Value|ReadSet]).

@@ -215,7 +215,7 @@ ensure_all_vnodes_running_master(VnodeType) ->
 check_staleness() ->
     Now = clocksi_vnode:now_microsec(erlang:now()),
     {ok, SS} = get_stable_snapshot(),
-    vectorclock:fold(fun(DcId,Time,_Acc) ->
+    dict:fold(fun(DcId,Time,_Acc) ->
 		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
 		      ok
 	      end, ok, SS).
@@ -258,7 +258,7 @@ get_stable_snapshot() ->
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
-                            ListTime = vectorclock:fold(
+                            ListTime = dict:fold(
                                          fun(_Key, Value, Acc) ->
                                                  [Value | Acc ]
                                          end, [], StableSnapshot),
@@ -307,7 +307,7 @@ get_scalar_stable_time() ->
             %% This is correct only if stablesnapshot has entries for
             %% all DCs. Inorder to check that we need to configure the
             %% number of DCs in advance, which is not possible now.
-            ListTime = vectorclock:fold(
+            ListTime = dict:fold(
                          fun(_Key, Value, Acc) ->
                                  [Value | Acc ]
                          end, [], StableSnapshot),

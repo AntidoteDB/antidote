@@ -601,7 +601,7 @@ define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, 
     TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
     OperationDependencyVC = Op#operation_payload.dependency_vc,
     {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
-    OperationCommitVC = vectorclock:create_commit_vector_clock(OperationDC, OperationCommitTime, OperationDependencyVC),
+    OperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime, OperationDependencyVC),
 	FinalReadVC = case ReadVC of
 		ignore -> %% newest operation in the list.
 			LocalDC = dc_utilities:get_my_dc_id(),
@@ -864,16 +864,16 @@ belongs_to_snapshot_test()->
     SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
     ?assertEqual(true, op_not_already_in_snapshot(
         vectorclock:from_list([{1, CommitTime1a},{2,CommitTime1b}]),
-        vectorclock:create_commit_vector_clock(1, SnapshotClockDC1, SnapshotVC))),
+        vectorclock:set_clock_of_dc(1, SnapshotClockDC1, SnapshotVC))),
     ?assertEqual(true, op_not_already_in_snapshot(
         vectorclock:from_list([{1, CommitTime2a},{2,CommitTime2b}]),
-        vectorclock:create_commit_vector_clock(2, SnapshotClockDC2, SnapshotVC))),
+        vectorclock:set_clock_of_dc(2, SnapshotClockDC2, SnapshotVC))),
     ?assertEqual(false, op_not_already_in_snapshot(
         vectorclock:from_list([{1, CommitTime3a},{2,CommitTime3b}]),
-        vectorclock:create_commit_vector_clock(1, SnapshotClockDC1, SnapshotVC))),
+        vectorclock:set_clock_of_dc(1, SnapshotClockDC1, SnapshotVC))),
     ?assertEqual(false, op_not_already_in_snapshot(
         vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]),
-        vectorclock:create_commit_vector_clock(2, SnapshotClockDC2, SnapshotVC))).
+        vectorclock:set_clock_of_dc(2, SnapshotClockDC2, SnapshotVC))).
 
 %% @doc This tests to make sure when garbage collection happens, no updates are lost
 gc_test() ->
