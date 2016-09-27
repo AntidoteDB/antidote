@@ -31,6 +31,7 @@
 -export([start_link/0,
          generate_downstream/3,
          process_transfer/1,
+         request_transfer/2,
          request_response/2
         ]).
 
@@ -67,9 +68,9 @@ init([]) ->
 %% If the operation is unsafe (i.e. the value of the counter can go
 %% below 0), operation fails, otherwhise a downstream for the decrement
 %% is generated.
-generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
+generate_downstream(Key, {decrement, {Amount, _}}, BCounter) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-    gen_server:call(?MODULE, {consume, Key, {decrement, {V,MyDCId}}, BCounter});
+    gen_server:call(?MODULE, {consume, Key, {decrement, {Amount,MyDCId}}, BCounter});
 
 %% @doc Processes an increment operation for the bounded counter.
 %% Operation is always safe.
@@ -85,6 +86,11 @@ generate_downstream(_Key, {transfer, {Amount, To, From}}, BCounter) ->
 %% @doc Handles a remote transfer request.
 process_transfer({transfer, TransferOp}) ->
     gen_server:cast(?MODULE, {transfer, TransferOp}).
+
+%% @doc Processes a trasfer request from a client.
+request_transfer(Key, Amount) ->
+    gen_server:cast(?MODULE, {request_transfer, {Key, Amount}}).
+
 
 %% ===================================================================
 %% Callbacks
@@ -102,15 +108,23 @@ handle_cast({transfer, {{K,B}=_Key,Amount,Requester}}, #state{last_transfers=LT}
             {noreply, State#state{last_transfers=orddict:store({BoundObject, Requester}, erlang:now(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
-    end.
+    end;
+
+handle_cast({request_transfer, {{_K,_B}=Key, Amount}}, #state{req_queue=RQ}=State) ->
+    UpdtQueue=queue_request(Key, Amount, RQ),
+    {noreply, State#state{req_queue=UpdtQueue}}.
 
 handle_call({consume, Key, {Op,{Amount,_}}, BCounter}, _From, #state{req_queue=RQ}=State) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     case ?DATA_TYPE:generate_downstream_check({Op,Amount}, MyDCId, BCounter, Amount) of
         {error, no_permissions} = FailedResult ->
-            Available = ?DATA_TYPE:localPermissions(MyDCId, BCounter),
-            UpdtQueue=queue_request(Key, Amount - Available, RQ),
-            {reply, FailedResult, State#state{req_queue=UpdtQueue}};
+            case ?MGR_TRANSFERS of
+                true ->
+                    Available = ?DATA_TYPE:localPermissions(MyDCId, BCounter),
+                    UpdtQueue=queue_request(Key, Amount - Available, RQ),
+                    {reply, FailedResult, State#state{req_queue=UpdtQueue}};
+                false -> {reply, FailedResult, State}
+            end;
         Result ->
             {reply, Result, State}
     end.
@@ -126,7 +140,6 @@ handle_info(transfer_periodic, #state{req_queue=RQ0,transfer_timer=OldTimer}=Sta
                               RequiredSum = lists:foldl(fun({Request, _Timeout}, Sum) ->
                                                                 Sum + Request end, 0, Queue),
                               Remaining = request_remote( RequiredSum, Key),
-
                               %% No remote resourecs available, cancel further requests.
                               case Remaining == RequiredSum of
                                   false -> queue_request(Key, Remaining, Accum);

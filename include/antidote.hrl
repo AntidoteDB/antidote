@@ -74,6 +74,7 @@
 -define(LOG_RECORD_VERSION, 0).
 %% Bounded counter manager parameters.
 %% Period during which transfer requests from the same DC to the same key are ignored.
+-define(MGR_TRANSFERS, true).
 -define(GRACE_PERIOD, 1000000). % in Microseconds
 %% Time to forget a pending request.
 -define(REQUEST_TIMEOUT, 500000). % In Microseconds
