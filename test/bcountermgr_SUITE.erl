@@ -171,22 +171,15 @@ execute_op(Node, Op, Key, Amount, Actor) ->
 execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
     Bound_object = {Key, ?TYPE, ?ANTIDOTE_BUCKET},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    ct:print("Txid ~p", [TxId]),
-    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, Op, {Amount, Actor}}], TxId]),
-    {ok, _CT} = rpc:call(Node, antidote, commit_transaction, [TxId]).
-    
-    
-    
-    Result = rpc:call(Node, antidote, append,
-                      [Key, ?TYPE, {Op, {Amount,Actor}}]),
+    Result = rpc:call(Node, antidote, update_objects, [[{Bound_object, Op, {Amount, Actor}}], TxId]),
     case Result of
-        {ok, {_,_,CommitTime}} ->
-            ct:print("got commit time when updating ~p", [CommitTime]),
-            {ok, CommitTime};
+        ok ->
+            rpc:call(Node, antidote, commit_transaction, [TxId]);
         Error when Try == 0 ->
-            ct:print("got error when executing op ~p", [Error]),
+            rpc:call(Node, antidote, abort_transaction, [TxId]),
             Error;
         _ ->
+            rpc:call(Node, antidote, abort_transaction, [TxId]),
             timer:sleep(1000),
             execute_op_success(Node, Op, Key, Amount, Actor, Try -1)
     end.

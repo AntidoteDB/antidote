@@ -90,13 +90,16 @@ process_transfer({transfer, TransferOp}) ->
 %% Callbacks
 %% ===================================================================
 
-handle_cast({transfer, {Key,Amount,Requester}}, #state{last_transfers=LT}=State) ->
+handle_cast({transfer, {{K,B}=_Key,Amount,Requester}}, #state{last_transfers=LT}=State) ->
+    BoundObject = {K, ?DATA_TYPE, B},
     NewLT = cancel_consecutive_req(LT, ?GRACE_PERIOD),
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-    case can_process(Key, Requester, NewLT) of
+    case can_process(BoundObject, Requester, NewLT) of
         true ->
-            antidote:append(Key, ?DATA_TYPE, {transfer, {Amount, Requester, MyDCId}}),
-            {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:now(), NewLT)}};
+            {ok, TxId} = antidote:start_transaction(ignore, []),
+            ok = antidote:update_objects([{BoundObject, transfer, {Amount, Requester, MyDCId}}], TxId),
+            {ok, _CT} = antidote:commit_transaction(TxId),
+            {noreply, State#state{last_transfers=orddict:store({BoundObject, Requester}, erlang:now(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
     end.
