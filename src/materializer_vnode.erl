@@ -341,6 +341,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 		       [{_, SnapshotDictA}] ->
 			   SnapshotDictA
 		   end,
+	lager:debug("This is the current snapshotDict: ~p",[SnapshotDict]),
     %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
     %% insert requests for the same snapshot could have occured
     ShouldInsert =
@@ -352,8 +353,9 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 	end,
     case (ShouldInsert or ShouldGc)of
 	true ->
-	    SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams,Snapshot,SnapshotDict),
-	    snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State, Protocol);
+		lager:debug("Inserting this snapshot: ~n~p ~nParams: ~p",[Snapshot, SnapshotParams]),
+		SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams,Snapshot,SnapshotDict),
+		snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State, Protocol);
 	false ->
 	    false
     end.
@@ -526,6 +528,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                         Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
                         Res;
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
+	                    lager:info("LatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p",[LatestSnapshot1, SnapshotCommitTime1]),
 	                    #snapshot_get_response{number_of_ops = Len, ops_list = OperationsForKey,
 		                    materialized_snapshot = LatestSnapshot1,
 		                    snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
@@ -607,7 +610,9 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 			no_compatible_operation_found;
 		_->
 			{_OpId, OperationRecord}= element((?FIRST_OP+Length-1) - PositionInOpList, OperationsTuple),
-			lager:debug("OperationRecord ~n ~p", [OperationRecord]),
+%%			{_OpId, OperationRecord}= element((?FIRST_OP+ PositionInOpList), OperationsTuple),
+			lager:debug("~n~n~nOperation ~p in Record ~n ~p", [PositionInOpList, OperationRecord]),
+			lager:debug("~n~n~nOperation List ~p", [OperationsTuple]),
 %%			[{_OpId, Op} | Rest] = OperationsTuple,
 			TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
 			TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
@@ -624,6 +629,7 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 			end,
 			case is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
 				true ->
+					lager:info("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, FinalReadVC}]),
 					{OperationCommitVC, OperationDependencyVC, FinalReadVC};
 				false ->
 					NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
@@ -674,7 +680,8 @@ create_empty_materialized_snapshot_record(Transaction, Type) ->
             ReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
             MyDc = dc_utilities:get_my_dc_id(),
             ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
-            {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
+	        lager:debug("creating a physics empty snapshot:"),
+	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, vectorclock:new()}
     end.

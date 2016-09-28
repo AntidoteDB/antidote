@@ -84,21 +84,23 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> [clocksi_test1,
-         clocksi_test2,
-         clocksi_test3,
-         clocksi_test5,
-         clocksi_test_read_wait,
-         clocksi_test4,
-         clocksi_test_read_time,
-         clocksi_test_prepare,
-         clocksi_tx_noclock_test,
-         clocksi_single_key_update_read_test,
-         clocksi_multiple_key_update_read_test,
-         clocksi_test_certification_check,
-         clocksi_multiple_test_certification_check,
-         clocksi_multiple_read_update_test,
-         clocksi_concurrency_test].
+all() -> [
+%%    clocksi_test1,
+%%         clocksi_test2,
+%%         clocksi_test3,
+%%         clocksi_test5,
+%%         clocksi_test_read_wait,
+%%         clocksi_test4,
+%%         clocksi_test_read_time,
+%%         clocksi_test_prepare,
+%%         clocksi_tx_noclock_test,
+%%         clocksi_single_key_update_read_test,
+%%         clocksi_multiple_key_update_read_test,
+%%         clocksi_test_certification_check,
+%%         clocksi_multiple_test_certification_check,
+         clocksi_multiple_read_update_test
+%%         clocksi_concurrency_test
+].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
@@ -106,27 +108,30 @@ clocksi_test1(Config) ->
     Nodes = proplists:get_value(nodes, Config),
 
     FirstNode = hd(Nodes),
-    ct:info("Test1 started"),
+    lager:info("Test1 started"),
     Key1=clocksi_test1_key1,
     Key2=clocksi_test1_key2,
     Type = antidote_crdt_counter,
     %% Empty transaction works,
-    ct:info("Running empty transaction"),
+    lager:info("Running empty transaction"),
     Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [[]]),
     ?assertMatch({ok, _}, Result0),
-    ct:info("Done"),
+    lager:info("Done"),
 
 
     % A simple read returns empty
-    ct:info("check that A simple read returns empty"),
+    lager:info("check that A simple read returns empty"),
     Result11=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result11),
     {ok, {_, ReadSet11, _}}=Result11,
     ?assertMatch([0], ReadSet11),
-
+    
+    lager:info("done"),
+    
+    lager:info("check that you read what you wrote in a transaction"),
     %% Read what you wrote
     Result2=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
@@ -134,11 +139,14 @@ clocksi_test1(Config) ->
                       {update, {Key1, Type, {increment, 1}}},
                       {update, {Key2, Type, {increment, 1}}},
                       {read, {Key1, Type}}]]),
+    lager:info("executed transaction"),
     ?assertMatch({ok, _}, Result2),
     {ok, {_, ReadSet2, _}}=Result2,
     ?assertMatch([0,0], ReadSet2),
-
-    %% Update is persisted && update to multiple keys are atomic
+    
+    lager:info("ok..."),
+    
+    lager:info("now read in a subsequent transaction"),
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{read, {Key1, Type}},
@@ -146,8 +154,10 @@ clocksi_test1(Config) ->
     ?assertMatch({ok, _}, Result3),
     {ok, {_, ReadSet3, _}}=Result3,
     ?assertEqual([1,1], ReadSet3),
-
-    %% Multiple updates to a key in a transaction works
+    
+    lager:info("done"),
+    
+    lager:info(" Multiple updates to a key in a transaction works ?"),
     Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{update, {Key1, Type, {increment, 1}}},
@@ -159,6 +169,7 @@ clocksi_test1(Config) ->
                      [{read, {Key1, Type}}]]),
     {ok, {_, ReadSet6, _}}=Result6,
     ?assertEqual(3, hd(ReadSet6)),
+    lager:info("done"),
     pass.
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
@@ -250,7 +261,7 @@ clocksi_test3(Config) ->
     lager:info("Test3 passed"),
     pass.
 
-%% @doc This test makes sure to block pending reads when a prepare is in progress
+%% @doc This test makes sure NOT TO block pending reads when a prepare is in progress
 %% that could violate atomicity if not blocked
 clocksi_test_prepare(Config) ->
     Nodes = proplists:get_value(nodes, Config),
@@ -297,7 +308,7 @@ clocksi_test_prepare(Config) ->
 
     ReadResultR=rpc:call(FirstNode, antidote, clocksi_iread,
 			 [TxIdRead, Key1, antidote_crdt_counter]),
-    ?assertEqual({ok, 1}, ReadResultR),
+    ?assertEqual({ok, 0}, ReadResultR),
 
     End1=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
@@ -390,6 +401,7 @@ clocksi_tx_noclock_test(Config) ->
     ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
                          [TxId, Key, antidote_crdt_counter]),
     ?assertEqual({ok, 0}, ReadResult0),
+    
     WriteResult0=rpc:call(FirstNode, antidote, clocksi_iupdate,
                           [TxId, Key, Type, increment]),
     ?assertEqual(ok, WriteResult0),
@@ -397,29 +409,26 @@ clocksi_tx_noclock_test(Config) ->
     ?assertMatch({ok, _}, CommitTime),
     End=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
     ?assertMatch({ok, _}, End),
+    
+    
+    
     ReadResult1 = rpc:call(FirstNode, antidote, clocksi_read,
                            [Key, antidote_crdt_counter]),
     {ok, {_, ReadSet1, _}}= ReadResult1,
     ?assertMatch([1], ReadSet1),
     
-    Operation = {{Key, Type, bucket}, {increment, actor}},
-    lager:info("About to execute Operation: ~p", [Operation]),
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    ok = rpc:call(FirstNode, antidote, update_objects,
-        [[Operation], TxId1]),
-    CommitTime1=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
-    ?assertMatch({ok, _}, CommitTime1),
-    End1=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
+    WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
+        [TxId1, Key, Type, increment]),
+    ?assertEqual(ok, WriteResult1),
+    End1=rpc:call(FirstNode, antidote, commit_transaction, [TxId1]),
     ?assertMatch({ok, _}, End1),
-  
     
-    {ok,TxId2}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    ReadResult2=rpc:call(FirstNode, antidote, clocksi_iread,
-        [TxId2, Key, antidote_crdt_counter]),
-    {ok, _}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId2]),
-    {ok, _}=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId2]),
-	{ok, {_, ReadSet2, _}}=ReadResult2,
-	?assertMatch([2], ReadSet2),
+    
+    ReadResult2 = rpc:call(FirstNode, antidote, clocksi_read,
+        [Key, antidote_crdt_counter]),
+    {ok, {_, ReadSet2, _}}= ReadResult2,
+    ?assertMatch([2], ReadSet2),
 	lager:info("clocksi_tx_noclock_test passed"),
 	pass.
 
@@ -453,25 +462,24 @@ clocksi_multiple_key_update_read_test(Config) ->
     Key1 = clocksi_multiple_key_update_read_test_key1,
     Key2 = clocksi_multiple_key_update_read_test_key2,
     Key3 = clocksi_multiple_key_update_read_test_key3,
-    Ops = [{update, {{Key1, Type, bucket}, {increment,1}}},
-           {update, {{Key2, Type, bucket}, {increment,10}}},
-           {update,{{Key3, Type, bucket}, increment}}
+    
+    Objs = [{Key1, Type, bucket}, {Key2, Type, bucket}, {Key3, Type, bucket}],
+    
+    Ops = [{{Key1, Type, bucket}, {increment,1}},
+           {{Key2, Type, bucket}, {increment,10}},
+           {{Key3, Type, bucket}, increment, 1}
           ],
-	{ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+	{ok,TxId1}=rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
 	ok = rpc:call(FirstNode, antidote, update_objects,
 		[Ops, TxId1]),
-	{ok, _}=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId1]),
-	{ok, CommitTime}=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId1]),
-	
-    {ok,{_,[ReadResult1],_}} = rpc:call(FirstNode, antidote, clocksi_read,
-                                        [CommitTime, Key1, Type]),
-    {ok,{_,[ReadResult2],_}} = rpc:call(FirstNode, antidote, clocksi_read,
-                                        [CommitTime, Key2, Type]),
-    {ok,{_,[ReadResult3],_}} = rpc:call(FirstNode, antidote, clocksi_read,
-                                        [CommitTime, Key3, Type]),
-    ?assertMatch(ReadResult1,1),
-    ?assertMatch(ReadResult2,10),
-    ?assertMatch(ReadResult3,1),
+	{ok, CommitTime}=rpc:call(FirstNode, antidote, commit_transaction, [TxId1]),
+    
+    
+    {ok,TxId2}=rpc:call(FirstNode, antidote, start_transaction, [CommitTime, []]),
+    {ok, FinalReadSet} = rpc:call(FirstNode, antidote, read_objects, [Objs, TxId2]),
+    {ok, _CT2}=rpc:call(FirstNode, antidote, commit_transaction, [TxId2]),
+
+    ?assertMatch(FinalReadSet,[1,10,1]),
     pass.
 
 %% @doc The following function tests that ClockSI can excute a
@@ -730,12 +738,12 @@ clocksi_multiple_read_update_test(Config) ->
     Type = antidote_crdt_counter,
     NTimes = 100,
     {ok,Result1} = rpc:call(Node, antidote, read,
-                       [Key, Type]),
+        [Key, Type]),
     lists:foreach(fun(_)->
-                          read_update_test(Node, Key) end,
-                  lists:seq(1,NTimes)),
+        read_update_test(Node, Key) end,
+        lists:seq(1,NTimes)),
     {ok,Result2} = rpc:call(Node, antidote, read,
-                       [Key, Type]),
+        [Key, Type]),
     ?assertEqual(Result1+NTimes, Result2),
     pass.
 
@@ -743,11 +751,11 @@ clocksi_multiple_read_update_test(Config) ->
 read_update_test(Node, Key) ->
     Type = antidote_crdt_counter,
     {ok,Result1} = rpc:call(Node, antidote, read,
-                       [Key, Type]),
-    {ok,_} = rpc:call(Node, antidote, clocksi_bulk_update,
-                      [[{update, {Key, Type, {increment,1}}}]]),
+        [Key, Type]),
+    {ok,_} = rpc:call(Node, antidote, append,
+        [Key, Type, {increment,1}]),
     {ok,Result2} = rpc:call(Node, antidote, read,
-                       [Key, Type]),
+        [Key, Type]),
     ?assertEqual(Result1+1,Result2),
     pass.
 

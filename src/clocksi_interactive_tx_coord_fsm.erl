@@ -352,16 +352,15 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
             case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
                 {ok, DownstreamRecord, SnapshotParameters}->
-                    %%            lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
+                                lager:debug("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     State1=case TransactionalProtocol of
                         physics->
-                            %%                        lager:info("SnapshotParameters ~p",[SnapshotParameters]),
                             {DownstreamOpCommitVC, _DepVC, _ReadTimeVC}=SnapshotParameters,
                             case WriteSet of
                                 []->
                                     NewUpdatedPartitions=[{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]}|UpdatedPartitions],
-                                    %%                                     update_causal_snapshot_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key);
-                                    CoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions};
+                                    NewCoordState = update_causal_snapshot_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key),
+                                    NewCoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions};
                                 _->
                                     NewUpdatedPartitions=lists:keyreplace(IndexNode, 1, UpdatedPartitions,
                                         {IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}|WriteSet]}),
@@ -537,12 +536,12 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
 %%      for maintaining the causal snapshot metadata
 update_causal_snapshot_state(State, ReadMetadata, _Key) ->
     {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
+    NewVC = vectorclock:new(),
     case CommitVC of
-        [] ->
+        NewVC ->
             State;
         _ ->
             Transaction = State#tx_coord_state.transaction,
-            %%    lager:info("~nCommitVC = ~p~n, DepVC = ~p~n ReadTimeVC = ~p~n",[CommitVC, DepVC, ReadTimeVC]),
 %%    KeysAccessTime = State#tx_coord_state.keys_access_time,
             VersionMax = State#tx_coord_state.version_max,
 %%    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
@@ -557,14 +556,21 @@ update_causal_snapshot_state(State, ReadMetadata, _Key) ->
 %%                 end,
             NewDepUpB = vectorclock:min_vc(ReadTimeVC, DepUpbound),
             NewCTLowB = vectorclock:max_vc(DepVC, CommitTimeLowbound),
-
+    
+            lager:debug("UPDATE CAUSAL SNAPSHOT STATE! "),
+            lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+            lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+            lager:debug("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+            lager:debug("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
+            
+            %todo: remove the folliwing, used for debugging.
             case NewDepUpB < NewCTLowB of
                 true ->
-                    lager:info("PROBLEM! "),
-                    lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
-                    lager:info("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-                    lager:info("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-                    lager:info("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]);
+                    lager:debug("PROBLEM! "),
+                    lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+                    lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+                    lager:debug("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+                    lager:debug("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]);
                 false ->
                     move_on
             end,

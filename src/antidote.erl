@@ -301,10 +301,12 @@ append(KeyOrKeyBucket, Type, Op) ->
     end,
         
     {ok, TxId} = start_transaction(ignore, []),
-    lager:debug("rinning an update: ~p",[{{Key, Bucket}, Type, Op}]),
+    lager:debug("~n RUNNING AN UPDATE: ~p",[{{Key, Bucket}, Type, Op}]),
     Response = update_objects([{{Key, Type, Bucket}, Op}], TxId),
     lager:debug("got this response ~p",[Response]),
     {ok, CommitTime} = commit_transaction(TxId),
+    lager:debug("~nAPPEND TX COMMITTED WITH COMMITTIME ~p",[CommitTime]),
+    
     case Response of
         {error, Reason} -> {error, Reason};
         ok -> {ok, {TxId, [], CommitTime}}
@@ -513,7 +515,6 @@ execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
     end;
 execute_ops([{read, {KeyOrKeyBucket, Type}}|Rest], TxId, ReadSet) ->
     lager:debug("about to read : ~p", [{read, {KeyOrKeyBucket, Type}}]),
-    lager:info("about to read : ~p", [{read, {KeyOrKeyBucket, Type}}]),
     {Key,Bucket} = case KeyOrKeyBucket of
         {K,B} -> {K,B};
         KeyOnly -> {KeyOnly, ?GLOBAL_BUCKET}

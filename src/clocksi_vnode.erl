@@ -500,6 +500,9 @@ reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, Active
 
 commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
     {CommitTime, SnapshotVC} = CommitParameters,
+    
+    lager:debug("COMMIT with parameters:~n SnapshotVC: ~p ~n CommitTime: ~p", [SnapshotVC, CommitTime]),
+    
     TxId = Transaction#transaction.txn_id,
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     LogRecord = #log_operation{tx_id = TxId,
@@ -605,6 +608,7 @@ certification_with_check(_, [], _, _) ->
 
 certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
     {Key, _, OperationData} = H,
+    lager:debug("~nH IS : ~n~p", [H]),
     TxId = Transaction#transaction.txn_id,
     ReferenceSnapshotTime = case Transaction#transaction.transactional_protocol of
                                 physics ->
@@ -613,17 +617,18 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
                                 Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                                     Transaction#transaction.txn_id#tx_id.local_start_time
                             end,
-
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
             case CommitTime > ReferenceSnapshotTime of
                 true ->
+                    lager:debug("COMMIT WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
                     false;
                 false ->
                     case check_prepared(TxId, PreparedTx, Key) of
                         true ->
                             certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
+                            lager:debug("PREPARE WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n", [OperationData]),
                             false
                     end
             end;

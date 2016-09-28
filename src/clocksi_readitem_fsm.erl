@@ -187,7 +187,9 @@ generate_server_name(Node, Partition, Id) ->
 
 -spec generate_random_server_name(node(), partition_id()) -> atom().
 generate_random_server_name(Node, Partition) ->
-    generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
+    ServerName = generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)),
+	lager:debug("Generated random server name to handle async read with name: ~p", [ServerName]),
+	ServerName.
 
 init([Partition, Id]) ->
     Addr = node(),
@@ -208,6 +210,7 @@ handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
+	lager:debug("handling perform_read_cast, for: ~nCoordinator ~p~nKey~p~nType~p~nTransaction~p~n", [Coordinator, Key, Type, Transaction]),
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0}.
 
