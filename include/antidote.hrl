@@ -278,3 +278,4 @@
 	  ops_cache :: cache_id(),
 	  snapshot_cache :: cache_id(),
 	  is_ready :: boolean()}).
+-type mat_state() :: #mat_state{}.

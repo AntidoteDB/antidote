@@ -107,10 +107,10 @@ commit_transaction(TxId) ->
 
 -spec read_objects(Objects::[bound_object()], TxId::txid())
                   -> {ok, [term()]} | {error, reason()}.
-read_objects(Objects, TxId) ->
+read_objects(BoundObjects, TxId) ->
     {_, _, CoordFsmPid} = TxId,
     NewObjects = lists:map(fun({Key, Type, Bucket}) ->
-        case materializer:check_operations([{read, {Key, Type}}]) of
+        case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
             ok ->
                 lager:debug("passed type checking"),
                 {{Key, Bucket}, Type};
@@ -118,7 +118,7 @@ read_objects(Objects, TxId) ->
                 lager:debug("typing problem, chceck your ops! "),
                 {error, type_check}
         end
-                           end, Objects),
+                           end, BoundObjects),
     case lists:member({error, type_check}, NewObjects) of
         true -> {error, type_check};
         false ->
@@ -512,6 +512,8 @@ execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
             {error, Reason}
     end;
 execute_ops([{read, {KeyOrKeyBucket, Type}}|Rest], TxId, ReadSet) ->
+    lager:debug("about to read : ~p", [{read, {KeyOrKeyBucket, Type}}]),
+    lager:info("about to read : ~p", [{read, {KeyOrKeyBucket, Type}}]),
     {Key,Bucket} = case KeyOrKeyBucket of
         {K,B} -> {K,B};
         KeyOnly -> {KeyOnly, ?GLOBAL_BUCKET}

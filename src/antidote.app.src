@@ -25,6 +25,13 @@
                   parse_trans
                  ]},
   {mod, { antidote_app, []}},
+    
+     {lager, [
+         {handlers, [
+             {lager_console_backend, debug}
+         ]}
+     ]},
+     
   %% Options for environmental variables
   %% txn_cert:
   %%        true -> write operations are certified during commit, aborting the transaction if a write conflict is detected (i.e. snapshot isolation
@@ -47,7 +54,7 @@
   %%        false -> all updates are sent to the operating system to be stored to disk (eventually), but are not guaranteed to be stored durably on disk
   %%                 when the reply is sent
   {env, [{txn_cert, true},
-      {txn_prot, clocksi},
+      {txn_prot, physics},
       {recover_from_log, true},
       {recover_meta_data_on_start, true},
       {sync_log, false}]}

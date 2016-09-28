@@ -242,7 +242,7 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
             DepUpbound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
             case
 %%                ((DepUpbound == undefined) or
-                (DepUpbound == []) of
+                (DepUpbound == vectorclock:new()) of
                 true ->
                     ready;
                 false ->

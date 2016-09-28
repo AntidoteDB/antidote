@@ -106,19 +106,20 @@ clocksi_test1(Config) ->
     Nodes = proplists:get_value(nodes, Config),
 
     FirstNode = hd(Nodes),
-    lager:info("Test1 started"),
+    ct:info("Test1 started"),
     Key1=clocksi_test1_key1,
     Key2=clocksi_test1_key2,
     Type = antidote_crdt_counter,
     %% Empty transaction works,
+    ct:info("Running empty transaction"),
     Result0=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [[]]),
     ?assertMatch({ok, _}, Result0),
-    Result1=rpc:call(FirstNode, antidote, clocksi_execute_tx,
-                    [[]]),
-    ?assertMatch({ok, _}, Result1),
+    ct:info("Done"),
+
 
     % A simple read returns empty
+    ct:info("check that A simple read returns empty"),
     Result11=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
                      [{read, {Key1, Type}}]]),

@@ -33,7 +33,7 @@
          test_dec_success/1,
          test_dec_fail/1,
          test_dec_multi_success0/1,
-         test_dec_multi_success1/1,
+         test_dec_multi_success1/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -76,8 +76,7 @@ all() -> [
          test_dec_success,
          test_dec_fail,
          test_dec_multi_success0,
-         test_dec_multi_success1,
-         conditional_write_test_run
+         test_dec_multi_success1
         ].
 
 %% Tests creating a new `bcounter()'.

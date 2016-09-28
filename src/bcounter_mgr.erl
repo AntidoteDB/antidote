@@ -97,7 +97,7 @@ handle_cast({transfer, {{K,B}=_Key,Amount,Requester}}, #state{last_transfers=LT}
     case can_process(BoundObject, Requester, NewLT) of
         true ->
             {ok, TxId} = antidote:start_transaction(ignore, []),
-            ok = antidote:update_objects([{BoundObject, transfer, {Amount, Requester, MyDCId}}], TxId),
+            ok = antidote:update_objects([{BoundObject, {transfer, {Amount, Requester, MyDCId}}}], TxId),
             {ok, _CT} = antidote:commit_transaction(TxId),
             {noreply, State#state{last_transfers=orddict:store({BoundObject, Requester}, erlang:now(), NewLT)}};
         _ ->

@@ -467,7 +467,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
             {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
 	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
-	        lager:debug("got this ope in opscache ~p ~n~p",[OpsCache, OperationsForKey]),
+	        lager:debug("Key ~p~n, Len ~p~n, _OpId ~p~n, _ListLen ~p~n, OperationsForKey ~p~n", [Key, Len, _OpId, _ListLen, OperationsForKey]),
 	        {UpdatedTxnRecord, TempCommitParameters} =
 		        case Protocol of
 			        physics ->
@@ -481,7 +481,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 								        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 								        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
 							        no_compatible_operation_found ->
-								        case length(OperationsForKey) of 1 ->
+								        case Len of 1 ->
 									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
 									        _->  {error, no_compatible_operation_found}
@@ -505,6 +505,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                              end,
                              {BlankSSRecord, ignore, true};
                          [{_, SnapshotDict}] ->
+	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
                                  {undefined, _IsF} ->
                                      {error, no_snapshot};
@@ -583,40 +584,64 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %% which is the latest operation that is compatible with the snapshot
 %% the protocol uses the commit time of the operation as the "snapshot time"
 %% of this particular read, whithin the transaction.
+-spec define_snapshot_vc_for_transaction(TxRecord::transaction(), OpsTuple::tuple()) ->
+	no_operation_to_define_snapshot | no_compatible_operation_found | {CommitVC::vectorclock(), DepVC::vectorclock(), ReadVC::vectorclock()}.
 define_snapshot_vc_for_transaction(_Transaction, []) ->
     no_operation_to_define_snapshot;
-define_snapshot_vc_for_transaction(Transaction, OperationList) ->
+define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
     LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
-    define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ignore, OperationList).
+    define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ignore, OperationTuple, 0).
 
-define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, _FullOpList) ->
+%%define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, _OperationTuple, _PositionInOpList) ->
 %%    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
 %%    TxDepUpBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 %%    lager:info("Transaction: ~n~p~n OperationList: ~n~p", [_Transaction, FullOpList]),
 %%    lager:info("TxCTLowBound: ~n~p~n TxDepUpBound: ~n~p", [TxCTLowBound, TxDepUpBound]),
-    no_compatible_operation_found;
-define_snapshot_vc_for_transaction(Transaction, OperationList, LocalDCReadTime, ReadVC, FullOpList) ->
-    [{_OpId, Op} | Rest] = OperationList,
-    TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-    TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-    OperationDependencyVC = Op#operation_payload.dependency_vc,
-    {OperationDC, OperationCommitTime} = Op#operation_payload.dc_and_commit_time,
-    OperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime, OperationDependencyVC),
-	FinalReadVC = case ReadVC of
-		ignore -> %% newest operation in the list.
-			LocalDC = dc_utilities:get_my_dc_id(),
-			OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
-			vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
-		_ ->
-			ReadVC
-	end,
-	case is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
-		true ->
-			{OperationCommitVC, OperationDependencyVC, FinalReadVC};
-		false ->
-			NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
-			define_snapshot_vc_for_transaction(Transaction, Rest, LocalDCReadTime, NewOperationCommitVC, FullOpList)
+%%    no_compatible_operation_found;
+
+define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
+	{Length,_ListLen} = element(2, OperationsTuple),
+	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
+	case PositionInOpList of
+		Length ->
+			no_compatible_operation_found;
+		_->
+			{_OpId, OperationRecord}= element((?FIRST_OP+Length-1) - PositionInOpList, OperationsTuple),
+			lager:debug("OperationRecord ~n ~p", [OperationRecord]),
+%%			[{_OpId, Op} | Rest] = OperationsTuple,
+			TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+			TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+			OperationDependencyVC = OperationRecord#operation_payload.dependency_vc,
+			{OperationDC, OperationCommitTime} = OperationRecord#operation_payload.dc_and_commit_time,
+			OperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime, OperationDependencyVC),
+			FinalReadVC = case ReadVC of
+				ignore -> %% newest operation in the list.
+					LocalDC = dc_utilities:get_my_dc_id(),
+					OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
+					vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
+				_ ->
+					ReadVC
+			end,
+			case is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+				true ->
+					{OperationCommitVC, OperationDependencyVC, FinalReadVC};
+				false ->
+					NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
+					define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, NewOperationCommitVC, OperationsTuple, PositionInOpList + 1)
+			end
 	end.
+    
+%%
+%%materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId,
+%%  InitialSnapshotCommitTime, Transaction, TupleOps, OutputSnapshotCT, DidGenerateNewSnapshot, Location) ->
+%%	{Length,_ListLen} = element(2, TupleOps),
+%%	case Length == Location of
+%%		true ->
+%%			{ok, OpList, OutputFirstNotIncludedOperationId, OutputSnapshotCT, DidGenerateNewSnapshot};
+%%		false ->
+%%			materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId, InitialSnapshotCommitTime, Transaction,
+%%				element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCT, DidGenerateNewSnapshot, Location + 1)
+%%	end.
 
 %%%% Todo: Future: Implement the following function for a causal snapshot
 %%get_all_operations_from_log_for_key(Key, Type, Transaction) ->
@@ -665,8 +690,8 @@ op_not_already_in_snapshot(_, empty) ->
     true;
 op_not_already_in_snapshot(empty, _) ->
     true;
-op_not_already_in_snapshot(SSTime, CommitVC) ->
-    not vectorclock:le(CommitVC, SSTime).
+op_not_already_in_snapshot(Parameters, CommitVC) ->
+    not vectorclock:le(CommitVC, Parameters).
 
 
 %% @doc Operation to insert a Snapshot in the cache and start
@@ -794,7 +819,7 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
 %% operations for a given key, just perform a read, that will trigger
 %% the GC mechanism.
--spec op_insert_gc(key(), operation_payload(), #mat_state{}, transaction() | no_txn_inserting_from_log) -> ok | {error, {op_gc_error, reason()}}.
+-spec op_insert_gc(key(), operation_payload(), mat_state(), transaction() | no_txn_inserting_from_log) -> ok | {error, {op_gc_error, reason()}}.
 op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transaction)->
     case ets:member(OpsCache, Key) of
 	false ->
@@ -803,8 +828,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 	true ->
 	    ok
     end,
-    NewId = ets:update_counter(OpsCache, Key,
-			       {3,1}),
+    NewId = ets:update_counter(OpsCache, Key, {3,1}),
     {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
     %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
     case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of

@@ -164,7 +164,7 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 integer(),
              snapshot_time() | {snapshot_time(), snapshot_time()} | ignore,
 			 transaction(),
-			 [{integer(),operation_payload()}],
+			 [{integer(),operation_payload()}] | tuple(),
 			 snapshot_time() | ignore,
 			 boolean(),
 			 non_neg_integer()) ->
@@ -191,14 +191,17 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
     Result = case Type == Op#operation_payload.type of
 		 true ->
 		     OpCom=Op#operation_payload.dc_and_commit_time,
-		     OpSS= case Transaction#transaction.transactional_protocol of
+			 {OpSS, CommitTime}= case Transaction#transaction.transactional_protocol of
 			     Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-				     Op#operation_payload.snapshot_vc;
+				     {Op#operation_payload.snapshot_vc, SnapshotCommitTime};
 			     physics ->
-				     Op#operation_payload.dependency_vc
+				     case SnapshotCommitTime of
+					     ignore -> {Op#operation_payload.dependency_vc, SnapshotCommitTime};
+					     {ComVC, _DepVC, _ReadTimeVC} -> {Op#operation_payload.dependency_vc, ComVC}
+				     end
 		     end,
 		     %% Check if the op is not in the previous snapshot and should be included in the new one
-		     case (is_op_in_snapshot(Op, OpCom, OpSS, Transaction, SnapshotCommitTime, LastOpCt)) of
+		     case (is_op_in_snapshot(Op, OpCom, OpSS, Transaction, CommitTime, LastOpCt)) of
 			 {true,_,NewOpCt} ->
 			     %% Include the new op because it has a timestamp bigger than the snapshot being generated
 			     {ok, [Op | OpList], NewOpCt, false, true, FirstHole};
@@ -250,7 +253,23 @@ is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSna
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
     OpCommitVC = vectorclock:set_clock_of_dc(OpDc, OpCommitTime, OpBaseSnapshot),
-    case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitParams, OpCommitVC) or
+	
+	LastSnapshotCommitTime=case LastSnapshotCommitParams of
+		ignore->
+			ignore;
+		_->
+			case Transaction#transaction.transactional_protocol of
+				Protocol when ((Protocol==gr)or(Protocol==clocksi))->
+					LastSnapshotCommitParams;
+				physics->
+					{CommitVC, _DepVC, _ReadTimeVC}=LastSnapshotCommitParams,
+					CommitVC
+			end
+	end,
+	
+	lager:debug("calling op not already in snapshot for ~n LastSnapshotCommitTime~n~p OpCommitVC~n~p", [LastSnapshotCommitTime, OpCommitVC]),
+	
+	case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitTime, OpCommitVC) or
         (Transaction#transaction.txn_id == Op#operation_payload.txid) of
         true ->
             %% If not, check if it should be included in the new snapshot
