@@ -350,19 +350,10 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
 %% TODO: sending empty writeset to clocksi_downstream_generatro
 %% Just a workaround, need to delete downstream_generator_vnode
 %% eventually.
-handle_command({commit, Transaction, TxCommitParams, Updates}, _Sender,
+handle_command({commit, Transaction, CommitParams, Updates}, _Sender,
   #state{partition = _Partition,
       committed_tx = CommittedTx
   } = State) ->
-    CommitParams =
-%%        case Transaction#transaction.transactional_protocol of
-%%                       physics ->
-%%%%                           SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-                           TxCommitParams,
-%%                       Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
-%%                           {TxCommitParams, Transaction#transaction.snapshot_vc}
-%%                   end,
-%%    lager:info("these are the commit params: ~p~n", [CommitParams]),
     Result = commit(Transaction, CommitParams, Updates, CommittedTx, State),
     case Result of
         {ok, committed, NewPreparedDict} ->
@@ -383,10 +374,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
-            %% ALE PREV CODE
-%%            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
-            %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
 				  {ok, _} ->
 				      clean_and_notify(TxId, Updates, State);
@@ -500,9 +488,6 @@ reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, Active
 
 commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
     {CommitTime, SnapshotVC} = CommitParameters,
-    
-    lager:debug("COMMIT with parameters:~n SnapshotVC: ~p ~n CommitTime: ~p", [SnapshotVC, CommitTime]),
-    
     TxId = Transaction#transaction.txn_id,
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     LogRecord = #log_operation{tx_id = TxId,
@@ -621,7 +606,7 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
         [{Key, CommitTime}] ->
             case CommitTime > ReferenceSnapshotTime of
                 true ->
-                    lager:debug("COMMIT WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
+                    lager:debug("COMMIT WRITE-WRITE CONFLICT: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
                     false;
                 false ->
                     case check_prepared(TxId, PreparedTx, Key) of

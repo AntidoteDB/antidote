@@ -148,7 +148,6 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
         stay_alive = StayAlive,
         %% The following are needed by the physics protocol
         version_max = vectorclock:new()
-%%        keys_access_time = orddict:new()
     }.
 
 -spec generate_name(pid()) -> atom().
@@ -182,7 +181,6 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
     case Protocol of
         physics ->
             PhysicsReadMetadata = #physics_read_metadata{
-%%                dict_key_read_vc = orddict:new(),
                 dep_upbound = vectorclock:new(),
                 commit_time_lowbound = vectorclock:new()},
             Now = clocksi_vnode:now_microsec(dc_utilities:now()),
@@ -191,7 +189,6 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                 transactional_protocol = Protocol,
                 physics_read_metadata = PhysicsReadMetadata,
                 txn_id = TransactionId},
-%%            lager:info("Transaction = ~p",[Transaction]),
             {Transaction, TransactionId};
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             {ok, SnapshotTime} = case ClientClock of
@@ -205,8 +202,6 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                                                  {ok, ClientClock}
                                          end
                                  end,
-%%            case Result of
-%%                ->
             DcId = ?DC_UTIL:get_my_dc_id(),
             LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
             TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
@@ -216,9 +211,6 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                 snapshot_vc = SnapshotTime,
                 txn_id = TransactionId},
             {Transaction, TransactionId}
-%%                {error, Reason} ->
-%%                    {error, Reason}
-%%            end
     end.
 
 %% @doc This is a standalone function for directly contacting the read
@@ -507,10 +499,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
       return_accumulator= ReadSet,
       internal_read_set = InternalReadSet,
       transactional_protocol = TransactionalProtocol}) ->
-%%    lager:info("got result !!! ~p ", [{ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}}]),
-
     %%TODO: type is hard-coded..
-
     Value = Type:value(Snapshot),
     ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value),
     NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
@@ -542,38 +531,16 @@ update_causal_snapshot_state(State, ReadMetadata, _Key) ->
             State;
         _ ->
             Transaction = State#tx_coord_state.transaction,
-%%    KeysAccessTime = State#tx_coord_state.keys_access_time,
             VersionMax = State#tx_coord_state.version_max,
-%%    NewKeysAccessTime = orddict:store(Key, CommitVC, KeysAccessTime),
             NewVersionMax = vectorclock:max_vc(VersionMax, CommitVC),
             CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
             DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-%%    ReadTimeVC = case CommitVC == ignore of
-%%                     true ->
-%%                         ignore;
-%%                     false ->
-%%                         vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), ReadTime, CommitVC)
-%%                 end,
             NewDepUpB = vectorclock:min_vc(ReadTimeVC, DepUpbound),
             NewCTLowB = vectorclock:max_vc(DepVC, CommitTimeLowbound),
-    
-            lager:debug("UPDATE CAUSAL SNAPSHOT STATE! "),
             lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
             lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
             lager:debug("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
             lager:debug("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
-            
-            %todo: remove the folliwing, used for debugging.
-            case NewDepUpB < NewCTLowB of
-                true ->
-                    lager:debug("PROBLEM! "),
-                    lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
-                    lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-                    lager:debug("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-                    lager:debug("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]);
-                false ->
-                    move_on
-            end,
             NewTransaction = Transaction#transaction{
                 physics_read_metadata = #physics_read_metadata{
                     %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.

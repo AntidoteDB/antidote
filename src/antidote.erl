@@ -112,21 +112,16 @@ read_objects(BoundObjects, TxId) ->
     NewObjects = lists:map(fun({Key, Type, Bucket}) ->
         case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
             ok ->
-                lager:debug("passed type checking"),
                 {{Key, Bucket}, Type};
             {error, _Reason} ->
-                lager:debug("typing problem, chceck your ops! "),
                 {error, type_check}
         end
                            end, BoundObjects),
     case lists:member({error, type_check}, NewObjects) of
         true -> {error, type_check};
         false ->
-%%            lager:info("gonna start multiple reads: ~p", [NewObjects]),
-            lager:debug("sending read_op to the coord "),
             case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
                      {ok, Res} ->
-                         lager:debug("~n GOT THIS READ RESPONSE: ~p~n~n ",[Res]),
                          {ok, Res};
                      {error, Reason} -> {error, Reason}
                  end
@@ -135,8 +130,6 @@ read_objects(BoundObjects, TxId) ->
 -spec update_objects([{bound_object(), term()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    lager:info("gonna start multiple updates: ~p", [Updates]),
-
     {_, _, CoordFsmPid} = TxId,
     Operations= lists:map(fun(Update) ->
         {Key, Type, Bucket, Op} =case Update of
@@ -145,10 +138,8 @@ update_objects(Updates, TxId) ->
         end,
         case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
             ok ->
-                lager:info("check ok!"),
                 {{Key, Bucket}, Type, Op};
             {error, _Reason} ->
-                lager:info("check WRONG!"),
                     {error, type_check}
         end
                            end, Updates),
@@ -301,11 +292,8 @@ append(KeyOrKeyBucket, Type, Op) ->
     end,
         
     {ok, TxId} = start_transaction(ignore, []),
-    lager:debug("~n RUNNING AN UPDATE: ~p",[{{Key, Bucket}, Type, Op}]),
     Response = update_objects([{{Key, Type, Bucket}, Op}], TxId),
-    lager:debug("got this response ~p",[Response]),
     {ok, CommitTime} = commit_transaction(TxId),
-    lager:debug("~nAPPEND TX COMMITTED WITH COMMITTIME ~p",[CommitTime]),
     
     case Response of
         {error, Reason} -> {error, Reason};
@@ -321,7 +309,6 @@ read(KeyOrKeyBucket, Type) ->
         KeyOnly->{KeyOnly, ?GLOBAL_BUCKET}
     end,
     {ok, TxId} = start_transaction(ignore, []),
-    lager:debug("gonna read objects ~p",[{Key, Type, Bucket}]),
     {ok, [Val]} = read_objects([{Key, Type, Bucket}], TxId),
     {ok, _CommitTime} = commit_transaction(TxId),
     {ok, Val}.
@@ -389,11 +376,8 @@ clocksi_bulk_update(Operations) ->
                    Key :: key(), Type:: type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_read(ClientClock, Key, Type) ->
     {ok, TxId} = start_transaction(ClientClock, []),
-    lager:debug("GOT THIS TXID: ~p", [TxId]),
     {ok, ReadResult} = read_objects([{Key, Type, ?GLOBAL_BUCKET}], TxId),
-    lager:debug("GOT THIS ReadResult: ~p", [ReadResult]),
     {ok, CommitTime} = commit_transaction(TxId),
-    lager:debug("GOT THIS CommitTime: ~p", [CommitTime]),
     {ok, {TxId, ReadResult, CommitTime}}.
 %%    clocksi_execute_tx(ClientClock, [{read, {Key, Type}}]).
 
@@ -508,7 +492,6 @@ execute_ops([], _TxId, ReadSet) ->
     lists:reverse(ReadSet);
 execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
     case  update_objects([{{Key, Type, ?GLOBAL_BUCKET}, OpParams}], TxId) of
-%%    case clocksi_iupdate(TxId, Key, Type, OpParams) of
         ok -> execute_ops(Rest, TxId, ReadSet);
         {error, Reason} ->
             {error, Reason}

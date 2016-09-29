@@ -70,33 +70,6 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 %%      the fifth element is a boolean, it it is true it means that the returned snapshot contains
 %%      more operations than the one given as input, false otherwise.
 %%      the sixth element is an integer the counts the number of operations applied to make the snapshot
-
-%% @todo ALE PREV CODE
-%%-spec materialize(type(),
-%%  snapshot(),
-%%  integer(),
-%%  snapshot_time() | ignore | {snapshot_time(),snapshot_time()},
-%%  transaction(),
-%%  [{integer(), operation_payload()}]) ->
-%%	{ok, snapshot(), integer(), snapshot_time() | ignore, boolean()} | {error, reason()}.
-%%materialize(Type, Snapshot, IncludeFromTime, SnapshotCommitParams, Transaction, Ops) ->
-%%	FirstId = case Ops of
-%%		[] ->
-%%			0;
-%%		[{Id, _Op} | _] ->
-%%			Id
-%%	end,
-%%	{ok, OpList, NewLastOp, LastOpCt, IsNewSS} =
-%%		materialize_intern(Type, [], IncludeFromTime, FirstId, SnapshotCommitParams, Transaction,
-%%			Ops, SnapshotCommitParams, false),
-%%	case apply_operations(Type, Snapshot, OpList) of
-%%		{ok, NewSS} ->
-%%			{ok, NewSS, NewLastOp, LastOpCt, IsNewSS};
-%%		{error, Reason} ->
-%%			{error, Reason}
-%%	end.
-
-
 -spec materialize(type(),
 		  transaction() | ignore,
 		  #snapshot_get_response{}
@@ -256,20 +229,6 @@ is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSna
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
     OpCommitVC = vectorclock:set_clock_of_dc(OpDc, OpCommitTime, OpBaseSnapshot),
-	
-%%	LastSnapshotCommitTime=case LastSnapshotCommitParams of
-%%		ignore->
-%%			ignore;
-%%		_->
-%%			case Transaction#transaction.transactional_protocol of
-%%				Protocol when ((Protocol==gr)or(Protocol==clocksi))->
-%%					LastSnapshotCommitParams;
-%%				physics->
-%%					{CommitVC, _DepVC, _ReadTimeVC}=LastSnapshotCommitParams,
-%%					CommitVC
-%%			end
-%%	end,
-	
 	lager:debug("calling op not already in snapshot for ~n LastSnapshotCommitTime~n~p ~nOpCommitVC~n~p", [LastSnapshotCommitTime, OpCommitVC]),
 	case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitTime, OpCommitVC)or
 		(Transaction#transaction.txn_id==Op#operation_payload.txid) of

@@ -210,7 +210,6 @@ handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
-	lager:debug("handling perform_read_cast, for: ~nCoordinator ~p~nKey~p~nType~p~nTransaction~p~n", [Coordinator, Key, Type, Transaction]),
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0}.
 
@@ -218,7 +217,6 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
 				   ok.
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
-	lager:debug("gonna start reading internal"),
     %% TODO: Add support for read properties
     PropertyList = [],
     case check_clock(Key,Transaction,PreparedCache,Partition) of
@@ -244,7 +242,6 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
         physics ->
             DepUpbound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
             case
-%%                ((DepUpbound == undefined) or
                 (DepUpbound == vectorclock:new()) of
                 true ->
                     ready;
@@ -253,13 +250,12 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
                     DepUpboundScalar= vectorclock:get_clock_of_dc(MyDC, DepUpbound),
                     case DepUpboundScalar > Time of
                         true ->
-                            % lager:info("Waiting... Reason: clock skew"),
+                            % lager:debug("Waiting... Reason: clock skew"),
                             {not_ready, (DepUpboundScalar - Time) div 1000 + 1};
                         false ->
                             ready
                     end
             end;
-
             Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
                 TxId = Transaction#transaction.txn_id,
                 T_TS = TxId#tx_id.local_start_time,

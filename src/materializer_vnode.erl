@@ -151,18 +151,6 @@ load_ops(OpsDict, State) ->
 				    end, CommittedOps)
 	      end, true, OpsDict).
 
-%%    @TODO ALE: PREV CODE
-%%        lists:foreach(fun({_OpId,Op}) ->
-%%            #operation_payload{key = Key} = Op,
-%%            case op_insert_gc(Key, Op, MatState, no_txn_inserting_from_log) of
-%%                ok ->
-%%                    true;
-%%                {error, Reason} ->
-%%                    {error, Reason}
-%%            end
-%%                      end, CommittedOps)
-%%              end, true, OpsDict).
-
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
     case ets:info(get_cache_name(Partition, Name)) of
@@ -360,97 +348,6 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 	    false
     end.
 
-%% @doc This function takes care of reading. It is implemented here for not blocking the
-%% vnode when the write function calls it. That is done for garbage collection.
-%%-spec internal_read(key(), type(), snapshot_time(), txid() | ignore, #mat_state{}) -> {ok, snapshot()} | {error, no_snapshot}.
-%%internal_read(Key, Type, Transaction, State) ->
-%%    internal_read(Key, Type, Transaction, false, State).
-%%internal_read(Key, Type, Transaction, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}) ->
-%%    %% First look for any existing snapshots in the cache that is compatible with
-%%    %% Result is a tuple where on success:
-%%    %%     1st element is the snapshot of type #materialized_snapshot{}
-%%    %%     2nd element is the commit time of the snapshost or igore if it is a new (empty) snapshot
-%%    %%     3rd is a boolean that is true if the snapshot returned is the most recent one in the cache
-%%    %% or on failure the tuple is
-%%    %%    {error, no_snapshot}
-%%    TxId = Transaction#transaction.txn_id,
-%%    Protocol = Transaction#transaction.transactional_protocol,
-%%    Result = case ets:lookup(SnapshotCache, Key) of
-%%		 [] ->
-%%		     %% First time reading this key, store an empty snapshot in the cache
-%%		     BlankSS = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
-%%		     case TxId of
-%%			 ignore ->
-%%			     internal_store_ss(Key,BlankSS,vectorclock:new(),false,State);
-%%			 _ ->
-%%			     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
-%%		     end,
-%%		     {BlankSS,ignore,true};
-%%		 [{_, SnapshotDict}] ->
-%%		     case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
-%%			 {undefined, _IsF} ->
-%%			     {error, no_snapshot};
-%%			 {{SnapshotCommitTime, LatestSnapshot},IsFirst}->
-%%			     {LatestSnapshot,SnapshotCommitTime,IsFirst}
-%%		     end
-%%	     end,
-%%    %% Now check for any additional operations that might be needed to apply to the snapshot
-%%    %% If no snapshot was returned, operations are returned from the log
-%%    %% Otherwise operations are taken from the in-memory cache (any snapshot in the cache
-%%    %% will have any more recent operations also in the cache so no need to go to the log)
-%%    %% The value returned is of type #snapshot_get_response{}
-%%    SnapshotGetResp =
-%%	case Result of
-%%	    {error, no_snapshot} ->
-%%		LogId = log_utilities:get_logid_from_key(Key),
-%%		[Node] = log_utilities:get_preflist_from_key(Key),
-%%		logging_vnode:get(Node, LogId, MinSnapshotTime, Type, Key);
-%%	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
-%%		case ets:lookup(OpsCache, Key) of
-%%		    [] ->
-%%			#snapshot_get_response{number_of_ops = 0, ops_list = [],
-%%					       materialized_snapshot = LatestSnapshot1,
-%%					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1};
-%%		    [Tuple] ->
-%%			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,false),
-%%			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
-%%					       materialized_snapshot = LatestSnapshot1,
-%%					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
-%%		end
-%%	end,
-%%    %% Now apply the operations to the snapshot
-%%    case SnapshotGetResp#snapshot_get_response.number_of_ops of
-%%	0 ->
-%%	    {ok, SnapshotGetResp#snapshot_get_response.materialized_snapshot#materialized_snapshot.value};
-%%	_Len ->
-%%	    case clocksi_materializer:materialize(Type, TxId, MinSnapshotTime, SnapshotGetResp) of
-%%		{ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
-%%		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-%%		    %% for the given snapshot_time
-%%		    %% But is the snapshot not safe?
-%%		    case CommitTime of
-%%			ignore ->
-%%			    {ok, Snapshot};
-%%			_ ->
-%%			    case (NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot and
-%%				  (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
-%%				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
-%%				%% previous snapshot
-%%				true ->
-%%				    case TxId of
-%%					ignore ->
-%%					    internal_store_ss(Key,#materialized_snapshot{last_op_id = NewLastOp,value = Snapshot},CommitTime,ShouldGc,State);
-%%					_ ->
-%%					    materializer_vnode:store_ss(Key,#materialized_snapshot{last_op_id = NewLastOp, value = Snapshot},CommitTime)
-%%				    end;
-%%				_ ->
-%%				    ok
-%%			    end,
-%%			    {ok, Snapshot}
-%%		    end;
-%%		{error, Reason} ->
-%%		    {error, Reason}
-%%	    end
 -spec internal_read(key(), type(), transaction(), #mat_state{}) -> {ok, {snapshot(), any()}}| {error, no_snapshot}.
 internal_read(Key, Type, Transaction, State) ->
     internal_read(Key, Type, Transaction, State,false).
@@ -496,15 +393,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	        lager:debug("about to lookup snapshots"),
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
-%%	                         lager:debug("this is empty, storing empty snapshot"),
-%%                             %% First time reading this key, store an empty snapshot in the cache
 	                         {BlankSSRecord, _BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
-%%                             case TxnId of %%Why do we need this?
-%%                                 Txid1 when ((Txid1 == eunit_test) orelse (Txid1 == no_txn_inserting_from_log)) ->
-%%                                     internal_store_ss(Key, BlankSSRecord, BlankSSCommitParams, false, MatState);
-%%                                 _ ->
-%%                                     materializer_vnode:store_ss(Key, BlankSSRecord, BlankSSCommitParams)
-%%                             end,
                              {BlankSSRecord, ignore, true};
                          [{_, SnapshotDict}] ->
 	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
@@ -537,14 +426,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                 0 ->
                             {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot,
 	                              SnapshotGetResponse#snapshot_get_response.snapshot_time}};
-%%                    lager:info("materializer_vnode: line 489 IS THIS POSSIBLE?"),
                 _ ->
-	
-	
-%%	                {snapshot_time=SnapshotCommitTime, ops_list=Ops,
-%%		                materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}}
-	                
-	                
                     case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse) of
                         {ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
@@ -594,14 +476,6 @@ define_snapshot_vc_for_transaction(_Transaction, []) ->
 define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
     LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
     define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ignore, OperationTuple, 0).
-
-%%define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, _OperationTuple, _PositionInOpList) ->
-%%    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-%%    TxDepUpBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-%%    lager:info("Transaction: ~n~p~n OperationList: ~n~p", [_Transaction, FullOpList]),
-%%    lager:info("TxCTLowBound: ~n~p~n TxDepUpBound: ~n~p", [TxCTLowBound, TxDepUpBound]),
-%%    no_compatible_operation_found;
-
 define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
 	{Length,_ListLen} = element(2, OperationsTuple),
 	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
@@ -636,18 +510,6 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 					define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, NewOperationCommitVC, OperationsTuple, PositionInOpList + 1)
 			end
 	end.
-    
-%%
-%%materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId,
-%%  InitialSnapshotCommitTime, Transaction, TupleOps, OutputSnapshotCT, DidGenerateNewSnapshot, Location) ->
-%%	{Length,_ListLen} = element(2, TupleOps),
-%%	case Length == Location of
-%%		true ->
-%%			{ok, OpList, OutputFirstNotIncludedOperationId, OutputSnapshotCT, DidGenerateNewSnapshot};
-%%		false ->
-%%			materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId, InitialSnapshotCommitTime, Transaction,
-%%				element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCT, DidGenerateNewSnapshot, Location + 1)
-%%	end.
 
 %%%% Todo: Future: Implement the following function for a causal snapshot
 %%get_all_operations_from_log_for_key(Key, Type, Transaction) ->
@@ -864,8 +726,8 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 		        {ok, _} ->
 			        %% Have to get the new ops dict because the interal_read can change it
 			        {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
-			        %%            lager:info("BEFORE GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length, ListLen]),
-			        %%            lager:info("AFTER GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length1, ListLen1]),
+			                    lager:debug("BEFORE GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length, ListLen]),
+			                    lager:debug("AFTER GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length1, ListLen1]),
 			        true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]),
 			        ok;
 		        {error, Reason} ->

@@ -165,12 +165,6 @@ asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
 
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
-
-%% ALE PREV CODE
-%%-spec get(index_node(), key(), transaction(), term(), key()) ->
-%%		 {number(), list(), snapshot(), vectorclock(), false} | {error, term()}.
-
-%%get(IndexNode, LogId, Transaction, Type, Key) ->
 %% It returns a #log_get_response{} record which is defined in antidote.hrl
 -spec get(index_node(), key(), transaction(), term(), key()) ->
 		 #snapshot_get_response{} | {error, term()}.
@@ -359,7 +353,6 @@ handle_command({append, LogId, LogOperation, Sync, ReplyTo}, _S,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition}=State) ->
-	lager:debug("Gonna log this:~n~p",[{{LogId, LogOperation, Sync}, ReplyTo}]),
 	{Reply, NewState}=case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
 	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
@@ -406,10 +399,8 @@ handle_command({append, LogId, LogOperation, Sync, ReplyTo}, _S,
     end,
 	case ReplyTo of
 		ignore ->
-			lager:debug("just reply: ~p ~n to Sender ~p",[Reply, ReplyTo]),
 			{reply, Reply, NewState};
 		_ ->
-			lager:debug("Sending this reply: ~p ~n to Sender ~p",[Reply, ReplyTo]),
 			gen_fsm:send_event(ReplyTo, Reply),
 			{noreply, NewState}
 	end;
