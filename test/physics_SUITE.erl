@@ -63,11 +63,11 @@ init_per_suite(Config) ->
     %         end, [dev1, dev2, dev3]),
     % ok = test_utils:join_cluster(Nodes),
     % Check that the clocksi protocol is tested
-    
+
     test_utils:pmap(fun(Node) ->
         rpc:call(Node, application, set_env,
             [antidote, txn_prot, physics]) end, Nodes),
-    
+
     %Check that indeed clocksi is running
     {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
     ?assertMatch(physics, Prot),
@@ -128,9 +128,9 @@ clocksi_test1(Config) ->
     ?assertMatch({ok, _}, Result11),
     {ok, {_, ReadSet11, _}}=Result11,
     ?assertMatch([0], ReadSet11),
-    
+
     lager:info("done"),
-    
+
     lager:info("check that you read what you wrote in a transaction"),
     %% Read what you wrote
     Result2=rpc:call(FirstNode, antidote, clocksi_execute_tx,
@@ -143,9 +143,9 @@ clocksi_test1(Config) ->
     ?assertMatch({ok, _}, Result2),
     {ok, {_, ReadSet2, _}}=Result2,
     ?assertMatch([0,0], ReadSet2),
-    
+
     lager:info("ok..."),
-    
+
     lager:info("now read in a subsequent transaction"),
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
@@ -154,9 +154,9 @@ clocksi_test1(Config) ->
     ?assertMatch({ok, _}, Result3),
     {ok, {_, ReadSet3, _}}=Result3,
     ?assertEqual([1,1], ReadSet3),
-    
+
     lager:info("done"),
-    
+
     lager:info(" Multiple updates to a key in a transaction works ?"),
     Result5=rpc:call(FirstNode, antidote, clocksi_execute_tx,
                     [
@@ -401,7 +401,7 @@ clocksi_tx_noclock_test(Config) ->
     ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
                          [TxId, Key, antidote_crdt_counter]),
     ?assertEqual({ok, 0}, ReadResult0),
-    
+
     WriteResult0=rpc:call(FirstNode, antidote, clocksi_iupdate,
                           [TxId, Key, Type, increment]),
     ?assertEqual(ok, WriteResult0),
@@ -409,22 +409,22 @@ clocksi_tx_noclock_test(Config) ->
     ?assertMatch({ok, _}, CommitTime),
     End=rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
     ?assertMatch({ok, _}, End),
-    
-    
-    
+
+
+
     ReadResult1 = rpc:call(FirstNode, antidote, clocksi_read,
                            [Key, antidote_crdt_counter]),
     {ok, {_, ReadSet1, _}}= ReadResult1,
     ?assertMatch([1], ReadSet1),
-    
+
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
         [TxId1, Key, Type, increment]),
     ?assertEqual(ok, WriteResult1),
     End1=rpc:call(FirstNode, antidote, commit_transaction, [TxId1]),
     ?assertMatch({ok, _}, End1),
-    
-    
+
+
     ReadResult2 = rpc:call(FirstNode, antidote, clocksi_read,
         [Key, antidote_crdt_counter]),
     {ok, {_, ReadSet2, _}}= ReadResult2,
@@ -462,9 +462,9 @@ clocksi_multiple_key_update_read_test(Config) ->
     Key1 = clocksi_multiple_key_update_read_test_key1,
     Key2 = clocksi_multiple_key_update_read_test_key2,
     Key3 = clocksi_multiple_key_update_read_test_key3,
-    
+
     Objs = [{Key1, Type, bucket}, {Key2, Type, bucket}, {Key3, Type, bucket}],
-    
+
     Ops = [{{Key1, Type, bucket}, {increment,1}},
            {{Key2, Type, bucket}, {increment,10}},
            {{Key3, Type, bucket}, increment, 1}
@@ -473,8 +473,8 @@ clocksi_multiple_key_update_read_test(Config) ->
 	ok = rpc:call(FirstNode, antidote, update_objects,
 		[Ops, TxId1]),
 	{ok, CommitTime}=rpc:call(FirstNode, antidote, commit_transaction, [TxId1]),
-    
-    
+
+
     {ok,TxId2}=rpc:call(FirstNode, antidote, start_transaction, [CommitTime, []]),
     {ok, FinalReadSet} = rpc:call(FirstNode, antidote, read_objects, [Objs, TxId2]),
     {ok, _CT2}=rpc:call(FirstNode, antidote, commit_transaction, [TxId2]),

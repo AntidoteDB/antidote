@@ -496,15 +496,15 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	        lager:debug("about to lookup snapshots"),
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
-	                         lager:debug("this is empty, storing empty snapshot"),
-                             %% First time reading this key, store an empty snapshot in the cache
-	                         {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
-                             case TxnId of %%Why do we need this?
-                                 Txid1 when ((Txid1 == eunit_test) orelse (Txid1 == no_txn_inserting_from_log)) ->
-                                     internal_store_ss(Key, BlankSSRecord, BlankSSCommitParams, false, MatState);
-                                 _ ->
-                                     materializer_vnode:store_ss(Key, BlankSSRecord, BlankSSCommitParams)
-                             end,
+%%	                         lager:debug("this is empty, storing empty snapshot"),
+%%                             %% First time reading this key, store an empty snapshot in the cache
+	                         {BlankSSRecord, _BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
+%%                             case TxnId of %%Why do we need this?
+%%                                 Txid1 when ((Txid1 == eunit_test) orelse (Txid1 == no_txn_inserting_from_log)) ->
+%%                                     internal_store_ss(Key, BlankSSRecord, BlankSSCommitParams, false, MatState);
+%%                                 _ ->
+%%                                     materializer_vnode:store_ss(Key, BlankSSRecord, BlankSSCommitParams)
+%%                             end,
                              {BlankSSRecord, ignore, true};
                          [{_, SnapshotDict}] ->
 	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),

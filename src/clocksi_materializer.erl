@@ -104,20 +104,10 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 			 {ok, snapshot(), integer(), snapshot_time() | ignore,
 			  boolean(), non_neg_integer()} | {error, reason()}.
 materialize(Type, Transaction,
-  #snapshot_get_response{snapshot_time=SnapshotCommitTime, ops_list=Ops,
+  #snapshot_get_response{snapshot_time=ProtocolIndependentSnapshotCommitVC, ops_list=Ops,
 	  materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}})->
 	FirstId=get_first_id(Ops),
-	
-	
-	ProtocolIndependentSnapshotCommitVC= case Transaction#transaction.transactional_protocol of
-		Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-			SnapshotCommitTime;
-		physics ->
-			case SnapshotCommitTime of
-				{ComVC, _DepVC, _ReadTimeVC} -> ComVC;
-				ignore -> vectorclock:new()
-			end
-	end,
+
 	
 	{ok, OpList, NewLastOp, LastOpCt, IsNewSS}=
 		materialize_intern(Type, [], LastOp, FirstId, ProtocolIndependentSnapshotCommitVC, Transaction,
