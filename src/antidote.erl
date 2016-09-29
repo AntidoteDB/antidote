@@ -114,9 +114,9 @@ read_objects(BoundObjects, TxId) ->
             ok ->
                 lager:debug("passed type checking"),
                 {{Key, Bucket}, Type};
-            {error, _Reason} ->
-                lager:debug("typing problem, chceck your ops! "),
-                {error, type_check}
+            {error, Reason} ->
+                lager:debug("typing problem, chceck your ops! ~n~p", [Reason]),
+                {error, Reason}
         end
                            end, BoundObjects),
     case lists:member({error, type_check}, NewObjects) of
