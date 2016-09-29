@@ -2,8 +2,7 @@
 
 entries:
 - title: sidebar
-  product: Antidote
-  version: 0.0.1
+#  product: Antidote
   folders:
 
   - title:
@@ -23,29 +22,33 @@ entries:
     output: web, pdf
     folderitems:
     - title: Get started
-      url: /index.html
+      url: /getting_started.html
       output: web, pdf
       type: homepage
 
-    - title: Supported features
-      url: /supported_features.html
+    - title: Architecture
+      url: /architecture.html
       output: web, pdf
 
-    - title: About the team
-      url: /about.html
-      output: web, pdf
+#    - title: About the team
+#      url: /about.html
+#      output: web, pdf
 
     - title: Support
       url: /support.html
       output: web, pdf
 
   - title: Installation
-    url: /install.html
+    url: /setup.html
     output: web, pdf
 
   - title: Configuration
-    url: /config.html
     output: web, pdf
+    folderitems:
+
+    - title: Configuration
+      url: /config.html
+      output: web, pdf
 
   - title: API
     output: web, pdf
@@ -57,6 +60,10 @@ entries:
 
     - title: Protocol Buffer API
       url: /api.html
+      output: web, pdf
+
+    - title: Commit hooks
+      url: /commit_hooks.html
       output: web, pdf
 
   - title: Release Notes
