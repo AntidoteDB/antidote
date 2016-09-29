@@ -26,11 +26,11 @@
                  ]},
   {mod, { antidote_app, []}},
     
-     {lager, [
-         {handlers, [
-             {lager_console_backend, debug}
-         ]}
-     ]},
+%%     {lager, [
+%%         {handlers, [
+%%             {lager_console_backend, debug}
+%%         ]}
+%%     ]},
      
   %% Options for environmental variables
   %% txn_cert:
