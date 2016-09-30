@@ -24,10 +24,10 @@
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_counter_spec/0]).
+-export([prop_lwwreg_spec/0]).
 
 
-prop_counter_spec() ->
+prop_lwwreg_spec() ->
  crdt_properties:crdt_satisfies_spec(antidote_crdt_lwwreg, fun op/0, fun spec/1).
 
 
