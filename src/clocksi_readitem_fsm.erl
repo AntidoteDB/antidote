@@ -103,7 +103,7 @@ async_read_data_item({Partition, Node}, Key, Type, Transaction, Coordinator) ->
 	lager:debug("got async read op"),
 	RandomServerName = generate_random_server_name(Node, Partition),
 	lager:debug("Sending this message:~n~p to ~n~p",[{perform_read_cast, Coordinator, Key, Type, Transaction}, RandomServerName]),
-    gen_server:cast({global, RandomServerName},
+    ok = gen_server:cast({global, RandomServerName},
         {perform_read_cast, Coordinator, Key, Type, Transaction}).
 
 %% @doc This checks all partitions in the system to see if all read
