@@ -195,7 +195,7 @@ to_binary(ORSet) ->
 
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     %% @TODO something smarter
-    binary_to_term(Bin).
+    {ok, binary_to_term(Bin)}.
 
 %% Private
 %% @doc add an element and its token to the `orset()'.
