@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module antidote_crdt_gset - A wrapper around riak_dt_gset
+%% @doc module antidote_crdt_gset - An operation based grow-only set
 
 -module(antidote_crdt_gset).
 
@@ -27,8 +27,6 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
-
--define(RIAK_MODULE, riak_dt_gset).
 
 -export([ new/0,
           value/1,
@@ -41,47 +39,47 @@
           require_state_downstream/1
         ]).
 
--type gset() :: riak_dt_gset:gset().
--type gset_op() :: {add, {member(), actor()}} | {remove, {member(), actor()}} |
-                    {add_all, {[member()], actor()}} | {remove_all, {[member()], actor()}}.
+-type gset() :: ordsets:ordset(member()).
+-type gset_op() :: {add, member()}
+                 | {add_all, [member()]}.
 
+-type gset_effect() :: gset().
 -type member() :: term().
--type actor() :: riak_dt:actor().
 
 new() ->
-    ?RIAK_MODULE:new().
+    ordsets:new().
 
 value(Set) ->
-    ?RIAK_MODULE:value(Set).
+    Set.
 
--spec downstream(gset_op(), gset()) -> {ok, term()}.
-downstream({Op, {OpParam, Actor}}, State) ->
-    {ok, S0} = ?RIAK_MODULE:update({Op, OpParam}, Actor, State),
-    {ok, {merge, S0}}.
+-spec downstream(gset_op(), gset()) -> {ok, gset_effect()}.
+downstream({add, Elem}, _State) ->
+  ordsets:from_list([Elem]);
+downstream({add_all, Elems}, _State) ->
+  ordsets:from_list(Elems).
 
-update({merge, State1}, State2) ->
-    {ok, ?RIAK_MODULE:merge(State1, State2)}.
+update(Effect, State) ->
+  ordsets:union(State, Effect).
 
-require_state_downstream(_Operation) -> true.
+require_state_downstream(_Operation) -> false.
 
-is_operation({Op, {Param, _Actor}}) ->
-    ?RIAK_MODULE:is_operation({Op, Param});
-is_operation(_) ->
-      false.
+is_operation({add, _}) -> true;
+is_operation({add_all, _}) -> true;
+is_operation(_) -> false.
 
 equal(CRDT1, CRDT2) ->
-    ?RIAK_MODULE:equal(CRDT1,CRDT2).
+    CRDT1 == CRDT2.
 
 to_binary(CRDT) ->
-    ?RIAK_MODULE:to_binary(CRDT).
+    erlang:term_to_binary(CRDT).
 
 from_binary(Bin) ->
-    ?RIAK_MODULE:from_binary(Bin).
+    erlang:binary_to_term(Bin).
 
 -ifdef(test).
 all_test() ->
     S0 = new(),
-    {ok, Downstream} = downstream({add, {a, actor}}, S0),
+    {ok, Downstream} = downstream({add, a}, S0),
     {ok, S1} = update(Downstream, S0),
     ?assertEqual(1, riak_dt_gset:stat(element_count, S1)).
 
