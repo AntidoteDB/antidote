@@ -32,8 +32,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(RIAK_MODULE, riak_dt_lwwreg).
-
 -export([ new/0,
           value/1,
           downstream/2,
