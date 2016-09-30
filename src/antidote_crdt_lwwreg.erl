@@ -18,7 +18,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module antidote_crdt_gset - A wrapper around riak_dt_gset
+%% @doc module antidote_crdt_lwwreg - An operation based last-writer-wins register
+%% Each operation is assigned a timestamp, which is guaranteed to be greater than
+%% the current timestamp.
+%% The current value of the register is the value assigned with the greatest timestamp
+%% or the empty binary if there was no assignment yet.
 
 -module(antidote_crdt_lwwreg).
 
