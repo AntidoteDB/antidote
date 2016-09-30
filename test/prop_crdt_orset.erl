@@ -24,7 +24,7 @@
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_orset_spec/0]).
+-export([prop_orset_spec/0, set_op/0, add_wins_set_spec/1]).
 
 
 prop_orset_spec() ->

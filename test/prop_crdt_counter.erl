@@ -24,7 +24,7 @@
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_counter_spec/0]).
+-export([prop_counter_spec/0, counter_op/0, counter_spec/1]).
 
 
 prop_counter_spec() ->
