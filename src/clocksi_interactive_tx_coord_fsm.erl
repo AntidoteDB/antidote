@@ -355,7 +355,10 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
                                 lager:debug("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     State1=case TransactionalProtocol of
                         physics->
-                            {DownstreamOpCommitVC, _DepVC, _ReadTimeVC}=SnapshotParameters,
+                            DownstreamOpCommitVC = case SnapshotParameters of
+                                {OpCommitVC, _DepVC, _ReadTimeVC} -> OpCommitVC;
+                                ignore -> vectorclock:new()
+                            end,
                             case WriteSet of
                                 []->
                                     NewUpdatedPartitions=[{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]}|UpdatedPartitions],
@@ -535,6 +538,9 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
 %% @doc Used by the causal snapshot for physics
 %%      Updates the state of a transaction coordinator
 %%      for maintaining the causal snapshot metadata
+update_causal_snapshot_state(State, ignore, _Key) ->
+    State;
+
 update_causal_snapshot_state(State, ReadMetadata, _Key) ->
     {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
     NewVC = vectorclock:new(),

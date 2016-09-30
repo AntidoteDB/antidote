@@ -483,10 +483,11 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 								        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 								        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
 							        no_compatible_operation_found ->
+								        lager:info("there no_compatible_operation_found, Len = ~p", [Len]),
 								        case Len of 1 ->
 									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
-									        _->  {error, no_compatible_operation_found}
+									        _->   {Transaction, {error, no_compatible_operation_found}}
 								        end
 						        end
 				        end;
@@ -539,12 +540,8 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	                              SnapshotGetResponse#snapshot_get_response.snapshot_time}};
 %%                    lager:info("materializer_vnode: line 489 IS THIS POSSIBLE?"),
                 _ ->
-	
-	
 %%	                {snapshot_time=SnapshotCommitTime, ops_list=Ops,
 %%		                materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}}
-	                
-	                
                     case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse) of
                         {ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
