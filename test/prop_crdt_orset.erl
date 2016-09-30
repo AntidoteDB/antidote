@@ -31,7 +31,8 @@ prop_orset_spec() ->
  crdt_properties:crdt_satisfies_spec(antidote_crdt_orset, fun set_op/0, fun add_wins_set_spec/1).
 
 
-add_wins_set_spec(Operations) ->
+add_wins_set_spec(Operations1) ->
+  Operations = lists:flatmap(fun normalizeOperation/1, Operations1),
   lists:usort(
     % all X,
     [X ||
@@ -41,12 +42,23 @@ add_wins_set_spec(Operations) ->
       [] == [Y || {RemoveClock, {remove, Y}} <- Operations, X == Y, crdt_properties:clock_le(AddClock, RemoveClock)]
     ]).
 
+% transforms add_all and remove_all into single operations
+normalizeOperation({Clock, {add_all, Elems}}) ->
+  [{Clock, {add, Elem}} || Elem <- Elems];
+normalizeOperation({Clock, {remove_all, Elems}}) ->
+  [{Clock, {remove, Elem}} || Elem <- Elems];
+normalizeOperation(X) ->
+  [X].
+
 % generates a random counter operation
 set_op() ->
   oneof([
     {add, set_element()},
-    {remove, set_element()}
+    {add_all, list(set_element())},
+    {remove, set_element()},
+    {remove_all, list(set_element())}
   ]).
 
 set_element() ->
   oneof([a,b]).
+
