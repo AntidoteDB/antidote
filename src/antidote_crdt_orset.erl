@@ -230,10 +230,8 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
 remove_elems([], ORDict) ->
     {ok, ORDict};
 remove_elems([Elem|Rest], ORDict) ->
-    case remove_elem(Elem,ORDict) of
-        {ok, ORDict1} -> remove_elems(Rest, ORDict1);
-        Error         -> Error
-    end.
+    {ok, ORDict1} = remove_elem(Elem,ORDict),
+    remove_elems(Rest, ORDict1).
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
