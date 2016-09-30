@@ -54,12 +54,12 @@ value(Set) ->
 
 -spec downstream(gset_op(), gset()) -> {ok, gset_effect()}.
 downstream({add, Elem}, _State) ->
-  ordsets:from_list([Elem]);
+  {ok, ordsets:from_list([Elem])};
 downstream({add_all, Elems}, _State) ->
-  ordsets:from_list(Elems).
+  {ok, ordsets:from_list(Elems)}.
 
 update(Effect, State) ->
-  ordsets:union(State, Effect).
+  {ok, ordsets:union(State, Effect)}.
 
 require_state_downstream(_Operation) -> false.
 

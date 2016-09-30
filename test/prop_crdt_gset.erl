@@ -28,7 +28,7 @@
 
 
 prop_gset_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_orset, fun set_op/0, fun add_wins_set_spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_gset, fun set_op/0, fun add_wins_set_spec/1).
 
 
 add_wins_set_spec(Operations) ->
