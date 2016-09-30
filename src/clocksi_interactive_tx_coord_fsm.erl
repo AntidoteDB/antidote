@@ -344,7 +344,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
             case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
                 {ok, DownstreamRecord, SnapshotParameters}->
-                                lager:debug("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
+%%                                lager:debug("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     State1=case TransactionalProtocol of
                         physics->
                             {DownstreamOpCommitVC, _DepVC, _ReadTimeVC}=SnapshotParameters,
@@ -390,7 +390,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
 %%       to execute the next operation.
 
 execute_op({update, Args}, Sender, SD0) ->
-    lager:debug("got execute update"),
+%%    lager:debug("got execute update"),
     execute_op({update_objects, [Args]}, Sender, SD0);
 
 execute_op({OpType, Args}, Sender,
@@ -421,7 +421,7 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set = InternalReadSet}}
             end;
         read_objects ->
-            lager:debug("got to read: ~p", [Args]),
+%%            lager:debug("got to read: ~p", [Args]),
             NewTransaction = case Transaction#transaction.transactional_protocol of
                 physics ->
                     case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == [] of
@@ -438,7 +438,7 @@ execute_op({OpType, Args}, Sender,
             ExecuteReads = fun({Key, Type}, Acc) ->
                 Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
                 IndexNode = hd(Preflist),
-                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
+%%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
                 ok = clocksi_vnode:async_read_data_item(IndexNode, NewTransaction, Key, Type),
                 ReadSet = Acc#tx_coord_state.return_accumulator,
                 Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
@@ -446,34 +446,34 @@ execute_op({OpType, Args}, Sender,
             NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
             {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
         update_objects ->
-            lager:debug("got update call with params: ~p",[Args]),
+%%            lager:debug("got update call with params: ~p",[Args]),
             ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc) ->
-                lager:debug("Executing this update: ~p",[{Key, Type, UpdateParams}]),
+%%                lager:debug("Executing this update: ~p",[{Key, Type, UpdateParams}]),
                 Result = perform_update({Key, Type, UpdateParams}, Sender, Acc),
-                lager:debug("got result: ~p",[Result]),
+%%                lager:debug("got result: ~p",[Result]),
                 case Result of
                     {error, Reason} ->
                         Acc#tx_coord_state{return_accumulator= {error, Reason}};
                     NewCoordinatorState ->
                         NewNumToRead = NewCoordinatorState#tx_coord_state.num_to_read,
-                        lager:debug("Updated Number of responses expected: ~p",[NewNumToRead+1]),
+%%                        lager:debug("Updated Number of responses expected: ~p",[NewNumToRead+1]),
                         NewCoordinatorState#tx_coord_state{num_to_read =  NewNumToRead+1}
                 end
                              end,
             NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
             case NewCoordState#tx_coord_state.num_to_read > 0 of
                 true ->
-                    lager:debug("num_to_read > 0"),
+%%                    lager:debug("num_to_read > 0"),
                     {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
                 false ->
-                    lager:debug("num_to_read <= 0"),
+%%                    lager:debug("num_to_read <= 0"),
                     {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
             end
     end.
 
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
     return_accumulator= ReturnAcc}) ->
-    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
+%%    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
     NewAcc = case Response of
                  {error, Reason} -> {error, Reason};
                  {ok, _OpId} -> ReturnAcc;
@@ -537,10 +537,10 @@ update_causal_snapshot_state(State, ReadMetadata, _Key) ->
             DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
             NewDepUpB = vectorclock:min_vc(ReadTimeVC, DepUpbound),
             NewCTLowB = vectorclock:max_vc(DepVC, CommitTimeLowbound),
-            lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
-            lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-            lager:debug("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-            lager:debug("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
+%%            lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+%%            lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+%%            lager:debug("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+%%            lager:debug("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
             NewTransaction = Transaction#transaction{
                 physics_read_metadata = #physics_read_metadata{
                     %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
@@ -903,7 +903,7 @@ get_snapshot_time() ->
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
     DcId = ?DC_META_UTIL:get_my_dc_id(),
     SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
-    lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
+%%    lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
     {ok, SnapshotTime}.
 
 

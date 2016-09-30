@@ -100,7 +100,7 @@ read_data_item({Partition, Node}, Key, Type, Transaction) ->
 
 -spec async_read_data_item(index_node(), key(), type(), transaction(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, Coordinator) ->
-	lager:debug("got async read op"),
+%%	lager:debug("got async read op"),
     gen_server:cast({global, generate_random_server_name(Node, Partition)},
         {perform_read_cast, Coordinator, Key, Type, Transaction}).
 
@@ -188,7 +188,7 @@ generate_server_name(Node, Partition, Id) ->
 -spec generate_random_server_name(node(), partition_id()) -> atom().
 generate_random_server_name(Node, Partition) ->
     ServerName = generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)),
-	lager:debug("Generated random server name to handle async read with name: ~p", [ServerName]),
+%%	lager:debug("Generated random server name to handle async read with name: ~p", [ServerName]),
 	ServerName.
 
 init([Partition, Id]) ->
@@ -226,7 +226,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
-		lager:debug("clock ready"),
+%%		lager:debug("clock ready"),
 	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
     end.
 

@@ -497,7 +497,7 @@ execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
             {error, Reason}
     end;
 execute_ops([{read, {KeyOrKeyBucket, Type}}|Rest], TxId, ReadSet) ->
-    lager:debug("about to read : ~p", [{read, {KeyOrKeyBucket, Type}}]),
+%%    lager:debug("about to read : ~p", [{read, {KeyOrKeyBucket, Type}}]),
     {Key,Bucket} = case KeyOrKeyBucket of
         {K,B} -> {K,B};
         KeyOnly -> {KeyOnly, ?GLOBAL_BUCKET}

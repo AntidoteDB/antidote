@@ -483,7 +483,7 @@ reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
 reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | orddict:fetch(Key, ActiveTxs)]}),
-    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
+%%    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
@@ -593,7 +593,7 @@ certification_with_check(_, [], _, _) ->
 
 certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
     {Key, _, OperationData} = H,
-    lager:debug("~nH IS : ~n~p", [H]),
+%%    lager:debug("~nH IS : ~n~p", [H]),
     TxId = Transaction#transaction.txn_id,
     ReferenceSnapshotTime = case Transaction#transaction.transactional_protocol of
                                 physics ->
@@ -606,14 +606,14 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
         [{Key, CommitTime}] ->
             case CommitTime > ReferenceSnapshotTime of
                 true ->
-                    lager:debug("COMMIT WRITE-WRITE CONFLICT: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
+%%                    lager:debug("COMMIT WRITE-WRITE CONFLICT: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
                     false;
                 false ->
                     case check_prepared(TxId, PreparedTx, Key) of
                         true ->
                             certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
-                            lager:debug("PREPARE WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n", [OperationData]),
+%%                            lager:debug("PREPARE WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n", [OperationData]),
                             false
                     end
             end;

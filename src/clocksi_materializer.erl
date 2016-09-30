@@ -223,13 +223,13 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitVC, Tr
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
 is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSnapshotCommitTime, PrevCheckedOpCT) ->
 	
-	lager:debug("~nOp ~p~n {OpDc, OpCommitTime} ~p~n OpBaseSnapshot ~p~n Transaction ~p~n LastSnapshotCommitTime, ~p~n PrevCheckedOpCT ~p",
-		[Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSnapshotCommitTime, PrevCheckedOpCT]),
+%%	lager:debug("~nOp ~p~n {OpDc, OpCommitTime} ~p~n OpBaseSnapshot ~p~n Transaction ~p~n LastSnapshotCommitTime, ~p~n PrevCheckedOpCT ~p",
+%%		[Op, {OpDc, OpCommitTime}, OpBaseSnapshot, Transaction, LastSnapshotCommitTime, PrevCheckedOpCT]),
 	
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
     OpCommitVC = vectorclock:set_clock_of_dc(OpDc, OpCommitTime, OpBaseSnapshot),
-	lager:debug("calling op not already in snapshot for ~n LastSnapshotCommitTime~n~p ~nOpCommitVC~n~p", [LastSnapshotCommitTime, OpCommitVC]),
+%%	lager:debug("calling op not already in snapshot for ~n LastSnapshotCommitTime~n~p ~nOpCommitVC~n~p", [LastSnapshotCommitTime, OpCommitVC]),
 	case materializer_vnode:op_not_already_in_snapshot(LastSnapshotCommitTime, OpCommitVC)or
 		(Transaction#transaction.txn_id==Op#operation_payload.txid) of
 		true->

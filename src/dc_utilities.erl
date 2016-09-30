@@ -268,7 +268,7 @@ get_stable_snapshot() ->
                                            GST
                                    end,
                                    StableSnapshot),
-	                        lager:info("Computed GR stable snapshot: ~p",[ReturnSS]),
+%%	                        lager:info("Computed GR stable snapshot: ~p",[ReturnSS]),
 	                        {ok, ReturnSS}
                     end
             end
@@ -282,7 +282,7 @@ get_partition_snapshot(Partition) ->
 	    timer:sleep(10),
 	    get_partition_snapshot(Partition);
 	SS ->
-		lager:debug("got this partition metadata_dict, coverting to vector clock",[SS]),
+%%		lager:debug("got this partition metadata_dict, coverting to vector clock",[SS]),
 %%	    vectorclock:from_dict(SS)
         SS
     end.
@@ -292,7 +292,7 @@ get_partition_snapshot(Partition) ->
 -spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
-	lager:info("STABLE SNAPSHOT GR IS: ",[StableSnapshot]),
+%%	lager:info("STABLE SNAPSHOT GR IS: ",[StableSnapshot]),
 	%% dict:is_empty/1 is not available, hence using dict:size/1
     %% to check whether it is empty
     case vectorclock:size(StableSnapshot) of

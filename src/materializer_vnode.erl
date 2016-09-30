@@ -329,7 +329,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 		       [{_, SnapshotDictA}] ->
 			   SnapshotDictA
 		   end,
-	lager:debug("This is the current snapshotDict: ~p",[SnapshotDict]),
+%%	lager:debug("This is the current snapshotDict: ~p",[SnapshotDict]),
     %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
     %% insert requests for the same snapshot could have occured
     ShouldInsert =
@@ -341,7 +341,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 	end,
     case (ShouldInsert or ShouldGc)of
 	true ->
-		lager:debug("Inserting this snapshot: ~n~p ~nParams: ~p",[Snapshot, SnapshotParams]),
+%%		lager:debug("Inserting this snapshot: ~n~p ~nParams: ~p",[Snapshot, SnapshotParams]),
 		SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams,Snapshot,SnapshotDict),
 		snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State, Protocol);
 	false ->
@@ -352,21 +352,21 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 internal_read(Key, Type, Transaction, State) ->
     internal_read(Key, Type, Transaction, State,false).
 internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
-	lager:debug("called : ~p",[Transaction]),
+%%	lager:debug("called : ~p",[Transaction]),
 	OpsCache = MatState#mat_state.ops_cache,
 	SnapshotCache = MatState#mat_state.snapshot_cache,
     TxnId = Transaction#transaction.txn_id,
     Protocol = Transaction#transaction.transactional_protocol,
     case ets:lookup(OpsCache, Key) of
         [] ->
-	        lager:debug("Cache for Key ~p is empty",[Key]),
+%%	        lager:debug("Cache for Key ~p is empty",[Key]),
 	        {NewMaterializedSnapshotRecord, SnapshotCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
 	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
-	        lager:debug("internal read returning: ",[{ok, {NewSnapshot, SnapshotCommitParams}}]),
+%%	        lager:debug("internal read returning: ",[{ok, {NewSnapshot, SnapshotCommitParams}}]),
             {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
 	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
-	        lager:debug("Key ~p~n, Len ~p~n, _OpId ~p~n, _ListLen ~p~n, OperationsForKey ~p~n", [Key, Len, _OpId, _ListLen, OperationsForKey]),
+%%	        lager:debug("Key ~p~n, Len ~p~n, _OpId ~p~n, _ListLen ~p~n, OperationsForKey ~p~n", [Key, Len, _OpId, _ListLen, OperationsForKey]),
 	        {UpdatedTxnRecord, TempCommitParameters} =
 		        case Protocol of
 			        physics ->
@@ -376,7 +376,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
 								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
 							        no_operation_to_define_snapshot ->
-								        lager:debug("there no_operation_to_define_snapshot"),
+%%								        lager:debug("there no_operation_to_define_snapshot"),
 								        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 								        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
 							        no_compatible_operation_found ->
@@ -390,13 +390,13 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 			        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
 				        {Transaction, empty}
 		        end,
-	        lager:debug("about to lookup snapshots"),
+%%	        lager:debug("about to lookup snapshots"),
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
 	                         {BlankSSRecord, _BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
                              {BlankSSRecord, ignore, true};
                          [{_, SnapshotDict}] ->
-	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
+%%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
                                  {undefined, _IsF} ->
                                      {error, no_snapshot};
@@ -417,7 +417,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                         Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
                         Res;
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
-	                    lager:info("LatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p",[LatestSnapshot1, SnapshotCommitTime1]),
+%%	                    lager:debug("LatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p",[LatestSnapshot1, SnapshotCommitTime1]),
 	                    #snapshot_get_response{number_of_ops = Len, ops_list = OperationsForKey,
 		                    materialized_snapshot = LatestSnapshot1,
 		                    snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
@@ -478,15 +478,15 @@ define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
     define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ignore, OperationTuple, 0).
 define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
 	{Length,_ListLen} = element(2, OperationsTuple),
-	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
+%%	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
 	case PositionInOpList of
 		Length ->
 			no_compatible_operation_found;
 		_->
 			{_OpId, OperationRecord}= element((?FIRST_OP+Length-1) - PositionInOpList, OperationsTuple),
 %%			{_OpId, OperationRecord}= element((?FIRST_OP+ PositionInOpList), OperationsTuple),
-			lager:debug("~n~n~nOperation ~p in Record ~n ~p", [PositionInOpList, OperationRecord]),
-			lager:debug("~n~n~nOperation List ~p", [OperationsTuple]),
+%%			lager:debug("~n~n~nOperation ~p in Record ~n ~p", [PositionInOpList, OperationRecord]),
+%%			lager:debug("~n~n~nOperation List ~p", [OperationsTuple]),
 %%			[{_OpId, Op} | Rest] = OperationsTuple,
 			TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
 			TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
@@ -503,7 +503,7 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 			end,
 			case is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
 				true ->
-					lager:info("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, FinalReadVC}]),
+%%					lager:debug("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, FinalReadVC}]),
 					{OperationCommitVC, OperationDependencyVC, FinalReadVC};
 				false ->
 					NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
@@ -542,7 +542,7 @@ create_empty_materialized_snapshot_record(Transaction, Type) ->
             ReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
             MyDc = dc_utilities:get_my_dc_id(),
             ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
-	        lager:debug("creating a physics empty snapshot:"),
+%%	        lager:debug("creating a physics empty snapshot:"),
 	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, vectorclock:new()}
@@ -692,7 +692,7 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transaction)->
     case ets:member(OpsCache, Key) of
 	false ->
-		lager:debug("inserting key: ~p",[Key]),
+%%		lager:debug("inserting key: ~p",[Key]),
 	    ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,{0,?OPS_THRESHOLD}}]));
 	true ->
 	    ok
@@ -726,8 +726,8 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 		        {ok, _} ->
 			        %% Have to get the new ops dict because the interal_read can change it
 			        {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
-			                    lager:debug("BEFORE GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length, ListLen]),
-			                    lager:debug("AFTER GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length1, ListLen1]),
+%%			                    lager:debug("BEFORE GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length, ListLen]),
+%%			                    lager:debug("AFTER GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length1, ListLen1]),
 			        true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]),
 			        ok;
 		        {error, Reason} ->
