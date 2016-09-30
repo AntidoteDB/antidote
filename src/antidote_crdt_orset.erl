@@ -221,15 +221,10 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
                 [] ->
                     {ok, orddict:erase(Elem, ORDict)};
                 _ ->
-                    {ok, orddict:store(Elem, Tokens--RemoveTokens, ORDict)}
+                    {ok, orddict:store(Elem, RestTokens, ORDict)}
             end;
         error ->
-            case RemoveTokens of
-                [] ->
-                    {ok, ORDict};
-                _ ->
-                    {error, {precondition, {not_present, Elem}}}
-            end
+            {ok, ORDict}
     end.
 
 remove_elems([], ORDict) ->
@@ -327,6 +322,26 @@ remove_test() ->
     {ok, Op7} = downstream({remove_all, [<<"manu">>, <<"test">>]}, Set6),
     Result = update(Op7, Set6),
     ?assertMatch({ok, _}, Result).
+
+
+remove2_test() ->
+    Set1 = new(),
+    %% Add an element then remove it
+    {ok, Op1} = downstream({add, <<"foo">>}, Set1),
+    {ok, Set2} = update(Op1, Set1),
+    ?assertEqual([<<"foo">>], value(Set2)),
+    {ok, Op2} = downstream({remove, <<"foo">>}, Set2),
+    {ok, Set3} = update(Op2, Set2),
+    ?assertEqual([], value(Set3)),
+
+    %% Remove the element again (e.g. on a different replica)
+    {ok, Op3} = downstream({remove, <<"foo">>}, Set2),
+    {ok, Set4} = update(Op3, Set2),
+    ?assertEqual([], value(Set4)),
+
+    %% now execute Op3 on Set3, where the element was already removed locally
+    {ok, Set5} = update(Op3, Set3),
+    ?assertEqual([], value(Set5)).
 
 
 concurrent_add_test() ->
