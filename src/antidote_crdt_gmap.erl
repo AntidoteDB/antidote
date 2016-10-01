@@ -107,14 +107,20 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
   {ok, binary_to_term(Bin)}.
 
 is_operation(Operation) ->
-    case Operation of
-        {update, {{_Key, Type}, _Op}} ->
-          antidote_crdt:is_type(Type);
-        {update, Ops} when is_list(Ops) ->
-            lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
-        _ ->
-            false
-    end.
+  case Operation of
+    {update, {{_Key, Type}, Op}} ->
+      antidote_crdt:is_type(Type)
+        andalso Type:is_operation(Op);
+    {update, Ops} when is_list(Ops) ->
+      distinct([Key || {Key, _} <- Ops])
+      andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
+    _ ->
+      false
+  end.
+
+distinct([]) -> true;
+distinct([X|Xs]) ->
+  not lists:member(X, Xs) andalso distinct(Xs).
 
 
 %% ===================================================================

@@ -39,6 +39,7 @@ spec(Operations1) ->
   lists:sort(NestedSpec).
 
 nestedSpec(antidote_crdt_gmap, Ops) -> spec(Ops);
+nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
 nestedSpec(antidote_crdt_counter, Ops) -> prop_crdt_counter:counter_spec(Ops).
 
 
@@ -47,20 +48,42 @@ normalizeOp({Clock, {update, List}}) when is_list(List) ->
 normalizeOp(X) -> [X].
 
 
-% generates a random counter operation
-op() ->
-  {update, oneof([nestedOp(), list(nestedOp())])}.
+% generates a random operation
+op() -> ?SIZED(Size, op(Size)).
+op(Size) ->
+  {update, oneof([
+    nestedOp(Size),
+    ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))
+  ])}.
 
-nestedOp() ->
-  oneof([
-%%    {{key(), antidote_crdt_gmap}, op()},
-    % TODO add other type (orset) and recursive maps
-    {{key(), antidote_crdt_counter}, prop_crdt_counter:counter_op()}
-  ]).
+removeDuplicateKeys([], _) -> [];
+removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
+  case lists:member(Key, Keys) of
+    true -> removeDuplicateKeys(Rest, Keys);
+    false -> [{Key, Op}|removeDuplicateKeys(Rest, [Key|Keys])]
+  end.
+
+nestedOp(Size) ->
+  oneof(
+    [
+      % TODO add other type (orset) and recursive maps
+      % TODO make sure that keys are unique here and in the is_operation check
+      {{key(), antidote_crdt_orset}, prop_crdt_orset:set_op()},
+      {{key(), antidote_crdt_counter}, prop_crdt_counter:counter_op()}
+    ]
+    ++
+    if
+      Size > 1 ->
+        [{{key(), antidote_crdt_gmap}, ?LAZY(op(Size div 2))}];
+      true -> []
+    end
+    ).
 
 
 key() ->
   oneof([a,b,c,d]).
+
+
 
 
 

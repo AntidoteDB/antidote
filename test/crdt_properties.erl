@@ -86,7 +86,10 @@ checkSpec(Crdt, Ops, Spec) ->
   InitialState = maps:from_list(
     [{Dc, #test_replica_state{state = Crdt:new()}} || Dc <- [dc1, dc2, dc3]]),
   EndState = execSystem(Crdt, Ops, InitialState),
-  lists:all(fun(R) -> checkSpecEnd(Crdt, Spec, EndState, R) end, maps:keys(EndState)).
+  conjunction(
+    [{R,
+      checkSpecEnd(Crdt, Spec, EndState, R)}
+    || R <- maps:keys(EndState)]).
 
 checkSpecEnd(Crdt, Spec, EndState, R) ->
   RState = maps:get(R, EndState),
@@ -100,7 +103,14 @@ checkSpecEnd(Crdt, Spec, EndState, R) ->
     clock_le(Clock, RClock)],
 
   SpecValue = Spec(VisibleOperations),
-  SpecValue == RValue.
+  ?WHENFAIL(
+    begin
+      io:format("Reading value on ~p~n", [R]),
+      io:format("Expected value: ~p~n", [SpecValue]),
+      io:format("Actual value  : ~p~n", [RValue])
+    end,
+    SpecValue == RValue
+  ).
 
 
 -spec execSystem(atom(), [test_operation()], test_state()) -> test_state().
