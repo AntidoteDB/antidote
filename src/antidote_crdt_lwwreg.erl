@@ -74,6 +74,7 @@ update(Effect, State) ->
 require_state_downstream(_Operation) -> true.
 
 is_operation({assign, _Value}) -> true;
+is_operation({assign, _Value, _Time}) -> true;
 is_operation(_Other) -> false.
 
 
