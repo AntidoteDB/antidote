@@ -245,10 +245,10 @@ minimum_tokens(Tokens) ->
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
 is_operation({add, _Elem}) -> true;
-is_operation({add_all, [_H|_T]}) -> true;
+is_operation({add_all, L}) when is_list(L) -> true;
 is_operation({remove, _Elem}) ->
     true;
-is_operation({remove_all, [_H|_T]}) -> true;
+is_operation({remove_all, L}) when is_list(L) -> true;
 is_operation(_) -> false.
 
 require_state_downstream({add,_}) ->
