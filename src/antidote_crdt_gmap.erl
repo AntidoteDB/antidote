@@ -51,7 +51,7 @@
 new() ->
     dict:new().
 
--spec value(gmap()) -> dict:dict().
+-spec value(gmap()) -> [{{Key::term(), Type::atom}, Value::term()}].
 value(Map) ->
   lists:sort([{{Key,Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
 
