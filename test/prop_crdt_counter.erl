@@ -32,9 +32,17 @@ prop_counter_spec() ->
 
 
 counter_spec(Operations) ->
-  lists:sum([X || {_, {increment, X}} <- Operations]) - lists:sum([X || {_, {decrement, X}} <- Operations]).
+  lists:sum([X || {_, {increment, X}} <- Operations])
+    + lists:sum([1 || {_, increment} <- Operations])
+    - lists:sum([X || {_, {decrement, X}} <- Operations])
+    - lists:sum([1 || {_, decrement} <- Operations]).
 
 % generates a random counter operation
 counter_op() ->
-  tuple([oneof([increment, decrement]), non_neg_integer()]).
+  oneof([
+    increment,
+    decrement,
+    {increment, integer()},
+    {decrement, integer()}
+  ]).
 
