@@ -5,7 +5,7 @@ output: web
 topnav_title: The Antidote data store
 # this appears on the top navigation bar next to the home button
 
-site_title: Antidote
+site_title: AntidoteDB
 # this appears in the html browser tab for the site title (seen mostly by search engines, not users)
 
 company_name: The Syncfree Consortium
@@ -97,4 +97,4 @@ description: "Documentation for the Antidote data store."
 # the description is used in the feed.xml file
 
 # needed for sitemap.xml file only
-url: http://idratherbewriting.com
+url: http://antidotedb.org
