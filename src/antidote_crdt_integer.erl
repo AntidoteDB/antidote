@@ -107,9 +107,9 @@ is_operation({set, N}) when is_integer(N) -> true;
 is_operation(_) -> false.
 
 %% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt 
-%%      to generate downstream effect    
-require_state_downstream(_) ->
-     false.
+%%      to generate downstream effect
+require_state_downstream({set,_}) -> true;
+require_state_downstream(_) -> false.
 
 
 

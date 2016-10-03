@@ -144,7 +144,12 @@ execSystem(Crdt, [{pull, Source, Target}|RemainingOps], State) ->
 execSystem(Crdt, [{exec, Replica, Op}|RemainingOps], State) ->
   ReplicaState = maps:get(Replica, State),
   CrdtState = ReplicaState#test_replica_state.state,
-  {ok, Effect} = Crdt:downstream(Op, CrdtState),
+  CrdtStateForDownstream =
+    case Crdt:require_state_downstream(Op) of
+      true -> CrdtState;
+      false -> no_state
+    end,
+  {ok, Effect} = Crdt:downstream(Op, CrdtStateForDownstream),
   {ok, NewCrdtState} = Crdt:update(Effect, CrdtState),
 
   ReplicaClock = ReplicaState#test_replica_state.clock,
