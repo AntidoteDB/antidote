@@ -155,7 +155,7 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
                                 boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
-    _Res = rand:seed(exsplus, erlang:timestamp()), % TODO 19 does this still make sense with the new rand module and timestamp?
+    _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
     {ok, SnapshotTime} = case ClientClock of
                              ignore ->
                                  get_snapshot_time();
