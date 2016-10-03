@@ -92,16 +92,21 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id,next=getmsg}) -
     %% Decode the message
     {ReqId,RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
     %% Create a response
-    QueryState = #inter_dc_query_state{zmq_id = Id,
-				       request_id_num_binary = ReqId,
-				       local_pid = self()},
+    QueryState =
+      fun(RequestType) ->
+        #inter_dc_query_state{
+          request_type = RequestType,
+          zmq_id = Id,
+          request_id_num_binary = ReqId,
+          local_pid = self()}
+      end,
     case RestMsg of
 	<<?LOG_READ_MSG,QueryBinary/binary>> ->
-	    ok = inter_dc_query_response:get_entries(QueryBinary,QueryState#inter_dc_query_state{request_type=?LOG_READ_MSG});
+	    ok = inter_dc_query_response:get_entries(QueryBinary,QueryState(?LOG_READ_MSG));
 	<<?CHECK_UP_MSG>> ->
 	    ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
     <<?BCOUNTER_REQUEST,RequestBinary/binary>> ->
-        ok = inter_dc_query_response:request_permissions(RequestBinary,QueryState#inter_dc_query_state{request_type=?BCOUNTER_REQUEST});
+        ok = inter_dc_query_response:request_permissions(RequestBinary,QueryState(?BCOUNTER_REQUEST));
 	%% TODO: Handle other types of requests
 	_ ->
 	    ErrorBinary = term_to_binary(bad_request),

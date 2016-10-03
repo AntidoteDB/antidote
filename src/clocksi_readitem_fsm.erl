@@ -52,7 +52,7 @@
 -record(state, {partition :: partition_id(),
 		id :: non_neg_integer(),
 		mat_state :: #mat_state{},
-		prepared_cache :: atom() | cache_id(),
+		prepared_cache ::  cache_id(),
 		self :: atom()}).
 
 %% TODO: allow properties for reads
@@ -193,7 +193,7 @@ init([Partition, Id]) ->
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
     PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
-    MatState = #mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition},
+    MatState = #mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition,is_ready=false},
     Self = generate_server_name(Addr,Partition,Id),
     {ok, #state{partition=Partition, id=Id,
 		mat_state = MatState,

@@ -112,6 +112,7 @@
 	  op_type :: update | prepare | commit | abort | noop,
 	  log_payload :: #commit_log_payload{}| #update_log_payload{} | #abort_log_payload{} | #prepare_log_payload{}}).
 -record(op_number, {
+  % TODO 19 undefined is required here, because of the use in inter_dc_log_sender_vnode. The use there should be refactored.
   node :: undefined | {node(),dcid()},
   global :: undefined | non_neg_integer(),
   local :: undefined | non_neg_integer()}).
@@ -119,9 +120,9 @@
 %% The way records are stored in the log.
 -record(log_record,{
 	  version :: non_neg_integer(), %% The version of the log record, for backwards compatability
-	  op_number :: undefined | #op_number{},
-	  bucket_op_number :: undefined | #op_number{},
-	  log_operation :: undefined | #log_operation{}}).
+	  op_number :: #op_number{},
+	  bucket_op_number :: #op_number{},
+	  log_operation :: #log_operation{}}).
 
 %% Clock SI
 
@@ -137,7 +138,6 @@
 -define(CLOCKSI_TIMEOUT, 1000).
 
 -record(transaction, {snapshot_time :: snapshot_time(),
-                      server_pid :: undefined|pid(),
                       vec_snapshot_time,
                       txn_id :: txid()}).
 
@@ -160,13 +160,13 @@
 -type op_num() :: non_neg_integer().
 -type op_id() :: {op_num(), node()}.
 -type payload() :: term().
--type partition_id()  :: non_neg_integer() | ets:tid().
+-type partition_id()  :: ets:tid() | integer(). % TODO 19 adding integer basically makes the tid type non-opaque, because some places of the code depend on it being an integer. This dependency should be removed, if possible.
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
 
 -type tx() :: #transaction{}.
--type cache_id() :: ets:tid().
+-type cache_id() :: ets:tab().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
 
@@ -233,6 +233,6 @@
 %% clocksi_read_item_fsm as pointers to the materializer's ets caches
 -record(mat_state, {
 	  partition :: partition_id(),
-	  ops_cache :: atom() | cache_id(),
-	  snapshot_cache :: atom() | cache_id(),
-	  is_ready :: undefined | boolean()}).
+	  ops_cache :: cache_id(),
+	  snapshot_cache :: cache_id(),
+	  is_ready :: boolean()}).
