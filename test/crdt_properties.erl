@@ -87,6 +87,7 @@ checkSpec(Crdt, Ops, Spec) ->
     [{Dc, #test_replica_state{state = Crdt:new()}} || Dc <- [dc1, dc2, dc3]]),
   EndState = execSystem(Crdt, Ops, InitialState),
   conjunction(
+    [{binary_encoding, checkBinaryEncoding(Crdt, EndState)}] ++
     [{R,
       checkSpecEnd(Crdt, Spec, EndState, R)}
     || R <- maps:keys(EndState)]).
@@ -164,3 +165,31 @@ execSystem(Crdt, [{exec, Replica, Op}|RemainingOps], State) ->
   NewState = State#{Replica => NewReplicaState},
   execSystem(Crdt, RemainingOps, NewState).
 
+
+
+checkBinaryEncoding(Crdt, EndState) ->
+  conjunction([{R, checkBinaryEncoding(Crdt, EndState, R)} || R <- maps:keys(EndState)]).
+
+checkBinaryEncoding(Crdt, EndState, R) ->
+  RState = maps:get(R, EndState),
+  CrdtState = RState#test_replica_state.state,
+  BinState = Crdt:to_binary(CrdtState),
+  true = is_binary(BinState),
+  {ok, CrdtState2} = Crdt:from_binary(BinState),
+
+  conjunction([
+    {equal_state, ?WHENFAIL(
+      begin
+        io:format("CRDT state before: ~p~n", [CrdtState]),
+        io:format("CRDT state after: ~p~n", [CrdtState2])
+      end,
+      Crdt:equal(CrdtState, CrdtState2)
+    )},
+    {equal_value, ?WHENFAIL(
+      begin
+        io:format("CRDT value before: ~p~n", [Crdt:value(CrdtState)]),
+        io:format("CRDT value after: ~p~n", [rdt:value(CrdtState2)])
+      end,
+      Crdt:value(CrdtState) == Crdt:value(CrdtState2)
+    )}
+  ]).

@@ -85,7 +85,7 @@ to_binary(CRDT) ->
     erlang:term_to_binary(CRDT).
 
 from_binary(Bin) ->
-    erlang:binary_to_term(Bin).
+  {ok, erlang:binary_to_term(Bin)}.
 
 -ifdef(test).
 all_test() ->
