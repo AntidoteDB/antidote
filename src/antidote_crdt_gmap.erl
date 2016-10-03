@@ -133,11 +133,10 @@ new_test() ->
 
 update_test() ->
     Map1 = new(),
-    {ok, DownstreamOp} = downstream({update, {{key1, crdt_lwwreg}, {assign, <<"test">>}}}, Map1),
-    ?assertMatch({update, {{key1, crdt_lwwreg}, {assign, <<"test">>, _TS}}}, DownstreamOp),
+    {ok, DownstreamOp} = downstream({update, {{key1, antidote_crdt_lwwreg}, {assign, <<"test">>}}}, Map1),
+    ?assertMatch({update, {{key1, antidote_crdt_lwwreg}, {_TS, <<"test">>}}}, DownstreamOp),
     {ok, Map2} = update(DownstreamOp, Map1),
-    Key1Value = dict:fetch({key1, crdt_lwwreg}, value(Map2)),
-    ?assertEqual(<<"test">>, Key1Value).
+    ?assertEqual([{{key1, antidote_crdt_lwwreg}, <<"test">>}], value(Map2)).
 -endif.
 
 
