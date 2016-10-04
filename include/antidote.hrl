@@ -80,6 +80,9 @@
 %% Frequency at which manager requests remote resources.
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
+%% threshold time for physics static reads, in microseconds
+-define(PHYSICS_THRESHOLD, 30000).
+
 %% The definition "FIRST_OP" is used by the materializer.
 %% The materialzer caches a tuple for each key containing
 %% information about the state of operations performed on that key.

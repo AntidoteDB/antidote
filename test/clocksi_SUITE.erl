@@ -32,6 +32,7 @@
 
 %% tests
 -export([
+    clocksi_read_nonupdated_key_test/1,
     clocksi_test1/1,
          clocksi_test2/1,
          clocksi_test3/1,
@@ -86,7 +87,7 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> [
+all() -> [clocksi_read_nonupdated_key_test,
     clocksi_test1,
          clocksi_test2,
          clocksi_test3,
@@ -101,10 +102,27 @@ all() -> [
          clocksi_test_certification_check,
          clocksi_multiple_test_certification_check,
          clocksi_multiple_read_update_test,
-         clocksi_concurrency_test].
+         clocksi_concurrency_test
+].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
+
+clocksi_read_nonupdated_key_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    
+    FirstNode = hd(Nodes),
+    Key1=clocksi_test_key,
+    Type=antidote_crdt_lwwreg,
+    BoundObject = {Key1, Type, bucket},
+    {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
+    {ok, ReadResult} = rpc:call(FirstNode, antidote, read_objects, [[BoundObject], TxId]),
+    {ok, _CT} = rpc:call(FirstNode, antidote, commit_transaction, [TxId]),
+    ?assertMatch([<<>>], ReadResult),
+    pass.
+    
+    
+
 clocksi_test1(Config) ->
     Nodes = proplists:get_value(nodes, Config),
 

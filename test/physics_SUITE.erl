@@ -85,21 +85,21 @@ end_per_testcase(_, _) ->
     ok.
 
 all() -> [
-%%    clocksi_test1,
-%%         clocksi_test2,
-%%         clocksi_test3,
-%%         clocksi_test5,
-%%         clocksi_test_read_wait,
-%%         clocksi_test4,
-%%         clocksi_test_read_time,
-%%         clocksi_test_prepare,
-%%         clocksi_tx_noclock_test,
-%%         clocksi_single_key_update_read_test,
-%%         clocksi_multiple_key_update_read_test,
-%%         clocksi_test_certification_check,
-%%         clocksi_multiple_test_certification_check,
-         clocksi_multiple_read_update_test
-%%         clocksi_concurrency_test
+    clocksi_test1,
+         clocksi_test2,
+         clocksi_test3,
+         clocksi_test5,
+         clocksi_test_read_wait,
+         clocksi_test4,
+         clocksi_test_read_time,
+         clocksi_test_prepare,
+         clocksi_tx_noclock_test,
+         clocksi_single_key_update_read_test,
+         clocksi_multiple_key_update_read_test,
+         clocksi_test_certification_check,
+         clocksi_multiple_test_certification_check,
+         clocksi_multiple_read_update_test,
+         clocksi_concurrency_test
 ].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
@@ -765,32 +765,40 @@ get_random_key() ->
 
 %% @doc The following function tests how two concurrent transactions work
 %%      when they are interleaved.
+%% in this case, PhysiCS performs different from ClockSI, as it does not wait for prepared
+%% transactions to commit. Therefore, when Tx2 wants to commit, it can't as Tx1 has committed,
+%% which generates a write-write conflict.
 clocksi_concurrency_test(Config) ->
-    Nodes = proplists:get_value(nodes, Config),
-    lager:info("clockSI_concurrency_test started"),
-    Node = hd(Nodes),
-    %% read txn starts before the write txn's prepare phase,
-    Key = clocksi_conc,
-    Type = antidote_crdt_counter,
-    {ok, TxId1} = rpc:call(Node, antidote, clocksi_istart_tx, []),
-    rpc:call(Node, antidote, clocksi_iupdate,
-             [TxId1, Key, Type, {increment, 1}]),
-    rpc:call(Node, antidote, clocksi_iprepare, [TxId1]),
-    {ok, TxId2} = rpc:call(Node, antidote, clocksi_istart_tx, []),
-    Pid = self(),
-    spawn( fun() ->
-                   rpc:call(Node, antidote, clocksi_iupdate,
-                            [TxId2, Key, Type, {increment, 1}]),
-                   rpc:call(Node, antidote, clocksi_iprepare, [TxId2]),
-                   {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId2]),
-                   Pid ! ok
-           end),
-
-    {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId1]),
-     receive
-         ok ->
-             Result= rpc:call(Node,
-                              antidote, read, [Key, Type]),
-             ?assertEqual({ok, 2}, Result),
-             pass
-     end.
+	Nodes = proplists:get_value(nodes, Config),
+	lager:info("clockSI_concurrency_test started"),
+	Node = hd(Nodes),
+	%% read txn starts before the write txn's prepare phase,
+	Key = clocksi_conc,
+	Type = antidote_crdt_counter,
+	Bucket = clocksi_test,
+	Bound_object = {Key, Type, Bucket},
+	
+	{ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+	ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, {increment, 1}}], TxId1]),
+	rpc:call(Node, antidote, clocksi_iprepare, [TxId1]),
+	
+	{ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+	
+	
+	Pid = self(),
+	spawn( fun() ->
+		ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, {increment, 1}}], TxId2]),
+        CommitResult = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+        ?assertMatch({error,{aborted,TxId2}}, CommitResult),
+		Pid ! ok
+	end),
+	
+	{ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId1]),
+	receive
+		ok ->
+			{ok, TxId3} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+			Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId3]),
+			rpc:call(Node, antidote, commit_transaction, [TxId3]),
+			?assertMatch({ok, [1]}, Res),
+			pass
+	end.

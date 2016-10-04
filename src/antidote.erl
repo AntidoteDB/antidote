@@ -113,8 +113,9 @@ read_objects(BoundObjects, TxId) ->
         case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
             ok ->
                 {{Key, Bucket}, Type};
-            {error, _Reason} ->
-                {error, type_check}
+            {error, Reason} ->
+                lager:debug("typing problem, chceck your ops! ~n~p", [Reason]),
+                {error, Reason}
         end
                            end, BoundObjects),
     case lists:member({error, type_check}, NewObjects) of

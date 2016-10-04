@@ -80,8 +80,6 @@ materialize(Type, Transaction,
   #snapshot_get_response{snapshot_time=ProtocolIndependentSnapshotCommitVC, ops_list=Ops,
 	  materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}})->
 	FirstId=get_first_id(Ops),
-
-	
 	{ok, OpList, NewLastOp, LastOpCt, IsNewSS}=
 		materialize_intern(Type, [], LastOp, FirstId, ProtocolIndependentSnapshotCommitVC, Transaction,
 			Ops, ProtocolIndependentSnapshotCommitVC, false, 0),
@@ -161,10 +159,27 @@ materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncl
 	    materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId, InitialSnapshotCommitTime, Transaction,
 				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCT, DidGenerateNewSnapshot, Location + 1)
     end.
-	    
+
+-spec materialize_intern_perform(type(),
+  [operation_payload()],
+  integer(),
+  integer(),
+  snapshot_time() | {snapshot_time(), snapshot_time()} | ignore,
+  transaction(),
+  {integer(),operation_payload()},
+  [{integer(),operation_payload()}] | tuple(),
+  snapshot_time() | ignore,
+  boolean(),
+  non_neg_integer()) ->
+	{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean()}.
 materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitVC, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, PositionInOpList) ->
     Result = case Type == Op#operation_payload.type of
 		 true ->
+			 case is_record(Transaction, transaction) of
+				 true -> ok;
+				 false ->
+					 lager:info("BAD TRANSACTION RECORD: ~p", [Transaction])
+			 end,
 		     OpDCandCT=Op#operation_payload.dc_and_commit_time,
 			 OpSnapshotVC= case Transaction#transaction.transactional_protocol of
 			     Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->

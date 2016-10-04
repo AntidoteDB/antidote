@@ -26,12 +26,7 @@
                  ]},
   {mod, { antidote_app, []}},
     
-%%     {lager, [
-%%         {handlers, [
-%%             {lager_console_backend, debug}
-%%         ]}
-%%     ]},
-     
+ 
   %% Options for environmental variables
   %% txn_cert:
   %%        true -> write operations are certified during commit, aborting the transaction if a write conflict is detected (i.e. snapshot isolation
