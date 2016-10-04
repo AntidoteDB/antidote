@@ -831,11 +831,11 @@ physics_snapshot_test(Config) ->
     %% read txn starts before the write txn's prepare phase,
     Key = physics_snapshot_test,
     Key2 = physics_snapshot_test2,
-    Type = antidote_crdt_counter,
-    Bucket = physics_test,
+    Type1 = antidote_crdt_counter,
+    Bucket1 = physics_test,
     
-    Bound_object1= {Key, Type, Bucket},
-    Bound_object2 = {Key2, Type, Bucket},
+    Bound_object1= {Key, Type1, Bucket1},
+    Bound_object2 = {Key2, Type1, Bucket1},
     
     
     %% first, create initial versions of the two objects.
