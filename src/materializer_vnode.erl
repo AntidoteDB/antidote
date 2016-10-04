@@ -151,6 +151,18 @@ load_ops(OpsDict, State) ->
 				    end, CommittedOps)
 	      end, true, OpsDict).
 
+%%    @TODO ALE: PREV CODE
+%%        lists:foreach(fun({_OpId,Op}) ->
+%%            #operation_payload{key = Key} = Op,
+%%            case op_insert_gc(Key, Op, MatState, no_txn_inserting_from_log) of
+%%                ok ->
+%%                    true;
+%%                {error, Reason} ->
+%%                    {error, Reason}
+%%            end
+%%                      end, CommittedOps)
+%%              end, true, OpsDict).
+
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
     case ets:info(get_cache_name(Partition, Name)) of
@@ -476,7 +488,7 @@ define_snapshot_vc_for_transaction(_Transaction, []) ->
     no_operation_to_define_snapshot;
 define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
     LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
-    define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ignore, OperationTuple, 0).
+    define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, first_operation, OperationTuple, 0).
 define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
 	{Length,_ListLen} = element(2, OperationsTuple),
 %%	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
@@ -492,13 +504,13 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 			TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
 			TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 			
-			lager:info("~n~n~TxCTLowBound ~p ~n TxDepUpBound ~n ~p", [TxCTLowBound, TxDepUpBound]),
+%%			lager:info("~n~n~TxCTLowBound ~p ~n TxDepUpBound ~n ~p", [TxCTLowBound, TxDepUpBound]),
 			
 			OperationDependencyVC = OperationRecord#operation_payload.dependency_vc,
 			{OperationDC, OperationCommitTime} = OperationRecord#operation_payload.dc_and_commit_time,
 			OperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime, OperationDependencyVC),
 			
-			lager:info("~n~n~OperationDependencyVC ~p ~n OperationCommitVC ~n ~p", [OperationDependencyVC, OperationCommitVC]),
+%%			lager:info("~n~n~OperationDependencyVC ~p ~n OperationCommitVC ~n ~p", [OperationDependencyVC, OperationCommitVC]),
 			
 			AccReadVC= case ReadVC of
 				first_operation -> %% newest operation in the list.
@@ -511,7 +523,7 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 			case is_causally_compatible(AccReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
 				true ->
 %%					lager:debug("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, FinalReadVC}]),
-					{OperationCommitVC, OperationDependencyVC, FinalReadVC};
+					{OperationCommitVC, OperationDependencyVC, AccReadVC};
 				false ->
 					NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
 					define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, NewOperationCommitVC, OperationsTuple, PositionInOpList + 1)
@@ -534,12 +546,12 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 
 is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
 	NewVC = vectorclock:new(),
-	lager:info("~n Called is causally compatible with
-	~n operation readtime: ~p
-	~n transaction rt lowbound: ~p
-	~n operation dependency clock: ~p
-	~n transaction dep upbound: ~p
-	", [CommitClock, CommitTimeLowbound, DepClock, DepUpbound]),
+%%	lager:info("~n Called is causally compatible with
+%%	~n operation readtime: ~p
+%%	~n transaction rt lowbound: ~p
+%%	~n operation dependency clock: ~p
+%%	~n transaction dep upbound: ~p
+%%	", [CommitClock, CommitTimeLowbound, DepClock, DepUpbound]),
 	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse CommitTimeLowbound == NewVC)
 		and (vectorclock:le(DepClock, DepUpbound) orelse DepUpbound == NewVC).
 
