@@ -590,7 +590,7 @@ define_snapshot_vc_for_transaction(_Transaction, []) ->
     no_operation_to_define_snapshot;
 define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
     LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
-    define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ignore, OperationTuple, 0).
+    define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, first_operation, OperationTuple, 0).
 
 %%define_snapshot_vc_for_transaction(_Transaction, [], _LocalDCReadTime, _ReadVC, _OperationTuple, _PositionInOpList) ->
 %%    TxCTLowBound = _Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
@@ -601,33 +601,39 @@ define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
 
 define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
 	{Length,_ListLen} = element(2, OperationsTuple),
-	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
+	lager:info("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
 	case PositionInOpList of
 		Length ->
 			no_compatible_operation_found;
 		_->
 			{_OpId, OperationRecord}= element((?FIRST_OP+Length-1) - PositionInOpList, OperationsTuple),
 %%			{_OpId, OperationRecord}= element((?FIRST_OP+ PositionInOpList), OperationsTuple),
-			lager:debug("~n~n~nOperation ~p in Record ~n ~p", [PositionInOpList, OperationRecord]),
-			lager:debug("~n~n~nOperation List ~p", [OperationsTuple]),
+			lager:info("~n~n~nOperation ~p in Record ~n ~p", [PositionInOpList, OperationRecord]),
+			lager:info("~n~n~nOperation List ~p", [OperationsTuple]),
 %%			[{_OpId, Op} | Rest] = OperationsTuple,
 			TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
 			TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+			
+			lager:info("~n~n~TxCTLowBound ~p ~n TxDepUpBound ~n ~p", [TxCTLowBound, TxDepUpBound]),
+			
 			OperationDependencyVC = OperationRecord#operation_payload.dependency_vc,
 			{OperationDC, OperationCommitTime} = OperationRecord#operation_payload.dc_and_commit_time,
 			OperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime, OperationDependencyVC),
-			FinalReadVC = case ReadVC of
-				ignore -> %% newest operation in the list.
+			
+			lager:info("~n~n~OperationDependencyVC ~p ~n OperationCommitVC ~n ~p", [OperationDependencyVC, OperationCommitVC]),
+			
+			AccReadVC= case ReadVC of
+				first_operation -> %% newest operation in the list.
 					LocalDC = dc_utilities:get_my_dc_id(),
 					OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
 					vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
 				_ ->
 					ReadVC
 			end,
-			case is_causally_compatible(FinalReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+			case is_causally_compatible(AccReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
 				true ->
-					lager:info("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, FinalReadVC}]),
-					{OperationCommitVC, OperationDependencyVC, FinalReadVC};
+					lager:info("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, AccReadVC}]),
+					{OperationCommitVC, OperationDependencyVC, AccReadVC};
 				false ->
 					NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
 					define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, NewOperationCommitVC, OperationsTuple, PositionInOpList + 1)
@@ -661,15 +667,15 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 
 
 is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
-	case ((CommitTimeLowbound == undefined) or (DepUpbound == undefined) or
-		(CommitTimeLowbound == []) or (DepUpbound == [])) of
-		true ->
-			true;
-		false ->
-			%%            lager:info("CommitClock= ~p~n CommitTimeLowbound= ~p~n, DepClock = ~p~n, DepUpbound = ~p~n",
-			%%                [CommitClock,CommitTimeLowbound, DepClock, DepUpbound]),
-			vectorclock:ge(CommitClock, CommitTimeLowbound) and vectorclock:le(DepClock, DepUpbound)
-	end.
+	NewVC = vectorclock:new(),
+	lager:info("~n Called is causally compatible with
+	~n operation readtime: ~p
+	~n transaction rt lowbound: ~p
+	~n operation dependency clock: ~p
+	~n transaction dep upbound: ~p
+	", [CommitClock, CommitTimeLowbound, DepClock, DepUpbound]),
+	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse CommitTimeLowbound == NewVC)
+		and (vectorclock:le(DepClock, DepUpbound) orelse DepUpbound == NewVC).
 
 create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
@@ -1180,11 +1186,16 @@ read_nonexisting_key_test() ->
 
 is_causally_compatible_test() ->
 	
+	NewVC = vectorclock:new(),
+	
 	DepUpBound = [{dc1, 1}, {dc2, 2}],
 	RTLowBound = [{dc1, 5}, {dc2, 10}],
 	
 	OpDepVC1 = [{dc1, 2}, {dc2, 3}],
 	OpCommitVC1 = [{dc1, 5}, {dc2, 10}],
+	
+	true = is_causally_compatible(OpCommitVC1, NewVC, OpDepVC1, NewVC),
+	
 	
 	false = is_causally_compatible(OpCommitVC1, RTLowBound, OpDepVC1, DepUpBound),
 	

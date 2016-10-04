@@ -136,7 +136,6 @@ read_objects(BoundObjects, TxId) ->
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     lager:info("gonna start multiple updates: ~p", [Updates]),
-
     {_, _, CoordFsmPid} = TxId,
     Operations= lists:map(fun(Update) ->
         {Key, Type, Bucket, Op} =case Update of
