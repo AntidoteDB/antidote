@@ -119,7 +119,7 @@ start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_sta
 execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 					     transaction = Transaction}) ->
     ExecuteOp = fun (Operation, Acc) ->
-			case Acc of 
+			case Acc of
 			    {error, Reason} ->  {error, Reason};
 			    _ ->
 				    case Operation of
@@ -170,7 +170,7 @@ receive_prepared({prepared, ReceivedPrepareTime},
                     NumToCommit = length(UpdatedPartitions),
                     ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
                     {next_state, receive_committed,
-                    S0#tx_coord_state{num_to_ack=NumToCommit, commit_time=MaxPrepareTime, 
+                    S0#tx_coord_state{num_to_ack=NumToCommit, commit_time=MaxPrepareTime,
                         state=committing}};
                 _ ->
                     {next_state, receive_prepared, S0#tx_coord_state{num_to_ack= NumToAck-1,
@@ -190,7 +190,7 @@ receive_prepared({ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}},
                             num_to_ack=NumToAck}) ->
 
     %%TODO: type is hard-coded..
-    Value = Type:value(Snapshot), 
+    Value = Type:value(Snapshot),
     ReadSet1 = replace(ReadSet, Key, Value),
     case NumToRead of
         1 ->
@@ -199,7 +199,7 @@ receive_prepared({ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}},
                     NumToCommit = length(UpdatedPartitions),
                     case NumToCommit of
                         0 ->
-                            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only, 
+                            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only,
                             return_accumulator=lists:reverse(ReadSet1)});
                         _ ->
                             ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
