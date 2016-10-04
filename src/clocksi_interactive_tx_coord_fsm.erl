@@ -436,7 +436,9 @@ execute_op({OpType, Args}, Sender,
             NewTransaction = case Transaction#transaction.transactional_protocol of
                 physics ->
                     NewVC = vectorclock:new(),
-                    case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == NewVC of
+                    case ((Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == NewVC) and
+                        (Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound == NewVC) and
+                        (length(Args) > 1)) of
                         true ->
                             PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), vectorclock:new()),
                             PhysicsMetadata = #physics_read_metadata{dep_upbound = PhysicsClock, commit_time_lowbound = PhysicsClock},
