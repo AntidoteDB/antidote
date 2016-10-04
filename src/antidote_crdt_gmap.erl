@@ -37,21 +37,21 @@
 -endif.
 
 
--type gmap() :: dict:dict().
+-type gmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
 -type gmap_op() ::
     {update, nested_op()}
   | {update, [nested_op()]}.
--type nested_op() :: {{Key::term(), Type::atom }, Op::term()}.
+-type nested_op() :: {{Key::term(), Type::atom() }, Op::term()}.
 -type gmap_effect() ::
     {update, nested_downstream()}
   | {update, [nested_downstream()]}.
--type nested_downstream() :: {{Key::term(), Type::atom }, Op::term()}.
+-type nested_downstream() :: {{Key::term(), Type::atom() }, Op::term()}.
 
 -spec new() -> gmap().
 new() ->
     dict:new().
 
--spec value(gmap()) -> [{{Key::term(), Type::atom}, Value::term()}].
+-spec value(gmap()) -> [{{Key::term(), Type::atom()}, Value::term()}].
 value(Map) ->
   lists:sort([{{Key,Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
 

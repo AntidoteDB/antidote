@@ -77,6 +77,8 @@ clock_le(A, B) ->
 
 % executes/checks the specification
 checkSpec(Crdt, Ops, Spec) ->
+  % check that the CRDT is registered:
+  true = antidote_crdt:is_type(Crdt),
   % check that all generated operatiosn are valid:
   _ = [case Crdt:is_operation(Op) of
             true -> true;

@@ -31,7 +31,8 @@ prop_counter_spec() ->
  crdt_properties:crdt_satisfies_spec(antidote_crdt_integer, fun op/0, fun spec/1).
 
 
-spec(Operations) ->
+spec(Operations1) ->
+  Operations = [normalizeOp(Op) || Op <- Operations1],
   ConcurrentValues =
     [{Clock, Val} || {Clock, {set, Val}} <- Operations,
       [] == [Clock2 || {Clock2, {set, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)]],
@@ -47,10 +48,14 @@ spec(Operations) ->
   WithDelta = [Val + Delta(Clock) || {Clock,Val} <- ConcurrentValues2],
   lists:max(WithDelta).
 
+normalizeOp({Clock, reset}) -> {Clock, {set, 0}};
+normalizeOp(Op) -> Op.
+
 % generates a random counter operation
 op() ->
   oneof([
     {set, integer()},
-    {increment, integer()}
+    {increment, integer()},
+    reset
   ]).
 
