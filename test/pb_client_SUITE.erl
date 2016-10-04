@@ -40,7 +40,8 @@
         update_counter_crdt_test/1,
         update_counter_crdt_and_read_test/1,
         update_set_read_test/1,
-        static_transaction_test/1]).
+        static_transaction_test/1,
+        update_reg_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -75,7 +76,8 @@ all() -> [start_stop_test,
         update_counter_crdt_test,
         update_counter_crdt_and_read_test,
         update_set_read_test,
-        static_transaction_test].
+        static_transaction_test,
+        update_reg_test].
 
 start_stop_test(_Config) ->
     lager:info("Verifying pb connection..."),
@@ -211,6 +213,23 @@ update_set_read_test(_Config) ->
     ?assertEqual(2,length(antidotec_set:value(Val))),
     ?assertMatch(true, antidotec_set:contains("a", Val)),
     ?assertMatch(true, antidotec_set:contains("b", Val)),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+update_reg_test(_Config) ->
+    Key = <<"pb_client_SUITE_update_reg_test">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, antidote_crdt_lwwreg, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid,
+                                                ignore, {}),
+    ok = antidotec_pb:update_objects(Pid,
+                                     [{Bound_object, assign, <<"10">>}],
+                                     TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    %% Read committed updated
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    ?assertEqual(<<"10">>, antidotec_reg:value(Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
 
 static_transaction_test(_Config) ->
