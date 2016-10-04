@@ -35,8 +35,7 @@ start(_StartType, _StartArgs) ->
     case antidote_sup:start_link() of
         {ok, Pid} ->
             
-            ok = lager:set_loglevel(lager_console_backend, debug),
-            
+     
             ok = riak_core:register([{vnode_module, logging_vnode}]),
             ok = riak_core_node_watcher:service_up(logging, self()),
             %%ClockSI layer
