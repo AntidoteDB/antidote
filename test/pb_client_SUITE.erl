@@ -108,7 +108,7 @@ read_write_test(Config) ->
 get_empty_crdt_test(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     _Disconnected = antidotec_pb_socket:stop(Pid),
@@ -118,11 +118,11 @@ pb_test_counter_read_write(_Config) ->
     Key = <<"pb_client_SUITE_pb_test_counter_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, antidote_crdt_counter, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     ok = antidotec_pb:update_objects(Pid, [{Bound_object, increment, 1}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
     ?assertEqual(1, antidotec_counter:value(Val)),
@@ -132,7 +132,7 @@ pb_test_set_read_write(_Config) ->
     Key = <<"pb_client_SUITE_pb_test_set_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {Key, antidote_crdt_orset, <<"bucket">>},
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     ok = antidotec_pb:update_objects(Pid, [{Bound_object, add, "a"}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
@@ -144,7 +144,7 @@ pb_test_set_read_write(_Config) ->
 
 pb_empty_txn_clock_test(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, CommitTime} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
     {ok, Tx2} = antidotec_pb:start_transaction(Pid, CommitTime, {}),
@@ -164,7 +164,7 @@ update_counter_crdt(Key, Bucket, Amount) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Obj = antidotec_counter:new(),
     Obj2 = antidotec_counter:increment(Amount, Obj),
-    {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_counter:to_ops(BObj, Obj2),
                                      TxId),
@@ -182,7 +182,7 @@ get_crdt_check_value(Key, Type, Bucket, Expected) ->
     lager:info("Verifying value of updated CRDT..."),
     BoundObject = {Key, Type, Bucket},
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [BoundObject], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
     _Disconnected = antidotec_pb_socket:stop(Pid),
@@ -199,13 +199,13 @@ update_set_read_test(_Config) ->
     Set2 = antidotec_set:add("b", Set1),
 
     {ok, TxId} = antidotec_pb:start_transaction(Pid,
-                                                term_to_binary(ignore), {}),
+                                                ignore, {}),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_set:to_ops(Bound_object, Set2),
                                      TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
     ?assertEqual(2,length(antidotec_set:value(Val))),
@@ -222,13 +222,13 @@ static_transaction_test(_Config) ->
     Set2 = antidotec_set:add("b", Set1),
 
     {ok, TxId} = antidotec_pb:start_transaction(Pid,
-                                                term_to_binary(ignore), [{static, true}]),
+                                                ignore, [{static, true}]),
     ok = antidotec_pb:update_objects(Pid,
                                      antidotec_set:to_ops(Bound_object, Set2),
                                      TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), [{static, true}]),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, [{static, true}]),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
     ?assertEqual(2,length(antidotec_set:value(Val))),
