@@ -30,21 +30,24 @@
          all/0]).
 
 %% tests
--export([clocksi_test1/1,
-         clocksi_test2/1,
-         clocksi_test3/1,
-         clocksi_test5/1,
-         clocksi_test_read_wait/1,
-         clocksi_test4/1,
-         clocksi_test_read_time/1,
-         clocksi_test_prepare/1,
-         clocksi_tx_noclock_test/1,
-         clocksi_single_key_update_read_test/1,
-         clocksi_multiple_key_update_read_test/1,
-         clocksi_test_certification_check/1,
-         clocksi_multiple_test_certification_check/1,
-         clocksi_multiple_read_update_test/1,
-         clocksi_concurrency_test/1,
+-export([
+    physics_read_nonupdated_key_test/1,
+    physics_test1/1,
+         physics_test2/1,
+         physics_test3/1,
+         physics_test5/1,
+         physics_test_read_wait/1,
+         physics_test4/1,
+         physics_test_read_time/1,
+         physics_test_prepare/1,
+         physics_tx_noclock_test/1,
+         physics_single_key_update_read_test/1,
+         physics_multiple_key_update_read_test/1,
+         physics_test_certification_check/1,
+         physics_multiple_test_certification_check/1,
+         physics_multiple_read_update_test/1,
+         physics_concurrency_test/1,
+         physics_snapshot_test/1,
          spawn_read/5,
          spawn_com/2]).
 
@@ -85,32 +88,49 @@ end_per_testcase(_, _) ->
     ok.
 
 all() -> [
-    clocksi_test1,
-         clocksi_test2,
-         clocksi_test3,
-         clocksi_test5,
-         clocksi_test_read_wait,
-         clocksi_test4,
-         clocksi_test_read_time,
-         clocksi_test_prepare,
-         clocksi_tx_noclock_test,
-         clocksi_single_key_update_read_test,
-         clocksi_multiple_key_update_read_test,
-         clocksi_test_certification_check,
-         clocksi_multiple_test_certification_check,
-         clocksi_multiple_read_update_test,
-         clocksi_concurrency_test
+%%         physics_read_nonupdated_key_test,
+%%         physics_test1,
+%%         physics_test2,
+%%         physics_test3,
+%%         physics_test5,
+%%         physics_test_read_wait,
+%%         physics_test4,
+%%         physics_test_read_time,
+%%         physics_test_prepare,
+%%         physics_tx_noclock_test,
+%%         physics_single_key_update_read_test,
+%%         physics_multiple_key_update_read_test,
+%%         physics_test_certification_check,
+%%         physics_multiple_test_certification_check,
+%%         physics_multiple_read_update_test,
+%%         physics_concurrency_test,
+         physics_snapshot_test
 ].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
-clocksi_test1(Config) ->
+
+
+physics_read_nonupdated_key_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    
+    FirstNode = hd(Nodes),
+    Key1=physics_test_key,
+    Type=antidote_crdt_lwwreg,
+    BoundObject = {Key1, Type, bucket},
+    {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
+    {ok, ReadResult} = rpc:call(FirstNode, antidote, read_objects, [[BoundObject], TxId]),
+    {ok, _CT} = rpc:call(FirstNode, antidote, commit_transaction, [TxId]),
+    ?assertMatch([<<>>], ReadResult),
+    pass.
+
+physics_test1(Config) ->
     Nodes = proplists:get_value(nodes, Config),
 
     FirstNode = hd(Nodes),
     lager:info("Test1 started"),
-    Key1=clocksi_test1_key1,
-    Key2=clocksi_test1_key2,
+    Key1=physics_test1_key1,
+    Key2=physics_test1_key2,
     Type = antidote_crdt_counter,
     %% Empty transaction works,
     lager:info("Running empty transaction"),
@@ -174,14 +194,14 @@ clocksi_test1(Config) ->
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %%      that updates multiple partitions.
-clocksi_test2(Config) ->
+physics_test2(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Test2 started"),
     Type = antidote_crdt_counter,
-    Key1=clocksi_test2_key1,
-    Key2=clocksi_test2_key2,
-    Key3=clocksi_test2_key3,
+    Key1=physics_test2_key1,
+    Key2=physics_test2_key2,
+    Key3=physics_test2_key3,
     {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
                          [TxId, Key1, antidote_crdt_counter]),
@@ -219,13 +239,13 @@ clocksi_test2(Config) ->
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %%      It tests the API operation that allows clients to run interactive txs
 %%      explicitely calling prepare and commit.
-clocksi_test3(Config) ->
+physics_test3(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Test2 started"),
-    Key1=clocksi_test3_key1,
-    Key2=clocksi_test3_key2,
-    Key3=clocksi_test3_key3,
+    Key1=physics_test3_key1,
+    Key2=physics_test3_key2,
+    Key3=physics_test3_key3,
     Type = antidote_crdt_counter,
     {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
@@ -263,13 +283,13 @@ clocksi_test3(Config) ->
 
 %% @doc This test makes sure NOT TO block pending reads when a prepare is in progress
 %% that could violate atomicity if not blocked
-clocksi_test_prepare(Config) ->
+physics_test_prepare(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Test prepare started"),
     Type = antidote_crdt_counter,
 
-    Key1=clocksi_test_prepare_key1,
+    Key1=physics_test_prepare_key1,
     Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
     IndexNode = hd(Preflist),
 
@@ -335,12 +355,12 @@ spawn_com(FirstNode, TxId) ->
 %% @doc The following function tests that ClockSI can run an interactive tx.
 %%      that updates only one partition. This type of txs use a only-one phase
 %%      commit.
-clocksi_test5(Config) ->
+physics_test5(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Test2 started"),
     Type = antidote_crdt_counter,
-    Key1=clocksi_test5_key1,
+    Key1=physics_test5_key1,
     {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     lager:info("Started Tx. got id: ~p",[TxId]),
     ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
@@ -392,10 +412,10 @@ clocksi_test5(Config) ->
 
 
 %% @doc Test to execute transaction with out explicit clock time
-clocksi_tx_noclock_test(Config) ->
+physics_tx_noclock_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    Key = clocksi_tx_noclock_test_key1,
+    Key = physics_tx_noclock_test_key1,
     Type = antidote_crdt_counter,
     {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
@@ -429,16 +449,16 @@ clocksi_tx_noclock_test(Config) ->
         [Key, antidote_crdt_counter]),
     {ok, {_, ReadSet2, _}}= ReadResult2,
     ?assertMatch([2], ReadSet2),
-	lager:info("clocksi_tx_noclock_test passed"),
+	lager:info("physics_tx_noclock_test passed"),
 	pass.
 
 %% @doc The following function tests that ClockSI can run both a single
 %%      read and a bulk-update tx.
-clocksi_single_key_update_read_test(Config) ->
+physics_single_key_update_read_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     lager:info("Test3 started"),
     FirstNode = hd(Nodes),
-    Key = clocksi_single_key_update_read_test_key1,
+    Key = physics_single_key_update_read_test_key1,
     Type = antidote_crdt_counter,
     Result= rpc:call(FirstNode, antidote, clocksi_bulk_update,
                      [
@@ -451,17 +471,17 @@ clocksi_single_key_update_read_test(Config) ->
                       [CommitTime, Key, Type]),
     {ok, {_, ReadSet, _}}=Result2,
     ?assertMatch([2], ReadSet),
-    lager:info("clocksi_single_key_update_read_test passed"),
+    lager:info("physics_single_key_update_read_test passed"),
     pass.
 
 %% @doc Verify that multiple reads/writes are successful.
-clocksi_multiple_key_update_read_test(Config) ->
+physics_multiple_key_update_read_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     Type = antidote_crdt_counter,
-    Key1 = clocksi_multiple_key_update_read_test_key1,
-    Key2 = clocksi_multiple_key_update_read_test_key2,
-    Key3 = clocksi_multiple_key_update_read_test_key3,
+    Key1 = physics_multiple_key_update_read_test_key1,
+    Key2 = physics_multiple_key_update_read_test_key2,
+    Key3 = physics_multiple_key_update_read_test_key3,
 
     Objs = [{Key1, Type, bucket}, {Key2, Type, bucket}, {Key3, Type, bucket}],
 
@@ -484,11 +504,11 @@ clocksi_multiple_key_update_read_test(Config) ->
 
 %% @doc The following function tests that ClockSI can excute a
 %%      read-only interactive tx.
-clocksi_test4(Config) ->
+physics_test4(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     lager:info("Test4 started"),
     FirstNode = hd(Nodes),
-    Key1 = clocksi_test4_key1,
+    Key1 = physics_test4_key1,
     Type = antidote_crdt_counter,
     lager:info("Node1: ~p", [FirstNode]),
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
@@ -511,11 +531,11 @@ clocksi_test4(Config) ->
 %% @doc The following function tests that Physics does not waits, when reading,
 %%      for a tx that has updated an element that it wants to read and
 %%      has a smaller TxId, but has not yet committed.
-clocksi_test_read_time(Config) ->
+physics_test_read_time(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     %% Start a new tx,  perform an update over key abc, and send prepare.
     lager:info("Test read_time started"),
-    Key1 = clocksi_test_read_time_key1,
+    Key1 = physics_test_read_time_key1,
     FirstNode = hd(Nodes),
     LastNode= lists:last(Nodes),
     lager:info("Node1: ~p", [FirstNode]),
@@ -561,10 +581,10 @@ clocksi_test_read_time(Config) ->
 %% @doc The following function tests that ClockSI does not read values
 %%      inserted by a tx with higher commit timestamp than the snapshot time
 %%      of the reading tx.
-clocksi_test_read_wait(Config) ->
+physics_test_read_wait(Config) ->
     Nodes = proplists:get_value(nodes, Config),
 
-    Key1 = clocksi_test_read_wait_key1,
+    Key1 = physics_test_read_wait_key1,
     Type = antidote_crdt_counter,
     %% Start a new tx, update a key read_wait_test, and send prepare.
 
@@ -615,18 +635,18 @@ spawn_read(Node, TxId, Return, Key, Type) ->
 
 %% @doc The following function tests the certification check algorithm,
 %%      when two concurrent txs modify a single object, one hast to abort.
-clocksi_test_certification_check(Config) ->
+physics_test_certification_check(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
         {ok, true} ->
-            clocksi_test_certification_check_run(Nodes);
+            physics_test_certification_check_run(Nodes);
         _ ->
             pass
     end.
 
-clocksi_test_certification_check_run(Nodes) ->
-    lager:info("clockSI_test_certification_check started"),
-    Key1 = clockSI_test_certification_check_key1,
+physics_test_certification_check_run(Nodes) ->
+    lager:info("physics_test_certification_check started"),
+    Key1 = physics_test_certification_check_key1,
     Type = antidote_crdt_counter,
 
     FirstNode = hd(Nodes),
@@ -669,21 +689,21 @@ clocksi_test_certification_check_run(Nodes) ->
 %% @doc The following function tests the certification check algorithm.
 %%      when two concurrent txs modify a single object, one hast to abort.
 %%      Besides, it updates multiple partitions.
-clocksi_multiple_test_certification_check(Config) ->
+physics_multiple_test_certification_check(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
         {ok, true} ->
-            clocksi_multiple_test_certification_check_run(Nodes);
+            physics_multiple_test_certification_check_run(Nodes);
         _ ->
             pass
     end.
 
-clocksi_multiple_test_certification_check_run(Nodes) ->
-    lager:info("clockSI_multiple_test_certification_check started"),
+physics_multiple_test_certification_check_run(Nodes) ->
+    lager:info("physics_multiple_test_certification_check started"),
 
-    Key1 = clocksi_multiple_test_certification_check_key1,
-    Key2 = clocksi_multiple_test_certification_check_key2,
-    Key3 = clocksi_multiple_test_certification_check_key3,
+    Key1 = physics_multiple_test_certification_check_key1,
+    Key2 = physics_multiple_test_certification_check_key2,
+    Key3 = physics_multiple_test_certification_check_key3,
     Type = antidote_crdt_counter,
 
     FirstNode = hd(Nodes),
@@ -731,7 +751,7 @@ clocksi_multiple_test_certification_check_run(Nodes) ->
     pass.
 
 %% @doc Read an update a key multiple times.
-clocksi_multiple_read_update_test(Config) ->
+physics_multiple_read_update_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     Key = get_random_key(),
@@ -768,14 +788,14 @@ get_random_key() ->
 %% in this case, PhysiCS performs different from ClockSI, as it does not wait for prepared
 %% transactions to commit. Therefore, when Tx2 wants to commit, it can't as Tx1 has committed,
 %% which generates a write-write conflict.
-clocksi_concurrency_test(Config) ->
+physics_concurrency_test(Config) ->
 	Nodes = proplists:get_value(nodes, Config),
-	lager:info("clockSI_concurrency_test started"),
+	lager:info("physics_concurrency_test started"),
 	Node = hd(Nodes),
 	%% read txn starts before the write txn's prepare phase,
-	Key = clocksi_conc,
+	Key = physics_conc,
 	Type = antidote_crdt_counter,
-	Bucket = clocksi_test,
+	Bucket = physics_test,
 	Bound_object = {Key, Type, Bucket},
 	
 	{ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
@@ -802,3 +822,66 @@ clocksi_concurrency_test(Config) ->
 			?assertMatch({ok, [1]}, Res),
 			pass
 	end.
+
+%% this test shows how a long fork, forward freshness, and causal snapshots work.
+physics_snapshot_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    lager:info("physics_snapshot_test started"),
+    Node = hd(Nodes),
+    %% read txn starts before the write txn's prepare phase,
+    Key = physics_snapshot_test,
+    Key2 = physics_snapshot_test2,
+    Type = antidote_crdt_counter,
+    Bucket = physics_test,
+    
+    Bound_object1= {Key, Type, Bucket},
+    Bound_object2 = {Key2, Type, Bucket},
+    
+    
+    %% first, create initial versions of the two objects.
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object1, {increment, 1}}, {Bound_object2, {increment, 1}}], TxId]),
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+    
+    %% now, start two transactions, one reading each of created versions.
+    {ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    
+    Res1 = rpc:call(Node, antidote, read_objects, [[Bound_object1], TxId1]),
+    Res1 = rpc:call(Node, antidote, read_objects, [[Bound_object2], TxId2]),
+    
+    ?assertMatch({ok, [1]}, Res1),
+    
+    %% now, a transaction creates new versions of the objects, which should depend on the previous transaction.
+    
+    {ok, TxId3} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    {ok, [1]} = rpc:call(Node, antidote, read_objects, [[Bound_object1, Bound_object2], TxId3]),
+    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object1, {increment, 1}}, {Bound_object2, {increment, 1}}], TxId3]),
+    rpc:call(Node, antidote, commit_transaction, [TxId3]),
+    
+    {ok, TxId4} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    {ok, [2]} = rpc:call(Node, antidote, read_objects, [[Bound_object1, Bound_object2], TxId4]),
+    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object1, {increment, 1}}, {Bound_object2, {increment, 1}}], TxId4]),
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId4]),
+    
+    {ok, TxId5} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    {ok, [3]} = rpc:call(Node, antidote, read_objects, [[Bound_object1, Bound_object2], TxId5]),
+    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object1, {increment, 1}}, {Bound_object2, {increment, 1}}], TxId5]),
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId5]),
+    
+    %% now, the reading transactions want to read the object they haven't read yet.
+    
+    Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object2], TxId1]),
+    Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object1], TxId2]),
+    
+    %% just finish the two transactions.
+    
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
+    {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+    
+    %% check that the result is 2, because
+    ?assertMatch({ok, [2]}, Res2),
+    pass.
+    
+    
+
