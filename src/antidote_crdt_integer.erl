@@ -45,7 +45,8 @@
 -type state() :: {[{term(), integer()}], integer()}.
 -type update() ::
       {increment, integer()}
-    | {set, integer()}.
+    | {set, integer()}
+    | reset.
 -type effect() ::
       {increment, integer()}
     | {set, term(), [term()], integer()}.

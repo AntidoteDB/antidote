@@ -34,9 +34,18 @@ prop_gmap_spec() ->
 spec(Operations1) ->
   Operations = lists:flatmap(fun normalizeOp/1, Operations1),
   Keys = lists:usort([Key || {_, {update, {Key, _}}} <- Operations]),
-  GroupedByKey = [{Key, [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2 ]}  || Key <- Keys],
+  GroupedByKey = [{Key, nestedOps(Operations, Key)}  || Key <- Keys],
   NestedSpec = [{{Key,Type}, nestedSpec(Type, Ops)} || {{Key,Type}, Ops} <- GroupedByKey],
   lists:sort(NestedSpec).
+
+nestedOps(Operations, {_,Type}=Key) ->
+  Resets =
+      case Type:is_operation(reset) of
+        true ->
+          [{Clock, reset} || {Clock, reset} <- Operations];
+        false -> []
+      end,
+  Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
 nestedSpec(antidote_crdt_gmap, Ops) -> spec(Ops);
 nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
@@ -51,10 +60,14 @@ normalizeOp(X) -> [X].
 % generates a random operation
 op() -> ?SIZED(Size, op(Size)).
 op(Size) ->
-  {update, oneof([
-    nestedOp(Size),
-    ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))
-  ])}.
+  frequency([
+    % nested updates
+    {10, {update, oneof([
+        nestedOp(Size),
+        ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))
+      ])}},
+    {1, reset}
+  ]).
 
 removeDuplicateKeys([], _) -> [];
 removeDuplicateKeys([{Key,Op}|Rest], Keys) ->

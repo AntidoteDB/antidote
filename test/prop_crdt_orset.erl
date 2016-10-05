@@ -39,7 +39,9 @@ add_wins_set_spec(Operations1) ->
       % such that there is an add operation for X
       {AddClock, {add, X}} <- Operations,
       % and there is no remove operation after the add
-      [] == [Y || {RemoveClock, {remove, Y}} <- Operations, X == Y, crdt_properties:clock_le(AddClock, RemoveClock)]
+      [] == [Y || {RemoveClock, {remove, Y}} <- Operations, X == Y, crdt_properties:clock_le(AddClock, RemoveClock)],
+      % and there is no reset operation after the add
+      [] == [reset || {ResetClock, reset} <- Operations, crdt_properties:clock_le(AddClock, ResetClock)]
     ]).
 
 % transforms add_all and remove_all into single operations
@@ -56,7 +58,8 @@ set_op() ->
     {add, set_element()},
     {add_all, list(set_element())},
     {remove, set_element()},
-    {remove_all, list(set_element())}
+    {remove_all, list(set_element())},
+    reset
   ]).
 
 set_element() ->

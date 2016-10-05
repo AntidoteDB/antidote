@@ -25,7 +25,7 @@
 
 
 
--export([crdt_satisfies_spec/3, clock_le/2]).
+-export([crdt_satisfies_spec/3, clock_le/2, subcontext/2]).
 
 -export_type([clocked_operation/0]).
 
@@ -75,6 +75,9 @@ clock_le(A, B) ->
   lists:all(fun(R) -> maps:get(R, A) =< maps:get(R, B, 0) end, maps:keys(A)).
 
 
+subcontext(Clock, Operations) ->
+  [{OpClock, Op} || {OpClock, Op} <- Operations, clock_le(OpClock, Clock), not clock_le(Clock, OpClock)].
+
 % executes/checks the specification
 checkSpec(Crdt, Ops, Spec) ->
   % check that the CRDT is registered:
@@ -108,6 +111,7 @@ checkSpecEnd(Crdt, Spec, EndState, R) ->
   SpecValue = Spec(VisibleOperations),
   ?WHENFAIL(
     begin
+%%      printState(EndState),
       io:format("Reading value on ~p~n", [R]),
       io:format("Expected value: ~p~n", [SpecValue]),
       io:format("Actual value  : ~p~n", [RValue])
@@ -195,3 +199,14 @@ checkBinaryEncoding(Crdt, EndState, R) ->
       Crdt:value(CrdtState) == Crdt:value(CrdtState2)
     )}
   ]).
+
+
+%%printState(State) ->
+%%  [printReplicaState(R, ReplicaState) || {R, ReplicaState} <- maps:to_list(State)].
+%%
+%%printReplicaState(R, S) ->
+%%  io:format("Replica ~p : ~n", [R]),
+%%  io:format("   State ~p : ~n", [S#test_replica_state.state]),
+%%  io:format("   operations ~p : ~n", [S#test_replica_state.operations]),
+%%  io:format("   downstreamOps ~p : ~n", [S#test_replica_state.downstreamOps]),
+%%  ok.

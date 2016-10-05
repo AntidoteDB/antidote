@@ -45,7 +45,8 @@
     {update, nested_op()}
   | {update, [nested_op()]}
   | {remove, typedKey()}
-  | {remove, [typedKey()]}.
+  | {remove, [typedKey()]}
+  | reset.
 -type nested_op() :: {typedKey(), Op::term()}.
 -type effect() ::
      {update, [nested_downstream()], AddedToken::token()}
@@ -74,7 +75,11 @@ downstream({update, NestedOps}, CurrentMap) ->
 downstream({remove, {Key, Type}}, CurrentMap) ->
   downstream({remove, [{Key, Type}]}, CurrentMap);
 downstream({remove, Keys}, CurrentMap) ->
-  {ok, {remove, [generateDownstreamRemove(Key, CurrentMap) || Key <- Keys]}}.
+  {ok, {remove, [generateDownstreamRemove(Key, CurrentMap) || Key <- Keys]}};
+downstream(reset, CurrentMap) ->
+  % reset removes all keys
+  AllKeys = [Key || {Key, _Val} <- value(CurrentMap)],
+  downstream({remove, AllKeys}, CurrentMap).
 
 
 -spec generateDownstreamUpdate({typedKey(), Op::term()}, state()) -> nested_downstream().
@@ -165,6 +170,7 @@ is_operation(Operation) ->
     {remove, Keys} when is_list(Keys) ->
       distinct(Keys)
         andalso lists:all(fun(Key) -> is_operation({remove, Key}) end, Keys);
+    reset -> true;
     _ ->
       false
   end.
@@ -175,6 +181,41 @@ distinct([X|Xs]) ->
 
 
 
+
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
+-ifdef(TEST).
+
+reset1_test() ->
+  Set0 = new(),
+  % DC1: a.incr
+  {ok, Incr1} = downstream({update, {{a, antidote_crdt_integer}, {increment, 1}}}, Set0),
+  {ok, Set1a} = update(Incr1, Set0),
+  % DC1 reset
+  {ok, Reset1} = downstream(reset, Set1a),
+  {ok, Set1b} = update(Reset1, Set1a),
+  % DC2 a.remove
+  {ok, Remove1} = downstream({remove, {a, antidote_crdt_integer}}, Set0),
+  {ok, Set2a} = update(Remove1, Set0),
+  % DC2 --> DC1
+  {ok, Set1c} = update(Remove1, Set1b),
+  % DC1 reset
+  {ok, Reset2} = downstream(reset, Set1c),
+  {ok, Set1d} = update(Reset2, Set1c),
+  % DC1: a.incr
+  {ok, Incr2} = downstream({update, {{a, antidote_crdt_integer}, {increment, 0}}}, Set1d),
+  {ok, Set1e} = update(Incr2, Set1d),
+
+  ?assertEqual([], value(Set2a)),
+  ?assertEqual([], value(Set1d)),
+  ?assertEqual([{{a, antidote_crdt_integer}, 1}], value(Set1e)).
+
+
+
+
+
+-endif.
 
 
 

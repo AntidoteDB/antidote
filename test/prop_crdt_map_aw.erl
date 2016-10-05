@@ -32,7 +32,7 @@ prop_map_spec() ->
 
 
 spec(Operations1) ->
-  Operations = lists:flatmap(fun normalizeOp/1, Operations1),
+  Operations = lists:flatmap(fun(Op) -> normalizeOp(Op, Operations1) end, Operations1),
   % the keys in the map are the ones that were updated and not deleted yet
   Keys = lists:usort([Key ||
     % has an update
@@ -59,11 +59,16 @@ nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
 nestedSpec(antidote_crdt_integer, Ops) -> prop_crdt_integer:spec(Ops).
 
 % normalizes operations (update-lists into single update-operations)
-normalizeOp({Clock, {update, List}}) when is_list(List) ->
+normalizeOp({Clock, {update, List}}, _) when is_list(List) ->
   [{Clock, {update, X}} || X <- List];
-normalizeOp({Clock, {remove, List}}) when is_list(List) ->
+normalizeOp({Clock, {remove, List}}, _) when is_list(List) ->
   [{Clock, {remove, X}} || X <- List];
-normalizeOp(X) -> [X].
+normalizeOp({Clock, reset}, Operations) ->
+  % reset is like removing all current keys
+  Map = spec(crdt_properties:subcontext(Clock, Operations)),
+  Keys = [Key || {Key, _Val} <- Map],
+  [{Clock, {remove, X}} || X <- Keys];
+normalizeOp(X, _) -> [X].
 
 
 % generates a random operation
@@ -73,7 +78,8 @@ op(Size) ->
     {update, nestedOp(Size)},
     {update, ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))},
     {remove, typed_key()},
-    {remove, ?LET(L, list(typed_key()), lists:usort(L))}
+    {remove, ?LET(L, list(typed_key()), lists:usort(L))},
+    reset
   ]).
 
 removeDuplicateKeys([], _) -> [];

@@ -57,7 +57,9 @@
 %% TODO: make opaque
 -type mvreg() :: [{term(), uniqueToken()}].
 -type uniqueToken() :: term().
--type mvreg_effect() :: {Value::term(), uniqueToken(), Overridden::[uniqueToken()]}.
+-type mvreg_effect() ::
+    {Value::term(), uniqueToken(), Overridden::[uniqueToken()]}
+  | {reset, Overridden::[uniqueToken()]}.
 
 
 -type mvreg_op() :: {assign, term()}.
@@ -81,7 +83,10 @@ value(MVReg) ->
 downstream({assign, Value}, MVReg) ->
     Token = unique(),
     Overridden = [Tok || {_, Tok} <- MVReg],
-    {ok, {Value, Token, Overridden}}.
+    {ok, {Value, Token, Overridden}};
+downstream(reset, MVReg) ->
+  Overridden = [Tok || {_, Tok} <- MVReg],
+  {ok, {reset, Overridden}}.
 
 -spec unique() -> uniqueToken().
 unique() ->
@@ -93,7 +98,10 @@ update({Value, Token, Overridden}, MVreg) ->
     % remove overridden values
     MVreg2 = [{V,T} || {V,T} <- MVreg, not lists:member(T, Overridden)],
     % insert new value
-    {ok, insertSorted({Value, Token}, MVreg2)}.
+    {ok, insertSorted({Value, Token}, MVreg2)};
+update({reset, Overridden}, MVreg) ->
+  MVreg2 = [{V,T} || {V,T} <- MVreg, not lists:member(T, Overridden)],
+  {ok, MVreg2}.
 
 % insert value into sorted list
 insertSorted(A, []) -> [A];
@@ -122,6 +130,7 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 %%      that Operation is supported by this particular CRDT.
 -spec is_operation(term()) -> boolean().
 is_operation({assign, _}) -> true;
+is_operation(reset) -> true;
 is_operation(_) -> false.
 
 require_state_downstream(_) ->

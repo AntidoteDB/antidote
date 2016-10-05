@@ -34,12 +34,19 @@ prop_mvreg_spec() ->
 spec(Operations) ->
   Values =
     [Val || {Clock, {assign, Val}} <- Operations,
-      [] == [Clock2 || {Clock2, {assign, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)]],
+      % all values, such that not overridden by other assign
+      [] == [Clock2 || {Clock2, {assign, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)],
+      % and not overridden by reset
+      [] == [Clock3 || {Clock3, reset} <- Operations, crdt_properties:clock_le(Clock, Clock3)]
+    ],
   lists:sort(Values).
 
 
 
 % generates a random counter operation
 op() ->
-  {assign, oneof([a,b,c,d,e,f,g,h,i])}.
+  frequency([
+    {5, {assign, oneof([a,b,c,d,e,f,g,h,i])}},
+    {1, reset}
+  ]).
 

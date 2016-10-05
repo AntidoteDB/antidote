@@ -47,74 +47,87 @@
 -endif.
 
 -export_type([set/0, binary_set/0, set_op/0]).
--opaque set() :: orddict:orddict(term(), [token()]).
+-opaque set() :: {ResetTokens::[token()], orddict:orddict(term(), [token()])}.
 
 -type binary_set() :: binary(). %% A binary that from_binary/1 will operate on.
 
--type set_op() :: {add, member()} | {remove, member()} |
-                    {add_all, [member()]} | {remove_all, [member()]}.
+-type set_op() ::
+      {add, member()}
+    | {remove, member()}
+    | {add_all, [member()]}
+    | {remove_all, [member()]}
+    | reset.
 
 -type token() :: term().
 -type effect() ::
-      {add, [{member(), [token()]}]}
-    | {remove, [{member(), [token()]}], token()}.
+      {add, [{member(), RemTokens::[token()]}], ResetTokens::[token()]}
+    | {remove, [{member(), RemTokens::[token()]}], NewRemToken::token(), ResetTokens::[token()]}
+    | {reset, [{member(), RemTokens::[token()]}], OldResetTokens::[token()], NewResetToken::token()}.
 
 -type member() :: term().
 
 -spec new() -> set().
 new() ->
-    orddict:new().
+  {[], orddict:new()}.
 
 -spec value(set()) -> [member()].
-value(Dict) ->
+value({_,Dict}) ->
     [Val || {Val, []} <- orddict:to_list(Dict)].
 
 
 -spec downstream(set_op(), set()) -> {ok, effect()}.
-downstream({add, Elem}, Dict) ->
-    downstream({add_all, [Elem]}, Dict);
-downstream({add_all,Elems}, Dict) ->
-    {ok, {add, elemsWithRemovedTombstones(lists:usort(Elems), Dict)}};
-downstream({remove, Elem}, Dict) ->
-    downstream({remove_all, [Elem]}, Dict);
-downstream({remove_all, Elems}, Dict) ->
-%%    {ok, {remove, [{E,[]} || E <- lists:usort(Elems)], unique()}}.
-% TODO optimization:
-    {ok, {remove, elemsWithRemovedTombstones(lists:usort(Elems), Dict), unique()}}.
+downstream({add, Elem}, State) ->
+    downstream({add_all, [Elem]}, State);
+downstream({add_all,Elems}, {ResetTokens, Dict}) ->
+    {ok, {add, elemsWithRemovedTombstones(lists:usort(Elems), Dict, ResetTokens), ResetTokens}};
+downstream({remove, Elem}, State) ->
+    downstream({remove_all, [Elem]}, State);
+downstream({remove_all, Elems}, {ResetTokens, Dict}) ->
+    {ok, {remove, elemsWithRemovedTombstones(lists:usort(Elems), Dict, ResetTokens), unique(), ResetTokens}};
+downstream(reset, {ResetTokens, Dict}) ->
+  RemovedTombstones = elemsWithRemovedTombstones(lists:usort(orddict:fetch_keys(Dict)), Dict, ResetTokens),
+  {ok, {reset, RemovedTombstones, ResetTokens, unique()}}.
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
     crypto:strong_rand_bytes(20).
 
-elemsWithRemovedTombstones([], _Dict) -> [];
-elemsWithRemovedTombstones(Elems, []) -> [{E,[]} || E <- Elems];
-elemsWithRemovedTombstones([E|ElemsRest]=Elems, [{K,Ts}|DictRest]=Dict) ->
+elemsWithRemovedTombstones([], _Dict, _ResetTokens) -> [];
+elemsWithRemovedTombstones(Elems, [], ResetTokens) -> [{E,ResetTokens} || E <- Elems];
+elemsWithRemovedTombstones([E|ElemsRest]=Elems, [{K,Ts}|DictRest]=Dict, ResetTokens) ->
     if
         E == K ->
-            [{E,Ts}|elemsWithRemovedTombstones(ElemsRest, DictRest)];
+            [{E,Ts++ResetTokens}|elemsWithRemovedTombstones(ElemsRest, DictRest, ResetTokens)];
         E > K ->
-            elemsWithRemovedTombstones(Elems, DictRest);
+            elemsWithRemovedTombstones(Elems, DictRest, ResetTokens);
         true ->
-            [{E,[]}|elemsWithRemovedTombstones(ElemsRest, Dict)]
+            [{E,ResetTokens}|elemsWithRemovedTombstones(ElemsRest, Dict, ResetTokens)]
     end.
 
 
 -spec update(effect(), set()) -> {ok, set()}.
-update({add, Elems}, Dict) ->
-    {ok, addElems(Elems, Dict,[])};
-update({remove,Elems,Token}, Dict) ->
-    {ok, addElems(Elems, Dict, [Token])}.
+update({add, Elems, ObservedResetTokens}, {ResetTokens, Dict}) ->
+  NewResetTokens = ResetTokens -- ObservedResetTokens,
+  {ok, {ResetTokens, addElems(Elems, Dict, [], NewResetTokens)}};
+update({remove,Elems,Token, ObservedResetTokens}, {ResetTokens, Dict}) ->
+  NewResetTokens = ResetTokens -- ObservedResetTokens,
+  {ok, {ResetTokens, addElems(Elems, Dict, [Token], NewResetTokens)}};
+update({reset, Elems, OldResetTokens, NewResetToken}, {ResetTokens, Dict}) ->
+  Dict2 = addElems(Elems, Dict, [], []),
+  Dict3 = [{X, [NewResetToken|Tokens--OldResetTokens]} || {X,Tokens} <- Dict2],
+  {ok, {[NewResetToken] ++ (ResetTokens -- OldResetTokens), Dict3}}.
 
-addElems([], Dict, _) -> Dict;
-addElems(Elems, [], NewTombs) -> [{E, NewTombs} || {E,_} <- Elems];
-addElems([{E,RemovedTombstones}|ElemsRest]=Elems, [{K,Ts}|DictRest]=Dict, NewTombs) ->
+
+addElems([], Dict, _, _) -> Dict;
+addElems(Elems, [], NewTombs, NewEntryTombs) -> [{E, NewTombs++NewEntryTombs} || {E,_} <- Elems];
+addElems([{E,RemovedTombstones}|ElemsRest]=Elems, [{K,Ts}|DictRest]=Dict, NewTombs, NewEntryTombs) ->
     if
         E == K ->
-            [{E, NewTombs ++ (Ts -- RemovedTombstones)}|addElems(ElemsRest, DictRest, NewTombs)];
+            [{E, NewTombs ++ (Ts -- RemovedTombstones)}|addElems(ElemsRest, DictRest, NewTombs, NewEntryTombs)];
         E > K ->
-            [{K,Ts}|addElems(Elems, DictRest, NewTombs)];
+            [{K,Ts}|addElems(Elems, DictRest, NewTombs, NewEntryTombs)];
         true ->
-            [{E, NewTombs}|addElems(ElemsRest, Dict, NewTombs)]
+            [{E, NewTombs++NewEntryTombs}|addElems(ElemsRest, Dict, NewTombs, NewEntryTombs)]
     end.
 
 
@@ -144,6 +157,77 @@ is_operation({add_all, L}) when is_list(L) -> true;
 is_operation({remove, _Elem}) ->
     true;
 is_operation({remove_all, L}) when is_list(L) -> true;
+is_operation(reset) -> true;
 is_operation(_) -> false.
 
 require_state_downstream(_) -> true.
+
+
+
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
+-ifdef(TEST).
+
+reset1_test() ->
+  Set0 = new(),
+  % DC1 reset
+  {ok, ResetEffect} = downstream(reset, Set0),
+  {ok, Set1a} = update(ResetEffect, Set0),
+  % DC1 add
+  {ok, Add1Effect} = downstream({add, a}, Set1a),
+  {ok, Set1b} = update(Add1Effect, Set1a),
+  % DC2 add
+  {ok, Add2Effect} = downstream({add, a}, Set0),
+  {ok, Set2a} = update(Add2Effect, Set0),
+  % pull 2 from DC1 to DC2
+  {ok, Set2b} = update(ResetEffect, Set2a),
+  {ok, Set2c} = update(Add1Effect, Set2b),
+
+  io:format("ResetEffect = ~p~n", [ResetEffect]),
+  io:format("Add1Effect = ~p~n", [Add1Effect]),
+  io:format("Add2Effect = ~p~n", [Add2Effect]),
+
+  io:format("Set1a = ~p~n", [Set1a]),
+  io:format("Set1b = ~p~n", [Set1b]),
+  io:format("Set2a = ~p~n", [Set2a]),
+  io:format("Set2b = ~p~n", [Set2b]),
+  io:format("Set2c = ~p~n", [Set2c]),
+
+  ?assertEqual([], value(Set1a)),
+  ?assertEqual([a], value(Set1b)),
+  ?assertEqual([a], value(Set2a)),
+  ?assertEqual([], value(Set2b)),
+  ?assertEqual([a], value(Set2c)).
+
+
+reset2_test() ->
+  Set0 = new(),
+  % DC1 reset
+  {ok, Reset1Effect} = downstream(reset, Set0),
+  {ok, Set1a} = update(Reset1Effect, Set0),
+  % DC1 --> Dc2
+  {ok, Set2a} = update(Reset1Effect, Set0),
+  % DC2 reset
+  {ok, Reset2Effect} = downstream(reset, Set2a),
+  {ok, Set2b} = update(Reset2Effect, Set2a),
+  % DC2 add
+  {ok, Add2Effect} = downstream({add, a}, Set2b),
+  {ok, Set2c} = update(Add2Effect, Set2b),
+  % DC3 add
+  {ok, Add3Effect} = downstream({add, a}, Set0),
+  {ok, Set3a} = update(Add3Effect, Set0),
+  % DC1 --> DC3
+  {ok, Set3b} = update(Reset1Effect, Set3a),
+  % DC2 --> DC3
+  {ok, Set3c} = update(Reset2Effect, Set3b),
+  % DC2 --> DC3
+  {ok, Set3d} = update(Add2Effect, Set3c),
+
+
+  ?assertEqual([], value(Set1a)),
+  ?assertEqual([a], value(Set2c)),
+  ?assertEqual([a], value(Set3d)).
+
+
+-endif.

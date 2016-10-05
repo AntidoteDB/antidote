@@ -33,15 +33,18 @@ prop_orset_spec() ->
 
 rem_wins_set_spec(Operations1) ->
   Operations = lists:flatmap(fun normalizeOperation/1, Operations1),
+  RemoveClocks =
+    fun(X) ->
+      [Clock || {Clock, {remove, Y}} <- Operations, X == Y]
+      ++ [Clock || {Clock, reset} <- Operations]
+    end,
   Removed =
-    [X ||
-      % such that there is a remove operation for X
-      {RemClock, {remove, X}} <- Operations,
-      % and there is no add operation after the remove
-      [] == [Y || {AddClock, {add, Y}} <- Operations, X == Y, crdt_properties:clock_le(RemClock, AddClock)]
-    ],
-  Added = lists:usort([X || {_, {add, X}} <- Operations]),
-  Added -- Removed.
+    fun(X) ->
+      % there is a remove for X which is not followed by an add
+      lists:any(fun(RemClock) -> [] == [Y || {AddClock, {add, Y}} <- Operations, X == Y, crdt_properties:clock_le(RemClock, AddClock)] end, RemoveClocks(X))
+    end,
+  Added = [X || {_, {add, X}} <- Operations],
+  [X || X <- lists:usort(Added), not Removed(X)].
 
 % transforms add_all and remove_all into single operations
 normalizeOperation({Clock, {add_all, Elems}}) ->
@@ -57,7 +60,8 @@ set_op() ->
     {add, set_element()},
     {add_all, list(set_element())},
     {remove, set_element()},
-    {remove_all, list(set_element())}
+    {remove_all, list(set_element())},
+    reset
   ]).
 
 set_element() ->
