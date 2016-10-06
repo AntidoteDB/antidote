@@ -167,19 +167,6 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
-    {ok, SnapshotTime} = case ClientClock of
-                             ignore ->
-                                 get_snapshot_time();
-                             _ ->
-                                 case UpdateClock of
-                                     update_clock ->
-                                         get_snapshot_time(ClientClock);
-                                     no_update_clock ->
-                                         {ok, ClientClock}
-                                 end
-                         end,
-    DcId = ?DC_META_UTIL:get_my_dc_id(),
-    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     Name = case StayAlive of
                true ->
                    case IsStatic of
