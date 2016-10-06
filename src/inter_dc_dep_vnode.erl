@@ -54,7 +54,7 @@
 %% VNode state
 -record(state, {
   partition :: partition_id(),
-  queues :: dict(), %% DCID -> queue()
+  queues :: dict:dict(), %% DCID -> queue()
   vectorclock :: vectorclock(),
   last_updated :: non_neg_integer(),
   drop_ping :: boolean()

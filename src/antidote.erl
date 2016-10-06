@@ -284,7 +284,7 @@ unregister_hook(Prefix, Bucket) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), term()) ->
+-spec append(key(), type(), {op() | transfer,term()}) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(KeyOrKeyBucket, Type, Op) ->
     {Key, Bucket} = case KeyOrKeyBucket of

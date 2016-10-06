@@ -90,16 +90,13 @@ process_transfer({transfer, TransferOp}) ->
 %% Callbacks
 %% ===================================================================
 
-handle_cast({transfer, {{K,B}=_Key,Amount,Requester}}, #state{last_transfers=LT}=State) ->
-    BoundObject = {K, ?DATA_TYPE, B},
+handle_cast({transfer, {Key,Amount,Requester}}, #state{last_transfers=LT}=State) ->
     NewLT = cancel_consecutive_req(LT, ?GRACE_PERIOD),
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-    case can_process(BoundObject, Requester, NewLT) of
+    case can_process(Key, Requester, NewLT) of
         true ->
-            {ok, TxId} = antidote:start_transaction(ignore, []),
-            ok = antidote:update_objects([{BoundObject, {transfer, {Amount, Requester, MyDCId}}}], TxId),
-            {ok, _CT} = antidote:commit_transaction(TxId),
-            {noreply, State#state{last_transfers=orddict:store({BoundObject, Requester}, erlang:now(), NewLT)}};
+            antidote:append(Key, ?DATA_TYPE, {transfer, {Amount, Requester, MyDCId}}),
+            {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:timestamp(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
     end.
@@ -150,7 +147,7 @@ queue_request(Key, Amount, RequestsQueue) ->
                       {ok, Value} -> Value;
                       error -> orddict:new()
                   end,
-    CurrTime = erlang:now(),
+    CurrTime = 	erlang:timestamp(),
     orddict:store(Key, [{Amount, CurrTime} | QueueForKey], RequestsQueue).
 
 request_remote(0, _Key) -> 0;
@@ -202,13 +199,13 @@ pref_list(Obj) ->
 request_response(_BinaryRep,_RequestCacheEntry) -> ok.
 
 cancel_consecutive_req(LastTransfers, Period) ->
-    CurrTime = erlang:now(),
+    CurrTime = 	erlang:timestamp(),
     orddict:filter(
       fun(_, Timeout) ->
               timer:now_diff(Timeout,CurrTime) < Period end, LastTransfers).
 
 clear_pending_req(LastRequests, Period) ->
-    CurrTime = erlang:now(),
+    CurrTime = 	erlang:timestamp(),
     orddict:filter(fun(_, ListRequests) ->
                    FilteredList = lists:filter(fun({_, Timeout}) ->
                                    timer:now_diff(Timeout,CurrTime) < Period end, ListRequests),

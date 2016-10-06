@@ -758,8 +758,8 @@ read_update_test(Node, Key) ->
     pass.
 
 get_random_key() ->
-    random:seed(now()),
-    random:uniform(1000).
+  rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
+  rand_compat:uniform(1000).  % TODO use deterministic keys in testcase
 
 %% @doc The following function tests how two concurrent transactions work
 %%      when they are interleaved.

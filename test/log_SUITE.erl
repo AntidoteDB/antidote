@@ -70,7 +70,7 @@ log_test(Config) ->
 
     % Distribute the updates randomly over all DCs
     NumWrites = 5,
-    ListIds = [random:uniform(N) || _ <- lists:seq(1, NumWrites)],
+    ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid nondeterminism in tests
 
     F = fun(Elem) ->
             Node = lists:nth(Elem, Nodes),

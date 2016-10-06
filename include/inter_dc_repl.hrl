@@ -18,8 +18,8 @@
  partition :: partition_id(),
 	prev_log_opid :: #op_number{} | none, %% the value is *none* if the transaction is read directly from the log
 	causal_dependencies :: snapshot_time(),
-    timestamp :: non_neg_integer(),
-	last_update_opid :: #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort)
+	timestamp :: clock_time(),
+	last_update_opid :: undefined | #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort)
 	bucket :: bucket(),
 	log_records :: [#log_record{}] %% if the OP list is empty, the message is a HEARTBEAT}).
 }).
