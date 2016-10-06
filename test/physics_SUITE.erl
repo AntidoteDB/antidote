@@ -308,11 +308,11 @@ physics_test_prepare(Config) ->
     CommitTime=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
     ?assertMatch({ok, _}, CommitTime),
     
-    timer:sleep(3000),
+%%    timer:sleep(3000),
     
     {ok,TxIdRead}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     
-    timer:sleep(3000),
+%%    timer:sleep(3000),
     
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
