@@ -120,8 +120,6 @@ clocksi_read_nonupdated_key_test(Config) ->
     {ok, _CT} = rpc:call(FirstNode, antidote, commit_transaction, [TxId]),
     ?assertMatch([<<>>], ReadResult),
     pass.
-    
-    
 
 clocksi_test1(Config) ->
     Nodes = proplists:get_value(nodes, Config),
