@@ -46,11 +46,11 @@
   | {update, [nested_op()]}
   | {remove, typedKey()}
   | {remove, [typedKey()]}
+  | {batch, {Updates::[nested_op()], Removes::[typedKey()]}}
   | reset.
 -type nested_op() :: {typedKey(), Op::term()}.
 -type effect() ::
-     {update, [nested_downstream()], AddedToken::token()}
-   | {remove, [nested_downstream()]}.
+     {Adds::[nested_downstream()], Removed::[nested_downstream()], AddedToken::token()}.
 -type nested_downstream() :: {typedKey(), none | {ok, Effect::term()}, RemovedTokens::[token()]}.
 
 -spec new() -> state().
@@ -70,12 +70,20 @@ require_state_downstream(_Op) ->
 downstream({update, {{Key, Type}, Op}}, CurrentMap) ->
   downstream({update, [{{Key, Type}, Op}]}, CurrentMap);
 downstream({update, NestedOps}, CurrentMap) ->
-  Token = unique(),
-  {ok, {update, [generateDownstreamUpdate(Op, CurrentMap) || Op <- NestedOps], Token}};
+  downstream({batch, {NestedOps, []}}, CurrentMap);
 downstream({remove, {Key, Type}}, CurrentMap) ->
   downstream({remove, [{Key, Type}]}, CurrentMap);
 downstream({remove, Keys}, CurrentMap) ->
-  {ok, {remove, [generateDownstreamRemove(Key, CurrentMap) || Key <- Keys]}};
+  downstream({batch, {[], Keys}}, CurrentMap);
+downstream({batch, {Updates, Removes}}, CurrentMap) ->
+  UpdateEffects = [generateDownstreamUpdate(Op, CurrentMap) || Op <- Updates],
+  RemoveEffects = [generateDownstreamRemove(Key, CurrentMap) || Key <- Removes],
+  Token =
+    case UpdateEffects of
+      [] -> <<>>; % no token required
+      _ -> unique()
+    end,
+  {ok, {UpdateEffects, RemoveEffects, Token}};
 downstream(reset, CurrentMap) ->
   % reset removes all keys
   AllKeys = [Key || {Key, _Val} <- value(CurrentMap)],
@@ -114,10 +122,14 @@ unique() ->
     crypto:strong_rand_bytes(20).
 
 -spec update(effect(), state()) -> {ok, state()}.
-update({update, NestedEffects, AddedToken}, State) ->
-  {ok, lists:foldl(fun(E, S) -> update(E, [AddedToken], S)  end, State, NestedEffects)};
-update({remove, NestedEffects}, State) ->
-  {ok, lists:foldl(fun(E, S) -> update(E, [], S)  end, State, NestedEffects)}.
+update({Updates, Removes, AddedToken}, State) ->
+  State2 = lists:foldl(fun(E, S) -> update(E, [AddedToken], S)  end, State, Updates),
+  State3 = lists:foldl(fun(E, S) -> update(E, [], S)  end, State2, Removes),
+  {ok, State3}.
+%%update({update, NestedEffects, AddedToken}, State) ->
+%%  {ok, lists:foldl(fun(E, S) -> update(E, [AddedToken], S)  end, State, NestedEffects)};
+%%update({remove, NestedEffects}, State) ->
+%%  {ok, lists:foldl(fun(E, S) -> update(E, [], S)  end, State, NestedEffects)}.
 
 update({{Key,Type}, {ok, Op}, RemovedTokens}, NewTokens, Map) ->
   case dict:find({Key,Type}, Map) of
@@ -170,6 +182,12 @@ is_operation(Operation) ->
     {remove, Keys} when is_list(Keys) ->
       distinct(Keys)
         andalso lists:all(fun(Key) -> is_operation({remove, Key}) end, Keys);
+    {batch, {Updates, Removes}} ->
+      is_list(Updates)
+        andalso is_list(Removes)
+        andalso distinct(Removes ++ [Key || {Key, _} <- Updates])
+        andalso lists:all(fun(Key) -> is_operation({remove, Key}) end, Removes)
+        andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Updates);
     reset -> true;
     _ ->
       false

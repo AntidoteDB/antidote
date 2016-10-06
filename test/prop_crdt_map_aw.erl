@@ -63,6 +63,9 @@ normalizeOp({Clock, {update, List}}, _) when is_list(List) ->
   [{Clock, {update, X}} || X <- List];
 normalizeOp({Clock, {remove, List}}, _) when is_list(List) ->
   [{Clock, {remove, X}} || X <- List];
+normalizeOp({Clock, {batch, {Updates, Removes}}}, _) ->
+  [{Clock, {update, X}} || X <- Updates]
+   ++ [{Clock, {remove, X}} || X <- Removes];
 normalizeOp({Clock, reset}, Operations) ->
   % reset is like removing all current keys
   Map = spec(crdt_properties:subcontext(Clock, Operations)),
@@ -79,6 +82,13 @@ op(Size) ->
     {update, ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))},
     {remove, typed_key()},
     {remove, ?LET(L, list(typed_key()), lists:usort(L))},
+    ?LET({Updates,Removes},
+      {list(nestedOp(Size div 2)),list(typed_key())},
+      begin
+        Removes2 = lists:usort(Removes),
+        Updates2 = removeDuplicateKeys(Updates, Removes2),
+        {batch, {Updates2, Removes2}}
+      end),
     reset
   ]).
 
