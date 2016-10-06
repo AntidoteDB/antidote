@@ -49,7 +49,8 @@
          clocksi_multiple_read_update_test/1,
          clocksi_concurrency_test/1,
          spawn_read/5,
-         spawn_com/2]).
+         spawn_com/2
+]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -87,8 +88,7 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> [
-%%    clocksi_read_nonupdated_key_test,
+all() -> [clocksi_read_nonupdated_key_test,
     clocksi_test1,
          clocksi_test2,
          clocksi_test3,

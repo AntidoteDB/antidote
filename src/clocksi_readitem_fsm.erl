@@ -100,16 +100,8 @@ read_data_item({Partition, Node}, Key, Type, Transaction) ->
 
 -spec async_read_data_item(index_node(), key(), type(), transaction(), term()) -> ok.
 async_read_data_item({Partition, Node}, Key, Type, Transaction, Coordinator) ->
-%%	lager:debug("got async read op"),
-%%	try
 		gen_server:cast({global, generate_random_server_name(Node, Partition)},
 			{perform_read_cast, Coordinator, Key, Type, Transaction}).
-%%	catch
-%%		_:Reason ->
-%%			lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
-%%			check_server_ready([{Partition,Node}]),
-%%			async_read_data_item({Partition,Node}, Key, Type, Transaction, Coordinator)
-%%	end.
 	
 	
 

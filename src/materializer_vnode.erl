@@ -487,7 +487,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 define_snapshot_vc_for_transaction(_Transaction, []) ->
     no_operation_to_define_snapshot;
 define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
-    LocalDCReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
+    LocalDCReadTime = dc_utilities:now_microsec(),
     define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, first_operation, OperationTuple, 0).
 define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
 	{Length,_ListLen} = element(2, OperationsTuple),
@@ -558,7 +558,7 @@ is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
 create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
-            ReadTime = clocksi_vnode:now_microsec(dc_utilities:now()),
+            ReadTime = dc_utilities:now_microsec(),
             MyDc = dc_utilities:get_my_dc_id(),
             ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
 %%	        lager:debug("creating a physics empty snapshot:"),
@@ -733,7 +733,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 					        physics ->
 						        case DownstreamOp#operation_payload.dependency_vc of
 							        [] ->
-								        vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), []);
+								        vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), []);
 							        DepVC -> DepVC
 						        end;
 					        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->

@@ -183,7 +183,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
             PhysicsReadMetadata = #physics_read_metadata{
                 dep_upbound = vectorclock:new(),
                 commit_time_lowbound = vectorclock:new()},
-            Now = clocksi_vnode:now_microsec(dc_utilities:now()),
+            Now = dc_utilities:now_microsec(),
             TransactionId = #tx_id{local_start_time= Now, server_pid = Name},
             Transaction = #transaction{
                 transactional_protocol = Protocol,
@@ -432,7 +432,7 @@ execute_op({OpType, Args}, Sender,
                         (Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound == NewVC) and
                         (length(Args) > 1)) of
                         true ->
-                            PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), clocksi_vnode:now_microsec(dc_utilities:now()), vectorclock:new()),
+                            PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
                             PhysicsMetadata = #physics_read_metadata{dep_upbound = PhysicsClock, commit_time_lowbound = PhysicsClock},
                             Transaction#transaction{physics_read_metadata = PhysicsMetadata};
                         false ->
