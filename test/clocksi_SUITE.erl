@@ -87,7 +87,8 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> [clocksi_read_nonupdated_key_test,
+all() -> [
+%%    clocksi_read_nonupdated_key_test,
     clocksi_test1,
          clocksi_test2,
          clocksi_test3,
