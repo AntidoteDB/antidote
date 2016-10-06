@@ -443,7 +443,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
         true ->
             case TxWriteSet of
                 [{Key, _Type, _Update} | _] ->
-                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
+                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, orddict:new()),
                     NewPrepare = dc_utilities:now_microsec(),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
