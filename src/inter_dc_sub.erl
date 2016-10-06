@@ -45,7 +45,7 @@
 
 %% State
 -record(state, {
-  sockets :: dict() % DCID -> socket
+  sockets :: dict:dict() % DCID -> socket
 }).
 
 %%%% API --------------------------------------------------------------------+

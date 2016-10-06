@@ -5,6 +5,7 @@ test:
 	${REBAR} eunit skip_deps=true
 
 systests: rel
+	rm -f test/*.beam
 	mkdir -p logs
 ifdef SUITE
 	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -suite test/${SUITE}

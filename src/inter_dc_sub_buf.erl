@@ -37,7 +37,7 @@
   state_name :: normal | buffering,
   pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer() | init,
-  queue :: queue()
+  queue :: queue:queue()
 }).
 
 %%%% API --------------------------------------------------------------------+
