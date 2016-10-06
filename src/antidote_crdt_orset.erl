@@ -80,7 +80,7 @@
     | {remove, member()}
     | {add_all, [member()]}
     | {remove_all, [member()]}
-    | reset.
+    | {reset, {}}.
 
 -type member() :: term().
 
@@ -137,7 +137,7 @@ downstream({remove_all,Elems}, ORDict) ->
                                    Sum++[{Elem, value({tokens, Elem}, ORDict)}]
                            end, [], Elems),
     {ok, {remove_all, ToRemove}};
-downstream(reset, ORDict) ->
+downstream({reset, {}}, ORDict) ->
     % reset is like removing all elements
     downstream({remove_all, value(ORDict)}, ORDict).
 
@@ -256,7 +256,7 @@ is_operation({add_all, L}) when is_list(L) -> true;
 is_operation({remove, _Elem}) ->
     true;
 is_operation({remove_all, L}) when is_list(L) -> true;
-is_operation(reset) -> true;
+is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 require_state_downstream({add,_}) ->
@@ -265,7 +265,7 @@ require_state_downstream({add_all,_}) ->
     false;
 require_state_downstream({remove,_}) -> true;
 require_state_downstream({remove_all, _}) -> true;
-require_state_downstream(reset) -> true.
+require_state_downstream({reset, {}}) -> true.
 
 %% ===================================================================
 %% EUnit tests

@@ -41,7 +41,7 @@
 -type gmap_op() ::
     {update, nested_op()}
   | {update, [nested_op()]}
-  | reset.
+  | {reset, {}}.
 -type nested_op() :: {{Key::term(), Type::atom() }, Op::term()}.
 -type gmap_effect() ::
     {update, nested_downstream()}
@@ -72,13 +72,13 @@ downstream({update, {{Key, Type}, Op}}, CurrentMap) ->
     {ok, {update, {{Key, Type}, DownstreamOp}}};
 downstream({update, Ops}, CurrentMap) when is_list(Ops) ->
     {ok, {update, lists:map(fun(Op) -> {ok, DSOp} = downstream({update, Op}, CurrentMap), DSOp end, Ops)}};
-downstream(reset, CurrentMap) ->
+downstream({reset, {}}, CurrentMap) ->
   % calls reset on all embedded keys which support reset
   Reset =
     fun({{Key, Type}, State}) ->
-      case Type:is_operation(reset) of
+      case Type:is_operation({reset, {}}) of
         true ->
-          {ok, EmbeddedEffect} = Type:downstream(reset, State),
+          {ok, EmbeddedEffect} = Type:downstream({reset, {}}, State),
           [{update, {{Key, Type}, EmbeddedEffect}}];
         false -> []
       end
@@ -128,7 +128,7 @@ is_operation(Operation) ->
     {update, Ops} when is_list(Ops) ->
       distinct([Key || {Key, _} <- Ops])
       andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Ops);
-    reset -> true;
+    {reset, {}} -> true;
     _ ->
       false
   end.
@@ -157,7 +157,7 @@ update2_test() ->
   Map1 = new(),
   {ok, Effect1} = downstream({update,[{{a,antidote_crdt_orset},{add,a}}]}, Map1),
   {ok, Map2} = update(Effect1, Map1),
-  {ok, Effect2} = downstream(reset, Map2),
+  {ok, Effect2} = downstream({reset, {}}, Map2),
   {ok, Map3} = update(Effect2, Map2),
   ?assertEqual([{{a, antidote_crdt_orset}, []}], value(Map3)).
 

@@ -48,7 +48,7 @@ spec(Operations1) ->
   WithDelta = [Val + Delta(Clock) || {Clock,Val} <- ConcurrentValues2],
   lists:max(WithDelta).
 
-normalizeOp({Clock, reset}) -> {Clock, {set, 0}};
+normalizeOp({Clock, {reset, {}}}) -> {Clock, {set, 0}};
 normalizeOp(Op) -> Op.
 
 % generates a random counter operation
@@ -56,6 +56,6 @@ op() ->
   oneof([
     {set, integer()},
     {increment, integer()},
-    reset
+    {reset, {}}
   ]).
 

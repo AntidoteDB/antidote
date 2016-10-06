@@ -47,9 +47,9 @@ spec(Operations1) ->
 
 nestedOps(Operations, {_,Type}=Key) ->
   Resets =
-    case Type:is_operation(reset) of
+    case Type:is_operation({reset, {}}) of
       true ->
-        [{Clock, reset} || {Clock, {remove, Key2}} <- Operations, Key == Key2];
+        [{Clock, {reset, {}}} || {Clock, {remove, Key2}} <- Operations, Key == Key2];
       false -> []
     end,
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
@@ -66,7 +66,7 @@ normalizeOp({Clock, {remove, List}}, _) when is_list(List) ->
 normalizeOp({Clock, {batch, {Updates, Removes}}}, _) ->
   [{Clock, {update, X}} || X <- Updates]
    ++ [{Clock, {remove, X}} || X <- Removes];
-normalizeOp({Clock, reset}, Operations) ->
+normalizeOp({Clock, {reset, {}}}, Operations) ->
   % reset is like removing all current keys
   Map = spec(crdt_properties:subcontext(Clock, Operations)),
   Keys = [Key || {Key, _Val} <- Map],
@@ -89,7 +89,7 @@ op(Size) ->
         Updates2 = removeDuplicateKeys(Updates, Removes2),
         {batch, {Updates2, Removes2}}
       end),
-    reset
+    {reset, {}}
   ]).
 
 removeDuplicateKeys([], _) -> [];

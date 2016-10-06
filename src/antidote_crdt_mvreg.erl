@@ -84,7 +84,7 @@ downstream({assign, Value}, MVReg) ->
     Token = unique(),
     Overridden = [Tok || {_, Tok} <- MVReg],
     {ok, {Value, Token, Overridden}};
-downstream(reset, MVReg) ->
+downstream({reset, {}}, MVReg) ->
   Overridden = [Tok || {_, Tok} <- MVReg],
   {ok, {reset, Overridden}}.
 
@@ -130,7 +130,7 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 %%      that Operation is supported by this particular CRDT.
 -spec is_operation(term()) -> boolean().
 is_operation({assign, _}) -> true;
-is_operation(reset) -> true;
+is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 require_state_downstream(_) ->

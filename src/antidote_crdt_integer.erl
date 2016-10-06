@@ -46,7 +46,7 @@
 -type update() ::
       {increment, integer()}
     | {set, integer()}
-    | reset.
+    | {reset, {}}.
 -type effect() ::
       {increment, integer()}
     | {set, term(), [term()], integer()}.
@@ -67,7 +67,7 @@ downstream({increment, N}, _State) ->
 downstream({set, N}, {Vals, Delta}) ->
     Overridden = [Tag || {Tag, _} <- Vals],
     {ok, {set, unique(), Overridden, N-Delta}};
-downstream(reset, State) ->
+downstream({reset, {}}, State) ->
   % resetting means setting value to 0
   downstream({set, 0}, State).
 
@@ -108,13 +108,13 @@ from_binary(Bin) ->
 -spec is_operation(term()) -> boolean().
 is_operation({increment, N}) when is_integer(N) -> true;
 is_operation({set, N}) when is_integer(N) -> true;
-is_operation(reset) -> true;
+is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 %% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt 
 %%      to generate downstream effect
 require_state_downstream({set,_}) -> true;
-require_state_downstream(reset) -> true;
+require_state_downstream({reset, {}}) -> true;
 require_state_downstream(_) -> false.
 
 

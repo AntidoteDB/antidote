@@ -40,9 +40,9 @@ spec(Operations1) ->
 
 nestedOps(Operations, {_,Type}=Key) ->
   Resets =
-      case Type:is_operation(reset) of
+      case Type:is_operation({reset, {}}) of
         true ->
-          [{Clock, reset} || {Clock, reset} <- Operations];
+          [{Clock, {reset, {}}} || {Clock, {reset, {}}} <- Operations];
         false -> []
       end,
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
@@ -66,7 +66,7 @@ op(Size) ->
         nestedOp(Size),
         ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))
       ])}},
-    {1, reset}
+    {1, {reset, {}}}
   ]).
 
 removeDuplicateKeys([], _) -> [];

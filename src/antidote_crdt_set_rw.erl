@@ -56,7 +56,7 @@
     | {remove, member()}
     | {add_all, [member()]}
     | {remove_all, [member()]}
-    | reset.
+    | {reset, {}}.
 
 -type token() :: term().
 -type effect() ::
@@ -84,7 +84,7 @@ downstream({remove, Elem}, State) ->
     downstream({remove_all, [Elem]}, State);
 downstream({remove_all, Elems}, {ResetTokens, Dict}) ->
     {ok, {remove, elemsWithRemovedTombstones(lists:usort(Elems), Dict, ResetTokens), unique(), ResetTokens}};
-downstream(reset, {ResetTokens, Dict}) ->
+downstream({reset, {}}, {ResetTokens, Dict}) ->
   RemovedTombstones = elemsWithRemovedTombstones(lists:usort(orddict:fetch_keys(Dict)), Dict, ResetTokens),
   {ok, {reset, RemovedTombstones, ResetTokens, unique()}}.
 
@@ -157,7 +157,7 @@ is_operation({add_all, L}) when is_list(L) -> true;
 is_operation({remove, _Elem}) ->
     true;
 is_operation({remove_all, L}) when is_list(L) -> true;
-is_operation(reset) -> true;
+is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 require_state_downstream(_) -> true.
@@ -172,7 +172,7 @@ require_state_downstream(_) -> true.
 reset1_test() ->
   Set0 = new(),
   % DC1 reset
-  {ok, ResetEffect} = downstream(reset, Set0),
+  {ok, ResetEffect} = downstream({reset, {}}, Set0),
   {ok, Set1a} = update(ResetEffect, Set0),
   % DC1 add
   {ok, Add1Effect} = downstream({add, a}, Set1a),
@@ -204,12 +204,12 @@ reset1_test() ->
 reset2_test() ->
   Set0 = new(),
   % DC1 reset
-  {ok, Reset1Effect} = downstream(reset, Set0),
+  {ok, Reset1Effect} = downstream({reset, {}}, Set0),
   {ok, Set1a} = update(Reset1Effect, Set0),
   % DC1 --> Dc2
   {ok, Set2a} = update(Reset1Effect, Set0),
   % DC2 reset
-  {ok, Reset2Effect} = downstream(reset, Set2a),
+  {ok, Reset2Effect} = downstream({reset, {}}, Set2a),
   {ok, Set2b} = update(Reset2Effect, Set2a),
   % DC2 add
   {ok, Add2Effect} = downstream({add, a}, Set2b),

@@ -47,7 +47,7 @@
   | {remove, typedKey()}
   | {remove, [typedKey()]}
   | {batch, {Updates::[nested_op()], Removes::[typedKey()]}}
-  | reset.
+  | {reset, {}}.
 -type nested_op() :: {typedKey(), Op::term()}.
 -type effect() ::
      {Adds::[nested_downstream()], Removed::[nested_downstream()], AddedToken::token()}.
@@ -84,7 +84,7 @@ downstream({batch, {Updates, Removes}}, CurrentMap) ->
       _ -> unique()
     end,
   {ok, {UpdateEffects, RemoveEffects, Token}};
-downstream(reset, CurrentMap) ->
+downstream({reset, {}}, CurrentMap) ->
   % reset removes all keys
   AllKeys = [Key || {Key, _Val} <- value(CurrentMap)],
   downstream({remove, AllKeys}, CurrentMap).
@@ -109,9 +109,9 @@ generateDownstreamRemove({Key,Type}, CurrentMap) ->
       false -> {[], Type:new()}
     end,
   DownstreamEffect =
-    case Type:is_operation(reset) of
+    case Type:is_operation({reset, {}}) of
       true ->
-        {ok, _} = Type:downstream(reset, CurrentState);
+        {ok, _} = Type:downstream({reset, {}}, CurrentState);
       false ->
         none
     end,
@@ -188,7 +188,7 @@ is_operation(Operation) ->
         andalso distinct(Removes ++ [Key || {Key, _} <- Updates])
         andalso lists:all(fun(Key) -> is_operation({remove, Key}) end, Removes)
         andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Updates);
-    reset -> true;
+    {reset, {}} -> true;
     _ ->
       false
   end.
@@ -211,7 +211,7 @@ reset1_test() ->
   {ok, Incr1} = downstream({update, {{a, antidote_crdt_integer}, {increment, 1}}}, Set0),
   {ok, Set1a} = update(Incr1, Set0),
   % DC1 reset
-  {ok, Reset1} = downstream(reset, Set1a),
+  {ok, Reset1} = downstream({reset, {}}, Set1a),
   {ok, Set1b} = update(Reset1, Set1a),
   % DC2 a.remove
   {ok, Remove1} = downstream({remove, {a, antidote_crdt_integer}}, Set0),
@@ -219,7 +219,7 @@ reset1_test() ->
   % DC2 --> DC1
   {ok, Set1c} = update(Remove1, Set1b),
   % DC1 reset
-  {ok, Reset2} = downstream(reset, Set1c),
+  {ok, Reset2} = downstream({reset, {}}, Set1c),
   {ok, Set1d} = update(Reset2, Set1c),
   % DC1: a.incr
   {ok, Incr2} = downstream({update, {{a, antidote_crdt_integer}, {increment, 0}}}, Set1d),

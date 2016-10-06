@@ -36,7 +36,7 @@ rem_wins_set_spec(Operations1) ->
   RemoveClocks =
     fun(X) ->
       [Clock || {Clock, {remove, Y}} <- Operations, X == Y]
-      ++ [Clock || {Clock, reset} <- Operations]
+      ++ [Clock || {Clock, {reset, {}}} <- Operations]
     end,
   Removed =
     fun(X) ->
@@ -61,7 +61,7 @@ set_op() ->
     {add_all, list(set_element())},
     {remove, set_element()},
     {remove_all, list(set_element())},
-    reset
+    {reset, {}}
   ]).
 
 set_element() ->
