@@ -1,6 +1,6 @@
 language: erlang
 otp_release:
-  - 18.1
+  - 18.3
   - 19
 install:
   - make
