@@ -119,11 +119,11 @@ add_op_test() ->
 add_op_existing_set_test() ->
     New = antidotec_set:new([<<"elem1">>,<<"elem2">>,<<"elem3">>]),
     ThreeElemSet = antidotec_set:dirty_value(New),
-    ?assertEqual([<<"elem1">>, <<"elem2">>, <<"elem3">>], ThreeElemSet),
+    ?assertEqual([<<"elem1">>, <<"elem2">>, <<"elem3">>], lists:sort(ThreeElemSet)),
     AddElem = antidotec_set:add(<<"elem4">>,New),
     S1 = antidotec_set:remove(<<"elem4">>,AddElem),
     S2 = antidotec_set:remove(<<"elem2">>,S1),
     TwoElemSet = antidotec_set:dirty_value(S2),
-    ?assertEqual([<<"elem1">>, <<"elem3">>], TwoElemSet).
+    ?assertEqual([<<"elem1">>, <<"elem3">>], lists:sort(TwoElemSet)).
 
 -endif.
