@@ -15,7 +15,8 @@
                   cuttlefish,
                   riak_dt,
                   antidote_pb,
-                  erlzmq
+                  erlzmq,
+                  rand_compat 
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables
