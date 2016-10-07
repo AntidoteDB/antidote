@@ -552,8 +552,8 @@ is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
 %%	~n operation dependency clock: ~p
 %%	~n transaction dep upbound: ~p
 %%	", [CommitClock, CommitTimeLowbound, DepClock, DepUpbound]),
-	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse CommitTimeLowbound == NewVC)
-		and (vectorclock:le(DepClock, DepUpbound) orelse DepUpbound == NewVC).
+	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse (CommitTimeLowbound == NewVC))
+		and (vectorclock:le(DepClock, DepUpbound) orelse (DepUpbound == NewVC)).
 
 create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of

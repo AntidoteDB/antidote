@@ -544,7 +544,13 @@ update_causal_snapshot_state(State, ReadMetadata, _Key) ->
             NewVersionMax = vectorclock:max([VersionMax, CommitVC]),
             CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
             DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-            NewDepUpB = vectorclock:min([ReadTimeVC, DepUpbound]),
+            NewDepUpB=
+                case DepUpbound of
+                    NewVC->
+                        ReadTimeVC;
+                    _->
+                        vectorclock:min([ReadTimeVC, DepUpbound])
+                end,
             NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
 %%            lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
 %%            lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),

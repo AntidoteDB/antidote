@@ -71,7 +71,7 @@ init_per_suite(Config) ->
         rpc:call(Node, application, set_env,
             [antidote, txn_prot, physics]) end, Nodes),
     
-    %Check that indeed clocksi is running
+    %Check that indeed physics is running
     {ok, Prot} = rpc:call(hd(Nodes), application, get_env, [antidote, txn_prot]),
     ?assertMatch(physics, Prot),
     
