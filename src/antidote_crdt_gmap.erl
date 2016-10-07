@@ -23,6 +23,7 @@
 %% This map simply forwards all operations to the embedded CRDTs.
 %% There is no real remove-operation.
 %%
+%% The reset operation, forwards the reset to all values in the map.
 
 -module(antidote_crdt_gmap).
 

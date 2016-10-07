@@ -18,10 +18,19 @@
 %%
 %% -------------------------------------------------------------------
 
-%% antidote_crdt_integer: A convergent, replicated, operation
-%% based integer
+%% antidote_crdt_integer: A convergent, replicated, operation based integer
 %%
+%% This is an extension of the counter:
+%% Besides the increment operation, it also provides a set operation
 %%
+%% Semantics:
+%% The value of the counter is determines as follows:
+%% 1) as base-values take the value of the latest (concurrent) set-operations (or 0 if there are none)
+%% 2) for each base-value: add the increments which are concurrent to or after the respective set and add them to the base value
+%% 3) take the maximum of these values (note that this is not always the maximum base-value)
+%%
+%% Implementation:
+%% A mix of counter and mvreg
 
 -module(antidote_crdt_integer).
 

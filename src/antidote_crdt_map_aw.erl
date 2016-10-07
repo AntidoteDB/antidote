@@ -24,6 +24,16 @@
 %% Deleting a key tries to reset the entry to its initial state
 %%
 %% An element exists in a map, if there is at least one update on the key, which is not followed by a remove
+%%
+%% Resetting the map means removing all the current entries
+%%
+%% Implementation note:
+%% The implementation of Add-wins semantic is the same as in orset:
+%% Each element has a set of add-tokens.
+%% An entry is in the map, if the set of add-tokens is not empty.
+%% When an entry is removed, the value is still kept in the state, so that
+%% concurrent updates can be reconciled.
+%% This could be optimized for certain types
 
 -module(antidote_crdt_map_aw).
 
@@ -126,10 +136,6 @@ update({Updates, Removes, AddedToken}, State) ->
   State2 = lists:foldl(fun(E, S) -> update(E, [AddedToken], S)  end, State, Updates),
   State3 = lists:foldl(fun(E, S) -> update(E, [], S)  end, State2, Removes),
   {ok, State3}.
-%%update({update, NestedEffects, AddedToken}, State) ->
-%%  {ok, lists:foldl(fun(E, S) -> update(E, [AddedToken], S)  end, State, NestedEffects)};
-%%update({remove, NestedEffects}, State) ->
-%%  {ok, lists:foldl(fun(E, S) -> update(E, [], S)  end, State, NestedEffects)}.
 
 update({{Key,Type}, {ok, Op}, RemovedTokens}, NewTokens, Map) ->
   case dict:find({Key,Type}, Map) of
@@ -162,11 +168,9 @@ equal(Map1, Map2) ->
 -define(V1_VERS, 1).
 
 to_binary(Policy) ->
-    %% @TODO okthing smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Policy))/binary>>.
 
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
-    %% @TODO okthing smarter
   {ok, binary_to_term(Bin)}.
 
 is_operation(Operation) ->

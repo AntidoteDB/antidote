@@ -23,6 +23,21 @@
 %% @doc
 %% An operation-based Remove-wins Set CRDT.
 %%
+%% Semantics:
+%% Add-operations only affect the remove-operations, which they have observed.
+%% The concurrent remove-operations will win over an add-operation.
+%% A reset operation has the same effect as removing all possible elements (not only the ones currently in the set).
+%%
+%% Implementation:
+%% The implementation is not very efficient, in particular tombstones for removed elements are stored forever.
+%%
+%% The state is a pair of:
+%%  a) the reset tokens, which store when the last resets were executed
+%%  b) a mapping from elements to a set of tombstone-tokens
+%%
+%% An element is in the set, if its set of tombstone-tokens is empty.
+%% An add-operation will remove the current tombstones of an element.
+
 %% @end
 -module(antidote_crdt_set_rw).
 
