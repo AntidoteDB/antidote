@@ -16,6 +16,9 @@ cleantests:
 	rm -f test/*.beam
 	rm -rf logs/
 
+shell:
+	$(REBAR) shell
+
 rel:
 	$(REBAR) release --overlay_vars rel/vars.config
 
