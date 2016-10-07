@@ -1,7 +1,7 @@
 language: erlang
 otp_release:
   - 18.3
-  - 19
+  - 19.1
 install:
   - make
   - ./rebar3 update
