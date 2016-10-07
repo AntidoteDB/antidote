@@ -21,3 +21,4 @@ docs/.sass-cache/
 docs/.jekyll-metadata
 docs/_pdf
 docs/.idea/
+compile_commands.json
