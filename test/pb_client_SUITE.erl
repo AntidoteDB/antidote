@@ -31,17 +31,18 @@
 
 %% tests
 -export([start_stop_test/1,
-        simple_transaction_test/1,
-        read_write_test/1,
-        get_empty_crdt_test/1,
-        pb_test_counter_read_write/1,
-        pb_test_set_read_write/1,
-        pb_empty_txn_clock_test/1,
-        update_counter_crdt_test/1,
-        update_counter_crdt_and_read_test/1,
-        update_set_read_test/1,
-        static_transaction_test/1,
-        update_reg_test/1]).
+  simple_transaction_test/1,
+  read_write_test/1,
+  get_empty_crdt_test/1,
+  pb_test_counter_read_write/1,
+  pb_test_set_read_write/1,
+  pb_empty_txn_clock_test/1,
+  update_counter_crdt_test/1,
+  update_counter_crdt_and_read_test/1,
+  update_set_read_test/1,
+  static_transaction_test/1,
+  crdt_integer_test/1,
+  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -77,6 +78,11 @@ all() -> [start_stop_test,
         update_counter_crdt_and_read_test,
         update_set_read_test,
         static_transaction_test,
+        crdt_integer_test,
+        crdt_mvreg_test,
+        crdt_set_rw_test,
+        crdt_gmap_test,
+        crdt_map_aw_test,
         update_reg_test].
 
 start_stop_test(_Config) ->
@@ -231,6 +237,170 @@ update_reg_test(_Config) ->
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
     ?assertEqual(<<"10">>, antidotec_reg:value(Val)),
     _Disconnected = antidotec_pb_socket:stop(Pid).
+
+
+crdt_integer_test(_Config) ->
+    Key = <<"pb_client_SUITE_crdt_integer_test">>,
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, antidote_crdt_integer, <<"bucket">>},
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    ok = antidotec_pb:update_objects(Pid,
+                                     [{Bound_object, set, 40}],
+                                     TxId),
+    ok = antidotec_pb:update_objects(Pid,
+                                       [{Bound_object, increment, 2}],
+                                       TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    %% Read committed updated
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, [Val]} = antidotec_pb:read_values(Pid, [Bound_object], Tx2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
+    ?assertEqual({integer, 42}, Val),
+    _Disconnected = antidotec_pb_socket:stop(Pid).
+
+
+crdt_mvreg_test(_Config) ->
+    Key = <<"pb_client_SUITE_crdt_mvreg_test">>,
+    {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {Key, antidote_crdt_mvreg, <<"bucket">>},
+    {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+    ok = antidotec_pb:update_objects(Pid1, [{Bound_object, assign, <<"a">>}], Tx1),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+    %% Read committed updated
+    {ok, Tx3} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+    {ok, [Val]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx3),
+    {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
+    ?assertEqual({mvreg, [<<"a">>]}, Val),
+    _Disconnected = antidotec_pb_socket:stop(Pid1).
+
+
+crdt_set_rw_test(_Config) ->
+  Key = <<"pb_client_SUITE_crdt_set_rw_test">>,
+  {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+  Bound_object = {Key, antidote_crdt_set_rw, <<"bucket">>},
+  {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, add, <<"a">>}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, add_all, [<<"b">>,<<"c">>,<<"d">>,<<"e">>,<<"f">>]}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, remove, <<"b">>}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, remove_all, [<<"c">>,<<"d">>]}], Tx1),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+  %% Read committed updated
+  {ok, Tx3} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  {ok, [Val]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx3),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
+  ?assertEqual({set, [<<"a">>,<<"e">>,<<"f">>]}, Val),
+  _Disconnected = antidotec_pb_socket:stop(Pid1).
+
+
+
+crdt_gmap_test(_Config) ->
+  Key = <<"pb_client_SUITE_crdt_map_aw_test">>,
+  {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+  Bound_object = {Key, antidote_crdt_gmap, <<"bucket">>},
+  {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, update, {{<<"a">>, antidote_crdt_integer}, {set, 42}}}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, update, [
+      {{<<"b">>, antidote_crdt_lwwreg}, {assign, <<"X">>}},
+      {{<<"c">>, antidote_crdt_mvreg}, {assign, <<"Paul">>}},
+      {{<<"d">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"e">>, antidote_crdt_set_rw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"f">>, antidote_crdt_counter}, {increment , 7}},
+      {{<<"g">>, antidote_crdt_gmap}, {update, [
+        {{<<"x">>, antidote_crdt_integer}, {set, 17}}
+      ]}},
+      {{<<"h">>, antidote_crdt_map_aw}, {update, [
+        {{<<"x">>, antidote_crdt_integer}, {set, 15}}
+      ]}}
+    ]}], Tx1),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+  %% Read committed updated
+  {ok, Tx3} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  {ok, [Val]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx3),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
+  ExpectedRes = {map, [
+    {{<<"a">>, antidote_crdt_integer}, 42},
+    {{<<"b">>, antidote_crdt_lwwreg}, <<"X">>},
+    {{<<"c">>, antidote_crdt_mvreg}, [<<"Paul">>]},
+    {{<<"d">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"e">>, antidote_crdt_set_rw}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"f">>, antidote_crdt_counter}, 7},
+    {{<<"g">>, antidote_crdt_gmap}, [
+      {{<<"x">>, antidote_crdt_integer}, 17}
+    ]},
+    {{<<"h">>, antidote_crdt_map_aw}, [
+      {{<<"x">>, antidote_crdt_integer}, 15}
+    ]}
+  ]},
+  ?assertEqual(ExpectedRes, Val),
+  _Disconnected = antidotec_pb_socket:stop(Pid1).
+
+crdt_map_aw_test(_Config) ->
+  Key = <<"pb_client_SUITE_crdt_map_aw_test">>,
+  {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+  Bound_object = {Key, antidote_crdt_map_aw, <<"bucket">>},
+  {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, update, {{<<"a">>, antidote_crdt_integer}, {set, 42}}}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, update, [
+      {{<<"b">>, antidote_crdt_lwwreg}, {assign, <<"X">>}},
+      {{<<"b1">>, antidote_crdt_lwwreg}, {assign, <<"X1">>}},
+      {{<<"b2">>, antidote_crdt_lwwreg}, {assign, <<"X2">>}},
+      {{<<"b3">>, antidote_crdt_lwwreg}, {assign, <<"X3">>}},
+      {{<<"b4">>, antidote_crdt_lwwreg}, {assign, <<"X4">>}},
+      {{<<"b5">>, antidote_crdt_lwwreg}, {assign, <<"X5">>}},
+      {{<<"c">>, antidote_crdt_mvreg}, {assign, <<"Paul">>}},
+      {{<<"d">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"e">>, antidote_crdt_set_rw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"f">>, antidote_crdt_counter}, {increment , 7}},
+      {{<<"g">>, antidote_crdt_gmap}, {update, [
+        {{<<"x">>, antidote_crdt_integer}, {set, 17}}
+      ]}},
+      {{<<"h">>, antidote_crdt_map_aw}, {update, [
+        {{<<"x">>, antidote_crdt_integer}, {set, 15}}
+      ]}}
+    ]}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, remove, {<<"b1">>, antidote_crdt_lwwreg}}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1,
+    [{Bound_object, remove, [
+      {<<"b2">>, antidote_crdt_lwwreg},
+      {<<"b3">>, antidote_crdt_lwwreg}]}
+    ], Tx1),
+  ok = antidotec_pb:update_objects(Pid1,
+    [{Bound_object, batch,
+      {[ % updates
+        {{<<"i">>, antidote_crdt_lwwreg}, {assign, <<"X">>}}
+      ],[ % removes
+        {<<"b4">>, antidote_crdt_lwwreg},
+        {<<"b5">>, antidote_crdt_lwwreg}
+      ]}}
+    ], Tx1),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+  %% Read committed updated
+  {ok, Tx3} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  {ok, [Val]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx3),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
+  ExpectedRes = {map, [
+    {{<<"a">>, antidote_crdt_integer}, 42},
+    {{<<"b">>, antidote_crdt_lwwreg}, <<"X">>},
+    {{<<"c">>, antidote_crdt_mvreg}, [<<"Paul">>]},
+    {{<<"d">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"e">>, antidote_crdt_set_rw}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"f">>, antidote_crdt_counter}, 7},
+    {{<<"g">>, antidote_crdt_gmap}, [
+      {{<<"x">>, antidote_crdt_integer}, 17}
+    ]},
+    {{<<"h">>, antidote_crdt_map_aw}, [
+      {{<<"x">>, antidote_crdt_integer}, 15}
+    ]},
+    {{<<"i">>, antidote_crdt_lwwreg}, <<"X">>}
+  ]},
+  ?assertEqual(ExpectedRes, Val),
+  _Disconnected = antidotec_pb_socket:stop(Pid1).
+
 
 static_transaction_test(_Config) ->
     Key = <<"pb_client_SUITE_static_transaction_test">>,
