@@ -23,10 +23,11 @@
 
 
 -export([start_transaction/3,
-    abort_transaction/2,
-    commit_transaction/2,
-    update_objects/3,
-    read_objects/3, read_values/3]).
+         abort_transaction/2,
+         commit_transaction/2,
+         update_objects/3,
+         read_objects/3,
+         read_values/3]).
 
 -define(TIMEOUT, 10000).
 
@@ -120,42 +121,17 @@ update_objects(Pid, Updates, {static, TxId}) ->
     end.
             
 -spec read_objects(Pid::term(), Objects::[term()], TxId::term()) -> {ok, [term()]}  | {error, term()}.
-read_objects(Pid, Objects, {interactive, TxId}) ->
-    EncMsg = antidote_pb_codec:encode(read_objects, {Objects, TxId}),
-    Result = antidotec_pb_socket:call_infinity(Pid, {req, EncMsg, ?TIMEOUT}),
-    case Result of
-        {error, timeout} -> {error, timeout};
-        _ ->
-            case antidote_pb_codec:decode_response(Result) of
-                {read_objects, Values} ->
-                    ResObjects = lists:map(fun({Type, Val}) ->
-                                        Mod = antidotec_datatype:module_for_type(Type),
-                                        Mod:new(Val)
-                                end, Values),
-                    {ok, ResObjects};
-                {error, Reason} -> {error, Reason};
-                Other -> {error, Other}
-            end
-    end;
-read_objects(Pid, Objects, {static, TxId}) ->
-    {Clock, Properties} = TxId,
-    EncMsg = antidote_pb_codec:encode(static_read_objects,
-                                      {Clock, Properties, Objects}),
-    Result = antidotec_pb_socket:call_infinity(Pid, {req, EncMsg, ?TIMEOUT}),
-    case Result of
-        {error, timeout} -> {error, timeout};
-        _ ->
-            case antidote_pb_codec:decode_response(Result) of
-                {static_read_objects_resp, Values, CommitTimeStamp} ->
-                    antidotec_pb_socket:store_commit_time(Pid, CommitTimeStamp),
-                    ResObjects = lists:map(
-                                   fun({Type, Val}) ->
-                                           Mod = antidotec_datatype:module_for_type(Type),
-                                           Mod:new(Val)
-                                   end, Values),
-                    {ok, ResObjects};
-                {error, Reason} -> {error, Reason}
-            end
+read_objects(Pid, Objects, Transaction) ->
+    case read_values(Pid, Objects, Transaction) of
+        {ok, Values} ->
+            ResObjects = lists:map(
+                fun({Type, Val}) ->
+                    Mod = antidotec_datatype:module_for_type(Type),
+                    Mod:new(Val)
+                end, Values),
+            {ok, ResObjects};
+        Other ->
+            Other
     end.
 
 -spec read_values(Pid::term(), Objects::[term()], TxId::term()) -> {ok, [term()]}  | {error, term()}.
