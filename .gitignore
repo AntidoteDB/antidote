@@ -23,3 +23,4 @@ docs/_pdf
 docs/.idea/
 compile_commands.json
 log/
+data/
