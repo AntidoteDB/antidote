@@ -6,19 +6,8 @@ install:
   - make
   - ./rebar3 update
 script:
-  - sudo unlink /usr/bin/gcc && sudo ln -s /usr/bin/gcc-5 /usr/bin/gcc
-  - gcc --version
   - make systests
 notifications:
   email: christopher.meiklejohn@gmail.com
 sudo: required
-
-env:
-  - CXX=g++-5
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - g++-5
-      - gcc-5
+dist: trusty
