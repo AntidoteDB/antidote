@@ -21,3 +21,5 @@ docs/.sass-cache/
 docs/.jekyll-metadata
 docs/_pdf
 docs/.idea/
+log/
+data/
