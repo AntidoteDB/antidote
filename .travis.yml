@@ -1,0 +1,13 @@
+language: erlang
+otp_release:
+  - 18.3
+  - 19.1
+install:
+  - make
+  - ./rebar3 update
+script:
+  - make systests
+notifications:
+  email: christopher.meiklejohn@gmail.com
+sudo: required
+dist: trusty
