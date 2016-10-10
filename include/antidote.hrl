@@ -257,8 +257,7 @@
     is_static :: boolean(),
     full_commit :: boolean(),
     stay_alive :: boolean(),
-    %% The following are needed by the physics protocol
-    %% Should I create a new tx_coord_record?
+    %% The following is needed by the physics protocol
     version_max :: vectorclock()
 }).
 
