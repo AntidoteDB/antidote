@@ -161,14 +161,10 @@
 
 
 -record(physics_read_metadata, {
-%%    dict_key_read_vc :: clock_value() | undefined,
     dep_upbound :: vectorclock() | undefined,
     commit_time_lowbound :: vectorclock() | undefined
 }).
-%%-record(physics_transaction, {snapshot_time :: snapshot_time(),
-%%    server_pid :: pid(),
-%%    physics_read_metadata :: physics_read_metadata(),
-%%    txn_id :: txid()}).
+
 
 -record(materialized_snapshot, {last_op_id :: op_num(),  %% This is the opid of the latest op in the list
        				                         %% of ops for this key included in this snapshot
@@ -194,7 +190,6 @@
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
--type orddict() :: orddict().
 %%-type snapshot_time() :: vectorclock:vectorclock().
 -type commit_time() :: {dcid(), non_neg_integer()}.
 %%-type txid() :: #tx_id{} | ignore |no_txn_inserting_from_log.
