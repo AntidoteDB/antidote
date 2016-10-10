@@ -153,7 +153,7 @@
 
 -record(transaction, {
     snapshot_clock :: snapshot_time(),
-    transactional_protocol :: atom(),
+    transactional_protocol :: transactional_protocol(),
     server_pid :: pid(),
     snapshot_vc :: vectorclock(),
     txn_id :: txid() | no_txn_inserting_from_log,
@@ -178,6 +178,7 @@
 
 %%---------------------------------------------------------------------
 -type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
+-type transactional_protocol():: clocksi | physics | gr.
 -type crdt() :: term().
 -type val() :: term().
 -type reason() :: term().
