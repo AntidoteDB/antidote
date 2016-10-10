@@ -354,7 +354,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
                             case WriteSet of
                                 []->
                                     NewUpdatedPartitions=[{IndexNode, [{Key, Type, {DownstreamRecord, DownstreamOpCommitVC}}]}|UpdatedPartitions],
-                                    NewCoordState = update_causal_snapshot_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key),
+                                    NewCoordState = update_coordinator_state(CoordState#tx_coord_state{updated_partitions = NewUpdatedPartitions}, SnapshotParameters, Key),
                                     NewCoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions};
                                 _->
                                     NewUpdatedPartitions=lists:keyreplace(IndexNode, 1, UpdatedPartitions,
@@ -417,7 +417,7 @@ execute_op({OpType, Args}, Sender,
                     {Snapshot, CommitParams} = ReadResult,
                     SD1 = case Transaction#transaction.transactional_protocol of
                               physics ->
-                                  update_causal_snapshot_state(SD0, CommitParams, Key);
+                                  update_coordinator_state(SD0, CommitParams, Key);
                               Protocol when ((Protocol == gr) or (Protocol == clocksi)) -> SD0
                           end,
                     InternalReadSet = orddict:store(key, ReadResult, SD1#tx_coord_state.internal_read_set),
@@ -511,7 +511,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
     NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
     SD1 = case TransactionalProtocol of
               physics ->
-                  update_causal_snapshot_state(S0, SnapshotCommitParams, Key);
+                  update_coordinator_state(S0, SnapshotCommitParams, Key);
               Protocol when ((Protocol == gr) or (Protocol == clocksi)) -> S0
           end,
     case NumToRead of
@@ -526,13 +526,11 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
 
 
 
-%% @doc Used by the causal snapshot for physics
-%%      Updates the state of a transaction coordinator
-%%      for maintaining the causal snapshot metadata
-update_causal_snapshot_state(State, ignore, _Key) ->
+%% @doc Updates the state of a transaction coordinator
+update_coordinator_state(State, ignore, _Key) ->
     State;
 
-update_causal_snapshot_state(State, ReadMetadata, _Key) ->
+update_coordinator_state(State, ReadMetadata, _Key) ->
     {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
     NewVC = vectorclock:new(),
     case CommitVC of

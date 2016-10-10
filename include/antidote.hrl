@@ -251,7 +251,7 @@
     state :: active | prepared | committing | committed | undefined
     | aborted | committed_read_only,
     operations :: undefined | list(),
-    internal_read_set :: orddict(),
+    internal_read_set :: list(),
     return_accumulator :: list() | ok | {error, reason()},
     is_static :: boolean(),
     full_commit :: boolean(),

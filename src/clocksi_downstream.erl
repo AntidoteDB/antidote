@@ -27,10 +27,9 @@
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
-  Type :: type(), Update :: {op(), actor()}, list(), orddict()) ->
+  Type :: type(), Update :: {op(), actor()}, list(), list()) ->
 	{ok, op(), vectorclock()|{vectorclock(), vectorclock()}} | {error, reason()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet)->
-	%%    {Op, Actor} = Update,
 	Result=case orddict:find(Key, InternalReadSet) of
 		{ok, {S, SCP}}->
 			{S, SCP};
