@@ -18,31 +18,31 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_counter).
+-module(prop_crdt_gset).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_counter_spec/0, counter_op/0, counter_spec/1]).
+-export([prop_gset_spec/0]).
 
 
-prop_counter_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_counter, fun counter_op/0, fun counter_spec/1).
+prop_gset_spec() ->
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_gset, fun set_op/0, fun add_wins_set_spec/1).
 
 
-counter_spec(Operations) ->
-  lists:sum([X || {_, {increment, X}} <- Operations])
-    + lists:sum([1 || {_, increment} <- Operations])
-    - lists:sum([X || {_, {decrement, X}} <- Operations])
-    - lists:sum([1 || {_, decrement} <- Operations]).
+add_wins_set_spec(Operations) ->
+  lists:usort(
+       [X || {_, {add, X}} <- Operations]
+    ++ [X || {_, {add_all, Xs}} <- Operations, X <- Xs]
+  ).
 
 % generates a random counter operation
-counter_op() ->
+set_op() ->
   oneof([
-    increment,
-    decrement,
-    {increment, integer()},
-    {decrement, integer()}
+    {add, set_element()},
+    {add_all, list(set_element())}
   ]).
 
+set_element() ->
+  oneof([a,b,c,d]).

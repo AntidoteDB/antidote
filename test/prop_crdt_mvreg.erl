@@ -18,31 +18,35 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_counter).
+-module(prop_crdt_mvreg).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_counter_spec/0, counter_op/0, counter_spec/1]).
+-export([prop_mvreg_spec/0]).
 
 
-prop_counter_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_counter, fun counter_op/0, fun counter_spec/1).
+prop_mvreg_spec() ->
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_mvreg, fun op/0, fun spec/1).
 
 
-counter_spec(Operations) ->
-  lists:sum([X || {_, {increment, X}} <- Operations])
-    + lists:sum([1 || {_, increment} <- Operations])
-    - lists:sum([X || {_, {decrement, X}} <- Operations])
-    - lists:sum([1 || {_, decrement} <- Operations]).
+spec(Operations) ->
+  Values =
+    [Val || {Clock, {assign, Val}} <- Operations,
+      % all values, such that not overridden by other assign
+      [] == [Clock2 || {Clock2, {assign, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)],
+      % and not overridden by reset
+      [] == [Clock3 || {Clock3, {reset, {}}} <- Operations, crdt_properties:clock_le(Clock, Clock3)]
+    ],
+  lists:sort(Values).
+
+
 
 % generates a random counter operation
-counter_op() ->
-  oneof([
-    increment,
-    decrement,
-    {increment, integer()},
-    {decrement, integer()}
+op() ->
+  frequency([
+    {5, {assign, oneof([a,b,c,d,e,f,g,h,i])}},
+    {1, {reset, {}}}
   ]).
 

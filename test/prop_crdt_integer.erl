@@ -18,31 +18,44 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_counter).
+-module(prop_crdt_integer).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_counter_spec/0, counter_op/0, counter_spec/1]).
+-export([prop_counter_spec/0, op/0, spec/1]).
 
 
 prop_counter_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_counter, fun counter_op/0, fun counter_spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_integer, fun op/0, fun spec/1).
 
 
-counter_spec(Operations) ->
-  lists:sum([X || {_, {increment, X}} <- Operations])
-    + lists:sum([1 || {_, increment} <- Operations])
-    - lists:sum([X || {_, {decrement, X}} <- Operations])
-    - lists:sum([1 || {_, decrement} <- Operations]).
+spec(Operations1) ->
+  Operations = [normalizeOp(Op) || Op <- Operations1],
+  ConcurrentValues =
+    [{Clock, Val} || {Clock, {set, Val}} <- Operations,
+      [] == [Clock2 || {Clock2, {set, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)]],
+  ConcurrentValues2 =
+    case ConcurrentValues of
+      [] -> [{#{}, 0}];
+      _ -> ConcurrentValues
+    end,
+  Delta =
+    fun(Clock) ->
+      lists:sum([X || {C, {increment, X}} <- Operations, not crdt_properties:clock_le(C, Clock)])
+    end,
+  WithDelta = [Val + Delta(Clock) || {Clock,Val} <- ConcurrentValues2],
+  lists:max(WithDelta).
+
+normalizeOp({Clock, {reset, {}}}) -> {Clock, {set, 0}};
+normalizeOp(Op) -> Op.
 
 % generates a random counter operation
-counter_op() ->
+op() ->
   oneof([
-    increment,
-    decrement,
+    {set, integer()},
     {increment, integer()},
-    {decrement, integer()}
+    {reset, {}}
   ]).
 

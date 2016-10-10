@@ -18,7 +18,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module antidote_crdt_gset - A wrapper around riak_dt_gset
+%% @doc module antidote_crdt_lwwreg - An operation based last-writer-wins register
+%% Each operation is assigned a timestamp, which is guaranteed to be greater than
+%% the current timestamp.
+%% The current value of the register is the value assigned with the greatest timestamp
+%% or the empty binary if there was no assignment yet.
 
 -module(antidote_crdt_lwwreg).
 
@@ -27,8 +31,6 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
-
--define(RIAK_MODULE, riak_dt_lwwreg).
 
 -export([ new/0,
           value/1,
@@ -43,38 +45,47 @@
 
 -export_type([lwwreg/0, lwwreg_op/0]).
 
--opaque lwwreg() :: {term(), non_neg_integer()}.
+-opaque lwwreg() :: {non_neg_integer(), term()}.
 
--type lwwreg_op() :: {assign, {term(), non_neg_integer()}}  | {assign, term()}.
+-type lwwreg_op() :: {assign, term(), non_neg_integer()}  | {assign, term()}.
 
 new() ->
-    ?RIAK_MODULE:new().
+  {0, <<>>}.
 
-value(Set) ->
-    ?RIAK_MODULE:value(Set).
+value({_Time, Val}) ->
+    Val.
 
 -spec downstream(lwwreg_op(), lwwreg()) -> {ok, term()}.
-downstream({Op, OpParam}, State) ->
-    Actor = ignore, % Actor is not used
-    {ok, S0} = ?RIAK_MODULE:update({Op, OpParam}, Actor, State),
-    {ok, {merge, S0}}.
+downstream({assign, Value, Time}, {OldTime, _OldValue}) ->
+  {ok, {max(Time, OldTime+1), Value}};
+downstream({assign, Value}, State) ->
+  downstream({assign, Value, make_micro_epoch()}, State).
 
-update({merge, State1}, State2) ->
-    {ok, ?RIAK_MODULE:merge(State1, State2)}.
+make_micro_epoch() ->
+    {Mega, Sec, Micro} = os:timestamp(),
+    (Mega * 1000000 + Sec) * 1000000 + Micro.
+
+
+update(Effect, State) ->
+  % take the state with maximum time, if times are equal use maximum state
+  {ok, max(Effect, State)}.
+
 
 require_state_downstream(_Operation) -> true.
 
-is_operation(Operation) ->
-    ?RIAK_MODULE:is_operation(Operation).
+is_operation({assign, _Value}) -> true;
+is_operation({assign, _Value, _Time}) -> true;
+is_operation(_Other) -> false.
+
 
 equal(CRDT1, CRDT2) ->
-    ?RIAK_MODULE:equal(CRDT1,CRDT2).
+    CRDT1 == CRDT2.
 
 to_binary(CRDT) ->
-    ?RIAK_MODULE:to_binary(CRDT).
+    erlang:term_to_binary(CRDT).
 
 from_binary(Bin) ->
-    ?RIAK_MODULE:from_binary(Bin).
+  {ok, erlang:binary_to_term(Bin)}.
 
 -ifdef(test).
 all_test() ->

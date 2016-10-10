@@ -75,8 +75,12 @@
 
 -type binary_orset() :: binary(). %% A binary that from_binary/1 will operate on.
 
--type orset_op() :: {add, member()} | {remove, member()} |
-                    {add_all, [member()]} | {remove_all, [member()]}.
+-type orset_op() ::
+      {add, member()}
+    | {remove, member()}
+    | {add_all, [member()]}
+    | {remove_all, [member()]}
+    | {reset, {}}.
 
 -type member() :: term().
 
@@ -132,7 +136,10 @@ downstream({remove_all,Elems}, ORDict) ->
     ToRemove = lists:foldl(fun(Elem, Sum) ->
                                    Sum++[{Elem, value({tokens, Elem}, ORDict)}]
                            end, [], Elems),
-    {ok, {remove_all, ToRemove}}.
+    {ok, {remove_all, ToRemove}};
+downstream({reset, {}}, ORDict) ->
+    % reset is like removing all elements
+    downstream({remove_all, value(ORDict)}, ORDict).
 
 %% @doc apply downstream operations and update an `orset()'.
 %% The first parameter denotes this operation is for adding or removing elements.
@@ -195,7 +202,7 @@ to_binary(ORSet) ->
 
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     %% @TODO something smarter
-    binary_to_term(Bin).
+    {ok, binary_to_term(Bin)}.
 
 %% Private
 %% @doc add an element and its token to the `orset()'.
@@ -230,10 +237,8 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
 remove_elems([], ORDict) ->
     {ok, ORDict};
 remove_elems([Elem|Rest], ORDict) ->
-    case remove_elem(Elem,ORDict) of
-        {ok, ORDict1} -> remove_elems(Rest, ORDict1);
-        Error         -> Error
-    end.
+    {ok, ORDict1} = remove_elem(Elem,ORDict),
+    remove_elems(Rest, ORDict1).
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
@@ -247,10 +252,11 @@ minimum_tokens(Tokens) ->
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
 is_operation({add, _Elem}) -> true;
-is_operation({add_all, [_H|_T]}) -> true;
+is_operation({add_all, L}) when is_list(L) -> true;
 is_operation({remove, _Elem}) ->
     true;
-is_operation({remove_all, [_H|_T]}) -> true;
+is_operation({remove_all, L}) when is_list(L) -> true;
+is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
 require_state_downstream({add,_}) ->
@@ -258,7 +264,8 @@ require_state_downstream({add,_}) ->
 require_state_downstream({add_all,_}) ->
     false;
 require_state_downstream({remove,_}) -> true;
-require_state_downstream({remove_all, _}) -> true.
+require_state_downstream({remove_all, _}) -> true;
+require_state_downstream({reset, {}}) -> true.
 
 %% ===================================================================
 %% EUnit tests
@@ -369,13 +376,13 @@ concurrent_add_test() ->
 binary_test() ->
     ORSet1 = new(),
     BinaryORSet1 = to_binary(ORSet1),
-    ORSet2 = from_binary(BinaryORSet1),
+    {ok, ORSet2} = from_binary(BinaryORSet1),
     ?assert(equal(ORSet1, ORSet2)),
 
     {ok, Op1} = downstream({add, <<"foo">>}, ORSet1),
     {ok, ORSet3} = update(Op1, ORSet1),
     BinaryORSet3 = to_binary(ORSet3),
-    ORSet4 = from_binary(BinaryORSet3),
+    {ok, ORSet4} = from_binary(BinaryORSet3),
     ?assert(equal(ORSet3, ORSet4)).
 
 -endif.

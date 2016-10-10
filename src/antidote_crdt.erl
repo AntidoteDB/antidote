@@ -32,7 +32,11 @@
                 antidote_crdt_bcounter,
                 antidote_crdt_mvreg,
                 antidote_crdt_map,
-                antidote_crdt_lwwreg
+                antidote_crdt_lwwreg,
+                antidote_crdt_gmap,
+                antidote_crdt_set_rw,
+                antidote_crdt_integer,
+                antidote_crdt_map_aw
                ]).
 
 -export([is_type/1
