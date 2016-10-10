@@ -17,7 +17,6 @@
 -define(NUM_R, 2).
 -define(GLOBAL_BUCKET, antidote_bucket).
 
-
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption
