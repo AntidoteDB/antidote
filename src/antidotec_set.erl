@@ -56,14 +56,9 @@
 new() ->
     #antidote_set{set=sets:new(), adds=sets:new(), rems=sets:new()}.
 
--spec new(list()) -> antidote_set().
-new([]) ->
-    #antidote_set{set=sets:new(), adds=sets:new(), rems=sets:new()};
-
-new([_H | _] = List) ->
-    Set = lists:foldl(fun(E,S) ->
-                        sets:add_element(E,S)
-                end,sets:new(),List),
+-spec new(list() | sets:set()) -> antidote_set().
+new(List) when is_list(List) ->
+    Set = sets:from_list(List),
     #antidote_set{set=Set, adds=sets:new(), rems=sets:new()};
 
 new(Set) ->
@@ -72,8 +67,9 @@ new(Set) ->
 -spec value(antidote_set()) -> [term()].
 value(#antidote_set{set=Set}) -> sets:to_list(Set).
 
+-spec dirty_value(antidote_set()) -> [term()].
 dirty_value(#antidote_set{set=Set, adds = Adds, rems=Rems}) ->
-    sets:to_list(sets:subtract(sets:union(Set, Adds), Rems)).
+  sets:to_list(sets:subtract(sets:union(Set, Adds), Rems)).
 
 %% @doc Adds an element to the local set container.
 -spec add(term(), antidote_set()) -> antidote_set().
@@ -113,20 +109,21 @@ to_ops(BoundObject, #antidote_set{adds=Adds, rems=Rems}) ->
 %% ===================================================================
 -ifdef(TEST).
 add_op_test() ->
-    New = antidotec_set:new(dumb_key),
-    EmptySet = sets:size(antidotec_set:dirty_value(New)),
-    OneElement = antidotec_set:add(atom1,New),
-    Size1Set = sets:size(antidotec_set:dirty_value(OneElement)),
-    [?_assert(EmptySet =:= 0),
-     ?_assert(Size1Set =:= 1)].
+    New = antidotec_set:new([]),
+    Set1 = antidotec_set:dirty_value(New),
+    ?assertEqual([], Set1),
+    OneElement = antidotec_set:add(<<"value1">>,New),
+    Set2 = antidotec_set:dirty_value(OneElement),
+    ?assertEqual([<<"value1">>], Set2).
 
 add_op_existing_set_test() ->
-    New = antidotec_set:new(dumb_key,[elem1,elem2,elem3]),
-    ThreeElemSet = sets:size(antidotec_set:dirty_value(New)),
-    AddElem = antidotec_set:add(elem4,New),
-    S1 = antidotec_set:remove(elem4,AddElem),
-    S2 = antidotec_set:remove(elem2,S1),
-    TwoElemSet = sets:size(antidotec_set:dirty_value(S2)),
-    [?_assert(ThreeElemSet =:= 3),
-     ?_assert(TwoElemSet =:= 2)].
+    New = antidotec_set:new([<<"elem1">>,<<"elem2">>,<<"elem3">>]),
+    ThreeElemSet = antidotec_set:dirty_value(New),
+    ?assertEqual([<<"elem1">>, <<"elem2">>, <<"elem3">>], lists:sort(ThreeElemSet)),
+    AddElem = antidotec_set:add(<<"elem4">>,New),
+    S1 = antidotec_set:remove(<<"elem4">>,AddElem),
+    S2 = antidotec_set:remove(<<"elem2">>,S1),
+    TwoElemSet = antidotec_set:dirty_value(S2),
+    ?assertEqual([<<"elem1">>, <<"elem3">>], lists:sort(TwoElemSet)).
+
 -endif.
