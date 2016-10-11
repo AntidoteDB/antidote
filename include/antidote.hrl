@@ -158,7 +158,6 @@
     type :: type(),
     op_param :: op(),
     dependency_vc :: vectorclock(),
-%%    dependency_vc :: vectorclock(),
     dc_and_commit_time :: commit_time(),
     txid :: txid()}).
 
