@@ -358,46 +358,41 @@ replicated_set_test(Config) ->
 
     Key1 = replicated_set_test,
     Type = antidote_crdt_orset,
-    
-    ct:print("Writing 100 elements to set!!!"),
+
+    lager:info("Writing 100 elements to set!!!"),
 
     %% add 100 elements to the set on Node 1 while simultaneously reading on Node2
     CommitTimes = lists:map(fun(N) ->
-                    ct:print("Writing ~p to set", [N]),
+				    lager:info("Writing ~p to set", [N]),
 				    WriteResult1 = rpc:call(Node1, antidote, clocksi_execute_tx,
 							    [[{update, {Key1, Type, {add, N}}}]]),
 				    ?assertMatch({ok, _}, WriteResult1),
 				    {ok, {_, _, CommitTime}} = WriteResult1,
-                    ct:print("Commit Time ~p", [CommitTime]),
 				    
 				    {ok, {_, [SetValue], _}} = rpc:call(Node2,
 									antidote, clocksi_read,
 									[ignore, Key1, Type]),
-                    ct:print("Read value ~p", [SetValue]),
+				    lager:info("Read value ~p", [SetValue]),
 				    case length(SetValue) > 0 of
 					true ->
 					    ?assertEqual(lists:seq(1,lists:max(SetValue)), SetValue);
 					false ->
 					    ok
 				    end,
-				    timer:sleep(100),
+				    timer:sleep(200),
 				    CommitTime
 			    end, lists:seq(1, 100)),
     
     LastCommitTime = lists:last(CommitTimes),
-    MaxCommitTime = vectorclock:max(CommitTimes),
-    
-    ct:print("last commit time was ~p.", [LastCommitTime]),
-    ct:print("MAX commit time was ~p.", [MaxCommitTime]),
+    lager:info("last commit time was ~p.", [LastCommitTime]),
     
     %% now read on Node2
     ReadResult = rpc:call(Node2,
 			  antidote, clocksi_read,
-			  [MaxCommitTime, Key1, Type]),
-    ct:print("Read value ~p.", [ReadResult]),
+			  [LastCommitTime, Key1, Type]),
+    lager:info("Read value ~p.", [ReadResult]),
     {ok, {_, [SetValue], _}} = ReadResult,
     %% expecting to read values 1-100
     ?assertEqual(lists:seq(1, 100), SetValue),
-    ?assertEqual(LastCommitTime, MaxCommitTime),
     
     pass.
