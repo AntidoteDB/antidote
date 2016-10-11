@@ -67,8 +67,8 @@ end_per_testcase(_, _) ->
 
 all() ->
     [
-    append_test
-%%    append_failure_test
+    append_test,
+    append_failure_test
     ].
 
 append_test(Config) ->
@@ -130,14 +130,16 @@ append_failure_test(Config) ->
     %% Partition the network.
     ct:print("About to partition: ~p from: ~p", [A, Nodes -- A]),
     test_utils:partition_cluster(A, Nodes -- A),
-    ct:print("done"),
-    ct:print("About to heal partition: ~p from: ~p", [A, Nodes -- A]),
+    
+    
 
     %% Heal the partition.
+    ct:print("About to heal: ~p from: ~p", [A, Nodes -- A]),
     test_utils:heal_cluster(A, Nodes -- A),
-    ct:print("done"),
+    ct:print("Done."),
     
+    ct:print("About to read after healing..."),
     %% Read after the partition has been healed.
     ReadResult3 = rpc:call(First, antidote, read, [Key, ?TYPE]),
-    ct:print("ReadResult3: ~p", [ReadResult3]),
+    ct:print("Done."),
     ?assertMatch({ok, 1}, ReadResult3).

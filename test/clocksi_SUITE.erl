@@ -260,8 +260,6 @@ clocksi_test3(Config) ->
     End=rpc:call(FirstNode, antidote, clocksi_full_icommit, [TxId]),
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End),
     {ok,{_Txid, CausalSnapshot}} = End,
-    lager:info("got causal snapshot ~p",[CausalSnapshot]),
-
     ReadResult3 = rpc:call(FirstNode, antidote, clocksi_read,
                            [CausalSnapshot, Key1, Type]),
     {ok, {_,[ReadVal],_}} = ReadResult3,
@@ -350,50 +348,33 @@ clocksi_test5(Config) ->
     Type = antidote_crdt_counter,
     Key1=clocksi_test5_key1,
     {ok,TxId}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    lager:info("Started Tx. got id: ~p",[TxId]),
     ReadResult0=rpc:call(FirstNode, antidote, clocksi_iread,
                          [TxId, Key1, antidote_crdt_counter]),
     ?assertEqual({ok, 0}, ReadResult0),
-
     WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
                          [TxId, Key1, Type, increment]),
     ?assertEqual(ok, WriteResult),
-    lager:info("wrote key  ok. "),
-
     ReadResult=rpc:call(FirstNode, antidote, clocksi_iread,
                         [TxId, Key1, antidote_crdt_counter]),
     ?assertEqual({ok, 1}, ReadResult),
-    lager:info("Read key ~p, got value: ~p ",[Key1, ReadResult]),
-
     WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
                           [TxId, Key1, Type, increment]),
     ?assertEqual(ok, WriteResult1),
-    lager:info("wrote key , ok. "),
-
     ReadResult1=rpc:call(FirstNode, antidote, clocksi_iread,
                          [TxId, Key1, antidote_crdt_counter]),
     ?assertEqual({ok, 2}, ReadResult1),
-    lager:info("Read key ~p, got value: ~p ",[Key1, ReadResult1]),
     WriteResult2=rpc:call(FirstNode, antidote, clocksi_iupdate,
                           [TxId, Key1, Type, {increment, 1}]),
     ?assertEqual(ok, WriteResult2),
     ReadResult2=rpc:call(FirstNode, antidote, clocksi_iread,
                          [TxId, Key1, antidote_crdt_counter]),
     ?assertEqual({ok, 3}, ReadResult2),
-    lager:info("Read key ~p, got value: ~p ",[Key1, ReadResult2]),
     End=rpc:call(FirstNode, antidote, clocksi_full_icommit, [TxId]),
-    lager:info("Running clocksi_full_icommit "),
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End),
-    lager:info("Got response: ~p ",[End]),
     {ok,{_Txid, CausalSnapshot}} = End,
-
-
-    lager:info("Reading causally after previous txn. "),
-
     ReadResult3 = rpc:call(FirstNode, antidote, clocksi_read,
                            [CausalSnapshot, Key1, Type]),
     {ok, {_,[ReadVal],_}} = ReadResult3,
-    lager:info("Read key ~p, got value: ~p ",[Key1, ReadResult3]),
     ?assertEqual(ReadVal, 3),
     lager:info("Test5 passed"),
     pass.
@@ -751,8 +732,8 @@ read_update_test(Node, Key) ->
     Type = antidote_crdt_counter,
     {ok,Result1} = rpc:call(Node, antidote, read,
                        [Key, Type]),
-    {ok,_} = rpc:call(Node, antidote, append,
-                      [Key, Type, {increment,1}]),
+    {ok,_} = rpc:call(Node, antidote, clocksi_bulk_update,
+                      [[{update, {Key, Type, {increment,1}}}]]),
     {ok,Result2} = rpc:call(Node, antidote, read,
                        [Key, Type]),
     ?assertEqual(Result1+1,Result2),
@@ -771,29 +752,25 @@ clocksi_concurrency_test(Config) ->
     %% read txn starts before the write txn's prepare phase,
     Key = clocksi_conc,
     Type = antidote_crdt_counter,
-    Bucket = clocksi_test,
-    Bound_object = {Key, Type, Bucket},
-    
-    {ok, TxId1} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, {increment, 1}}], TxId1]),
+    {ok, TxId1} = rpc:call(Node, antidote, clocksi_istart_tx, []),
+    rpc:call(Node, antidote, clocksi_iupdate,
+             [TxId1, Key, Type, {increment, 1}]),
     rpc:call(Node, antidote, clocksi_iprepare, [TxId1]),
-    
-    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    
-    
+    {ok, TxId2} = rpc:call(Node, antidote, clocksi_istart_tx, []),
     Pid = self(),
     spawn( fun() ->
-                   ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, {increment, 1}}], TxId2]),
-                   {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+                   rpc:call(Node, antidote, clocksi_iupdate,
+                            [TxId2, Key, Type, {increment, 1}]),
+                   rpc:call(Node, antidote, clocksi_iprepare, [TxId2]),
+                   {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId2]),
                    Pid ! ok
            end),
 
     {ok,_}= rpc:call(Node, antidote, clocksi_icommit, [TxId1]),
      receive
          ok ->
-             {ok, TxId3} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-             Res = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId3]),
-             rpc:call(Node, antidote, commit_transaction, [TxId3]),
-             ?assertMatch({ok, [2]}, Res),
+             Result= rpc:call(Node,
+                              antidote, read, [Key, Type]),
+             ?assertEqual({ok, 2}, Result),
              pass
      end.

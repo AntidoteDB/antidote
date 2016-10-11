@@ -46,13 +46,10 @@
 -include_lib("kernel/include/inet.hrl").
 
 init_per_suite(Config) ->
-	ct:print("about to init test suite"),
     test_utils:at_init_testsuite(),
-	ct:print("done, setting up cluster..."),
-	Clusters = test_utils:set_up_clusters_common(Config),
+    Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = hd(Clusters),
-	ct:print("Done, nodes are: ~p",[Nodes]),
-	[{nodes, Nodes}|Config].
+    [{nodes, Nodes}|Config].
 
 end_per_suite(Config) ->
     %application:stop(lager),
@@ -70,34 +67,24 @@ all() ->
     ].
 
 dummy_test(Config) ->
-	ct:print("starting dummy test"),
-	
-	[Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
+  [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
   ct:print("Test on ~p!",[Node1]),
   %timer:sleep(10000),
   %application:set_env(antidote, txn_cert, true),
   %application:set_env(antidote, txn_prot, clocksi),
   Key = antidote_key,
   Type = antidote_crdt_counter,
-	
-	ct:print("Sending 3 updates..."),
-	
-	{ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
+
+  {ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
   {ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
   {ok,_} = rpc:call(Node2, antidote, append, [Key, Type, {increment, 1}]),
-	ct:print("Done."),
-	
-	Result1 = rpc:call(Node1, antidote, read, [Key, Type]),
-	ct:print("Reading node 1 returned this value: ~p",[Result1]),
-	
+
   % Propagation of updates
   F = fun() ->
-    Result = rpc:call(Node2, antidote, read, [Key, Type])
-%%	  ct:print("Reading node 2 returned this value: ~p",[Result])
-end,
+    rpc:call(Node2, antidote, read, [Key, Type])
+    end,
   Delay = 100,
   Retry = 360000 div Delay, %wait for max 1 min
-	ct:print("Waiting untill result is 3, after the 3 updates. [~p, ~p]",[Key, Type]),
-	ok = test_utils:wait_until_result(F, {ok, 3}, Retry, Delay),
+  ok = test_utils:wait_until_result(F, {ok, 3}, Retry, Delay),
 
   ok.
