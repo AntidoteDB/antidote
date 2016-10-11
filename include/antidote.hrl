@@ -189,6 +189,7 @@
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
+-type orddict() :: orddict().
 %%-type snapshot_time() :: vectorclock:vectorclock().
 -type commit_time() :: {dcid(), non_neg_integer()}.
 %%-type txid() :: #tx_id{} | ignore |no_txn_inserting_from_log.
@@ -222,6 +223,7 @@
               txn_properties/0,
               op_param/0, op_name/0,
               bound_object/0,
+	          orddict/0,
               module_name/0,
               function_name/0]).
 %%---------------------------------------------------------------------
@@ -251,7 +253,7 @@
     state :: active | prepared | committing | committed | undefined
     | aborted | committed_read_only,
     operations :: undefined | list(),
-    internal_read_set :: list(),
+    internal_read_set :: orddict(),
     return_accumulator :: list() | ok | {error, reason()},
     is_static :: boolean(),
     full_commit :: boolean(),
