@@ -110,7 +110,7 @@ start_tx({start_tx, From, ClientClock, Operations, UpdateClock}, SD0) ->
     {next_state, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, SD0)}.
 
 start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol}) ->
-    {Transaction, _TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock, StayAlive, From, true, Protocol),
+    Transaction = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock, StayAlive, From, true, Protocol),
     SD#tx_coord_state{transaction=Transaction, operations=Operations}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the

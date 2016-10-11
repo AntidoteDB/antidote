@@ -158,12 +158,12 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
 
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol}) ->
-    {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
-    From ! {ok, TransactionId},
+    Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
+    From ! {ok, Transaction#transaction.txn_id},
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-  boolean(), pid() | undefined, boolean(), atom()) -> {transaction(), txid() | {error, term()}}.
+  boolean(), pid() | undefined, boolean(), atom()) -> transaction().
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
@@ -180,39 +180,45 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
            end,
     case Protocol of
         physics ->
-            PhysicsReadMetadata = #physics_read_metadata{
-                dep_upbound = vectorclock:new(),
-                commit_time_lowbound = vectorclock:new()},
-            Now = dc_utilities:now_microsec(),
-            TransactionId = #tx_id{local_start_time= Now, server_pid = Name},
-            Transaction = #transaction{
-                transactional_protocol = Protocol,
-                physics_read_metadata = PhysicsReadMetadata,
-                txn_id = TransactionId},
-            {Transaction, TransactionId};
+            create_physics_tx_record(Name);
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            {ok, SnapshotTime} = case ClientClock of
-                                     ignore ->
-                                         get_snapshot_time();
-                                     _ ->
-                                         case UpdateClock of
-                                             update_clock ->
-                                                 get_snapshot_time(ClientClock);
-                                             no_update_clock ->
-                                                 {ok, ClientClock}
-                                         end
-                                 end,
-            DcId = ?DC_UTIL:get_my_dc_id(),
-            LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
-            TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
-
-            Transaction = #transaction{snapshot_clock = LocalClock,
-                transactional_protocol = Protocol,
-                snapshot_vc = SnapshotTime,
-                txn_id = TransactionId,
-                physics_read_metadata=undefined},
-            {Transaction, TransactionId}
+            create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)
     end.
+
+-spec create_physics_tx_record(atom())-> transaction().
+create_physics_tx_record(Name)->
+    PhysicsReadMetadata = #physics_read_metadata{
+        dep_upbound = vectorclock:new(),
+        commit_time_lowbound = vectorclock:new()},
+    Now = dc_utilities:now_microsec(),
+    TransactionId = #tx_id{local_start_time= Now, server_pid = Name},
+    #transaction{
+        transactional_protocol = physics,
+        physics_read_metadata = PhysicsReadMetadata,
+        txn_id = TransactionId}.
+
+-spec create_cure_gr_tx_record(atom(), clock_time(), clock_time(), transactional_protocol())->transaction().
+create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)->
+    {ok, SnapshotTime} = case ClientClock of
+        ignore ->
+            get_snapshot_time();
+        _ ->
+            case UpdateClock of
+                update_clock ->
+                    get_snapshot_time(ClientClock);
+                no_update_clock ->
+                    {ok, ClientClock}
+            end
+    end,
+    DcId = ?DC_UTIL:get_my_dc_id(),
+    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
+    TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
+    
+    #transaction{snapshot_clock = LocalClock,
+        transactional_protocol = Protocol,
+        snapshot_vc = SnapshotTime,
+        txn_id = TransactionId,
+        physics_read_metadata=undefined}.
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
@@ -222,7 +228,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
 perform_singleitem_read(Key, Type) ->
 %%    todo: there should be a better way to get the Protocol.
     {ok, Protocol} = application:get_env(antidote, txn_prot),
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
+    Transaction= create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
