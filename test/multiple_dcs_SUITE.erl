@@ -166,29 +166,24 @@ parallel_writes_test(Config) ->
                 {ok, CT2} ->
                 receive
                     {ok, CT3} ->
-                        Time= dict:merge(fun(_K, T1,T2) ->
+                        Time = dict:merge(fun(_K, T1,T2) ->
                                                   max(T1,T2)
                                           end,
-%%                                          vectorclock:to_dict(CT3), dict:merge(
                                           CT3, dict:merge(
                                                  fun(_K, T1,T2) ->
                                                          max(T1,T2)
                                                  end,
-%%                                vectorclock:to_dict(CT1), vectorclock:to_dict(CT2))),
-                                CT1, CT2)),
-                        
-%%                        Time = vectorclock:from_dict(TimeDict),
-                        
+                                                 CT1, CT2)),
                         ReadResult1 = rpc:call(Node1,
                            antidote, clocksi_read,
                            [Time, Key, Type]),
                         {ok, {_,[ReadSet1],_} }= ReadResult1,
-
+                        ?assertEqual(15, ReadSet1),
                         ReadResult2 = rpc:call(Node2,
                            antidote, clocksi_read,
                            [Time, Key, Type]),
                         {ok, {_,[ReadSet2],_} }= ReadResult2,
-
+                        ?assertEqual(15, ReadSet2),
                         ReadResult3 = rpc:call(Node3,
                            antidote, clocksi_read,
                            [Time, Key, Type]),
@@ -363,41 +358,46 @@ replicated_set_test(Config) ->
 
     Key1 = replicated_set_test,
     Type = antidote_crdt_orset,
-
-    lager:info("Writing 100 elements to set!!!"),
+    
+    ct:print("Writing 100 elements to set!!!"),
 
     %% add 100 elements to the set on Node 1 while simultaneously reading on Node2
     CommitTimes = lists:map(fun(N) ->
-				    lager:info("Writing ~p to set", [N]),
+                    ct:print("Writing ~p to set", [N]),
 				    WriteResult1 = rpc:call(Node1, antidote, clocksi_execute_tx,
 							    [[{update, {Key1, Type, {add, N}}}]]),
 				    ?assertMatch({ok, _}, WriteResult1),
 				    {ok, {_, _, CommitTime}} = WriteResult1,
+                    ct:print("Commit Time ~p", [CommitTime]),
 				    
 				    {ok, {_, [SetValue], _}} = rpc:call(Node2,
 									antidote, clocksi_read,
 									[ignore, Key1, Type]),
-				    lager:info("Read value ~p", [SetValue]),
+                    ct:print("Read value ~p", [SetValue]),
 				    case length(SetValue) > 0 of
 					true ->
 					    ?assertEqual(lists:seq(1,lists:max(SetValue)), SetValue);
 					false ->
 					    ok
 				    end,
-				    timer:sleep(200),
+				    timer:sleep(100),
 				    CommitTime
 			    end, lists:seq(1, 100)),
     
     LastCommitTime = lists:last(CommitTimes),
-    lager:info("last commit time was ~p.", [LastCommitTime]),
+    MaxCommitTime = vectorclock:max(CommitTimes),
+    
+    ct:print("last commit time was ~p.", [LastCommitTime]),
+    ct:print("MAX commit time was ~p.", [MaxCommitTime]),
     
     %% now read on Node2
     ReadResult = rpc:call(Node2,
 			  antidote, clocksi_read,
-			  [LastCommitTime, Key1, Type]),
-    lager:info("Read value ~p.", [ReadResult]),
+			  [MaxCommitTime, Key1, Type]),
+    ct:print("Read value ~p.", [ReadResult]),
     {ok, {_, [SetValue], _}} = ReadResult,
     %% expecting to read values 1-100
     ?assertEqual(lists:seq(1, 100), SetValue),
+    ?assertEqual(LastCommitTime, MaxCommitTime),
     
     pass.

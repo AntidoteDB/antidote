@@ -221,7 +221,7 @@ start_node(Name, Config) ->
 
 partition_cluster(ANodes, BNodes) ->
     pmap(fun({Node1, Node2}) ->
-                true = rpc:call(Node1, erlang, set_cookie, [Node2, canttouchthis]),
+%%                true = rpc:call(Node1, erlang, set_cookie, [Node2, canttouchthis]),
                 true = rpc:call(Node1, erlang, disconnect_node, [Node2]),
                 ok = wait_until_disconnected(Node1, Node2)
         end,

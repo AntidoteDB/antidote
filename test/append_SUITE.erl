@@ -67,8 +67,8 @@ end_per_testcase(_, _) ->
 
 all() ->
     [
-    append_test
-%%    append_failure_test
+    append_test,
+    append_failure_test
     ].
 
 append_test(Config) ->

@@ -741,6 +741,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 				        end}
 	        end,
 %%	        lager:info("calling internal read: ~p",[Transaction]),
+	        %% Here is where the GC is done (with the 5th argument being "true", GC is performed by the internal read
 	        case internal_read(Key, Type, NewTransaction, State, true) of
 		        {ok, _} ->
 			        %% Have to get the new ops dict because the interal_read can change it
