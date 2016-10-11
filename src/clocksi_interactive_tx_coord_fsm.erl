@@ -185,7 +185,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
             create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)
     end.
 
--spec create_physics_tx_record(atom())-> transaction().
+-spec create_physics_tx_record(pid())-> transaction().
 create_physics_tx_record(Name)->
     PhysicsReadMetadata = #physics_read_metadata{
         dep_upbound = vectorclock:new(),
@@ -197,7 +197,7 @@ create_physics_tx_record(Name)->
         physics_read_metadata = PhysicsReadMetadata,
         txn_id = TransactionId}.
 
--spec create_cure_gr_tx_record(atom(), clock_time(), clock_time(), transactional_protocol())->transaction().
+-spec create_cure_gr_tx_record(pid(), clock_time(), clock_time(), clocksi|gr)->transaction().
 create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)->
     {ok, SnapshotTime} = case ClientClock of
         ignore ->
