@@ -15,6 +15,11 @@
 -define(ZMQ_TIMEOUT, 5000).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
+
+%% the following is used for backwards compatibility with
+%% the previous interface, used by many systests.
+%% when a read and update operation does not contain a bucket,
+%% this global bucket will be used.
 -define(GLOBAL_BUCKET, antidote_bucket).
 
 %% Allow read concurrency on shared ets tables
