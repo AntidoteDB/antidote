@@ -290,7 +290,7 @@ physics_test_prepare(Config) ->
     Type = antidote_crdt_counter,
     
     Key1=physics_test_prepare_key1,
-    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
+    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[xxx]),
     IndexNode = hd(Preflist),
     
     Key2 = find_key_same_node(FirstNode,IndexNode,1),
@@ -308,11 +308,11 @@ physics_test_prepare(Config) ->
     CommitTime=rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
     ?assertMatch({ok, _}, CommitTime),
     
-%%    timer:sleep(3000),
+    timer:sleep(3000),
     
     {ok,TxIdRead}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     
-%%    timer:sleep(3000),
+    timer:sleep(3000),
     
     {ok,TxId1}=rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
     WriteResult1=rpc:call(FirstNode, antidote, clocksi_iupdate,
@@ -337,8 +337,8 @@ physics_test_prepare(Config) ->
     pass.
 
 find_key_same_node(FirstNode,IndexNode,Num) ->
-    NewKey = list_to_atom(atom_to_list(aaa) ++ integer_to_list(Num)),
-    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
+    NewKey = list_to_atom(atom_to_list(xxx) ++ integer_to_list(Num)),
+    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[xxx]),
     case hd(Preflist) == IndexNode of
         true ->
             NewKey;
