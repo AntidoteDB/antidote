@@ -65,7 +65,7 @@
 
 %%%% API --------------------------------------------------------------------+
 
-get_stable_snapshot() -> riak_core_metadata:get(?META_PREFIX_SS, 1, [{default,dict:new()}]).
+get_stable_snapshot() -> riak_core_metadata:get(?META_PREFIX_SS, 1, [{default,vectorclock:new()}]).
 
 recalculate_stable_snapshot(Partition) ->
   dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot).
@@ -81,7 +81,7 @@ start_vnode(I) ->
 
 %% @doc Initialize the clock
 init([Partition]) ->
-  NewPClock = dict:new(),
+  NewPClock = vectorclock:new(),
   metadata_maybe_put(?META_PREFIX, Partition, NewPClock),
   {ok, #state{
     vectorclock = NewPClock,

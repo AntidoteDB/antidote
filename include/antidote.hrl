@@ -16,6 +16,12 @@
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 
+%% the following is used for backwards compatibility with
+%% the previous interface, used by many systests.
+%% when a read and update operation does not contain a bucket,
+%% this global bucket will be used.
+-define(GLOBAL_BUCKET, antidote_bucket).
+
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
 %% and information about live transactions, so the assumption
@@ -50,7 +56,7 @@
 %% wake up and retry. I.e. a read waiting for
 %% a transaction currently in the prepare state that is blocking
 %% that read.
--define(SPIN_WAIT, 10).
+-define(SPIN_WAIT, 0).
 %% HEARTBEAT_PERIOD: Period of sending the heartbeat messages in interDC layer
 -define(HEARTBEAT_PERIOD, 1000).
 %% VECTORCLOCK_UPDATE_PERIOD: Period of updates of the stable snapshot per partition
@@ -78,6 +84,16 @@
 %% Frequency at which manager requests remote resources.
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
+%% threshold time for physics static reads, in microseconds
+%% @doc when running the physics protocol, if multiple reads
+%% are sent in parallel in a single read_objects operation, the
+%% physics read metadata is set to the current clock of the txn
+%% coordinator. In the case a vnode receives that metadata and
+%% its clock has not reached that value, it will have to wait
+%% until it does. This threshold is used to reduce/avoid that
+%% waiting.
+-define(PHYSICS_THRESHOLD, 30000).
+
 %% The definition "FIRST_OP" is used by the materializer.
 %% The materialzer caches a tuple for each key containing
 %% information about the state of operations performed on that key.
@@ -92,7 +108,7 @@
 -record (payload, {key:: key(), type :: type(), op_param, actor :: actor()}).
 
 -record(commit_log_payload, {commit_time :: dc_and_commit_time(),
-			     snapshot_time :: snapshot_time()
+			     causal_dependencies :: snapshot_time()
 			    }).
 
 -record(update_log_payload, {key :: key(),
@@ -137,9 +153,27 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--record(transaction, {snapshot_time :: snapshot_time(),
-                      vec_snapshot_time,
-                      txn_id :: txid()}).
+-record(operation_payload, {
+    key :: key(),
+    type :: type(),
+    op_param :: op(),
+    dependency_vc :: vectorclock(),
+    dc_and_commit_time :: commit_time(),
+    txid :: txid()}).
+
+-record(transaction, {
+    snapshot_clock :: snapshot_time(),
+    transactional_protocol :: transactional_protocol(),
+    snapshot_vc :: vectorclock(),
+    txn_id :: txid() | no_txn_inserting_from_log,
+    physics_read_metadata :: physics_read_metadata()}).
+
+
+-record(physics_read_metadata, {
+    dep_upbound :: vectorclock() | undefined,
+    commit_time_lowbound :: vectorclock() | undefined
+}).
+
 
 -record(materialized_snapshot, {last_op_id :: op_num(),  %% This is the opid of the latest op in the list
        				                         %% of ops for this key included in this snapshot
@@ -149,9 +183,10 @@
 
 %%---------------------------------------------------------------------
 -type client_op() :: {update, {key(), type(), op()}} | {read, {key(), type()}} | {prepare, term()} | commit.
+-type transactional_protocol():: clocksi | physics | gr.
 -type crdt() :: term().
 -type val() :: term().
--type reason() :: atom().
+-type reason() :: term().
 %%chash:index_as_int() is the same as riak_core_apl:index().
 %%If it is changed in the future this should be fixed also.
 -type index_node() :: {chash:index_as_int(), node()}.
@@ -164,10 +199,23 @@
 -type log_id() :: [partition_id()].
 -type bucket() :: term().
 -type snapshot() :: term().
+-type orddict() :: orddict().
+%%-type snapshot_time() :: vectorclock:vectorclock().
+-type commit_time() :: {dcid(), non_neg_integer()}.
+%%-type txid() :: #tx_id{} | ignore |no_txn_inserting_from_log.
+-type operation_payload() :: #operation_payload{}.
+%%-type dcid() :: term().
+-type transaction() :: #transaction{} | undefined.
+%-type physics_tx() :: #physics_transaction{}.
 
 -type tx() :: #transaction{}.
 -type cache_id() :: ets:tab().
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
+
+%%physics
+-type clock_value() :: non_neg_integer().
+-type key_access_time_tuple() :: {clock_value(), boolean()}.
+-type physics_read_metadata() :: #physics_read_metadata{} | undefined. %undefined when using any protocol that's not PhysiCS.
 
 
 -type txn_properties() :: term().
@@ -185,6 +233,7 @@
               txn_properties/0,
               op_param/0, op_name/0,
               bound_object/0,
+	          orddict/0,
               module_name/0,
               function_name/0]).
 %%---------------------------------------------------------------------
@@ -201,27 +250,33 @@
 %%----------------------------------------------------------------------
 
 -record(tx_coord_state, {
-          from :: undefined | {pid(), term()},
-          transaction :: undefined | tx(),
-          updated_partitions :: list(),
-          client_ops :: list(), % list of upstream updates, used for post commit hooks
-          num_to_ack :: non_neg_integer(),
-          num_to_read :: non_neg_integer(),
-          prepare_time :: clock_time(),
-          commit_time :: undefined | clock_time(),
-          commit_protocol :: term(),
-          state :: active | prepared | committing | committed | undefined
-                 | aborted | committed_read_only,
-          operations :: undefined | list(),
-          read_set :: list(),
-          is_static :: boolean(),
-          full_commit :: boolean(),
-	  stay_alive :: boolean()}).
+    transactional_protocol :: atom(),
+    from :: undefined | {pid(), term()},
+    transaction :: undefined | transaction(),
+    updated_partitions :: list(),
+	client_ops :: list(), % list of upstream updates, used for post commit hooks
+	num_to_ack :: non_neg_integer(),
+    num_to_read :: non_neg_integer(),
+    prepare_time :: clock_time(),
+    commit_time :: clock_time(),
+    commit_protocol :: term(),
+    state :: active | prepared | committing | committed | undefined
+    | aborted | committed_read_only,
+    operations :: undefined | list(),
+    internal_read_set :: orddict(),
+    return_accumulator :: list() | ok | {error, reason()},
+    is_static :: boolean(),
+    full_commit :: boolean(),
+    stay_alive :: boolean(),
+    %% The following is needed by the physics protocol
+    version_max :: vectorclock()
+}).
+
 
 %% The record is using during materialization to keep the
 %% state needed to materilze an object from the cache (or log)
 -record(snapshot_get_response, {
-	  ops_list :: [{op_num(),clocksi_payload()}] | tuple(),  %% list of new ops
+	  ops_list :: [{op_num(),operation_payload()}] | tuple(),  %% list of new ops
 	  number_of_ops :: non_neg_integer(), %% size of ops_list
 	  materialized_snapshot :: #materialized_snapshot{},  %% the previous snapshot to apply the ops to
 	  snapshot_time :: snapshot_time() | ignore,  %% The version vector time of the snapshot
@@ -236,3 +291,4 @@
 	  ops_cache :: cache_id(),
 	  snapshot_cache :: cache_id(),
 	  is_ready :: boolean()}).
+-type mat_state() :: #mat_state{}.

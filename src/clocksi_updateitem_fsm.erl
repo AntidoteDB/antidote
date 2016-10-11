@@ -58,8 +58,8 @@ init([Coordinator, VecSnapshotTime, Partition]) ->
 check_clock(timeout, SD0=#state{vclock=Vclock}) ->
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     T_TS = vectorclock:get_clock_of_dc(DcId, Vclock),
-    Time = dc_utilities:now_microsec(),
-    Newclock = dict:erase(DcId, Vclock),
+	Time = dc_utilities:now_microsec(),
+    Newclock = vectorclock:erase(DcId, Vclock),
     case T_TS > Time of
         true ->
             timer:sleep((T_TS - Time)div 1000 +1 ),

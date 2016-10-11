@@ -57,7 +57,8 @@
   queues :: dict:dict(), %% DCID -> queue()
   vectorclock :: vectorclock(),
   last_updated :: non_neg_integer(),
-  drop_ping :: boolean()
+  drop_ping :: boolean(),
+  transactional_protocol :: transactional_protocol()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -77,7 +78,8 @@ set_dependency_clock(Partition, Vector) -> dc_utilities:call_local_vnode_sync(Pa
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   StableSnapshot = vectorclock:new(),
-  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0, drop_ping = false}}.
+  {ok, Protocol} = application:get_env(antidote, txn_prot),
+  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0, drop_ping = false, transactional_protocol = Protocol}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
@@ -118,7 +120,7 @@ try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = 
 try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant.
   %% Therefore, we remove it prior to further checks.
-  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.snapshot),
+  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.causal_dependencies),
   CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
 
   %% Check if the current clock is greater than or equal to the dependency vector
@@ -137,9 +139,10 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
 					   [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
-      ClockSiOps = updates_to_clocksi_payloads(Txn),
-
-      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
+      ClockSiOps = updates_to_operation_payloads(Txn),
+      [OpHead | _OpsTail] = ClockSiOps,
+      Transaction = #transaction{transactional_protocol=State#state.transactional_protocol, txn_id=OpHead#operation_payload.txid},
+      ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#operation_payload.key, Op, Transaction) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.
 
@@ -190,7 +193,7 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
 -spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
 update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
-  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
+  NewVectorClock= vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
 
   %% Check if the stable snapshot should be refreshed.
   %% It's an optimization that reduces communication overhead during intensive updates at remote DCs.
@@ -207,14 +210,14 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
     true ->
 
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
+      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewVectorClock),
 
       Now;
     %% Stable snapshot was recently updated, no need to do so.
     false -> LastUpdated
   end,
 
-  State#state{vectorclock = NewClock, last_updated = NewLastUpdated}.
+  State#state{vectorclock =NewVectorClock, last_updated = NewLastUpdated}.
 
 %% Get the current vectorclock from the perspective of this partition, with the updated entry for current DC.
 -spec get_partition_clock(#state{}) -> vectorclock().
@@ -222,17 +225,17 @@ get_partition_clock(State) ->
   %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
   vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
-%% Utility function: converts the transaction to a list of clocksi_payload ops.
--spec updates_to_clocksi_payloads(#interdc_txn{}) -> list(#clocksi_payload{}).
-updates_to_clocksi_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, snapshot = SnapshotTime}) ->
+%% Utility function: converts the transaction to a list of operation_payload ops.
+-spec updates_to_operation_payloads(#interdc_txn{}) -> list(operation_payload()).
+updates_to_operation_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, causal_dependencies = CausalDependencies}) ->
   lists:map(fun(#log_record{log_operation = LogRecord}) ->
     #update_log_payload{key = Key, type = Type, op = Op} = LogRecord#log_operation.log_payload,
-    #clocksi_payload{
+    #operation_payload{
       key = Key,
       type = Type,
       op_param = Op,
-      snapshot_time = SnapshotTime,
-      commit_time = {DCID, CommitTime},
-      txid =  LogRecord#log_operation.tx_id
+      dependency_vc= CausalDependencies,
+      dc_and_commit_time = {DCID, CommitTime},
+      txid = LogRecord#log_operation.tx_id
     }
   end, inter_dc_txn:ops_by_type(Txn, update)).

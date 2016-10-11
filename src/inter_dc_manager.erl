@@ -83,7 +83,7 @@ connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
 connect_nodes(_Nodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->
     ok = forget_dc(Desc),
-    {error, connection_error};    
+    {error, connection_error};
 connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
     case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
 	ok ->

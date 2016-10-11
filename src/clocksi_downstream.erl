@@ -21,27 +21,41 @@
 
 -include("antidote.hrl").
 
--export([generate_downstream_op/6]).
+-export([generate_downstream_op/7]).
 
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(Transaction :: tx(), Node :: term(), Key :: key(),
-    Type :: type(), Update :: {op(), actor()}, list()) ->
-    {ok, op()} | {error, atom()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
-    %% TODO: Check if read can be omitted for some types and ops
-    case clocksi_vnode:read_data_item(Node,
-                                      Transaction,
-                                      Key,
-                                      Type,
-                                      WriteSet) of
-        {ok, Snapshot} ->
-            case Type of
-                antidote_crdt_bcounter -> %% bcounter data-type.
-                    bcounter_mgr:generate_downstream(Key,Update,Snapshot);
-                _ ->
-                    Type:downstream(Update, Snapshot)
-            end;
-        {error, Reason} -> {error, Reason}
-    end.
+-spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
+  Type :: type(), Update :: {op(), actor()}, list(), orddict()) ->
+	{ok, op(), vectorclock()|{vectorclock(), vectorclock()}} | {error, reason()}.
+generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet)->
+	Result=case orddict:find(Key, InternalReadSet) of
+		{ok, {S, SCP}}->
+			{S, SCP};
+		error->
+			case clocksi_vnode:read_data_item(Node, Transaction, Key, Type, WriteSet) of
+				{ok, {S, SCP}}->
+					{S, SCP};
+				{error, Reason}->
+					{error, Reason}
+			end
+	end,
+	case Result of
+		{error, R}->
+			{error, R}; %% {error, Reason} is returned here.
+		{Snapshot, SnapshotCommitParams}->
+			NewSnapshot=case Type of
+				antidote_crdt_bcounter->
+					%% bcounter data-type.
+					bcounter_mgr:generate_downstream(Key, Update, Snapshot);
+				_->
+					Type:downstream(Update, Snapshot)
+			end,
+			case NewSnapshot of
+				{ok, FinalSnapshot}->
+					{ok, FinalSnapshot, SnapshotCommitParams};
+				{error, Reason1}->
+					{error, Reason1}
+			end
+	end.

@@ -51,7 +51,7 @@
 %% Spawn
 -record(state, {partition :: partition_id(),
 		id :: non_neg_integer(),
-		mat_state :: #mat_state{},
+		mat_state :: mat_state(),
 		prepared_cache ::  cache_id(),
 		self :: atom()}).
 
@@ -86,8 +86,8 @@ stop_read_servers(Partition, Count) ->
     Addr = node(),
     stop_read_servers_internal(Addr, Partition, Count).
 
--spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
-read_data_item({Partition,Node},Key,Type,Transaction) ->
+-spec read_data_item(index_node(), key(), type(), transaction()) -> {error, term()} | {ok, snapshot()}.
+read_data_item({Partition, Node}, Key, Type, Transaction) ->
     try
 	gen_server:call({global,generate_random_server_name(Node,Partition)},
 			{perform_read,Key,Type,Transaction},infinity)
@@ -98,10 +98,13 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
             read_data_item({Partition,Node},Key,Type,Transaction)
     end.
 
--spec async_read_data_item(index_node(), key(), type(), tx(), term()) -> ok.
-async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
-	gen_server:cast({global,generate_random_server_name(Node,Partition)},
-            {perform_read_cast, Coordinator, Key, Type, Transaction}).
+-spec async_read_data_item(index_node(), key(), type(), transaction(), term()) -> ok.
+async_read_data_item({Partition, Node}, Key, Type, Transaction, Coordinator) ->
+		gen_server:cast({global, generate_random_server_name(Node, Partition)},
+			{perform_read_cast, Coordinator, Key, Type, Transaction}).
+	
+	
+
 
 %% @doc This checks all partitions in the system to see if all read
 %%      servers have been started up.
@@ -216,14 +219,14 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
     %% TODO: Add support for read properties
     PropertyList = [],
-    TxId = Transaction#transaction.txn_id,
-    TxLocalStartTime = TxId#tx_id.local_start_time,
-    case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
+    case check_clock(Key,Transaction,PreparedCache,Partition) of
 	{not_ready,Time} ->
+		lager:debug("waiting for clock to catch up"),
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
+%%		lager:debug("clock ready"),
 	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
     end.
 
@@ -231,25 +234,50 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
--spec check_clock(key(),clock_time(),ets:tid(),partition_id()) ->
-			 {not_ready, clock_time()} | ready.
-check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
-    Time = dc_utilities:now_microsec(),
-    case TxLocalStartTime > Time of
-        true ->
-	    {not_ready, (TxLocalStartTime - Time) div 1000 +1};
-        false ->
-	    check_prepared(Key,TxLocalStartTime,PreparedCache,Partition)
+-spec check_clock(key(),transaction(),ets:tid(),partition_id()) ->
+	{not_ready, clock_time()} | ready.
+check_clock(Key, Transaction, PreparedCache, Partition) ->
+	Time = dc_utilities:now_microsec(),
+    case Transaction#transaction.transactional_protocol of
+        physics ->
+            DepUpbound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+            case
+                (DepUpbound == vectorclock:new()) of
+                true ->
+                    ready;
+                false ->
+                    MyDC = dc_utilities:get_my_dc_id(),
+                    DepUpboundScalar= vectorclock:get_clock_of_dc(MyDC, DepUpbound),
+                    case DepUpboundScalar > Time of
+                        true ->
+                            % lager:debug("Waiting... Reason: clock skew"),
+                            {not_ready, (DepUpboundScalar - Time) div 1000 + 1};
+                        false ->
+                            ready
+                    end
+            end;
+            Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
+                TxId = Transaction#transaction.txn_id,
+                T_TS = TxId#tx_id.local_start_time,
+                case T_TS > Time of
+                true ->
+                    % lager:info("Waiting... Reason: clock skew"),
+                    {not_ready, (T_TS - Time) div 1000 + 1};
+                false ->
+                    check_prepared(Key, Transaction, PreparedCache, Partition)
+            end
     end.
 
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
--spec check_prepared(key(),clock_time(),ets:tid(),partition_id()) ->
-			    ready | {not_ready, ?SPIN_WAIT}.
-check_prepared(Key,TxLocalStartTime,PreparedCache,Partition) ->
+-spec check_prepared(key(),transaction(),ets:tid(),partition_id()) ->
+	ready | {not_ready, ?SPIN_WAIT}.
+check_prepared(Key,Transaction,PreparedCache,Partition) ->
+    TxId = Transaction#transaction.txn_id,
+    SnapshotTime = TxId#tx_id.local_start_time,
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
-    check_prepared_list(Key, TxLocalStartTime, ActiveTxs).
+    check_prepared_list(Key,SnapshotTime,ActiveTxs).
 
 -spec check_prepared_list(key(),clock_time(),[{txid(),clock_time()}]) ->
 				 ready | {not_ready, ?SPIN_WAIT}.
@@ -265,20 +293,22 @@ check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
+%%return(Coordinator, Key, Type, Transaction, OpsCache, SnapshotCache, Partition) ->
+%%    case materializer_vnode:read(Key, Type, Transaction, OpsCache, SnapshotCache, Partition) of
+%%        {ok, Result} ->
 -spec return({fsm,pid()} | pid(),key(),type(),#transaction{},[],#state{}) -> ok.
 return(Coordinator,Key,Type,Transaction,PropertyList,
        #state{mat_state=MatState}) ->
     %% TODO: Add support for read properties
     PropertyList = [],
-    VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
-    TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, MatState) of
-        {ok, Snapshot} ->
+%%    VecSnapshotTime = Transaction#transaction.snapshot_vc,
+    case materializer_vnode:read(Key, Type, Transaction, MatState) of
+        {ok, Result} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
-                    gen_fsm:send_event(Sender, {ok, {Key, Type, Snapshot}});
+                    gen_fsm:send_event(Sender, {ok, {Key, Type, Result}});
                 _ ->
-                    _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
+                    _Ignore = gen_server:reply(Coordinator, {ok, Result})
             end;
         {error, Reason} ->
             case Coordinator of

@@ -75,40 +75,39 @@ append_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     ct:print("Starting write operation 1"),
-
-    WriteResult = rpc:call(Node,
-                           antidote, append,
-                           [append_key1, ?TYPE, increment]),
-    ?assertMatch({ok, _}, WriteResult),
+    Bucket = append_test_bucket,
+    BoundObject1 = {append_key1, ?TYPE, Bucket},
+    BoundObject2 = {append_key2, ?TYPE, Bucket},
+    
+    {ok, TxId}=rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    ok = rpc:call(Node, antidote, update_objects, [[{BoundObject1, increment}], TxId]),
+    {ok, _CommitTime} = rpc:call(Node, antidote, commit_transaction, [TxId]),
 
     ct:print("Starting write operation 2"),
-
-    WriteResult2 = rpc:call(Node,
-                           antidote, append,
-                           [append_key2, ?TYPE, increment]),
-    ?assertMatch({ok, _}, WriteResult2),
+    
+    {ok, TxId2}=rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    ok = rpc:call(Node, antidote, update_objects, [[{BoundObject2, increment}], TxId2]),
+    {ok, _CommitTime2} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
 
     ct:print("Starting read operation 1"),
-
-    ReadResult1 = rpc:call(Node,
-                           antidote, read,
-                           [append_key1, ?TYPE]),
-    ?assertEqual({ok, 1}, ReadResult1),
-
-    ct:print("Starting read operation 2"),
-
-    ReadResult2 = rpc:call(Node,
-                           antidote, read,
-                           [append_key2, ?TYPE]),
-    ?assertEqual({ok, 1}, ReadResult2).
+    
+    {ok, TxId3}=rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    {ok, [ReadResult1]} = rpc:call(Node, antidote, read_objects, [[BoundObject1], TxId3]),
+    ?assertEqual(1, ReadResult1),
+    {ok, [ReadResult2]} = rpc:call(Node, antidote, read_objects, [[BoundObject2], TxId3]),
+    ?assertEqual(1, ReadResult2),
+    {ok, _CommitTime3} = rpc:call(Node, antidote, commit_transaction, [TxId3]),
+    pass.
 
 append_failure_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
-    N = hd(Nodes),
-    Key = append_failure,
+    Node= hd(Nodes),
+    Key = append_failure_key,
+    Bucket = append_failure_bucket,
+    BoundObject1 = {Key, ?TYPE, Bucket},
 
     %% Identify preference list for a given key.
-    Preflist = rpc:call(N, log_utilities, get_preflist_from_key, [Key]),
+    Preflist = rpc:call(Node, log_utilities, get_preflist_from_key, [Key]),
     ct:print("Preference list: ~p", [Preflist]),
 
     NodeList = [Node || {_Index, Node} <- Preflist],
@@ -116,24 +115,30 @@ append_failure_test(Config) ->
 
     {A, _} = lists:split(1, NodeList),
     First = hd(A),
-
-    %% Perform successful write and read.
-    WriteResult = rpc:call(First,
-                           antidote, append, [Key, ?TYPE, {increment, 1}]),
-    ct:print("WriteResult: ~p", [WriteResult]),
-    ?assertMatch({ok, _}, WriteResult),
-
-    ReadResult = rpc:call(First, antidote, read, [Key, ?TYPE]),
-    ct:print("ReadResult: ~p", [ReadResult]),
-    ?assertMatch({ok, 1}, ReadResult),
+    
+    {ok, TxId}=rpc:call(First, antidote, start_transaction, [ignore, []]),
+    ok = rpc:call(First, antidote, update_objects, [[{BoundObject1, increment}], TxId]),
+    {ok, _CommitTime} = rpc:call(First, antidote, commit_transaction, [TxId]),
+    
+    {ok, TxId3}=rpc:call(First, antidote, start_transaction, [ignore, []]),
+    {ok, [ReadResult1]} = rpc:call(First, antidote, read_objects, [[BoundObject1], TxId3]),
+    ?assertEqual(1, ReadResult1),
+    {ok, _CommitTime3} = rpc:call(First, antidote, commit_transaction, [TxId3]),
 
     %% Partition the network.
-    lager:info("About to partition: ~p from: ~p", [A, Nodes -- A]),
+    ct:print("About to partition: ~p from: ~p", [A, Nodes -- A]),
     test_utils:partition_cluster(A, Nodes -- A),
-
     %% Heal the partition.
+    timer:sleep(3000),
+    ct:print("About to heal: ~p from: ~p", [A, Nodes -- A]),
     test_utils:heal_cluster(A, Nodes -- A),
-
+    ct:print("Done."),
+    timer:sleep(3000),
+    ct:print("About to read after healing..."),
     %% Read after the partition has been healed.
-    ReadResult3 = rpc:call(First, antidote, read, [Key, ?TYPE]),
-    ?assertMatch({ok, 1}, ReadResult3).
+    {ok, TxId4}=rpc:call(First, antidote, start_transaction, [ignore, []]),
+    {ok, [ReadResult3]} = rpc:call(First, antidote, read_objects, [[BoundObject1], TxId4]),
+    ?assertEqual(1, ReadResult3),
+    {ok, _CommitTime4} = rpc:call(First, antidote, commit_transaction, [TxId4]),
+    ct:print("Done."),
+    pass.

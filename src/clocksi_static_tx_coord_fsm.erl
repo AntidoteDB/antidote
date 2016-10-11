@@ -66,7 +66,8 @@
 	 handle_event/3,
 	 handle_info/3,
          handle_sync_event/4,
-	 terminate/3]).
+	 terminate/3,
+    replace/3]).
 
 %% States
 -export([execute_batch_ops/3]).
@@ -98,7 +99,9 @@ start_link(From, Operations) ->
 %%%===================================================================
 
 init([From, ClientClock, Operations, UpdateClock, StayAlive]) ->
-    {ok, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, clocksi_interactive_tx_coord_fsm:init_state(StayAlive, true, true))}.
+    {ok, Protocol} = application:get_env(antidote, txn_prot),
+    {ok, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock,
+        clocksi_interactive_tx_coord_fsm:init_state(StayAlive, true, true, Protocol))}.
 
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "static_cord").
@@ -106,8 +109,8 @@ generate_name(From) ->
 start_tx({start_tx, From, ClientClock, Operations, UpdateClock}, SD0) ->
     {next_state, execute_batch_ops, start_tx_internal(From, ClientClock, Operations, UpdateClock, SD0)}.
 
-start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
-    {Transaction, _TransactionId} = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock, StayAlive, From, true),
+start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol}) ->
+    Transaction = clocksi_interactive_tx_coord_fsm:create_transaction_record(ClientClock, UpdateClock, StayAlive, From, true, Protocol),
     SD#tx_coord_state{transaction=Transaction, operations=Operations}.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
@@ -116,40 +119,38 @@ start_tx_internal(From, ClientClock, Operations, UpdateClock, SD = #tx_coord_sta
 execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 					     transaction = Transaction}) ->
     ExecuteOp = fun (Operation, Acc) ->
-			case Acc of 
+			case Acc of
 			    {error, Reason} ->  {error, Reason};
 			    _ ->
 				    case Operation of
 				        {update, {Key, Type, OpParams}} ->
 					        case clocksi_interactive_tx_coord_fsm:perform_update(
-                                                       {Key,Type,OpParams},
-                                                       Acc#tx_coord_state.updated_partitions,
-                                                       Transaction,undefined, 
-                                                       Acc#tx_coord_state.client_ops) of
-					            {error,Reason} ->   {error, Reason};
-					            {NewUpdatedPartitions, NewClientOps} -> 
-                                                        Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions,
-                                                                           client_ops = NewClientOps}
+						        {Key,Type,OpParams},undefined, Acc) of
+					            {error,Reason} ->
+                                    {error, Reason};
+					            NewUpdatedPartitions ->
+                                    NewUpdatedPartitions
 					        end;
 				        {read, {Key, Type}} ->
-                                            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-                                            IndexNode = hd(Preflist),
-                                            ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                                            NumToRead = Acc#tx_coord_state.num_to_read+1,
-                                            ReadSet = Acc#tx_coord_state.read_set,
-                                            Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
+                            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+                            IndexNode = hd(Preflist),
+					        ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                            NumToRead = Acc#tx_coord_state.num_to_read +1,
+                            ReadSet = Acc#tx_coord_state.return_accumulator,
+                            Acc#tx_coord_state{num_to_read =NumToRead, return_accumulator=[Key|ReadSet]}
 				    end
 			end
-		end,    
+		end,
     NewState = lists:foldl(ExecuteOp, SD, Operations),
-    _Res = case NewState of 
-	       {error, Reason} ->
-		   %From ! {error, Reason},
-		   gen_fsm:reply(Sender,{error,Reason}),
-		   {stop, normal, SD};
-	       _ ->
-		   clocksi_interactive_tx_coord_fsm:prepare(NewState#tx_coord_state{from=Sender})
-	   end.
+    _Res = case NewState of
+               {error, Reason} ->
+                   %From ! {error, Reason},
+%%                   lager:info("Error, Reason:", [Reason]),
+                   gen_fsm:reply(Sender, {error, Reason}),
+                   {stop, normal, SD};
+               _ ->
+                   clocksi_interactive_tx_coord_fsm:prepare(NewState#tx_coord_state{from = Sender})
+           end.
 
 
 %% @doc in this state, the fsm waits for prepare_time from each updated
@@ -157,7 +158,7 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 %%      of the received prepare_time).
 receive_prepared({prepared, ReceivedPrepareTime},
                  S0=#tx_coord_state{num_to_ack=NumToAck,
-                           num_to_read=NumToRead,
+                           num_to_read =NumToRead,
                            transaction=Transaction,
                            updated_partitions=UpdatedPartitions,
                            prepare_time=PrepareTime}) ->
@@ -169,7 +170,7 @@ receive_prepared({prepared, ReceivedPrepareTime},
                     NumToCommit = length(UpdatedPartitions),
                     ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
                     {next_state, receive_committed,
-                    S0#tx_coord_state{num_to_ack=NumToCommit, commit_time=MaxPrepareTime, 
+                    S0#tx_coord_state{num_to_ack=NumToCommit, commit_time=MaxPrepareTime,
                         state=committing}};
                 _ ->
                     {next_state, receive_prepared, S0#tx_coord_state{num_to_ack= NumToAck-1,
@@ -180,15 +181,16 @@ receive_prepared({prepared, ReceivedPrepareTime},
              S0#tx_coord_state{num_to_ack= NumToAck-1, prepare_time=MaxPrepareTime}}
     end;
 
-receive_prepared({ok, {Key, Type, Snapshot}},
-                 S0=#tx_coord_state{num_to_read=NumToRead,
-                            read_set=ReadSet,
+receive_prepared({ok, {Key, Type, {Snapshot, _SnapshotCommitParams}}},
+                 S0=#tx_coord_state{num_to_read =NumToRead,
+                            return_accumulator=ReadSet,
                             commit_time=CommitTime,
                             transaction=Transaction,
                             updated_partitions=UpdatedPartitions,
                             num_to_ack=NumToAck}) ->
+
     %%TODO: type is hard-coded..
-    Value = Type:value(Snapshot), 
+    Value = Type:value(Snapshot),
     ReadSet1 = replace(ReadSet, Key, Value),
     case NumToRead of
         1 ->
@@ -197,20 +199,20 @@ receive_prepared({ok, {Key, Type, Snapshot}},
                     NumToCommit = length(UpdatedPartitions),
                     case NumToCommit of
                         0 ->
-                            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only, 
-                            read_set=lists:reverse(ReadSet1)});
+                            clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only,
+                            return_accumulator=lists:reverse(ReadSet1)});
                         _ ->
                             ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
                             {next_state, receive_committed,
-                               S0#tx_coord_state{num_to_ack=NumToCommit, read_set=lists:reverse(ReadSet1), state=committing}}
+                               S0#tx_coord_state{num_to_ack=NumToCommit, return_accumulator=lists:reverse(ReadSet1), state=committing}}
                     end;
                 _ ->
-                    {next_state, receive_prepared, S0#tx_coord_state{num_to_read= NumToRead-1,
-                            read_set=ReadSet1}}
+                    {next_state, receive_prepared, S0#tx_coord_state{num_to_read = NumToRead-1,
+                            return_accumulator=ReadSet1}}
             end;
         _ ->
             {next_state, receive_prepared,
-             S0#tx_coord_state{read_set=ReadSet1, num_to_read = NumToRead-1}}
+             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_read = NumToRead-1}}
     end;
 
 receive_prepared(abort, S0) ->
@@ -220,8 +222,8 @@ receive_prepared(timeout, S0) ->
     {next_state, abort, S0, 0}.
 
 single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
-                            num_to_read=NumToRead,
-                            read_set=ReadSet,
+                            num_to_read =NumToRead,
+                            return_accumulator=ReadSet,
                             num_to_ack=NumToAck}) ->
     %%TODO: type is hard-coded..
     Value = Type:value(Snapshot),
@@ -231,17 +233,17 @@ single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
             case NumToAck of
                 0 ->
                     clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed,
-                    read_set=lists:reverse(ReadSet1)});
+                    return_accumulator=lists:reverse(ReadSet1)});
                 _ ->
-                    {next_state, single_committing, S0#tx_coord_state{num_to_read= NumToRead-1,
-                            read_set=ReadSet1}}
+                    {next_state, single_committing, S0#tx_coord_state{num_to_read = NumToRead-1,
+                            return_accumulator=ReadSet1}}
             end;
         _ ->
             {next_state, single_committing,
-             S0#tx_coord_state{read_set=ReadSet1, num_to_read = NumToRead-1}}
+             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_read = NumToRead-1}}
     end;
 
-single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit, num_to_read=NumToRead}) ->
+single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit, num_to_read =NumToRead}) ->
     case FullCommit of
 	false ->
 	    gen_fsm:reply(From, {ok, CommitTime}),

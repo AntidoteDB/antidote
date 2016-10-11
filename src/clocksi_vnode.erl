@@ -36,7 +36,7 @@
     single_commit_sync/2,
     abort/2,
     now_microsec/1,
-    reverse_and_filter_updates_per_key/2,
+    reverse_and_filter_updates_per_key/3,
     init/1,
     terminate/2,
     handle_command/3,
@@ -84,19 +84,18 @@ start_vnode(I) ->
 %% @doc Sends a read request to the Node that is responsible for the Key
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
-read_data_item(Node, TxId, Key, Type, Updates) ->
-    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId) of
-        {ok, Snapshot} ->
-            Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-            Snapshot2 = clocksi_materializer:materialize_eager
-            (Type, Snapshot, Updates2),
-            {ok, Snapshot2};
+read_data_item(Node, Transaction, Key, Type, Updates) ->
+    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, Transaction) of
+        {ok, {Snapshot, CommitParameters}} ->
+            Updates2 = reverse_and_filter_updates_per_key(Updates, Key, Transaction),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
+            {ok, {Snapshot2, CommitParameters}};
         {error, Reason} ->
             {error, Reason}
     end.
 
-async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}).
+async_read_data_item(Node, Transaction, Key, Type) ->
+    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, Transaction, {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -154,39 +153,40 @@ send_min_prepared(Partition) ->
     dc_utilities:call_local_vnode(Partition, clocksi_vnode_master, {send_min_prepared}).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
-prepare(ListofNodes, TxId) ->
+prepare(ListofNodes, Transaction) ->
     lists:foldl(fun({Node, WriteSet}, _Acc) ->
         riak_core_vnode_master:command(Node,
-            {prepare, TxId, WriteSet},
+            {prepare, Transaction, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+                end, ok, ListofNodes).
 
 
 %% @doc Sends prepare+commit to a single partition
 %%      Called by a Tx coordinator when the tx only
 %%      affects one partition
-single_commit([{Node, WriteSet}], TxId) ->
+single_commit([{Node, WriteSet}], Transaction) ->
     riak_core_vnode_master:command(Node,
-        {single_commit, TxId, WriteSet},
+        {single_commit, Transaction, WriteSet},
         {fsm, undefined, self()},
         ?CLOCKSI_MASTER).
 
 
-single_commit_sync([{Node, WriteSet}], TxId) ->
+single_commit_sync([{Node, WriteSet}], Transaction) ->
     riak_core_vnode_master:sync_command(Node,
-        {single_commit, TxId, WriteSet},
+        {single_commit, Transaction, WriteSet},
         ?CLOCKSI_MASTER).
 
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
-commit(ListofNodes, TxId, CommitTime) ->
+commit(ListofNodes, Transaction, CommitParams) ->
+%%    lager:info("vnode commit with params: ~p",[CommitParams]),
     lists:foldl(fun({Node, WriteSet}, _Acc) ->
         riak_core_vnode_master:command(Node,
-            {commit, TxId, CommitTime, WriteSet},
+            {commit, Transaction, CommitParams, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+                end, ok, ListofNodes).
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId
 abort(ListofNodes, TxId) ->
@@ -195,7 +195,7 @@ abort(ListofNodes, TxId) ->
             {abort, TxId, WriteSet},
             {fsm, undefined, self()},
             ?CLOCKSI_MASTER)
-    end, ok, ListofNodes).
+                end, ok, ListofNodes).
 
 get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
@@ -264,7 +264,7 @@ loop_until_started(Partition, Num) ->
     loop_until_started(Partition, Ret).
 
 handle_command({hello}, _Sender, State) ->
-  {reply, ok, State};
+    {reply, ok, State};
 
 handle_command({check_tables_ready}, _Sender, SD0 = #state{partition = Partition}) ->
     Result = case ets:info(get_cache_name(Partition, prepared)) of
@@ -310,26 +310,33 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
 %%      thus this function performs both the prepare and commit for the
 %%      coordinator that sent the request.
 handle_command({single_commit, Transaction, WriteSet}, _Sender,
-    State = #state{partition = _Partition,
-        committed_tx = CommittedTx,
-        prepared_tx = PreparedTx,
-	prepared_dict = PreparedDict
-    }) ->
-    PrepareTime = dc_utilities:now_microsec(),
-    {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
+  State = #state{partition = _Partition,
+      committed_tx = CommittedTx,
+      prepared_tx = PreparedTx,
+      prepared_dict = PreparedDict
+  }) ->
+	PrepareTime = dc_utilities:now_microsec(),
+    {Result, NewPrepareTime, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
         {ok, _} ->
-            ResultCommit = commit(Transaction, NewPrepare, WriteSet, CommittedTx, NewState),
+            CommitParams = case Transaction#transaction.transactional_protocol of
+                               physics ->
+                                   SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+                                   {NewPrepareTime, SnapshotDepVC};
+                               Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
+                                   {NewPrepareTime, Transaction#transaction.snapshot_vc}
+                           end,
+            ResultCommit = commit(Transaction, CommitParams, WriteSet, CommittedTx, NewState),
             case ResultCommit of
                 {ok, committed, NewPreparedDict2} ->
-                    {reply, {committed, NewPrepare}, NewState#state{prepared_dict = NewPreparedDict2}};
+                    {reply, {committed, NewPrepareTime}, NewState#state{prepared_dict = NewPreparedDict2}};
                 {error, materializer_failure} ->
                     {reply, {error, materializer_failure}, NewState};
                 {error, timeout} ->
-                    {reply, {error, timeout}, NewState};
-                {error, no_updates} ->
-                    {reply, no_tx_record, NewState}
+                    {reply, {error, timeout}, NewState}
+%%                {error, no_updates} ->
+%%                    {reply, no_tx_record, NewState}
             end;
         {error, timeout} ->
             {reply, {error, timeout}, NewState};
@@ -343,24 +350,24 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
 %% TODO: sending empty writeset to clocksi_downstream_generatro
 %% Just a workaround, need to delete downstream_generator_vnode
 %% eventually.
-handle_command({commit, Transaction, TxCommitTime, Updates}, _Sender,
-    #state{partition = _Partition,
-        committed_tx = CommittedTx
-    } = State) ->
-    Result = commit(Transaction, TxCommitTime, Updates, CommittedTx, State),
+handle_command({commit, Transaction, CommitParams, Updates}, _Sender,
+  #state{partition = _Partition,
+      committed_tx = CommittedTx
+  } = State) ->
+    Result = commit(Transaction, CommitParams, Updates, CommittedTx, State),
     case Result of
         {ok, committed, NewPreparedDict} ->
             {reply, committed, State#state{prepared_dict = NewPreparedDict}};
         {error, materializer_failure} ->
             {reply, {error, materializer_failure}, State};
         {error, timeout} ->
-            {reply, {error, timeout}, State};
-        {error, no_updates} ->
-            {reply, no_tx_record, State}
+            {reply, {error, timeout}, State}
+%%        {error, no_updates} ->
+%%            {reply, no_tx_record, State}
     end;
 
 handle_command({abort, Transaction, Updates}, _Sender,
-    #state{partition = _Partition} = State) ->
+  #state{partition = _Partition} = State) ->
     TxId = Transaction#transaction.txn_id,
     case Updates of
         [{Key, _Type,  _Update} | _Rest] ->
@@ -368,7 +375,6 @@ handle_command({abort, Transaction, Updates}, _Sender,
             [Node] = log_utilities:get_preflist_from_key(Key),
             LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
-            %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
 				  {ok, _} ->
 				      clean_and_notify(TxId, Updates, State);
@@ -381,7 +387,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
     end;
 
 handle_command({get_active_txns}, _Sender,
-    #state{partition = Partition} = State) ->
+  #state{partition = Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
 
 handle_command(_Message, _Sender, State) ->
@@ -433,11 +439,11 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 
 prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
     TxId = Transaction#transaction.txn_id,
-    case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
+    case certification_check(Transaction, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
                 [{Key, _Type, _Update} | _] ->
-                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
+                    Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, orddict:new()),
                     NewPrepare = dc_utilities:now_microsec(),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
@@ -457,7 +463,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
-set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
+set_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, PrepareTime, Acc) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
@@ -466,32 +472,33 @@ set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
                 end,
     case lists:keymember(TxId, 1, ActiveTxs) of
         true ->
-            set_prepared(PreparedTx, Rest, TxId, Time, Acc);
+            set_prepared(PreparedTx, Rest, TxId, PrepareTime, Acc);
         false ->
-            true = ets:insert(PreparedTx, {Key, [{TxId, Time} | ActiveTxs]}),
-            set_prepared(PreparedTx, Rest, TxId, Time, dict:append_list(Key, ActiveTxs, Acc))
+            true = ets:insert(PreparedTx, {Key, [{TxId, PrepareTime} | ActiveTxs]}),
+            set_prepared(PreparedTx, Rest, TxId, PrepareTime, orddict:append_list(Key, ActiveTxs, Acc))
     end.
 
 reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
-reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
+reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
-    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
-    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
+    true = ets:insert(PreparedTx, {Key, [{TxId, Time} | orddict:fetch(Key, ActiveTxs)]}),
+%%    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
-commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
+commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
+    {CommitTime, SnapshotVC} = CommitParameters,
     TxId = Transaction#transaction.txn_id,
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     LogRecord = #log_operation{tx_id = TxId,
 			    op_type = commit,
-			    log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
-							     snapshot_time = Transaction#transaction.vec_snapshot_time}},
+			    log_payload = #commit_log_payload{commit_time = {DcId, CommitTime},
+							     causal_dependencies=SnapshotVC}},
     case Updates of
         [{Key, _Type, _Update} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of
 		{ok, true} ->
-		    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
+		    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, CommitTime}) end,
 				  Updates);
 		_ ->
 		    ok
@@ -500,7 +507,9 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
                 {ok, _} ->
-                    case update_materializer(Updates, Transaction, TxCommitTime) of
+                    FinalCommitParams =
+                    {{DcId, CommitTime}, SnapshotVC},
+                    case update_materializer(Updates, Transaction, FinalCommitParams) of
                         ok ->
                             NewPreparedDict = clean_and_notify(TxId, Updates, State),
                             {ok, committed, NewPreparedDict};
@@ -569,11 +578,11 @@ clean_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
-certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
+certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
     case application:get_env(antidote, txn_cert) of
         {ok, true} ->
         %io:format("AAAAH"),
-        certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
+        certification_with_check(Transaction, Updates, CommittedTx, PreparedTx);
         _  -> true
     end.
 
@@ -581,26 +590,37 @@ certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
 %%      to the prepared state.
 certification_with_check(_, [], _, _) ->
     true;
-certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
-    TxLocalStartTime = TxId#tx_id.local_start_time,
-    {Key, _, _} = H,
+
+certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
+    {Key, _, OperationData} = H,
+%%    lager:debug("~nH IS : ~n~p", [H]),
+    TxId = Transaction#transaction.txn_id,
+    ReferenceSnapshotTime = case Transaction#transaction.transactional_protocol of
+                                physics ->
+                                    {_DownstreamOp, DownstreamOpCommitVC} = OperationData,
+                                    _CT = vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(), DownstreamOpCommitVC);
+                                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                                    Transaction#transaction.txn_id#tx_id.local_start_time
+                            end,
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
-            case CommitTime > TxLocalStartTime of
+            case CommitTime > ReferenceSnapshotTime of
                 true ->
+%%                    lager:debug("COMMIT WRITE-WRITE CONFLICT: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
                     false;
                 false ->
                     case check_prepared(TxId, PreparedTx, Key) of
                         true ->
-                            certification_with_check(TxId, T, CommittedTx, PreparedTx);
+                            certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
+%%                            lager:debug("PREPARE WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n", [OperationData]),
                             false
                     end
             end;
         [] ->
             case check_prepared(TxId, PreparedTx, Key) of
                 true ->
-                    certification_with_check(TxId, T, CommittedTx, PreparedTx);
+                    certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                 false ->
                     false
             end
@@ -615,22 +635,39 @@ check_prepared(_TxId, PreparedTx, Key) ->
     end.
 
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
-    Transaction :: tx(), TxCommitTime :: non_neg_integer()) ->
+  Transaction :: transaction(), TxCommitTime :: {term(), commit_time()}) ->
     ok | error.
-update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
+update_materializer(DownstreamOps, Transaction, CommitParams) ->
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
-    UpdateFunction = fun({Key, Type, Op}, AccIn) ->
-			     CommittedDownstreamOp =
-				 #clocksi_payload{
-				    key = Key,
-				    type = Type,
-				    op_param = Op,
-				    snapshot_time = Transaction#transaction.vec_snapshot_time,
-				    commit_time = {DcId, TxCommitTime},
-				    txid = Transaction#transaction.txn_id},
-			     [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
-		     end,
+    case Transaction#transaction.transactional_protocol of
+        physics ->
+            {{DcId, CommitTime}, DependencyVC} = CommitParams,
+            UpdateFunction = fun({Key, Type, {OpParam, _OpCommitVC}}, AccIn) ->
+                CommittedDownstreamOp =
+                    #operation_payload{
+                        key = Key,
+                        type = Type,
+                        op_param = OpParam,
+                        dependency_vc = DependencyVC,
+                        dc_and_commit_time = {DcId, CommitTime},
+                        txid = Transaction#transaction.txn_id},
+                [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
+                             end;
+        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+            {{DcId, CommitTime}, SnapshotVC} = CommitParams,
+            UpdateFunction = fun({Key, Type, Op}, AccIn) ->
+                CommittedDownstreamOp =
+                    #operation_payload{
+                        key = Key,
+                        type = Type,
+                        op_param = Op,
+                        dependency_vc= SnapshotVC,
+                        dc_and_commit_time = {DcId, CommitTime},
+                        txid = Transaction#transaction.txn_id},
+                [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
+                             end
+    end,
     Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
     case Failures of
@@ -641,15 +678,30 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
     end.
 
 %% Internal functions
-reverse_and_filter_updates_per_key(Updates, Key) ->
-    lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
-			case KeyPrime == Key of
-			    true ->
-				[Op | Acc];
-			    false ->
-				Acc
-			end
-		end, [], Updates).
+reverse_and_filter_updates_per_key(Updates, Key, Transaction) ->
+    case Transaction#transaction.transactional_protocol of
+        physics ->
+            lists:foldl(fun({KeyPrime, _Type, {Op, _OpCommitVC}}, Acc) ->
+                case KeyPrime == Key of
+                    true ->
+                        [Op | Acc];
+                    false ->
+                        Acc
+                end
+                        end, [], Updates);
+        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+            lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
+                case KeyPrime == Key of
+                    true ->
+                        [Op | Acc];
+                    false ->
+                        Acc
+                end
+                        end, [], Updates)
+
+    end.
+
+
 
 
 -spec get_min_prep(list()) -> {ok, non_neg_integer()}.
@@ -675,7 +727,7 @@ get_time([{Time,TxId} | Rest], TxIdCheck) ->
 -ifdef(TEST).
 
 %% @doc Testing filter_updates_per_key.
-filter_updates_per_key_test() ->
+filter_updates_per_key_clocksi_test() ->
     Op1 = {update, {{increment, 1}, actor1}},
     Op2 = {update, {{increment, 2}, actor1}},
     Op3 = {update, {{increment, 3}, actor1}},
@@ -686,7 +738,26 @@ filter_updates_per_key_test() ->
     ClockSIOp3 = {c, crdt_pncounter, Op3},
     ClockSIOp4 = {a, crdt_pncounter, Op4},
 
+    Transaction = #transaction{transactional_protocol = clocksi, txn_id=no_txn_inserting_from_log},
+
     ?assertEqual([Op4, Op1],
-        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a)).
+        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a, Transaction)).
+
+%% @doc Testing filter_updates_per_key.
+filter_updates_per_key_physics_test() ->
+    Op1 = {{update, {{increment, 1}, actor1}}, dummy_vc},
+    Op2 = {{update, {{increment, 2}, actor1}}, dummy_vc},
+    Op3 = {{update, {{increment, 3}, actor1}}, dummy_vc},
+    Op4 = {{update, {{increment, 4}, actor1}}, dummy_vc},
+
+    ClockSIOp1 = {a, crdt_pncounter, Op1},
+    ClockSIOp2 = {b, crdt_pncounter, Op2},
+    ClockSIOp3 = {c, crdt_pncounter, Op3},
+    ClockSIOp4 = {a, crdt_pncounter, Op4},
+    
+    Transaction = #transaction{transactional_protocol = clocksi, txn_id=no_txn_inserting_from_log},
+
+    ?assertEqual([Op4, Op1],
+        reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a, Transaction)).
 
 -endif.

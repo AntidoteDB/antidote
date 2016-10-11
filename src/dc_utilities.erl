@@ -243,7 +243,7 @@ get_stable_snapshot() ->
 	    get_stable_snapshot();
 	SS ->
             case application:get_env(antidote, txn_prot) of
-                {ok, clocksi} ->
+	            {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
                     %% to riak core meta-data) otherwise will have to change this
                     {ok, SS};
@@ -251,7 +251,7 @@ get_stable_snapshot() ->
                     %% For gentlerain use the same format as clocksi
                     %% But, replicate GST to all entries in the dict
                     StableSnapshot = SS,
-                    case dict:size(StableSnapshot) of
+                    case vectorclock:size(StableSnapshot) of
                         0 ->
                             {ok, StableSnapshot};
                         _ ->
@@ -260,7 +260,7 @@ get_stable_snapshot() ->
                                                  [Value | Acc ]
                                          end, [], StableSnapshot),
                             GST = lists:min(ListTime),
-                            {ok, dict:map(
+                            {ok, vectorclock:map(
                                    fun(_K, _V) ->
                                            GST
                                    end,
@@ -287,7 +287,7 @@ get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
     %% dict:is_empty/1 is not available, hence using dict:size/1
     %% to check whether it is empty
-    case dict:size(StableSnapshot) of
+    case vectorclock:size(StableSnapshot) of
         0 ->
             %% This case occur when updates from remote replicas has not yet received
             %% or when there are no remote replicas

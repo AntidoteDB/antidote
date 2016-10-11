@@ -36,17 +36,19 @@
          execute_op/3,
          execute_op/2,
          code_change/4,
-	 append/3,
+    append/3,
+    asyn_append/4,
          handle_event/3,
          handle_info/3,
          handle_sync_event/4,
          terminate/3]).
 
 -export([get_my_dc_id/0,
+     get_env/2,
 	 get_clock_of_dc/2, 
 	 get_preflist_from_key/1,
 	 read_data_item/5,
-	 generate_downstream_op/6,
+	 generate_downstream_op/7,
 	 get_logid_from_key/1,
 	 update_data_item/5,
 	 prepare/2,
@@ -72,6 +74,9 @@ start_link() ->
 init([]) ->
     {ok, execute_op, #state{}}.
 
+get_env(_, _) ->
+    {ok, clocksi}.
+
 %% Functions that always return the same value no matter the input.
 get_my_dc_id() ->
     mock_dc.
@@ -90,7 +95,7 @@ get_preflist_from_key(_Key) ->
     [Pid].
 
 get_stable_snapshot() ->
-    {ok, dict:new()}.
+    {ok, vectorclock:new()}.
 
 get_logid_from_key(_Key) ->
     self().
@@ -115,25 +120,32 @@ read_data_item(_IndexNode, _Transaction, Key, _Type, _Ws) ->
             Counter = riak_dt_gcounter:new(),
             {ok, Counter1} = riak_dt_gcounter:update(increment, haha, Counter),
             {ok, Counter2} = riak_dt_gcounter:update(increment, nono, Counter1),
-            {ok, Counter2};
+            {ok, {Counter2, ignore}};
         set ->
             Set = riak_dt_gset:new(),
             {ok, Set1} = riak_dt_gset:update({add, a}, haha, Set),
-            {ok, Set1}; 
+            {ok, {Set1, ignore}};
         _ ->
-            {ok, mock_value}
+            {ok, {mock_value, ignore}}
     end.
 
-generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->
+generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws, _Rs) ->
     case Key of 
         downstream_fail ->
             {error, mock_downstream_fail};
         _ ->
-            {ok, mock_downsteam}
+            {ok, mock_downsteam, mock_metadata}
     end.
 
 append(_Node,_LogId,_LogRecord) ->
     {ok, {0,node}}.
+
+asyn_append(_Node, _LogId, _LogRecord, Pid) ->
+    case Pid of ignore ->
+        ok;
+        _ -> gen_fsm:send_event(Pid, {ok, 0})
+    end,
+    ok.
 
 update_data_item(FsmRef, _Transaction, Key, _Type, _DownstreamRecord) ->
     gen_fsm:sync_send_event(FsmRef, {update_data_item, Key}).

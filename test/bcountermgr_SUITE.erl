@@ -42,6 +42,7 @@
 -include_lib("kernel/include/inet.hrl").
 
 -define(TYPE, antidote_crdt_bcounter).
+-define(ANTIDOTE_BUCKET, antidote_bucket).
 -define(RETRY_COUNT, 5).
 
 
@@ -164,18 +165,23 @@ execute_op(Node, Op, Key, Amount, Actor) ->
 
 %%Auxiliary functions.
 execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
-    Result = rpc:call(Node, antidote, append,
-                      [Key, ?TYPE, {Op, {Amount,Actor}}]),
+    Bound_object = {Key, ?TYPE, ?ANTIDOTE_BUCKET},
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    Result = rpc:call(Node, antidote, update_objects, [[{Bound_object, Op, {Amount, Actor}}], TxId]),
     case Result of
-        {ok, {_,_,CommitTime}} -> {ok, CommitTime};
-        Error when Try == 0 -> Error;
+        ok ->
+            rpc:call(Node, antidote, commit_transaction, [TxId]);
+        Error when Try == 0 ->
+            rpc:call(Node, antidote, abort_transaction, [TxId]),
+            Error;
         _ ->
             timer:sleep(1000),
             execute_op_success(Node, Op, Key, Amount, Actor, Try -1)
     end.
 
 read(Node, Key) ->
-    rpc:call(Node, antidote, read, [Key, ?TYPE]).
+    {ok, {_, [Obj], _}} = rpc:call(Node, antidote, clocksi_read, [Key, ?TYPE]),
+    {ok, Obj}.
 
 read_si(Node, Key, CommitTime) ->
     rpc:call(Node, antidote, clocksi_read, [CommitTime, Key, ?TYPE]).

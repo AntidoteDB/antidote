@@ -43,7 +43,7 @@ update_snapshot(Type, Snapshot, Op) ->
     try
         Type:update(Op, Snapshot)
     catch
-        _:_ -> 
+        _:_ ->
             {error, unexpected_format}
     end.
 

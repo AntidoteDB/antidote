@@ -27,6 +27,7 @@
   %% txn_prot:
   %%        clocksi -> uses "Cure" protocol to define snapshots and causal dependencies (https://pages.lip6.fr/Marc.Shapiro/papers/Cure-final-ICDCS16.pdf)
   %%        gr -> uses "Gentle-rain like" protocol to define snapshots and causal dependencies (https://infoscience.epfl.ch/record/202079)
+  %%        physics -> uses physiCS like protocol to define snapshots, causal dependencies and commitment protocol (https://pages.lip6.fr/Marc.Shapiro/papers/PhysiCS-NMSI-PaPoC-2016.pdf)
   %% recover_from_log:
   %%        true -> on node start will load any operations stored on the disk log to the in memory cache of the key-value store
   %%        false -> on node start the state of the key-value store will be empty
