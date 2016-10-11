@@ -76,7 +76,7 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
 %%      are in shared memory, allowing concurrent reads.
--spec read(key(), type(), transaction(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
+-spec read(key(), type(), transaction(), mat_state()) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, Transaction, MatState = #mat_state{ops_cache = OpsCache}) ->
     case ets:info(OpsCache) of
 	undefined ->
@@ -123,13 +123,13 @@ init([Partition]) ->
 	      end,
     {ok, #mat_state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
--spec load_from_log_to_tables(partition_id(), #mat_state{}) -> ok | {error, reason()}.
+-spec load_from_log_to_tables(partition_id(), mat_state()) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, State) ->
     LogId = [Partition],
     Node = {Partition, log_utilities:get_my_node(Partition)},
     loop_until_loaded(Node, LogId, start, dict:new(), State).
 
--spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict:dict(), #mat_state{}) -> ok | {error, reason()}.
+-spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict:dict(), mat_state()) -> ok | {error, reason()}.
 loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
     case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
 	{error, Reason} ->
@@ -142,7 +142,7 @@ loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
 	    ok
     end.
 
--spec load_ops(dict:dict(), #mat_state{}) -> true.
+-spec load_ops(dict:dict(), mat_state()) -> true.
 load_ops(OpsDict, State) ->
     dict:fold(fun(Key, CommittedOps, _Acc) ->
 		      lists:foreach(fun({_OpId,Op}) ->
@@ -150,18 +150,6 @@ load_ops(OpsDict, State) ->
 					    op_insert_gc(Key, Op, State, no_txn_inserting_from_log)
 				    end, CommittedOps)
 	      end, true, OpsDict).
-
-%%    @TODO ALE: PREV CODE
-%%        lists:foreach(fun({_OpId,Op}) ->
-%%            #operation_payload{key = Key} = Op,
-%%            case op_insert_gc(Key, Op, MatState, no_txn_inserting_from_log) of
-%%                ok ->
-%%                    true;
-%%                {error, Reason} ->
-%%                    {error, Reason}
-%%            end
-%%                      end, CommittedOps)
-%%              end, true, OpsDict).
 
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
@@ -332,9 +320,8 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
+-spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), mat_state()) -> boolean().
 internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},SnapshotParams,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
-    Protocol = application:get_env(antidote, txn_prot),
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 		       [] ->
 			   vector_orddict:new();
@@ -355,12 +342,12 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},S
 	true ->
 %%		lager:debug("Inserting this snapshot: ~n~p ~nParams: ~p",[Snapshot, SnapshotParams]),
 		SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams,Snapshot,SnapshotDict),
-		snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State, Protocol);
+		snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State);
 	false ->
 	    false
     end.
 
--spec internal_read(key(), type(), transaction(), #mat_state{}) -> {ok, {snapshot(), any()}}| {error, no_snapshot}.
+-spec internal_read(key(), type(), transaction(), mat_state()) -> {ok, {snapshot(), any()}}| {error, no_snapshot}.
 internal_read(Key, Type, Transaction, State) ->
     internal_read(Key, Type, Transaction, State,false).
 internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
@@ -530,28 +517,8 @@ define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, Operati
 			end
 	end.
 
-%%%% Todo: Future: Implement the following function for a causal snapshot
-%%get_all_operations_from_log_for_key(Key, Type, Transaction) ->
-%%    case Transaction#transaction.transactional_protocol of
-%%        physics->
-%%            {{_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} =
-%%                {{0, Type:new()}, {vectorclock:new(),vectorclock:new(), clocksi_vnode:now_microsec(now())}, false};
-%%        Protocol when ((Protocol == gr) or (Protocol == clocksi))->
-%%            LogId = log_utilities:get_logid_from_key(Key),
-%%            [Node] = log_utilities:get_preflist_from_key(Key),
-%%%%            {{_LastOp, _LatestCompatSnapshot}, _SnapshotCommitParams, _IsFirst} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
-%%            {_Lenght, _CommittedOpsForKey} = logging_vnode:get(Node, LogId, Transaction, Type, Key)
-%%    end.
-
-
 is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
 	NewVC = vectorclock:new(),
-%%	lager:info("~n Called is causally compatible with
-%%	~n operation readtime: ~p
-%%	~n transaction rt lowbound: ~p
-%%	~n operation dependency clock: ~p
-%%	~n transaction dep upbound: ~p
-%%	", [CommitClock, CommitTimeLowbound, DepClock, DepUpbound]),
 	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse (CommitTimeLowbound == NewVC))
 		and (vectorclock:le(DepClock, DepUpbound) orelse (DepUpbound == NewVC)).
 
@@ -561,7 +528,6 @@ create_empty_materialized_snapshot_record(Transaction, Type) ->
             ReadTime = dc_utilities:now_microsec(),
             MyDc = dc_utilities:get_my_dc_id(),
             ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
-%%	        lager:debug("creating a physics empty snapshot:"),
 	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, vectorclock:new()}
@@ -585,8 +551,8 @@ op_not_already_in_snapshot(Parameters, CommitVC) ->
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
-                         boolean(),#mat_state{}, atom()) -> true.
-snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}, Protocol)->
+                         boolean(),mat_state()) -> true.
+snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache})->
     %% Perform the garbage collection when the size of the snapshot dict passed the threshold
     %% or when a GC is forced (a GC is forced after every ?OPS_THRESHOLD ops are inserted into the cache)
     %% Should check op size here also, when run from op gc
@@ -605,7 +571,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
 						    [Tuple] ->
 							tuple_to_key(Tuple,false)
 						end,
-            {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime, Protocol),
+            {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
 	    %% Check if the pruned ops are larger or smaller than the previous list size
 	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
@@ -636,9 +602,9 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops({non_neg_integer(),tuple()}, snapshot_time(), atom())->
+-spec prune_ops({non_neg_integer(),tuple()}, snapshot_time())->
 		       {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
-prune_ops({Len,OpsTuple}, Threshold, Protocol)->
+prune_ops({Len,OpsTuple}, Threshold)->
     %% should write custom function for this in the vector_orddict
     %% or have to just traverse the entire list?
     %% since the list is ordered, can just stop when all values of
@@ -647,9 +613,7 @@ prune_ops({Len,OpsTuple}, Threshold, Protocol)->
     %% Or can have the filter function return a tuple, one vale for stopping
     %% one for including
     {NewSize,NewOps} = check_filter(fun({_OpId,Op}) ->
-        BaseSnapshotVC = case Protocol of {ok, physics} -> Op#operation_payload.dependency_vc;
-                             _ -> Op#operation_payload.dependency_vc
-                         end,
+        BaseSnapshotVC = Op#operation_payload.dependency_vc,
 	    {DcId,CommitTime} = Op#operation_payload.dc_and_commit_time,
 	    CommitVC = vectorclock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
         (op_not_already_in_snapshot(Threshold,CommitVC))
