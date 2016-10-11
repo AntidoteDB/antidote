@@ -33,7 +33,8 @@
          test_dec_success/1,
          test_dec_fail/1,
          test_dec_multi_success0/1,
-         test_dec_multi_success1/1
+         test_dec_multi_success1/1,
+         conditional_write_test_run/1
         ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -76,7 +77,8 @@ all() -> [
          test_dec_success,
          test_dec_fail,
          test_dec_multi_success0,
-         test_dec_multi_success1
+         test_dec_multi_success1,
+         conditional_write_test_run
         ].
 
 %% Tests creating a new `bcounter()'.
@@ -99,14 +101,10 @@ test_dec_success(Config) ->
 test_dec_fail(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    ct:print("Nodes 1 and 2: ~p, ~p", [Node1, Node2]),
     Actor = dc,
     Key = bcounter3_mgr,
-    ct:print("performing 3 increments"),
     {ok, CommitTime} = execute_op(Node1, increment, Key, 10, Actor),
-    ct:print("done, got commit time: ~p", [CommitTime]),
-    {ok, {_, [Obj], _}} = read_si(Node2, Key, CommitTime),
-    ct:print("Reading after icrementing in ~p, got result: ~p", [Node2, Obj]),
+    _ForcePropagation = read_si(Node2, Key, CommitTime),
     Result0 = execute_op_success(Node2, decrement, Key, 5, Actor, 0),
     ?assertEqual({error, no_permissions}, Result0).
 
@@ -130,6 +128,38 @@ test_dec_multi_success1(Config) ->
     {ok, Obj} = read(Node1, Key),
     ?assertEqual(5, ?TYPE:permissions(Obj)).
 
+conditional_write_test_run(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    [Node1, Node2 | _OtherNodes] = Nodes,
+    Type = antidote_crdt_bcounter,
+    Key = bcounter6_mgr,
+
+    {ok, {_,_,AfterIncrement}} = rpc:call(Node1, antidote, append,
+        [Key, Type, {increment, {10, r1}}]),
+
+    %% Start a transaction on the first node and perform a read operation.
+    {ok, TxId1} = rpc:call(Node1, antidote, clocksi_istart_tx, [AfterIncrement]),
+    {ok, _} = rpc:call(Node1, antidote, clocksi_iread, [TxId1, Key, Type]),
+    %% Execute a transaction on the last node which performs a write operation.
+    {ok, TxId2} = rpc:call(Node2, antidote, clocksi_istart_tx, [AfterIncrement]),
+    ok = rpc:call(Node2, antidote, clocksi_iupdate,
+             [TxId2, Key, Type, {decrement, {3, r1}}]),
+    CommitTime1 = rpc:call(Node2, antidote, clocksi_iprepare, [TxId2]),
+    ?assertMatch({ok, _}, CommitTime1),
+    End1 = rpc:call(Node2, antidote, clocksi_icommit, [TxId2]),
+    ?assertMatch({ok, _}, End1),
+    {ok, {_,AfterTxn2}} = End1,
+    %% Resume the first transaction and check that it fails.
+    Result0 = rpc:call(Node1, antidote, clocksi_iupdate,
+         [TxId1, Key, Type, {decrement, {3, r1}}]),
+    ?assertEqual(ok, Result0),
+    CommitTime2 = rpc:call(Node1, antidote, clocksi_iprepare, [TxId1]),
+    ?assertEqual({aborted, TxId1}, CommitTime2),
+    %% Test that the failed transaction didn't affect the `bcounter()'.
+    Result1 = rpc:call(Node1, antidote, clocksi_read, [AfterTxn2, Key, Type]),
+    {ok, {_, [Counter1], _}} = Result1,
+    ?assertEqual(7, antidote_crdt_bcounter:permissions(Counter1)).
+
 execute_op(Node, Op, Key, Amount, Actor) ->
     execute_op_success(Node, Op, Key, Amount, Actor, ?RETRY_COUNT).
 
@@ -145,7 +175,6 @@ execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
             rpc:call(Node, antidote, abort_transaction, [TxId]),
             Error;
         _ ->
-            rpc:call(Node, antidote, abort_transaction, [TxId]),
             timer:sleep(1000),
             execute_op_success(Node, Op, Key, Amount, Actor, Try -1)
     end.
