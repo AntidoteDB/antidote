@@ -209,7 +209,8 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
             Transaction = #transaction{snapshot_clock = LocalClock,
                 transactional_protocol = Protocol,
                 snapshot_vc = SnapshotTime,
-                txn_id = TransactionId},
+                txn_id = TransactionId,
+                physics_read_metadata=undefined},
             {Transaction, TransactionId}
     end.
 

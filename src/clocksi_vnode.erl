@@ -662,7 +662,7 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
                         key = Key,
                         type = Type,
                         op_param = Op,
-                        snapshot_vc = SnapshotVC,
+                        dependency_vc= SnapshotVC,
                         dc_and_commit_time = {DcId, CommitTime},
                         txid = Transaction#transaction.txn_id},
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
@@ -738,7 +738,7 @@ filter_updates_per_key_clocksi_test() ->
     ClockSIOp3 = {c, crdt_pncounter, Op3},
     ClockSIOp4 = {a, crdt_pncounter, Op4},
 
-    Transaction = #transaction{transactional_protocol = clocksi},
+    Transaction = #transaction{transactional_protocol = clocksi, txn_id=no_txn_inserting_from_log},
 
     ?assertEqual([Op4, Op1],
         reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a, Transaction)).
@@ -754,8 +754,8 @@ filter_updates_per_key_physics_test() ->
     ClockSIOp2 = {b, crdt_pncounter, Op2},
     ClockSIOp3 = {c, crdt_pncounter, Op3},
     ClockSIOp4 = {a, crdt_pncounter, Op4},
-
-    Transaction = #transaction{transactional_protocol = clocksi},
+    
+    Transaction = #transaction{transactional_protocol = clocksi, txn_id=no_txn_inserting_from_log},
 
     ?assertEqual([Op4, Op1],
         reverse_and_filter_updates_per_key([ClockSIOp1, ClockSIOp2, ClockSIOp3, ClockSIOp4], a, Transaction)).

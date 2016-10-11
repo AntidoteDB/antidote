@@ -738,8 +738,7 @@ handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict) ->
 						   key = KeyInternal,
 						   type = Type,
 						   op_param = Op,
-                            snapshot_vc = SnapshotTime,
-                            dependency_vc = SnapshotTime, %% todo: clean this physics patch
+                            dependency_vc= SnapshotTime,
 						   dc_and_commit_time = {DcId, TxCommitTime},
 						   txid = TxId},
 					    dict:append(KeyInternal, CommittedDownstreamOp, Acc);

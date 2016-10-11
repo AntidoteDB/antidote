@@ -145,15 +145,14 @@
     key :: key(),
     type :: type(),
     op_param :: op(),
-    snapshot_vc :: vectorclock(),
     dependency_vc :: vectorclock(),
+%%    dependency_vc :: vectorclock(),
     dc_and_commit_time :: commit_time(),
     txid :: txid()}).
 
 -record(transaction, {
     snapshot_clock :: snapshot_time(),
     transactional_protocol :: transactional_protocol(),
-    server_pid :: pid(),
     snapshot_vc :: vectorclock(),
     txn_id :: txid() | no_txn_inserting_from_log,
     physics_read_metadata :: physics_read_metadata()}).
@@ -205,7 +204,7 @@
 %%physics
 -type clock_value() :: non_neg_integer().
 -type key_access_time_tuple() :: {clock_value(), boolean()}.
--type physics_read_metadata() :: #physics_read_metadata{}.
+-type physics_read_metadata() :: #physics_read_metadata{} | undefined. %undefined when using any protocol that's not PhysiCS.
 
 
 -type txn_properties() :: term().

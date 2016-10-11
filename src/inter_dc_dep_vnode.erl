@@ -57,7 +57,8 @@
   queues :: dict:dict(), %% DCID -> queue()
   vectorclock :: vectorclock(),
   last_updated :: non_neg_integer(),
-  drop_ping :: boolean()
+  drop_ping :: boolean(),
+  transactional_protocol :: transactional_protocol()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -73,10 +74,12 @@ handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_local_v
 set_dependency_clock(Partition, Vector) -> dc_utilities:call_local_vnode_sync(Partition, inter_dc_dep_vnode_master, {set_dependency_clock, Vector}).
 
 %%%% VNode methods ----------------------------------------------------------+
+
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   StableSnapshot = vectorclock:new(),
-  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0, drop_ping = false}}.
+  {ok, Protocol} = application:get_env(antidote, txn_prot),
+  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0, drop_ping = false, transactional_protocol = Protocol}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
@@ -127,24 +130,17 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% Still need to update the timestamp for that DC, up to 1 less than the
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
-    false ->
-%%      lager:info("could not store trasaction yet: ~n~p",[Txn]),
-      {update_clock(State, DCID, Timestamp-1), false};
+    false -> {update_clock(State, DCID, Timestamp-1), false};
+
     %% If so, store the transaction
     true ->
-%%      lager:info("stored remote trasaction : ~n~p",[Txn]),
       %% Put the operations in the log
       {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),
-
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_operation_payloads(Txn),
-%%      lager:info("got this operations from tx: : ~n~p",[ClockSiOps]),
-
-%%      Todo: fix this dirty patch
-      {ok, Protocol} = application:get_env(antidote, txn_prot),
-      Transaction = #transaction{
-        transactional_protocol = Protocol},
+      [OpHead | _OpsTail] = ClockSiOps,
+      Transaction = #transaction{transactional_protocol=State#state.transactional_protocol, txn_id=OpHead#operation_payload.txid},
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#operation_payload.key, Op, Transaction) end, ClockSiOps),
       {update_clock(State, DCID, Timestamp), true}
   end.
@@ -228,7 +224,7 @@ get_partition_clock(State) ->
   %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
   vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
-%% Utility function: converts the transaction to a list of clocksi_payload ops.
+%% Utility function: converts the transaction to a list of operation_payload ops.
 -spec updates_to_operation_payloads(#interdc_txn{}) -> list(operation_payload()).
 updates_to_operation_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = CommitTime, causal_dependencies = CausalDependencies}) ->
   lists:map(fun(#log_record{log_operation = LogRecord}) ->
@@ -237,11 +233,8 @@ updates_to_operation_payloads(Txn = #interdc_txn{dcid = DCID, timestamp = Commit
       key = Key,
       type = Type,
       op_param = Op,
-      snapshot_vc = CausalDependencies,
-      dependency_vc = CausalDependencies,
-      dc_and_commit_time = {DCID, CommitTime}
-        
-        %% ALE PREV CODE
-        %% txid =  LogRecord#log_record.tx_id
+      dependency_vc= CausalDependencies,
+      dc_and_commit_time = {DCID, CommitTime},
+      txid = LogRecord#log_operation.tx_id
     }
   end, inter_dc_txn:ops_by_type(Txn, update)).

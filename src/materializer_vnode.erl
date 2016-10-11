@@ -648,7 +648,7 @@ prune_ops({Len,OpsTuple}, Threshold, Protocol)->
     %% one for including
     {NewSize,NewOps} = check_filter(fun({_OpId,Op}) ->
         BaseSnapshotVC = case Protocol of {ok, physics} -> Op#operation_payload.dependency_vc;
-                             _ -> Op#operation_payload.snapshot_vc
+                             _ -> Op#operation_payload.dependency_vc
                          end,
 	    {DcId,CommitTime} = Op#operation_payload.dc_and_commit_time,
 	    CommitVC = vectorclock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
@@ -725,7 +725,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 	        NewTransaction = case Transaction of
 		        no_txn_inserting_from_log -> %% the function is being called by the logging vnode at startup
 			        {ok, Protocol} = application:get_env(antidote, txn_prot),
-			        #transaction{snapshot_vc = DownstreamOp#operation_payload.snapshot_vc,
+			        #transaction{snapshot_vc = DownstreamOp#operation_payload.dependency_vc,
 				        transactional_protocol = Protocol, txn_id = no_txn_inserting_from_log};
 		        _ ->
 			        Transaction#transaction{
@@ -737,7 +737,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 							        DepVC -> DepVC
 						        end;
 					        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-						        DownstreamOp#operation_payload.snapshot_vc
+						        DownstreamOp#operation_payload.dependency_vc
 				        end}
 	        end,
 %%	        lager:info("calling internal read: ~p",[Transaction]),
@@ -913,7 +913,7 @@ generate_payload(SnapshotTime,CommitTime,Prev,_Name) ->
     #operation_payload{key = Key,
 		     type = Type,
 		     op_param = Op1,
-	         snapshot_vc = vectorclock:from_list([{DC1,SnapshotTime}]),
+	         dependency_vc= vectorclock:from_list([{DC1,SnapshotTime}]),
 	         dc_and_commit_time = {DC1,CommitTime},
 		     txid = 1
 		    }.
@@ -932,7 +932,7 @@ seq_write_test() ->
     DownstreamOp1 = #operation_payload{key = Key,
                                      type = Type,
                                      op_param = Op1,
-                                     snapshot_vc= vectorclock:from_list([{DC1,10}]),
+                                     dependency_vc= vectorclock:from_list([{DC1,10}]),
                                      dc_and_commit_time= {DC1, 15},
                                      txid = 1
                                     },
@@ -977,7 +977,7 @@ multipledc_write_test() ->
 	DownstreamOp1 = #operation_payload{key = Key,
 		type = Type,
 		op_param = Op1,
-		snapshot_vc = vectorclock:from_list([{DC2,0}, {DC1,10}]),
+		dependency_vc= vectorclock:from_list([{DC2,0}, {DC1,10}]),
 		dc_and_commit_time = {DC1, 15},
 		txid = 1
 	},
@@ -990,7 +990,7 @@ multipledc_write_test() ->
 	{ok,Op2} = Type:downstream({increment,1},S1),
 	DownstreamOp2 = DownstreamOp1#operation_payload{
 		op_param = Op2,
-		snapshot_vc =vectorclock:from_list([{DC2,16}, {DC1,16}]),
+		dependency_vc=vectorclock:from_list([{DC2,16}, {DC1,16}]),
 		dc_and_commit_time = {DC2,20},
 		txid=2},
 	
@@ -1018,7 +1018,7 @@ concurrent_write_test() ->
 	DownstreamOp1 = #operation_payload{key = Key,
 		type = Type,
 		op_param = Op1,
-		snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,0}]),
+		dependency_vc= vectorclock:from_list([{DC1,0}, {DC2,0}]),
 		dc_and_commit_time = {DC2, 1},
 		txid = 1
 	},
@@ -1032,7 +1032,7 @@ concurrent_write_test() ->
 	DownstreamOp2 = #operation_payload{ key = Key,
 		type = Type,
 		op_param = Op2,
-		snapshot_vc =vectorclock:from_list([{DC1,0}, {DC2,0}]),
+		dependency_vc=vectorclock:from_list([{DC1,0}, {DC2,0}]),
 		dc_and_commit_time = {DC1, 1},
 		txid=2},
 	op_insert_gc(Key,DownstreamOp2,MatState, #transaction{txn_id = eunit_test}),
