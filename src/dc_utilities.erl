@@ -241,9 +241,7 @@ get_stable_snapshot() ->
 	    %% The snapshot isn't realy yet, need to wait for startup
 	    timer:sleep(10),
 	    get_stable_snapshot();
-	    SS ->
-%%		    SS=vectorclock:from_dict(SSDict),
-%%		    lager:debug("stable snapshot is ~p",[SS]),
+	SS ->
             case application:get_env(antidote, txn_prot) of
 	            {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
@@ -262,13 +260,11 @@ get_stable_snapshot() ->
                                                  [Value | Acc ]
                                          end, [], StableSnapshot),
                             GST = lists:min(ListTime),
-                            ReturnSS = vectorclock:map(
+                            {ok, vectorclock:map(
                                    fun(_K, _V) ->
                                            GST
                                    end,
-                                   StableSnapshot),
-%%	                        lager:info("Computed GR stable snapshot: ~p",[ReturnSS]),
-	                        {ok, ReturnSS}
+                                   StableSnapshot)}
                     end
             end
     end.
@@ -281,9 +277,7 @@ get_partition_snapshot(Partition) ->
 	    timer:sleep(10),
 	    get_partition_snapshot(Partition);
 	SS ->
-%%		lager:debug("got this partition metadata_dict, coverting to vector clock",[SS]),
-%%	    vectorclock:from_dict(SS)
-        SS
+	    SS
     end.
 
 %% Returns the minimum value in the stable vector snapshot time
@@ -291,8 +285,7 @@ get_partition_snapshot(Partition) ->
 -spec get_scalar_stable_time() -> {ok, non_neg_integer(), vectorclock()}.
 get_scalar_stable_time() ->
     {ok, StableSnapshot} = get_stable_snapshot(),
-%%	lager:info("STABLE SNAPSHOT GR IS: ",[StableSnapshot]),
-	%% dict:is_empty/1 is not available, hence using dict:size/1
+    %% dict:is_empty/1 is not available, hence using dict:size/1
     %% to check whether it is empty
     case vectorclock:size(StableSnapshot) of
         0 ->
