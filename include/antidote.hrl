@@ -80,6 +80,13 @@
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
 %% threshold time for physics static reads, in microseconds
+%% @doc when running the physics protocol, if multiple reads
+%% are sent in parallel in a single read_objects operation, the
+%% physics read metadata is set to the current clock of the txn
+%% coordinator. In the case a vnode receives that metadata and
+%% its clock has not reached that value, it will have to wait
+%% until it does. This threshold is used to reduce/avoid that
+%% waiting.
 -define(PHYSICS_THRESHOLD, 30000).
 
 %% The definition "FIRST_OP" is used by the materializer.
