@@ -137,6 +137,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       %% Put the operations in the log
       {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),
+
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_operation_payloads(Txn),
       [OpHead | _OpsTail] = ClockSiOps,

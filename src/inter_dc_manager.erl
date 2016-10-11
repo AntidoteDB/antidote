@@ -265,7 +265,6 @@ wait_for_stable_snapshot(DCID, MinValue) ->
           lager:info("Connected to DC ~p", [DCID]),
           ok;
         false ->
-            lager:info("Stable Snapshot ~p", [SS]),
           lager:info("Waiting for DC ~p", [DCID]),
           timer:sleep(1000),
           wait_for_stable_snapshot(DCID, MinValue)
