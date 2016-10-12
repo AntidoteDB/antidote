@@ -87,7 +87,7 @@ get_meta_data_name() ->
 %% The first is a dict with all partitions for DCID, with key and value being the partition id
 %% The second is a tuple with all partitions for DCID
 %% The third is an integer telling the number of partitions
--spec get_dc_partitions_detailed(dcid()) -> {dict(),tuple(),non_neg_integer()}.
+-spec get_dc_partitions_detailed(dcid()) -> {dict:dict(),tuple(),non_neg_integer()}.
 get_dc_partitions_detailed(DCID) ->
     case stable_meta_data_server:read_meta_data({partition_meta_data,DCID}) of
 	{ok, Info} ->
@@ -98,7 +98,7 @@ get_dc_partitions_detailed(DCID) ->
     end.
 
 %% Returns a dict with all partitions for DCID, with key and value being the partition id
--spec get_dc_partitions_dict(dcid()) -> dict().
+-spec get_dc_partitions_dict(dcid()) -> dict:dict().
 get_dc_partitions_dict(DCID) ->
     case stable_meta_data_server:read_meta_data({partition_dict,DCID}) of
 	{ok, Dict} ->
@@ -219,7 +219,7 @@ store_dc_descriptors(Descriptors) ->
     stable_meta_data_server:broadcast_meta_data_merge(all_descriptors, Descriptors, fun desc_merge_func/2, fun dict:new/0).
 
 %% Internal function for merging the list of dc descriptors
--spec desc_merge_func([#descriptor{}], dict()) -> dict().
+-spec desc_merge_func([#descriptor{}], dict:dict()) -> dict:dict().
 desc_merge_func(DescList, PrevDict) ->
     lists:foldl(fun(Desc = #descriptor{dcid = DCID}, Acc) ->
 			dict:store(DCID, Desc, Acc)

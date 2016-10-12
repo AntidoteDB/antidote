@@ -53,7 +53,7 @@ start_link(Name) ->
     gen_server:start_link({global,generate_server_name(node())}, ?MODULE, [Name], []).
 
 %% Add a list of DCs to this DC
--spec send_meta_data(atom(),atom(),atom(),dict()) -> ok.
+-spec send_meta_data(atom(),atom(),atom(),dict:dict()) -> ok.
 send_meta_data(Name,DestinationNodeId,NodeId,Dict) ->
     gen_server:cast({global,generate_server_name(DestinationNodeId)}, {update_meta_data, Name, NodeId, Dict}).
 

@@ -77,7 +77,7 @@ start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) ->
     {_, Port} = get_address(),
     Socket = zmq_utils:create_bind_socket(xrep, true, Port),
-    _Res = random:seed(dc_utilities:now()),
+    _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
     lager:info("Log reader started on port ~p", [Port]),
     {ok, #state{socket = Socket,next=getid}}.
 
@@ -92,18 +92,23 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id,next=getmsg}) -
     %% Decode the message
     {ReqId,RestMsg} = binary_utilities:check_version_and_req_id(BinaryMsg),
     %% Create a response
-    QueryState = #inter_dc_query_state{zmq_id = Id,
-				       request_id_num_binary = ReqId,
-				       local_pid = self()},
+    QueryState =
+      fun(RequestType) ->
+        #inter_dc_query_state{
+          request_type = RequestType,
+          zmq_id = Id,
+          request_id_num_binary = ReqId,
+          local_pid = self()}
+      end,
     case RestMsg of
 	<<?LOG_READ_MSG,QueryBinary/binary>> ->
-	    ok = inter_dc_query_response:get_entries(QueryBinary,QueryState#inter_dc_query_state{request_type=?LOG_READ_MSG});
+	    ok = inter_dc_query_response:get_entries(QueryBinary,QueryState(?LOG_READ_MSG));
 	<<?CHECK_UP_MSG>> ->
 	    ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
 	<<?EXTERNAL_READ_MSG,QueryBinary/binary>> ->
-	    ok = inter_dc_query_response:perform_external_read(QueryBinary,QueryState#inter_dc_query_state{request_type=?EXTERNAL_READ_MSG});
+	    ok = inter_dc_query_response:perform_external_read(QueryBinary,QueryState(?EXTERNAL_READ_MSG));
 	<<?BCOUNTER_REQUEST,RequestBinary/binary>> ->
-	    ok = inter_dc_query_response:request_permissions(RequestBinary,QueryState#inter_dc_query_state{request_type=?BCOUNTER_REQUEST});
+	    ok = inter_dc_query_response:request_permissions(RequestBinary,QueryState(?BCOUNTER_REQUEST));
 	%% TODO: Handle other types of requests
 	_ ->
 	    ErrorBinary = term_to_binary(bad_request),

@@ -12,17 +12,11 @@
                   riak_core,
                   antidote_crdt,
                   antidote_utils,
+                  cuttlefish,
                   riak_dt,
                   antidote_pb,
-                  setup,
-                  cuttlefish,
                   erlzmq,
-                  getopt,
-                  bear,
-                  edown,
-                  mochiweb,
-                  neotoma,
-                  parse_trans
+                  rand_compat 
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables

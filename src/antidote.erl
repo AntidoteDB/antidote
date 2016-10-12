@@ -316,7 +316,7 @@ append(Key, Type, OpParams) ->
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), op(), list()) ->
+-spec append(key(), type(), op() | {transfer,_}, list()) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 append(Key, Type, OpParams, Properties) ->
     case materializer:check_operations([{update,

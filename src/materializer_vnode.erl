@@ -153,7 +153,7 @@ load_from_log_to_tables(Partition, State) ->
     Node = {Partition, log_utilities:get_my_node(Partition)},
     loop_until_loaded(Node, LogId, start, dict:new(), State).
 
--spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict(), #mat_state{}) -> ok | {error, reason()}.
+-spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict:dict(), #mat_state{}) -> ok | {error, reason()}.
 loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
     case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
 	{error, Reason} ->
@@ -166,7 +166,7 @@ loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
 	    ok
     end.
 
--spec load_ops(dict(), #mat_state{}) -> true.
+-spec load_ops(dict:dict(), #mat_state{}) -> true.
 load_ops(OpsDict, State) ->
     dict:fold(fun(Key, CommittedOps, _Acc) ->
 		      lists:foreach(fun({_OpId,Op}) ->
