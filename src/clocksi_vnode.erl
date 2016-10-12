@@ -310,7 +310,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    PrepareTime = now_microsec(dc_utilities:now()),
+    PrepareTime = dc_utilities:now_microsec(),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of
         {ok, _} ->
@@ -332,7 +332,7 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    PrepareTime = now_microsec(dc_utilities:now()),
+    PrepareTime = dc_utilities:now_microsec(),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
@@ -455,7 +455,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
                 [{Key, _Type, _Update} | _] ->
 		    TxId = Transaction#transaction.txn_id,
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
-                    NewPrepare = now_microsec(dc_utilities:now()),
+                    NewPrepare = dc_utilities:now_microsec(),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
                     LogRecord = #log_operation{tx_id = TxId,
@@ -674,7 +674,7 @@ reverse_and_filter_updates_per_key(Updates, Key) ->
 get_min_prep(OrdDict) ->
     case OrdDict of
 	[] ->
-	    {ok, clocksi_vnode:now_microsec(dc_utilities:now())};
+	    {ok, dc_utilities:now_microsec()};
 	[{Time,_TxId}|_] ->
 	    {ok, Time}
     end.

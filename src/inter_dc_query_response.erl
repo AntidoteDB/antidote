@@ -49,15 +49,15 @@ start_link(Num) ->
 
 -spec get_entries(binary(),#inter_dc_query_state{}) -> ok.
 get_entries(BinaryQuery,QueryState) ->
-    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
 
 -spec perform_external_read(binary(),#inter_dc_query_state{}) -> ok.
 perform_external_read(BinaryQuery,QueryState) ->
-    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {perform_external_read,BinaryQuery,QueryState}).
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {perform_external_read,BinaryQuery,QueryState}).
 
 -spec request_permissions(binary(),#inter_dc_query_state{}) -> ok.
 request_permissions(BinaryRequest,QueryState) ->
-    ok = gen_server:cast(generate_server_name(random:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions,BinaryRequest,QueryState}).
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions,BinaryRequest,QueryState}).
 
 
 %% ===================================================================
@@ -80,7 +80,7 @@ handle_cast({perform_external_read,BinaryQuery,QueryState}, State) ->
     {external_read, Key, Type, Transaction, Property} = binary_to_term(BinaryQuery),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    %% lager:info("The external read req ~p", [binary_to_term(BinaryQuery)]),
+    % lager:info("The external read req ~p", [binary_to_term(BinaryQuery)]),
     {ok,Snapshot} = clocksi_readitem_fsm:read_data_item(IndexNode,Key,Type,Transaction,[Property]),
     BinaryRep = term_to_binary({external_read_rep, Key, Type, Snapshot}),
     ok = inter_dc_query_receive_socket:send_response(BinaryRep,QueryState),

@@ -55,7 +55,7 @@
 %% VNode state
 -record(state, {
   partition :: partition_id(),
-  queues :: dict(), %% DCID -> queue()
+  queues :: dict:dict(), %% DCID -> queue()
   vectorclock :: vectorclock(),
   last_updated :: non_neg_integer(),
   drop_ping :: boolean()
@@ -120,8 +120,8 @@ process_queue(DCID, {State, PrevCount}) ->
 	false -> {NewState2, PrevCount}
     end.
 
--spec process_ping(queue(), non_neg_integer(), none | non_neg_integer(), #state{}) ->
-			  {queue(), non_neg_integer(), #state{}}.
+-spec process_ping(queue:queue(), non_neg_integer(), none | non_neg_integer(), #state{}) ->
+			  {queue:queue(), non_neg_integer(), #state{}}.
 process_ping(Queue, Count, MaxTime, State) ->
     case queue:peek(Queue) of
 	empty -> {Queue, Count, State};
@@ -133,8 +133,8 @@ process_ping(Queue, Count, MaxTime, State) ->
 	    end
     end.
 
--spec process_txn(queue(), non_neg_integer(), none | non_neg_integer(), #state{}) ->
-			 {queue(), non_neg_integer(), none | non_neg_integer(), #state{}}.
+-spec process_txn(queue:queue(), non_neg_integer(), none | non_neg_integer(), #state{}) ->
+			 {queue:queue(), non_neg_integer(), none | non_neg_integer(), #state{}}.
 process_txn(Queue, Count, MaxTime, State) ->
     case queue:peek(Queue) of
 	empty -> {Queue, Count, MaxTime, State};
@@ -146,7 +146,7 @@ process_txn(Queue, Count, MaxTime, State) ->
 	    end
     end.
 
--spec pop_queue(queue()) -> queue().
+-spec pop_queue(queue:queue()) -> queue:queue().
 pop_queue(Queue) ->
     {_, NewQueue} = queue:out(Queue),
     NewQueue.

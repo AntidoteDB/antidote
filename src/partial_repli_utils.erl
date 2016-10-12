@@ -217,6 +217,7 @@ replace_external_ops(SnapshotGetResp = #snapshot_get_response{ops_list = OldOps}
 	    FromDC = ReadProp#external_read_property.from_dcid,
 	    IncludedOpsTime = ReadProp#external_read_property.included_ops_time,
 	    OldOpsRem = remove_ops(OldOps,IncludedOpsTime,FromDC,[]),
+	    lager:info("there are ~p ops from the other dc", [length(OldOps)]),
 	    %% Next instert the external ops
 	    %% Note this is really expensive, but should expect the list of new ops to be short anyway
 	    Ops =

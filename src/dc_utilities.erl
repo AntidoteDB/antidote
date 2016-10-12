@@ -46,7 +46,6 @@
   get_partition_snapshot/1,
   get_stable_snapshot/0,
   check_registered_global/1,
-  now/0,
   now_microsec/0,
   now_millisec/0]).
 
@@ -111,7 +110,7 @@ get_all_partitions_nodes() ->
     try
 	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
 	CHash = riak_core_ring:chash(Ring),
-	Nodes = chash:nodes(CHash)
+	chash:nodes(CHash)
     catch
 	_Ex:Res ->
 	    lager:debug("Error loading partition-node names ~p, will retry", [Res]),
@@ -231,7 +230,7 @@ ensure_all_vnodes_running_master(VnodeType) ->
 %% other DCs that it is connected to
 -spec check_staleness() -> ok.
 check_staleness() ->
-    Now = clocksi_vnode:now_microsec(erlang:now()),
+    Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
     dict:fold(fun(DcId,Time,_Acc) ->
 		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
@@ -337,26 +336,11 @@ check_registered_global(Name) ->
 	    ok
     end.
 
--ifdef(SAFE_TIME).
-%% Uses erlang now to the the physical time
-%% This value is guaranteed not to go backwards,
-%% but is a scalability bottleneck
-now() ->
-    erlang:now().
 
--else.
-%% Uses os:timestamp to get the current physical time
-%% This time can go backwards which could break the
-%% consistency guarantees of clock si
-now() ->
-    os:timestamp().
-
--endif.
 
 -spec now_microsec() -> non_neg_integer().
 now_microsec() ->
-  {MegaSecs, Secs, MicroSecs} = dc_utilities:now(),
-  (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
+  erlang:system_time(micro_seconds). % TODO 19 this is not correct, since it is not monotonic (Question: must it be unique as well?)
 
 -spec now_millisec() -> non_neg_integer().
 now_millisec() ->

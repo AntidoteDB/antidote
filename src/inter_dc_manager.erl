@@ -88,7 +88,7 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 	    end
     end.
 
--spec connect_nodes([node()], dict(), dcid(), [socket_address()], [socket_address()], #descriptor{}, non_neg_integer()) -> ok | {error, connection_error}.
+-spec connect_nodes([node()], dict:dict(), dcid(), [socket_address()], [socket_address()], #descriptor{}, non_neg_integer()) -> ok | {error, connection_error}.
 connect_nodes([], _MyNodes, _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
 connect_nodes(_Nodes, _MyNodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->

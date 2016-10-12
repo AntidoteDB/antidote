@@ -50,14 +50,14 @@
 
 %% State
 -record(state, {
-  ping_count :: dict(),
-  partition :: partition_id(),
-  buffer_fsms :: dict() %% dcid -> buffer
-}).
+	  ping_count :: dict:dict(),
+	  partition :: non_neg_integer(),
+	  buffer_fsms :: dict:dict() %% dcid -> buffer
+	 }).
 
 %%%% API --------------------------------------------------------------------+
 
--spec deliver_txn(#interdc_txn{}, dict(), dict()) -> ok.
+-spec deliver_txn(#interdc_txn{}, dict:dict(), dict:dict()) -> ok.
 deliver_txn(Txn = #interdc_txn{dcid = DCID, prev_log_opid_dc = #partial_ping{}}, _MyNodePartitions, DictPartitionMatch) ->
     {_PartitionMatch,PartitionMatchReverse} = dict:fetch(DCID, DictPartitionMatch),
     ok = dict:fold(fun(LocalP,ExternalPList,ok) ->

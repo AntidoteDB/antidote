@@ -26,7 +26,7 @@
 	  prev_log_opid :: #op_number{} | none, %% the value is *none* if the transaction is read directly from the log
 	  snapshot :: snapshot_time() | none,
 	  timestamp :: clock_time(),
-	  last_update_opid :: #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort) THIS ISN'T USED???
+	  last_update_opid :: undefined | #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort) THIS ISN'T USED???
 	  bucket :: bucket(),
 	  log_records :: [#log_record{}] %% if the OP list is empty, the message is a HEARTBEAT
 }).
@@ -48,7 +48,7 @@
 	  req_id_binary :: binary(),
 	  req_pid :: pid() | {fsm, pid()},
 	  pdcid :: pdcid(),
-	  timer :: reference(),
+	  timer :: reference() | undefined,
 	  extra_state :: term(),
 	  binary_req :: binary()
 	 }).
@@ -78,5 +78,5 @@
   pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer() | init,
   last_observed_commit_ids :: {non_neg_integer(), non_neg_integer()} | init,
-  queue :: queue()
+  queue :: queue:queue()
 }).

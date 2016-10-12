@@ -27,7 +27,7 @@
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: tx(), Node :: index_node(), Key :: key(),
-    Type :: type(), Update :: {op(), actor()}, list()) ->
+    Type :: type(), Update :: op_param(), list()) ->
     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
     %% TODO: Check if read can be omitted for some types and ops

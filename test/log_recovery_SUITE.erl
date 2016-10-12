@@ -64,16 +64,18 @@ read_pncounter_log_recovery_test(Config) ->
     FirstNode = hd(Nodes),
     Type = antidote_crdt_counter,
     Key = log_value_test,
+    Obj = {Key, Type, bucket},
     
-    {ok, TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
-    increment_counter(FirstNode, Key, 15),
+    {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
+    increment_counter(FirstNode, Obj, 15),
     %% value from old snapshot is 0
-    {ok, ReadResult1} = rpc:call(FirstNode,
-        antidote, clocksi_iread, [TxId, Key, Type]),
+    {ok, [ReadResult1]} = rpc:call(FirstNode,
+        antidote, read_objects, [[Obj], TxId]),
     ?assertEqual(0, ReadResult1),
     %% read value in txn is 15
-    {ok, {_, [ReadResult2], _}} = rpc:call(FirstNode,
-        antidote, clocksi_read, [Key, Type]),
+    {ok, [ReadResult2], CommitTime} = rpc:call(FirstNode,
+        antidote, read_objects, [ignore, [], [Obj]]),
+
     ?assertEqual(15, ReadResult2),
 
     lager:info("Killing and restarting the nodes"),
@@ -83,16 +85,16 @@ read_pncounter_log_recovery_test(Config) ->
     lager:info("Nodes: ~p", [Nodes]),
 
     %% Read the value again
-    {ok, {_, [ReadResult3], _}} = rpc:call(FirstNode, antidote, clocksi_execute_tx,
-             [[{read, {Key, Type}}]]),
+    {ok, [ReadResult3], CT} = rpc:call(FirstNode, antidote, read_objects,
+             [CommitTime, [], [Obj]]),
     ?assertEqual(15, ReadResult3),
     lager:info("read_pncounter_log_recovery_test finished").
 
-%% Auxiliary method to increment a counter N times.
+%% Auxiliary method o increment a counter N times.
 increment_counter(_FirstNode, _Key, 0) ->
     ok;
-increment_counter(FirstNode, Key, N) ->
-    WriteResult = rpc:call(FirstNode, antidote, clocksi_execute_tx,
-        [[{update, {Key, antidote_crdt_counter, {increment, 1}}}]]),
+increment_counter(FirstNode, Obj, N) ->
+    WriteResult = rpc:call(FirstNode, antidote, update_objects,
+        [ignore, [], [{Obj, increment, 1}]]),
     ?assertMatch({ok, _}, WriteResult),
-    increment_counter(FirstNode, Key, N - 1).
+    increment_counter(FirstNode, Obj, N - 1).

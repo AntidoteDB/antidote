@@ -482,9 +482,9 @@ set_up_clusters_common(Config) ->
                               start_node(N, Config)
                            end, Nodes)
                   end,
-   Clusters = pmap(fun(N) ->
-                  StartDCs(N)
-              end, [[dev1, dev2], [dev3], [dev4]]).
+   pmap(fun(N) ->
+		StartDCs(N)
+	end, [[dev1, dev2], [dev3], [dev4]]).
 
 finish_cluster_setup(Config) ->
    %% Do not join cluster if it is already done

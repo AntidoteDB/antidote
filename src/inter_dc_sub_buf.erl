@@ -199,7 +199,7 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
 			    true ->
 				[Txn] ++ Acc;
 			    false ->
-				lager:info("got a txn ~w", [Txn]),
+				% lager:info("got a txn ~w", [Txn]),
 				ok = deliver(Txn,LocalPartition),
 				Acc
 			end,

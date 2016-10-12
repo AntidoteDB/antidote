@@ -96,7 +96,7 @@ handle_cast({transfer, {Key,Amount,Requester}}, #state{last_transfers=LT}=State)
     case can_process(Key, Requester, NewLT) of
         true ->
             antidote:append(Key, ?DATA_TYPE, {transfer, {Amount, Requester, MyDCId}}),
-            {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:now(), NewLT)}};
+            {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:timestamp(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
     end.
@@ -147,7 +147,7 @@ queue_request(Key, Amount, RequestsQueue) ->
                       {ok, Value} -> Value;
                       error -> orddict:new()
                   end,
-    CurrTime = erlang:now(),
+    CurrTime = 	erlang:timestamp(),
     orddict:store(Key, [{Amount, CurrTime} | QueueForKey], RequestsQueue).
 
 request_remote(0, _Key) -> 0;
@@ -199,13 +199,13 @@ pref_list(Obj) ->
 request_response(_BinaryRep,_RequestCacheEntry) -> ok.
 
 cancel_consecutive_req(LastTransfers, Period) ->
-    CurrTime = erlang:now(),
+    CurrTime = 	erlang:timestamp(),
     orddict:filter(
       fun(_, Timeout) ->
               timer:now_diff(Timeout,CurrTime) < Period end, LastTransfers).
 
 clear_pending_req(LastRequests, Period) ->
-    CurrTime = erlang:now(),
+    CurrTime = 	erlang:timestamp(),
     orddict:filter(fun(_, ListRequests) ->
                    FilteredList = lists:filter(fun({_, Timeout}) ->
                                    timer:now_diff(Timeout,CurrTime) < Period end, ListRequests),

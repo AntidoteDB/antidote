@@ -153,7 +153,7 @@ load_from_log_to_tables(Partition, State) ->
     Node = {Partition, log_utilities:get_my_node(Partition)},
     loop_until_loaded(Node, LogId, start, dict:new(), State).
 
--spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict(), #mat_state{}) -> ok | {error, reason()}.
+-spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict:dict(), #mat_state{}) -> ok | {error, reason()}.
 loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
     case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
 	{error, Reason} ->
@@ -166,7 +166,7 @@ loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
 	    ok
     end.
 
--spec load_ops(dict(), #mat_state{}) -> true.
+-spec load_ops(dict:dict(), #mat_state{}) -> true.
 load_ops(OpsDict, State) ->
     dict:fold(fun(Key, CommittedOps, _Acc) ->
 		      lists:foreach(fun({_OpId,Op}) ->
@@ -425,6 +425,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
     %% or on failure the tuple is
     %%    {error, no_snapshot}
     IsExternal = partial_repli_utils:check_external_read_in_materializer(PropertyList),
+    lager:info("is external ~p", [IsExternal]),
     Result = case ets:lookup(SnapshotCache, Key) of
 		 [] ->
 		     %% First time reading this key, store an empty snapshot in the cache
@@ -486,8 +487,10 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
     %% Now apply the operations to the snapshot
     case SnapshotGetResp#snapshot_get_response.number_of_ops of
 	0 ->
+	    lager:info("there are 0 ops"),
 	    {ok, SnapshotGetResp#snapshot_get_response.materialized_snapshot#materialized_snapshot.value};
-	_Len ->
+	Len ->
+	    lager:info("there are ~p ops", [Len]),
 	    case clocksi_materializer:materialize(Type, TxId, MinSnapshotTime, SnapshotGetResp) of
 		{ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
 		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable

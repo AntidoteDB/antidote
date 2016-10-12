@@ -47,11 +47,11 @@
 
 %% State
 -record(state, {
-  node_list :: [atom()], %% names of all the inter_dc_subs processes at this DC
-  partition_match :: dict(), %% DCID -> {dict,dict} of local partitions matched with external partitions (for partial rep when DCs have different partitions) two dicts because one is the inverse of the other
-  my_partitions :: [partition_id()],
-  my_node_partitions :: dict(), %% Partition -> Partition
-  sockets :: dict() % DCID -> socket
+  node_list :: [atom()] | undefined, %% names of all the inter_dc_subs processes at this DC
+  partition_match :: dict:dict(), %% DCID -> {dict,dict} of local partitions matched with external partitions (for partial rep when DCs have different partitions) two dicts because one is the inverse of the other
+  my_partitions :: [partition_id()] | undefined,
+  my_node_partitions :: dict:dict() | undefined, %% Partition -> Partition
+  sockets :: dict:dict() % DCID -> socket
 }).
 
 %%%% API --------------------------------------------------------------------+

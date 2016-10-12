@@ -77,7 +77,10 @@ encode(Message) ->
 process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
         State) ->
     %%Clock = antidote_pb_codec:decode(vectorclock,BClock),
-    Clock = binary_to_term(BClock),
+    Clock = case BClock of
+                    undefined -> ignore;
+                    _ -> binary_to_term(BClock)
+            end,
     Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
 		     {} -> [];
 		     Other -> Other
@@ -194,8 +197,10 @@ process(#apbstaticupdateobjects{
            transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            updates=BUpdates},
         State) ->
-    %%Clock = antidote_pb_codec:decode(vectorclock,BClock),
-    Clock = binary_to_term(BClock),
+    Clock = case BClock of
+                    undefined -> ignore;
+                    _ -> binary_to_term(BClock)
+            end,
     Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
 		     {} -> [];
 		     Other -> Other
@@ -224,8 +229,10 @@ process(#apbstaticreadobjects{
            transaction=#apbstarttransaction{timestamp=BClock, properties = BProperties},
            objects=BoundObjects},
         State) ->
-    %%Clock = antidote_pb_codec:decode(vectorclock,BClock),
-    Clock = binary_to_term(BClock),
+    Clock = case BClock of
+                    undefined -> ignore;
+                    _ -> binary_to_term(BClock)
+            end,
     Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
 		     {} -> [];
 		     Other -> Other
