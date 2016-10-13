@@ -21,20 +21,35 @@
 
 -include("antidote.hrl").
 
--export([generate_downstream_op/7]).
+-ifdef(TEST).
+-define(LOG_UTIL, mock_partition_fsm).
+-else.
+-define(LOG_UTIL, log_utilities).
+-endif.
+
+-export([generate_downstream_op/4]).
 
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(Transaction :: transaction(), Node :: term(), Key :: key(),
-  Type :: type(), Update :: {op(), actor()}, list(), orddict()) ->
+-spec generate_downstream_op(Key :: key(),  Type :: type(), Update :: op(), CoordState :: #tx_coord_state{}) ->
 	{ok, op(), vectorclock()|{vectorclock(), vectorclock()}} | {error, reason()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet, InternalReadSet)->
+generate_downstream_op(Key, Type, Update, CoordState)->
+	Transaction = CoordState#tx_coord_state.transaction,
+	InternalReadSet = CoordState#tx_coord_state.internal_read_set,
+	Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+	IndexNode = hd(Preflist),
+	WriteSet = case lists:keyfind(IndexNode, 1, CoordState#tx_coord_state.updated_partitions) of
+		false->
+			[];
+		{IndexNode, WS}->
+			WS
+	end,
 	Result=case orddict:find(Key, InternalReadSet) of
 		{ok, {S, SCP}}->
 			{S, SCP};
 		error->
-			case clocksi_vnode:read_data_item(Node, Transaction, Key, Type, WriteSet) of
+			case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
 				{ok, {S, SCP}}->
 					{S, SCP};
 				{error, Reason}->

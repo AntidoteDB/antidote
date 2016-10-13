@@ -335,7 +335,6 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
     UpdatedPartitions = CoordState#tx_coord_state.updated_partitions,
     Transaction = CoordState#tx_coord_state.transaction,
     TransactionalProtocol = Transaction#transaction.transactional_protocol,
-    InternalReadSet = CoordState#tx_coord_state.internal_read_set,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     ClientOps = CoordState#tx_coord_state.client_ops,
@@ -351,7 +350,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
     %% Todo: There are 3 messages sent to a vnode: 1 for downstream generation,
     %% todo: another for logging, and finally one (or two) for  commit.
     %% todo: couldn't we replace them for just 1, and do all that directly at the vnode?
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState) of
                 {ok, DownstreamRecord, SnapshotParameters}->
 %%                                lager:debug("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     State1=case TransactionalProtocol of
