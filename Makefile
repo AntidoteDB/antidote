@@ -40,3 +40,8 @@ tutorial:
 	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
 	docker run -t -i cmeiklejohn/antidote-tutorial
 
+docker-build:
+	docker build -f Dockerfiles/antidote -t cmeiklejohn/antidote .
+
+docker-run: docker-build
+	docker run -t -i cmeiklejohn/antidote
