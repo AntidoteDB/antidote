@@ -375,10 +375,16 @@ clocksi_bulk_update(Operations) ->
 
 -spec clocksi_read(ClientClock :: snapshot_time(),
                    Key :: key(), Type:: type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_read(ClientClock, Key, Type) ->
-    {ok, TxId} = start_transaction(ClientClock, []),
-    {ok, ReadResult} = read_objects([{Key, Type, ?GLOBAL_BUCKET}], TxId),
-    {ok, CommitTime} = commit_transaction(TxId),
+clocksi_read(ClientClock, KeyOrKeyBucket, Type)->
+    {Key, Bucket}=case KeyOrKeyBucket of
+        {K, B}->
+            {K, B};
+        KeyOnly->
+            {KeyOnly, ?GLOBAL_BUCKET}
+    end,
+    {ok, TxId}=start_transaction(ClientClock, []),
+    {ok, ReadResult}=read_objects([{Key, Type, Bucket}], TxId),
+    {ok, CommitTime}=commit_transaction(TxId),
     {ok, {TxId, ReadResult, CommitTime}}.
 %%    clocksi_execute_tx(ClientClock, [{read, {Key, Type}}]).
 
@@ -421,11 +427,17 @@ clocksi_istart_tx() ->
     clocksi_istart_tx(ignore, false).
 
 -spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
-clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
+clocksi_iread({_, _, CoordFsmPid}, KeyOrKeyBucket, Type) ->
+    {Key, Bucket}=case KeyOrKeyBucket of
+        {K, B}->
+            {K, B};
+        KeyOnly->
+            {KeyOnly, ?GLOBAL_BUCKET}
+    end,
+    case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
         ok ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {read, {{Key, ?GLOBAL_BUCKET}, Type}}, ?OP_TIMEOUT) of
-                {ok, Res} -> {ok, Res};
+            case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, [{{Key, ?GLOBAL_BUCKET}, Type}]}, ?OP_TIMEOUT) of
+                {ok, [Res]} -> {ok, Res};
                 {error, Reason} -> {error, Reason}
             end;
         {error, Reason} ->
@@ -433,11 +445,17 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     end.
 
 -spec clocksi_iupdate(txid(), key(), type(), term()) -> ok | {error, reason()}.
-clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
-    case materializer:check_operations([{update, {{Key, ?GLOBAL_BUCKET}, Type, OpParams}}]) of
+clocksi_iupdate({_, _, CoordFsmPid}, KeyOrKeyBucket, Type, OpParams) ->
+    {Key, Bucket}=case KeyOrKeyBucket of
+        {K, B}->
+            {K, B};
+        KeyOnly->
+            {KeyOnly, ?GLOBAL_BUCKET}
+    end,
+    case materializer:check_operations([{update, {{Key, Bucket}, Type, OpParams}}]) of
         ok ->
             case gen_fsm:sync_send_event(CoordFsmPid,
-                                         {update, {{Key, ?GLOBAL_BUCKET}, Type, OpParams}}, ?OP_TIMEOUT) of
+                                         {update, {{Key, Bucket}, Type, OpParams}}, ?OP_TIMEOUT) of
                 ok -> ok;
                 {aborted, _} -> {error, aborted};
                 {error, Reason} -> {error, Reason}
@@ -491,10 +509,17 @@ gr_snapshot_read(ClientClock, Args) ->
 
 execute_ops([], _TxId, ReadSet) ->
     lists:reverse(ReadSet);
-execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
-    case  update_objects([{{Key, Type, ?GLOBAL_BUCKET}, OpParams}], TxId) of
-        ok -> execute_ops(Rest, TxId, ReadSet);
-        {error, Reason} ->
+execute_ops([{update, {KeyOrKeyBucket, Type, OpParams}}|Rest], TxId, ReadSet)->
+    {Key, Bucket}=case KeyOrKeyBucket of
+        {K, B}->
+            {K, B};
+        KeyOnly->
+            {KeyOnly, ?GLOBAL_BUCKET}
+    end,
+    case update_objects([{{Key, Type, Bucket}, OpParams}], TxId) of
+        ok->
+            execute_ops(Rest, TxId, ReadSet);
+        {error, Reason}->
             {error, Reason}
     end;
 execute_ops([{read, {KeyOrKeyBucket, Type}}|Rest], TxId, ReadSet) ->
