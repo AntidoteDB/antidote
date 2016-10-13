@@ -162,7 +162,7 @@ physics_test1(Config) ->
     lager:info("executed transaction"),
     ?assertMatch({ok, _}, Result2),
     {ok, {_, ReadSet2, _}}=Result2,
-    ?assertMatch([0,0], ReadSet2),
+    ?assertMatch([0,1], ReadSet2),
     
     lager:info("ok..."),
     

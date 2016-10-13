@@ -364,8 +364,8 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-
-execute_op({update, Args}, Sender, SD0) ->
+    %% update kept for backwards compatibility with tests.
+    execute_op({update, Args}, Sender, SD0) ->
 %%    lager:debug("got execute update"),
     execute_op({update_objects, [Args]}, Sender, SD0);
 
@@ -474,18 +474,22 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 
 
 receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
-  S0 = #tx_coord_state{num_to_read = NumToRead,
+  CoordState= #tx_coord_state{num_to_read = NumToRead,
       return_accumulator= ReadSet,
       internal_read_set = InternalReadSet,
-      transactional_protocol = TransactionalProtocol}) ->
+      transactional_protocol = TransactionalProtocol,
+      transaction=Transaction}) ->
     %%TODO: type is hard-coded..
-    Value = Type:value(Snapshot),
-    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value),
+    
+    SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot),
+    Value2 = Type:value(SnapshotAfterMyUpdates),
+    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
     NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
     SD1 = case TransactionalProtocol of
               physics ->
-                  update_physics_metadata(S0, SnapshotCommitParams, Key);
-              Protocol when ((Protocol == gr) or (Protocol == clocksi)) -> S0
+                  update_physics_metadata(CoordState, SnapshotCommitParams, Key);
+              Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                  CoordState
           end,
     case NumToRead of
         1 ->
@@ -496,6 +500,19 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
                 SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
     end.
 
+-spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, transaction(), type(), snapshot()) -> snapshot().
+apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot)->
+    Preflist=?LOG_UTIL:get_preflist_from_key(Key),
+    IndexNode=hd(Preflist),
+    case lists:keyfind(IndexNode, 1, CoordState#tx_coord_state.updated_partitions) of
+        false->
+            Snapshot;
+        {IndexNode, WS}->
+            FileteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key, Transaction),
+            SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates),
+            SnapshotAfterMyUpdates
+    end.
+    
 
 
 
