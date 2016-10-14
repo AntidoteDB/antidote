@@ -129,11 +129,11 @@ append_failure_test(Config) ->
     ct:print("About to partition: ~p from: ~p", [A, Nodes -- A]),
     test_utils:partition_cluster(A, Nodes -- A),
     %% Heal the partition.
-    timer:sleep(3000),
+%%    timer:sleep(3000),
     ct:print("About to heal: ~p from: ~p", [A, Nodes -- A]),
     test_utils:heal_cluster(A, Nodes -- A),
     ct:print("Done."),
-    timer:sleep(3000),
+%%    timer:sleep(3000),
     ct:print("About to read after healing..."),
     %% Read after the partition has been healed.
     {ok, TxId4}=rpc:call(First, antidote, start_transaction, [ignore, []]),
