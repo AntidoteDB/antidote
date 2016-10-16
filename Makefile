@@ -42,3 +42,10 @@ tutorial:
 	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
 	docker run -t -i cmeiklejohn/antidote-tutorial
 
+# Mesos targets.
+
+mesos-docker-build:
+	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
+
+mesos-docker-run: mesos-docker-build
+	docker run -t -i cmeiklejohn/antidote-mesos
