@@ -1,7 +1,7 @@
 REBAR = $(shell pwd)/rebar3
 .PHONY: rel test relgentlerain
 
-all: compile #test compile-riak-test
+all: compile
 
 compile:
 	$(REBAR) compile
@@ -9,7 +9,7 @@ compile:
 clean:
 	$(REBAR) clean
 
-distclean: clean relclean #cleanplt
+distclean: clean relclean
 	$(REBAR) clean --all
 
 cleantests:
