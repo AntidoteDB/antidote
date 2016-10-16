@@ -12,16 +12,28 @@ if [ ! -z "$MESOS_TASK_ID" ]; then
   # that's only resolvable with resolv.conf won't work for long names.
   if [ ! -z "$HOSTNAME" ]; then
     if /usr/bin/dig ${HOSTNAME} | grep -q 'NXDOMAIN'
-      export NODE_NAME=antidote-${PORT1}@${HOSTNAME}
+      export NODE_NAME=antidote-${PORT0}@${HOSTNAME}
     then
-      export NODE_NAME=antidote-${PORT1}@${IP}
+      export NODE_NAME=antidote-${PORT0}@${IP}
     fi
   fi
 
   # Else, default to IP.
   if [ -z "$NODE_NAME" ]; then
-    export NODE_NAME=andtidote-${PORT1}@${IP}
+    export NODE_NAME=andtidote-${PORT0}@${IP}
   fi
+
+  # Handoff port.
+  export HANDOFF_PORT=${PORT0}
+
+  # Protocol buffer port.
+  export PB_PORT=${PORT1}
+
+  # Pub/sub port.
+  export PUBSUB_PORT=${PORT2}
+
+  # Logeader port.
+  export LOGREADER_PORT=${PORT3}
 fi
 
 # Assume 127.0.0.1 as bind host.
@@ -42,7 +54,9 @@ export RELX_REPLACE_OS_VARS=true
 
 echo "MESOS_TASK_ID: ${MESOS_TASK_ID}"
 echo "PORT0: ${PORT0}"
-echo "WEB_PORT: ${WEB_PORT}"
+echo "PORT1: ${PORT1}"
+echo "PORT2: ${PORT2}"
+echo "PORT3: ${PORT3}"
 echo "NODE_NAME: ${NODE_NAME}"
 echo "COOKIE: ${COOKIE}"
 echo "IP: ${IP}"
