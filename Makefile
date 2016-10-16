@@ -20,7 +20,7 @@ shell:
 	$(REBAR) shell
 
 rel:
-	$(REBAR) release
+	$(REBAR) release --overlay_vars rel/vars.config
 
 relclean:
 	rm -rf _build/default/rel
