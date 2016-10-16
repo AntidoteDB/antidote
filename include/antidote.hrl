@@ -15,6 +15,8 @@
 -define(ZMQ_TIMEOUT, 5000).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
+-define(DEFAULT_PUBSUB_PORT, 8086).
+-define(DEFAULT_LOGREADER_PORT, 8085).
 
 %% Allow read concurrency on shared ets tables
 %% These are the tables that store materialized objects
