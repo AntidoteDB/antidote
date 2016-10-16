@@ -1,5 +1,25 @@
 #!/bin/bash
 
+# Handoff port.
+if [ -z "$HANDOFF_PORT" ]; then
+  export HANDOFF_PORT=8099
+fi
+
+# Protocol buffer port.
+if [ -z "$PB_PORT" ]; then
+  export PB_PORT=8087
+fi
+
+# Pub/sub port.
+if [ -z "$PUBSUB_PORT" ]; then
+  export PUBSUB_PORT=8086
+fi
+
+# Logeader port.
+if [ -z "$LOGREADER_PORT" ]; then
+  export LOGREADER_PORT=8085
+fi
+
 # If we're running in Mesos...
 if [ ! -z "$MESOS_TASK_ID" ]; then
   # Choose publicly routable IP.
