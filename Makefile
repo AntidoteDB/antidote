@@ -36,6 +36,8 @@ stage :
 
 include tools.mk
 
+# Tutorial targets.
+
 tutorial:
 	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
 	docker run -t -i cmeiklejohn/antidote-tutorial
