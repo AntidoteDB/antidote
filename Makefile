@@ -44,6 +44,9 @@ tutorial:
 
 # Mesos targets.
 
+foreground: rel
+	./_build/default/rel/antidote/bin/env
+
 mesos-docker-build:
 	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
 
