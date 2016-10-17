@@ -52,3 +52,9 @@ mesos-docker-build:
 
 mesos-docker-run: mesos-docker-build
 	docker run -t -i cmeiklejohn/antidote-mesos
+
+mesos-docker-build-dev:
+	docker build -f Dockerfiles/antidote-mesos-dev -t cmeiklejohn/antidote-mesos-dev .
+
+mesos-docker-run-dev: mesos-docker-build-dev
+	docker run -t -i cmeiklejohn/antidote-mesos-dev
