@@ -181,12 +181,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitVC, Tr
 					 lager:info("BAD TRANSACTION RECORD: ~p", [Transaction])
 			 end,
 		     OpDCandCT=Op#operation_payload.dc_and_commit_time,
-			 OpSnapshotVC= case Transaction#transaction.transactional_protocol of
-			     Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-				     Op#operation_payload.dependency_vc;
-			     physics ->
-				     Op#operation_payload.dependency_vc
-		     end,
+			 OpSnapshotVC= Op#operation_payload.dependency_vc,
 		     %% Check if the op is not in the previous snapshot and should be included in the new one
 		     case (is_op_in_snapshot(Op, OpDCandCT, OpSnapshotVC, Transaction, SnapshotCommitVC, LastOpCt)) of
 			 {true,_,NewOpCt} ->
