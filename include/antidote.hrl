@@ -213,8 +213,6 @@
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
 %%physics
--type clock_value() :: non_neg_integer().
--type key_access_time_tuple() :: {clock_value(), boolean()}.
 -type physics_read_metadata() :: #physics_read_metadata{} | undefined. %undefined when using any protocol that's not PhysiCS.
 
 
