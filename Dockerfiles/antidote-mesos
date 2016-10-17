@@ -17,6 +17,7 @@ RUN cd /tmp && \
     git clone $ANTIDOTE_REPOSITORY -b $ANTIDOTE_BRANCH && \
     cd antidote && \
     make && \
-    make rel
+    make rel && \
+    make clean
 
 CMD /opt/antidote/_build/default/rel/antidote/bin/env
