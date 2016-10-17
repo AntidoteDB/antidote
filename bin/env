@@ -27,20 +27,23 @@ if [ ! -z "$MESOS_TASK_ID" ]; then
     export IP=$(ip route get 8.8.8.8 | head -1 | cut -d' ' -f8)
   fi
 
+  # Caveat: there's only one antidote supported per node because of
+  # EPMD, so we will address it by name@IP.
+
   # Choose the hostname for the epmd long name if the hostname exists
   # and if it resolves through the resolver; using a resolvable name
   # that's only resolvable with resolv.conf won't work for long names.
   if [ ! -z "$HOSTNAME" ]; then
     if /usr/bin/dig ${HOSTNAME} | grep -q 'NXDOMAIN'
-      export NODE_NAME=antidote-${PORT0}@${HOSTNAME}
+      export NODE_NAME=antidote@${HOSTNAME}
     then
-      export NODE_NAME=antidote-${PORT0}@${IP}
+      export NODE_NAME=antidote@${IP}
     fi
   fi
 
   # Else, default to IP.
   if [ -z "$NODE_NAME" ]; then
-    export NODE_NAME=andtidote-${PORT0}@${IP}
+    export NODE_NAME=andtidote@${IP}
   fi
 
   # Handoff port.
