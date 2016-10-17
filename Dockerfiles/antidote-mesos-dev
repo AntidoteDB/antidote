@@ -12,12 +12,12 @@ RUN cd /tmp && \
     wget http://packages.erlang-solutions.com/erlang-solutions_1.0_all.deb && \
     dpkg -i erlang-solutions_1.0_all.deb && \
     apt-get update && \
-    apt-get -y install erlang && \
-    cd /opt && \
+    apt-get -y install erlang
+
+CMD cd /opt && \
     git clone $ANTIDOTE_REPOSITORY -b $ANTIDOTE_BRANCH && \
     cd antidote && \
     make && \
     make rel && \
-    make clean
-
-CMD /opt/antidote/_build/default/rel/antidote/bin/env
+    make clean && \
+    /opt/antidote/_build/default/rel/antidote/bin/env
