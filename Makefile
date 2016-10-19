@@ -20,6 +20,7 @@ shell:
 	$(REBAR) shell
 
 rel:
+	$(REBAR) eunit
 	$(REBAR) release --overlay_vars rel/vars.config
 
 relclean:
