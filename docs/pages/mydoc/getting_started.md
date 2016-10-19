@@ -30,10 +30,12 @@ Add user information for Michel
 ```
 User1 = {michel, antidote_crdt_mvreg, user_bucket},
 
-{ok, Time2} = antidote:update_objects(ignore, [],
-[{User1, assign, {["Michel", „michel@blub.org"], client1}}]),
+{ok, Time1} = antidote:update_objects(ignore, [],
+[{User1, assign, {["Michel", "michel@blub.org"], client1}}]),
 
-{ok, Result, Time2} = antidote:read_objects(ignore, [], [User1])
+{ok, Result, Time2} = antidote:read_objects(ignore, [], [User1]),
+
+Result.
 ```
 
 {% include links.html %}

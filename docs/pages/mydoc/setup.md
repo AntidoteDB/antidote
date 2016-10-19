@@ -11,7 +11,7 @@ permalink: setup.html
 ### Prerequisites ###
 
 *  An UNIX-like OS
-*  [Erlang R16B02](https://github.com/SyncFree/crdtdb/blob/master/tutorial/1-get-started.md#get-an-erlang)
+*  Erlang 18.3 or later
 
 ### Getting Antidote ###
 
@@ -23,14 +23,13 @@ You can clone it to your machine via
 
 ### Building a single node cluster ###
 
-Antidote uses rebar3 for building releases. 
+Antidote uses rebar3 for building releases.
 
     make rel
 
 Rebar3 will now pull all the dependencies it needs from Github, and build
 the application, and make an Erlang "release" of a single node.  If all
-went well (if it didn't, send an email to the SyncFree tech mailing
-list), then you should be able to start a node:
+went well (if it didn't, contact [antidotedb-support](https://groups.google.com/forum/#!forum/antidotedb-support)), then you should be able to start a node:
 
     15:55:05:antidote $ _build/default/rel/antidote/bin/antidote console
     (elided)
@@ -141,7 +140,7 @@ Perform a write operation (example):
         CounterObj = {my_counter, antidote_crdt_counter, my_bucket}.
         {ok, TxId} = antidote:start_transaction(ignore, []).
         ok = antidote:update_objects([{CounterObj, increment, 1}], TxId).
-        {ok, _CommitTime} = antidote:commit_transaction(TxId1).
+        {ok, _CommitTime} = antidote:commit_transaction(TxId).
 
 You can also update objects with a single call as follows:
 
