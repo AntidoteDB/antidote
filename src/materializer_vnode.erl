@@ -371,26 +371,34 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 			        physics ->
 				        case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
 					        _ ->
-						        case define_snapshot_vc_for_transaction(Transaction, OperationsForKey) of
-							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
-								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
-							        no_operation_to_define_snapshot ->
-%%								        lager:debug("there no_operation_to_define_snapshot"),
-								        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-								        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
-							        no_compatible_operation_found ->
-								        lager:info("there no_compatible_operation_found, Len = ~p", [Len]),
-								        case Len of 1 ->
-									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
-									        _->   {Transaction, {error, no_compatible_operation_found}}
-								        end
-						        end
+%%						        case define_snapshot_vc_for_transaction(Transaction, OperationsForKey) of
+%%							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
+%%								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
+%%							        no_operation_to_define_snapshot ->
+%%%%								        lager:debug("there no_operation_to_define_snapshot"),
+						        NewVC=vectorclock:new(),
+						        NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec()-?PHYSICS_THRESHOLD, NewVC),
+						        DepUpbound=Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+						        NewSnapshotVC=case DepUpbound==NewVC of
+							        true->
+								        NowVC;
+							        false->
+								        DepUpbound
+						        end,
+						        {Transaction#transaction{snapshot_vc=NewSnapshotVC}, {NewVC, NewVC, NowVC}}
+%%							        no_compatible_operation_found ->
+%%								        lager:info("there no_compatible_operation_found, Len = ~p", [Len]),
+%%								        case Len of 1 ->
+%%									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
+%%									        _->   {Transaction, {error, no_compatible_operation_found}}
+%%								        end
+%%						        end
 				        end;
 			        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
 				        {Transaction, empty}
 		        end,
-%%	        lager:debug("about to lookup snapshots"),
+	        lager:info("~n UpdatedTxnRecord ~p ~n TempCommitParameters ~p ",[UpdatedTxnRecord, TempCommitParameters]),
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
 	                         {BlankSSRecord, _BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
@@ -405,7 +413,6 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 		                                 true -> {LS, SCP, IsF};
 		                                 false -> {error, bad_returned_record}
 	                                 end
-                                     
                              end
                      end,
 	        SnapshotGetResponse =
@@ -417,8 +424,10 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                         Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
                         Res;
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
-%%	                    lager:debug("LatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p",[LatestSnapshot1, SnapshotCommitTime1]),
-	                    #snapshot_get_response{number_of_ops = Len, ops_list = OperationsForKey,
+	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[LatestSnapshot1, SnapshotCommitTime1, OperationsForKey]),
+	                    #snapshot_get_response{
+		                    number_of_ops = Len,
+		                    ops_list = OperationsForKey,
 		                    materialized_snapshot = LatestSnapshot1,
 		                    snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
                 end,
@@ -427,6 +436,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                             {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot,
 	                              SnapshotGetResponse#snapshot_get_response.snapshot_time}};
                 _ ->
+	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
                     case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse) of
                         {ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
@@ -436,6 +446,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                 ignore ->
                                     {ok, {Snapshot, CommitTime}};
                                 _ ->
+	                                lager:info("~nCommitTime~n~p",[CommitTime]),
                                     case (NewSS and SnapshotGetResponse#snapshot_get_response.is_newest_snapshot and
                                     (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
@@ -469,58 +480,58 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %% which is the latest operation that is compatible with the snapshot
 %% the protocol uses the commit time of the operation as the "snapshot time"
 %% of this particular read, whithin the transaction.
--spec define_snapshot_vc_for_transaction(TxRecord::transaction(), OpsTuple::tuple()) ->
-	no_operation_to_define_snapshot | no_compatible_operation_found | {CommitVC::vectorclock(), DepVC::vectorclock(), ReadVC::vectorclock()}.
-define_snapshot_vc_for_transaction(_Transaction, []) ->
-    no_operation_to_define_snapshot;
-define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
-    LocalDCReadTime = dc_utilities:now_microsec(),
-    define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, first_operation, OperationTuple, 0).
-define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
-	{Length,_ListLen} = element(2, OperationsTuple),
-%%	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
-	case PositionInOpList of
-		Length ->
-			no_compatible_operation_found;
-		_->
-			{_OpId, OperationRecord}= element((?FIRST_OP+Length-1) - PositionInOpList, OperationsTuple),
-%%			{_OpId, OperationRecord}= element((?FIRST_OP+ PositionInOpList), OperationsTuple),
-%%			lager:debug("~n~n~nOperation ~p in Record ~n ~p", [PositionInOpList, OperationRecord]),
-%%			lager:debug("~n~n~nOperation List ~p", [OperationsTuple]),
-%%			[{_OpId, Op} | Rest] = OperationsTuple,
-			TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-			TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-			
-%%			lager:info("~n~n~TxCTLowBound ~p ~n TxDepUpBound ~n ~p", [TxCTLowBound, TxDepUpBound]),
-			
-			OperationDependencyVC = OperationRecord#operation_payload.dependency_vc,
-			{OperationDC, OperationCommitTime} = OperationRecord#operation_payload.dc_and_commit_time,
-			OperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime, OperationDependencyVC),
-			
-%%			lager:info("~n~n~OperationDependencyVC ~p ~n OperationCommitVC ~n ~p", [OperationDependencyVC, OperationCommitVC]),
-			
-			AccReadVC= case ReadVC of
-				first_operation -> %% newest operation in the list.
-					LocalDC = dc_utilities:get_my_dc_id(),
-					OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
-					vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
-				_ ->
-					ReadVC
-			end,
-			case is_causally_compatible(AccReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
-				true ->
-%%					lager:debug("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, FinalReadVC}]),
-					{OperationCommitVC, OperationDependencyVC, AccReadVC};
-				false ->
-					NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
-					define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, NewOperationCommitVC, OperationsTuple, PositionInOpList + 1)
-			end
-	end.
-
-is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
-	NewVC = vectorclock:new(),
-	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse (CommitTimeLowbound == NewVC))
-		and (vectorclock:le(DepClock, DepUpbound) orelse (DepUpbound == NewVC)).
+%%-spec define_snapshot_vc_for_transaction(TxRecord::transaction(), OpsTuple::tuple()) ->
+%%	no_operation_to_define_snapshot | no_compatible_operation_found | {CommitVC::vectorclock(), DepVC::vectorclock(), ReadVC::vectorclock()}.
+%%define_snapshot_vc_for_transaction(_Transaction, []) ->
+%%    no_operation_to_define_snapshot;
+%%define_snapshot_vc_for_transaction(Transaction, OperationTuple) ->
+%%    LocalDCReadTime = dc_utilities:now_microsec(),
+%%    define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, first_operation, OperationTuple, 0).
+%%define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, ReadVC, OperationsTuple, PositionInOpList) ->
+%%	{Length,_ListLen} = element(2, OperationsTuple),
+%%%%	lager:debug("{Length,_ListLen} ~n ~p", [{Length,_ListLen}]),
+%%	case PositionInOpList of
+%%		Length ->
+%%			no_compatible_operation_found;
+%%		_->
+%%			{_OpId, OperationRecord}= element((?FIRST_OP+Length-1) - PositionInOpList, OperationsTuple),
+%%%%			{_OpId, OperationRecord}= element((?FIRST_OP+ PositionInOpList), OperationsTuple),
+%%%%			lager:debug("~n~n~nOperation ~p in Record ~n ~p", [PositionInOpList, OperationRecord]),
+%%%%			lager:debug("~n~n~nOperation List ~p", [OperationsTuple]),
+%%%%			[{_OpId, Op} | Rest] = OperationsTuple,
+%%			TxCTLowBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+%%			TxDepUpBound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%
+%%%%			lager:info("~n~n~TxCTLowBound ~p ~n TxDepUpBound ~n ~p", [TxCTLowBound, TxDepUpBound]),
+%%
+%%			OperationDependencyVC = OperationRecord#operation_payload.dependency_vc,
+%%			{OperationDC, OperationCommitTime} = OperationRecord#operation_payload.dc_and_commit_time,
+%%			OperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime, OperationDependencyVC),
+%%
+%%%%			lager:info("~n~n~OperationDependencyVC ~p ~n OperationCommitVC ~n ~p", [OperationDependencyVC, OperationCommitVC]),
+%%
+%%			AccReadVC= case ReadVC of
+%%				first_operation -> %% newest operation in the list.
+%%					LocalDC = dc_utilities:get_my_dc_id(),
+%%					OPCommitVCLocalDC = vectorclock:get_clock_of_dc(LocalDC, OperationCommitVC),
+%%					vectorclock:set_clock_of_dc(LocalDC, max(LocalDCReadTime, OPCommitVCLocalDC), OperationCommitVC);
+%%				_ ->
+%%					ReadVC
+%%			end,
+%%			case is_causally_compatible(AccReadVC, TxCTLowBound, OperationDependencyVC, TxDepUpBound) of
+%%				true ->
+%%%%					lager:debug("the final operation defining the snapshot will be: ~n~p", [{OperationCommitVC, OperationDependencyVC, FinalReadVC}]),
+%%					{OperationCommitVC, OperationDependencyVC, AccReadVC};
+%%				false ->
+%%					NewOperationCommitVC = vectorclock:set_clock_of_dc(OperationDC, OperationCommitTime - 1, OperationCommitVC),
+%%					define_snapshot_vc_for_transaction(Transaction, LocalDCReadTime, NewOperationCommitVC, OperationsTuple, PositionInOpList + 1)
+%%			end
+%%	end.
+%%
+%%is_causally_compatible(CommitClock, CommitTimeLowbound, DepClock, DepUpbound) ->
+%%	NewVC = vectorclock:new(),
+%%	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse (CommitTimeLowbound == NewVC))
+%%		and (vectorclock:le(DepClock, DepUpbound) orelse (DepUpbound == NewVC)).
 
 create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
@@ -1027,50 +1038,50 @@ read_nonexisting_key_test() ->
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{dc1,1}, {dc2,0}])}, MatState),
 	?assertEqual(0, Type:value(ReadResult)).
 
-is_causally_compatible_test() ->
-	
-	NewVC = vectorclock:new(),
-	
-	DepUpBound = [{dc1, 1}, {dc2, 2}],
-	RTLowBound = [{dc1, 5}, {dc2, 10}],
-	
-	OpDepVC1 = [{dc1, 2}, {dc2, 3}],
-	OpCommitVC1 = [{dc1, 5}, {dc2, 10}],
-	
-	true = is_causally_compatible(OpCommitVC1, NewVC, OpDepVC1, NewVC),
-	
-	
-	false = is_causally_compatible(OpCommitVC1, RTLowBound, OpDepVC1, DepUpBound),
-	
-	OpDepVC2 = [{dc1, 1}, {dc2, 2}],
-	OpCommitVC2 = [{dc1, 5}, {dc2, 10}],
-	
-	true = is_causally_compatible(OpCommitVC2, RTLowBound, OpDepVC2, DepUpBound),
-	
-	OpDepVC3 = [],
-	OpCommitVC3 = [{dc1, 5}, {dc2, 10}],
-	
-	true = is_causally_compatible(OpCommitVC3, RTLowBound, OpDepVC3, DepUpBound),
-	
-	OpDepVC4 = [],
-	OpCommitVC4 = [{dc1, 4}, {dc2, 10}],
-	
-	false = is_causally_compatible(OpCommitVC4, RTLowBound, OpDepVC4, DepUpBound),
-	true = is_causally_compatible(OpCommitVC4, [], OpDepVC4, []),
-	
-	
-	DepUpBound2 = [{dc1, 1}, {dc2, 2}],
-	RTLowBound2 = [{dc1, 1}, {dc2, 2}],
-	
-	OpDepVC21 = [{dc1, 1}, {dc2, 2}],
-	OpCommitVC21 = [{dc1, 4}, {dc2, 10}],
-	
-	true = is_causally_compatible(OpCommitVC21, RTLowBound2, OpDepVC21, DepUpBound2),
-	
-	OpDepVC22 = [{dc1, 1}, {dc2, 2}],
-	OpCommitVC22 = [{dc1, 0}, {dc2, 10}],
-	
-	false = is_causally_compatible(OpCommitVC22, RTLowBound2, OpDepVC22, DepUpBound2).
+%%is_causally_compatible_test() ->
+%%
+%%	NewVC = vectorclock:new(),
+%%
+%%	DepUpBound = [{dc1, 1}, {dc2, 2}],
+%%	RTLowBound = [{dc1, 5}, {dc2, 10}],
+%%
+%%	OpDepVC1 = [{dc1, 2}, {dc2, 3}],
+%%	OpCommitVC1 = [{dc1, 5}, {dc2, 10}],
+%%
+%%	true = is_causally_compatible(OpCommitVC1, NewVC, OpDepVC1, NewVC),
+%%
+%%
+%%	false = is_causally_compatible(OpCommitVC1, RTLowBound, OpDepVC1, DepUpBound),
+%%
+%%	OpDepVC2 = [{dc1, 1}, {dc2, 2}],
+%%	OpCommitVC2 = [{dc1, 5}, {dc2, 10}],
+%%
+%%	true = is_causally_compatible(OpCommitVC2, RTLowBound, OpDepVC2, DepUpBound),
+%%
+%%	OpDepVC3 = [],
+%%	OpCommitVC3 = [{dc1, 5}, {dc2, 10}],
+%%
+%%	true = is_causally_compatible(OpCommitVC3, RTLowBound, OpDepVC3, DepUpBound),
+%%
+%%	OpDepVC4 = [],
+%%	OpCommitVC4 = [{dc1, 4}, {dc2, 10}],
+%%
+%%	false = is_causally_compatible(OpCommitVC4, RTLowBound, OpDepVC4, DepUpBound),
+%%	true = is_causally_compatible(OpCommitVC4, [], OpDepVC4, []),
+%%
+%%
+%%	DepUpBound2 = [{dc1, 1}, {dc2, 2}],
+%%	RTLowBound2 = [{dc1, 1}, {dc2, 2}],
+%%
+%%	OpDepVC21 = [{dc1, 1}, {dc2, 2}],
+%%	OpCommitVC21 = [{dc1, 4}, {dc2, 10}],
+%%
+%%	true = is_causally_compatible(OpCommitVC21, RTLowBound2, OpDepVC21, DepUpBound2),
+%%
+%%	OpDepVC22 = [{dc1, 1}, {dc2, 2}],
+%%	OpCommitVC22 = [{dc1, 0}, {dc2, 10}],
+%%
+%%	false = is_causally_compatible(OpCommitVC22, RTLowBound2, OpDepVC22, DepUpBound2).
 
 -endif.
    

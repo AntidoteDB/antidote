@@ -405,7 +405,7 @@ execute_op({OpType, Args}, Sender,
                         (Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound == NewVC) and
                         (length(Args) > 1)) of
                         true ->
-                            PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
+                            PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec() - ?PHYSICS_THRESHOLD, NewVC),
                             PhysicsMetadata = #physics_read_metadata{dep_upbound = PhysicsClock, commit_time_lowbound = PhysicsClock},
                             Transaction#transaction{physics_read_metadata = PhysicsMetadata};
                         false ->
@@ -415,8 +415,8 @@ execute_op({OpType, Args}, Sender,
                     Transaction
             end,
             ExecuteReads = fun({Key, Type}, Acc) ->
-                Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-                IndexNode = hd(Preflist),
+                PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
+                IndexNode = hd(PrefList),
 %%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
                 ok = clocksi_vnode:async_read_data_item(IndexNode, NewTransaction, Key, Type),
                 ReadSet = Acc#tx_coord_state.return_accumulator,

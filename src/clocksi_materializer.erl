@@ -26,6 +26,7 @@
 
 -export([new/1,
          materialize/3,
+		 compat/2,
          materialize_eager/3]).
 
 %% @doc Creates an empty CRDT for a given type.
@@ -291,20 +292,29 @@ is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Transaction, 
 	    {false,true,PrevTime}
     end.
 
+
+%%is_op_in_snapshot(Op, OpDCandCT, OpDependencyVC, Transaction, SnapshotCommitParams, PrevOpCommitParams) ->
+%%	{InitCT, InitDep, InitRT} =SnapshotCommitParams,
+%%	{PrevOpCT, PrevOpDep, PrevOpRT} = case PrevOpCommitParams of Atom when ((Atom == ignore) orelse (Atom == empty))
+%%		->
+%%		SnapshotCommitParams;
+%%		_->
+%%			PrevOpCommitParams,
+%%		%% first check that the operation is compatible with the transaction's snapshot
+%%			case compat(OpDependencyVC, Transaction)
+%%	true.
+
 %% @doc Returns true if an operation defined by its commit vectorclock and
 %%      its base snapshot is compatible with a transaction's snapshot, as
 %%      defined by the metadata encoded in the Transaction record.
-%%compat(OpCommitVC, OpBaseSnapshot, Transaction) ->
-%%            SnapshotTime = Transaction#transaction.snapshot_vc,
-%%			Protocol = Transaction#transaction.transactional_protocol,
-%%			%% @doc: Physics compares that the dependency VC of the operation is le
-%%			%% than the snapshot time, that in this case represents the
-%%			%% dependency upbound of the protocol.
-%%			VectorToCompare = case Protocol of
-%%				physics -> OpBaseSnapshot;
-%%				_-> OpCommitVC
-%%			end,
-%%            vectorclock:le(VectorToCompare,SnapshotTime).
+compat(OpDependencyVC, Transaction) ->
+			%% we can use the snapshot vc here, as it has been updated by the
+	        %% transaction coordinator to fulfill this purpose.
+            SnapshotTime = Transaction#transaction.snapshot_vc,
+			%% @doc: Physics compares that the dependency VC of the operation is le
+			%% or concurrent with the snapshot time, that in this case represents the
+			%% dependency upbound of the protocol.
+            not(vectorclock:lt(SnapshotTime, OpDependencyVC)).
 
 %% @doc Apply updates in given order without any checks.
 %%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
@@ -524,4 +534,15 @@ is_op_in_snapshot_test() ->
 	Tx2 = #transaction{snapshot_vc = ST2, transactional_protocol = clocksi, txn_id = 2},
 	?assertEqual({true,false,OpCT1SS}, is_op_in_snapshot(Op1, OpCT1, OpCT1SS, Tx1, ignore,ignore)),
 	?assertEqual({false,false,ignore}, is_op_in_snapshot(Op1,OpCT1, OpCT1SS, Tx2, ignore,ignore)).
+
+compat_test() ->
+	ST1 = vectorclock:from_list([{dc1, 2}, {dc2, 0}]),
+	ST2 = vectorclock:from_list([{dc1, 0}, {dc2, 2}]), %% concurrent, should return true
+	ST3 = vectorclock:from_list([{dc1, 2}, {dc2, 2}]), %% bigger, should return false
+	ST4 = vectorclock:from_list([{dc1, 0}, {dc2, 2}]), %% smakker, should return true
+	Transaction = #transaction{snapshot_vc = ST1, transactional_protocol = physics, txn_id = 2},
+	?assertEqual(compat(ST2, Transaction), true),
+	?assertEqual(compat(ST3, Transaction), false),
+	?assertEqual(compat(ST4, Transaction), true).
+
 -endif.
