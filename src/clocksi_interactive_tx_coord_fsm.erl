@@ -1059,7 +1059,7 @@ downstream_fail_test(Pid) ->
 
 get_snapshot_time_test() ->
     {ok, SnapshotTime} = get_snapshot_time(),
-    ?assertMatch([{mock_dc, _}], SnapshotTime).
+    ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)).
 
 wait_for_clock_test() ->
     {ok, SnapshotTime} = wait_for_clock(vectorclock:from_list([{mock_dc, 10}])),
