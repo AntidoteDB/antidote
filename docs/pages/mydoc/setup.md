@@ -29,8 +29,7 @@ Antidote uses rebar3 for building releases.
 
 Rebar3 will now pull all the dependencies it needs from Github, and build
 the application, and make an Erlang "release" of a single node.  If all
-went well (if it didn't, send an email to the SyncFree tech mailing
-list), then you should be able to start a node:
+went well (if it didn't, contact [antidotedb-support](https://groups.google.com/forum/#!forum/antidotedb-support)), then you should be able to start a node:
 
     15:55:05:antidote $ _build/default/rel/antidote/bin/antidote console
     (elided)
