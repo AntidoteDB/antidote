@@ -236,6 +236,53 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 %%      be applied to the snapshot
 -spec is_op_in_snapshot(operation_payload(), dc_and_commit_time(), snapshot_time(), transaction(),
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
+is_op_in_snapshot(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{transactional_protocol=physics}, {SnapshotCT, _SnapshotDep, _SnapshotRT}, PrevIncludedOpParams)->
+	lager:info("running this shit!"),
+	TxId = Transaction#transaction.txn_id,
+	OpCommitVC = vectorclock:set_clock_of_dc(OpDC, OpCT, OpDependencyVC),
+	{PrevOpCT, PrevOpDep, PrevOpRT} = PrevIncludedOpParams,
+	%% first, check if the op is not already included in the object snapshot.
+	
+	
+	lager:info("IS OP IN SNAPSHOT CALLED WITH ~n
+	Op ~p ~n, {OpDC, OpCT}  ~p ~n, OpDependencyVC  ~p ~n, Transaction  ~p ~n  SnapshotCT  ~p ~n PrevIncludedOpParams ~p ~n ~p~n ~p ~n",
+		[Op, {OpDC, OpCT}, vectorclock:to_list(OpDependencyVC), Transaction, vectorclock:to_list(SnapshotCT), vectorclock:to_list(PrevOpCT), vectorclock:to_list(PrevOpDep), vectorclock:to_list(PrevOpRT)]),
+	
+	
+	case materializer_vnode:op_not_already_in_snapshot(SnapshotCT, OpCommitVC) or (TxId == Op#operation_payload.txid) of
+		true->
+			lager:info("~n OP NOT ALREADY IN SNAPSHOT!"),
+			%% the operation is newer than the snapshot, might need to include it
+			%% if it is compatible with the transaction's snapshot.
+
+			case compat(OpDependencyVC, Transaction) of
+				true->
+					lager:info("~n OP COMPATIBLE, WILL INCLUDE"),
+					%% the operation must be included
+					%% now update the commit time of our output
+					FinalCT=vectorclock:max([PrevOpCT, OpCommitVC]),
+					%% now update the dependency time of our output
+					FinalDep=vectorclock:max([PrevOpDep, OpDependencyVC]),
+					%% the Operation Read time is not updated as we assume
+					%% operations to be ordered from newer to older, and
+					%% the final read time is given by the newest included op.
+					lager:info("~n REPLYING ~p", [{true, false, {vectorclock:to_list(FinalCT), vectorclock:to_list(FinalDep), vectorclock:to_list(PrevOpRT)}}]),
+					{true, false, {FinalCT, FinalDep, PrevOpRT}};
+
+				false->
+					lager:info("~n OP INCOMPATIBLE, WILL  NOT NOT NOT INCLUDE"),
+					%% the operation was not already in snapshot, but is incompatible (too new).
+					%% now update the commit time of our output
+					ReadTimeOfNextOp=vectorclock:set_clock_of_dc(OpDC, OpCT-1, OpDependencyVC),
+					FinalRT=vectorclock:min([PrevOpRT, ReadTimeOfNextOp]),
+					lager:info("~n REPLYING ~p", [{false, false, {vectorclock:to_list(PrevOpCT), vectorclock:to_list(PrevOpDep), vectorclock:to_list(FinalRT)}}]),
+					{false, false, {PrevOpCT, PrevOpDep, FinalRT}}
+			end;
+		false->
+			%% the operation is older than the snapshot, discard.
+			{false, true, {PrevOpCT, PrevOpDep, PrevOpRT}}
+	end;
+
 is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Transaction, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
@@ -291,18 +338,6 @@ is_op_in_snapshot(Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Transaction, 
 	    %% was already in the prev ss, done searching ops
 	    {false,true,PrevTime}
     end.
-
-
-%%is_op_in_snapshot(Op, OpDCandCT, OpDependencyVC, Transaction, SnapshotCommitParams, PrevOpCommitParams) ->
-%%	{InitCT, InitDep, InitRT} =SnapshotCommitParams,
-%%	{PrevOpCT, PrevOpDep, PrevOpRT} = case PrevOpCommitParams of Atom when ((Atom == ignore) orelse (Atom == empty))
-%%		->
-%%		SnapshotCommitParams;
-%%		_->
-%%			PrevOpCommitParams,
-%%		%% first check that the operation is compatible with the transaction's snapshot
-%%			case compat(OpDependencyVC, Transaction)
-%%	true.
 
 %% @doc Returns true if an operation defined by its commit vectorclock and
 %%      its base snapshot is compatible with a transaction's snapshot, as
@@ -535,14 +570,56 @@ is_op_in_snapshot_test() ->
 	?assertEqual({true,false,OpCT1SS}, is_op_in_snapshot(Op1, OpCT1, OpCT1SS, Tx1, ignore,ignore)),
 	?assertEqual({false,false,ignore}, is_op_in_snapshot(Op1,OpCT1, OpCT1SS, Tx2, ignore,ignore)).
 
+is_op_in_snapshot_physics_test() ->
+	
+	SnapshotParams = {SnapshotCT, SnapshotDep, SnapshotRT} = {vectorclock:from_list([{dc1, 2}, {dc2, 2}]), vectorclock:from_list([{dc1, 2}, {dc2, 1}]), vectorclock:from_list([{dc1, 10}, {dc2, 10}])},
+	TransactionDepUpbound = vectorclock:from_list([{dc1, 3}, {dc2, 3}]),
+	Transaction = #transaction{snapshot_vc = TransactionDepUpbound, transactional_protocol = physics, txn_id = 2},
+	
+	Op = #operation_payload{txid = 1},
+	{OpDC, OpCT} = {dc1, 1},
+	OpDependencyVC = vectorclock:from_list([{dc1, 0}, {dc2, 0}]),
+	
+	%% this op has commit time smaller than the snapshot, should return the snapshot parameters.
+	?assertEqual({false,true,SnapshotParams},is_op_in_snapshot(Op, {OpDC, OpCT}, OpDependencyVC, Transaction, SnapshotParams, ignore)),
+	
+	Op2 = #operation_payload{txid = 1},
+	{OpDC2, OpCT2} = {dc2, 3},
+	
+	OpDependencyVC2 = vectorclock:from_list([{dc1, 0}, {dc2, 0}]),
+	ExpectedCT = vectorclock:from_list([{dc1, 2}, {dc2, 3}]),
+	%% this op has commit time bigger than the snapshot, should return the snapshot parameters.
+	?assertEqual({true, false,{ExpectedCT, SnapshotDep, SnapshotRT}},is_op_in_snapshot(Op2, {OpDC2, OpCT2}, OpDependencyVC2, Transaction, SnapshotParams, ignore)),
+	
+	Op3 = #operation_payload{txid = 1},
+	{OpDC3, OpCT3} = {dc2, 4}, %% commit time is bigger
+	OpDependencyVC3 = vectorclock:from_list([{dc1, 4}, {dc2, 2}]), %% dependencuy time is concurrent with the transaction snapshot and bigger than the snapshot.
+	
+	ExpectedCT3 = vectorclock:from_list([{dc1, 4}, {dc2, 4}]), %% we expect the dependency time and the commit time of the op.
+	ExpectedDep3 = vectorclock:from_list([{dc1, 4}, {dc2, 2}]),
+	%% this should be included and modify the commit time and dependency time.
+	?assertEqual({true, false,{ExpectedCT3, ExpectedDep3, SnapshotRT}},is_op_in_snapshot(Op3, {OpDC3, OpCT3}, OpDependencyVC3, Transaction, SnapshotParams, ignore)),
+	
+	Op4 = #operation_payload{txid = 1},
+	{OpDC4, OpCT4} = {dc2, 8}, %% commit time is bigger
+	OpDependencyVC4 = vectorclock:from_list([{dc1, 8}, {dc2, 7}]), %% dependency is bigger than snapshot limit, should be left out.
+	
+	ExpectedRT4 = vectorclock:from_list([{dc1, 8}, {dc2, 7}]), %% operation should be left out, we expect that the read time will change.
+	
+	?assertEqual({false, false,{SnapshotCT, SnapshotDep, ExpectedRT4}},is_op_in_snapshot(Op4, {OpDC4, OpCT4}, OpDependencyVC4, Transaction, SnapshotParams, ignore)).
+	
+	
+	
 compat_test() ->
 	ST1 = vectorclock:from_list([{dc1, 2}, {dc2, 0}]),
 	ST2 = vectorclock:from_list([{dc1, 0}, {dc2, 2}]), %% concurrent, should return true
 	ST3 = vectorclock:from_list([{dc1, 2}, {dc2, 2}]), %% bigger, should return false
-	ST4 = vectorclock:from_list([{dc1, 0}, {dc2, 2}]), %% smakker, should return true
+	ST4 = vectorclock:from_list([{dc1, 0}, {dc2, 2}]), %% smaller, should return true
+	ST5 = vectorclock:from_list([{dc1, 2}, {dc2, 0}]), %% equal, should return true
 	Transaction = #transaction{snapshot_vc = ST1, transactional_protocol = physics, txn_id = 2},
 	?assertEqual(compat(ST2, Transaction), true),
 	?assertEqual(compat(ST3, Transaction), false),
-	?assertEqual(compat(ST4, Transaction), true).
+	?assertEqual(compat(ST4, Transaction), true),
+	?assertEqual(compat(ST5, Transaction), true).
 
 -endif.

@@ -366,7 +366,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
         [Tuple] ->
 	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
 %%	        lager:debug("Key ~p~n, Len ~p~n, _OpId ~p~n, _ListLen ~p~n, OperationsForKey ~p~n", [Key, Len, _OpId, _ListLen, OperationsForKey]),
-	        {UpdatedTxnRecord, TempCommitParameters} =
+	        UpdatedTxnRecord =
 		        case Protocol of
 			        physics ->
 				        case TxnId of no_txn_inserting_from_log -> {Transaction, empty};
@@ -385,7 +385,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 							        false->
 								        DepUpbound
 						        end,
-						        {Transaction#transaction{snapshot_vc=NewSnapshotVC}, {NewVC, NewVC, NowVC}}
+						        Transaction#transaction{snapshot_vc=NewSnapshotVC}
 %%							        no_compatible_operation_found ->
 %%								        lager:info("there no_compatible_operation_found, Len = ~p", [Len]),
 %%								        case Len of 1 ->
@@ -396,13 +396,13 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%						        end
 				        end;
 			        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-				        {Transaction, empty}
+				        Transaction
 		        end,
-	        lager:info("~n UpdatedTxnRecord ~p ~n TempCommitParameters ~p ",[UpdatedTxnRecord, TempCommitParameters]),
+%%	        lager:info("~n UpdatedTxnRecord ~p  ",[UpdatedTxnRecord]),
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
-	                         {BlankSSRecord, _BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
-                             {BlankSSRecord, ignore, true};
+	                         {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
+                             {BlankSSRecord, BlankSSCommitParams, true};
                          [{_, SnapshotDict}] ->
 %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
@@ -424,7 +424,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                         Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
                         Res;
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
-	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[LatestSnapshot1, SnapshotCommitTime1, OperationsForKey]),
+%%	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[LatestSnapshot1, SnapshotCommitTime1, OperationsForKey]),
 	                    #snapshot_get_response{
 		                    number_of_ops = Len,
 		                    ops_list = OperationsForKey,
@@ -436,17 +436,17 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                             {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot,
 	                              SnapshotGetResponse#snapshot_get_response.snapshot_time}};
                 _ ->
-	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
+%%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
                     case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse) of
-                        {ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
+                        {ok, Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount} ->
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                             %% for the given snapshot_time
                             %% But is the snapshot not safe?
-                            case CommitTime of
+                            case CommitParameters of
                                 ignore ->
-                                    {ok, {Snapshot, CommitTime}};
+                                    {ok, {Snapshot, CommitParameters}};
                                 _ ->
-	                                lager:info("~nCommitTime~n~p",[CommitTime]),
+	                                lager:info("~nCommitTime~n~p",[CommitParameters]),
                                     case (NewSS and SnapshotGetResponse#snapshot_get_response.is_newest_snapshot and
                                     (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
@@ -455,20 +455,14 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                             case TxnId of
                                                 Txid when ((Txid == eunit_test) orelse (Txid == no_txn_inserting_from_log)) ->
                                                     internal_store_ss(Key, #materialized_snapshot{last_op_id=NewLastOp, value=Snapshot},
-	                                                    CommitTime, ShouldGc, MatState);
+	                                                    CommitParameters, ShouldGc, MatState);
                                                 _ ->
-                                                    store_ss(Key, #materialized_snapshot{last_op_id=NewLastOp, value=Snapshot}, CommitTime)
+                                                    store_ss(Key, #materialized_snapshot{last_op_id=NewLastOp, value=Snapshot}, CommitParameters)
                                             end;
                                         _ ->
                                             ok
                                     end,
-                                    FinalCommitParameters = case Protocol of
-                                        physics ->
-                                            TempCommitParameters;
-                                        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
-                                            CommitTime
-                                    end,
-                                    {ok, {Snapshot, FinalCommitParameters}}
+                                    {ok, {Snapshot, CommitParameters}}
                             end;
                         {error, Reason} ->
                             {error, Reason}
