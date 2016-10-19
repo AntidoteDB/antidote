@@ -861,7 +861,7 @@ large_list_test() ->
 		Op = generate_payload(10,11+Val,Res0,Val),
 		%%        lager:info("Op= ~p", [Op]),
 		op_insert_gc(Key, Op, MatState,
-			#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{1,11+Val}])} )
+			#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 11+Val}])} )
 	end, lists:seq(1,1000)),
 	
 	{ok, {Res1000, _}} = internal_read(Key, Type,

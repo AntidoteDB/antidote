@@ -314,7 +314,7 @@ compat(OpDependencyVC, Transaction) ->
 			%% @doc: Physics compares that the dependency VC of the operation is le
 			%% or concurrent with the snapshot time, that in this case represents the
 			%% dependency upbound of the protocol.
-            not(vectorclock:lt(SnapshotTime, OpDependencyVC)).
+            not(vectorclock:strict_le(SnapshotTime, OpDependencyVC)).
 
 %% @doc Apply updates in given order without any checks.
 %%    Careful: In contrast to materialize/6, it takes just operations, not clocksi_payloads!
