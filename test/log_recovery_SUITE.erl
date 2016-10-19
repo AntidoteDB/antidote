@@ -85,7 +85,7 @@ read_pncounter_log_recovery_test(Config) ->
     lager:info("Nodes: ~p", [Nodes]),
 
     %% Read the value again
-    {ok, [ReadResult3], CT} = rpc:call(FirstNode, antidote, read_objects,
+    {ok, [ReadResult3], _CT} = rpc:call(FirstNode, antidote, read_objects,
              [CommitTime, [], [Obj]]),
     ?assertEqual(15, ReadResult3),
     lager:info("read_pncounter_log_recovery_test finished").
