@@ -321,31 +321,32 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 %%---------------- Internal Functions -------------------%%
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), mat_state()) -> boolean().
-internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId},SnapshotParams,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
-    SnapshotDict = case ets:lookup(SnapshotCache, Key) of
-		       [] ->
-			   vector_orddict:new();
-		       [{_, SnapshotDictA}] ->
-			   SnapshotDictA
-		   end,
+internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, SnapshotParams, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache}) ->
+	SnapshotDict = case ets:lookup(SnapshotCache, Key) of
+									 [] ->
+										 vector_orddict:new();
+									 [{_, SnapshotDictA}] ->
+										 SnapshotDictA
+								 end,
 %%	lager:debug("This is the current snapshotDict: ~p",[SnapshotDict]),
-    %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
-    %% insert requests for the same snapshot could have occured
-    ShouldInsert =
-	case vector_orddict:size(SnapshotDict) > 0 of
-	    true ->
-		{_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
-		((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
-	    false -> true
-	end,
-    case (ShouldInsert or ShouldGc)of
-	true ->
-%%		lager:debug("Inserting this snapshot: ~n~p ~nParams: ~p",[Snapshot, SnapshotParams]),
-		SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams,Snapshot,SnapshotDict),
-		snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State);
-	false ->
-	    false
-    end.
+	%% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
+	%% insert requests for the same snapshot could have occured
+	ShouldInsert =
+		case vector_orddict:size(SnapshotDict) > 0 of
+			true ->
+				{_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
+				((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
+			false -> true
+		end,
+	case (ShouldInsert or ShouldGc) of
+		true ->
+			lager:info("Inserting this snapshot: ~n~p ~nParams: ~p ~n SnapshotDict ~n~p", [Snapshot, SnapshotParams, SnapshotDict]),
+			SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams, Snapshot, SnapshotDict),
+			snapshot_insert_gc(Key, SnapshotDict1, ShouldGc, State);
+		false ->
+			lager:info("~n~nShould NOT INSERT~n~n"),
+			false
+	end.
 
 -spec internal_read(key(), type(), transaction(), mat_state()) -> {ok, {snapshot(), any()}}| {error, no_snapshot}.
 internal_read(Key, Type, Transaction, State) ->
@@ -452,6 +453,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
                                         %% previous snapshot
                                         true ->
+																					lager:info("~n~nStoring Snapshot~n~n"),
                                             case TxnId of
                                                 Txid when ((Txid == eunit_test) orelse (Txid == no_txn_inserting_from_log)) ->
                                                     internal_store_ss(Key, #materialized_snapshot{last_op_id=NewLastOp, value=Snapshot},

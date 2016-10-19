@@ -280,6 +280,7 @@ is_op_in_snapshot(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{tra
 			end;
 		false->
 			%% the operation is older than the snapshot, discard.
+			lager:info("~n Op too old, already in the snapshot, do nothing."),
 			{false, true, {PrevOpCT, PrevOpDep, PrevOpRT}}
 	end;
 

@@ -770,12 +770,9 @@ physics_multiple_read_update_test(Config) ->
 %% @doc Test updating prior to a read.
 read_update_test(Node, Key) ->
     Type = antidote_crdt_counter,
-    {ok,Result1} = rpc:call(Node, antidote, read,
-        [Key, Type]),
-    {ok,_} = rpc:call(Node, antidote, append,
-        [Key, Type, {increment,1}]),
-    {ok,Result2} = rpc:call(Node, antidote, read,
-        [Key, Type]),
+    {ok,Result1} = rpc:call(Node, antidote, read,[Key, Type]),
+    {ok,_} = rpc:call(Node, antidote, append, [Key, Type, {increment,1}]),
+    {ok,Result2} = rpc:call(Node, antidote, read, [Key, Type]),
     ?assertEqual(Result1+1,Result2),
     pass.
 

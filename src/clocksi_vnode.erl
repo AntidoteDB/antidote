@@ -606,14 +606,14 @@ certification_with_check(Transaction, [H | T], CommittedTx, PreparedTx) ->
         [{Key, CommitTime}] ->
             case CommitTime > ReferenceSnapshotTime of
                 true ->
-%%                    lager:debug("COMMIT WRITE-WRITE CONFLICT: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
+                    lager:debug("COMMIT WRITE-WRITE CONFLICT: ~n Base Snapshot: ~p ~n CommitTime: ~p", [ReferenceSnapshotTime, CommitTime]),
                     false;
                 false ->
                     case check_prepared(TxId, PreparedTx, Key) of
                         true ->
                             certification_with_check(Transaction, T, CommittedTx, PreparedTx);
                         false ->
-%%                            lager:debug("PREPARE WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n", [OperationData]),
+                            lager:debug("PREPARE WRITE-WRITE CONFLICTS: ~n Base Snapshot: ~p ~n", [OperationData]),
                             false
                     end
             end;
