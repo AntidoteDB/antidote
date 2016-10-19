@@ -55,14 +55,14 @@
 get_address() ->
   {ok, List} = inet:getif(),
   {Ip, _, _} = hd(List),
-  {ok, Port} = application:get_env(antidote, logreader_port),
+  Port = application:get_env(antidote, logreader_port, ?DEFAULT_LOGREADER_PORT),
   {Ip, Port}.
 
 -spec get_address_list() -> {[partition_id()],[socket_address()]}.
 get_address_list() ->
     PartitionList = dc_utilities:get_my_partitions(),
     {ok, List} = inet:getif(),
-    {ok, Port} = application:get_env(antidote, logreader_port),
+    Port = application:get_env(antidote, logreader_port, ?DEFAULT_LOGREADER_PORT),
     AddressList = [{Ip1,Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}],
     {PartitionList, AddressList}.
 
