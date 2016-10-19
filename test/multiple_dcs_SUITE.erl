@@ -358,39 +358,41 @@ replicated_set_test(Config) ->
 
     Key1 = replicated_set_test,
     Type = antidote_crdt_orset,
-    Bucket = antidote_test_bucket,
-    BoundObject = {Key1, Type, Bucket},
 
     lager:info("Writing 100 elements to set!!!"),
+
     %% add 100 elements to the set on Node 1 while simultaneously reading on Node2
-    CommitTimes=lists:map(fun(N)->
-        lager:info("Writing ~p to set", [N]),
-        {ok, TxId}=rpc:call(Node1, antidote, start_transaction, [ignore, []]),
-        ok = rpc:call(Node1, antidote, update_objects, [[{BoundObject, add, N}], TxId]),
-        {ok, CommitTime} = rpc:call(Node1, antidote, commit_transaction, [TxId]),
-    
-        {ok, TxId2}=rpc:call(Node1, antidote, start_transaction, [ignore, []]),
-        {ok, [SetValue]} = rpc:call(Node1, antidote, read_objects, [[BoundObject], TxId2]),
-        {ok, _CommitTime2} = rpc:call(Node1, antidote, commit_transaction, [TxId2]),
-        lager:info("Read value ~p", [SetValue]),
-        case length(SetValue)>0 of
-            true->
-                ?assertEqual(lists:seq(1, lists:max(SetValue)), SetValue);
-            false->
-                ok
-        end,
-        timer:sleep(200),
-        CommitTime
-    end, lists:seq(1, 100)),
+    CommitTimes = lists:map(fun(N) ->
+				    lager:info("Writing ~p to set", [N]),
+				    WriteResult1 = rpc:call(Node1, antidote, clocksi_execute_tx,
+							    [[{update, {Key1, Type, {add, N}}}]]),
+				    ?assertMatch({ok, _}, WriteResult1),
+				    {ok, {_, _, CommitTime}} = WriteResult1,
+				    
+				    {ok, {_, [SetValue], _}} = rpc:call(Node2,
+									antidote, clocksi_read,
+									[ignore, Key1, Type]),
+				    lager:info("Read value ~p", [SetValue]),
+				    case length(SetValue) > 0 of
+					true ->
+					    ?assertEqual(lists:seq(1,lists:max(SetValue)), SetValue);
+					false ->
+					    ok
+				    end,
+				    timer:sleep(200),
+				    CommitTime
+			    end, lists:seq(1, 100)),
     
     LastCommitTime = lists:last(CommitTimes),
     lager:info("last commit time was ~p.", [LastCommitTime]),
     
     %% now read on Node2
-    {ok, TxId3}=rpc:call(Node1, antidote, start_transaction, [ignore, []]),
-    {ok, [SetValue]} = rpc:call(Node1, antidote, read_objects, [[BoundObject], TxId3]),
-    {ok, _CommitTime3} = rpc:call(Node1, antidote, commit_transaction, [TxId3]),
-    lager:info("Read value ~p.", [SetValue]),
+    ReadResult = rpc:call(Node2,
+			  antidote, clocksi_read,
+			  [LastCommitTime, Key1, Type]),
+    lager:info("Read value ~p.", [ReadResult]),
+    {ok, {_, [SetValue], _}} = ReadResult,
     %% expecting to read values 1-100
     ?assertEqual(lists:seq(1, 100), SetValue),
+    
     pass.

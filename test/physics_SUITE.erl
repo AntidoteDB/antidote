@@ -780,8 +780,8 @@ read_update_test(Node, Key) ->
     pass.
 
 get_random_key() ->
-    random:seed(now()),
-    random:uniform(1000).
+    rand:seed(dc_utilities:now_microsec()),
+    rand:uniform(1000).
 
 %% @doc The following function tests how two concurrent transactions work
 %%      when they are interleaved.

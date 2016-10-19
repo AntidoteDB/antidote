@@ -110,7 +110,7 @@ append_failure_test(Config) ->
     Preflist = rpc:call(Node, log_utilities, get_preflist_from_key, [Key]),
     ct:print("Preference list: ~p", [Preflist]),
 
-    NodeList = [Node || {_Index, Node} <- Preflist],
+    NodeList = [Node1 || {_Index, Node1} <- Preflist],
     ct:print("Responsible nodes for key: ~p", [NodeList]),
 
     {A, _} = lists:split(1, NodeList),
