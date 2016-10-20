@@ -92,7 +92,7 @@
 %% its clock has not reached that value, it will have to wait
 %% until it does. This threshold is used to reduce/avoid that
 %% waiting.
--define(PHYSICS_THRESHOLD, 30000).
+-define(PHYSICS_THRESHOLD, 0).
 
 %% The definition "FIRST_OP" is used by the materializer.
 %% The materialzer caches a tuple for each key containing
