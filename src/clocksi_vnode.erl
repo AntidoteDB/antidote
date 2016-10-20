@@ -32,8 +32,8 @@
     get_active_txns/2,
     prepare/2,
     commit/3,
-    single_commit/2,
-    single_commit_sync/2,
+    single_commit/3,
+    single_commit_sync/3,
     abort/2,
     now_microsec/1,
     reverse_and_filter_updates_per_key/3,
@@ -165,16 +165,16 @@ prepare(ListofNodes, Transaction) ->
 %% @doc Sends prepare+commit to a single partition
 %%      Called by a Tx coordinator when the tx only
 %%      affects one partition
-single_commit([{Node, WriteSet}], Transaction) ->
+single_commit([{Node, WriteSet}], Transaction, DependencyVC) ->
     riak_core_vnode_master:command(Node,
-        {single_commit, Transaction, WriteSet},
+        {single_commit, Transaction, WriteSet, DependencyVC},
         {fsm, undefined, self()},
         ?CLOCKSI_MASTER).
 
 
-single_commit_sync([{Node, WriteSet}], Transaction) ->
+single_commit_sync([{Node, WriteSet}], Transaction, DependencyVC) ->
     riak_core_vnode_master:sync_command(Node,
-        {single_commit, Transaction, WriteSet},
+        {single_commit, Transaction, WriteSet, DependencyVC},
         ?CLOCKSI_MASTER).
 
 
@@ -309,7 +309,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
 %% @doc This is the only partition being updated by a transaction,
 %%      thus this function performs both the prepare and commit for the
 %%      coordinator that sent the request.
-handle_command({single_commit, Transaction, WriteSet}, _Sender,
+handle_command({single_commit, Transaction, WriteSet, DependencyVC}, _Sender,
   State = #state{partition = _Partition,
       committed_tx = CommittedTx,
       prepared_tx = PreparedTx,
@@ -322,8 +322,7 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
         {ok, _} ->
             CommitParams = case Transaction#transaction.transactional_protocol of
                                physics ->
-                                   SnapshotDepVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-                                   {NewPrepareTime, SnapshotDepVC};
+                                   {NewPrepareTime, DependencyVC};
                                Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
                                    {NewPrepareTime, Transaction#transaction.snapshot_vc}
                            end,
@@ -331,12 +330,8 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
             case ResultCommit of
                 {ok, committed, NewPreparedDict2} ->
                     {reply, {committed, NewPrepareTime}, NewState#state{prepared_dict = NewPreparedDict2}};
-                {error, materializer_failure} ->
-                    {reply, {error, materializer_failure}, NewState};
-                {error, timeout} ->
-                    {reply, {error, timeout}, NewState}
-%%                {error, no_updates} ->
-%%                    {reply, no_tx_record, NewState}
+                {error, Reason} ->
+                    {reply, {error, Reason}, NewState}
             end;
         {error, timeout} ->
             {reply, {error, timeout}, NewState};
@@ -358,10 +353,8 @@ handle_command({commit, Transaction, CommitParams, Updates}, _Sender,
     case Result of
         {ok, committed, NewPreparedDict} ->
             {reply, committed, State#state{prepared_dict = NewPreparedDict}};
-        {error, materializer_failure} ->
-            {reply, {error, materializer_failure}, State};
-        {error, timeout} ->
-            {reply, {error, timeout}, State}
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
 %%        {error, no_updates} ->
 %%            {reply, no_tx_record, State}
     end;
@@ -513,8 +506,8 @@ commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
                         ok ->
                             NewPreparedDict = clean_and_notify(TxId, Updates, State),
                             {ok, committed, NewPreparedDict};
-                        error ->
-                            {error, materializer_failure}
+                        {error, update_materializer, Reason} ->
+                            {error, update_materializer, Reason}
                     end;
                 {error, timeout} ->
                     {error, timeout}
@@ -673,8 +666,8 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
     case Failures of
         [] ->
             ok;
-        _ ->
-            error
+        Other ->
+            {error, update_materializer, Other}
     end.
 
 %% Internal functions

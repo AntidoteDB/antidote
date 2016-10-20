@@ -350,7 +350,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
 		{Key, Type, Param} ->
             case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState) of
                 {ok, DownstreamRecord, SnapshotParameters}->
-%%                                lager:debug("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
+                                lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     ok = log_downstream_record_at_vnode(Key, Type, DownstreamRecord, CoordState),
                     _NewCoordState = update_coordinator_state(CoordState, DownstreamRecord, SnapshotParameters, Key, Type, Param);
                 {error, Reason}->
@@ -425,12 +425,8 @@ execute_op({OpType, Args}, Sender,
             NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
             {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
         update_objects ->
-%%            lager:debug("got update call with params: ~p",[Args]),
             ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc) ->
-%%                lager:debug("Executing this update: ~p",[{Key, Type, UpdateParams}]),
-                Result = perform_update({Key, Type, UpdateParams}, Sender, Acc),
-%%                lager:debug("got result: ~p",[Result]),
-                case Result of
+                case perform_update({Key, Type, UpdateParams}, Sender, Acc) of
                     {error, Reason} ->
                         Acc#tx_coord_state{return_accumulator= {error, Reason}};
                     NewCoordinatorState ->
@@ -571,10 +567,10 @@ update_physics_metadata(State, ReadMetadata, _Key) ->
                         vectorclock:min([ReadTimeVC, DepUpbound])
                 end,
             NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
-%%            lager:debug("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
-%%            lager:debug("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-%%            lager:debug("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-%%            lager:debug("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
+            lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+            lager:info("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+            lager:info("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+            lager:info("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
             NewTransaction = Transaction#transaction{
                 physics_read_metadata = #physics_read_metadata{
                     %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
@@ -590,7 +586,8 @@ update_physics_metadata(State, ReadMetadata, _Key) ->
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
     transaction = Transaction, num_to_read = NumToRead,
-    updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
+    updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From,
+    version_max= DependencyVC}) ->
     case UpdatedPartitions of
         [] ->
             Snapshot_time = Transaction#transaction.snapshot_clock,
@@ -608,7 +605,7 @@ prepare(SD0 = #tx_coord_state{
                         SD0#tx_coord_state{state = prepared}}
             end;
         [_] ->
-            ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction),
+            ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction, DependencyVC),
             {next_state, single_committing,
                 SD0#tx_coord_state{state = committing, num_to_ack = 1}};
         [_ | _] ->
@@ -652,7 +649,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                         physics ->
                             {MaxPrepareTime, DependencyVC};
                         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                            {MaxPrepareTime, tyler_broke_this}
+                            {MaxPrepareTime, no_dep_vc}
                     end,
     case NumToAck of 1 ->
         case CommitProtocol of
