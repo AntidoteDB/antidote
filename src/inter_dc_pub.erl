@@ -52,13 +52,13 @@ get_address() ->
   %% TODO check if we do not return a link-local address
   {ok, List} = inet:getif(),
   {Ip, _, _} = hd(List),
-  {ok, Port} = application:get_env(antidote, pubsub_port),
+  Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
   {Ip, Port}.
 
 -spec get_address_list() -> [socket_address()].
 get_address_list() ->
     {ok, List} = inet:getif(),
-    {ok, Port} = application:get_env(antidote, pubsub_port),
+    Port = application:get_env(antidote, pubsub_port, ?DEFAULT_PUBSUB_PORT),
     [{Ip1, Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}].
 
 -spec broadcast(#interdc_txn{}) -> ok.

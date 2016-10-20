@@ -1,7 +1,7 @@
 REBAR = $(shell pwd)/rebar3
 .PHONY: rel test relgentlerain
 
-all: compile #test compile-riak-test
+all: compile
 
 compile:
 	$(REBAR) compile
@@ -9,7 +9,7 @@ compile:
 clean:
 	$(REBAR) clean
 
-distclean: clean relclean #cleanplt
+distclean: clean relclean
 	$(REBAR) clean --all
 
 cleantests:
@@ -20,7 +20,7 @@ shell:
 	$(REBAR) shell
 
 rel:
-	$(REBAR) release --overlay_vars rel/vars.config
+	$(REBAR) release
 
 relclean:
 	rm -rf _build/default/rel
@@ -36,7 +36,25 @@ stage :
 
 include tools.mk
 
+# Tutorial targets.
+
 tutorial:
 	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
 	docker run -t -i cmeiklejohn/antidote-tutorial
 
+# Mesos targets.
+
+foreground: rel
+	./_build/default/rel/antidote/bin/env
+
+mesos-docker-build:
+	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
+
+mesos-docker-run: mesos-docker-build
+	docker run -t -i cmeiklejohn/antidote-mesos
+
+mesos-docker-build-dev:
+	docker build -f Dockerfiles/antidote-mesos-dev -t cmeiklejohn/antidote-mesos-dev .
+
+mesos-docker-run-dev: mesos-docker-build-dev
+	docker run -t -i cmeiklejohn/antidote-mesos-dev
