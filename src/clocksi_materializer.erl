@@ -582,7 +582,7 @@ is_op_in_snapshot_physics_test() ->
 	OpDependencyVC = vectorclock:from_list([{dc1, 0}, {dc2, 0}]),
 	
 	%% this op has commit time smaller than the snapshot, should return the snapshot parameters.
-	?assertEqual({false,true,SnapshotParams},is_op_in_snapshot(Op, {OpDC, OpCT}, OpDependencyVC, Transaction, SnapshotParams, ignore)),
+	?assertEqual({false,true,SnapshotParams},is_op_in_snapshot(Op, {OpDC, OpCT}, OpDependencyVC, Transaction, SnapshotParams, SnapshotParams)),
 	
 	Op2 = #operation_payload{txid = 1},
 	{OpDC2, OpCT2} = {dc2, 3},
@@ -590,7 +590,7 @@ is_op_in_snapshot_physics_test() ->
 	OpDependencyVC2 = vectorclock:from_list([{dc1, 0}, {dc2, 0}]),
 	ExpectedCT = vectorclock:from_list([{dc1, 2}, {dc2, 3}]),
 	%% this op has commit time bigger than the snapshot, should return the snapshot parameters.
-	?assertEqual({true, false,{ExpectedCT, SnapshotDep, SnapshotRT}},is_op_in_snapshot(Op2, {OpDC2, OpCT2}, OpDependencyVC2, Transaction, SnapshotParams, ignore)),
+	?assertEqual({true, false,{ExpectedCT, SnapshotDep, SnapshotRT}},is_op_in_snapshot(Op2, {OpDC2, OpCT2}, OpDependencyVC2, Transaction, SnapshotParams, SnapshotParams)),
 	
 	Op3 = #operation_payload{txid = 1},
 	{OpDC3, OpCT3} = {dc2, 4}, %% commit time is bigger
@@ -599,7 +599,7 @@ is_op_in_snapshot_physics_test() ->
 	ExpectedCT3 = vectorclock:from_list([{dc1, 4}, {dc2, 4}]), %% we expect the dependency time and the commit time of the op.
 	ExpectedDep3 = vectorclock:from_list([{dc1, 4}, {dc2, 2}]),
 	%% this should be included and modify the commit time and dependency time.
-	?assertEqual({true, false,{ExpectedCT3, ExpectedDep3, SnapshotRT}},is_op_in_snapshot(Op3, {OpDC3, OpCT3}, OpDependencyVC3, Transaction, SnapshotParams, ignore)),
+	?assertEqual({true, false,{ExpectedCT3, ExpectedDep3, SnapshotRT}},is_op_in_snapshot(Op3, {OpDC3, OpCT3}, OpDependencyVC3, Transaction, SnapshotParams, SnapshotParams)),
 	
 	Op4 = #operation_payload{txid = 1},
 	{OpDC4, OpCT4} = {dc2, 8}, %% commit time is bigger
@@ -607,7 +607,7 @@ is_op_in_snapshot_physics_test() ->
 	
 	ExpectedRT4 = vectorclock:from_list([{dc1, 8}, {dc2, 7}]), %% operation should be left out, we expect that the read time will change.
 	
-	?assertEqual({false, false,{SnapshotCT, SnapshotDep, ExpectedRT4}},is_op_in_snapshot(Op4, {OpDC4, OpCT4}, OpDependencyVC4, Transaction, SnapshotParams, ignore)).
+	?assertEqual({false, false,{SnapshotCT, SnapshotDep, ExpectedRT4}},is_op_in_snapshot(Op4, {OpDC4, OpCT4}, OpDependencyVC4, Transaction, SnapshotParams, SnapshotParams)).
 	
 	
 	
