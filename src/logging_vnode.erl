@@ -490,29 +490,30 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
     end;
 
 handle_command({get, LogId, Transaction, Type, Key}, _Sender,
-    #state{logs_map = Map, partition = Partition} = State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            ok = disk_log:sync(Log),
-            case get_ops_from_log(Log, {key, Key}, start, Transaction, dict:new(), dict:new(), load_all) of
-                {error, Reason} ->
-                    {reply, {error, Reason}, State};
-                {eof, CommittedOpsForKeyDict} ->
-		    CommittedOpsForKey =
-			case dict:find(Key, CommittedOpsForKeyDict) of
-			    {ok, Val} ->
-				Val;
-			    error ->
-				[]
-			end,
-		    {reply, #snapshot_get_response{number_of_ops = length(CommittedOpsForKey), ops_list = CommittedOpsForKey,
-						   materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
-						   snapshot_time = vectorclock:new(), is_newest_snapshot = false},
-		     State}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+  #state{logs_map=Map, partition=Partition}=State)->
+	case get_log_from_map(Map, Partition, LogId) of
+		{ok, Log}->
+			ok=disk_log:sync(Log),
+			case get_ops_from_log(Log, {key, Key}, start, Transaction, dict:new(), dict:new(), load_all) of
+				{error, Reason}->
+					{reply, {error, Reason}, State};
+				{eof, CommittedOpsForKeyDict}->
+					CommittedOpsForKey=
+						case dict:find(Key, CommittedOpsForKeyDict) of
+							{ok, Val}->
+								Val;
+							error->
+								[]
+						end,
+					{BlankSSRecord, BlankSSCommitParams}=materializer_vnode:create_empty_materialized_snapshot_record(Transaction, Type),
+					{reply, #snapshot_get_response{number_of_ops=length(CommittedOpsForKey), ops_list=CommittedOpsForKey,
+						materialized_snapshot=#materialized_snapshot{last_op_id=0, value=BlankSSRecord},
+						commit_parameters=BlankSSCommitParams, is_newest_snapshot=false},
+						State}
+			end;
+		{error, Reason}->
+			{reply, {error, Reason}, State}
+	end;
 
 %% This will reply with all downstream operations that have
 %% been stored in the log given by LogId
