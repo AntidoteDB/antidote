@@ -42,6 +42,8 @@
          clocksi_tx_noclock_test/1,
          clocksi_single_key_update_read_test/1,
          clocksi_multiple_key_update_read_test/1,
+	 clocksi_test_cert_property/1,
+	 clocksi_test_no_update_property/1,
          clocksi_test_certification_check/1,
          clocksi_multiple_test_certification_check/1,
          clocksi_multiple_read_update_test/1,
@@ -90,6 +92,8 @@ all() -> [clocksi_test1,
          clocksi_tx_noclock_test,
          clocksi_single_key_update_read_test,
          clocksi_multiple_key_update_read_test,
+	 clocksi_test_cert_property,
+	 clocksi_test_no_update_property,
          clocksi_test_certification_check,
          clocksi_multiple_test_certification_check,
          clocksi_multiple_read_update_test,
@@ -574,14 +578,27 @@ clocksi_test_certification_check(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
         {ok, true} ->
-            clocksi_test_certification_check_run(Nodes);
+            clocksi_test_certification_check_run(Nodes, false);
         _ ->
             pass
     end.
 
-clocksi_test_certification_check_run(Nodes) ->
+%% @doc The following function tests the certification check algorithm,
+%%      with the property set to disable the certification
+%%      when two concurrent txs modify a single object, they both must commit.
+clocksi_test_cert_property(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
+        {ok, true} ->
+            clocksi_test_certification_check_run(Nodes, true);
+        _ ->
+            pass
+    end.
+
+clocksi_test_certification_check_run(Nodes, DisableCert) ->
     lager:info("clockSI_test_certification_check started"),
-    Key1 = clockSI_test_certification_check_key1,
+    Key1 = 
+	clockSI_test_certification_check_key1,
     Type = antidote_crdt_counter,
 
     FirstNode = hd(Nodes),
@@ -590,7 +607,12 @@ clocksi_test_certification_check_run(Nodes) ->
     lager:info("LastNode: ~p", [LastNode]),
 
     %% Start a new tx on first node, perform an update on some key.
-    {ok,TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, []),
+    Properties = case DisableCert of
+		     true -> [{certify,dont_certify}];
+		     false -> []
+		 end,
+			 
+    {ok,TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, [ignore, false, Properties]),
     lager:info("Tx1 Started, id : ~p", [TxId]),
     WriteResult=rpc:call(FirstNode, antidote, clocksi_iupdate,
                          [TxId, Key1, Type, {increment, 1}]),
@@ -616,9 +638,31 @@ clocksi_test_certification_check_run(Nodes) ->
 
     %% Commit the first tx.
     CommitTime = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
-    ?assertMatch({aborted, TxId}, CommitTime),
-    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-    lager:info("Tx1 aborted. Test passed!"),
+    case DisableCert of
+	false ->
+	    ?assertMatch({aborted, TxId}, CommitTime),
+	    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
+	    lager:info("Tx1 aborted. Test passed!");
+	true ->
+	    ?assertMatch({ok, _}, CommitTime),
+	    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
+	    End2 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
+	    ?assertMatch({ok, _}, End2),
+	    lager:info("Tx1 committed. Test passed!")
+    end,
+    pass.
+    
+clocksi_test_no_update_property(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    FirstNode = hd(Nodes),
+    _LastNode = lists:last(Nodes),
+    Key = 
+	clockSI_test_no_update_property_key1,
+    Bucket = bucket,
+    Type = antidote_crdt_counter,
+    {ok,_} = rpc:call(FirstNode, antidote, update_objects,
+                      [ignore, [], [{{Key, Type, Bucket}, increment, 1}]]),
+
     pass.
 
 %% @doc The following function tests the certification check algorithm.

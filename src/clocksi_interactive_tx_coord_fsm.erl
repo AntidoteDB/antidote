@@ -85,9 +85,9 @@
     receive_aborted/2,
     abort/1,
     abort/2,
-    perform_singleitem_read/3,
-    perform_singleitem_get/3,
-    perform_singleitem_update/4,
+    perform_singleitem_read/4,
+    perform_singleitem_get/4,
+    perform_singleitem_update/5,
     reply_to_client/1,
     wait_for_clock/1,
     generate_name/1]).
@@ -196,22 +196,22 @@ create_transaction_record(ClientClock, StayAlive, From, IsStatic, Properties) ->
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type(), clocksi_readitem_fsm:read_property_list()) ->
+-spec perform_singleitem_read(snapshot_time() | ignore, key(), type(), clocksi_readitem_fsm:read_property_list()) ->
 				     {ok, val(), snapshot_time()} | {error, reason()}.
-perform_singleitem_read(Key, Type, Properties) ->
-    perform_singleitem_operation(Key,Type,object_value,Properties).
+perform_singleitem_read(Clock, Key, Type, Properties) ->
+    perform_singleitem_operation(Clock, Key,Type,object_value,Properties).
 
 %% @doc This is the same as perform_singleitem_read, except returns
 %%      the object state instead of its value
--spec perform_singleitem_get(key(), type(), clocksi_readitem_fsm:read_property_list()) ->
+-spec perform_singleitem_get(snapshot_time() | ignore, key(), type(), clocksi_readitem_fsm:read_property_list()) ->
 {ok, term(), snapshot_time()} | {error, reason()}.
-perform_singleitem_get(Key, Type, Properties) ->
-    perform_singleitem_operation(Key,Type,object_state,Properties).
+perform_singleitem_get(Clock, Key, Type, Properties) ->
+    perform_singleitem_operation(Clock, Key,Type,object_state,Properties).
 
--spec perform_singleitem_operation(key(), type(), object_state | object_value, clocksi_readitem_fsm:read_property_list()) ->
+-spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), object_state | object_value, clocksi_readitem_fsm:read_property_list()) ->
 					  {ok, val() | term(), snapshot_time()} | {error, reason()}.
-perform_singleitem_operation(Key, Type, ReturnType, Properties) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, false, undefined, true, Properties),
+perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, []) of
@@ -231,9 +231,9 @@ perform_singleitem_operation(Key, Type, ReturnType, Properties) ->
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Key, Type, Params, Properties) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, false, undefined, true, Properties),
+-spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     %% Execute pre_commit_hook if any

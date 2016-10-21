@@ -50,6 +50,7 @@
 %% Old APIs, We would still need them for tests and benchmarks
 -export([append/3,
 	 append/4,
+	 append/5,
          read/2,
          read/3,
          clocksi_execute_tx/4,
@@ -161,16 +162,13 @@ update_objects(Clock, Properties, Updates, StayAlive) ->
                    Updates),
     SingleKey = case Operations of
                     [_O] -> %% Single key update
-                        case Clock of
-                            ignore -> true;
-                            _ -> false
-                        end;
+			true;
                     [_H|_T] -> false
                 end,
     case SingleKey of
         true ->  %% if single key, execute the fast path
             [{update, {K, T, Op}}] = Operations,
-            case append(K, T, Op, Properties) of
+            case append(Clock, K, T, Op, Properties) of
                 {ok, {_TxId, [], CT}} ->
                     {ok, CT};
                 {error, Reason} ->
@@ -197,10 +195,7 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
              Objects),
     SingleKey = case Args of
                     [_O] -> %% Single key update
-                        case Clock of
-                            ignore -> true;
-                            _ -> false
-                        end;
+			true;
                     [_H|_T] -> false
                 end,
     case SingleKey of
@@ -209,7 +204,7 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
             case materializer:check_operations([{read, {Key, Type}}]) of
                 ok ->
                     {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
-                        perform_singleitem_read(Key,Type,Properties),
+                        perform_singleitem_read(Clock,Key,Type,Properties),
                     {ok, [Val], CommitTime};
                 {error, Reason} ->
                     {error, Reason}
@@ -242,20 +237,20 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
             end
     end.
 
-%% Takes as input a list of bound objects and transaction properties
+%% Takes as input a list of tuples of bound object, clock pairs and transaction properties
 %% Returns a list containing tuples of object state and commit time for each
 %% of those objects
--spec get_objects([bound_object()], txn_properties()) ->
+-spec get_objects([{bound_object(), snapshot_time() | ignore}], txn_properties()) ->
 			 {ok, [{term(),snapshot_time()}]} | {error, reason()}.
 get_objects(Objects,Properties) ->
     get_objects_internal(Objects,Properties,[]).
 
 get_objects_internal([],_Properties,Acc) ->
     {ok,lists:reverse(Acc)};
-get_objects_internal([{Key,Type,Bucket}|Rest],Properties, Acc) ->
-    case materializer:check_operations([{read, {Key,Bucket}, Type}]) of
+get_objects_internal([{{Key,Type,Bucket},Clock}|Rest],Properties, Acc) ->
+    case materializer:check_operations([{read, {{Key,Bucket}, Type}}]) of
 	ok ->
-	    case clocksi_interactive_tx_coord_fsm:perform_singleitem_get({Key,Bucket},Type,Properties) of
+	    case clocksi_interactive_tx_coord_fsm:perform_singleitem_get(Clock,{Key,Bucket},Type,Properties) of
 		{ok, Val, CommitTime} ->
 		    get_objects_internal(Rest,Properties,[{Val,CommitTime}|Acc]);
 		{error, Reason} ->
@@ -267,21 +262,25 @@ get_objects_internal([{Key,Type,Bucket}|Rest],Properties, Acc) ->
 
 %% Takes as input a list of tuples of bound objects and snapshot times
 %% Returns a list for each object that contains all logged update operations more recent than the give snapshot time
--spec get_log_operations([{bound_object(),snapshot_time()}]) -> [[{non_neg_integer(),#clocksi_payload{}}]] | {error, reason()}.
+-spec get_log_operations([{bound_object(),snapshot_time()}]) -> {ok, [[{non_neg_integer(),#clocksi_payload{}}]]} | {error, reason()}.
 get_log_operations(ObjectClockPairs) ->
-    Res = get_log_operations_internal(ObjectClockPairs,[]),
     %% result is a list of lists of lists
     %% internal list is {number, clocksi_payload}
-    Res.
+    get_log_operations_internal(ObjectClockPairs,[]).
 
 get_log_operations_internal([],Acc) ->
     {ok,lists:reverse(Acc)};
 get_log_operations_internal([{{Key,Type,Bucket},Clock}|Rest],Acc) ->
-    LogId = log_utilities:get_logid_from_key({Key,Bucket}),
-    [Node] = log_utilities:get_preflist_from_key({Key,Bucket}),
-    case logging_vnode:get_from_time(Node,LogId,Clock,Type,{Key,Bucket}) of
-	#snapshot_get_response{ops_list = Ops} ->
-	    get_log_operations_internal(Rest,[Ops|Acc]);
+    case materializer:check_operations([{read, {{Key,Bucket}, Type}}]) of
+	ok ->
+	    LogId = log_utilities:get_logid_from_key({Key,Bucket}),
+	    [Node] = log_utilities:get_preflist_from_key({Key,Bucket}),
+	    case logging_vnode:get_from_time(Node,LogId,Clock,Type,{Key,Bucket}) of
+		#snapshot_get_response{ops_list = Ops} ->
+		    get_log_operations_internal(Rest,[lists:reverse(Ops)|Acc]);
+		{error, Reason} ->
+		    {error, Reason}
+	    end;
 	{error, Reason} ->
 	    {error, Reason}
     end.
@@ -316,17 +315,20 @@ unregister_hook(Prefix, Bucket) ->
 
 
 append(Key, Type, OpParams) ->
-    append(Key, Type, OpParams, []).
+    append(ignore, Key, Type, OpParams, []).
+
+append(Clock, Key, Type, OpParams) ->
+    append(Clock, Key, Type, OpParams, []).
 
 %% @doc The append/2 function adds an operation to the log of the CRDT
 %%      object stored at some key.
--spec append(key(), type(), op() | {transfer,_}, list()) ->
+-spec append(snapshot_time() | ignore, key(), type(), op() | {transfer,_}, list()) ->
                     {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Key, Type, OpParams, Properties) ->
+append(Clock, Key, Type, OpParams, Properties) ->
     case materializer:check_operations([{update,
                                          {Key, Type, OpParams}}]) of
         ok -> clocksi_interactive_tx_coord_fsm:
-		  perform_singleitem_update(Key, Type, OpParams, Properties);
+		  perform_singleitem_update(Clock, Key, Type, OpParams, Properties);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -341,7 +343,7 @@ read(Key, Type, Properties) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
             {ok, Val, _CommitTime} = clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_read(Key,Type,Properties),
+                perform_singleitem_read(ignore,Key,Type,Properties),
             {ok, Val};
         {error, Reason} ->
             {error, Reason}
@@ -439,7 +441,7 @@ clocksi_read(Key, Type) ->
 %%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
--spec clocksi_istart_tx(snapshot_time(), boolean(), txn_properties()) ->
+-spec clocksi_istart_tx(snapshot_time() | ignore, boolean(), txn_properties()) ->
                                {ok, txid()} | {error, reason()}.
 clocksi_istart_tx(Clock, KeepAlive, Properties) ->
     TxPid = case KeepAlive of
