@@ -73,9 +73,6 @@
 	 get_txn_property/2]).
 %% ===========================================================
 
-%% -type op_param() :: term(). %% TODO: Define
-%% -type bound_object() :: {key(), type(), bucket()}.
-
 %% Public API
 
 -spec start() -> {ok, _} | {error, term()}.
@@ -85,7 +82,6 @@ start() ->
 -spec stop() -> ok.
 stop() ->
   application:stop(antidote).
-
 
 -spec start_transaction(Clock::snapshot_time() | ignore , Properties::txn_properties(), boolean())
                        -> {ok, txid()} | {error, reason()}.
@@ -188,6 +184,8 @@ update_objects(Clock, Properties, Updates, StayAlive) ->
             end
     end.
 
+-spec read_objects(snapshot_time() | ignore, txn_properties(), [bound_object()]) ->
+			  {ok, [term()], snapshot_time()} | {error, reason()}.
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
 
@@ -244,16 +242,20 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
             end
     end.
 
-
+%% Takes as input a list of bound objects and transaction properties
+%% Returns a list containing tuples of object state and commit time for each
+%% of those objects
+-spec get_objects([bound_object()], txn_properties()) ->
+			 {ok, [{term(),snapshot_time()}]} | {error, reason()}.
 get_objects(Objects,Properties) ->
-    get_objects_internal(Objects,[],Properties).
+    get_objects_internal(Objects,Properties,[]).
 
 get_objects_internal([],_Properties,Acc) ->
     {ok,lists:reverse(Acc)};
-get_objects_internal([{Key,Type,_Bucket}|Rest],Properties, Acc) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
+get_objects_internal([{Key,Type,Bucket}|Rest],Properties, Acc) ->
+    case materializer:check_operations([{read, {Key,Bucket}, Type}]) of
 	ok ->
-	    case clocksi_interactive_tx_coord_fsm:perform_singleitem_get(Key,Type,Properties) of
+	    case clocksi_interactive_tx_coord_fsm:perform_singleitem_get({Key,Bucket},Type,Properties) of
 		{ok, Val, CommitTime} ->
 		    get_objects_internal(Rest,Properties,[{Val,CommitTime}|Acc]);
 		{error, Reason} ->
@@ -263,7 +265,9 @@ get_objects_internal([{Key,Type,_Bucket}|Rest],Properties, Acc) ->
 	    {error, Reason}
     end.
 
-%%-get_log_operations({key(),type(),bucket()}) -> [[{non_neg_integer(),#clocksi_payload{}]] | {error, term()}.
+%% Takes as input a list of tuples of bound objects and snapshot times
+%% Returns a list for each object that contains all logged update operations more recent than the give snapshot time
+-spec get_log_operations([{bound_object(),snapshot_time()}]) -> [[{non_neg_integer(),#clocksi_payload{}}]] | {error, reason()}.
 get_log_operations(ObjectClockPairs) ->
     Res = get_log_operations_internal(ObjectClockPairs,[]),
     %% result is a list of lists of lists
@@ -272,10 +276,10 @@ get_log_operations(ObjectClockPairs) ->
 
 get_log_operations_internal([],Acc) ->
     {ok,lists:reverse(Acc)};
-get_log_operations_internal([{{Key,Type,_Bucket},Clock}|Rest],Acc) ->
-    LogId = log_utilities:get_logid_from_key(Key),
-    [Node] = log_utilities:get_preflist_from_key(Key),
-    case logging_vnode:get_from_time(Node,LogId,Clock,Type,Key) of
+get_log_operations_internal([{{Key,Type,Bucket},Clock}|Rest],Acc) ->
+    LogId = log_utilities:get_logid_from_key({Key,Bucket}),
+    [Node] = log_utilities:get_preflist_from_key({Key,Bucket}),
+    case logging_vnode:get_from_time(Node,LogId,Clock,Type,{Key,Bucket}) of
 	#snapshot_get_response{ops_list = Ops} ->
 	    get_log_operations_internal(Rest,[Ops|Acc]);
 	{error, Reason} ->
