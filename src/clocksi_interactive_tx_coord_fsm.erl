@@ -350,7 +350,7 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
 		{Key, Type, Param} ->
             case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState) of
                 {ok, DownstreamRecord, SnapshotParameters}->
-                                lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
+%%                                lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     ok = log_downstream_record_at_vnode(Key, Type, DownstreamRecord, CoordState),
                     _NewCoordState = update_coordinator_state(CoordState, DownstreamRecord, SnapshotParameters, Key, Type, Param);
                 {error, Reason}->
@@ -567,10 +567,10 @@ update_physics_metadata(State, ReadMetadata, _Key) ->
                         vectorclock:min([ReadTimeVC, DepUpbound])
                 end,
             NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
-            lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
-            lager:info("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-            lager:info("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-            lager:info("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
+%%            lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+%%            lager:info("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+%%            lager:info("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+%%            lager:info("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
             NewTransaction = Transaction#transaction{
                 physics_read_metadata = #physics_read_metadata{
                     %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.

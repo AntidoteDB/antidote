@@ -78,7 +78,7 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 			 {ok, snapshot(), integer(), snapshot_time() | ignore,
 			  boolean(), non_neg_integer()} | {error, reason()}.
 materialize(Type, Transaction, #snapshot_get_response{
-	snapshot_time=ProtocolIndependentSnapshotCommitVC,
+	commit_parameters=ProtocolIndependentSnapshotCommitVC,
 	ops_list=Ops,
 	materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}})->
 	FirstId=get_first_id(Ops),
@@ -182,7 +182,7 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 			 case is_record(Transaction, transaction) of
 				 true -> ok;
 				 false ->
-					 lager:info("BAD TRANSACTION RECORD: ~p", [Transaction])
+					 lager:error("BAD TRANSACTION RECORD: ~p", [Transaction])
 			 end,
 		     OpDCandCT=Op#operation_payload.dc_and_commit_time,
 			 OpSnapshotVC= Op#operation_payload.dependency_vc,
@@ -237,27 +237,22 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 -spec is_op_in_snapshot(operation_payload(), dc_and_commit_time(), snapshot_time(), transaction(),
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
 is_op_in_snapshot(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{transactional_protocol=physics}, {SnapshotCT, _SnapshotDep, _SnapshotRT}, PrevIncludedOpParams)->
-	lager:info("running this shit!"),
 	TxId = Transaction#transaction.txn_id,
 	OpCommitVC = vectorclock:set_clock_of_dc(OpDC, OpCT, OpDependencyVC),
 	{PrevOpCT, PrevOpDep, PrevOpRT} = PrevIncludedOpParams,
 	%% first, check if the op is not already included in the object snapshot.
-	
-	
-	lager:info("IS OP IN SNAPSHOT CALLED WITH ~n
-	Op ~p ~n, {OpDC, OpCT}  ~p ~n, OpDependencyVC  ~p ~n, Transaction  ~p ~n  SnapshotCT  ~p ~n PrevIncludedOpParams ~p ~n ~p~n ~p ~n",
-		[Op, {OpDC, OpCT}, vectorclock:to_list(OpDependencyVC), Transaction, vectorclock:to_list(SnapshotCT), vectorclock:to_list(PrevOpCT), vectorclock:to_list(PrevOpDep), vectorclock:to_list(PrevOpRT)]),
-	
-	
+%%	lager:info("IS OP IN SNAPSHOT CALLED WITH ~n
+%%	Op ~p ~n, {OpDC, OpCT}  ~p ~n, OpDependencyVC  ~p ~n, Transaction  ~p ~n  SnapshotCT  ~p ~n PrevIncludedOpParams ~p ~n ~p~n ~p ~n",
+%%		[Op, {OpDC, OpCT}, vectorclock:to_list(OpDependencyVC), Transaction, vectorclock:to_list(SnapshotCT), vectorclock:to_list(PrevOpCT), vectorclock:to_list(PrevOpDep), vectorclock:to_list(PrevOpRT)]),
 	case materializer_vnode:op_not_already_in_snapshot(SnapshotCT, OpCommitVC) or (TxId == Op#operation_payload.txid) of
 		true->
-			lager:info("~n OP NOT ALREADY IN SNAPSHOT!"),
+%%			lager:info("~n OP NOT ALREADY IN SNAPSHOT!"),
 			%% the operation is newer than the snapshot, might need to include it
 			%% if it is compatible with the transaction's snapshot.
 
 			case compat(OpDependencyVC, Transaction) of
 				true->
-					lager:info("~n OP COMPATIBLE, WILL INCLUDE"),
+%%					lager:info("~n OP COMPATIBLE, WILL INCLUDE"),
 					%% the operation must be included
 					%% now update the commit time of our output
 					FinalCT=vectorclock:max([PrevOpCT, OpCommitVC]),
@@ -266,21 +261,21 @@ is_op_in_snapshot(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{tra
 					%% the Operation Read time is not updated as we assume
 					%% operations to be ordered from newer to older, and
 					%% the final read time is given by the newest included op.
-					lager:info("~n REPLYING ~p", [{true, false, {vectorclock:to_list(FinalCT), vectorclock:to_list(FinalDep), vectorclock:to_list(PrevOpRT)}}]),
+%%					lager:info("~n REPLYING ~p", [{true, false, {vectorclock:to_list(FinalCT), vectorclock:to_list(FinalDep), vectorclock:to_list(PrevOpRT)}}]),
 					{true, false, {FinalCT, FinalDep, PrevOpRT}};
 
 				false->
-					lager:info("~n OP INCOMPATIBLE, WILL  NOT NOT NOT INCLUDE"),
+%%					lager:info("~n OP INCOMPATIBLE, WILL  NOT NOT NOT INCLUDE"),
 					%% the operation was not already in snapshot, but is incompatible (too new).
 					%% now update the commit time of our output
 					ReadTimeOfNextOp=vectorclock:set_clock_of_dc(OpDC, OpCT-1, OpDependencyVC),
 					FinalRT=vectorclock:min([PrevOpRT, ReadTimeOfNextOp]),
-					lager:info("~n REPLYING ~p", [{false, false, {vectorclock:to_list(PrevOpCT), vectorclock:to_list(PrevOpDep), vectorclock:to_list(FinalRT)}}]),
+%%					lager:info("~n REPLYING ~p", [{false, false, {vectorclock:to_list(PrevOpCT), vectorclock:to_list(PrevOpDep), vectorclock:to_list(FinalRT)}}]),
 					{false, false, {PrevOpCT, PrevOpDep, FinalRT}}
 			end;
 		false->
 			%% the operation is older than the snapshot, discard.
-			lager:info("~n Op too old, already in the snapshot, do nothing."),
+%%			lager:info("~n Op too old, already in the snapshot, do nothing."),
 			{false, true, {PrevOpCT, PrevOpDep, PrevOpRT}}
 	end;
 

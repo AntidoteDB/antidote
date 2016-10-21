@@ -45,13 +45,13 @@
 
 %% API
 -export([start_vnode/1,
-	 tuple_to_key/2,
-    check_tables_ready/0,
-    read/4,
-    get_cache_name/2,
-    store_ss/4,
-    update/3,
-    op_not_already_in_snapshot/2]).
+	tuple_to_key/2,
+	check_tables_ready/0,
+	read/4,
+	get_cache_name/2,
+	store_ss/4,
+	update/3,
+	op_not_already_in_snapshot/2, create_empty_materialized_snapshot_record/2]).
 
 %% Callbacks
 -export([init/1,
@@ -222,7 +222,7 @@ handle_command({read, Key, Type, Transaction}, _Sender, State) ->
     {reply, read(Key, Type, Transaction, State), State};
 
 handle_command({update, Key, DownstreamOp, Transaction}, _Sender, State) ->
-	lager:info("~nInserting this downstreamop : ~n~p", [DownstreamOp]),
+%%	lager:info("~nInserting this downstreamop : ~n~p", [DownstreamOp]),
     case op_insert_gc(Key,DownstreamOp, State, Transaction) of
         ok ->
             {reply, ok, State};
@@ -340,16 +340,16 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
 				((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
 			false -> true
 		end,
-	lager:info("~nShouldGc ~p", [ShouldGc]),
+%%	lager:info("~nShouldGc ~p", [ShouldGc]),
 	case (ShouldInsert or ShouldGc) of
 		true ->
-			lager:info("Inserting this snapshot: ~n~p ~nParams: ~p ~n SnapshotDict ~n~p", [Snapshot, SnapshotParams, SnapshotDict]),
+%%			lager:info("Inserting this snapshot: ~n~p ~nParams: ~p ~n SnapshotDict ~n~p", [Snapshot, SnapshotParams, SnapshotDict]),
 			SnapshotDict1 = vector_orddict:insert_bigger(SnapshotParams, Snapshot, SnapshotDict),
-			lager:info("~nSnapshotDict after ~n~p", [SnapshotDict1]),
-			lager:info("~nShouldGc ~p", [ShouldGc]),
+%%			lager:info("~nSnapshotDict after ~n~p", [SnapshotDict1]),
+%%			lager:info("~nShouldGc ~p", [ShouldGc]),
 			snapshot_insert_gc(Key, SnapshotDict1, ShouldGc, State);
 		false ->
-			lager:info("~n~nShould NOT INSERT~n~n"),
+%%			lager:info("~n~nShould NOT INSERT~n~n"),
 			false
 	end.
 
@@ -427,20 +427,19 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                         lager:info("no snapshot in the cache for key: ~p",[Key]),
                         LogId = log_utilities:get_logid_from_key(Key),
                         [Node] = log_utilities:get_preflist_from_key(Key),
-                        Res = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
-                        Res;
+	                    _SnapshotGetResponseRecord = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key);
                     {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
 %%	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[LatestSnapshot1, SnapshotCommitTime1, OperationsForKey]),
 	                    #snapshot_get_response{
 		                    number_of_ops = Len,
 		                    ops_list = OperationsForKey,
 		                    materialized_snapshot = LatestSnapshot1,
-		                    snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
+		                    commit_parameters= SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
                 end,
             case SnapshotGetResponse#snapshot_get_response.number_of_ops of
                 0 ->
                             {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot,
-	                              SnapshotGetResponse#snapshot_get_response.snapshot_time}};
+	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
                 _ ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
                     case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse) of
@@ -452,17 +451,17 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                 ignore ->
                                     {ok, {Snapshot, CommitParameters}};
                                 _ ->
-	                                lager:info("~nCommitTime~n~p ~n Is new snapshot ~p ~n SnapshotGetResponse#snapshot_get_response.is_newest_snapshot ~p ~n OpAddedCount ~p",[CommitParameters, NewSS, SnapshotGetResponse#snapshot_get_response.is_newest_snapshot, OpAddedCount]),
-	                                lager:info("~nShouldGc ~p", [ShouldGc]),
+%%	                                lager:info("~nCommitTime~n~p ~n Is new snapshot ~p ~n SnapshotGetResponse#snapshot_get_response.is_newest_snapshot ~p ~n OpAddedCount ~p",[CommitParameters, NewSS, SnapshotGetResponse#snapshot_get_response.is_newest_snapshot, OpAddedCount]),
+%%	                                lager:info("~nShouldGc ~p", [ShouldGc]),
 	                                case (NewSS and SnapshotGetResponse#snapshot_get_response.is_newest_snapshot and
                                     (OpAddedCount >= ?MIN_OP_STORE_SS)) or ShouldGc of
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
                                         %% previous snapshot
                                         true ->
-																					lager:info("~n~nStoring Snapshot~n~n"),
+%%																					lager:info("~n~nStoring Snapshot~n~n"),
                                             case TxnId of
                                                 Txid when ((Txid == eunit_test) orelse (Txid == no_txn_inserting_from_log)) ->
-	                                                lager:info("~nShouldGc ~p", [ShouldGc]),
+%%	                                                lager:info("~nShouldGc ~p", [ShouldGc]),
                                                     internal_store_ss(Key, #materialized_snapshot{last_op_id=NewLastOp, value=Snapshot},
 	                                                    CommitParameters, ShouldGc, MatState);
                                                 _ ->
@@ -536,6 +535,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	(vectorclock:ge(CommitClock, CommitTimeLowbound)  orelse (CommitTimeLowbound == NewVC))
 %%		and (vectorclock:le(DepClock, DepUpbound) orelse (DepUpbound == NewVC)).
 
+-spec create_empty_materialized_snapshot_record(transaction(), type()) -> {#materialized_snapshot{}, vectorclock() | {vectorclock(), vectorclock(), vectorclock()}}.
 create_empty_materialized_snapshot_record(Transaction, Type) ->
     case Transaction#transaction.transactional_protocol of
         physics ->
@@ -570,10 +570,10 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
     %% Perform the garbage collection when the size of the snapshot dict passed the threshold
     %% or when a GC is forced (a GC is forced after every ?OPS_THRESHOLD ops are inserted into the cache)
     %% Should check op size here also, when run from op gc
-	lager:info("~n~SHOULD  GC??? ~p ~p ", [vector_orddict:size(SnapshotDict) >= ?SNAPSHOT_THRESHOLD, ShouldGc]),
+%%	lager:info("~n~SHOULD  GC??? ~p ~p ", [vector_orddict:size(SnapshotDict) >= ?SNAPSHOT_THRESHOLD, ShouldGc]),
     case ((vector_orddict:size(SnapshotDict)) >= ?SNAPSHOT_THRESHOLD) orelse ShouldGc of
         true ->
-	        lager:info("~n~nWILL GC!!!"),
+%%	        lager:info("~n~nWILL GC!!!"),
             %% snapshots are no longer totally ordered
             PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp = vector_orddict:last(PrunedSnapshots),
@@ -622,7 +622,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
 	    NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]),
 	    true = ets:insert(OpsCache, NewTuple);
 	false ->
-		lager:info("~n~WONT GC!!!"),
+%%		lager:info("~n~WONT GC!!!"),
             true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
@@ -637,23 +637,22 @@ prune_ops({Len,OpsTuple}, Threshold)->
     %% So can add a stop function to ordered_filter
     %% Or can have the filter function return a tuple, one vale for stopping
     %% one for including
-	lager:info ("~n old tuple : ~n~p", [OpsTuple]),
-    {NewSize,NewOps} = check_filter(fun({_OpId,Op}) ->
-        BaseSnapshotVC = Op#operation_payload.dependency_vc,
-	    {DcId,CommitTime} = Op#operation_payload.dc_and_commit_time,
-	    CommitVC = vectorclock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
-        Result = (op_not_already_in_snapshot(Threshold,CommitVC)),
-	    case Result of
-		    true -> lager:info("~nHAVE TO KEEP THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
-			                [CommitVC, BaseSnapshotVC]);
-		    false ->
-			    lager:info("~nWILL REMOVE THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
-				    [CommitVC, BaseSnapshotVC])
-	    end,
-        Result
-	
-				    end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
-	lager:info ("~n new tuple : ~n~p ~n ARE THEY THE SAME? ", [NewOps]),
+%%	lager:info ("~n old tuple : ~n~p", [OpsTuple]),
+	{NewSize, NewOps}=check_filter(fun({_OpId, Op})->
+		BaseSnapshotVC=Op#operation_payload.dependency_vc,
+		{DcId, CommitTime}=Op#operation_payload.dc_and_commit_time,
+		CommitVC=vectorclock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
+		(op_not_already_in_snapshot(Threshold, CommitVC))
+	%%	    case Result of
+	%%		    true -> lager:info("~nHAVE TO KEEP THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
+	%%			                [CommitVC, BaseSnapshotVC]);
+	%%		    false ->
+	%%			    lager:info("~nWILL REMOVE THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
+	%%				    [CommitVC, BaseSnapshotVC])
+	%%	    end,
+	%%        Result
+	end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
+%%	lager:info ("~n new tuple : ~n~p ~n ARE THEY THE SAME? ", [NewOps]),
     case NewSize of
 	0 ->
 	    First = element(?FIRST_OP+Len,OpsTuple),
@@ -742,7 +741,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 	        end,
 %%	        lager:info("calling internal read: ~p",[Transaction]),
 	        %% Here is where the GC is done (with the 5th argument being "true", GC is performed by the internal read
-	        lager:info("~n~n~nCALLING INTERNAL READ WITH SHOULDGC TRUE!!! ~n~n~n"),
+%%	        lager:info("~n~n~nCALLING INTERNAL READ WITH SHOULDGC TRUE!!! ~n~n~n"),
 	        case internal_read(Key, Type, NewTransaction, State, true) of
 		        {ok, _} ->
 			        %% Have to get the new ops dict because the interal_read can change it
