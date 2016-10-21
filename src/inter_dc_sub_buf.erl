@@ -32,27 +32,18 @@
   new_state/1,
   process/2]).
 
-%% State
--record(state, {
-  state_name :: normal | buffering,
-  pdcid :: pdcid(),
-  last_observed_opid :: non_neg_integer() | init,
-  queue :: queue:queue()
-}).
-
 %%%% API --------------------------------------------------------------------+
 
-%% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
--spec new_state(pdcid()) -> #state{}.
-new_state(PDCID) -> #state{
+-spec new_state(pdcid()) -> #inter_dc_sub_buf{}.
+new_state(PDCID) -> #inter_dc_sub_buf{
   state_name = normal,
   pdcid = PDCID,
   last_observed_opid = init,
   queue = queue:new()
 }.
 
--spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #state{}) -> #state{}.
-process({txn, Txn}, State = #state{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
+-spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
     %% you can check for duplocates or lost messages
@@ -66,29 +57,29 @@ process({txn, Txn}, State = #state{last_observed_opid = init, pdcid = {DCID, Par
     case Result of
 	{ok, OpId} ->
 	    lager:debug("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
-	    process({txn, Txn}, State#state{last_observed_opid=OpId});
+	    process({txn, Txn}, State#inter_dc_sub_buf{last_observed_opid=OpId});
 	_ ->
 	    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, {txn, Txn}),
 	    State
     end;
-process({txn, Txn}, State = #state{state_name = normal}) -> process_queue(push(Txn, State));
-process({txn, Txn}, State = #state{state_name = buffering}) ->
-  lager:info("Buffering txn in ~p", [State#state.pdcid]),
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = normal}) -> process_queue(push(Txn, State));
+process({txn, Txn}, State = #inter_dc_sub_buf{state_name = buffering}) ->
+  lager:info("Buffering txn in ~p", [State#inter_dc_sub_buf.pdcid]),
   push(Txn, State);
 
-process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buffering}) ->
+process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_name = buffering}) ->
   ok = lists:foreach(fun deliver/1, Txns),
   NewLast = case queue:peek(Queue) of
-    empty -> State#state.last_observed_opid;
+    empty -> State#inter_dc_sub_buf.last_observed_opid;
     {value, Txn} -> Txn#interdc_txn.prev_log_opid#op_number.local
   end,
-  NewState = State#state{last_observed_opid = NewLast},
+  NewState = State#inter_dc_sub_buf{last_observed_opid = NewLast},
   process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
+process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
-    empty -> State#state{state_name = normal};
+    empty -> State#inter_dc_sub_buf{state_name = normal};
     {value, Txn} ->
       TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
       case cmp(TxnLast, Last) of
@@ -97,24 +88,24 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
         eq ->
           deliver(Txn),
           Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
-          process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
+          process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max});
 
       %% If the transaction seems to come after an unknown transaction, ask the remote log
         gt ->
           lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-		     [TxnLast, Last, State#state.pdcid]),
-          case query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
+		     [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
+          case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
             ok ->
-              State#state{state_name = buffering};
+              State#inter_dc_sub_buf{state_name = buffering};
             _ ->
               lager:warning("Failed to send log query to DC, will retry on next ping message"),
-              State#state{state_name = normal}
+              State#inter_dc_sub_buf{state_name = normal}
           end;
 
       %% If the transaction has an old value, drop it.
         lt ->
 	      lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
-	      process_queue(State#state{queue = queue:drop(Queue)})
+	      process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
       end
   end.
 
@@ -123,8 +114,8 @@ deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
 
 %% TODO: consider dropping messages if the queue grows too large.
 %% The lost messages would be then fetched again by the log_reader.
--spec push(#interdc_txn{}, #state{}) -> #state{}.
-push(Txn, State) -> State#state{queue = queue:in(Txn, State#state.queue)}.
+-spec push(#interdc_txn{}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
+push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_sub_buf.queue)}.
 
 %% Instructs the log reader to ask the remote DC for a given range of operations.
 %% Instead of a simple request/response with blocking, the result is delivered

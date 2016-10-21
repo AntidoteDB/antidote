@@ -51,4 +51,11 @@
 	  request_id_num_binary :: binary(),
 	  local_pid :: pid()
 	 }).
-	  
+
+%% State for sub buff
+-record(inter_dc_sub_buf, {
+  state_name :: normal | buffering,
+  pdcid :: pdcid(),
+  last_observed_opid :: non_neg_integer() | init,
+  queue :: queue:queue()
+}).

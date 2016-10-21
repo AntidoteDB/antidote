@@ -152,7 +152,7 @@ update_objects(Updates, TxId) ->
     end.
 
 %% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}]) ->
+-spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()}]) ->
                             {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
@@ -358,7 +358,7 @@ read(Key, Type, Properties) ->
 %%      error message in case of a failure.
 %%
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
-                         [client_op()],snapshot_time(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
+                         [client_op()],txn_properties(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations, Properties, KeepAlive) ->
     case materializer:check_operations(Operations) of
         {error, Reason} ->
@@ -435,7 +435,7 @@ clocksi_read(Key, Type) ->
 %%      ClientClock: last clock the client has seen from a successful transaction.
 %%      Returns: an ok message along with the new TxId.
 %%
--spec clocksi_istart_tx(Clock:: snapshot_time()) ->
+-spec clocksi_istart_tx(snapshot_time(), boolean(), txn_properties()) ->
                                {ok, txid()} | {error, reason()}.
 clocksi_istart_tx(Clock, KeepAlive, Properties) ->
     TxPid = case KeepAlive of

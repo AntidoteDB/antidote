@@ -45,7 +45,7 @@
 
 %% State
 -record(state, {
-  sockets :: dict:dict() % DCID -> socket
+  sockets :: dict:dict(dcid(),erlzmq:erlzmq_socket()) % DCID -> socket
 }).
 
 %%%% API --------------------------------------------------------------------+
