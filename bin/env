@@ -20,6 +20,16 @@ if [ -z "$LOGREADER_PORT" ]; then
   export LOGREADER_PORT=8085
 fi
 
+# Ring State directory.
+if [ -z "$RING_STATE_DIR" ]; then
+  export RING_STATE_DIR="data/ring"
+fi
+
+# Platform data directory.
+if [ -z "$PLATFORM_DATA_DIR" ]; then
+  export PLATFORM_DATA_DIR="data"
+fi
+
 # If we're running in Mesos...
 if [ ! -z "$MESOS_TASK_ID" ]; then
   # Choose publicly routable IP.
