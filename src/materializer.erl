@@ -43,8 +43,8 @@ update_snapshot(Type, Snapshot, Op) ->
     try
         Type:update(Op, Snapshot)
     catch
-        _:_ ->
-            {error, unexpected_format}
+        Class:Exception ->
+            {error, {materializer_unexpected_format, {Class, Exception}}}
     end.
 
 %% @doc Applies updates in given order without any checks, errors are simply propagated.
