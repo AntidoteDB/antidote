@@ -349,10 +349,10 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
 	case antidote_hooks:execute_pre_commit_hook(Key, Type, Param1) of
 		{Key, Type, Param} ->
             case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState) of
-                {ok, DownstreamRecord, SnapshotParameters}->
+                {ok, DownstreamRecord, SnapshotParameters, KeyWasRead}->
 %%                                lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     ok = log_downstream_record_at_vnode(Key, Type, DownstreamRecord, CoordState),
-                    _NewCoordState = update_coordinator_state(CoordState, DownstreamRecord, SnapshotParameters, Key, Type, Param);
+                    _NewCoordState = update_coordinator_state(CoordState, DownstreamRecord, SnapshotParameters, Key, Type, Param, KeyWasRead);
                 {error, Reason}->
                     {error, Reason}
             end;
@@ -369,6 +369,10 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
 %%    lager:debug("got execute update"),
     execute_op({update_objects, [Args]}, Sender, SD0);
 
+    execute_op({read, Args}, Sender, SD0) ->
+	    %%    lager:debug("got execute update"),
+	    execute_op({read_objects, [Args]}, Sender, SD0);
+
 execute_op({OpType, Args}, Sender,
   SD0 = #tx_coord_state{transaction = Transaction,
       updated_partitions = Updated_partitions
@@ -381,22 +385,7 @@ execute_op({OpType, Args}, Sender,
                 _ ->
                     prepare(SD0#tx_coord_state{from = Sender, commit_protocol = Args})
             end;
-        read ->
-            {Key, Type} = Args,
-            case perform_read({Key, Type}, Updated_partitions, Transaction, Sender) of
-                {error, _Reason} ->
-                    abort(SD0);
-                ReadResult ->
-                    {Snapshot, CommitParams} = ReadResult,
-                    SD1 = case Transaction#transaction.transactional_protocol of
-                              physics ->
-                                  update_physics_metadata(SD0, CommitParams, Key);
-                              Protocol when ((Protocol == gr) or (Protocol == clocksi)) -> SD0
-                          end,
-                    InternalReadSet = orddict:store(key, ReadResult, SD1#tx_coord_state.internal_read_set),
-                    {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set = InternalReadSet}}
-            end;
-        read_objects ->
+	    read_objects ->
 %%            lager:debug("got to read: ~p", [Args]),
             NewTransaction = case Transaction#transaction.transactional_protocol of
                 physics ->
@@ -483,7 +472,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
     NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
     SD1 = case TransactionalProtocol of
               physics ->
-                  update_physics_metadata(CoordState, SnapshotCommitParams, Key);
+                  update_physics_metadata(CoordState, SnapshotCommitParams);
               Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                   CoordState
           end,
@@ -511,8 +500,8 @@ apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot)->
 
 
 
--spec update_coordinator_state(#tx_coord_state{}, downstream_record(), vectorclock()| {vectorclock(), vectorclock(), vectorclock()}, key(), type(), downstream_record()) -> #tx_coord_state{}.
-update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, Type, Param) ->
+-spec update_coordinator_state(#tx_coord_state{}, downstream_record(), vectorclock()| {vectorclock(), vectorclock(), vectorclock()}, key(), type(), downstream_record(), boolean()) -> #tx_coord_state{}.
+update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, Type, Param, KeyWasRead) ->
     
     UpdatedPartitions = InitCoordState#tx_coord_state.updated_partitions,
     Transaction = InitCoordState#tx_coord_state.transaction,
@@ -523,13 +512,15 @@ update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, 
     NewClientOps = [{Key, Type, Param} | ClientOps],
     {TempCoordState, AddToWriteSet} =case TransactionalProtocol of
         physics->
-            PhysicsTempCoordState = update_physics_metadata(InitCoordState, SnapshotParameters, Key),
+            PhysicsTempCoordState = case KeyWasRead of
+	            true -> update_physics_metadata(InitCoordState, SnapshotParameters, Key);
+	            false -> InitCoordState
+            end,
             DownstreamOpCommitVC = case SnapshotParameters of
                 {OpCommitVC, _DepVC, _ReadTimeVC} -> OpCommitVC;
                 ignore -> vectorclock:new()
             end,
             {PhysicsTempCoordState, {DownstreamOp, DownstreamOpCommitVC}};
-
         Prot when ((Prot==gr)or(Prot==clocksi))->
             {InitCoordState, DownstreamOp}
     end,
@@ -544,11 +535,11 @@ update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, 
 
 %% @doc Updates the metadata for the physics protocol
 
--spec update_physics_metadata(#tx_coord_state{}, {vectorclock(), vectorclock(), vectorclock()} | ignore, key()) -> #tx_coord_state{}.
-update_physics_metadata(State, ignore, _Key) ->
+-spec update_physics_metadata(#tx_coord_state{}, {vectorclock(), vectorclock(), vectorclock()} | ignore) -> #tx_coord_state{}.
+update_physics_metadata(State, ignore) ->
     State;
 
-update_physics_metadata(State, ReadMetadata, _Key) ->
+update_physics_metadata(State, ReadMetadata) ->
     {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
     NewVC = vectorclock:new(),
     case CommitVC of

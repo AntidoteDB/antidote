@@ -33,7 +33,7 @@
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Key :: key(),  Type :: type(), Update :: op(), CoordState :: #tx_coord_state{}) ->
-	{ok, op(), vectorclock()|{vectorclock(), vectorclock()}} | {error, reason()}.
+	{ok, op(), vectorclock()|{vectorclock(), vectorclock()}, boolean()} | {error, reason()}.
 generate_downstream_op(Key, Type, Update, CoordState)->
 	Transaction = CoordState#tx_coord_state.transaction,
 	InternalReadSet = CoordState#tx_coord_state.internal_read_set,
@@ -45,13 +45,13 @@ generate_downstream_op(Key, Type, Update, CoordState)->
 		{IndexNode, WS}->
 			WS
 	end,
-	Result=case orddict:find(Key, InternalReadSet) of
+	{Result, KeyWasRead}=case orddict:find(Key, InternalReadSet) of
 		{ok, {S, SCP}}->
-			{S, SCP};
+			{{S, SCP}, true};
 		error->
 			case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
 				{ok, {S, SCP}}->
-					{S, SCP};
+					{{S, SCP}, false};
 				{error, Reason}->
 					{error, Reason}
 			end
@@ -59,7 +59,7 @@ generate_downstream_op(Key, Type, Update, CoordState)->
 	case Result of
 		{error, R}->
 			{error, R}; %% {error, Reason} is returned here.
-		{Snapshot, SnapshotCommitParams}->
+		{{Snapshot, SnapshotCommitParams}, KeyWasRead}->
 			NewSnapshot=case Type of
 				antidote_crdt_bcounter->
 					%% bcounter data-type.
@@ -69,7 +69,7 @@ generate_downstream_op(Key, Type, Update, CoordState)->
 			end,
 			case NewSnapshot of
 				{ok, FinalSnapshot}->
-					{ok, FinalSnapshot, SnapshotCommitParams};
+					{ok, FinalSnapshot, SnapshotCommitParams, KeyWasRead};
 				{error, Reason1}->
 					{error, Reason1}
 			end
