@@ -539,14 +539,12 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 
 -spec create_empty_materialized_snapshot_record(transaction(), type()) -> {#materialized_snapshot{}, vectorclock() | {vectorclock(), vectorclock(), vectorclock()}}.
 create_empty_materialized_snapshot_record(Transaction, Type) ->
-    case Transaction#transaction.transactional_protocol of
+	NewVC = vectorclock:new(),
+	case Transaction#transaction.transactional_protocol of
         physics ->
-            ReadTime = dc_utilities:now_microsec(),
-            MyDc = dc_utilities:get_my_dc_id(),
-            ReadTimeVC = vectorclock:set_clock_of_dc(MyDc, ReadTime, vectorclock:new()),
-	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {vectorclock:new(), vectorclock:new(), ReadTimeVC}};
+	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {NewVC, NewVC, NewVC}};
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, vectorclock:new()}
+            {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, NewVC}
     end.
 
 %% returns true if op is more recent than SS (i.e. is not in the ss)
