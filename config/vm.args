@@ -39,5 +39,3 @@
 
 ## Riak Core configuration values coming from the command line.
 -riak_core handoff_port ${HANDOFF_PORT}
--riak_core ring_state_dir ${RING_STATE_DIR}
--riak_core platform_data_dir ${PLATFORM_DATA_DIR}
