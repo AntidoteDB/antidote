@@ -455,7 +455,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                 _ ->
 %%	                                lager:info("~nCommitTime~n~p ~n Is new snapshot ~p ~n SnapshotGetResponse#snapshot_get_response.is_newest_snapshot ~p ~n OpAddedCount ~p",[CommitParameters, NewSS, SnapshotGetResponse#snapshot_get_response.is_newest_snapshot, OpAddedCount]),
 %%	                                lager:info("~nShouldGc ~p", [ShouldGc]),
-	                                case (NewSS and SnapshotGetResponse#snapshot_get_response.is_newest_snapshot and
+	                                case (NewSS and (SnapshotGetResponse#snapshot_get_response.is_newest_snapshot == 1) and
                                     (OpAddedCount >= ?MIN_OP_STORE_SS)) or ShouldGc of
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
                                         %% previous snapshot

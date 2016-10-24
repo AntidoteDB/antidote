@@ -278,7 +278,7 @@
 	  number_of_ops :: non_neg_integer(), %% size of ops_list
 	  materialized_snapshot :: #materialized_snapshot{},  %% the previous snapshot to apply the ops to
 	  commit_parameters :: vectorclock() | {vectorclock(), vectorclock()} | ignore,  %% The version vector time of the snapshot
-	  is_newest_snapshot :: boolean() %% true if this is the most recent snapshot in the cache
+	  is_newest_snapshot :: non_neg_integer() %% true if this is the most recent snapshot in the cache
 	 }).
 
 %% This record keeps the state of the materializer vnode

@@ -90,7 +90,7 @@ materialize(Type, Transaction, #snapshot_get_response{
 	end,
 	{ok, OpList, NewLastOp, LastOpCt, IsNewSS}=
 		materialize_intern(Type, [], LastOp, FirstId, ProtocolIndependentSnapshotCommitParams, Transaction,
-			Ops, PrevOpCommitParams, false, 0),
+			Ops, PrevOpCommitParams, false, 0, 0),
 	case apply_operations(Type, Snapshot, 0, OpList) of
 		{ok, NewSS, Count}->
 			{ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};
@@ -148,24 +148,25 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 [{integer(),operation_payload()}] | tuple(),
 			 snapshot_time() | ignore,
 			 boolean(),
-			 non_neg_integer()) ->
+			 non_neg_integer(), non_neg_integer()) ->
 				{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean()}.
 
-materialize_intern(_Type, OutputOpList, _LastOp, FirstHole, _SnapshotCommitParams, _Transaction, [], LastOpCt, NewSS, _Location) ->
+materialize_intern(_Type, OutputOpList, _LastOp, FirstHole, _SnapshotCommitParams, _Transaction, [], LastOpCt, NewSS, _Location, NumberOfNonAppliedOps) ->
+	ok = log_number_of_non_applied_ops(NumberOfNonAppliedOps),
     {ok, OutputOpList, FirstHole, LastOpCt, NewSS};
 
-materialize_intern(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, Transaction, [{OpId,Op}|Rest], LastOpCt, NewSS, Location) ->
-    materialize_intern_perform(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, Location + 1);
+materialize_intern(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, Transaction, [{OpId,Op}|Rest], LastOpCt, NewSS, Location, NumberOfNonAppliedOps) ->
+    materialize_intern_perform(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, Location + 1, NumberOfNonAppliedOps);
 
 materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId,
-                    InitSnapshotCommitParams, Transaction, TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location) ->
+                    InitSnapshotCommitParams, Transaction, TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location, 0) ->
     {Length,_ListLen} = element(2, TupleOps),
     case Length == Location of
 	true ->
 	    {ok, OpList, OutputFirstNotIncludedOperationId, OutputSnapshotCommitParams, DidGenerateNewSnapshot};
 	false ->
 	    materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId, InitSnapshotCommitParams, Transaction,
-				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location + 1)
+				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location + 1, 0)
     end.
 
 -spec materialize_intern_perform(type(),
@@ -178,10 +179,11 @@ materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncl
   [{integer(),operation_payload()}] | tuple(),
   snapshot_time() | ignore,
   boolean(),
+  non_neg_integer(),
   non_neg_integer()) ->
 	{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean()}.
 materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole, InitSnapshotCommitParams, Transaction,
-                            {OpId,Op}, Rest, OutputSnapshotCommitParams, DidGenerateNewSnapshot, PositionInOpList) ->
+                            {OpId,Op}, Rest, OutputSnapshotCommitParams, DidGenerateNewSnapshot, PositionInOpList, NumberOfNonAppliedOps) ->
     Result = case Type == Op#operation_payload.type of
 		 true ->
 			 case is_record(Transaction, transaction) of
@@ -196,33 +198,40 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 		     case (is_op_in_snapshot(Op, OpDCandCT, OpSnapshotVC, Transaction, InitSnapshotCommitParams, OutputSnapshotCommitParams)) of
 			 {true,_,NewOpCt} ->
 			     %% Include the new op because it has a timestamp bigger than the snapshot being generated
-			     {ok, [Op | OpList], NewOpCt, false, true, FirstHole};
+			     {ok, [Op | OpList], NewOpCt, false, true, FirstHole, NumberOfNonAppliedOps};
 			 {false,false,_} ->
 			     %% Dont include the op
-			     {ok, OpList, OutputSnapshotCommitParams, false, DidGenerateNewSnapshot, OpId-1}; % no update
+			     {ok, OpList, OutputSnapshotCommitParams, false, DidGenerateNewSnapshot, OpId-1, NumberOfNonAppliedOps+1}; % no update
 			 {false,true,_} ->
 			     %% Dont Include the op, because it was already in the SS
-			     {ok, OpList, OutputSnapshotCommitParams, true, DidGenerateNewSnapshot, FirstHole}
+			     {ok, OpList, OutputSnapshotCommitParams, true, DidGenerateNewSnapshot, FirstHole, NumberOfNonAppliedOps}
 		     end;
 		 false -> %% Op is not for this {Key, Type}
 		     %% @todo THIS CASE PROBABLY SHOULD NOT HAPPEN?!
-		     {ok, OpList, OutputSnapshotCommitParams, false, DidGenerateNewSnapshot, FirstHole} %% no update
+		     {ok, OpList, OutputSnapshotCommitParams, false, DidGenerateNewSnapshot, FirstHole, NumberOfNonAppliedOps} %% no update
 	     end,
     case Result of
-	{ok, NewOpList1, NewLastOpCt, false, NewSS1, NewHole} ->
+	{ok, NewOpList1, NewLastOpCt, false, NewSS1, NewHole, NewNumberOfNonAppliedOps} ->
 	    materialize_intern(Type,NewOpList1, FirstNotIncludedOperationId,NewHole, InitSnapshotCommitParams,
-		    Transaction,Rest,NewLastOpCt,NewSS1, PositionInOpList);
-	{ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole} ->
+		    Transaction,Rest,NewLastOpCt,NewSS1, PositionInOpList, NewNumberOfNonAppliedOps);
+	{ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole, NewNumberOfNonAppliedOps} ->
 	    case OpId - 1 =<FirstNotIncludedOperationId of
 		true ->
 		    %% can skip the rest of the ops because they are already included in the SS
 		    materialize_intern(Type,NewOpList1, FirstNotIncludedOperationId,NewHole, InitSnapshotCommitParams,
-			    Transaction,[],NewLastOpCt,NewSS1, PositionInOpList);
+			    Transaction,[],NewLastOpCt,NewSS1, PositionInOpList, NewNumberOfNonAppliedOps);
 		false ->
 		    materialize_intern(Type,NewOpList1, FirstNotIncludedOperationId,NewHole, InitSnapshotCommitParams,
-			    Transaction,Rest,NewLastOpCt,NewSS1, PositionInOpList)
+			    Transaction,Rest,NewLastOpCt,NewSS1, PositionInOpList, NewNumberOfNonAppliedOps)
 	    end
     end.
+
+%% @doc This function is used only for benchmark purposes.
+%% It logs on disk the number of snapshot and the number of operations
+%% that it had to leave out to build the transaction's snapshot.
+%% this is used to measure staleness.
+log_number_of_non_applied_ops(_NumberOfNonAppliedOps) ->
+	ok.
 
 %% @doc Check whether an udpate is included in a snapshot and also
 %%		if that update is newer than a snapshot's commit time

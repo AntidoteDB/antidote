@@ -508,7 +508,7 @@ handle_command({get, LogId, Transaction, Type, Key}, _Sender,
 					{BlankSSRecord, BlankSSCommitParams}=materializer_vnode:create_empty_materialized_snapshot_record(Transaction, Type),
 					{reply, #snapshot_get_response{number_of_ops=length(CommittedOpsForKey), ops_list=CommittedOpsForKey,
 						materialized_snapshot=BlankSSRecord,
-						commit_parameters=BlankSSCommitParams, is_newest_snapshot=false},
+						commit_parameters=BlankSSCommitParams, is_newest_snapshot=100},
 						State}
 			end;
 		{error, Reason}->
