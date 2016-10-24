@@ -1,0 +1,18 @@
+[
+{ "file"      : "c_src/erocksdb.cc"
+, "directory" : "/Users/alek/antidote/_build/default/lib/erocksdb"
+, "command"   : "c++ -c -std=c++11 -Wall -O3 -fPIC -g -Wall -fPIC -MMD -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" -O3 -Wall -I c_src/rocksdb -I c_src/rocksdb/include -I /usr/local/include c_src/erocksdb.cc -o c_src/erocksdb.o"
+},
+{ "file"      : "c_src/refobjects.cc"
+, "directory" : "/Users/alek/antidote/_build/default/lib/erocksdb"
+, "command"   : "c++ -c -std=c++11 -Wall -O3 -fPIC -g -Wall -fPIC -MMD -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" -O3 -Wall -I c_src/rocksdb -I c_src/rocksdb/include -I /usr/local/include c_src/refobjects.cc -o c_src/refobjects.o"
+},
+{ "file"      : "c_src/threading.cc"
+, "directory" : "/Users/alek/antidote/_build/default/lib/erocksdb"
+, "command"   : "c++ -c -std=c++11 -Wall -O3 -fPIC -g -Wall -fPIC -MMD -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" -O3 -Wall -I c_src/rocksdb -I c_src/rocksdb/include -I /usr/local/include c_src/threading.cc -o c_src/threading.o"
+},
+{ "file"      : "c_src/workitems.cc"
+, "directory" : "/Users/alek/antidote/_build/default/lib/erocksdb"
+, "command"   : "c++ -c -std=c++11 -Wall -O3 -fPIC -g -Wall -fPIC -MMD -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" -O3 -Wall -I c_src/rocksdb -I c_src/rocksdb/include -I /usr/local/include c_src/workitems.cc -o c_src/workitems.o"
+}
+]

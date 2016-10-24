@@ -128,7 +128,7 @@ materializer_error_invalidupdate_test() ->
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
-    ?assertEqual({error, unexpected_format}, materialize_eager(Type, Counter, Ops)).
+    ?assertEqual({error,{materializer_unexpected_format,{error, function_clause}}}, materialize_eager(Type, Counter, Ops)).
 
 %% @doc Testing that the function check_operations works properly
 check_operations_test() ->
