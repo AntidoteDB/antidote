@@ -368,15 +368,10 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
     execute_op({update, Args}, Sender, SD0) ->
 %%    lager:debug("got execute update"),
     execute_op({update_objects, [Args]}, Sender, SD0);
-
-    execute_op({read, Args}, Sender, SD0) ->
-	    %%    lager:debug("got execute update"),
-	    execute_op({read_objects, [Args]}, Sender, SD0);
-
+    
 execute_op({OpType, Args}, Sender,
   SD0 = #tx_coord_state{transaction = Transaction,
-      updated_partitions = Updated_partitions
-  }) ->
+      updated_partitions=Updated_partitions}) ->
     case OpType of
         prepare ->
             case Args of
@@ -384,6 +379,22 @@ execute_op({OpType, Args}, Sender,
                     prepare_2pc(SD0#tx_coord_state{from = Sender, commit_protocol = Args});
                 _ ->
                     prepare(SD0#tx_coord_state{from = Sender, commit_protocol = Args})
+            end;
+        read->
+            {Key, Type}=Args,
+            case perform_read({Key, Type}, Updated_partitions, Transaction, Sender) of
+                {error, _Reason}->
+                    abort(SD0);
+                ReadResult->
+                    {Snapshot, CommitParams}=ReadResult,
+                    SD1=case Transaction#transaction.transactional_protocol of
+                        physics->
+                            update_physics_metadata(SD0, CommitParams);
+                        Protocol when ((Protocol==gr)or(Protocol==clocksi))->
+                            SD0
+                    end,
+                    InternalReadSet=orddict:store(key, ReadResult, SD1#tx_coord_state.internal_read_set),
+                    {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
 	    read_objects ->
 %%            lager:debug("got to read: ~p", [Args]),
@@ -513,7 +524,7 @@ update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, 
     {TempCoordState, AddToWriteSet} =case TransactionalProtocol of
         physics->
             PhysicsTempCoordState = case KeyWasRead of
-	            true -> update_physics_metadata(InitCoordState, SnapshotParameters, Key);
+	            true -> update_physics_metadata(InitCoordState, SnapshotParameters);
 	            false -> InitCoordState
             end,
             DownstreamOpCommitVC = case SnapshotParameters of

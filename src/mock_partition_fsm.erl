@@ -134,7 +134,7 @@ generate_downstream_op(Key, _, _, _) ->
         downstream_fail ->
             {error, mock_downstream_fail};
         _ ->
-            {ok, mock_downsteam, mock_metadata}
+            {ok, mock_downsteam, mock_metadata, true}
     end.
 
 append(_Node,_LogId,_LogRecord) ->
