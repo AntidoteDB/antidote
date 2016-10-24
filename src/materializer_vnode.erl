@@ -415,6 +415,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	                                 lager:info("~nno snapshot in the cache for key: ~p",[Key]),
 %%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
 %%	                                 lager:info("~n TXN Snapshot is : ~p",[UpdatedTxnRecord#transaction.snapshot_vc]),
+%%	                                 lager:info("~n Old DepUpbound Snapshot is : ~p",[Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound]),
                                      {error, no_snapshot};
                                  {{SCP, LS}, IsF} ->
 	                                 case is_record(LS, materialized_snapshot) of
@@ -429,17 +430,17 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                         LogId = log_utilities:get_logid_from_key(Key),
                         [Node] = log_utilities:get_preflist_from_key(Key),
 	                    _SnapshotGetResponseRecord = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key);
-                    {LatestSnapshot1, SnapshotCommitTime1, IsFirst1} ->
-%%	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[LatestSnapshot1, SnapshotCommitTime1, OperationsForKey]),
+                    {MatSnapshotRecord1, SnapshotCommitTime1, IsFirst1} ->
+%%	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[MatSnapshotRecord1, SnapshotCommitTime1, OperationsForKey]),
 	                    #snapshot_get_response{
 		                    number_of_ops = Len,
 		                    ops_list = OperationsForKey,
-		                    materialized_snapshot = LatestSnapshot1,
+		                    materialized_snapshot =MatSnapshotRecord1,
 		                    commit_parameters= SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
                 end,
             case SnapshotGetResponse#snapshot_get_response.number_of_ops of
                 0 ->
-                            {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot,
+                            {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot#materialized_snapshot.value,
 	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
                 _ ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
