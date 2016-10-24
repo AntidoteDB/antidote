@@ -47,6 +47,9 @@ tutorial:
 foreground: rel
 	./_build/default/rel/antidote/bin/env
 
+console: rel
+	./_build/default/rel/antidote/bin/ienv
+
 mesos-docker-build:
 	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
 
