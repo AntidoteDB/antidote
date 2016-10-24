@@ -45,7 +45,7 @@ generate_downstream_op(Key, Type, Update, CoordState)->
 		{IndexNode, WS}->
 			WS
 	end,
-	{Result, KeyWasRead}=case orddict:find(Key, InternalReadSet) of
+	Result=case orddict:find(Key, InternalReadSet) of
 		{ok, {S, SCP}}->
 			{{S, SCP}, true};
 		error->
@@ -59,7 +59,7 @@ generate_downstream_op(Key, Type, Update, CoordState)->
 	case Result of
 		{error, R}->
 			{error, R}; %% {error, Reason} is returned here.
-		{{Snapshot, SnapshotCommitParams}, KeyWasRead}->
+		{{Snapshot, SnapshotCommitParams}, KewWasRead}->
 			NewSnapshot=case Type of
 				antidote_crdt_bcounter->
 					%% bcounter data-type.
@@ -69,7 +69,7 @@ generate_downstream_op(Key, Type, Update, CoordState)->
 			end,
 			case NewSnapshot of
 				{ok, FinalSnapshot}->
-					{ok, FinalSnapshot, SnapshotCommitParams, KeyWasRead};
+					{ok, FinalSnapshot, SnapshotCommitParams, KewWasRead};
 				{error, Reason1}->
 					{error, Reason1}
 			end
