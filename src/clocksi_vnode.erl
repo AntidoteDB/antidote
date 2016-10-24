@@ -648,14 +648,14 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
                              end;
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            {{DcId, CommitTime}, SnapshotVC} = CommitParams,
+            {{DcId, CommitTime}, _SnapshotVC} = CommitParams,
             UpdateFunction = fun({Key, Type, Op}, AccIn) ->
                 CommittedDownstreamOp =
                     #operation_payload{
                         key = Key,
                         type = Type,
                         op_param = Op,
-                        dependency_vc= SnapshotVC,
+                        dependency_vc= Transaction#transaction.snapshot_vc,
                         dc_and_commit_time = {DcId, CommitTime},
                         txid = Transaction#transaction.txn_id},
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]

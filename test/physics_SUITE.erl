@@ -846,8 +846,11 @@ physics_snapshot_test(Config) ->
     
     Res1 = rpc:call(Node, antidote, read_objects, [[Bound_object1], TxId1]),
     Res1 = rpc:call(Node, antidote, read_objects, [[Bound_object2], TxId2]),
-    
     ?assertMatch({ok, [1]}, Res1),
+    
+    Res1Parallel = rpc:call(Node, antidote, read_objects, [[Bound_object1, Bound_object2], TxId1]),
+    Res1Parallel = rpc:call(Node, antidote, read_objects, [[Bound_object1, Bound_object2], TxId2]),
+    ?assertMatch({ok, [1,1]}, Res1Parallel),
     
     %% now, a transaction creates new versions of the objects, which should depend on the previous transaction.
     
@@ -871,6 +874,9 @@ physics_snapshot_test(Config) ->
     Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object2], TxId1]),
     Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object1], TxId2]),
     
+    Res2Parallel = rpc:call(Node, antidote, read_objects, [[Bound_object1, Bound_object2], TxId1]),
+    Res2Parallel = rpc:call(Node, antidote, read_objects, [[Bound_object1, Bound_object2], TxId2]),
+    
     %% just finish the two transactions.
     
     {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId1]),
@@ -878,6 +884,8 @@ physics_snapshot_test(Config) ->
     
     %% check that the result is 2, because
     ?assertMatch({ok, [2]}, Res2),
+    
+    ?assertMatch({ok, [2,2]}, Res2Parallel),
     
     %% just verify that all updates were applied.
     {ok, TxId6} = rpc:call(Node, antidote, start_transaction, [ignore, []]),

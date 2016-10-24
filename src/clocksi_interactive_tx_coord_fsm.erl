@@ -505,8 +505,7 @@ apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot)->
             Snapshot;
         {IndexNode, WS}->
             FileteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key, Transaction),
-            SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates),
-            SnapshotAfterMyUpdates
+            _SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
     end.
     
 
@@ -544,6 +543,8 @@ update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, 
     TempCoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}.
 
 %% @doc Updates the metadata for the physics protocol
+
+-spec update_physics_metadata(#tx_coord_state{}, {vectorclock(), vectorclock(), vectorclock()} | ignore, key()) -> #tx_coord_state{}.
 update_physics_metadata(State, ignore, _Key) ->
     State;
 
@@ -568,9 +569,9 @@ update_physics_metadata(State, ReadMetadata, _Key) ->
                 end,
             NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
 %%            lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
-%%            lager:info("DepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-%%            lager:info("NewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-%%            lager:info("VersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
+%%            lager:info("~nDepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+%%            lager:info("~nNewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+%%            lager:info("~nVersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
             NewTransaction = Transaction#transaction{
                 physics_read_metadata = #physics_read_metadata{
                     %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.

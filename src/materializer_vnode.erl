@@ -383,11 +383,10 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%							        no_operation_to_define_snapshot ->
 %%%%								        lager:debug("there no_operation_to_define_snapshot"),
 						        NewVC=vectorclock:new(),
-						        NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec()-?PHYSICS_THRESHOLD, NewVC),
 						        DepUpbound=Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 						        NewSnapshotVC=case DepUpbound==NewVC of
 							        true->
-								        NowVC;
+								        _NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec()-?PHYSICS_THRESHOLD, NewVC);
 							        false->
 								        DepUpbound
 						        end,
@@ -413,6 +412,9 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
                                  {undefined, _IsF} ->
+%%	                                 lager:info("~nno snapshot in the cache for key: ~p",[Key]),
+%%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
+%%	                                 lager:info("~n TXN Snapshot is : ~p",[UpdatedTxnRecord#transaction.snapshot_vc]),
                                      {error, no_snapshot};
                                  {{SCP, LS}, IsF} ->
 	                                 case is_record(LS, materialized_snapshot) of
@@ -424,7 +426,6 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	        SnapshotGetResponse =
                 case Result of
                     {error, no_snapshot} ->
-                        lager:info("no snapshot in the cache for key: ~p",[Key]),
                         LogId = log_utilities:get_logid_from_key(Key),
                         [Node] = log_utilities:get_preflist_from_key(Key),
 	                    _SnapshotGetResponseRecord = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key);
@@ -728,18 +729,10 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 				        transactional_protocol = Protocol, txn_id = no_txn_inserting_from_log};
 		        _ ->
 			        Transaction#transaction{
-				        snapshot_vc = case Transaction#transaction.transactional_protocol of
-					        physics ->
-						        case DownstreamOp#operation_payload.dependency_vc of
-							        [] ->
-								        vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), []);
-							        DepVC -> DepVC
-						        end;
-					        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-						        DownstreamOp#operation_payload.dependency_vc
-				        end}
+				        snapshot_vc = DownstreamOp#operation_payload.dependency_vc}
 	        end,
-%%	        lager:info("calling internal read: ~p",[Transaction]),
+%%	        lager:info("~nOp GC calling internal read: ~p",[NewTransaction#transaction.snapshot_vc]),
+%%	        lager:info("~nOp is: ~p",[NewTransaction#transaction.snapshot_vc]),
 	        %% Here is where the GC is done (with the 5th argument being "true", GC is performed by the internal read
 %%	        lager:info("~n~n~nCALLING INTERNAL READ WITH SHOULDGC TRUE!!! ~n~n~n"),
 	        case internal_read(Key, Type, NewTransaction, State, true) of
