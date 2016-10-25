@@ -35,7 +35,7 @@
 -define(RESIZE_THRESHOLD, 5).
 %% Only store the new SS if the following number of ops
 %% were applied to the previous SS
--define(MIN_OP_STORE_SS, 1).
+-define(MIN_OP_STORE_SS, 3).
 %% Expected time to wait until the logging vnode is up
 -define(LOG_STARTUP_WAIT, 1000).
 
@@ -51,7 +51,9 @@
 	get_cache_name/2,
 	store_ss/4,
 	update/3,
-	op_not_already_in_snapshot/2, create_empty_materialized_snapshot_record/2]).
+	op_not_already_in_snapshot/2,
+	create_empty_materialized_snapshot_record/2,
+	log_number_of_non_applied_snapshot_and_ops/3]).
 
 %% Callbacks
 -export([init/1,
@@ -126,7 +128,7 @@ init([Partition]) ->
 		{ok, true}->
 			case open_staleness_log(Partition) of
 				{ok, LogName} ->
-					lager:info("Opened staleness log for Partition ~p", [Partition]),
+					lager:info("Opened staleness log ~p", [LogName]),
 					LogName;
 				{error, Reason} ->
 					lager:error("Failed to open log for partition ~p. ~n Error was ~p", [Partition, Reason]),
@@ -151,6 +153,32 @@ open_staleness_log(Partition) ->
 			{ok, Log};
 		{error, Reason}->
 			{error, Reason}
+	end.
+
+%% @doc This function is used only for benchmark purposes.
+%% It logs on disk the number of operations and snapshots
+%% that it had to leave out to build the transaction's snapshot.
+%% this is used to measure staleness.
+-spec log_number_of_non_applied_snapshot_and_ops(mat_state(), non_neg_integer(), non_neg_integer())-> ok | {error, {no_such_log, atom()}}.
+log_number_of_non_applied_snapshot_and_ops(MatState = #mat_state{staleness_log=StalenessLog}, NumberOfSnapshot, NumberOfNonAppliedOps)->
+	case StalenessLog of
+		staleness_log_disabled->
+			ok;
+		undefined->
+			riak_core_vnode_master:command({MatState#mat_state.partition, node()},
+				{log_number_of_non_applied_snapshot_and_ops, NumberOfSnapshot, NumberOfNonAppliedOps},
+				materializer_vnode_master);
+		_->
+			log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfSnapshot, NumberOfNonAppliedOps)
+	end.
+
+-spec log_number_of_non_applied_snapshot_and_ops_internal(atom(), non_neg_integer(), non_neg_integer())-> ok | {error, {no_such_log, atom()}}.
+log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfSnapshot, NumberOfNonAppliedOps)->
+	case disk_log:alog(StalenessLog, {NumberOfSnapshot, NumberOfNonAppliedOps}) of
+		ok->
+			ok;
+		{error, no_such_log}->
+			{error, {no_such_log, StalenessLog}}
 	end.
 
 -spec load_from_log_to_tables(partition_id(), mat_state()) -> ok | {error, reason()}.
@@ -250,6 +278,9 @@ handle_command({check_ready},_Sender,State = #mat_state{partition=Partition, is_
 
 handle_command({read, Key, Type, Transaction}, _Sender, State) ->
     {reply, read(Key, Type, Transaction, State), State};
+
+handle_command({log_number_of_non_applied_snapshot_and_ops, NumberOfSnapshot, NumberOfNonAppliedOps}, _Sender, MatState) ->
+	{reply, log_number_of_non_applied_snapshot_and_ops(MatState, NumberOfSnapshot, NumberOfNonAppliedOps), MatState};
 
 handle_command({update, Key, DownstreamOp, Transaction}, _Sender, State) ->
 %%	lager:info("~nInserting this downstreamop : ~n~p", [DownstreamOp]),
@@ -379,7 +410,7 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
 %%			lager:info("~nShouldGc ~p", [ShouldGc]),
 			snapshot_insert_gc(Key, SnapshotDict1, ShouldGc, State);
 		false ->
-%%			lager:info("~n~nShould NOT INSERT~n~n"),
+			lager:info("~n~nShould NOT INSERT~n~n"),
 			false
 	end.
 
@@ -437,7 +468,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
 	                         {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
-                             {BlankSSRecord, BlankSSCommitParams, true};
+                             {BlankSSRecord, BlankSSCommitParams, 0};
                          [{_, SnapshotDict}] ->
 %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
@@ -474,7 +505,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
                 _ ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
-                    case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse, MatState#mat_state.staleness_log) of
+                    case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse, MatState) of
                         {ok, Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount} ->
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                             %% for the given snapshot_time
