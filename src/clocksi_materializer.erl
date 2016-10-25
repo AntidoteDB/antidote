@@ -84,6 +84,9 @@ materialize(Type, Transaction, #snapshot_get_response{
 	FirstId=get_first_id(Ops),
 	PrevOpCommitParams=case ProtocolIndependentSnapshotCommitParams of
 		{CommitVC, DepVC, _ReadTime} ->
+			%% the following is used for setting the read time of a snapshot.
+			%% Initially, we start with the current clock time of the vnode, that will be used
+			%% in the case the
 			NowVC = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
 			{CommitVC, DepVC, NowVC};
 		_->ProtocolIndependentSnapshotCommitParams
@@ -159,14 +162,14 @@ materialize_intern(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, 
     materialize_intern_perform(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, Location + 1, NumberOfNonAppliedOps);
 
 materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId,
-                    InitSnapshotCommitParams, Transaction, TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location, 0) ->
+                    InitSnapshotCommitParams, Transaction, TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location, NumberOfNonAppliedOps) ->
     {Length,_ListLen} = element(2, TupleOps),
     case Length == Location of
 	true ->
 	    {ok, OpList, OutputFirstNotIncludedOperationId, OutputSnapshotCommitParams, DidGenerateNewSnapshot};
 	false ->
 	    materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId, InitSnapshotCommitParams, Transaction,
-				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location + 1, 0)
+				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location + 1, NumberOfNonAppliedOps)
     end.
 
 -spec materialize_intern_perform(type(),
