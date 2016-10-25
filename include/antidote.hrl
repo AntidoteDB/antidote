@@ -288,5 +288,6 @@
 	  partition :: partition_id(),
 	  ops_cache :: cache_id(),
 	  snapshot_cache :: cache_id(),
-	  is_ready :: boolean()}).
+	  is_ready :: boolean(),
+	staleness_log :: atom()}).
 -type mat_state() :: #mat_state{}.

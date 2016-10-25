@@ -35,7 +35,7 @@
 -define(RESIZE_THRESHOLD, 5).
 %% Only store the new SS if the following number of ops
 %% were applied to the previous SS
--define(MIN_OP_STORE_SS, 5).
+-define(MIN_OP_STORE_SS, 1).
 %% Expected time to wait until the logging vnode is up
 -define(LOG_STARTUP_WAIT, 1000).
 
@@ -121,7 +121,37 @@ init([Partition]) ->
 		  _ ->
 		      true
 	      end,
-    {ok, #mat_state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
+	%% the following log is used in benchmarks to measure how old returned snapshots are.
+	StalenessLog=case application:get_env(antidote, log_staleness) of
+		{ok, true}->
+			case open_staleness_log(Partition) of
+				{ok, LogName} ->
+					lager:info("Opened staleness log for Partition ~p", [Partition]),
+					LogName;
+				{error, Reason} ->
+					lager:error("Failed to open log for partition ~p. ~n Error was ~p", [Partition, Reason]),
+					staleness_log_disabled
+			end;
+		_->
+			staleness_log_disabled
+	end,
+    {ok, #mat_state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache, staleness_log=StalenessLog}}.
+
+
+%% opens the log file for staleness.
+%% this happens if the environment variable log_staleness
+%% is set to true in antidote.app.src
+-spec open_staleness_log(non_neg_integer() | ets:tid()) -> {'error',reason()} | {'ok', string()}.
+open_staleness_log(Partition) ->
+	LogFile = "StalenessLog-" ++ integer_to_list(Partition) ++ "-" ++ integer_to_list(dc_utilities:now_microsec()),
+	LogPath=filename:join(
+		app_helper:get_env(riak_core, platform_data_dir), LogFile),
+	case disk_log:open([{name, LogPath}]) of
+		{ok, Log}->
+			{ok, Log};
+		{error, Reason}->
+			{error, Reason}
+	end.
 
 -spec load_from_log_to_tables(partition_id(), mat_state()) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, State) ->
@@ -444,7 +474,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
                 _ ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
-                    case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse) of
+                    case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse, MatState#mat_state.staleness_log) of
                         {ok, Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount} ->
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                             %% for the given snapshot_time

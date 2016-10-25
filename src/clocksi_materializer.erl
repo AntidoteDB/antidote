@@ -25,7 +25,7 @@
 -endif.
 
 -export([new/1,
-         materialize/3,
+         materialize/4,
 		 compat/2,
          materialize_eager/3]).
 
@@ -72,28 +72,32 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 %%      more operations than the one given as input, false otherwise.
 %%      the sixth element is an integer the counts the number of operations applied to make the snapshot
 -spec materialize(type(),
-		  transaction() | ignore,
-		  #snapshot_get_response{}
-		 ) ->
-			 {ok, snapshot(), integer(), snapshot_time() | ignore,
-			  boolean(), non_neg_integer()} | {error, reason()}.
+  transaction() | ignore,
+  #snapshot_get_response{},
+  atom()
+)->
+	{ok, snapshot(), integer(), snapshot_time() | ignore,
+		boolean(), non_neg_integer()} | {error, reason()}.
 materialize(Type, Transaction, #snapshot_get_response{
 	commit_parameters=ProtocolIndependentSnapshotCommitParams,
 	ops_list=Ops,
-	materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}})->
+	is_newest_snapshot=NumberOfSnapshot,
+	materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}}, StalenessLog)->
 	FirstId=get_first_id(Ops),
 	PrevOpCommitParams=case ProtocolIndependentSnapshotCommitParams of
-		{CommitVC, DepVC, _ReadTime} ->
+		{CommitVC, DepVC, _ReadTime}->
 			%% the following is used for setting the read time of a snapshot.
 			%% Initially, we start with the current clock time of the vnode, that will be used
 			%% in the case the
-			NowVC = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
+			NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
 			{CommitVC, DepVC, NowVC};
-		_->ProtocolIndependentSnapshotCommitParams
+		_->
+			ProtocolIndependentSnapshotCommitParams
 	end,
-	{ok, OpList, NewLastOp, LastOpCt, IsNewSS}=
+	{ok, OpList, NewLastOp, LastOpCt, IsNewSS, NumberOfNonAppliedOps}=
 		materialize_intern(Type, [], LastOp, FirstId, ProtocolIndependentSnapshotCommitParams, Transaction,
 			Ops, PrevOpCommitParams, false, 0, 0),
+	ok=log_number_of_non_applied_snapshot_and_ops(StalenessLog, NumberOfSnapshot, NumberOfNonAppliedOps),
 	case apply_operations(Type, Snapshot, 0, OpList) of
 		{ok, NewSS, Count}->
 			{ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};
@@ -152,11 +156,10 @@ apply_operations(Type,Snapshot,Count,[Op | Rest]) ->
 			 snapshot_time() | ignore,
 			 boolean(),
 			 non_neg_integer(), non_neg_integer()) ->
-				{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean()}.
+				{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean(), non_neg_integer()}.
 
 materialize_intern(_Type, OutputOpList, _LastOp, FirstHole, _SnapshotCommitParams, _Transaction, [], LastOpCt, NewSS, _Location, NumberOfNonAppliedOps) ->
-	ok = log_number_of_non_applied_ops(NumberOfNonAppliedOps),
-    {ok, OutputOpList, FirstHole, LastOpCt, NewSS};
+    {ok, OutputOpList, FirstHole, LastOpCt, NewSS, NumberOfNonAppliedOps};
 
 materialize_intern(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, Transaction, [{OpId,Op}|Rest], LastOpCt, NewSS, Location, NumberOfNonAppliedOps) ->
     materialize_intern_perform(Type, OpList, OutputOpList, FirstHole, SnapshotCommitParams, Transaction, {OpId,Op}, Rest, LastOpCt, NewSS, Location + 1, NumberOfNonAppliedOps);
@@ -166,17 +169,18 @@ materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncl
     {Length,_ListLen} = element(2, TupleOps),
     case Length == Location of
 	true ->
-	    {ok, OpList, OutputFirstNotIncludedOperationId, OutputSnapshotCommitParams, DidGenerateNewSnapshot};
+	    {ok, OpList, OutputFirstNotIncludedOperationId, OutputSnapshotCommitParams, DidGenerateNewSnapshot, NumberOfNonAppliedOps};
 	false ->
 	    materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncludedOperationId, InitSnapshotCommitParams, Transaction,
 				       element((?FIRST_OP+Length-1) - Location, TupleOps), TupleOps, OutputSnapshotCommitParams, DidGenerateNewSnapshot, Location + 1, NumberOfNonAppliedOps)
     end.
 
--spec materialize_intern_perform(type(),
+-spec materialize_intern_perform(
+  type(),
   [operation_payload()],
   integer(),
   integer(),
-  snapshot_time() | {snapshot_time(), snapshot_time()} | ignore,
+  vectorclock() | {vectorclock(), vectorclock(), vectorclock()} | ignore,
   transaction(),
   {integer(),operation_payload()},
   [{integer(),operation_payload()}] | tuple(),
@@ -184,7 +188,7 @@ materialize_intern(Type, OpList, FirstNotIncludedOperationId, OutputFirstNotIncl
   boolean(),
   non_neg_integer(),
   non_neg_integer()) ->
-	{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean()}.
+	{ok,[operation_payload()],integer(),snapshot_time()|ignore,boolean(), non_neg_integer()}.
 materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole, InitSnapshotCommitParams, Transaction,
                             {OpId,Op}, Rest, OutputSnapshotCommitParams, DidGenerateNewSnapshot, PositionInOpList, NumberOfNonAppliedOps) ->
     Result = case Type == Op#operation_payload.type of
@@ -230,11 +234,18 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
     end.
 
 %% @doc This function is used only for benchmark purposes.
-%% It logs on disk the number of snapshot and the number of operations
+%% It logs on disk the number of operations and snapshots
 %% that it had to leave out to build the transaction's snapshot.
 %% this is used to measure staleness.
-log_number_of_non_applied_ops(_NumberOfNonAppliedOps) ->
-	ok.
+-spec log_number_of_non_applied_snapshot_and_ops(atom(), non_neg_integer(), non_neg_integer()) -> ok.
+log_number_of_non_applied_snapshot_and_ops(StalenessLog, NumberOfSnapshot, NumberOfNonAppliedOps) ->
+	case StalenessLog of
+		staleness_log_disabled ->
+			ok;
+		_-> disk_log:alog(StalenessLog, {NumberOfSnapshot, NumberOfNonAppliedOps}),
+			ok
+		end.
+
 
 %% @doc Check whether an udpate is included in a snapshot and also
 %%		if that update is newer than a snapshot's commit time
@@ -398,18 +409,18 @@ materializer_clocksi_test()->
     {ok, PNCounter2, 3, CommitTime2, _SsSave, _} = materialize(Type,
 							    #transaction{snapshot_vc = vectorclock:from_list([{1, 3}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
-							    SS),
+							    SS, staleness_log_disabled),
     ?assertEqual({4, vectorclock:from_list([{1,3}])}, {Type:value(PNCounter2), CommitTime2}),
     {ok, PNcounter3, 4, CommitTime3, _SsSave1, _} = materialize(Type,
 							     #transaction{snapshot_vc = vectorclock:from_list([{1, 4}]),
-		    txn_id = ignore, transactional_protocol = clocksi}, SS),
+		    txn_id = ignore, transactional_protocol = clocksi}, SS, staleness_log_disabled),
 	
 	?assertEqual({6, vectorclock:from_list([{1,4}])}, {Type:value(PNcounter3), CommitTime3}),
 
     {ok, PNcounter4, 4,CommitTime4, _SsSave2, _} = materialize(Type,
 							    #transaction{snapshot_vc = vectorclock:from_list([{1, 7}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
-							    SS),
+							    SS, staleness_log_disabled),
     ?assertEqual({6, vectorclock:from_list([{1,4}])}, {Type:value(PNcounter4), CommitTime4}).
 
 %% This test tests when a a snapshot is generated that does not include all of the updates in the
@@ -439,7 +450,7 @@ materializer_missing_op_test() ->
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave, _} = materialize(Type,
 								 #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
-								 SS),
+								 SS, staleness_log_disabled),
     ?assertEqual({3, vectorclock:from_list([{1,3},{2,1}])}, {Type:value(PNCounter2), CommitTime2}),
 
     SS2 = #snapshot_get_response{commit_parameters = CommitTime2, ops_list = Ops,
@@ -447,7 +458,7 @@ materializer_missing_op_test() ->
     {ok, PNCounter3, 4, CommitTime3, _SsSave, _} = materialize(Type,
 							    #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
-							    SS2),
+							    SS2, staleness_log_disabled),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {Type:value(PNCounter3), CommitTime3}).
 
 %% This test tests the case when there are updates that only snapshots that contain entries from one of the DCs.
@@ -476,7 +487,7 @@ materializer_missing_dc_test() ->
     {ok, PNCounterA, LastOpA, CommitTimeA, _SsSave, _} = materialize(Type,
 								  #transaction{snapshot_vc = vectorclock:from_list([{1,3}]),
 txn_id = ignore, transactional_protocol = clocksi},
-								  SS),
+								  SS, staleness_log_disabled),
     ?assertEqual({3, vectorclock:from_list([{1,3}])}, {Type:value(PNCounterA), CommitTimeA}),
 
     SS2 = #snapshot_get_response{commit_parameters = CommitTimeA, ops_list = Ops,
@@ -484,13 +495,13 @@ txn_id = ignore, transactional_protocol = clocksi},
     {ok, PNCounterB, 4, CommitTimeB, _SsSave, _} = materialize(Type,
 							    #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
 txn_id = ignore, transactional_protocol = clocksi},
-							    SS2),
+							    SS2, staleness_log_disabled),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {Type:value(PNCounterB), CommitTimeB}),
     
     {ok, PNCounter2, LastOp, CommitTime2, _SsSave, _} = materialize(Type,
 								 #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,1}]),
 txn_id = ignore, transactional_protocol = clocksi},
-								 SS),
+								 SS, staleness_log_disabled),
     ?assertEqual({3, vectorclock:from_list([{1,3}])}, {Type:value(PNCounter2), CommitTime2}),
 
     SS3 = #snapshot_get_response{commit_parameters = CommitTime2, ops_list = Ops,
@@ -498,7 +509,7 @@ txn_id = ignore, transactional_protocol = clocksi},
     {ok, PNCounter3, 4, CommitTime3, _SsSave, _} = materialize(Type,
 							    #transaction{snapshot_vc = vectorclock:from_list([{1,3},{2,2}]),
 txn_id = ignore, transactional_protocol = clocksi},
-							    SS3),
+							    SS3, staleness_log_disabled),
     ?assertEqual({4, vectorclock:from_list([{1,3},{2,2}])}, {Type:value(PNCounter3), CommitTime3}).
        
 materializer_clocksi_concurrent_test() ->
@@ -516,11 +527,11 @@ materializer_clocksi_concurrent_test() ->
 	    dc_and_commit_time = {2, 2}, txid = 3, dependency_vc=vectorclock:from_list([{1,1},{2,1}])},
 
     Ops = [{3,Op2},{2,Op3},{1,Op1}],
-    {ok, PNCounter2, 3, CommitTime2, _Keep} = materialize_intern(Type,
+    {ok, PNCounter2, 3, CommitTime2, _Keep, _Number} = materialize_intern(Type,
                                       [], 0, 3, ignore,
 	    #transaction{snapshot_vc = vectorclock:from_list([{2,2},{1,2}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
-                                      Ops, ignore, false, 0),
+                                      Ops, ignore, false, 0, 0),
     {ok, PNCounter3, _} = apply_operations(Type, PNCounter, 0, PNCounter2),
     ?assertEqual({4, vectorclock:from_list([{1,2},{2,2}])}, {Type:value(PNCounter3), CommitTime2}),
     Snapshot=new(Type),
@@ -529,15 +540,15 @@ materializer_clocksi_concurrent_test() ->
 				materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = Snapshot}},
     {ok, PNcounter3, 1, CommitTime3, _SsSave1, _} = materialize(Type,
 	    #transaction{snapshot_vc = vectorclock:from_list([{1,2},{2,1}]),
-		    txn_id = ignore, transactional_protocol = clocksi}, SS),
+		    txn_id = ignore, transactional_protocol = clocksi}, SS, staleness_log_disabled),
     ?assertEqual({3, vectorclock:from_list([{1,2},{2,1}])}, {Type:value(PNcounter3), CommitTime3}),
     {ok, PNcounter4, 2, CommitTime4, _SsSave2, _} = materialize(Type,
 	    #transaction{snapshot_vc = vectorclock:from_list([{1,1},{2,2}]),
-		    txn_id = ignore, transactional_protocol = clocksi}, SS),
+		    txn_id = ignore, transactional_protocol = clocksi}, SS, staleness_log_disabled),
     ?assertEqual({3, vectorclock:from_list([{1,1},{2,2}])}, {Type:value(PNcounter4), CommitTime4}),
     {ok, PNcounter5, 1, CommitTime5, _SsSave3, _} = materialize(Type,
 	    #transaction{snapshot_vc = vectorclock:from_list([{1,1},{2,1}]),
-		    txn_id = ignore, transactional_protocol = clocksi}, SS),
+		    txn_id = ignore, transactional_protocol = clocksi}, SS, staleness_log_disabled),
     ?assertEqual({2, vectorclock:from_list([{1,1},{2,1}])}, {Type:value(PNcounter5), CommitTime5}).
 
 %% @doc Testing gcounter with empty update log
@@ -546,10 +557,10 @@ materializer_clocksi_noop_test() ->
     PNCounter = new(Type),
     ?assertEqual(0,Type:value(PNCounter)),
     Ops = [],
-    {ok, PNCounter2, 0, ignore, _SsSave} = materialize_intern(Type, [], 0, 0,ignore,
+    {ok, PNCounter2, 0, ignore, _SsSave, _Number} = materialize_intern(Type, [], 0, 0,ignore,
 	    #transaction{snapshot_vc = vectorclock:from_list([{1,1}]),
 		    txn_id = ignore, transactional_protocol = clocksi},
-	        Ops, ignore, false, 0),
+	        Ops, ignore, false, 0, 0),
     {ok, PNCounter3, _} = apply_operations(Type, PNCounter, 0, PNCounter2),
     ?assertEqual(0,Type:value(PNCounter3)).
 
