@@ -35,7 +35,7 @@
 -define(RESIZE_THRESHOLD, 5).
 %% Only store the new SS if the following number of ops
 %% were applied to the previous SS
--define(MIN_OP_STORE_SS, 3).
+-define(MIN_OP_STORE_SS, 1).
 %% Expected time to wait until the logging vnode is up
 -define(LOG_STARTUP_WAIT, 1000).
 
@@ -53,7 +53,8 @@
 	update/3,
 	op_not_already_in_snapshot/2,
 	create_empty_materialized_snapshot_record/2,
-	log_number_of_non_applied_snapshot_and_ops/3]).
+	log_number_of_non_applied_snapshot_and_ops/3,
+	merge_staleness_files_into_table/0]).
 
 %% Callbacks
 -export([init/1,
@@ -180,6 +181,52 @@ log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfSnapsh
 		{error, no_such_log}->
 			{error, {no_such_log, StalenessLog}}
 	end.
+
+-spec merge_staleness_files_into_table() -> atom() | {error, reason()}.
+merge_staleness_files_into_table() ->
+	case file:list_dir("./data/") of
+		{error, Reason} ->
+			{error, Reason};
+		{ok, FileList} ->
+			lager:info("got file list: ~p",[FileList]),
+			StalenessTable = ets:new(staleness_table, [duplicate_bag, named_table, public]),
+			lists:foreach(fun(FileName) ->
+				ok = file_to_table(FileName, start, StalenessTable)
+			end, FileList),
+			StalenessTable
+	end.
+	
+
+-spec file_to_table(string(), start | disk_log:continuation(), atom()) -> ok.
+file_to_table(FileName, Continuation, TableName)->
+	%% add the directory and remove the .LOG extension.
+	DirAndFileName = "./data/" ++ lists:sublist(FileName, length(FileName)-4),
+	lager:info("merging file ~p from Continuation ~p ", [DirAndFileName, Continuation]),
+	case (lists:sublist(FileName, 1, length("StalenessLog")) == "StalenessLog") of
+		true -> %% this is a staleness log file, process it
+			case Continuation of
+				start ->
+					lager:info("openning file"),
+					disk_log:open([{name, DirAndFileName}]);
+				_->
+					do_nothing
+			end,
+			case disk_log:chunk(DirAndFileName, Continuation) of
+				eof ->
+					lager:info("closing file"),
+					disk_log:close(DirAndFileName),
+					ok;
+				{NextContinuation, List} ->
+					lists:foreach(fun(Info) ->
+						lager:info("inserting into table: ~p", [{Info, 1}]),
+						ets:insert(TableName, {Info,1})
+					end, List),
+					file_to_table(DirAndFileName, NextContinuation, TableName)
+			end;
+		false -> %% nothing to do, not a staleness file.
+			ok
+	end.
+
 
 -spec load_from_log_to_tables(partition_id(), mat_state()) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, State) ->
@@ -410,13 +457,13 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
 %%			lager:info("~nShouldGc ~p", [ShouldGc]),
 			snapshot_insert_gc(Key, SnapshotDict1, ShouldGc, State);
 		false ->
-			lager:info("~n~nShould NOT INSERT~n~n"),
+%%			lager:info("~n~nShould NOT INSERT~n~n"),
 			false
 	end.
 
 -spec internal_read(key(), type(), transaction(), mat_state()) -> {ok, {snapshot(), any()}}| {error, no_snapshot}.
-internal_read(Key, Type, Transaction, State) ->
-    internal_read(Key, Type, Transaction, State,false).
+internal_read(Key, Type, Transaction, MatState) ->
+    internal_read(Key, Type, Transaction, MatState,false).
 internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	lager:debug("called : ~p",[Transaction]),
 	OpsCache = MatState#mat_state.ops_cache,
@@ -472,25 +519,26 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                          [{_, SnapshotDict}] ->
 %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
-                                 {undefined, _IsF} ->
+                                 {undefined, NumberOfSnap} ->
 %%	                                 lager:info("~nno snapshot in the cache for key: ~p",[Key]),
 %%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
 %%	                                 lager:info("~n TXN Snapshot is : ~p",[UpdatedTxnRecord#transaction.snapshot_vc]),
 %%	                                 lager:info("~n Old DepUpbound Snapshot is : ~p",[Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound]),
-                                     {error, no_snapshot};
-                                 {{SCP, LS}, IsF} ->
+	                                 {undefined, NumberOfSnap};
+                                 {{SCP, LS}, NumberOfSnap} ->
 	                                 case is_record(LS, materialized_snapshot) of
-		                                 true -> {LS, SCP, IsF};
+		                                 true -> {LS, SCP, NumberOfSnap};
 		                                 false -> {error, bad_returned_record}
 	                                 end
                              end
                      end,
 	        SnapshotGetResponse =
                 case Result of
-                    {error, no_snapshot} ->
+	                {undefined, NumberOfSnapshot} ->
                         LogId = log_utilities:get_logid_from_key(Key),
                         [Node] = log_utilities:get_preflist_from_key(Key),
-	                    _SnapshotGetResponseRecord = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key);
+	                    SnapshotGetResponseRecord = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
+		                SnapshotGetResponseRecord#snapshot_get_response{is_newest_snapshot=NumberOfSnapshot};
                     {MatSnapshotRecord1, SnapshotCommitTime1, IsFirst1} ->
 %%	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[MatSnapshotRecord1, SnapshotCommitTime1, OperationsForKey]),
 	                    #snapshot_get_response{
@@ -507,6 +555,10 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
                     case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse, MatState) of
                         {ok, Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount} ->
+%%	                        lager:info("~n Snapshot ~p~n ~n NewLastOp ~p ~n CommitParameters ~p ~n NewSS ~p ~n OpAddedCount ~p", [Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount]),
+%%	                        lager:info("~nShouldGc ~p", [ShouldGc]),
+%%	                        lager:info("~SnapshotGetResponse#snapshot_get_response.is_newest_snapshot ~p", [SnapshotGetResponse#snapshot_get_response.is_newest_snapshot]),
+	                        
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                             %% for the given snapshot_time
                             %% But is the snapshot not safe?
@@ -514,9 +566,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                 ignore ->
                                     {ok, {Snapshot, CommitParameters}};
                                 _ ->
-%%	                                lager:info("~nCommitTime~n~p ~n Is new snapshot ~p ~n SnapshotGetResponse#snapshot_get_response.is_newest_snapshot ~p ~n OpAddedCount ~p",[CommitParameters, NewSS, SnapshotGetResponse#snapshot_get_response.is_newest_snapshot, OpAddedCount]),
-%%	                                lager:info("~nShouldGc ~p", [ShouldGc]),
-	                                case (NewSS and (SnapshotGetResponse#snapshot_get_response.is_newest_snapshot == 1) and
+	                                case (NewSS and (SnapshotGetResponse#snapshot_get_response.is_newest_snapshot == 0) and
                                     (OpAddedCount >= ?MIN_OP_STORE_SS)) or ShouldGc of
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
                                         %% previous snapshot
