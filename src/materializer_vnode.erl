@@ -53,7 +53,7 @@
 	update/3,
 	op_not_already_in_snapshot/2,
 	create_empty_materialized_snapshot_record/2,
-	log_number_of_non_applied_snapshot_and_ops/3,
+	log_number_of_non_applied_ops/2,
 	merge_staleness_files_into_table/0]).
 
 %% Callbacks
@@ -160,22 +160,23 @@ open_staleness_log(Partition) ->
 %% It logs on disk the number of operations and snapshots
 %% that it had to leave out to build the transaction's snapshot.
 %% this is used to measure staleness.
--spec log_number_of_non_applied_snapshot_and_ops(mat_state(), non_neg_integer(), non_neg_integer())-> ok | {error, {no_such_log, atom()}}.
-log_number_of_non_applied_snapshot_and_ops(MatState = #mat_state{staleness_log=StalenessLog}, NumberOfSnapshot, NumberOfNonAppliedOps)->
+-spec log_number_of_non_applied_ops(mat_state(), non_neg_integer())-> ok | {error, {no_such_log, atom()}}.
+log_number_of_non_applied_ops(MatState = #mat_state{staleness_log=StalenessLog}, NumberOfNonAppliedOps)->
 	case StalenessLog of
 		staleness_log_disabled->
 			ok;
 		undefined->
+			%% asynchronously send message to the right vnode.
 			riak_core_vnode_master:command({MatState#mat_state.partition, node()},
-				{log_number_of_non_applied_snapshot_and_ops, NumberOfSnapshot, NumberOfNonAppliedOps},
+				{log_number_of_non_applied_snapshot_and_ops, NumberOfNonAppliedOps},
 				materializer_vnode_master);
 		_->
-			log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfSnapshot, NumberOfNonAppliedOps)
+			log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps)
 	end.
 
--spec log_number_of_non_applied_snapshot_and_ops_internal(atom(), non_neg_integer(), non_neg_integer())-> ok | {error, {no_such_log, atom()}}.
-log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfSnapshot, NumberOfNonAppliedOps)->
-	case disk_log:alog(StalenessLog, {NumberOfSnapshot, NumberOfNonAppliedOps}) of
+-spec log_number_of_non_applied_snapshot_and_ops_internal(atom(), non_neg_integer())-> ok | {error, {no_such_log, atom()}}.
+log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps)->
+	case disk_log:alog(StalenessLog, NumberOfNonAppliedOps) of
 		ok->
 			ok;
 		{error, no_such_log}->
@@ -326,8 +327,8 @@ handle_command({check_ready},_Sender,State = #mat_state{partition=Partition, is_
 handle_command({read, Key, Type, Transaction}, _Sender, State) ->
     {reply, read(Key, Type, Transaction, State), State};
 
-handle_command({log_number_of_non_applied_snapshot_and_ops, NumberOfSnapshot, NumberOfNonAppliedOps}, _Sender, MatState) ->
-	{reply, log_number_of_non_applied_snapshot_and_ops(MatState, NumberOfSnapshot, NumberOfNonAppliedOps), MatState};
+handle_command({log_number_of_non_applied_snapshot_and_ops, NumberOfNonAppliedOps}, _Sender, MatState) ->
+	{reply, log_number_of_non_applied_ops(MatState, NumberOfNonAppliedOps), MatState};
 
 handle_command({update, Key, DownstreamOp, Transaction}, _Sender, State) ->
 %%	lager:info("~nInserting this downstreamop : ~n~p", [DownstreamOp]),
@@ -515,12 +516,12 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
             Result = case ets:lookup(SnapshotCache, Key) of
                          [] ->
 	                         {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
-                             {BlankSSRecord, BlankSSCommitParams, 0};
+                             {BlankSSRecord, BlankSSCommitParams, 1};
                          [{_, SnapshotDict}] ->
 %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
                                  {undefined, NumberOfSnap} ->
-%%	                                 lager:info("~nno snapshot in the cache for key: ~p",[Key]),
+	                                 lager:info("~nno snapshot in the cache for key: ~p",[Key]),
 %%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
 %%	                                 lager:info("~n TXN Snapshot is : ~p",[UpdatedTxnRecord#transaction.snapshot_vc]),
 %%	                                 lager:info("~n Old DepUpbound Snapshot is : ~p",[Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound]),
@@ -549,6 +550,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                 end,
             case SnapshotGetResponse#snapshot_get_response.number_of_ops of
                 0 ->
+	                lager:info("this should not happen"),
                             {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot#materialized_snapshot.value,
 	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
                 _ ->
@@ -566,7 +568,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                 ignore ->
                                     {ok, {Snapshot, CommitParameters}};
                                 _ ->
-	                                case (NewSS and (SnapshotGetResponse#snapshot_get_response.is_newest_snapshot == 0) and
+	                                case (NewSS and (SnapshotGetResponse#snapshot_get_response.is_newest_snapshot == 1) and
                                     (OpAddedCount >= ?MIN_OP_STORE_SS)) or ShouldGc of
                                         %% Only store the snapshot if it would be at the end of the list and has new operations added to the
                                         %% previous snapshot
