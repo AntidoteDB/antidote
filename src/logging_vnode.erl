@@ -68,6 +68,7 @@
 -ignore_xref([start_vnode/1]).
 
 -record(state, {partition :: partition_id(),
+		enable_log_to_disk :: boolean(), %% this enables or disables logging to disk.
 		logs_map :: dict:dict(),
 		op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
 		recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
@@ -234,12 +235,14 @@ init([Partition]) ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
         {Map,MaxVector} ->
+	        {ok, EnableLoggingToDisk} = application:get_env(antidote, enable_logging),
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         op_id_table=OpIdTable,
 			recovered_vector=MaxVector,
                         senders_awaiting_ack=dict:new(),
-                        last_read=start}}
+                        last_read=start,
+	            enable_log_to_disk=EnableLoggingToDisk}}
     end.
 
 %% Used to check if the vnode is up
@@ -293,19 +296,25 @@ handle_command({send_min_prepared, Time}, _Sender,
 %%          Input: The id of the log to be read
 %%      Output: {ok, {vnode_id, Operations}} | {error, Reason}
 handle_command({read, LogId}, _Sender,
-               #state{partition=Partition, logs_map=Map}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-	    %% TODO should continue reading with the continuation??
-            ok = disk_log:sync(Log),
-	    {Continuation,Ops} = read_internal(Log,start,[]),
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State}
-	    end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+               #state{partition=Partition, logs_map=Map, enable_log_to_disk=EnableLog}=State) ->
+	case EnableLog of
+		true ->
+			case get_log_from_map(Map, Partition, LogId) of
+				{ok, Log} ->
+					%% TODO should continue reading with the continuation??
+					ok = disk_log:sync(Log),
+					{Continuation,Ops} = read_internal(Log,start,[]),
+					case Continuation of
+						error -> {reply, {error, Ops}, State};
+						eof -> {reply, {ok, Ops}, State}
+					end;
+				{error, Reason} ->
+					{reply, {error, Reason}, State}
+			end;
+		false ->
+			{reply, {ok, []}, State}
+	end;
+    
 
 %% @doc Threshold read command: Returns the operations logged for Key
 %%      from a specified op_id-based threshold.
