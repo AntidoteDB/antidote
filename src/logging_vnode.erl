@@ -314,7 +314,6 @@ handle_command({read, LogId}, _Sender,
 		false ->
 			{reply, {ok, []}, State}
 	end;
-    
 
 %% @doc Threshold read command: Returns the operations logged for Key
 %%      from a specified op_id-based threshold.
@@ -324,26 +323,32 @@ handle_command({read, LogId}, _Sender,
 %%      Output: {vnode_id, Operations} | {error, Reason}
 %%
 handle_command({read_from, LogId, _From}, _Sender,
-               #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            ok = disk_log:sync(Log),
-	    %% TODO should continue reading with the continuation??
-            {Continuation, Ops} =
-                case disk_log:chunk(Log, Lastread) of
-                    {error, Reason} -> {error, Reason};
-                    {C, O} -> {C,O};
-                    {C, O, _} -> {C,O};
-                    eof -> {eof, []}
-                end,
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+               #state{partition=Partition, logs_map=Map, last_read=Lastread, enable_log_to_disk=EnableLog}=State) ->
+	case EnableLog of
+		true ->
+			case get_log_from_map(Map, Partition, LogId) of
+				{ok, Log} ->
+					ok = disk_log:sync(Log),
+					%% TODO should continue reading with the continuation??
+					{Continuation, Ops} =
+						case disk_log:chunk(Log, Lastread) of
+							{error, Reason} -> {error, Reason};
+							{C, O} -> {C,O};
+							{C, O, _} -> {C,O};
+							eof -> {eof, []}
+						end,
+					case Continuation of
+						error -> {reply, {error, Ops}, State};
+						eof -> {reply, {ok, Ops}, State};
+						_ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
+					end;
+				{error, Reason} ->
+					{reply, {error, Reason}, State}
+			end;
+			false ->
+				{reply, {ok, []}, State}
+	end;
+    
 
 %% @doc Append command: Appends a new op to the Log of Key
 %%      Input:  LogId: Indetifies which log the operation has to be
@@ -361,58 +366,64 @@ handle_command({append, LogId, LogOperation, Sync}, Sender, State)->
 handle_command({append, LogId, LogOperation, Sync, ReplyTo}, _S,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
-                      partition=Partition}=State) ->
+                      partition=Partition,
+	               enable_log_to_disk=EnableLog}=State) ->
 	{Reply, NewState}=case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-	    %% all operations update the per log, operation id
-	    OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
-	    #op_number{local = Local, global = Global} = OpId,
-	    NewOpId = OpId#op_number{local =  Local + 1, global = Global + 1},
-	    true = update_ets_op_id({LogId,MyDCID},NewOpId,OpIdTable),
-	    %% non commit operations update the bucket id number to keep track
-	    %% of the number of updates per bucket
-	    NewBucketOpId =
-		case LogOperation#log_operation.op_type of
-		    update ->
-			Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
-			BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
-			#op_number{local = BLocal, global = BGlobal} = BOpId,
-			NewBOpId = BOpId#op_number{local = BLocal + 1, global = BGlobal + 1},
-			true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable),
-			NewBOpId;
-		    _ ->
-			NewOpId
-		end,
-            LogRecord = #log_record{
-              version = log_utilities:log_record_version(),
-              op_number = NewOpId,
-              bucket_op_number = NewBucketOpId,
-              log_operation = LogOperation},
-            case insert_log_record(Log, LogId, LogRecord) of
-                {ok, NewOpId} ->
-		    inter_dc_log_sender_vnode:send(Partition, LogRecord),
-		    case Sync of
-			true ->
-			    case disk_log:sync(Log) of
-				ok ->
-				    {{ok, OpId}, State};
-				{error, Reason} ->
-				    {{error, Reason}, State}
-			    end;
-			false ->
-			    {{ok, OpId}, State}
-		    end;
-                {error, Reason} ->
-                    {{error, Reason}, State}
-            end;
-        {error, Reason} ->
-            {{error, Reason}, State}
-    end,
+		{ok, Log}->
+			MyDCID=dc_meta_data_utilities:get_my_dc_id(),
+			%% all operations update the per log, operation id
+			OpId=get_op_id(OpIdTable, {LogId, MyDCID}),
+			case EnableLog of
+				true->
+					#op_number{local=Local, global=Global}=OpId,
+					NewOpId=OpId#op_number{local=Local+1, global=Global+1},
+					true=update_ets_op_id({LogId, MyDCID}, NewOpId, OpIdTable),
+					%% non commit operations update the bucket id number to keep track
+					%% of the number of updates per bucket
+					NewBucketOpId=
+						case LogOperation#log_operation.op_type of
+							update->
+								Bucket=(LogOperation#log_operation.log_payload)#update_log_payload.bucket,
+								BOpId=get_op_id(OpIdTable, {LogId, Bucket, MyDCID}),
+								#op_number{local=BLocal, global=BGlobal}=BOpId,
+								NewBOpId=BOpId#op_number{local=BLocal+1, global=BGlobal+1},
+								true=update_ets_op_id({LogId, Bucket, MyDCID}, NewBOpId, OpIdTable),
+								NewBOpId;
+							_->
+								NewOpId
+						end,
+					LogRecord=#log_record{
+						version=log_utilities:log_record_version(),
+						op_number=NewOpId,
+						bucket_op_number=NewBucketOpId,
+						log_operation=LogOperation},
+					case insert_log_record(Log, LogId, LogRecord) of
+						{ok, NewOpId}->
+							inter_dc_log_sender_vnode:send(Partition, LogRecord),
+							case Sync of
+								true->
+									case disk_log:sync(Log) of
+										ok->
+											{{ok, OpId}, State};
+										{error, Reason}->
+											{{error, Reason}, State}
+									end;
+								false->
+									{{ok, OpId}, State}
+							end;
+						{error, Reason}->
+							{{error, Reason}, State}
+					end;
+				false ->
+					{{ok, OpId}, State}
+			end;
+		{error, Reason}->
+			{{error, Reason}, State}
+	end,
 	case ReplyTo of
-		ignore ->
+		ignore->
 			{reply, Reply, NewState};
-		_ ->
+		_->
 			gen_fsm:send_event(ReplyTo, Reply),
 			{noreply, NewState}
 	end;
@@ -425,84 +436,95 @@ handle_command({append, LogId, LogOperation, Sync, ReplyTo}, _S,
 %% for efficency
 %% -spec handle_command({append_group, log_id(), [#log_record{}], false, boolean()}, pid(), #state{}) ->
 %%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
-handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Sender,
-               #state{logs_map=Map,
-                      op_id_table=OpIdTable,
-                      partition=Partition}=State) ->
-    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-    {ErrorList, SuccList, UpdatedLogs} =
-	lists:foldl(fun(LogRecordOrg, {AccErr, AccSucc, UpdatedLogs}) ->
-			    LogRecord = log_utilities:check_log_record_version(LogRecordOrg),
-			    case get_log_from_map(Map, Partition, LogId) of
-				{ok, Log} ->
-				    %% Generate the new operation ID
-				    %% This is only stored in memory to count the total number
-				    %% of operations, since the input operations should
-				    %% have already been assigned an op id number since
-				    %% they are coming from an external DC
-				    OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
-				    #op_number{local = _Local, global = Global} = OpId,
-				    NewOpId = OpId#op_number{global = Global + 1},
-				    %% Should assign the opid as follows if this function starts being
-				    %% used for operations generated locally
-				    %% NewOpId =
-				    %% 	case IsLocal of
-				    %% 	    true ->
-				    %% 		OpId#op_number{local =  Local + 1, global = Global + 1};
-				    %% 	    false ->
-				    %% 		OpId#op_number{global = Global + 1}
-				    %% 	end,
-				    true = update_ets_op_id({LogId,MyDCID},NewOpId,OpIdTable),
-				    LogOperation = LogRecord#log_record.log_operation,
-				    case LogOperation#log_operation.op_type of
-					update ->
-					    Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
-					    BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
-					    #op_number{local = _BLocal, global = BGlobal} = BOpId,
-					    NewBOpId = BOpId#op_number{global = BGlobal + 1},
-					    true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable);
-					_ ->
-					    true
-				    end,
-				    ExternalOpNum = LogRecord#log_record.op_number,
-				    case insert_log_record(Log, LogId, LogRecord) of
-					{ok, ExternalOpNum} ->
-					    %% Would need to uncomment this is local ops are sent to this function
-					    %% case IsLocal of
-					    %% 	true -> inter_dc_log_sender_vnode:send(Partition, Operation);
-					    %% 	false -> ok
-					    %% end,
-					    {AccErr, AccSucc ++ [NewOpId], ordsets:add_element(Log,UpdatedLogs)};
-					{error, Reason} ->
-					    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
-				    end;
-				{error, Reason} ->
-				    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
-			    end
-		    end, {[],[], ordsets:new()}, LogRecordList),
-    %% Sync the updated logs if necessary
-    case Sync of
-	true ->
-	    ordsets:fold(fun(Log,_Acc) ->
-				 ok = disk_log:sync(Log)
-			 end, ok, UpdatedLogs);
-	false ->
-	    ok
-    end,
-    case ErrorList of
-	[] ->
-	    [SuccId|_T] = SuccList,
-	    {reply, {ok, SuccId}, State};
-	[Error|_T] ->
-	    %%Error
-	    {reply, Error, State}
-    end;
+handle_command({append_group, LogId, LogRecordList, _IsLocal=false, Sync}, _Sender,
+  #state{logs_map=Map,
+	  op_id_table=OpIdTable,
+	  partition=Partition,
+	  enable_log_to_disk=EnableLog}=State)->
+	MyDCID=dc_meta_data_utilities:get_my_dc_id(),
+	{ErrorList, SuccList, UpdatedLogs}=
+		lists:foldl(fun(LogRecordOrg, {AccErr, AccSucc, UpdatedLogs})->
+			LogRecord=log_utilities:check_log_record_version(LogRecordOrg),
+			case get_log_from_map(Map, Partition, LogId) of
+				{ok, Log}->
+					%% Generate the new operation ID
+					%% This is only stored in memory to count the total number
+					%% of operations, since the input operations should
+					%% have already been assigned an op id number since
+					%% they are coming from an external DC
+					OpId=get_op_id(OpIdTable, {LogId, MyDCID}),
+					#op_number{local=_Local, global=Global}=OpId,
+					NewOpId=OpId#op_number{global=Global+1},
+					%% Should assign the opid as follows if this function starts being
+					%% used for operations generated locally
+					%% NewOpId =
+					%% 	case IsLocal of
+					%% 	    true ->
+					%% 		OpId#op_number{local =  Local + 1, global = Global + 1};
+					%% 	    false ->
+					%% 		OpId#op_number{global = Global + 1}
+					%% 	end,
+					true=update_ets_op_id({LogId, MyDCID}, NewOpId, OpIdTable),
+					LogOperation=LogRecord#log_record.log_operation,
+					case LogOperation#log_operation.op_type of
+						update->
+							Bucket=(LogOperation#log_operation.log_payload)#update_log_payload.bucket,
+							BOpId=get_op_id(OpIdTable, {LogId, Bucket, MyDCID}),
+							#op_number{local=_BLocal, global=BGlobal}=BOpId,
+							NewBOpId=BOpId#op_number{global=BGlobal+1},
+							true=update_ets_op_id({LogId, Bucket, MyDCID}, NewBOpId, OpIdTable);
+						_->
+							true
+					end,
+					ExternalOpNum=LogRecord#log_record.op_number,
+					case insert_log_record(Log, LogId, LogRecord) of
+						{ok, ExternalOpNum}->
+							%% Would need to uncomment this is local ops are sent to this function
+							%% case IsLocal of
+							%% 	true -> inter_dc_log_sender_vnode:send(Partition, Operation);
+							%% 	false -> ok
+							%% end,
+							{AccErr, AccSucc++[NewOpId], ordsets:add_element(Log, UpdatedLogs)};
+						{error, Reason}->
+							{AccErr++[{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
+					end;
+				{error, Reason}->
+					{AccErr++[{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
+			end
+		end, {[], [], ordsets:new()}, LogRecordList),
+	%% Sync the updated logs if necessary
+	case Sync of
+		true->
+			ordsets:fold(fun(Log, _Acc)->
+				case EnableLog of
+					true ->
+						ok=disk_log:sync(Log);
+					false ->
+						ok
+				end
+			end, ok, UpdatedLogs);
+		false->
+			ok
+	end,
+	case ErrorList of
+		[]->
+			[SuccId|_T]=SuccList,
+			{reply, {ok, SuccId}, State};
+		[Error|_T]->
+			%%Error
+			{reply, Error, State}
+	end;
 
 handle_command({get, LogId, Transaction, Type, Key}, _Sender,
-  #state{logs_map=Map, partition=Partition}=State)->
+  #state{logs_map=Map, partition=Partition, enable_log_to_disk=EnableLog}=State)->
 	case get_log_from_map(Map, Partition, LogId) of
 		{ok, Log}->
-			ok=disk_log:sync(Log),
+			case EnableLog of
+				true ->
+					ok=disk_log:sync(Log);
+				false ->
+					ok
+			end,
 			case get_ops_from_log(Log, {key, Key}, start, Transaction, dict:new(), dict:new(), load_all) of
 				{error, Reason}->
 					{reply, {error, Reason}, State};
@@ -531,19 +553,25 @@ handle_command({get, LogId, Transaction, Type, Key}, _Sender,
 %% -spec handle_command({get_all, log_id(), disk_log:continuation() | start, dict:dict()}, term(), #state{}) ->
 %% 			   {reply, {error, reason()} | dict:dict(), #state{}}.
 handle_command({get_all, LogId, Continuation, Ops}, _Sender,
-	       #state{logs_map = Map, partition = Partition} = State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            ok = disk_log:sync(Log),
-	    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
-                {error, Reason} ->
-                    {reply, {error, Reason}, State};
-                CommittedOpsForKeyDict ->
-		    {reply, CommittedOpsForKeyDict, State}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+	       #state{logs_map = Map, partition = Partition, enable_log_to_disk=EnableLog} = State) ->
+    case EnableLog of
+	    true ->
+		    case get_log_from_map(Map, Partition, LogId) of
+			    {ok, Log} ->
+				    ok=disk_log:sync(Log),
+				    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
+					    {error, Reason} ->
+						    {reply, {error, Reason}, State};
+					    CommittedOpsForKeyDict ->
+						    {reply, CommittedOpsForKeyDict, State}
+				    end;
+			    {error, Reason} ->
+				    {reply, {error, Reason}, State}
+		    end;
+	    false ->
+		    {reply, [], State}
     end;
+	
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.

@@ -343,31 +343,31 @@ handle_command({store_ss, Key, Snapshot, Params, ShouldGC}, _Sender, State) ->
     internal_store_ss(Key,Snapshot,Params,ShouldGC,State),
     {noreply, State};
 
-handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
-    IsReady = try
-		  case load_from_log_to_tables(Partition, State) of
-		      ok ->
-		          lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
-			  true;
-		      {error, not_ready} ->
-			  false;
-		      {error, Reason} ->
-			  lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
-			  true
-		  end
-	      catch
-		  _:Reason1 ->
-		      lager:debug("Error loading from log ~w, will retry", [Reason1]),
-		      false
-	      end,
-    ok = case IsReady of
-	     false ->
-		 riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
-		 ok;
-	     true ->
-		 ok
-	 end,
-    {noreply, State#mat_state{is_ready=IsReady}};
+handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition})->
+	IsReady=try
+		case load_from_log_to_tables(Partition, State) of
+			ok->
+				lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
+				true;
+			{error, not_ready}->
+				false;
+			{error, Reason}->
+				lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+				true
+		end
+	catch
+		_:Reason1->
+			lager:debug("Error loading from log ~w, will retry", [Reason1]),
+			false
+	end,
+	ok=case IsReady of
+		false->
+			riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+			ok;
+		true->
+			ok
+	end,
+	{noreply, State#mat_state{is_ready=IsReady}};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
