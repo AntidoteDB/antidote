@@ -20,4 +20,4 @@ CMD cd /opt && \
     make && \
     make rel && \
     make clean && \
-    /opt/antidote/_build/default/rel/antidote/bin/env
+    /opt/antidote/_build/default/rel/antidote/bin/env foreground
