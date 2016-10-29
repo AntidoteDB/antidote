@@ -87,4 +87,4 @@ echo "IP: ${IP}"
 echo "HOSTNAME: ${HOSTNAME}"
 
 RELNAME="`dirname \"$0\"`"/antidote
-exec ${RELNAME} foreground "$@"
+exec ${RELNAME} "$@"
