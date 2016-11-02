@@ -70,7 +70,7 @@ is_operation({Op, {Param, _Actor}}) ->
     ?RIAK_MODULE:is_operation({Op, Param}).
 
 equal(CRDT1, CRDT2) ->
-    ?RIAK_MODULE:equal(CRDT1,CRDT2).
+    ?RIAK_MODULE:equal(CRDT1, CRDT2).
 
 to_binary(CRDT) ->
     ?RIAK_MODULE:to_binary(CRDT).
@@ -87,9 +87,9 @@ all_test() ->
     ?assertEqual([{Field, 1}], value(S1)).
 
 type_check_test() ->
-    Res = is_operation({update,{[{update,{key,riak_dt_lwwreg},{assign,<<"A">>}},
-                                          {update,{val,riak_dt_pncounter},{increment,1}}],
-                                         hardcodedactor}}),
+    Res = is_operation({update, {[{update, {key, riak_dt_lwwreg}, {assign, <<"A">>}},
+                                  {update, {val, riak_dt_pncounter}, {increment, 1}}],
+                                 hardcodedactor}}),
     ?assertEqual(true, Res).
 
 -endif.

@@ -76,7 +76,7 @@ new() ->
 %% since there can be diverged value in this register.
 -spec value(mvreg()) -> [term()].
 value(MVReg) ->
-    [V || {V,_} <- MVReg].
+    [V || {V, _} <- MVReg].
 
 
 -spec downstream(mvreg_op(), mvreg()) -> {ok, mvreg_effect()}.
@@ -96,17 +96,17 @@ unique() ->
 -spec update(mvreg_effect(), mvreg()) -> {ok, mvreg()}.
 update({Value, Token, Overridden}, MVreg) ->
     % remove overridden values
-    MVreg2 = [{V,T} || {V,T} <- MVreg, not lists:member(T, Overridden)],
+    MVreg2 = [{V, T} || {V, T} <- MVreg, not lists:member(T, Overridden)],
     % insert new value
-    {ok, insertSorted({Value, Token}, MVreg2)};
+    {ok, insert_sort({Value, Token}, MVreg2)};
 update({reset, Overridden}, MVreg) ->
-  MVreg2 = [{V,T} || {V,T} <- MVreg, not lists:member(T, Overridden)],
+  MVreg2 = [{V, T} || {V, T} <- MVreg, not lists:member(T, Overridden)],
   {ok, MVreg2}.
 
 % insert value into sorted list
-insertSorted(A, []) -> [A];
-insertSorted(A, [X|Xs]) when A < X -> [A,X|Xs];
-insertSorted(A, [X|Xs]) -> [X|insertSorted(A,Xs)].
+insert_sort(A, []) -> [A];
+insert_sort(A, [X|Xs]) when A < X -> [A, X|Xs];
+insert_sort(A, [X|Xs]) -> [X|insert_sort(A, Xs)].
 
 
 -spec equal(mvreg(), mvreg()) -> boolean().
