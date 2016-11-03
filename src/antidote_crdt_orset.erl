@@ -97,7 +97,8 @@ new() ->
 value(ORDict) ->
     orddict:fetch_keys(ORDict).
 
--spec value(any(), orset()) -> [member()] | orddict:orddict().
+-spec value({fragment, member()}, orset()) -> orset();
+           ({tokens, member()}, orset()) -> [binary()].
 value({fragment, Elem}, ORSet) ->
     case value({tokens, Elem}, ORSet) of
         [] ->
@@ -108,11 +109,11 @@ value({fragment, Elem}, ORSet) ->
 value({tokens, Elem}, ORSet) ->
     case orddict:find(Elem, ORSet) of
         error ->
-            orddict:new();
+            [];
         {ok, Tokens} ->
             Tokens
     end;
-value(_,ORSet) ->
+value(_, ORSet) ->
     value(ORSet).
 
 %% @doc generate downstream operations.
@@ -120,21 +121,21 @@ value(_,ORSet) ->
 %% If the operation is remove or remove_all, fetches all unique tokens for
 %% these elements existing in the `orset()'.
 -spec downstream(orset_op(), orset()) -> {ok, orset_op()}.
-downstream({add,Elem}, _ORDict) ->
+downstream({add, Elem}, _ORDict) ->
     Token = unique(),
-    {ok, {add, {Elem,[Token]}}};
-downstream({add_all,Elems}, _ORDict0) ->
+    {ok, {add, {Elem, [Token]}}};
+downstream({add_all, Elems}, _ORDict0) ->
     DownstreamOp = lists:foldl(fun(Elem, Sum) ->
                                        Token = unique(),
-                                       Sum++[{Elem, [Token]}]
+                                       Sum ++ [{Elem, [Token]}]
                                end, [], Elems),
     {ok, {add_all, DownstreamOp}};
 downstream({remove, Elem}, ORDict) ->
     ToRemove = value({tokens, Elem}, ORDict),
     {ok, {remove, {Elem, ToRemove}}};
-downstream({remove_all,Elems}, ORDict) ->
+downstream({remove_all, Elems}, ORDict) ->
     ToRemove = lists:foldl(fun(Elem, Sum) ->
-                                   Sum++[{Elem, value({tokens, Elem}, ORDict)}]
+                                   Sum ++ [{Elem, value({tokens, Elem}, ORDict)}]
                            end, [], Elems),
     {ok, {remove_all, ToRemove}};
 downstream({reset, {}}, ORDict) ->
@@ -151,16 +152,16 @@ downstream({reset, {}}, ORDict) ->
 -spec update(orset_op(), orset()) ->
                     {ok, orset()}.
 update({add, {Elem, [Token|_]}}, ORDict) ->
-    add_elem(Elem,Token,ORDict);
-update({add_all,Elems}, ORDict0) ->
-    OD = lists:foldl(fun(Elem,ORDict) ->
-                             {ok, ORDict1} = update({add,Elem},ORDict),
+    add_elem(Elem, Token, ORDict);
+update({add_all, Elems}, ORDict0) ->
+    OD = lists:foldl(fun(Elem, ORDict) ->
+                             {ok, ORDict1} = update({add, Elem}, ORDict),
                              ORDict1
                      end, ORDict0, Elems),
     {ok, OD};
 update({remove, Elem}, ORDict) ->
     remove_elem(Elem, ORDict);
-update({remove_all,Elems}, ORDict0) ->
+update({remove_all, Elems}, ORDict0) ->
     remove_elems(Elems, ORDict0).
 
 -spec equal(orset(), orset()) -> boolean().
@@ -206,24 +207,24 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 
 %% Private
 %% @doc add an element and its token to the `orset()'.
-add_elem(Elem,Token,ORDict) ->
-    case orddict:find(Elem,ORDict) of
+add_elem(Elem, Token, ORDict) ->
+    case orddict:find(Elem, ORDict) of
         {ok, Tokens} ->
             case lists:member(Token, Tokens) of
                 true ->
                     {ok, ORDict};
                 false ->
-                    {ok, orddict:store(Elem, Tokens++[Token], ORDict)}
+                    {ok, orddict:store(Elem, Tokens ++ [Token], ORDict)}
             end;
         error ->
             {ok, orddict:store(Elem, [Token], ORDict)}
     end.
 
 %% @doc remove all tokens of the element from the `orset()'.
-remove_elem({Elem,RemoveTokens},ORDict) ->
-    case orddict:find(Elem,ORDict) of
+remove_elem({Elem, RemoveTokens}, ORDict) ->
+    case orddict:find(Elem, ORDict) of
         {ok, Tokens} ->
-            RestTokens = Tokens--RemoveTokens,
+            RestTokens = Tokens -- RemoveTokens,
             case RestTokens of
                 [] ->
                     {ok, orddict:erase(Elem, ORDict)};
@@ -237,7 +238,7 @@ remove_elem({Elem,RemoveTokens},ORDict) ->
 remove_elems([], ORDict) ->
     {ok, ORDict};
 remove_elems([Elem|Rest], ORDict) ->
-    {ok, ORDict1} = remove_elem(Elem,ORDict),
+    {ok, ORDict1} = remove_elem(Elem, ORDict),
     remove_elems(Rest, ORDict1).
 
 %% @doc generate a unique identifier (best-effort).
@@ -259,11 +260,9 @@ is_operation({remove_all, L}) when is_list(L) -> true;
 is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
-require_state_downstream({add,_}) ->
-    false;
-require_state_downstream({add_all,_}) ->
-    false;
-require_state_downstream({remove,_}) -> true;
+require_state_downstream({add, _}) -> false;
+require_state_downstream({add_all, _}) -> false;
+require_state_downstream({remove, _}) -> true;
 require_state_downstream({remove_all, _}) -> true;
 require_state_downstream({reset, {}}) -> true.
 
@@ -278,7 +277,7 @@ add_test() ->
     Set1 = new(),
     {ok, DownstreamOp1} = downstream({add, <<"foo">>}, Set1),
     ?assertMatch({add, {<<"foo">>, _}}, DownstreamOp1),
-    {ok, DownstreamOp2} = downstream({add_all, [<<"li">>,<<"manu">>]}, Set1),
+    {ok, DownstreamOp2} = downstream({add_all, [<<"li">>, <<"manu">>]}, Set1),
     ?assertMatch({add_all, [{<<"li">>, _}, {<<"manu">>, _}]}, DownstreamOp2),
     {ok, Set2} = update(DownstreamOp1, Set1),
     {_, Elem1} = DownstreamOp1,
@@ -293,16 +292,16 @@ value_test() ->
     ?assertEqual([], value(Set1)),
     {ok, Set2} = update(DownstreamOp1, Set1),
     ?assertEqual([<<"foo">>], value(Set2)),
-    {ok, DownstreamOp2} = downstream({add_all, [<<"foo">>, <<"li">>,<<"manu">>]}, Set2),
+    {ok, DownstreamOp2} = downstream({add_all, [<<"foo">>, <<"li">>, <<"manu">>]}, Set2),
     {ok, Set3} = update(DownstreamOp2, Set2),
     ?assertEqual([<<"foo">>, <<"li">>, <<"manu">>], value(Set3)),
 
-    {_, {_, Token1}}=DownstreamOp1,
-    {_, [{_, Token2}|_]}=DownstreamOp2,
+    {_, {_, Token1}} = DownstreamOp1,
+    {_, [{_, Token2}|_]} = DownstreamOp2,
     ?assertEqual(Token1, value({tokens, <<"foo">>}, Set2)),
-    ?assertEqual(Token1++Token2, value({tokens, <<"foo">>}, Set3)),
+    ?assertEqual(Token1 ++ Token2, value({tokens, <<"foo">>}, Set3)),
 
-    ?assertEqual(orddict:store(<<"foo">>, Token1++Token2, orddict:new()), value({fragment, <<"foo">>}, Set3)).
+    ?assertEqual(orddict:store(<<"foo">>, Token1 ++ Token2, orddict:new()), value({fragment, <<"foo">>}, Set3)).
 
 remove_test() ->
     Set1 = new(),
@@ -315,7 +314,7 @@ remove_test() ->
     ?assertEqual([], value(Set3)),
 
     %% Add many elements then remove part
-    {ok, Op3} = downstream({add_all, [<<"foo">>, <<"li">>,<<"manu">>]}, Set1),
+    {ok, Op3} = downstream({add_all, [<<"foo">>, <<"li">>, <<"manu">>]}, Set1),
     {ok, Set4} = update(Op3, Set1),
     ?assertEqual([<<"foo">>, <<"li">>, <<"manu">>], value(Set4)),
 
@@ -324,7 +323,7 @@ remove_test() ->
     ?assertEqual([<<"manu">>], value(Set5)),
 
     %% Remove more than current have
-    {ok, Op6} = downstream({add_all, [<<"foo">>, <<"li">>,<<"manu">>]}, Set1),
+    {ok, Op6} = downstream({add_all, [<<"foo">>, <<"li">>, <<"manu">>]}, Set1),
     {ok, Set6} = update(Op6, Set1),
     {ok, Op7} = downstream({remove_all, [<<"manu">>, <<"test">>]}, Set6),
     Result = update(Op7, Set6),

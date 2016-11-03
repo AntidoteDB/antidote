@@ -55,7 +55,7 @@ new() ->
 
 -spec value(gmap()) -> [{{Key::term(), Type::atom()}, Value::term()}].
 value(Map) ->
-  lists:sort([{{Key,Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
+  lists:sort([{{Key, Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
 
 -spec require_state_downstream(gmap_op()) -> boolean().
 require_state_downstream(_Op) ->
@@ -156,7 +156,7 @@ update_test() ->
 
 update2_test() ->
   Map1 = new(),
-  {ok, Effect1} = downstream({update,[{{a,antidote_crdt_orset},{add,a}}]}, Map1),
+  {ok, Effect1} = downstream({update, [{{a, antidote_crdt_orset}, {add, a}}]}, Map1),
   {ok, Map2} = update(Effect1, Map1),
   {ok, Effect2} = downstream({reset, {}}, Map2),
   {ok, Map3} = update(Effect2, Map2),

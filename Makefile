@@ -1,24 +1,34 @@
-.PHONY: rel deps test
+REBAR            = $(shell pwd)/rebar3
 
-all: deps compile
+.PHONY: test
 
-compile: deps
-	@./rebar compile
+all: compile
 
-app:
-	@./rebar compile skip_deps=true
-
-deps:
-	@./rebar get-deps
+compile:
+	${REBAR} compile
 
 clean:
-	@./rebar clean
+	${REBAR} clean
 
-distclean: clean
-	@./rebar delete-deps
+##
+## Test targets
+##
 
-DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	xmerl webtool eunit syntax_tools compiler mnesia public_key snmp
+check: test xref dialyzer lint
+
+test: eunit proper
+
+lint:
+	${REBAR} as lint lint
+
+eunit:
+	${REBAR} eunit
+
+proper:
+	${REBAR} proper
+
+shell:
+	${REBAR} shell --apps antidote_crdt
 
 include tools.mk
 

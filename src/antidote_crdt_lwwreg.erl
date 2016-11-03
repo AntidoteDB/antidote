@@ -57,7 +57,7 @@ value({_Time, Val}) ->
 
 -spec downstream(lwwreg_op(), lwwreg()) -> {ok, term()}.
 downstream({assign, Value, Time}, {OldTime, _OldValue}) ->
-  {ok, {max(Time, OldTime+1), Value}};
+  {ok, {max(Time, OldTime + 1), Value}};
 downstream({assign, Value}, State) ->
   downstream({assign, Value, make_micro_epoch()}, State).
 

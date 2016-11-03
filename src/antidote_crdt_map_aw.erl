@@ -69,12 +69,11 @@ new() ->
 
 -spec value(state()) -> [{typedKey(), Value::term()}].
 value(Map) ->
-  lists:sort([{{Key,Type}, Type:value(Value)} || {{Key, Type}, {Tokens, Value}} <- dict:to_list(Map), Tokens =/= []]).
+  lists:sort([{{Key, Type}, Type:value(Value)} || {{Key, Type}, {Tokens, Value}} <- dict:to_list(Map), Tokens =/= []]).
 
 -spec require_state_downstream(op()) -> boolean().
 require_state_downstream(_Op) ->
   true.
-
 
 -spec downstream(op(), state()) -> {ok, effect()}.
 downstream({update, {{Key, Type}, Op}}, CurrentMap) ->
@@ -86,8 +85,8 @@ downstream({remove, {Key, Type}}, CurrentMap) ->
 downstream({remove, Keys}, CurrentMap) ->
   downstream({batch, {[], Keys}}, CurrentMap);
 downstream({batch, {Updates, Removes}}, CurrentMap) ->
-  UpdateEffects = [generateDownstreamUpdate(Op, CurrentMap) || Op <- Updates],
-  RemoveEffects = [generateDownstreamRemove(Key, CurrentMap) || Key <- Removes],
+  UpdateEffects = [generate_downstream_update(Op, CurrentMap) || Op <- Updates],
+  RemoveEffects = [generate_downstream_remove(Key, CurrentMap) || Key <- Removes],
   Token =
     case UpdateEffects of
       [] -> <<>>; % no token required
@@ -100,8 +99,8 @@ downstream({reset, {}}, CurrentMap) ->
   downstream({remove, AllKeys}, CurrentMap).
 
 
--spec generateDownstreamUpdate({typedKey(), Op::term()}, state()) -> nested_downstream().
-generateDownstreamUpdate({{Key,Type}, Op}, CurrentMap) ->
+-spec generate_downstream_update({typedKey(), Op::term()}, state()) -> nested_downstream().
+generate_downstream_update({{Key, Type}, Op}, CurrentMap) ->
   {CurrentTokens, CurrentState} =
     case dict:is_key({Key, Type}, CurrentMap) of
       true -> dict:fetch({Key, Type}, CurrentMap);
@@ -111,8 +110,8 @@ generateDownstreamUpdate({{Key,Type}, Op}, CurrentMap) ->
   {{Key, Type}, {ok, DownstreamEffect}, CurrentTokens}.
 
 
--spec generateDownstreamRemove(typedKey(), state()) -> nested_downstream().
-generateDownstreamRemove({Key,Type}, CurrentMap) ->
+-spec generate_downstream_remove(typedKey(), state()) -> nested_downstream().
+generate_downstream_remove({Key, Type}, CurrentMap) ->
   {CurrentTokens, CurrentState} =
     case dict:is_key({Key, Type}, CurrentMap) of
       true -> dict:fetch({Key, Type}, CurrentMap);
@@ -137,8 +136,8 @@ update({Updates, Removes, AddedToken}, State) ->
   State3 = lists:foldl(fun(E, S) -> update(E, [], S)  end, State2, Removes),
   {ok, State3}.
 
-update({{Key,Type}, {ok, Op}, RemovedTokens}, NewTokens, Map) ->
-  case dict:find({Key,Type}, Map) of
+update({{Key, Type}, {ok, Op}, RemovedTokens}, NewTokens, Map) ->
+  case dict:find({Key, Type}, Map) of
     {ok, {Tokens, State}} ->
       UpdatedTokens = NewTokens ++ (Tokens -- RemovedTokens),
       {ok, UpdatedState} = Type:update(Op, State),
@@ -148,8 +147,8 @@ update({{Key,Type}, {ok, Op}, RemovedTokens}, NewTokens, Map) ->
       {ok, NewValueUpdated} = Type:update(Op, NewValue),
       dict:store({Key, Type}, {NewTokens, NewValueUpdated}, Map)
   end;
-update({{Key,Type}, none, RemovedTokens}, NewTokens, Map) ->
-  case dict:find({Key,Type}, Map) of
+update({{Key, Type}, none, RemovedTokens}, NewTokens, Map) ->
+  case dict:find({Key, Type}, Map) of
     {ok, {Tokens, State}} ->
       UpdatedTokens = NewTokens ++ (Tokens -- RemovedTokens),
       dict:store({Key, Type}, {UpdatedTokens, State}, Map);

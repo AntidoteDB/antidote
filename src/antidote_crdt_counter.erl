@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% antidote_crdt_pncounter: A convergent, replicated, operation 
+%% antidote_crdt_pncounter: A convergent, replicated, operation
 %% based PN-Counter
 
 -module(antidote_crdt_counter).
@@ -60,7 +60,7 @@ value(PNCnt) when is_integer(PNCnt) ->
     PNCnt.
 
 %% @doc Generate a downstream operation.
-%% The first parameter is either `increment' or `decrement' or the two tuples 
+%% The first parameter is either `increment' or `decrement' or the two tuples
 %% `{increment, pos_integer()}' or `{decrement, pos_integer()}'. The second parameter
 %%  is the pncounter (this parameter is not actually used).
 -spec downstream(pncounter_update(), any()) -> {ok, pncounter_effect()}.
@@ -68,14 +68,14 @@ downstream(increment, _PNCnt) ->
     {ok, {increment, 1}};
 downstream(decrement, _PNCnt) ->
     {ok, {decrement, 1}};
-downstream({increment, By}, _PNCnt) -> 
+downstream({increment, By}, _PNCnt) ->
     {ok, {increment, By}};
-downstream({decrement, By}, _PNCnt) -> 
+downstream({decrement, By}, _PNCnt) ->
     {ok, {decrement, By}}.
 
 %% @doc Update a `pncounter()'. The first argument is either the atom
 %% `increment' or `decrement' or the two tuples `{increment, pos_integer()}' or
-%% `{decrement, pos_integer()}'. 
+%% `{decrement, pos_integer()}'.
 %% In the case of the former, the operation's amount
 %% is `1'. Otherwise it is the value provided in the tuple's second element.
 %% The 2nd argument is the `pncounter()' to update.
@@ -93,7 +93,7 @@ update({decrement, By}, PNCnt) when is_integer(By), By > 0 ->
 update({decrement, By}, PNCnt) when is_integer(By), By < 0 ->
     {ok, increment_by(-By, PNCnt)}.
 
-%% @doc Compare if two `pncounter()' are equal. Only returns `true()' if both 
+%% @doc Compare if two `pncounter()' are equal. Only returns `true()' if both
 %% of their positive and negative entries are equal.
 -spec equal(pncounter(), pncounter()) -> boolean().
 equal(PNCnt1, PNCnt2) ->
@@ -116,8 +116,8 @@ is_operation({increment, By}) when is_integer(By) -> true;
 is_operation({decrement, By}) when is_integer(By)-> true;
 is_operation(_) -> false.
 
-%% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt 
-%%      to generate downstream effect    
+%% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt
+%%      to generate downstream effect
 require_state_downstream(_) ->
      false.
 
@@ -125,11 +125,11 @@ require_state_downstream(_) ->
 % Priv
 -spec increment_by(pos_integer(), pncounter()) -> pncounter().
 increment_by(Increment, PNCnt) ->
-    PNCnt+Increment.
+    PNCnt + Increment.
 
 -spec decrement_by(pos_integer(), pncounter()) -> pncounter().
 decrement_by(Decrement, PNCnt) ->
-    PNCnt-Decrement.
+    PNCnt - Decrement.
 
 %% ===================================================================
 %% EUnit tests
@@ -187,5 +187,3 @@ binary_test() ->
     ?assert(equal(PNCnt1, PNCnt2)).
 
 -endif.
-
-    

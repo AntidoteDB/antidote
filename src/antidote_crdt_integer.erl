@@ -68,7 +68,7 @@ new() ->
 
 -spec value(state()) -> value().
 value({Vals, Delta}) ->
-    lists:max([X || {_,X} <- Vals]) + Delta.
+    lists:max([X || {_, X} <- Vals]) + Delta.
 
 -spec downstream(update(), state()) -> {ok, effect()}.
 downstream({increment, N}, _State) ->
@@ -85,7 +85,7 @@ unique() ->
 
 %% @doc Update a `pncounter()'. The first argument is either the atom
 %% `increment' or `decrement' or the two tuples `{increment, pos_integer()}' or
-%% `{decrement, pos_integer()}'. 
+%% `{decrement, pos_integer()}'.
 %% In the case of the former, the operation's amount
 %% is `1'. Otherwise it is the value provided in the tuple's second element.
 %% The 2nd argument is the `pncounter()' to update.
@@ -93,12 +93,12 @@ unique() ->
 %% returns the updated `pncounter()'
 -spec update(effect(), state()) -> {ok, state()}.
 update({set, Token, Overridden, N}, {Vals, Delta}) ->
-    Surviving = [{T,V} || {T,V} <- Vals, not lists:member(T, Overridden)],
+    Surviving = [{T, V} || {T, V} <- Vals, not lists:member(T, Overridden)],
     {ok, {[{Token, N}|Surviving], Delta}};
 update({increment, N}, {Vals, Delta}) ->
     {ok, {Vals, Delta + N}}.
 
-%% @doc Compare if two `pncounter()' are equal. Only returns `true()' if both 
+%% @doc Compare if two `pncounter()' are equal. Only returns `true()' if both
 %% of their positive and negative entries are equal.
 -spec equal(state(), state()) -> boolean().
 equal(PNCnt1, PNCnt2) ->
@@ -120,9 +120,9 @@ is_operation({set, N}) when is_integer(N) -> true;
 is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
 
-%% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt 
+%% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt
 %%      to generate downstream effect
-require_state_downstream({set,_}) -> true;
+require_state_downstream({set, _}) -> true;
 require_state_downstream({reset, {}}) -> true;
 require_state_downstream(_) -> false.
 
@@ -134,5 +134,3 @@ require_state_downstream(_) -> false.
 -ifdef(TEST).
 
 -endif.
-
-    
