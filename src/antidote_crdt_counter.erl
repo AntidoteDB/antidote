@@ -108,7 +108,7 @@ is_operation({increment, By}) when is_integer(By) -> true;
 is_operation({decrement, By}) when is_integer(By)-> true;
 is_operation(_) -> false.
 
-%% @doc Returns true if ?MODULE:downstream/2 needs the state of crd
+%% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt
 %%      to generate downstream effect
 require_state_downstream(_) ->
     false.
