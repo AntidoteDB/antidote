@@ -109,12 +109,15 @@ unique() ->
 
 elems_with_removed_tombstones([], _Dict, _ResetTokens) -> [];
 elems_with_removed_tombstones(Elems, [], ResetTokens) -> [{E, ResetTokens} || E <- Elems];
-elems_with_removed_tombstones([E|ElemsRest], [{K, Ts}|DictRest], ResetTokens) when E == K ->
-    [{E, Ts ++ ResetTokens}|elems_with_removed_tombstones(ElemsRest, DictRest, ResetTokens)];
-elems_with_removed_tombstones([E|_]=Elems, [{K, _Ts}|DictRest], ResetTokens) when E > K ->
-    elems_with_removed_tombstones(Elems, DictRest, ResetTokens);
-elems_with_removed_tombstones([E|ElemsRest], Dict, ResetTokens) ->
-    [{E, ResetTokens}|elems_with_removed_tombstones(ElemsRest, Dict, ResetTokens)].
+elems_with_removed_tombstones([E|ElemsRest]=Elems, [{K, Ts}|DictRest]=Dict, ResetTokens) ->
+    if
+        E == K ->
+            [{E, Ts ++ ResetTokens}|elems_with_removed_tombstones(ElemsRest, DictRest, ResetTokens)];
+        E > K ->
+            elems_with_removed_tombstones(Elems, DictRest, ResetTokens);
+        true ->
+            [{E, ResetTokens}|elems_with_removed_tombstones(ElemsRest, Dict, ResetTokens)]
+    end.
 
 -spec update(effect(), set()) -> {ok, set()}.
 update({add, Elems, ObservedResetTokens}, {ResetTokens, Dict}) ->
@@ -131,12 +134,15 @@ update({reset, Elems, OldResetTokens, NewResetToken}, {ResetTokens, Dict}) ->
 
 add_elems([], Dict, _, _) -> Dict;
 add_elems(Elems, [], NewTombs, NewEntryTombs) -> [{E, NewTombs ++ NewEntryTombs} || {E, _} <- Elems];
-add_elems([{E, RemovedTombstones}|ElemsRest], [{K, Ts}|DictRest], NewTombs, NewEntryTombs) when E == K ->
-    [{E, NewTombs ++ (Ts -- RemovedTombstones)}|add_elems(ElemsRest, DictRest, NewTombs, NewEntryTombs)];
-add_elems([{E, _RemovedTombstones}|_]=Elems, [{K, Ts}|DictRest], NewTombs, NewEntryTombs) when E > K ->
-    [{K, Ts}|add_elems(Elems, DictRest, NewTombs, NewEntryTombs)];
-add_elems([{E, _RemovedTombstones}|ElemsRest], Dict, NewTombs, NewEntryTombs) ->
-    [{E, NewTombs ++ NewEntryTombs}|add_elems(ElemsRest, Dict, NewTombs, NewEntryTombs)].
+add_elems([{E, RemovedTombstones}|ElemsRest]=Elems, [{K, Ts}|DictRest]=Dict, NewTombs, NewEntryTombs) ->
+    if
+        E == K ->
+            [{E, NewTombs ++ (Ts -- RemovedTombstones)}|add_elems(ElemsRest, DictRest, NewTombs, NewEntryTombs)];
+        E > K ->
+            [{K, Ts}|add_elems(Elems, DictRest, NewTombs, NewEntryTombs)];
+        true ->
+            [{E, NewTombs ++ NewEntryTombs}|add_elems(ElemsRest, Dict, NewTombs, NewEntryTombs)]
+    end.
 
 -spec equal(set(), set()) -> boolean().
 equal(ORDictA, ORDictB) ->

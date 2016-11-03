@@ -32,7 +32,7 @@
         ]).
 
 %% API
--export([local_permissions/2,
+-export([localPermissions/2,
          permissions/1
         ]).
 
@@ -56,8 +56,8 @@ new() ->
     {orddict:new(), orddict:new()}.
 
 %% @doc Return the available permissions of replica `Id' in a `bcounter()'.
--spec local_permissions(id(), bcounter()) -> non_neg_integer().
-local_permissions(Id, {P, D}) ->
+-spec localPermissions(id(), bcounter()) -> non_neg_integer().
+localPermissions(Id, {P, D}) ->
     Received = lists:foldl(
                  fun(
                    {_, V}, Acc) ->
@@ -76,8 +76,7 @@ local_permissions(Id, {P, D}) ->
                          Acc + V
                  end, 0, orddict:filter(
                            fun
-                               ({From, To}, _) when
-                                     From == Id andalso To /= Id ->
+                               ({From, To}, _) when From == Id andalso To /= Id ->
                                    true;
                                (_, _) ->
                                    false
@@ -130,12 +129,9 @@ downstream({transfer, {V, To, Actor}}, Counter) when is_integer(V), V > 0 ->
     generate_downstream_check({transfer, V, To}, Actor, Counter, V).
 
 generate_downstream_check(Op, Actor, Counter, V) ->
-    Available = local_permissions(Actor, Counter),
-    case  Available >= V of
-        true ->
-            {ok, {Op, Actor}};
-        false ->
-            {error, no_permissions}
+    Available = localPermissions(Actor, Counter),
+    if Available >= V -> {ok, {Op, Actor}};
+       Available < V -> {error, no_permissions}
     end.
 
 %% @doc Update a `bcounter()' with a downstream operation,
@@ -213,19 +209,19 @@ increment_test() ->
     Counter1 = apply_op({increment, {10, r1}}, Counter0),
     Counter2 = apply_op({increment, {5, r2}}, Counter1),
     %% Test replicas' values.
-    ?assertEqual(5, local_permissions(r2, Counter2)),
-    ?assertEqual(10, local_permissions(r1, Counter2)),
+    ?assertEqual(5, localPermissions(r2, Counter2)),
+    ?assertEqual(10, localPermissions(r1, Counter2)),
     %% Test total value.
     ?assertEqual(15, permissions(Counter2)).
 
-%% Tests the function `local_permissions()'.
+%% Tests the function `localPermissions()'.
 localPermisisons_test() ->
     Counter0 = new(),
     Counter1 = apply_op({increment, {10, r1}}, Counter0),
     %% Test replica with positive amount of permissions.
-    ?assertEqual(10, local_permissions(r1, Counter1)),
+    ?assertEqual(10, localPermissions(r1, Counter1)),
     %% Test nonexistent replica.
-    ?assertEqual(0, local_permissions(r2, Counter1)).
+    ?assertEqual(0, localPermissions(r2, Counter1)).
 
 %% Tests decrement operations.
 decrement_test() ->
@@ -235,7 +231,7 @@ decrement_test() ->
     Counter2 = apply_op({decrement, {6, r1}}, Counter1),
     ?assertEqual(4, permissions(Counter2)),
     %% Test nonexistent replica.
-    ?assertEqual(0, local_permissions(r2, Counter1)),
+    ?assertEqual(0, localPermissions(r2, Counter1)),
     %% Test forbidden decrement.
     OP_DS = downstream({decrement, {6, r1}}, Counter2),
     ?assertEqual({error, no_permissions}, OP_DS).
@@ -261,16 +257,16 @@ transfer_test() ->
     Counter1 = apply_op({increment, {10, r1}}, Counter0),
     %% Test transferring permissions from one replica to another.
     Counter2 = apply_op({transfer, {6, r2, r1}}, Counter1),
-    ?assertEqual(4, local_permissions(r1, Counter2)),
-    ?assertEqual(6, local_permissions(r2, Counter2)),
+    ?assertEqual(4, localPermissions(r1, Counter2)),
+    ?assertEqual(6, localPermissions(r2, Counter2)),
     ?assertEqual(10, permissions(Counter2)),
     %% Test transference forbidden by lack of previously transfered resources.
     OP_DS = downstream({transfer, {5, r2, r1}}, Counter2),
     ?assertEqual({error, no_permissions}, OP_DS),
     %% Test transference enabled by previously transfered resources.
     Counter3 = apply_op({transfer, {5, r1, r2}}, Counter2),
-    ?assertEqual(9, local_permissions(r1, Counter3)),
-    ?assertEqual(1, local_permissions(r2, Counter3)),
+    ?assertEqual(9, localPermissions(r1, Counter3)),
+    ?assertEqual(1, localPermissions(r2, Counter3)),
     ?assertEqual(10, permissions(Counter3)).
 
 %% Tests the function `value()'.
