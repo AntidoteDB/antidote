@@ -97,7 +97,8 @@ new() ->
 value(ORDict) ->
     orddict:fetch_keys(ORDict).
 
--spec value(any(), orset()) -> [member()] | orddict:orddict().
+-spec value({fragment, member()}, orset()) -> orset();
+           ({tokens, member()}, orset()) -> [binary()].
 value({fragment, Elem}, ORSet) ->
     case value({tokens, Elem}, ORSet) of
         [] ->
