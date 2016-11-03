@@ -7,7 +7,7 @@
 -type pncounter() :: integer().
 -type pncounter_update() :: {increment, integer()} |
                             {decrement, integer()}.
--type pncounter_effect() :: pncounter_update().
+-type pncounter_effect() :: integer().
 -type pncounter_value() :: integer().
 
 

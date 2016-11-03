@@ -63,15 +63,15 @@ value(PNCnt) when is_integer(PNCnt) ->
 %% The first parameter is either `increment' or `decrement' or the two tuples
 %% `{increment, pos_integer()}' or `{decrement, pos_integer()}'. The second parameter
 %%  is the pncounter (this parameter is not actually used).
--spec downstream(pncounter_update(), any()) -> {ok, pncounter_effect()}.
+-spec downstream(pncounter_update(), pncounter()) -> {ok, pncounter_effect()}.
 downstream(increment, _PNCnt) ->
-    {ok, {increment, 1}};
+    {ok, 1};
 downstream(decrement, _PNCnt) ->
-    {ok, {decrement, 1}};
-downstream({increment, By}, _PNCnt) ->
-    {ok, {increment, By}};
-downstream({decrement, By}, _PNCnt) ->
-    {ok, {decrement, By}}.
+    {ok, -1};
+downstream({increment, By}, _PNCnt) when is_integer(By) ->
+    {ok, By};
+downstream({decrement, By}, _PNCnt) when is_integer(By) ->
+    {ok, -By}.
 
 %% @doc Update a `pncounter()'. The first argument is either the atom
 %% `increment' or `decrement' or the two tuples `{increment, pos_integer()}' or
@@ -82,16 +82,8 @@ downstream({decrement, By}, _PNCnt) ->
 %%
 %% returns the updated `pncounter()'
 -spec update(pncounter_effect(), pncounter()) -> {ok, pncounter()}.
-update({_IncrDecr, 0}, PNCnt) ->
-    {ok, PNCnt};
-update({increment, By}, PNCnt) when is_integer(By), By > 0 ->
-    {ok, increment_by(By, PNCnt)};
-update({increment, By}, PNCnt) when is_integer(By), By < 0 ->
-    {ok, decrement_by(-By, PNCnt)};
-update({decrement, By}, PNCnt) when is_integer(By), By > 0 ->
-    {ok, decrement_by(By, PNCnt)};
-update({decrement, By}, PNCnt) when is_integer(By), By < 0 ->
-    {ok, increment_by(-By, PNCnt)}.
+update(N, PNCnt) ->
+    {ok, PNCnt + N}.
 
 %% @doc Compare if two `pncounter()' are equal. Only returns `true()' if both
 %% of their positive and negative entries are equal.
@@ -116,25 +108,20 @@ is_operation({increment, By}) when is_integer(By) -> true;
 is_operation({decrement, By}) when is_integer(By)-> true;
 is_operation(_) -> false.
 
-%% @doc Returns true if ?MODULE:downstream/2 needs the state of crdt
+%% @doc Returns true if ?MODULE:downstream/2 needs the state of crd
 %%      to generate downstream effect
 require_state_downstream(_) ->
-     false.
-
-
-% Priv
--spec increment_by(pos_integer(), pncounter()) -> pncounter().
-increment_by(Increment, PNCnt) ->
-    PNCnt + Increment.
-
--spec decrement_by(pos_integer(), pncounter()) -> pncounter().
-decrement_by(Decrement, PNCnt) ->
-    PNCnt - Decrement.
+    false.
 
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+
+%% @priv
+prepare_and_effect(Op, PNCounter) ->
+    {ok, Downstream} = downstream(Op, PNCounter),
+    update(Downstream, PNCounter).
 
 new_test() ->
     ?assertEqual(0, new()).
@@ -147,30 +134,30 @@ value_test() ->
 %% @doc test the correctness of increment without parameter.
 update_increment_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, 1}, PNCnt0),
-    {ok, PNCnt2} = update({increment, 2}, PNCnt1),
-    {ok, PNCnt3} = update({increment, 1}, PNCnt2),
+    {ok, PNCnt1} = prepare_and_effect({increment, 1}, PNCnt0),
+    {ok, PNCnt2} = prepare_and_effect({increment, 2}, PNCnt1),
+    {ok, PNCnt3} = prepare_and_effect({increment, 1}, PNCnt2),
     ?assertEqual(4, value(PNCnt3)).
 
 %% @doc test the correctness of increment by some numbers.
 update_increment_by_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, 7}, PNCnt0),
+    {ok, PNCnt1} = prepare_and_effect({increment, 7}, PNCnt0),
     ?assertEqual(7, value(PNCnt1)).
 
 %% @doc test the correctness of decrement.
 update_decrement_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, 1}, PNCnt0),
-    {ok, PNCnt2} = update({increment, 2}, PNCnt1),
-    {ok, PNCnt3} = update({increment, 1}, PNCnt2),
-    {ok, PNCnt4} = update({decrement, 1}, PNCnt3),
+    {ok, PNCnt1} = prepare_and_effect({increment, 1}, PNCnt0),
+    {ok, PNCnt2} = prepare_and_effect({increment, 2}, PNCnt1),
+    {ok, PNCnt3} = prepare_and_effect({increment, 1}, PNCnt2),
+    {ok, PNCnt4} = prepare_and_effect({decrement, 1}, PNCnt3),
     ?assertEqual(3, value(PNCnt4)).
 
 update_negative_params_test() ->
     PNCnt0 = new(),
-    {ok, PNCnt1} = update({increment, -7}, PNCnt0),
-    {ok, PNCnt2} = update({decrement, -5}, PNCnt1),
+    {ok, PNCnt1} = prepare_and_effect({increment, -7}, PNCnt0),
+    {ok, PNCnt2} = prepare_and_effect({decrement, -5}, PNCnt1),
     ?assertEqual(-2, value(PNCnt2)).
 
 equal_test() ->
