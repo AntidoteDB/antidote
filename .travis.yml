@@ -1,0 +1,14 @@
+language: erlang
+otp_release:
+  - 18.3
+  - 19.1
+install:
+  - make
+  - ./rebar3 update
+script:
+  - make test
+  - make dialyzer
+  - make lint
+  - ./rebar3 proper -n 1000
+sudo: required
+dist: trusty
