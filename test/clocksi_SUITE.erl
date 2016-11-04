@@ -80,22 +80,21 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> [
-%%    clocksi_test1,
-%%         clocksi_test2,
-%%         clocksi_test3,
-%%         clocksi_test5,
-%%         clocksi_test_read_wait,
-%%         clocksi_test4,
-%%         clocksi_test_read_time,
-%%         clocksi_test_prepare,
-%%         clocksi_tx_noclock_test,
-%%         clocksi_single_key_update_read_test,
-%%         clocksi_multiple_key_update_read_test,
-%%         clocksi_test_certification_check,
-%%         clocksi_multiple_test_certification_check,
-%%         clocksi_multiple_read_update_test,
-%%         clocksi_concurrency_test,
+all() -> [clocksi_test1,
+         clocksi_test2,
+         clocksi_test3,
+         clocksi_test5,
+         clocksi_test_read_wait,
+         clocksi_test4,
+         clocksi_test_read_time,
+         clocksi_test_prepare,
+         clocksi_tx_noclock_test,
+         clocksi_single_key_update_read_test,
+         clocksi_multiple_key_update_read_test,
+         clocksi_test_certification_check,
+         clocksi_multiple_test_certification_check,
+         clocksi_multiple_read_update_test,
+         clocksi_concurrency_test,
          clocksi_parallel_writes_test].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
@@ -765,7 +764,6 @@ clocksi_parallel_writes_test(Config) ->
     Bound_object4 = {parallel_key4, antidote_crdt_counter, Bucket},
     Bound_object5 = {parallel_key5, antidote_crdt_counter, Bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    ct:print("Txid ~p", [TxId]),
     
     %% update 5 different objects
     ok = rpc:call(Node, antidote, update_objects,
