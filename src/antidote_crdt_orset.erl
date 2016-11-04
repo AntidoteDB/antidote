@@ -76,6 +76,11 @@
     | {remove_all, [member()]}
     | {reset, {}}.
 
+%% The downstream op is a list of triples.
+%% In each triple:
+%%  - the first component is the elem that was added or removed
+%%  - the second component is the list of supporting tokens to be added
+%%  - the third component is the list of supporting tokens to be removed
 -type downstream_op() :: [{member(), tokens(), tokens()}].
 
 -type member() :: term().
@@ -131,11 +136,6 @@ downstream({reset, {}}, ORSet) ->
     downstream({remove_all, value(ORSet)}, ORSet).
 
 %% @doc apply downstream operations and update an `orset()'.
-%% The downstream op is a list of triples.
-%% In each triple:
-%%  - the first component is the elem that was added or removed
-%%  - the second component is the list of supporting tokens to be added
-%%  - the third component is the list of supporting tokens to be removed
 -spec update(downstream_op(), orset()) -> {ok, orset()}.
 update(DownstreamOps, ORSet0) ->
     ORSet = lists:foldl(
