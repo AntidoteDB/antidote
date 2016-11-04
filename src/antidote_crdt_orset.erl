@@ -125,22 +125,8 @@ downstream({reset, {}}, ORSet) ->
 
 %% @doc apply downstream operations and update an `orset()'.
 -spec update(downstream_op(), orset()) -> {ok, orset()}.
-update(DownstreamOps, ORSet0) ->
-    ORSet = lists:foldl(
-        fun({Elem, ToAdd, ToRemove}, ORSet1) ->
-            CurrentTokens = get_supporting_tokens(Elem, ORSet1),
-            Tokens = (CurrentTokens ++ ToAdd) -- ToRemove,
-            case Tokens of
-                [] ->
-                    orddict:erase(Elem, ORSet1);
-                _ ->
-                    orddict:store(Elem, Tokens, ORSet1)
-            end
-        end,
-        ORSet0,
-        DownstreamOps
-    ),
-    {ok, ORSet}.
+update(DownstreamOp, ORSet) ->
+    {ok, apply_downstreams(DownstreamOp, ORSet)}.
 
 -spec equal(orset(), orset()) -> boolean().
 equal(ORSetA, ORSetB) ->
@@ -172,7 +158,7 @@ create_downstreams(CreateDownstream, Elems, [], DownstreamOps) ->
     lists:foldl(
         fun(Elem, Ops) ->
             DownstreamOp = CreateDownstream(Elem, []),
-            [DownstreamOp | Ops]
+            [DownstreamOp|Ops]
         end,
         DownstreamOps,
         Elems
@@ -181,25 +167,45 @@ create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|O
     if
         Elem1 == Elem2 ->
             DownstreamOp = CreateDownstream(Elem1, Tokens),
-            create_downstreams(CreateDownstream, ElemsRest, ORSetRest, [DownstreamOp | DownstreamOps]);
+            create_downstreams(CreateDownstream, ElemsRest, ORSetRest, [DownstreamOp|DownstreamOps]);
         Elem1 > Elem2 ->
             create_downstreams(CreateDownstream, Elems, ORSetRest, DownstreamOps);
         true ->
             DownstreamOp = CreateDownstream(Elem1, Tokens),
-            create_downstreams(CreateDownstream, ElemsRest, ORSet, [DownstreamOp | DownstreamOps])
+            create_downstreams(CreateDownstream, ElemsRest, ORSet, [DownstreamOp|DownstreamOps])
     end;
 create_downstreams(CreateDownstream, Elems, [_|ORSet], DownstreamOps) ->
     create_downstreams(CreateDownstream, Elems, ORSet, DownstreamOps).
 
-%% @doc returns the list of tokens in the `orset()'
-%%      that support a given `member()'.
--spec get_supporting_tokens(member(), orset()) -> tokens().
-get_supporting_tokens(Elem, ORSet) ->
-    case orddict:find(Elem, ORSet) of
-        error ->
+%% @private apply a list of downstream ops to a given orset
+apply_downstreams([], ORSet) ->
+    ORSet;
+apply_downstreams(Ops, []) ->
+    lists:foldl(
+        fun({Elem, ToAdd, ToRemove}, ORSet) ->
+            ORSet ++ apply_downstream(Elem, [], ToAdd, ToRemove)
+        end,
+        [],
+        Ops
+    );
+apply_downstreams([{Elem1, ToAdd, ToRemove}|OpsRest]=Ops, [{Elem2, CurrentTokens}|ORSetRest]=ORSet) ->
+    if
+        Elem1 == Elem2 ->
+            apply_downstream(Elem1, CurrentTokens, ToAdd, ToRemove) ++ apply_downstreams(OpsRest, ORSetRest);
+        Elem1 > Elem2 ->
+            [{Elem2, CurrentTokens} | apply_downstreams(Ops, ORSetRest)];
+        true ->
+            apply_downstream(Elem1, [], ToAdd, ToRemove) ++ apply_downstreams(OpsRest, ORSet)
+    end.
+
+%% @private create an orddict entry from a downstream op
+apply_downstream(Elem, CurrentTokens, ToAdd, ToRemove) ->
+    Tokens = (CurrentTokens ++ ToAdd) -- ToRemove,
+    case Tokens of
+        [] ->
             [];
-        {ok, Tokens} ->
-            Tokens
+        _ ->
+            [{Elem, Tokens}]
     end.
 
 %% @doc The following operation verifies
