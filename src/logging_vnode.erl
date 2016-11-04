@@ -68,6 +68,7 @@
 -ignore_xref([start_vnode/1]).
 
 -record(state, {partition :: partition_id(),
+		enable_log_to_disk :: boolean(), %% this enables or disables logging to disk.
 		logs_map :: dict:dict(),
 		op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
 		recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
@@ -235,12 +236,14 @@ init([Partition]) ->
 	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
         {Map,MaxVector} ->
+	        {ok, EnableLoggingToDisk} = application:get_env(antidote, enable_logging),
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         op_id_table=OpIdTable,
 			recovered_vector=MaxVector,
                         senders_awaiting_ack=dict:new(),
-                        last_read=start}}
+                        last_read=start,
+	            enable_log_to_disk=EnableLoggingToDisk}}
     end.
 
 %% Used to check if the vnode is up
@@ -282,7 +285,7 @@ handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_
     end,
     {noreply, State};
 
-%% @doc Read command: Returns the phyiscal time of the 
+%% @doc Read command: Returns the phyiscal time of the
 %%      clocksi vnode for which no transactions will commit with smaller time
 %%      Output: {ok, Time}
 handle_command({send_min_prepared, Time}, _Sender,
@@ -294,19 +297,24 @@ handle_command({send_min_prepared, Time}, _Sender,
 %%          Input: The id of the log to be read
 %%      Output: {ok, {vnode_id, Operations}} | {error, Reason}
 handle_command({read, LogId}, _Sender,
-               #state{partition=Partition, logs_map=Map}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-	    %% TODO should continue reading with the continuation??
-            ok = disk_log:sync(Log),
-	    {Continuation,Ops} = read_internal(Log,start,[]),
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State}
-	    end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+               #state{partition=Partition, logs_map=Map, enable_log_to_disk=EnableLog}=State) ->
+	case EnableLog of
+		true ->
+			case get_log_from_map(Map, Partition, LogId) of
+				{ok, Log} ->
+					%% TODO should continue reading with the continuation??
+					ok = disk_log:sync(Log),
+					{Continuation,Ops} = read_internal(Log,start,[]),
+					case Continuation of
+						error -> {reply, {error, Ops}, State};
+						eof -> {reply, {ok, Ops}, State}
+					end;
+				{error, Reason} ->
+					{reply, {error, Reason}, State}
+			end;
+		false ->
+			{reply, {ok, []}, State}
+	end;
 
 %% @doc Threshold read command: Returns the operations logged for Key
 %%      from a specified op_id-based threshold.
@@ -316,26 +324,32 @@ handle_command({read, LogId}, _Sender,
 %%      Output: {vnode_id, Operations} | {error, Reason}
 %%
 handle_command({read_from, LogId, _From}, _Sender,
-               #state{partition=Partition, logs_map=Map, last_read=Lastread}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            ok = disk_log:sync(Log),
-	    %% TODO should continue reading with the continuation??
-            {Continuation, Ops} = 
-                case disk_log:chunk(Log, Lastread) of
-                    {error, Reason} -> {error, Reason};
-                    {C, O} -> {C,O};
-                    {C, O, _} -> {C,O};
-                    eof -> {eof, []}
-                end,
-            case Continuation of
-                error -> {reply, {error, Ops}, State};
-                eof -> {reply, {ok, Ops}, State};
-                _ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+               #state{partition=Partition, logs_map=Map, last_read=Lastread, enable_log_to_disk=EnableLog}=State) ->
+	case EnableLog of
+		true ->
+			case get_log_from_map(Map, Partition, LogId) of
+				{ok, Log} ->
+					ok = disk_log:sync(Log),
+					%% TODO should continue reading with the continuation??
+					{Continuation, Ops} =
+						case disk_log:chunk(Log, Lastread) of
+							{error, Reason} -> {error, Reason};
+							{C, O} -> {C,O};
+							{C, O, _} -> {C,O};
+							eof -> {eof, []}
+						end,
+					case Continuation of
+						error -> {reply, {error, Ops}, State};
+						eof -> {reply, {ok, Ops}, State};
+						_ -> {reply, {ok, Ops}, State#state{last_read=Continuation}}
+					end;
+				{error, Reason} ->
+					{reply, {error, Reason}, State}
+			end;
+			false ->
+				{reply, {ok, []}, State}
+	end;
+    
 
 %% @doc Append command: Appends a new op to the Log of Key
 %%      Input:  LogId: Indetifies which log the operation has to be
@@ -349,7 +363,8 @@ handle_command({read_from, LogId, _From}, _Sender,
 handle_command({append, LogId, LogOperation, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
-                      partition=Partition}=State) ->
+	                  partition=Partition,
+	                  enable_log_to_disk=EnableLog}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
 	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
@@ -360,7 +375,7 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 	    true = update_ets_op_id({LogId,MyDCID},NewOpId,OpIdTable),
 	    %% non commit operations update the bucket id number to keep track
 	    %% of the number of updates per bucket
-	    NewBucketOpId = 
+	    NewBucketOpId =
 		case LogOperation#log_operation.op_type of
 		    update ->
 			Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
@@ -371,29 +386,35 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 			NewBOpId;
 		    _ ->
 			NewOpId
-		end,		    
+		end,
             LogRecord = #log_record{
               version = log_utilities:log_record_version(),
               op_number = NewOpId,
               bucket_op_number = NewBucketOpId,
               log_operation = LogOperation},
-            case insert_log_record(Log, LogId, LogRecord) of
-                {ok, NewOpId} ->
-		    inter_dc_log_sender_vnode:send(Partition, LogRecord),
-		    case Sync of
-			true ->
-			    case disk_log:sync(Log) of
-				ok ->
-				    {reply, {ok, OpId}, State};
-				{error, Reason} ->
-				    {reply, {error, Reason}, State}
-			    end;
-			false ->
-			    {reply, {ok, OpId}, State}
-		    end;
-                {error, Reason} ->
-                    {reply, {error, Reason}, State}
-            end;
+	        case EnableLog of
+		        true ->
+			        case insert_log_record(Log, LogId, LogRecord) of
+				        {ok, NewOpId} ->
+					        inter_dc_log_sender_vnode:send(Partition, LogRecord),
+					        case Sync of
+						        true ->
+							        case disk_log:sync(Log) of
+								        ok ->
+									        {reply, {ok, OpId}, State};
+								        {error, Reason} ->
+									        {reply, {error, Reason}, State}
+							        end;
+						        false ->
+							        {reply, {ok, OpId}, State}
+					        end;
+				        {error, Reason} ->
+					        {reply, {error, Reason}, State}
+			        end;
+		        false ->
+			        inter_dc_log_sender_vnode:send(Partition, LogRecord),
+			        {reply, {ok, OpId}, State}
+	        end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -408,7 +429,8 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
-                      partition=Partition}=State) ->
+                      partition=Partition,
+	               enable_log_to_disk=EnableLog}=State)->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
     {ErrorList, SuccList, UpdatedLogs} =
 	lists:foldl(fun(LogRecordOrg, {AccErr, AccSucc, UpdatedLogs}) ->
@@ -463,9 +485,14 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
     %% Sync the updated logs if necessary
     case Sync of
 	true ->
-	    ordsets:fold(fun(Log,_Acc) ->
-				 ok = disk_log:sync(Log)
-			 end, ok, UpdatedLogs);
+		case EnableLog of
+			true ->
+				ordsets:fold(fun(Log,_Acc) ->
+					ok = disk_log:sync(Log)
+				end, ok, UpdatedLogs);
+			false ->
+				do_nothing
+		end;
 	false ->
 	    ok
     end,
@@ -479,11 +506,15 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
     end;
 
 handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
-    #state{logs_map = Map, partition = Partition} = State) ->
+  #state{logs_map=Map, partition=Partition, enable_log_to_disk=EnableLog}=State)->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-            ok = disk_log:sync(Log),
-            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
+	        case EnableLog of
+		        true ->
+			        ok=disk_log:sync(Log);
+		        false ->
+			        ok
+	        end,            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 {eof, CommittedOpsForKeyDict} ->
@@ -510,18 +541,23 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 %% -spec handle_command({get_all, log_id(), disk_log:continuation() | start, dict:dict()}, term(), #state{}) ->
 %% 			   {reply, {error, reason()} | dict:dict(), #state{}}.
 handle_command({get_all, LogId, Continuation, Ops}, _Sender,
-	       #state{logs_map = Map, partition = Partition} = State) ->
-    case get_log_from_map(Map, Partition, LogId) of
-        {ok, Log} ->
-            ok = disk_log:sync(Log),
-	    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
-                {error, Reason} ->
-                    {reply, {error, Reason}, State};
-                CommittedOpsForKeyDict ->
-		    {reply, CommittedOpsForKeyDict, State}
-            end;
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+	       #state{logs_map = Map, partition = Partition, enable_log_to_disk=EnableLog} = State) ->
+    case EnableLog of
+	    true ->
+		    case get_log_from_map(Map, Partition, LogId) of
+			    {ok, Log} ->
+				    ok=disk_log:sync(Log),
+				    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
+					    {error, Reason} ->
+						    {reply, {error, Reason}, State};
+					    CommittedOpsForKeyDict ->
+						    {reply, CommittedOpsForKeyDict, State}
+				    end;
+			    {error, Reason} ->
+				    {reply, {error, Reason}, State}
+		    end;
+	    false ->
+		    {reply, [], State}
     end;
 
 handle_command(_Message, _Sender, State) ->
