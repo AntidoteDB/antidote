@@ -23,7 +23,7 @@
 %% @doc
 %% An operation-based Observed-Remove Set CRDT.
 %% As the data structure is operation-based, to issue an operation, one should
-%% firstly call `generate_downstream/3' to get the downstream version of the
+%% firstly call `downstream/2' to get the downstream version of the
 %% operation and then call `update/2'.
 %%
 %% It provides five operations: add, which adds an element to a set; add_all,
@@ -177,11 +177,30 @@ create_downstreams(CreateDownstream, Elems, [], DownstreamOps) ->
         DownstreamOps,
         Elems
     );
-create_downstreams(CreateDownstream, [Elem|Elems], [{Elem, Tokens}|ORSet], DownstreamOps) ->
-    DownstreamOp = CreateDownstream(Elem, Tokens),
-    create_downstreams(CreateDownstream, Elems, ORSet, [DownstreamOp | DownstreamOps]);
+create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|ORSetRest]=ORSet, DownstreamOps) ->
+    if
+        Elem1 == Elem2 ->
+            DownstreamOp = CreateDownstream(Elem1, Tokens),
+            create_downstreams(CreateDownstream, ElemsRest, ORSetRest, [DownstreamOp | DownstreamOps]);
+        Elem1 > Elem2 ->
+            create_downstreams(CreateDownstream, Elems, ORSetRest, DownstreamOps);
+        true ->
+            DownstreamOp = CreateDownstream(Elem1, Tokens),
+            create_downstreams(CreateDownstream, ElemsRest, ORSet, [DownstreamOp | DownstreamOps])
+    end;
 create_downstreams(CreateDownstream, Elems, [_|ORSet], DownstreamOps) ->
     create_downstreams(CreateDownstream, Elems, ORSet, DownstreamOps).
+
+%% @doc returns the list of tokens in the `orset()'
+%%      that support a given `member()'.
+-spec get_supporting_tokens(member(), orset()) -> tokens().
+get_supporting_tokens(Elem, ORSet) ->
+    case orddict:find(Elem, ORSet) of
+        error ->
+            [];
+        {ok, Tokens} ->
+            Tokens
+    end.
 
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
