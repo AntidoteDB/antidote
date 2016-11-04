@@ -71,6 +71,7 @@
     perform_update/5,
     perform_read/4,
     execute_op/3,
+	receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -135,7 +136,8 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        from=undefined,
        full_commit=FullCommit,
        is_static=IsStatic,
-       read_set=[],
+       return_accumulator=[],
+	    internal_read_set=orddict:new(),
        stay_alive = StayAlive
       }.
 
@@ -211,6 +213,7 @@ perform_singleitem_read(Key, Type) ->
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
+    lager:info("PERFORMING SINGLE ITEM UPDATE"),
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -279,7 +282,7 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
     end.
 
 
-perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
+perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
     {Key, Type, Param} = Args,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -302,36 +305,27 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
                                 lists:keyreplace(IndexNode, 1, Updated_partitions,
                                                  {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
                         end,
-                    case Sender of
-                        undefined ->
-                            ok;
-                        _ ->
-                            gen_fsm:reply(Sender, ok)
-                    end,
+%%                    case Sender of
+%%                        undefined ->
+%%                            ok;
+%%                        _ ->
+%%                            gen_fsm:reply(Sender, ok)
+%%                    end,
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
-                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                        {ok, _} ->
-                            {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
-                        Error ->
-                            case Sender of
-                                undefined ->
-                                    ok;
-                                _ ->
-                                    _Res = gen_fsm:reply(Sender, {error, Error})
-                            end,
-                            {error, Error}
-                    end;
+                    lager:info("Calling async node myself ~p",[self()]),
+                    ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()),
+	                {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
                 {error, Reason} ->
-                    case Sender of
-                        undefined ->
-                            ok;
-                        _ ->
-                            _Res = gen_fsm:reply(Sender, {error, Reason})
-                    end,
+%%                    case Sender of
+%%                        undefined ->
+%%                            ok;
+%%                        _ ->
+%%                            _Res = gen_fsm:reply(Sender, {error, Reason})
+%%                    end,
                     {error, Reason}
             end;
         {error, Reason} ->
@@ -342,10 +336,14 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
+    %% update kept for backwards compatibility with tests.
+    execute_op({update, Args}, Sender, SD0) ->
+%%    lager:debug("got execute update"),
+    execute_op({update_objects, [Args]}, Sender, SD0);
+    
 execute_op({OpType, Args}, Sender,
     SD0 = #tx_coord_state{transaction = Transaction,
-                          updated_partitions = Updated_partitions,
-                          client_ops = ClientOps
+                          updated_partitions = Updated_partitions
                          }) ->
     case OpType of
         prepare ->
@@ -362,16 +360,54 @@ execute_op({OpType, Args}, Sender,
                 ReadResult ->
                     {reply, {ok, ReadResult}, execute_op, SD0}
             end;
-        update ->
-            case perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) of
-                {error, _Reason} ->
-                    abort(SD0#tx_coord_state{from = Sender});
-                {NewUpdatedPartitions, NewClientOps} ->
-                    {next_state, execute_op,
-                        SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions,
-                                          client_ops = NewClientOps}}
-            end
+	    update_objects ->
+		    ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps}) ->
+			    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps) of
+				    {error, Reason} ->
+					    Acc#tx_coord_state{return_accumulator= {error, Reason}};
+				    {NewUpdatedPartitions, NewClientOps} ->
+					    NewNumToRead = Acc#tx_coord_state.num_to_read,
+					    Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
+						    updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
+			    end
+		    end,
+		    NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
+		    case NewCoordState#tx_coord_state.num_to_read > 0 of
+			    true ->
+                    lager:info("Need to receive ~p responses",[NewCoordState#tx_coord_state.num_to_read]),
+				    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
+			    false ->
+				    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
+		    end
     end.
+
+
+%% @doc This state reached after an execute_op(update_objects[Params]).
+%% update_objects calls the perform_update function, which asynchronously
+%% sends a log operation per update, to the vnode responsible of the updated
+%% key. After sending all those messages, the coordinator reaches this state
+%% to receive the responses of the vnodes.
+receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
+	return_accumulator= ReturnAcc}) ->
+	%%    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
+	NewAcc = case Response of
+		{error, Reason} -> {error, Reason};
+		{ok, _OpId} -> ReturnAcc;
+		timeout -> ReturnAcc
+	end,
+	case NumToReply > 1 of
+		false ->
+			gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
+			case (NewAcc == ok) of
+				true ->
+					{next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}};
+				false ->
+					abort(S0)
+			end;
+		true ->
+			{next_state, receive_logging_responses,
+				S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
+	end.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes
@@ -594,7 +630,7 @@ receive_aborted(_, S0) ->
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state
-                {from = From, transaction = Transaction, read_set = ReadSet,
+                {from = From, transaction = Transaction, return_accumulator= ReadSet,
                  state = TxState, commit_time = CommitTime,
                  full_commit = FullCommit,
                  is_static = IsStatic, stay_alive = StayAlive,

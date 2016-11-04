@@ -38,7 +38,7 @@
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
-         asyn_append/3,
+         asyn_append/4,
          append/3,
          append_commit/3,
          append_group/4,
@@ -123,17 +123,19 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), #log_operation{}) -> ok.
-asyn_append(Preflist, Log, LogOperation) ->
-    riak_core_vnode_master:command(Preflist,
-                                   {append, Log, LogOperation},
-                                   {fsm, undefined, self(), ?SYNC_LOG},
+-spec asyn_append(index_node(), key(), #log_operation{}, pid()) -> ok.
+asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
+	lager:info("called asyn append"),
+    riak_core_vnode_master:command(IndexNode,
+                                   {append, Log, LogOperation, false, ReplyTo},
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation payload
 -spec append(index_node(), key(), #log_operation{}) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, LogOperation) ->
-    riak_core_vnode_master:sync_command(IndexNode,
+	lager:info("called  append"),
+	
+	riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, LogOperation, false},
                                         ?LOGGING_MASTER,
                                         infinity).
@@ -346,11 +348,15 @@ handle_command({read_from, LogId, _From}, _Sender,
 %%
 %% -spec handle_command({append, log_id(), #log_operation{}, boolean()}, pid(), #state{}) ->
 %%                      {reply, {ok, #op_number{}} #state{}} | {reply, error(), #state{}}.
-handle_command({append, LogId, LogOperation, Sync}, _Sender,
+handle_command({append, LogId, LogOperation, Sync}, Sender, State)->
+	handle_command({append, LogId, LogOperation, Sync, ignore}, Sender, State);
+
+
+handle_command({append, LogId, LogOperation, Sync, ReplyTo}, _S,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition}=State) ->
-    case get_log_from_map(Map, Partition, LogId) of
+	{Reply, NewState}=case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
 	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
 	    %% all operations update the per log, operation id
@@ -384,19 +390,31 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
 			true ->
 			    case disk_log:sync(Log) of
 				ok ->
-				    {reply, {ok, OpId}, State};
+					{{ok, OpId}, State};
 				{error, Reason} ->
-				    {reply, {error, Reason}, State}
+				    {{error, Reason}, State}
 			    end;
 			false ->
-			    {reply, {ok, OpId}, State}
+				{{ok, OpId}, State}
 		    end;
                 {error, Reason} ->
-                    {reply, {error, Reason}, State}
+	                {{error, Reason}, State}
             end;
         {error, Reason} ->
-            {reply, {error, Reason}, State}
-    end;
+	        {{error, Reason}, State}
+	end,
+	%% The following is used when this function is called by async_append,
+	%% to reply to the process calling that function.
+	%% This is currently being used by the update_objects function in the
+	%% interactive coordinator fsm.
+	lager:info("ReplyTo is ~p ~nReply is ~p",[ReplyTo, Reply]),
+	case ReplyTo of
+		ignore->
+			{reply, Reply, NewState};
+		_->
+			gen_fsm:send_event(ReplyTo, Reply),
+			{noreply, NewState}
+	end;
 
 %% Currently this should be only used for external operations
 %% That already have their operation id numbers assigned

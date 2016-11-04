@@ -126,20 +126,27 @@ read_objects(Objects, TxId) ->
 -spec update_objects([{bound_object(), op_name(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    %% Execute each update as in an interactive transaction
-    Results = lists:map(
-                fun({{Key, Type, Bucket}, Op, OpParam}) ->
-                        case clocksi_iupdate(TxId, {Key, Bucket}, Type,
-                                             {Op, OpParam}) of
-                            ok -> ok;
-                            {error, Reason} ->
-                                lager:debug("Update failed. Reason : ~p",[Reason]),
-                                error
-                        end
-                end, Updates),
-    case lists:member(error, Results) of
-       true -> {error, update_failed}; %% TODO: Capture the reason for error
-       false -> ok
+    {_, _, CoordFsmPid} = TxId,
+    Operations= lists:map(fun(Update) ->
+        {Key, Type, Bucket, Op} =case Update of
+            {{K, T, B}, O} -> {K, T, B, O};
+            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
+        end,
+        case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
+            ok ->
+                {{Key, Bucket}, Type, Op};
+            {error, _Reason} ->
+                    {error, type_check}
+        end
+                           end, Updates),
+    case lists:member({error, type_check}, Operations) of
+        true -> {error, type_check};
+        false ->
+%%            lager:info("gonna start multiple updates: ~p", [Operations]),
+            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
+                ok-> ok;
+                {error, Reason} -> {error, Reason}
+            end
     end.
 
 %% For static transactions: bulk updates and bulk reads
@@ -147,11 +154,15 @@ update_objects(Updates, TxId) ->
                             {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
-
+update_objects(_Clock, _Properties, [], _StayAlive) ->
+    {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
-    Operations = lists:map(
-                   fun({{Key, Type, Bucket}, Op, OpParam}) ->
-                           {update, {{Key, Bucket}, Type, {Op,OpParam}}}
+    Operations = lists:map(fun(Update) ->
+        {Key, Type, Bucket, Op} =case Update of
+            {{K, T, B}, O} -> {K, T, B, O};
+            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
+                end,
+                           {update, {{Key, Bucket}, Type, Op}}
                    end,
                    Updates),
     SingleKey = case Operations of
@@ -307,30 +318,12 @@ read(Key, Type) ->
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()],snapshot_time(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
-    case materializer:check_operations(Operations) of
-        {error, Reason} ->
-            {error, Reason};
-        ok ->
-	    TxPid = case KeepAlive of
-			true ->
-			    whereis(clocksi_static_tx_coord_fsm:generate_name(self()));
-			false ->
-			    undefined
-		    end,
-	    CoordPid = case TxPid of
-			   undefined ->
-			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock, KeepAlive]),
-			       CoordFsmPid;
-			   TxPid ->
-			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, UpdateClock}),
-			       TxPid
-		       end,
-	    case gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT) of
-		{aborted, Info} ->
-		    {error, {aborted, Info}};
-		Other ->
-		    Other
-	    end
+    {ok, TxId} = start_transaction(Clock, [UpdateClock], KeepAlive),
+    ReadSet = execute_ops(Operations, TxId, []),
+    {ok, CommitTime} = commit_transaction(TxId),
+    case ReadSet of
+        {error, Reason} -> {error, Reason};
+        _ -> {ok, {TxId, ReadSet, CommitTime}}
     end.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->
