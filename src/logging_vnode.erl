@@ -125,7 +125,6 @@ read(Node, Log) ->
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
 -spec asyn_append(index_node(), key(), #log_operation{}, pid()) -> ok.
 asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
-	lager:info("called asyn append"),
     riak_core_vnode_master:command(IndexNode,
                                    {append, Log, LogOperation, false, ReplyTo},
                                    ?LOGGING_MASTER).
@@ -133,7 +132,6 @@ asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
 %% @doc synchronous append operation payload
 -spec append(index_node(), key(), #log_operation{}) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, LogOperation) ->
-	lager:info("called  append"),
 	
 	riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, LogOperation, false},
@@ -407,7 +405,6 @@ handle_command({append, LogId, LogOperation, Sync, ReplyTo}, _S,
 	%% to reply to the process calling that function.
 	%% This is currently being used by the update_objects function in the
 	%% interactive coordinator fsm.
-	lager:info("ReplyTo is ~p ~nReply is ~p",[ReplyTo, Reply]),
 	case ReplyTo of
 		ignore->
 			{reply, Reply, NewState};
