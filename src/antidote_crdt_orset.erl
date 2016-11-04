@@ -103,34 +103,22 @@ value(ORSet) ->
 %% supporting tokens of these elements existing in the `orset()'.
 -spec downstream(orset_op(), orset()) -> {ok, downstream_op()}.
 downstream({add, Elem}, ORSet) ->
-    Token = unique(),
-    ToRemove = get_supporting_tokens(Elem, ORSet),
-    DownstreamOp = {Elem, [Token], ToRemove},
-    {ok, [DownstreamOp]};
+    downstream({add_all, [Elem]}, ORSet);
 downstream({add_all, Elems}, ORSet) ->
-    DownstreamOps = sets:fold(
-        fun(Elem, Ops) ->
-            {ok, [Op]} = downstream({add, Elem}, ORSet),
-            [Op | Ops]
-        end,
-        [],
-        sets:from_list(Elems)
-    ),
-    {ok, DownstreamOps};
+    CreateDownstream = fun(Elem, CurrentTokens) ->
+        Token = unique(),
+        {Elem, [Token], CurrentTokens}
+    end,
+    DownstreamOps = create_downstreams(CreateDownstream, lists:usort(Elems), ORSet, []),
+    {ok, lists:reverse(DownstreamOps)};
 downstream({remove, Elem}, ORSet) ->
-    ToRemove = get_supporting_tokens(Elem, ORSet),
-    DownstreamOp = {Elem, [], ToRemove},
-    {ok, [DownstreamOp]};
+    downstream({remove_all, [Elem]}, ORSet);
 downstream({remove_all, Elems}, ORSet) ->
-    DownstreamOps = sets:fold(
-        fun(Elem, Ops) ->
-            {ok, [Op]} = downstream({remove, Elem}, ORSet),
-            [Op | Ops]
-        end,
-        [],
-        sets:from_list(Elems)
-    ),
-    {ok, DownstreamOps};
+    CreateDownstream = fun(Elem, CurrentTokens) ->
+        {Elem, [], CurrentTokens}
+    end,
+    DownstreamOps = create_downstreams(CreateDownstream, lists:usort(Elems), ORSet, []),
+    {ok, lists:reverse(DownstreamOps)};
 downstream({reset, {}}, ORSet) ->
     % reset is like removing all elements
     downstream({remove_all, value(ORSet)}, ORSet).
@@ -177,16 +165,23 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 unique() ->
     crypto:strong_rand_bytes(20).
 
-%% @doc returns the list of tokens in the `orset()'
-%%      that support a given `member()'.
--spec get_supporting_tokens(member(), orset()) -> tokens().
-get_supporting_tokens(Elem, ORSet) ->
-    case orddict:find(Elem, ORSet) of
-        error ->
-            [];
-        {ok, Tokens} ->
-            Tokens
-    end.
+%% @private generic downstream op creation for adds and removals
+create_downstreams(_CreateDownstream, [], _ORSet, DownstreamOps) ->
+    DownstreamOps;
+create_downstreams(CreateDownstream, Elems, [], DownstreamOps) ->
+    lists:foldl(
+        fun(Elem, Ops) ->
+            DownstreamOp = CreateDownstream(Elem, []),
+            [DownstreamOp | Ops]
+        end,
+        DownstreamOps,
+        Elems
+    );
+create_downstreams(CreateDownstream, [Elem|Elems], [{Elem, Tokens}|ORSet], DownstreamOps) ->
+    DownstreamOp = CreateDownstream(Elem, Tokens),
+    create_downstreams(CreateDownstream, Elems, ORSet, [DownstreamOp | DownstreamOps]);
+create_downstreams(CreateDownstream, Elems, [_|ORSet], DownstreamOps) ->
+    create_downstreams(CreateDownstream, Elems, ORSet, DownstreamOps).
 
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
