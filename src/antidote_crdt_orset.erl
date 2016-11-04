@@ -173,9 +173,7 @@ create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|O
         true ->
             DownstreamOp = CreateDownstream(Elem1, Tokens),
             create_downstreams(CreateDownstream, ElemsRest, ORSet, [DownstreamOp|DownstreamOps])
-    end;
-create_downstreams(CreateDownstream, Elems, [_|ORSet], DownstreamOps) ->
-    create_downstreams(CreateDownstream, Elems, ORSet, DownstreamOps).
+    end.
 
 %% @private apply a list of downstream ops to a given orset
 apply_downstreams([], ORSet) ->
