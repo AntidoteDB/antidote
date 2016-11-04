@@ -47,7 +47,7 @@
 	 get_clock_of_dc/2, 
 	 get_preflist_from_key/1,
 	 read_data_item/5,
-	 generate_downstream_op/6,
+	 generate_downstream_op/7,
 	 get_logid_from_key/1,
 	 update_data_item/5,
 	 prepare/2,
@@ -125,7 +125,7 @@ read_data_item(_IndexNode, _Transaction, Key, _Type, _Ws) ->
             {ok, mock_value}
     end.
 
-generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->
+generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws, _Rs) ->
     case Key of 
         downstream_fail ->
             {error, mock_downstream_fail};
