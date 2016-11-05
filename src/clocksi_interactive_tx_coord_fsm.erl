@@ -136,6 +136,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        full_commit=FullCommit,
        is_static=IsStatic,
        read_set=[],
+        internal_read_set = orddict:new(),
        stay_alive = StayAlive
       }.
 
@@ -277,10 +278,11 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
         {ok, Snapshot} ->
             Type:value(Snapshot)
     end.
-
-
-perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
-    {Key, Type, Param} = Args,
+perform_update(UpdateArgs, Sender, CoordState) ->
+    {Key, Type, Param} = UpdateArgs,
+    Updated_partitions = CoordState#tx_coord_state.updated_partitions,
+    Transaction = CoordState#tx_coord_state.transaction,
+    InternalReadSet = CoordState#tx_coord_state.internal_read_set,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
@@ -292,8 +294,8 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
         {Key, Type, Param1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet) of
-                {ok, DownstreamRecord} ->
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param, WriteSet, InternalReadSet) of
+                {ok, DownstreamRecord, _SnapshotParameters}->
                     NewUpdatedPartitions =
                         case WriteSet of
                             [] ->
