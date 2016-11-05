@@ -213,7 +213,6 @@ perform_singleitem_read(Key, Type) ->
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
-    lager:info("PERFORMING SINGLE ITEM UPDATE"),
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -316,7 +315,6 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
-                    lager:info("Calling async node myself ~p",[self()]),
                     ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()),
 	                {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
                 {error, Reason} ->
@@ -374,7 +372,6 @@ execute_op({OpType, Args}, Sender,
 		    NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
 		    case NewCoordState#tx_coord_state.num_to_read > 0 of
 			    true ->
-                    lager:info("Need to receive ~p responses",[NewCoordState#tx_coord_state.num_to_read]),
 				    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
 			    false ->
 				    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
