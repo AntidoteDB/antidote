@@ -42,7 +42,7 @@
   update_set_read_test/1,
   static_transaction_test/1,
   crdt_integer_test/1,
-  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1]).
+  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1, multi_read_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -78,6 +78,7 @@ all() -> [start_stop_test,
         update_counter_crdt_and_read_test,
         update_set_read_test,
         static_transaction_test,
+        multi_read_test,
         crdt_integer_test,
         crdt_mvreg_test,
         crdt_set_rw_test,
@@ -186,6 +187,7 @@ update_counter_crdt_and_read_test(_Config) ->
     pass = update_counter_crdt(Key, <<"bucket">>, Amount),
     pass = get_crdt_check_value(Key, antidote_crdt_counter, <<"bucket">>, Amount).
 
+
 get_crdt_check_value(Key, Type, Bucket, Expected) ->
     lager:info("Verifying value of updated CRDT..."),
     BoundObject = {Key, Type, Bucket},
@@ -197,6 +199,22 @@ get_crdt_check_value(Key, Type, Bucket, Expected) ->
     Mod = antidotec_datatype:module_for_term(Val),
     ?assertEqual(Expected,Mod:value(Val)),
     pass.
+
+
+multi_read_test(_Config) ->
+  Key1 = <<"pb_client_SUITE_multi_read_test1">>,
+  Key2 = <<"pb_client_SUITE_multi_read_test2">>,
+  {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+  Bound_object1 = {Key1, antidote_crdt_counter, <<"bucket">>},
+  Bound_object2 = {Key2, antidote_crdt_counter, <<"bucket">>},
+  ok =antidotec_pb:update_objects(Pid, [
+    {Bound_object1, increment, 1},
+    {Bound_object2, increment, 2}
+  ], {static, {ignore, []}}),
+  {ok, Values} = antidotec_pb:read_values(Pid, [Bound_object1, Bound_object2], {static, {ignore, []}}),
+  ?assertEqual([{counter,1},{counter,2}], Values),
+  _Disconnected = antidotec_pb_socket:stop(Pid).
+
 
 update_set_read_test(_Config) ->
     Key = <<"pb_client_SUITE_update_set_read_test">>,
