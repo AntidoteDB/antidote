@@ -198,11 +198,11 @@ receive_prepared({ok, {Key, Type, Snapshot}},
                     case NumToCommit of
                         0 ->
                             clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only, 
-                            read_set=lists:reverse(ReadSet1)});
+                            read_set=ReadSet1});
                         _ ->
                             ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
                             {next_state, receive_committed,
-                               S0#tx_coord_state{num_to_ack=NumToCommit, read_set=lists:reverse(ReadSet1), state=committing}}
+                               S0#tx_coord_state{num_to_ack=NumToCommit, read_set=ReadSet1, state=committing}}
                     end;
                 _ ->
                     {next_state, receive_prepared, S0#tx_coord_state{num_to_read= NumToRead-1,
