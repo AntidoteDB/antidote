@@ -322,8 +322,8 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-    %% update kept for backwards compatibility with tests.
-    execute_op({update, Args}, Sender, SD0) ->
+%% update kept for backwards compatibility with tests.
+execute_op({update, Args}, Sender, SD0) ->
     execute_op({update_objects, [Args]}, Sender, SD0);
     
 execute_op({OpType, Args}, Sender,
@@ -346,15 +346,16 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, ReadResult}, execute_op, SD0}
             end;
 	    update_objects ->
-		    ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps}) ->
-			    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps) of
-				    {error, Reason} ->
-					    Acc#tx_coord_state{return_accumulator= {error, Reason}};
-				    {NewUpdatedPartitions, NewClientOps} ->
-					    NewNumToRead = Acc#tx_coord_state.num_to_read,
-					    Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
-						    updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
-			    end
+		    ExecuteUpdates =
+                fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps}) ->
+                    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps) of
+                        {error, Reason} ->
+                            Acc#tx_coord_state{return_accumulator= {error, Reason}};
+                        {NewUpdatedPartitions, NewClientOps} ->
+                            NewNumToRead = Acc#tx_coord_state.num_to_read,
+                            Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
+                                updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
+			        end
 		    end,
 		    NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
 		    case NewCoordState#tx_coord_state.num_to_read > 0 of
@@ -372,7 +373,7 @@ execute_op({OpType, Args}, Sender,
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
-	return_accumulator= ReturnAcc}) ->
+	                        return_accumulator= ReturnAcc}) ->
 	NewAcc = case Response of
 		{error, Reason} -> {error, Reason};
 		{ok, _OpId} -> ReturnAcc;
