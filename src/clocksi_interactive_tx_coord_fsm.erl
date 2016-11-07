@@ -71,7 +71,7 @@
     perform_update/6,
     perform_read/4,
     execute_op/3,
-	receive_logging_responses/2,
+    receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -137,7 +137,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        full_commit=FullCommit,
        is_static=IsStatic,
        return_accumulator=[],
-	    internal_read_set=orddict:new(),
+       internal_read_set=orddict:new(),
        stay_alive = StayAlive
       }.
 
@@ -322,9 +322,8 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps, Intern
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-    %% update kept for backwards compatibility with tests.
-    execute_op({update, Args}, Sender, SD0) ->
-%%    lager:debug("got execute update"),
+%% update kept for backwards compatibility with tests.
+execute_op({update, Args}, Sender, SD0) ->
     execute_op({update_objects, [Args]}, Sender, SD0);
     
 execute_op({OpType, Args}, Sender,
@@ -375,8 +374,7 @@ execute_op({OpType, Args}, Sender,
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
-	return_accumulator= ReturnAcc}) ->
-	%%    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
+	                        return_accumulator= ReturnAcc}) ->
 	NewAcc = case Response of
 		{error, Reason} -> {error, Reason};
 		{ok, _OpId} -> ReturnAcc;

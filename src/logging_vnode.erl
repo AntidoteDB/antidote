@@ -132,7 +132,6 @@ asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
 %% @doc synchronous append operation payload
 -spec append(index_node(), key(), #log_operation{}) -> {ok, op_id()} | {error, term()}.
 append(IndexNode, LogId, LogOperation) ->
-	
 	riak_core_vnode_master:sync_command(IndexNode,
                                         {append, LogId, LogOperation, false},
                                         ?LOGGING_MASTER,

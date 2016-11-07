@@ -768,14 +768,14 @@ clocksi_parallel_writes_test(Config) ->
     %% update 5 different objects
     ok = rpc:call(Node, antidote, update_objects,
         [[{Bound_object1, increment, 1},
-            {Bound_object2, increment, 1},
-                {Bound_object3, increment, 1},
-                    {Bound_object4, increment, 1},
-                        {Bound_object5, increment, 1}],
+            {Bound_object2, increment, 2},
+                {Bound_object3, increment, 3},
+                    {Bound_object4, increment, 4},
+                        {Bound_object5, increment, 5}],
                             TxId]),
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object1,
         Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId]),
-    ?assertMatch({ok, [1,1,1,1,1]}, Res),
+    ?assertMatch({ok, [1,2,3,4,5]}, Res),
     
     %% update 5 times the first object.
     ok = rpc:call(Node, antidote, update_objects,

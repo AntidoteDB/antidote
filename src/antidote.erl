@@ -127,25 +127,35 @@ read_objects(Objects, TxId) ->
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     {_, _, CoordFsmPid} = TxId,
-    Operations= lists:map(fun(Update) ->
-        {Key, Type, Bucket, Op} =case Update of
-            {{K, T, B}, O} -> {K, T, B, O};
-            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
-        end,
-        case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
-            ok ->
-                {{Key, Bucket}, Type, Op};
-            {error, _Reason} ->
-                    {error, type_check}
-        end
-                           end, Updates),
+    Operations = lists:map(fun(Update) ->
+                                {Key, Type, Bucket, Op} = case Update of
+                                    %% the following checks the format of the
+                                    %% operation for compatibility with
+                                    %% some systests that call updates with
+                                    %% {Operation, Params} (as a single parameter),
+                                    %% and Operation, Params (two separate parameters).
+                                    {{K, T, B}, O} ->
+                                        {K, T, B, O};
+                                    {{K, T, B}, O, P} ->
+                                        {K, T, B, {O, P}}
+                                end,
+                                case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
+                                    ok ->
+                                        {{Key, Bucket}, Type, Op};
+                                    {error, _Reason} ->
+                                        {error, type_check}
+                                end
+                            end, Updates),
     case lists:member({error, type_check}, Operations) of
-        true -> {error, type_check};
+        true ->
+            {error, type_check};
         false ->
-%%            lager:info("gonna start multiple updates: ~p", [Operations]),
+            %%            lager:info("gonna start multiple updates: ~p", [Operations]),
             case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
-                ok-> ok;
-                {error, Reason} -> {error, Reason}
+                ok ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
@@ -158,12 +168,15 @@ update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
     Operations = lists:map(fun(Update) ->
-        {Key, Type, Bucket, Op} =case Update of
-            {{K, T, B}, O} -> {K, T, B, O};
-            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
-                end,
-                           {update, {{Key, Bucket}, Type, Op}}
-                   end,
+                                {Key, Type, Bucket, Op} =
+                                    case Update of
+                                    {{K, T, B}, O} ->
+                                        {K, T, B, O};
+                                    {{K, T, B}, O, P} ->
+                                        {K, T, B, {O, P}}
+                                        end,
+                                    {update, {{Key, Bucket}, Type, Op}}
+                            end,
                    Updates),
     SingleKey = case Operations of
                     [_O] -> %% Single key update
@@ -322,8 +335,10 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
     ReadSet = execute_ops(Operations, TxId, []),
     {ok, CommitTime} = commit_transaction(TxId),
     case ReadSet of
-        {error, Reason} -> {error, Reason};
-        _ -> {ok, {TxId, ReadSet, CommitTime}}
+        {error, Reason} ->
+            {error, Reason};
+        _ ->
+            {ok, {TxId, ReadSet, CommitTime}}
     end.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->
