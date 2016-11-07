@@ -129,8 +129,10 @@ update_objects(Updates, TxId) ->
     {_, _, CoordFsmPid} = TxId,
     Operations = lists:map(fun(Update) ->
                                 {Key, Type, Bucket, Op} = case Update of
-                                    %% the following checks the format of the operation for compatibility with
-                                    %% some systests that call updates with {Operation, Params} (as a single parameter),
+                                    %% the following checks the format of the
+                                    %% operation for compatibility with
+                                    %% some systests that call updates with
+                                    %% {Operation, Params} (as a single parameter),
                                     %% and Operation, Params (two separate parameters).
                                     {{K, T, B}, O} ->
                                         {K, T, B, O};
