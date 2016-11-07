@@ -71,6 +71,7 @@
     perform_update/6,
     perform_read/4,
     execute_op/3,
+    receive_read_objects_result/2,
     receive_logging_responses/2,
     finish_op/3,
     prepare/1,
@@ -347,6 +348,16 @@ execute_op({OpType, Args}, Sender,
                     InternalReadSet=orddict:store(Key, ReadResult, SD0#tx_coord_state.internal_read_set),
                     {reply, {ok, Type:value(ReadResult)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
+        read_objects ->
+            ExecuteReads = fun({Key, Type}, Acc) ->
+                PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
+                IndexNode = hd(PrefList),
+                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                ReadSet = Acc#tx_coord_state.return_accumulator,
+                Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
+            end,
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
+            {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
 	    update_objects ->
 		    ExecuteUpdates =
                 fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps, internal_read_set=InternalReadSet}) ->
@@ -394,6 +405,38 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 			{next_state, receive_logging_responses,
 				S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
 	end.
+
+receive_read_objects_result({ok, {Key, Type, Snapshot}},
+  CoordState= #tx_coord_state{num_to_read = NumToRead,
+      return_accumulator= ReadSet,
+      internal_read_set = InternalReadSet}) ->
+    %%TODO: type is hard-coded..
+    SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
+    Value2 = Type:value(SnapshotAfterMyUpdates),
+    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
+    NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
+    case NumToRead of
+        1 ->
+            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+            {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+        _ ->
+            {next_state, receive_read_objects_result,
+                CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
+    end.
+
+%% The following function is used to apply the updates that were performed by the running
+%% transaction, to the result returned by a read.
+-spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, type(), snapshot()) -> snapshot().
+apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
+    Preflist=?LOG_UTIL:get_preflist_from_key(Key),
+    IndexNode=hd(Preflist),
+    case lists:keyfind(IndexNode, 1, CoordState#tx_coord_state.updated_partitions) of
+        false->
+            Snapshot;
+        {IndexNode, WS}->
+            FileteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
+            _SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
+    end.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes
