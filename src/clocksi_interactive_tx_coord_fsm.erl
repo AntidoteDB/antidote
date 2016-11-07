@@ -348,15 +348,16 @@ execute_op({OpType, Args}, Sender,
                     {reply, {ok, Type:value(ReadResult)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
 	    update_objects ->
-		    ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps, internal_read_set=InternalReadSet}) ->
-			    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps, InternalReadSet) of
-				    {error, Reason} ->
-					    Acc#tx_coord_state{return_accumulator= {error, Reason}};
-				    {NewUpdatedPartitions, NewClientOps} ->
-					    NewNumToRead = Acc#tx_coord_state.num_to_read,
-					    Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
-						    updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
-			    end
+		    ExecuteUpdates =
+                fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps, internal_read_set=InternalReadSet}) ->
+                    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps, InternalReadSet) of
+                        {error, Reason} ->
+                            Acc#tx_coord_state{return_accumulator= {error, Reason}};
+                        {NewUpdatedPartitions, NewClientOps} ->
+                            NewNumToRead = Acc#tx_coord_state.num_to_read,
+                            Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
+                                updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
+                    end
 		    end,
 		    NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
 		    case NewCoordState#tx_coord_state.num_to_read > 0 of
