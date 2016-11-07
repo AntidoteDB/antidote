@@ -20,6 +20,11 @@
 
 -module(multiple_dcs_node_failure_SUITE).
 
+%% If logging is disabled these tests will fail and some reads will
+%% block as DCs will be waiting for missing messages, so add a
+%% timeout to these calls so the test sutie can finish
+-define(RPC_TIMEOUT, 10000).
+
 %% common_test callbacks
 -export([%% suite/0,
          init_per_suite/1,
@@ -104,13 +109,13 @@ cluster_failure_test(Config) ->
     ct:print("Done append in Node1"),
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
-                           [CommitTime, Key1, Type]),
+                           [CommitTime, Key1, Type], ?RPC_TIMEOUT),
     {ok, {_,[ReadSet1],_} }= ReadResult2,
     ?assertEqual(3, ReadSet1),
     ct:print("Done Read in Node3"),
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
-                           [CommitTime, Key1, Type]),
+                           [CommitTime, Key1, Type], ?RPC_TIMEOUT),
     {ok, {_,[ReadSet2],_} }= ReadResult3,
     ?assertEqual(3, ReadSet2),
 
@@ -190,13 +195,13 @@ multiple_cluster_failure_test(Config) ->
     ct:print("Done append in Node1"),
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
-                           [CommitTime, Key1, Type]),
+                           [CommitTime, Key1, Type], ?RPC_TIMEOUT),
     {ok, {_,[ReadSet1],_} }= ReadResult2,
     ?assertEqual(3, ReadSet1),
     ct:print("Done Read in Node3"),
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
-                           [CommitTime, Key1, Type]),
+                           [CommitTime, Key1, Type], ?RPC_TIMEOUT),
     {ok, {_,[ReadSet2],_} }= ReadResult3,
     ?assertEqual(3, ReadSet2),
 
@@ -303,20 +308,20 @@ update_during_cluster_failure_test(Config) ->
 
     ReadResult2a = rpc:call(Node1,
                            antidote, clocksi_read,
-                           [Time, Key1, Type]),
+                           [Time, Key1, Type], ?RPC_TIMEOUT),
     {ok, {_,[ReadSet1a],_} }= ReadResult2a,
     ?assertEqual(4, ReadSet1a),
     ct:print("Done Read in Node3"),
 
     ReadResult2 = rpc:call(Node3,
                            antidote, clocksi_read,
-                           [Time, Key1, Type]),
+                           [Time, Key1, Type], ?RPC_TIMEOUT),
     {ok, {_,[ReadSet1],_} }= ReadResult2,
     ?assertEqual(4, ReadSet1),
     ct:print("Done Read in Node3"),
     ReadResult3 = rpc:call(Node2,
                            antidote, clocksi_read,
-                           [Time, Key1, Type]),
+                           [Time, Key1, Type], ?RPC_TIMEOUT),
     {ok, {_,[ReadSet2],_} }= ReadResult3,
     ?assertEqual(4, ReadSet2),
 
