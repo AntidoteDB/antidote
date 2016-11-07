@@ -46,7 +46,7 @@
          clocksi_multiple_test_certification_check/1,
          clocksi_multiple_read_update_test/1,
          clocksi_concurrency_test/1,
-         clocksi_parallel_writes_test/1,
+         clocksi_parallel_ops_test/1,
          spawn_read/5,
          spawn_com/2]).
 
@@ -95,7 +95,7 @@ all() -> [clocksi_test1,
          clocksi_multiple_test_certification_check,
          clocksi_multiple_read_update_test,
          clocksi_concurrency_test,
-         clocksi_parallel_writes_test].
+         clocksi_parallel_ops_test].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
@@ -752,9 +752,10 @@ clocksi_concurrency_test(Config) ->
              pass
      end.
 
-%% doc The following test tests sending multiple updates in a single
-%% update_objects call.
-clocksi_parallel_writes_test(Config) ->
+%% doc The following test checks multiple updates/reads using
+%% read/update_objects. It also checks that reads are returned
+%% in the same order they were sent.
+clocksi_parallel_ops_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     Bucket = test_bucket,
@@ -773,6 +774,9 @@ clocksi_parallel_writes_test(Config) ->
                     {Bound_object4, increment, 4},
                         {Bound_object5, increment, 5}],
                             TxId]),
+
+    %% read the objects in the same transaction to see that the updates
+    %% are seen.
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object1,
         Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId]),
     ?assertMatch({ok, [1,2,3,4,5]}, Res),
@@ -785,7 +789,15 @@ clocksi_parallel_writes_test(Config) ->
             {Bound_object1, increment, 1},
             {Bound_object1, increment, 1}],
             TxId]),
+    %% see that these updates are seen too.
     Res1 = rpc:call(Node, antidote, read_objects, [[Bound_object1], TxId]),
     ?assertMatch({ok, [6]}, Res1),
-    {ok, _CT} = rpc:call(Node, antidote, commit_transaction, [TxId]).
+    {ok, _CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+
+    %% start a new transaction that reads the updated objects.
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object1,
+        Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId2]),
+    ?assertMatch({ok, [6,2,3,4,5]}, Res2),
+    {ok, _CT2} = rpc:call(Node, antidote, commit_transaction, [TxId2]).
 

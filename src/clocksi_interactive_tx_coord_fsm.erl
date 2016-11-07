@@ -410,19 +410,20 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}},
   CoordState= #tx_coord_state{num_to_read = NumToRead,
       return_accumulator= ReadSet,
       internal_read_set = InternalReadSet}) ->
-    %%TODO: type is hard-coded..
-    SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
-    Value2 = Type:value(SnapshotAfterMyUpdates),
-    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
-    NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
-    case NumToRead of
-        1 ->
-            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
-            {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
-        _ ->
-            {next_state, receive_read_objects_result,
-                CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
-    end.
+    lager:info("got result! ~p", [{Key, Type, Snapshot}]),
+            %%TODO: type is hard-coded..
+            SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
+            Value2 = Type:value(SnapshotAfterMyUpdates),
+            ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
+            NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
+            case NumToRead of
+                1 ->
+                    gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+                    {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+                _ ->
+                    {next_state, receive_read_objects_result,
+                        CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
+            end.
 
 %% The following function is used to apply the updates that were performed by the running
 %% transaction, to the result returned by a read.
