@@ -128,22 +128,22 @@ read_objects(Objects, TxId) ->
 update_objects(Updates, TxId) ->
     {_, _, CoordFsmPid} = TxId,
     Operations = lists:map(fun(Update) ->
-        {Key, Type, Bucket, Op} = case Update of
-            %% the following checks the format of the operation for compatibility with
-            %% some systests that call updates with {Operation, Params} (as a single parameter),
-            %% and Operation, Params (two separate parameters).
-            {{K, T, B}, O} ->
-                {K, T, B, O};
-            {{K, T, B}, O, P} ->
-                {K, T, B, {O, P}}
-        end,
-        case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
-            ok ->
-                {{Key, Bucket}, Type, Op};
-            {error, _Reason} ->
-                {error, type_check}
-        end
-    end, Updates),
+                                {Key, Type, Bucket, Op} = case Update of
+                                    %% the following checks the format of the operation for compatibility with
+                                    %% some systests that call updates with {Operation, Params} (as a single parameter),
+                                    %% and Operation, Params (two separate parameters).
+                                    {{K, T, B}, O} ->
+                                        {K, T, B, O};
+                                    {{K, T, B}, O, P} ->
+                                        {K, T, B, {O, P}}
+                                end,
+                                case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
+                                    ok ->
+                                        {{Key, Bucket}, Type, Op};
+                                    {error, _Reason} ->
+                                        {error, type_check}
+                                end
+                            end, Updates),
     case lists:member({error, type_check}, Operations) of
         true ->
             {error, type_check};
