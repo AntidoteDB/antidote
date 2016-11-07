@@ -410,7 +410,6 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}},
   CoordState= #tx_coord_state{num_to_read = NumToRead,
       return_accumulator= ReadSet,
       internal_read_set = InternalReadSet}) ->
-    lager:info("got result! ~p", [{Key, Type, Snapshot}]),
             %%TODO: type is hard-coded..
             SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
             Value2 = Type:value(SnapshotAfterMyUpdates),
