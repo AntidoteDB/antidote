@@ -304,12 +304,6 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
                                 lists:keyreplace(IndexNode, 1, Updated_partitions,
                                                  {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
                         end,
-%%                    case Sender of
-%%                        undefined ->
-%%                            ok;
-%%                        _ ->
-%%                            gen_fsm:reply(Sender, ok)
-%%                    end,
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
@@ -318,12 +312,6 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
                     ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()),
 	                {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
                 {error, Reason} ->
-%%                    case Sender of
-%%                        undefined ->
-%%                            ok;
-%%                        _ ->
-%%                            _Res = gen_fsm:reply(Sender, {error, Reason})
-%%                    end,
                     {error, Reason}
             end;
         {error, Reason} ->
@@ -336,7 +324,6 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
 %%       to execute the next operation.
     %% update kept for backwards compatibility with tests.
     execute_op({update, Args}, Sender, SD0) ->
-%%    lager:debug("got execute update"),
     execute_op({update_objects, [Args]}, Sender, SD0);
     
 execute_op({OpType, Args}, Sender,
@@ -386,7 +373,6 @@ execute_op({OpType, Args}, Sender,
 %% to receive the responses of the vnodes.
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
 	return_accumulator= ReturnAcc}) ->
-	%%    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
 	NewAcc = case Response of
 		{error, Reason} -> {error, Reason};
 		{ok, _OpId} -> ReturnAcc;
