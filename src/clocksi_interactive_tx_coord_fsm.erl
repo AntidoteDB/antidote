@@ -71,7 +71,7 @@
     perform_update/5,
     perform_read/4,
     execute_op/3,
-	receive_logging_responses/2,
+    receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -137,7 +137,7 @@ init_state(StayAlive, FullCommit, IsStatic) ->
        full_commit=FullCommit,
        is_static=IsStatic,
        return_accumulator=[],
-	    internal_read_set=orddict:new(),
+       internal_read_set=orddict:new(),
        stay_alive = StayAlive
       }.
 
