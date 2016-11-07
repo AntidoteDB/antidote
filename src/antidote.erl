@@ -168,12 +168,15 @@ update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
     Operations = lists:map(fun(Update) ->
-        {Key, Type, Bucket, Op} =case Update of
-            {{K, T, B}, O} -> {K, T, B, O};
-            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
-                end,
-                           {update, {{Key, Bucket}, Type, Op}}
-                   end,
+                                {Key, Type, Bucket, Op} =
+                                    case Update of
+                                    {{K, T, B}, O} ->
+                                        {K, T, B, O};
+                                    {{K, T, B}, O, P} ->
+                                        {K, T, B, {O, P}}
+                                        end,
+                                    {update, {{Key, Bucket}, Type, Op}}
+                            end,
                    Updates),
     SingleKey = case Operations of
                     [_O] -> %% Single key update
@@ -332,8 +335,10 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
     ReadSet = execute_ops(Operations, TxId, []),
     {ok, CommitTime} = commit_transaction(TxId),
     case ReadSet of
-        {error, Reason} -> {error, Reason};
-        _ -> {ok, {TxId, ReadSet, CommitTime}}
+        {error, Reason} ->
+            {error, Reason};
+        _ ->
+            {ok, {TxId, ReadSet, CommitTime}}
     end.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->
