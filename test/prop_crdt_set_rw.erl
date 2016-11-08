@@ -32,11 +32,11 @@ prop_orset_spec() ->
 
 
 rem_wins_set_spec(Operations1) ->
-  Operations = lists:flatmap(fun normalizeOperation/1, Operations1),
+  Operations2 = crdt_properties:filter_resets(Operations1),
+  Operations = lists:flatmap(fun normalizeOperation/1, Operations2),
   RemoveClocks =
     fun(X) ->
       [Clock || {Clock, {remove, Y}} <- Operations, X == Y]
-      ++ [Clock || {Clock, {reset, {}}} <- Operations]
     end,
   Removed =
     fun(X) ->

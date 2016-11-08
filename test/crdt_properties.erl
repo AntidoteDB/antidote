@@ -25,7 +25,7 @@
 
 
 
--export([crdt_satisfies_spec/3, clock_le/2, subcontext/2]).
+-export([crdt_satisfies_spec/3, clock_le/2, subcontext/2, filter_resets/1]).
 
 -export_type([clocked_operation/0]).
 
@@ -77,6 +77,17 @@ clock_le(A, B) ->
 
 subcontext(Clock, Operations) ->
   [{OpClock, Op} || {OpClock, Op} <- Operations, clock_le(OpClock, Clock), not clock_le(Clock, OpClock)].
+
+%% removes all operations which are followed by a reset-operation (including the resets)
+filter_resets(Operations) ->
+  ResetClocks = [Clock || {Clock, {reset, {}}} <- Operations],
+  % consider only operations, that are not invalidated by a reset:
+  [{Clock, Op} ||
+    % all operations ... 
+    {Clock, Op} <- Operations,
+    % such that no reset comes after the operation
+    [] == [ResetClock || ResetClock <- ResetClocks, clock_le(Clock, ResetClock)]].
+
 
 % executes/checks the specification
 checkSpec(Crdt, Ops, Spec) ->
