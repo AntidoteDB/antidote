@@ -136,10 +136,10 @@ generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws) ->
 append(_Node,_LogId,_LogRecord) ->
     {ok, {0,node}}.
 
-asyn_append(_Node, _LogId, _LogRecord, Pid) ->
-    case Pid of ignore ->
+asyn_append(_Node, _LogId, _LogRecord, ReplyTo) ->
+    case ReplyTo of ignore ->
         ok;
-        _ -> gen_fsm:send_event(Pid, {ok, 0})
+        {_,_,Pid} -> gen_fsm:send_event(Pid, {ok, 0})
     end,
     ok.
 
