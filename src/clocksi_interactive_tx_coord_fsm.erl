@@ -309,7 +309,7 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
-                    ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()),
+                    ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, {fsm, undefined, self()}),
 	                {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
                 {error, Reason} ->
                     {error, Reason}
@@ -381,9 +381,9 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 	end,
 	case NumToReply > 1 of
 		false ->
-			gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
 			case (NewAcc == ok) of
 				true ->
+                    gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
 					{next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}};
 				false ->
 					abort(S0)
@@ -819,7 +819,7 @@ read_success_test(Pid) ->
 
 downstream_fail_test(Pid) ->
     fun() ->
-        ?assertEqual({error, mock_downstream_fail},
+        ?assertMatch({aborted, _},
             gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
