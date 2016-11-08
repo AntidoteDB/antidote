@@ -149,8 +149,12 @@ update_objects(Updates, TxId) ->
         false ->
 %%            lager:info("gonna start multiple updates: ~p", [Operations]),
             case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
-                ok-> ok;
-                {error, Reason} -> {error, Reason}
+                ok->
+                    ok;
+                {aborted, TxId} ->
+                    {aborted, TxId};
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
