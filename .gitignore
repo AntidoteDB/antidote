@@ -24,3 +24,4 @@ docs/.idea/
 log/
 data/
 .idea/
+compile_commands.json

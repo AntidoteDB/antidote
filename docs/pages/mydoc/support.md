@@ -7,7 +7,7 @@ permalink: support.html
 folder: mydoc
 ---
 
-We set up a Google group for support and feedback [here](https://groups.google.com/forum/#!forum/antidotedb).
+We set up a Google group for support and feedback [here](https://groups.google.com/forum/#!forum/antidotedb-support).
 
 
 {% include links.html %}

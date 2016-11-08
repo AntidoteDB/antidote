@@ -196,7 +196,7 @@ merge_staleness_files_into_table() ->
 			end, FileList),
 			StalenessTable
 	end.
-	
+
 
 -spec file_to_table(string(), start | disk_log:continuation(), atom()) -> ok.
 file_to_table(FileName, Continuation, TableName)->
@@ -343,31 +343,31 @@ handle_command({store_ss, Key, Snapshot, Params, ShouldGC}, _Sender, State) ->
     internal_store_ss(Key,Snapshot,Params,ShouldGC,State),
     {noreply, State};
 
-handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition})->
-	IsReady=try
-		case load_from_log_to_tables(Partition, State) of
-			ok->
-				lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
-				true;
-			{error, not_ready}->
-				false;
-			{error, Reason}->
-				lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
-				true
-		end
-	catch
-		_:Reason1->
-			lager:debug("Error loading from log ~w, will retry", [Reason1]),
-			false
-	end,
-	ok=case IsReady of
-		false->
-			riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
-			ok;
-		true->
-			ok
-	end,
-	{noreply, State#mat_state{is_ready=IsReady}};
+handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
+    IsReady = try
+                case load_from_log_to_tables(Partition, State) of
+                    ok ->
+                        lager:debug("Finished loading from log to materializer on partition ~w", [Partition]),
+                        true;
+                    {error, not_ready} ->
+                        false;
+                    {error, Reason} ->
+                        lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+                        true
+                end
+            catch
+                _:Reason1 ->
+                    lager:debug("Error loading from log ~w, will retry", [Reason1]),
+                    false
+            end,
+    ok = case IsReady of
+            false ->
+                riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+                ok;
+            true ->
+                ok
+    end,
+    {noreply, State#mat_state{is_ready=IsReady}};
 
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
@@ -432,7 +432,7 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), mat_state()) -> boolean().
 internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, SnapshotParams, ShouldGc,
   State = #mat_state{snapshot_cache = SnapshotCache}) ->
-	
+
 	SnapshotDict = case ets:lookup(SnapshotCache, Key) of
 									 [] ->
 										 vector_orddict:new();
@@ -560,7 +560,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	                        lager:info("~n Snapshot ~p~n ~n NewLastOp ~p ~n CommitParameters ~p ~n NewSS ~p ~n OpAddedCount ~p", [Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount]),
 %%	                        lager:info("~nShouldGc ~p", [ShouldGc]),
 %%	                        lager:info("~SnapshotGetResponse#snapshot_get_response.is_newest_snapshot ~p", [SnapshotGetResponse#snapshot_get_response.is_newest_snapshot]),
-	                        
+
                             %% the following checks for the case there were no snapshots and there were operations, but none was applicable
                             %% for the given snapshot_time
                             %% But is the snapshot not safe?
@@ -910,69 +910,69 @@ gc_test() ->
 	{ok, {Res0, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])}, MatState),
 	?assertEqual(0, Type:value(Res0)),
-	
+
 	op_insert_gc(Key, generate_payload(10,11,Res0,a1), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res1, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,12}])}, MatState),
 	?assertEqual(1, Type:value(Res1)),
-	
+
 	op_insert_gc(Key, generate_payload(20,21,Res1,a2), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res2, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,22}])}, MatState),
 	?assertEqual(2, Type:value(Res2)),
-	
+
 	op_insert_gc(Key, generate_payload(30,31,Res2,a3), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res3, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,32}])}, MatState),
 	?assertEqual(3, Type:value(Res3)),
-	
+
 	op_insert_gc(Key, generate_payload(40,41,Res3,a4), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res4, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,42}])}, MatState),
 	?assertEqual(4, Type:value(Res4)),
-	
+
 	op_insert_gc(Key, generate_payload(50,51,Res4,a5), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res5, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,52}])}, MatState),
 	?assertEqual(5, Type:value(Res5)),
-	
+
 	op_insert_gc(Key, generate_payload(60,61,Res5,a6), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res6, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,62}])}, MatState),
 	?assertEqual(6, Type:value(Res6)),
-	
+
 	op_insert_gc(Key, generate_payload(70,71,Res6,a7), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res7, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,72}])}, MatState),
 	?assertEqual(7, Type:value(Res7)),
-	
+
 	op_insert_gc(Key, generate_payload(80,81,Res7,a8), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res8, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,82}])}, MatState),
 	?assertEqual(8, Type:value(Res8)),
-	
+
 	op_insert_gc(Key, generate_payload(90,91,Res8,a9), MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res9, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,92}])}, MatState),
 	?assertEqual(9, Type:value(Res9)),
-	
+
 	op_insert_gc(Key, generate_payload(100,101,Res9,a10), MatState, #transaction{txn_id = eunit_test}),
-	
+
 	%% Insert some new values
-	
+
 	op_insert_gc(Key, generate_payload(15,111,Res1,a11), MatState, #transaction{txn_id = eunit_test}),
 	op_insert_gc(Key, generate_payload(16,121,Res1,a12), MatState, #transaction{txn_id = eunit_test}),
-	
+
 	%% Trigger the clean
-	
+
 	Tx = #transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,102}])},
-	
+
 	{ok, {Res10, _}} = internal_read(Key, Type,
 		Tx , MatState),
 	?assertEqual(10, Type:value(Res10)),
-	
+
 	op_insert_gc(Key, generate_payload(102,131,Res9,a13), MatState, Tx),
-	
+
 	%% Be sure you didn't loose any updates
 	{ok, {Res13, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,142}])}, MatState),
@@ -985,24 +985,24 @@ large_list_test() ->
 	Key = mycount,
 	DC1 = 1,
 	Type = antidote_crdt_counter,
-	
+
 	%% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
 	{ok, {Res0, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2}])}, MatState),
 	?assertEqual(0, Type:value(Res0)),
 	%%    lager:info("Res0 = ~p", [Res0]),
-	
+
 	lists:foreach(fun(Val) ->
 		Op = generate_payload(10,11+Val,Res0,Val),
 		%%        lager:info("Op= ~p", [Op]),
 		op_insert_gc(Key, Op, MatState,
 			#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 11+Val}])} )
 	end, lists:seq(1,1000)),
-	
+
 	{ok, {Res1000, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,2000}])}, MatState),
 	?assertEqual(1000, Type:value(Res1000)),
-	
+
 	%% Now check everything is ok as the list shrinks from generating new snapshots
 	lists:foreach(fun(Val) ->
 		op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), MatState,
@@ -1061,7 +1061,7 @@ seq_write_test() ->
                       dependency_vc=vectorclock:from_list([{DC1,16}]),
                       dc_and_commit_time = {DC1,20},
                       txid=2},
-	
+
     op_insert_gc(Key,DownstreamOp2, MatState, #transaction{txn_id = eunit_test}),
     {ok, {Res2, _}} = internal_read(Key, Type,
         #transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 21}])}, MatState),
@@ -1096,7 +1096,7 @@ multipledc_write_test() ->
 	{ok, {Res1, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1, 16}, {DC2, 0}])}, MatState),
 	?assertEqual(1, Type:value(Res1)),
-	
+
 	%% Insert second increment in other DC
 	{ok,Op2} = Type:downstream({increment,1},S1),
 	DownstreamOp2 = DownstreamOp1#operation_payload{
@@ -1104,12 +1104,12 @@ multipledc_write_test() ->
 		dependency_vc=vectorclock:from_list([{DC2,16}, {DC1,16}]),
 		dc_and_commit_time = {DC2,20},
 		txid=2},
-	
+
 	op_insert_gc(Key,DownstreamOp2,MatState, #transaction{txn_id = eunit_test}),
 	{ok, {Res2, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,16}, {DC2,21}])}, MatState),
 	?assertEqual(2, Type:value(Res2)),
-	
+
 	%% Read old version
 	{ok, {ReadOld, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,15}, {DC2,15}])}, MatState),
@@ -1123,7 +1123,7 @@ concurrent_write_test() ->
 	DC1 = local,
 	DC2 = remote,
 	S1 = Type:new(),
-	
+
 	%% Insert one increment in DC1
 	{ok,Op1} = Type:downstream({increment,1},S1),
 	DownstreamOp1 = #operation_payload{key = Key,
@@ -1137,7 +1137,7 @@ concurrent_write_test() ->
 	{ok, {Res1, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,1}])}, MatState),
 	?assertEqual(1, Type:value(Res1)),
-	
+
 	%% Another concurrent increment in other DC
 	{ok, Op2} = Type:downstream({increment,1},S1),
 	DownstreamOp2 = #operation_payload{ key = Key,
@@ -1147,7 +1147,7 @@ concurrent_write_test() ->
 		dc_and_commit_time = {DC1, 1},
 		txid=2},
 	op_insert_gc(Key,DownstreamOp2,MatState, #transaction{txn_id = eunit_test}),
-	
+
 	%% Read different snapshots
 	{ok, {ReadDC1, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,1}, {DC2,0}])}, MatState),
@@ -1157,7 +1157,7 @@ concurrent_write_test() ->
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,0}, {DC2,1}])}, MatState),
 	io:format("Result2 = ~p", [ReadDC2]),
 	?assertEqual(1, Type:value(ReadDC2)),
-	
+
 	%% Read snapshot including both increments
 	{ok, {Res2, _}} = internal_read(Key, Type,
 		#transaction{txn_id = eunit_test, transactional_protocol = clocksi, snapshot_vc = vectorclock:from_list([{DC1,1}, {DC2,1}])}, MatState),
@@ -1219,4 +1219,4 @@ read_nonexisting_key_test() ->
 %%	false = is_causally_compatible(OpCommitVC22, RTLowBound2, OpDepVC22, DepUpBound2).
 
 -endif.
-   
+

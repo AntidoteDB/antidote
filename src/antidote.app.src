@@ -40,6 +40,10 @@
   %%                stored to disk (this is very slow in the current logging setup)
   %%        false -> all updates are sent to the operating system to be stored to disk (eventually), but are not guaranteed to be stored durably on disk
   %%                 when the reply is sent
+  %% enable_logging:
+  %%        true -> writes to disk done by the logging_vnode are enabled
+  %%        false -> writes to disk are disabled, this improves performance when benchmarking.
+  %%        WARNING: disabling logging makes updates non-recoverable after shutting down antidote or under failures.
   %% log_staleness:
   %%        true -> the materializer vnode will log staleness in log files that can later be processed.
   %%        false -> this option will be disabled.
