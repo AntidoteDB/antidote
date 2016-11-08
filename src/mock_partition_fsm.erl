@@ -139,7 +139,8 @@ append(_Node,_LogId,_LogRecord) ->
 asyn_append(_Node, _LogId, _LogRecord, ReplyTo) ->
     case ReplyTo of ignore ->
         ok;
-        {_,_,Pid} -> gen_fsm:send_event(Pid, {ok, 0})
+        {_,_,Pid} ->
+            gen_fsm:send_event(Pid, {ok, 0})
     end,
     ok.
 
