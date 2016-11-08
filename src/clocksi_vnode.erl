@@ -50,7 +50,8 @@
     handle_handoff_data/2,
     encode_handoff_item/2,
     handle_coverage/4,
-    handle_exit/3]).
+    handle_exit/3,
+    get_antidote_db/1]).
 
 -ignore_xref([start_vnode/1]).
 
@@ -72,7 +73,8 @@
     prepared_tx :: cache_id(),
     committed_tx :: cache_id(),
     read_servers :: non_neg_integer(),
-    prepared_dict :: list()}).
+    prepared_dict :: list(),
+    antidote_db :: antidote_db:antidote_db()}).
 
 %%%===================================================================
 %%% API
@@ -205,11 +207,19 @@ get_cache_name(Partition, Base) ->
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
+    AntidoteDB = case application:get_env(antidote, antidote_db) of
+                     {ok, true} ->
+                         {ok, DB} = antidote_db:new(get_cache_name(antidote_db, Partition), leveldb),
+                         DB;
+                     _ ->
+                         undefined
+                 end,
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
         read_servers = ?READ_CONCURRENCY,
-        prepared_dict = orddict:new()}}.
+        prepared_dict = orddict:new(),
+        antidote_db = AntidoteDB}}.
 
 %% @doc The table holding the prepared transactions is shared with concurrent
 %%      readers, so they can safely check if a key they are reading is being updated.
@@ -257,11 +267,11 @@ open_table(Partition) ->
 	    open_table(Partition)
     end.
 
-loop_until_started(_Partition, 0) ->
+loop_until_started(_Partition, 0, _AntidoteDB) ->
     0;
-loop_until_started(Partition, Num) ->
-    Ret = clocksi_readitem_fsm:start_read_servers(Partition, Num),
-    loop_until_started(Partition, Ret).
+loop_until_started(Partition, Num, AntidoteDB) ->
+    Ret = clocksi_readitem_fsm:start_read_servers(AntidoteDB, Partition, Num),
+    loop_until_started(Partition, Ret, AntidoteDB).
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
@@ -281,8 +291,8 @@ handle_command({send_min_prepared}, _Sender,
     dc_utilities:call_local_vnode(Partition, logging_vnode_master, {send_min_prepared, Time}),
     {noreply, State};
 
-handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
-    loop_until_started(Partition, Serv),
+handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv, antidote_db = AntidoteDB}) ->
+    loop_until_started(Partition, Serv, AntidoteDB),
     Node = node(),
     Result = clocksi_readitem_fsm:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
     {reply, Result, SD0};
@@ -384,6 +394,10 @@ handle_command({get_active_txns}, _Sender,
     #state{partition = Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
 
+handle_command(get_dbs, _Sender,
+    #state{antidote_db = AntidoteDB} = State) ->
+    {reply, AntidoteDB, State};
+
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
@@ -417,12 +431,18 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{partition = Partition} = _State) ->
+terminate(_Reason, #state{partition = Partition, antidote_db = AntidoteDB} = _State) ->
     try
         ets:delete(get_cache_name(Partition, prepared))
     catch
         _:Reason ->
             lager:error("Error closing table ~p", [Reason])
+    end,
+    case AntidoteDB of
+        undefined ->
+            ok;
+        DB ->
+            antidote_db:close(DB)
     end,
     clocksi_readitem_fsm:stop_read_servers(Partition, ?READ_CONCURRENCY),
     ok.
@@ -671,6 +691,12 @@ get_time([{Time,TxId} | Rest], TxIdCheck) ->
 	false ->
 	    get_time(Rest, TxIdCheck)
     end.
+
+get_antidote_db(Partition) ->
+    riak_core_vnode_master:sync_command({Partition, node()},
+        get_antidote_db,
+        clocksi_vnode_master,
+        infinity).
 
 -ifdef(TEST).
 

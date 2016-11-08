@@ -57,7 +57,13 @@
 -spec get_my_dc_id() -> dcid().
 get_my_dc_id() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-    riak_core_ring:cluster_name(Ring).
+    Name = riak_core_ring:cluster_name(Ring),
+    case Name of
+        {Id, _} ->
+            Id;
+        Other ->
+            Other
+    end.
 
 %% Returns the list of all node addresses in the cluster.
 -spec get_my_dc_nodes() -> [node()].
