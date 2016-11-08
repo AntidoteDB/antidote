@@ -8,6 +8,9 @@
         </parseTransforms>
       </configuration>
     </facet>
+    <facet type="erlang" name="Erlang">
+      <configuration />
+    </facet>
   </component>
   <component name="NewModuleRootManager" inherit-compiler-output="false">
     <output url="file://$MODULE_DIR$/ebin" />

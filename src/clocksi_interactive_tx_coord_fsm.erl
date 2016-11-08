@@ -339,7 +339,7 @@ log_downstream_record_at_vnode(Key, Type, DownstreamRecord, CoordState) ->
     LogId=?LOG_UTIL:get_logid_from_key(Key),
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     [Node]=Preflist,
-    ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()).
+    ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, {fsm, undefined, self()}).
     
 
 perform_update(UpdateArgs, _Sender, CoordState) ->
@@ -447,26 +447,25 @@ execute_op({OpType, Args}, Sender,
     end.
 
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
-    return_accumulator= ReturnAcc}) ->
-%%    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
-    NewAcc = case Response of
-                 {error, Reason} -> {error, Reason};
-                 {ok, _OpId} -> ReturnAcc;
-                 timeout -> ReturnAcc
-             end,
-    case NumToReply > 1 of
-        false ->
-            gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
-            case (NewAcc == ok) of
-                true ->
-                    {next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}};
-                false ->
-                    abort(S0)
-            end;
-        true ->
-            {next_state, receive_logging_responses,
-                S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
-    end.
+	                        return_accumulator= ReturnAcc}) ->
+	NewAcc = case Response of
+		{error, Reason} -> {error, Reason};
+		{ok, _OpId} -> ReturnAcc;
+		timeout -> ReturnAcc
+	end,
+	case NumToReply > 1 of
+		false ->
+			case (NewAcc == ok) of
+				true ->
+                    gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
+					{next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}};
+				false ->
+					abort(S0)
+			end;
+		true ->
+			{next_state, receive_logging_responses,
+				S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
+	end.
 
 
 receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
@@ -1052,7 +1051,7 @@ read_success_test(Pid) ->
 
 downstream_fail_test(Pid) ->
     fun() ->
-        ?assertEqual({error, mock_downstream_fail},
+        ?assertMatch({aborted, _},
             gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
