@@ -32,21 +32,21 @@
 
 %% Callbacks
 -export([init/1,
-	 handle_call/3,
-	 handle_cast/2,
-	 code_change/3,
-         handle_event/3,
-	 check_servers_ready/0,
-         handle_info/2,
-         handle_sync_event/4,
-         terminate/2]).
+    handle_call/3,
+    handle_cast/2,
+    code_change/3,
+    handle_event/3,
+    check_servers_ready/0,
+    handle_info/2,
+    handle_sync_event/4,
+    terminate/2]).
 
 %% States
 -export([read_data_item/4,
-        async_read_data_item/5,
-	 check_partition_ready/3,
-	 start_read_servers/2,
-	 stop_read_servers/2]).
+    async_read_data_item/5,
+    check_partition_ready/3,
+    start_read_servers/3,
+    stop_read_servers/2]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
@@ -76,10 +76,10 @@ start_link(Partition,Id) ->
     Addr = node(),
     gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
 
--spec start_read_servers(partition_id(),non_neg_integer()) -> 0.
-start_read_servers(Partition, Count) ->
+-spec start_read_servers(antidote_db:antidote_db(), partition_id(),non_neg_integer()) -> 0.
+start_read_servers(AntidoteDB, Partition, Count) ->
     Addr = node(),
-    start_read_servers_internal(Addr, Partition, Count).
+    start_read_servers_internal(AntidoteDB, Addr, Partition, Count).
 
 -spec stop_read_servers(partition_id(),non_neg_integer()) -> ok.
 stop_read_servers(Partition, Count) ->
@@ -148,15 +148,15 @@ check_partition_ready(Node,Partition,Num) ->
 %%% Internal
 %%%===================================================================
 
--spec start_read_servers_internal(node(), partition_id(), non_neg_integer()) -> non_neg_integer().
-start_read_servers_internal(_Node,_Partition,0) ->
+-spec start_read_servers_internal(antidote_db:antidote_db(), node(), partition_id(), non_neg_integer()) -> non_neg_integer().
+start_read_servers_internal(_AntidoteDB, _Node,_Partition,0) ->
     0;
-start_read_servers_internal(Node, Partition, Num) ->
-    case clocksi_readitem_sup:start_fsm(Partition,Num) of
+start_read_servers_internal(AntidoteDB, Node, Partition, Num) ->
+    case clocksi_readitem_sup:start_fsm(AntidoteDB,Partition,Num) of
 	{ok,_Id} ->
-	    start_read_servers_internal(Node, Partition, Num-1);
+	    start_read_servers_internal(AntidoteDB, Node, Partition, Num-1);
     {error,{already_started, _}} ->
-	    start_read_servers_internal(Node, Partition, Num-1);
+	    start_read_servers_internal(AntidoteDB, Node, Partition, Num-1);
 	Err ->
 	    lager:debug("Unable to start clocksi read server for ~w, will retry", [Err]),
 	    try
@@ -165,7 +165,7 @@ start_read_servers_internal(Node, Partition, Num) ->
 		_:_Reason->
 		    ok
 	    end,
-	    start_read_servers_internal(Node, Partition, Num)
+	    start_read_servers_internal(AntidoteDB, Node, Partition, Num)
     end.
 
 -spec stop_read_servers_internal(node(), partition_id(), non_neg_integer()) -> ok.
@@ -188,12 +188,17 @@ generate_server_name(Node, Partition, Id) ->
 generate_random_server_name(Node, Partition) ->
     generate_server_name(Node, Partition, rand_compat:uniform(?READ_CONCURRENCY)).
 
-init([Partition, Id]) ->
+init([AntidoteDB, Partition, Id]) ->
     Addr = node(),
-    OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
-    SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
     PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
-    MatState = #mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition,is_ready=false},
+    MatState = case AntidoteDB of
+                   undefined ->
+                       OpsCache = materializer_vnode:get_cache_name(Partition, ops_cache),
+                       SnapshotCache = materializer_vnode:get_cache_name(Partition, snapshot_cache),
+                       #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache, partition = Partition, is_ready = false, antidote_db = AntidoteDB};
+                   _ ->
+                       #mat_state{ops_cache = undefined, snapshot_cache = undefined, partition = Partition, is_ready = false, antidote_db = AntidoteDB}
+               end,
     Self = generate_server_name(Addr,Partition,Id),
     {ok, #state{partition=Partition, id=Id,
 		mat_state = MatState,
