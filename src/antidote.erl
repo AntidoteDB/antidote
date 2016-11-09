@@ -139,12 +139,12 @@ update_objects(Updates, TxId) ->
 
 %% For static transactions: bulk updates and bulk reads
 -spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}]) ->
-                            {ok, snapshot_time()} | {error, reason()} | {aborted, txid()}.
+                            {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
 
 -spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}], boolean()) ->
-    {ok, snapshot_time()} | {error, reason()} | {aborted, txid()}.
+    {ok, snapshot_time()} | {error, reason()}.
 update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
