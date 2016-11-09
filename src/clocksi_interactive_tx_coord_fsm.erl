@@ -94,20 +94,27 @@
 %%% API
 %%%===================================================================
 
-start_link(From, Clientclock, UpdateClock, StayAlive) ->
+-spec start_link(pid(), clock_time() | ignore, atom(), boolean(), [op_param()]) -> {ok, pid()}.
+start_link(From, Clientclock, UpdateClock, StayAlive, Operations) ->
     case StayAlive of
         true ->
-            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive, Operations], []);
         false ->
-            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive, Operations], [])
     end.
+-spec start_link(pid(), clock_time() | ignore, atom(), boolean()) -> {ok, pid()}.
+start_link(From, Clientclock, UpdateClock, StayAlive) ->
+    start_link(From, Clientclock, UpdateClock, StayAlive, []).
 
+-spec start_link(pid(), clock_time() | ignore, atom()) -> {ok, pid()}.
 start_link(From, Clientclock) ->
     start_link(From, Clientclock, update_clock).
 
+-spec start_link(pid(), clock_time() | ignore) -> {ok, pid()}.
 start_link(From,Clientclock,UpdateClock) ->
     start_link(From,Clientclock,UpdateClock,false).
 
+-spec start_link(pid()) -> {ok, pid()}.
 start_link(From) ->
     start_link(From, ignore, update_clock).
 
@@ -122,7 +129,9 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 
 %% @doc Initialize the state.
 init([From, ClientClock, UpdateClock, StayAlive]) ->
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))}.
+    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))};
+init([From, ClientClock, UpdateClock, StayAlive, Operations]) ->
+    {ok, {execute_op, Operations}, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, true))}.
 
 init_state(StayAlive, FullCommit, IsStatic) ->
     #tx_coord_state{
@@ -146,7 +155,11 @@ generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
 start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
+    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)};
+
+%% Used by static update and read transactions
+start_tx({start_tx, From, ClientClock, UpdateClock, Operation}, SD0) ->
+    {next_state, {execute_op, Operation}, start_tx_internal(From, ClientClock, UpdateClock, SD0#tx_coord_state{is_static = true}), 0}.
 
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
@@ -373,7 +386,7 @@ execute_op({OpType, Args}, Sender,
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
-	                        return_accumulator= ReturnAcc}) ->
+	                        return_accumulator= ReturnAcc, is_static = IsStatic}) ->
 	NewAcc = case Response of
 		{error, Reason} -> {error, Reason};
 		{ok, _OpId} -> ReturnAcc;
@@ -383,8 +396,13 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 		false ->
 			case (NewAcc == ok) of
 				true ->
-                    gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
-					{next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}};
+                    case IsStatic of
+                        true ->
+                            {next_state, prepare, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}, 0};
+                        false ->
+                            gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
+                            {next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}}
+                    end;
 				false ->
 					abort(S0)
 			end;

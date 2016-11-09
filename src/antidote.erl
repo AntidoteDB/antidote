@@ -127,14 +127,18 @@ read_objects(Objects, TxId) ->
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     {_, _, CoordFsmPid} = TxId,
-    Operations = check_and_format_ops(Updates),
-    case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
-        ok ->
-            ok;
-        {aborted, TxId} ->
-            {error, {aborted, TxId}};
+    case check_and_format_ops(Updates) of
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason};
+        Operations ->
+            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
+                ok ->
+                    ok;
+                {aborted, TxId} ->
+                    {error, {aborted, TxId}};
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% For static transactions: bulk updates and bulk reads
@@ -148,17 +152,23 @@ update_objects(Clock, Properties, Updates) ->
 update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
-    {ok, TxId} = start_transaction(Clock, [], StayAlive),
-    case update_objects(Updates, TxId) of
-        ok ->
-            case commit_transaction(TxId) of
-                {ok, CT} ->
-                    {ok, CT};
+    case check_and_format_ops(Updates) of
+        {error, Reason} ->
+            {error, Reason};
+        Operations ->
+            case StayAlive of
+                true ->
+                    TxPid = whereis(clocksi_interactive_tx_coord_fsm:generate_name(self())),
+                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock, {update_objects, Operations}});
+                false ->
+                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, StayAlive, {update_objects, Operations}])
+            end,
+            receive
+                {ok, CommitTime} ->
+                    {ok, CommitTime};
                 {error, Reason} ->
                     {error, Reason}
-            end;
-        {error, Reason} ->
-            {error, Reason}
+            end
     end.
 
 %% @doc This function is used temporarily to unify the
