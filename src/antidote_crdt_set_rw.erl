@@ -86,19 +86,7 @@ new() ->
 
 -spec value(set()) -> [member()].
 value(RWSet) ->
-    % orddict:fold(
-    %     fun(Elem, {AddTokens, RemoveTokens}, Acc) ->
-    %         case AddTokens =/= [] andalso RemoveTokens == [] of
-    %             true ->
-    %                 Acc ++ [Elem];
-    %             false ->
-    %                 Acc
-    %         end
-    %     end,
-    %     [],
-    %     RWSet
-    % ).
-[Elem || {Elem, {AddTokens, []}} <- RWSet, AddTokens =/= []].
+  [Elem || {Elem, {AddTokens, []}} <- RWSet, AddTokens =/= []].
 
 -spec downstream(set_op(), set()) -> {ok, downstream_op()}.
 downstream({add, Elem}, RWSet) ->
