@@ -462,11 +462,9 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{ant
 			   end,
 %%	io:format("snap time : ~p  min snap time : ~p~n", [dict:to_list(MatSnapshot#materialized_snapshot.snapshot_time), dict:to_list(MinSnapshotTime)]),
 	Operations = antidote_db:get_ops(AntidoteDB, Key, MatSnapshot#materialized_snapshot.snapshot_time, MinSnapshotTime),
-%%	io:format("Operations length : ~p ~n", [length(Operations)]),
-	FilteredOps = filter_ops(Operations, MatSnapshot#materialized_snapshot.snapshot_time),
-%%	io:format("FilteredOps length : ~p ~n", [length(FilteredOps)]),
-	MaxOpVC = get_newest_vc(FilteredOps),
-	OPS = clocksi_payload_to_op(FilteredOps),
+%%	io:format("FilteredOps length : ~p ~n", [length(Operations)]),
+	MaxOpVC = get_newest_vc(Operations),
+	OPS = clocksi_payload_to_op(Operations),
 	Snapshot = clocksi_materializer:materialize_eager(Type, MatSnapshot#materialized_snapshot.value, OPS),
 	%% TODO CUAL ES EL COMMIT TIME PARA EL NUEVO SNAPPPPPP???? el maximo de las ops por ahora
 	%% No hay que incrementar el dc local en uno al crear el snap???
@@ -494,10 +492,6 @@ newest_vc(ClockSiPayload, Acc) ->
 
 clocksi_payload_to_op(OPS) ->
 	lists:map(fun (ClockSiPayload) -> ClockSiPayload#clocksi_payload.op_param end, OPS).
-
-filter_ops(OPS, SnapVC) ->
-	lists:filter(fun(ClockSiPayload) -> belongs_to_snapshot_op(SnapVC,
-		ClockSiPayload#clocksi_payload.commit_time, ClockSiPayload#clocksi_payload.snapshot_time)end, OPS).
 
 %% Should be called doesn't belong in SS
 %% returns true if op is more recent than SS (i.e. is not in the ss)
@@ -809,18 +803,6 @@ large_list_generic(MatState) ->
 		?assertEqual(Val, Type:value(Res))
 				  end, lists:seq(1001,1100)).
 
-print_DB(Ref) ->
-	io:format("----------------------------~n"),
-	eleveldb:fold(
-		Ref,
-		fun({K, V}, AccIn) ->
-			io:format("~p : ~p ~n", [binary_to_term(K), binary_to_term(V)]),
-			AccIn
-		end,
-		[],
-		[]),
-	io:format("----------------------------~n").
-
 generate_payload(SnapshotTime,CommitTime,Prev,_Name) ->
     Key = mycount,
     Type = antidote_crdt_counter,
@@ -953,27 +935,16 @@ concurrent_write_generic(MatState) ->
 				      txid=2},
     op_insert_gc(Key,DownstreamOp2,MatState),
 
-	Pepe = vectorclock:from_list([{DC2,1}, {DC1,0}]),
-	io:format("PEPE = ~p", [vc_in_range(Pepe, Pepe, Pepe)]),
-
-	{leveldb, DB} = MatState#mat_state.antidote_db,
-	print_DB(DB),
-
     %% Read different snapshots
     {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1,1}, {DC2, 0}]), ignore, MatState),
-	print_DB(DB),
     ?assertEqual(1, Type:value(ReadDC1)),
-    io:format("Result1 = ~p", [ReadDC1]),
+
     {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1,0},{DC2,1}]), ignore, MatState),
-    io:format("Result2 = ~p", [ReadDC2]),
     ?assertEqual(1, Type:value(ReadDC2)),
 
     %% Read snapshot including both increments
     {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC2,1}, {DC1,1}]), ignore, MatState),
     ?assertEqual(2, Type:value(Res2)).
-
-vc_in_range(VC, VCFrom, VCTo) ->
-	not vectorclock:lt(VC, VCFrom) and vectorclock:le(VC, VCTo).
 
 %% Check that a read to a key that has never been read or updated, returns the CRDTs initial value
 %% E.g., for a gcounter, return 0.
