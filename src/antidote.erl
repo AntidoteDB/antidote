@@ -124,7 +124,7 @@ read_objects(Objects, TxId) ->
     end.
 
 -spec update_objects([{bound_object(), op_name(), op_param()}], txid())
-                    -> ok | {error, reason()} | {aborted, txid()}.
+                    -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     {_, _, CoordFsmPid} = TxId,
     Operations = check_and_format_ops(Updates),
@@ -132,7 +132,7 @@ update_objects(Updates, TxId) ->
         ok ->
             ok;
         {aborted, TxId} ->
-            {aborted, TxId};
+            {error, {aborted, TxId}};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -158,9 +158,7 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
                     {error, Reason}
             end;
         {error, Reason} ->
-            {error, Reason};
-        {aborted, TxId} ->
-            {aborted, TxId}
+            {error, Reason}
     end.
 
 %% @doc This function is used temporarily to unify the

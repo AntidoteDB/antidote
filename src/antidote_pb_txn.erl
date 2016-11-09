@@ -166,9 +166,6 @@ process(#apbstaticupdateobjects{
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
                                              {error, Reason}), State};
-        {aborted, TxId} ->
-            {reply, antidote_pb_codec:encode(commit_response,
-                {aborted, TxId}), State};
         {ok, CommitTime} ->
             {reply, antidote_pb_codec:encode(commit_response, {ok, CommitTime}),
              State}

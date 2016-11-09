@@ -145,7 +145,7 @@ test_increment_hook({{Key, Bucket}, antidote_crdt_counter, {increment, 1}}) ->
     {ok, {{Key, Bucket}, antidote_crdt_counter, {increment, 2}}}.
 
 test_post_hook({{Key, Bucket}, Type, OP}) ->
-    _Result = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter, commitcount}, increment, 1}]),
+    {ok, _CT} = antidote:update_objects(ignore, [], [{{Key, antidote_crdt_counter, commitcount}, increment, 1}]),
     {ok, {{Key, Bucket}, Type, OP}}.
 
 -endif.
