@@ -150,22 +150,22 @@ unique() ->
 apply_downstreams([], RWSet) ->
   RWSet;
 apply_downstreams(Ops, []) ->
-  lists:flatten([apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, [], []) || {Elem, SeenTokens, ToAdd, ToRemove} <- Ops]);
+  [apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, [], []) || {Elem, SeenTokens, ToAdd, ToRemove} <- Ops];
 apply_downstreams([{Elem1, SeenTokens, ToAdd, ToRemove}|OpsRest]=Ops, [{Elem2, {CurrentAddTokens, CurrentRemoveTokens}}|RWSetRest]=RWSet) ->
   if
     Elem1 == Elem2 ->
-      apply_downstream(Elem1, SeenTokens, ToAdd, ToRemove, CurrentAddTokens, CurrentRemoveTokens) ++ apply_downstreams(OpsRest, RWSetRest);
+      [apply_downstream(Elem1, SeenTokens, ToAdd, ToRemove, CurrentAddTokens, CurrentRemoveTokens) | apply_downstreams(OpsRest, RWSetRest)];
     Elem1 > Elem2 ->
       [{Elem2, {CurrentAddTokens, CurrentRemoveTokens}} | apply_downstreams(Ops, RWSetRest)];
     true ->
-      apply_downstream(Elem1, SeenTokens, ToAdd, ToRemove, [], []) ++ apply_downstreams(OpsRest, RWSet)
+      [apply_downstream(Elem1, SeenTokens, ToAdd, ToRemove, [], []) | apply_downstreams(OpsRest, RWSet)]
   end.
 
 %% @private create an orddict entry from a downstream op
 apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, CurrentAddTokens, CurrentRemoveTokens) ->
   AddTokens = (CurrentAddTokens ++ ToAdd) -- SeenTokens,
   RemoveTokens = (CurrentRemoveTokens ++ ToRemove) -- SeenTokens,
-  [{Elem, {AddTokens, RemoveTokens}}].
+  {Elem, {AddTokens, RemoveTokens}}.
 
 
 
