@@ -110,13 +110,13 @@ commit_transaction(TxId) ->
 read_objects(BoundObjects, TxId) ->
     {_, _, CoordFsmPid} = TxId,
     NewObjects = lists:map(fun({Key, Type, Bucket}) ->
-        case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
-            ok ->
-                {{Key, Bucket}, Type};
-            {error, Reason} ->
-                lager:debug("typing problem, chceck your ops! ~n~p", [Reason]),
-                {error, Reason}
-        end
+                                case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
+                                    ok ->
+                                        {{Key, Bucket}, Type};
+                                    {error, Reason} ->
+                                        lager:debug("typing problem, check your ops! ~n~p", [Reason]),
+                                        {error, Reason}
+                                end
                            end, BoundObjects),
     case lists:member({error, type_check}, NewObjects) of
         true -> {error, type_check};
@@ -128,34 +128,18 @@ read_objects(BoundObjects, TxId) ->
                  end
     end.
 
--spec update_objects([{bound_object(), term()}], txid())
+-spec update_objects([{bound_object(), op_name(), op_param()}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     {_, _, CoordFsmPid} = TxId,
-    Operations= lists:map(fun(Update) ->
-        {Key, Type, Bucket, Op} =case Update of
-            {{K, T, B}, O} -> {K, T, B, O};
-            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
-        end,
-        case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
-            ok ->
-                {{Key, Bucket}, Type, Op};
-            {error, _Reason} ->
-                    {error, type_check}
-        end
-                           end, Updates),
-    case lists:member({error, type_check}, Operations) of
-        true -> {error, type_check};
-        false ->
-%%            lager:info("gonna start multiple updates: ~p", [Operations]),
-            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
-                ok->
-                    ok;
-                {aborted, TxId} ->
-                    {aborted, TxId};
-                {error, Reason} ->
-                    {error, Reason}
-            end
+    Operations = check_and_format_ops(Updates),
+    case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
+        ok ->
+            ok;
+        {aborted, TxId} ->
+            {error, {aborted, TxId}};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% For static transactions: bulk updates and bulk reads
@@ -163,41 +147,56 @@ update_objects(Updates, TxId) ->
                             {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
+
+-spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}], boolean()) ->
+    {ok, snapshot_time()} | {error, reason()}.
 update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
 update_objects(Clock, _Properties, Updates, StayAlive) ->
-    Operations = lists:map(fun(Update) ->
-        {Key, Type, Bucket, Op} =case Update of
-            {{K, T, B}, O} -> {K, T, B, O};
-            {{K, T, B}, O, P} -> {K, T, B, {O, P}}
-                end,
-                           {update, {{Key, Bucket}, Type, Op}}
-                   end,
-                   Updates),
-    SingleKey = case Operations of
-                    [_O] -> %% Single key update
-                        case Clock of
-                            ignore -> true;
-                            _ -> false
-                        end;
-                    [_H|_T] -> false
-                end,
-    case SingleKey of
-        true ->  %% if single key, execute the fast path
-            [{update, {K, T, Op}}] = Operations,
-            case append(K, T, Op) of
-                {ok, {_TxId, [], CT}} ->
+    {ok, TxId} = start_transaction(Clock, [], StayAlive),
+    case update_objects(Updates, TxId) of
+        ok ->
+            case commit_transaction(TxId) of
+                {ok, CT} ->
                     {ok, CT};
                 {error, Reason} ->
                     {error, Reason}
             end;
-        false ->
-            case clocksi_execute_tx(Clock, Operations, update_clock, StayAlive) of
-                {ok, {_TxId, [], CommitTime}} ->
-                    {ok, CommitTime};
-                {error, Reason} -> {error, Reason}
-            end
+        {error, Reason} ->
+            {error, Reason}
     end.
+
+%% @doc This function is used temporarily to unify the
+%% interfaces of old and new transactions. It should
+%% be removed once tests call only the new interface.
+%% It checks the format of the
+%% operation for compatibility with
+%% some systests that call updates with
+%% {Operation, Params} (as a single parameter),
+%% and Operation, Params (two separate parameters).
+-spec check_and_format_ops([{key(), type(), bucket(), op(), op_param()} | {key(), type(), bucket(), {op(), op_param()}}]) ->
+                                [{{key(), bucket()}, type(), {op(), op_param()}}] | {error, reason()}.
+check_and_format_ops(Updates) ->
+    try
+        lists:map(fun(Update) ->
+            {Key, Type, Bucket, Op} = case Update of
+                {{K, T, B}, O} ->
+                    {K, T, B, O};
+                {{K, T, B}, O, P} ->
+                    {K, T, B, {O, P}}
+            end,
+            case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
+                ok ->
+                    {{Key, Bucket}, Type, Op};
+                {error, Reason} ->
+                    throw(Reason)
+            end
+        end, Updates)
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
+
 
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
@@ -241,7 +240,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                 {ok, gr} ->
                     case Args of
                         [_Op] -> %% Single object read = read latest value
-                            case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
+                            case read(Clock, Args, update_clock, StayAlive) of
                                 {ok, {_TxId, Result, CommitTime}} ->
                                     {ok, Result, CommitTime};
                                 {error, Reason} -> {error, Reason}
