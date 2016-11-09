@@ -86,18 +86,19 @@ new() ->
 
 -spec value(set()) -> [member()].
 value(RWSet) ->
-    orddict:fold(
-        fun(Elem, {AddTokens, RemoveTokens}, Acc) ->
-            case AddTokens =/= [] andalso RemoveTokens == [] of
-                true ->
-                    Acc ++ [Elem];
-                false ->
-                    Acc
-            end
-        end,
-        [],
-        RWSet
-    ).
+    % orddict:fold(
+    %     fun(Elem, {AddTokens, RemoveTokens}, Acc) ->
+    %         case AddTokens =/= [] andalso RemoveTokens == [] of
+    %             true ->
+    %                 Acc ++ [Elem];
+    %             false ->
+    %                 Acc
+    %         end
+    %     end,
+    %     [],
+    %     RWSet
+    % ).
+[Elem || {Elem, {AddTokens, []}} <- RWSet, AddTokens =/= []].
 
 -spec downstream(set_op(), set()) -> {ok, downstream_op()}.
 downstream({add, Elem}, RWSet) ->
@@ -161,13 +162,7 @@ unique() ->
 apply_downstreams([], RWSet) ->
   RWSet;
 apply_downstreams(Ops, []) ->
-  lists:foldl(
-    fun({Elem, SeenTokens, ToAdd, ToRemove}, RWSet) ->
-      RWSet ++ apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, [], [])
-    end,
-    [],
-    Ops
-  );
+  lists:flatten([apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, [], []) || {Elem, SeenTokens, ToAdd, ToRemove} <- Ops]);
 apply_downstreams([{Elem1, SeenTokens, ToAdd, ToRemove}|OpsRest]=Ops, [{Elem2, {CurrentAddTokens, CurrentRemoveTokens}}|RWSetRest]=RWSet) ->
   if
     Elem1 == Elem2 ->
