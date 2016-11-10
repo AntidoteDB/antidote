@@ -11,8 +11,7 @@
 -define(LOG_READ_MSG,2).
 -define(OK_MSG,4).
 -define(ERROR_MSG,5).
--define(EXTERNAL_READ_MSG,6).
--define(BCOUNTER_REQUEST,7).
+-define(BCOUNTER_REQUEST,6).
 
 %% The number of bytes a parition id is in a message
 -define(PARTITION_BYTE_LENGTH, 20).
@@ -23,4 +22,4 @@
 %% Needed for dialyzer, must be the size of the request id bits plus the version bits
 -define(MESSAGE_HEADER_BIT_LENGTH, 32).
 
--type inter_dc_message_type() :: ?CHECK_UP_MSG | ?LOG_READ_MSG | ?OK_MSG | ?ERROR_MSG | ?EXTERNAL_READ_MSG | ?BCOUNTER_REQUEST.
+-type inter_dc_message_type() :: ?CHECK_UP_MSG | ?LOG_READ_MSG | ?OK_MSG | ?ERROR_MSG | ?BCOUNTER_REQUEST.

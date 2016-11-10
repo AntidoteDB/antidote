@@ -391,12 +391,7 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false}
 		end
 	end,
-    OpList = SnapshotGetRespPrev#snapshot_get_response.ops_list,
-    MaxTime = vectorclock:get_clock_of_dc(DCID,SnapshotTime),
-    lager:info("The min ~p max ~p and diff ~p", [MinTime,MaxTime,(MaxTime - MinTime)]),
-    TrimmedOps = partial_repli_utils:trim_ops_from_dc(OpList,DCID,MinTime,MaxTime,[]),
-    lager:info("the size of the trimmed ops ~p", [length(TrimmedOps)]),
-    {ok, TrimmedOps}.
+    {ok, SnapshotGetRespPrev#snapshot_get_response.ops_list}.
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
 internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
@@ -427,7 +422,7 @@ internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},Co
 %% vnode when the write function calls it. That is done for garbage collection.
 -spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem_fsm:read_property_list(), boolean(), #mat_state{})
 		   -> {ok, snapshot()} | {error, no_snapshot}.
-internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}) ->
+internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}) ->
     %% First look for any existing snapshots in the cache that is compatible with 
     %% Result is a tuple where on success:
     %%     1st element is the snapshot of type #materialized_snapshot{}
@@ -459,7 +454,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
     %% Otherwise operations are taken from the in-memory cache (any snapshot in the cache
     %% will have any more recent operations also in the cache so no need to go to the log)
     %% The value returned is of type #snapshot_get_response{}
-    SnapshotGetRespPrev = 
+    SnapshotGetResp = 
 	case Result of
 	    {error, no_snapshot} ->
 		LogId = log_utilities:get_logid_from_key(Key),
@@ -473,21 +468,12 @@ internal_read(Key, Type, MinSnapshotTime, TxId, PropertyList, ShouldGc, State = 
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1};
 		    [Tuple] ->
-			{Key,Length1,_OpId,_ListLen,AllOps} =
-			    case partial_repli_utils:check_should_convert_to_list_in_materializer(PropertyList) of
-				true ->
-				    tuple_to_key(Tuple,true);
-				false ->
-				    tuple_to_key(Tuple,false)
-			    end,
+			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,false),
 			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
 					       materialized_snapshot = LatestSnapshot1,
 					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
 		end
 	end,
-    %% Apply any changes needed by the read properties
-    SnapshotGetResp =
-	partial_repli_utils:replace_external_ops(SnapshotGetRespPrev, PropertyList),
     %% Now apply the operations to the snapshot
     case SnapshotGetResp#snapshot_get_response.number_of_ops of
 	0 ->
