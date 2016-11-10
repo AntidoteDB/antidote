@@ -46,7 +46,6 @@
 %% API
 -export([start_vnode/1,
 	 check_tables_ready/0,
-	 get_ops/6,
          read/5,
          read/6,
 	 get_cache_name/2,
@@ -74,19 +73,6 @@
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
-
--spec get_ops(key(),type(),clock_time(),snapshot_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]} | {error, reason()}.
-get_ops(Key, Type, Time, SnapshotTime, DCID, MatState = #mat_state{ops_cache = OpsCache}) ->
-    case ets:info(OpsCache) of
-	undefined ->
-	    riak_core_vnode_master:sync_command({MatState#mat_state.partition,node()},
-						{get_ops,Key,Type,Time,SnapshotTime,DCID},
-						materializer_vnode_master,
-						infinity);
-	_ ->
-	    internal_get_ops(Key,Type,Time,SnapshotTime,DCID,MatState)
-    end.
-    
 
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
@@ -245,9 +231,6 @@ handle_command({check_ready},_Sender,State = #mat_state{partition=Partition, is_
 handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
     {reply, read(Key, Type, SnapshotTime, TxId, State), State};
 
-handle_command({get_ops, Key, Type, Time, SnapshotTime, DCID}, _Sender, State) ->
-    {reply, internal_get_ops(Key, Type, Time, SnapshotTime, DCID, State), State};
-
 handle_command({update, Key, DownstreamOp}, _Sender, State) ->
     true = op_insert_gc(Key, DownstreamOp,State),
     {reply, ok, State};
@@ -343,49 +326,6 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 
 %%---------------- Internal Functions -------------------%%
 
--spec internal_get_ops(key(), type(),clock_time(), snapshot_time(),dcid(),#mat_state{}) -> {ok, [clocksi_payload()]}.
-internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{ops_cache = OpsCache, snapshot_cache=SnapshotCache}) ->
-    %% First get the oldest snapshot in the cache
-    Result = case ets:lookup(SnapshotCache, Key) of
-		 [] ->
-		     %% First time reading this key, store an empty snapshot in the cache
-		     BlankSS = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
-		     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new()),
-		     {BlankSS,ignore};
-		 [{_, SnapshotDict}] ->
-		     case vector_orddict:get_smaller_from_id(DCID, MinTime, SnapshotDict) of
-			 undefined ->
-			     lager:info("no snapshot found"),
-			     {error, no_snapshot};
-			 {SnapshotCommitTime, LatestSnapshot} ->
-			     lager:info("Found the snapshot ~p", [{SnapshotCommitTime,LatestSnapshot}]),
-			     {LatestSnapshot,SnapshotCommitTime}
-		     end
-	     end,
-    SnapshotGetRespPrev = 
-	case Result of
-	    {error, no_snapshot} ->
-		LogId = log_utilities:get_logid_from_key(Key),
-		[Node] = log_utilities:get_preflist_from_key(Key),
-		MinSnapshotTime = vectorclock:set_clock_of_dc(DCID, MinTime, vectorclock:new()),
-		logging_vnode:get_range(Node, LogId, MinSnapshotTime, SnapshotTime, Type, Key);
-	    {LatestSnapshot1,SnapshotCommitTime1} ->
-		case ets:lookup(OpsCache, Key) of
-		    [] ->
-			lager:info("no ops in the SS"),
-			#snapshot_get_response{number_of_ops = 0, ops_list = [],
-					       materialized_snapshot = LatestSnapshot1,
-					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false};
-		    [Tuple] ->
-			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,true),
-			lager:info("found the ops in the SS ~p", [length(AllOps)]),
-			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
-					       materialized_snapshot = LatestSnapshot1,
-					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = false}
-		end
-	end,
-    {ok, SnapshotGetRespPrev#snapshot_get_response.ops_list}.
-
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
 internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
@@ -452,8 +392,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State =
 	    {error, no_snapshot} ->
 		LogId = log_utilities:get_logid_from_key(Key),
 		[Node] = log_utilities:get_preflist_from_key(Key),
-		Res = logging_vnode:get_up_to_time(Node, LogId, MinSnapshotTime, Type, Key),
-		Res;
+		logging_vnode:get_up_to_time(Node, LogId, MinSnapshotTime, Type, Key);
 	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
 		case ets:lookup(OpsCache, Key) of
 		    [] ->
@@ -627,7 +566,7 @@ tuple_to_key(Tuple,ToList) ->
 	end,
     {Key,Length,OpId,ListLen,Ops}.
 tuple_to_key_int(Next,Next,_Tuple,Acc) ->
-    lists:reverse(Acc);
+    Acc;
 tuple_to_key_int(Next,Last,Tuple,Acc) ->
     tuple_to_key_int(Next+1,Last,Tuple,[element(Next,Tuple)|Acc]).
 
@@ -655,7 +594,6 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, [], true, State),
 	    %% Have to get the new ops dict because the interal_read can change it
 	    {Length1,ListLen1} = ets:lookup_element(OpsCache, Key, 2),
-	    lager:info("Lengths after the gc ~p~n~n~n", [{Length1,ListLen1}]),
 	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length1+1,ListLen1}}]);
         false ->
 	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
