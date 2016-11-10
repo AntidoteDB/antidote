@@ -79,9 +79,9 @@ read_write_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     Bound_object = {gr_rw_key, antidote_crdt_counter, bucket},
-    {ok, [0], _} = rpc:call(Node, antidote, read_objects, [ignore, {}, [Bound_object]]),
-    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{Bound_object, increment, 1}]]),
-    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [ignore, {}, [Bound_object]]),
+    {ok, [0], _} = rpc:call(Node, antidote, read_objects, [ignore, [], [Bound_object]]),
+    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [{Bound_object, increment, 1}]]),
+    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [ignore, [], [Bound_object]]),
     ?assertMatch([1], Res).
 
 read_multiple_test(Config) ->
@@ -89,9 +89,9 @@ read_multiple_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     O1 = {gr_read_mult_key1, antidote_crdt_counter, bucket},
-    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O1, increment, 1}]]),
+    {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, [], [{O1, increment, 1}]]),
     O2 = {o2, antidote_crdt_counter, bucket},
-    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O2, increment, 1}]]),
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [], [{O2, increment, 1}]]),
     {ok, Res, _} = rpc:call(Node, antidote, read_objects, [CT, {}, [O1,O2]]),
     ?assertMatch([1,1], Res).
 
@@ -102,11 +102,11 @@ replication_test(Config) ->
     O1 = {gr_repl_key1, antidote_crdt_counter, bucket},
     O2 = {gr_repl_key2, antidote_crdt_counter, bucket},
     %% Write to DC1
-    {ok, _CT1} = rpc:call(Node1, antidote, update_objects, [ignore, {}, [{O1, increment, 1}]]),
+    {ok, _CT1} = rpc:call(Node1, antidote, update_objects, [ignore, [], [{O1, increment, 1}]]),
     %% Write to DC2
-    {ok, CT2} = rpc:call(Node2, antidote, update_objects, [ignore, {}, [{O2, increment, 1}]]),
+    {ok, CT2} = rpc:call(Node2, antidote, update_objects, [ignore, [], [{O2, increment, 1}]]),
     %% Read r1 from DC2, with dependency to first write
-    {ok, [Res1], _} = rpc:call(Node2, antidote, read_objects, [ignore, {}, [O1]]),
+    {ok, [Res1], _} = rpc:call(Node2, antidote, read_objects, [ignore, [], [O1]]),
     lager:info("Read r1 from DC2: ~p", [Res1]), %% Result could be 0 or 1, there is no guarantee
     {ok, Res2, _} = rpc:call(Node2, antidote, read_objects, [CT2, {}, [O1, O2]]),
     %% Since CT1 < CT2, any snapshot that includes second write must include first write
