@@ -156,12 +156,18 @@ update_objects(Clock, Properties, Updates) ->
     {ok, snapshot_time()} | {error, reason()}.
 update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
-update_objects(Clock, _Properties, Updates, StayAlive) ->
+update_objects(ClientCausalVC, _Properties, Updates, StayAlive) ->
     case check_and_format_ops(Updates) of
         {error, Reason} ->
             {error, Reason};
         Operations ->
+            start_static_transaction(update_objects, Operations, StayAlive, ClientCausalVC)
+    end.
 
+%% @doc The following function is called by the static versions of read and update_objects
+%%      to execute a static transaction.
+-spec start_static_transaction(update_objects | read_objects, list(), boolean(), vectorclock()) -> {ok, vectorclock()} | {error, reason()}.
+start_static_transaction(TransactionKind, ListOfOperations, StayAlive, ClientCausalVC) ->
             TxPid = case StayAlive of
                 true ->
                     whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
@@ -170,17 +176,15 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
             end,
             case TxPid of
                 undefined ->
-                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, StayAlive, {update_objects, Operations}]);
+                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientCausalVC, update_clock, StayAlive, {TransactionKind, ListOfOperations}]);
                 TxPid ->
-                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock, {update_objects, Operations}})
+                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), ClientCausalVC, update_clock, {TransactionKind, ListOfOperations}})
             end,
             receive
-                {ok, CommitTime} ->
-                    {ok, CommitTime};
-                {error, Reason} ->
-                    {error, Reason}
-            end
-    end.
+                Reply ->
+                    Reply
+            end.
+
 
 %% @doc This function is used temporarily to unify the
 %% interfaces of old and new transactions. It should
@@ -217,6 +221,8 @@ check_and_format_ops(Updates) ->
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
 
+-spec read_objects(vectorclock(), list(), [bound_object()], boolean()) ->
+                        {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
              fun({Key, Type, Bucket}) ->
@@ -253,11 +259,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                 {ok, gr} ->
                     case Args of
                         [_Op] -> %% Single object read = read latest value
-                            case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
-                                {ok, {_TxId, Result, CommitTime}} ->
-                                    {ok, Result, CommitTime};
-                                {error, Reason} -> {error, Reason}
-                            end;
+                            start_static_transaction(read_objects, Objects, StayAlive, Clock);
                         [_|_] -> %% Read Multiple objects  = read from a snapshot
                             %% Snapshot includes all updates committed at time GST
                             %% from local and remore replicas
