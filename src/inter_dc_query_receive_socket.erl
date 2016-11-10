@@ -105,8 +105,6 @@ handle_info({zmq, Socket, BinaryMsg, _Flags}, State=#state{id=Id,next=getmsg}) -
 	    ok = inter_dc_query_response:get_entries(QueryBinary,QueryState(?LOG_READ_MSG));
 	<<?CHECK_UP_MSG>> ->
 	    ok = finish_send_response(<<?OK_MSG>>, Id, ReqId, Socket);
-	<<?EXTERNAL_READ_MSG,QueryBinary/binary>> ->
-	    ok = inter_dc_query_response:perform_external_read(QueryBinary,QueryState(?EXTERNAL_READ_MSG));
 	<<?BCOUNTER_REQUEST,RequestBinary/binary>> ->
 	    ok = inter_dc_query_response:request_permissions(RequestBinary,QueryState(?BCOUNTER_REQUEST));
 	%% TODO: Handle other types of requests

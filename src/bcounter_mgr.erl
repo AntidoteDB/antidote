@@ -176,7 +176,7 @@ do_request(MyDCId, RemoteId, Key, Amount) ->
     BinaryMsg = term_to_binary({request_permissions,
                                 {transfer, {Key, Amount, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
     inter_dc_query:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
-                                   BinaryMsg, fun bcounter_mgr:request_response/2, self()).
+                                   BinaryMsg, fun bcounter_mgr:request_response/2).
 
 %% Orders the reservation of each DC, from high to low.
 pref_list(Obj) ->

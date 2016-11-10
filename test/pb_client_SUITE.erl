@@ -155,7 +155,7 @@ pb_empty_txn_clock_test(_Config) ->
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, CommitTime} = antidotec_pb:commit_transaction(Pid, TxId),
     %% Read committed updated
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, CommitTime, []),
+    {ok, Tx2} = antidotec_pb:start_transaction(Pid, CommitTime, {}),
     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
     _Disconnected = antidotec_pb_socket:stop(Pid).
 

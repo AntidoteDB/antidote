@@ -51,7 +51,6 @@ get_descriptor() ->
   LogReaders = lists:map(fun(Node) -> rpc:call(Node, inter_dc_query_receive_socket, get_address_list, []) end, Nodes),
   {ok, #descriptor{
     dcid = dc_meta_data_utilities:get_my_dc_id(),
-    partition_list = dc_meta_data_utilities:get_my_partitions_list(),
     partition_num = dc_utilities:get_partitions_num(),
     publishers = Publishers,
     logreaders = LogReaders
@@ -120,7 +119,6 @@ start_bg_processes(MetaDataName) ->
 			  ok = rpc:call(Node, meta_data_sender, start, [MetaDataName]) end, Nodes),
     %% Load the internal meta-data
     _MyDCId = dc_meta_data_utilities:reset_my_dc_id(),
-    _MyDesc = dc_meta_data_utilities:get_my_dc_descriptor(),
     ok = dc_meta_data_utilities:load_partition_meta_data(),
     ok = dc_meta_data_utilities:store_meta_data_name(MetaDataName),
     %% Start the timers sending the heartbeats
@@ -213,11 +211,7 @@ observe_dcs_sync(Descriptors) ->
 			      ok ->
 				  Value = vectorclock:get_clock_of_dc(DCID, SS),
 				  wait_for_stable_snapshot(DCID, Value),
-				  case DCID == dc_utilities:get_my_dc_id() of
-				      true -> ok;
-				      false ->
-					  ok = dc_meta_data_utilities:store_dc_descriptors([Desc])
-				  end;
+				  ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
 			      _ ->
 				  ok
 			  end

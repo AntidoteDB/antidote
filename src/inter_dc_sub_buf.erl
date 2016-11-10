@@ -123,7 +123,7 @@ push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_
 -spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
 query({DCID,Partition}, From, To) ->
     BinaryRequest = term_to_binary({read_log, Partition, From, To}),
-    inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2, self()).
+    inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2).
 
 cmp(A, B) when A > B -> gt;
 cmp(A, B) when B > A -> lt;

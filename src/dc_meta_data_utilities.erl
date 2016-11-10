@@ -14,11 +14,7 @@
 	 get_dc_partitions_detailed/1,
 	 get_dc_partitions_dict/1,
 	 get_my_dc_id/0,
-	 get_dc_descriptors_w_me/0,
-	 get_my_dc_descriptor/0,
 	 reset_my_dc_id/0,
-	 get_my_partitions_list/0,
-	 get_dc_partitions_list/1,
 	 set_dc_partitions/2,
 	 get_dc_ids/1,
 	 get_key/1,
@@ -87,7 +83,7 @@ get_meta_data_name() ->
 %% The first is a dict with all partitions for DCID, with key and value being the partition id
 %% The second is a tuple with all partitions for DCID
 %% The third is an integer telling the number of partitions
--spec get_dc_partitions_detailed(dcid()) -> {dict:dict(partition_id(),partition_id()),tuple(),non_neg_integer()}.
+-spec get_dc_partitions_detailed(dcid()) -> {dict:dict(),tuple(),non_neg_integer()}.
 get_dc_partitions_detailed(DCID) ->
     case stable_meta_data_server:read_meta_data({partition_meta_data,DCID}) of
 	{ok, Info} ->
@@ -98,7 +94,7 @@ get_dc_partitions_detailed(DCID) ->
     end.
 
 %% Returns a dict with all partitions for DCID, with key and value being the partition id
--spec get_dc_partitions_dict(dcid()) -> dict:dict(partition_id(),partition_id()).
+-spec get_dc_partitions_dict(dcid()) -> dict:dict().
 get_dc_partitions_dict(DCID) ->
     case stable_meta_data_server:read_meta_data({partition_dict,DCID}) of
 	{ok, Dict} ->
@@ -106,34 +102,6 @@ get_dc_partitions_dict(DCID) ->
 	error ->
 	    lager:error("Error no partitions for dc ~w", [DCID]),
 	    dict:new()
-    end.
-
-%% Returns a list of partitions at this DC
--spec get_my_partitions_list() -> [partition_id()].
-get_my_partitions_list() ->
-    case stable_meta_data_server:read_meta_data(my_partition_list) of
-	{ok, List} ->
-	    List;
-	error ->
-	    ok = load_partition_meta_data(),
-	    get_my_partitions_list()
-    end.
-
-%% Returns a dict with all partitions for DCID, with key and value being the partition id
--spec get_dc_partitions_list(dcid()) -> [partition_id()].
-get_dc_partitions_list(DCID) ->
-    case stable_meta_data_server:read_meta_data({partition_list,DCID}) of
-	{ok, List} ->
-	    List;
-	error ->
-	    case get_my_dc_id() of
-		DCID ->
-		    load_partition_meta_data(),
-		    get_my_partitions_list();
-		_ ->
-		    lager:error("Error no partitions for dc ~w", [DCID]),
-		    []
-	    end
     end.
 
 %% Returns the id of the local dc
@@ -155,25 +123,6 @@ reset_my_dc_id() ->
 	    ok = stable_meta_data_server:broadcast_meta_data_merge(dc_list_w_me, MyDC, fun ordsets:add_element/2, fun ordsets:new/0),
 	    MyDC.
 
-%% Returns the descriptor of the local dc
--spec get_my_dc_descriptor() -> #descriptor{}.
-get_my_dc_descriptor() ->
-    case stable_meta_data_server:read_meta_data(my_dc_descriptor) of
-	{ok, Des} ->
-	    Des;
-	error ->
-	    %% Add my DC to the list of DCs since none have been added yet
-	    reset_my_dc_descriptor()
-    end.
-
-% Sets the descriptor of the local dc
--spec reset_my_dc_descriptor() -> #descriptor{}.
-reset_my_dc_descriptor() ->
-    {ok,MyDC} = inter_dc_manager:get_descriptor(),
-    ok = stable_meta_data_server:broadcast_meta_data(my_dc_descriptor, MyDC),
-    ok = stable_meta_data_server:broadcast_meta_data_merge(all_descriptors, [MyDC], fun desc_merge_func/2, fun dict:new/0),
-    MyDC.
-
 %% Loads all the partitions ids into an ets table stored by
 %% their index
 -spec load_partition_meta_data() -> ok.
@@ -181,9 +130,6 @@ load_partition_meta_data() ->
     {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
     PartitionList = chashbin:to_list(CHBin),
     Length = length(PartitionList),
-    MyDCID = get_my_dc_id(),
-    ok = set_dc_partitions(PartitionList, MyDCID),
-    ok = stable_meta_data_server:broadcast_meta_data(my_partition_list, PartitionList),
     ok = stable_meta_data_server:broadcast_meta_data({part,length}, Length),
     {_Len, IdPartitionList} = lists:foldl(fun(Partition,{PrevId,Acc}) ->
 						  {PrevId + 1, Acc ++ [{{part,PrevId},Partition}]}
@@ -215,15 +161,12 @@ get_partition_at_index(Index) ->
 %% Store an external dc descriptor
 -spec store_dc_descriptors([#descriptor{}]) -> ok.
 store_dc_descriptors(Descriptors) ->
-    stable_meta_data_server:broadcast_meta_data_merge(external_descriptors, Descriptors, fun desc_merge_func/2, fun dict:new/0),
-    stable_meta_data_server:broadcast_meta_data_merge(all_descriptors, Descriptors, fun desc_merge_func/2, fun dict:new/0).
-
-%% Internal function for merging the list of dc descriptors
--spec desc_merge_func([#descriptor{}], dict:dict(dcid(),#descriptor{})) -> dict:dict(dcid(),#descriptor{}).
-desc_merge_func(DescList, PrevDict) ->
-    lists:foldl(fun(Desc = #descriptor{dcid = DCID}, Acc) ->
-			dict:store(DCID, Desc, Acc)
-		end, PrevDict, DescList).
+    MergeFunc = fun(DescList, PrevDict) ->
+			lists:foldl(fun(Desc = #descriptor{dcid = DCID}, Acc) ->
+					    dict:store(DCID, Desc, Acc)
+				    end, PrevDict, DescList)
+		end,
+    stable_meta_data_server:broadcast_meta_data_merge(external_descriptors, Descriptors, MergeFunc, fun dict:new/0).
 
 %% Gets the list of external dc descriptors
 -spec get_dc_descriptors() -> [#descriptor{}].
@@ -237,18 +180,6 @@ get_dc_descriptors() ->
 	    []
     end.
 
-%% Gets a list of all dc descriptors
--spec get_dc_descriptors_w_me() -> [#descriptor{}].
-get_dc_descriptors_w_me() ->
-    case stable_meta_data_server:read_meta_data(all_descriptors) of
-	{ok, Dict} ->
-	    dict:fold(fun(_DCID, Desc, Acc) ->
-			      [Desc | Acc]
-		      end, [], Dict);
-	error ->
-	    get_my_dc_descriptor()
-    end.
-
 %% Add information about a DC to the meta_data
 -spec set_dc_partitions([partition_id()],dcid()) -> ok.
 set_dc_partitions(PartitionList, DCID) ->
@@ -260,7 +191,6 @@ set_dc_partitions(PartitionList, DCID) ->
 		    end, dict:new(), PartitionList),
     ok = stable_meta_data_server:broadcast_meta_data({partition_meta_data,DCID}, {PartitionDict,PartitionTuple,NumPartitions}),
     ok = stable_meta_data_server:broadcast_meta_data({partition_dict,DCID}, PartitionDict),
-    ok = stable_meta_data_server:broadcast_meta_data({partition_list,DCID}, PartitionList),
     %% Add the new one to the list that doesnt include you
     ok = stable_meta_data_server:broadcast_meta_data_merge(dc_list, DCID, fun ordsets:add_element/2, fun ordsets:new/0),
     %% Be sure your dc is in the list before adding the new one to the list that includes you
@@ -301,5 +231,3 @@ key_as_integer(Key) when is_binary(Key) ->
     binary_to_integer(Key);
 key_as_integer(Key) ->
     key_as_integer(term_to_binary(Key)).
-
-    

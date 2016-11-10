@@ -45,14 +45,9 @@
 %% States
 -export([read_data_item/5,
 	 async_read_data_item/6,
-	 is_external/2,
 	 check_partition_ready/3,
 	 start_read_servers/2,
 	 stop_read_servers/2]).
-
--export_type([external_read_property/0,
-	     read_property/0,
-	     read_property_list/0]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
@@ -61,9 +56,7 @@
 		prepared_cache ::  cache_id(),
 		self :: atom()}).
 
--type external_read_property() :: #external_read_property{}.
--type read_property() :: external_read_property().
--type read_property_list() :: [read_property()].
+-type read_property_list() :: [].
 
 %%%===================================================================
 %%% API
@@ -90,20 +83,6 @@ start_read_servers(Partition, Count) ->
 stop_read_servers(Partition, Count) ->
     Addr = node(),
     stop_read_servers_internal(Addr, Partition, Count).
-
-%% TODO: implement this
-is_external({Key,_Bucket},PropList) ->
-    is_external(Key,PropList);
-is_external(<<"external",_/binary>>,[]) ->
-    case dc_meta_data_utilities:get_dc_descriptors() of
-	[] ->
-	    false;
-	Descs ->
-	    #descriptor{dcid=ExDCID,partition_num=PartitionNum,partition_list=PartitionList} = lists:nth(rand_compat:uniform(length(Descs)),Descs),
-	    {true, {ExDCID,lists:nth(rand_compat:uniform(PartitionNum),PartitionList)}}
-    end;
-is_external(_Key,_PropList) ->
-    false.
 
 -spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->

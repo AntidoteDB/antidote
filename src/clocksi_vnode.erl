@@ -24,8 +24,6 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_vnode/1,
-    set_txn_cert/1,
-    set_txn_cert_internal/1,
     read_data_item/5,
     async_read_data_item/4,
     get_cache_name/2,
@@ -79,21 +77,6 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-
-
--spec set_txn_cert(boolean()) -> ok.
-set_txn_cert(Value) ->
-    Nodes = dc_utilities:get_my_dc_nodes(),
-    %% Update the environment varible on all nodes in the DC
-    lists:foreach(fun(Node) -> 
-			  ok = rpc:call(Node, clocksi_vnode, set_txn_cert_internal, [Value])
-		  end, Nodes).
-
-%% @doc internal function to set txn certification environment variable.
--spec set_txn_cert_internal(boolean()) -> ok.
-set_txn_cert_internal(Value) ->
-    lager:info("setting txn cert ~p at ~p", [Value,node()]),
-    application:set_env(antidote,txn_cert,Value).
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).

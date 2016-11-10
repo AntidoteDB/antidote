@@ -35,7 +35,7 @@
 
 %% API
 -export([
-  perform_request/5,
+  perform_request/4,
   add_dc/2,
   del_dc/1]).
 
@@ -65,13 +65,10 @@
 %%          the second is a #request_cache_entry{} record
 %%          Note that the function should not perform anywork, instead just send
 %%          the work to another thread, otherwise it will block other messages
-%%    Pid is a process that will be stored in the #request_cache_entry{}
-%%          that will be sent to Func.  This for example can be the id of the process
-%%          who sent the request if the same process wants to handle the reply
--spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(),#request_cache_entry{})->ok), pid() | {fsm, pid()})
+-spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(),#request_cache_entry{})->ok))
 		     -> ok | unknown_dc.
-perform_request(RequestType, PDCID, BinaryRequest, Func, Pid) ->
-    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func, Pid}).
+perform_request(RequestType, PDCID, BinaryRequest, Func) ->
+    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.
@@ -130,7 +127,7 @@ handle_call({del_dc, DCID}, _From, State) ->
     {reply, ok, NewState};
 
 %% Handle an instruction to ask a remote DC.
-handle_call({any_request, RequestType, PDCID, BinaryRequest, Func, ReqPid}, _From, State=#state{req_id=ReqId}) ->
+handle_call({any_request, RequestType, PDCID, BinaryRequest, Func}, _From, State=#state{req_id=ReqId}) ->
     {DCID, Partition} = PDCID,
     case dict:find(DCID, State#state.sockets) of
 	%% If socket found
@@ -150,7 +147,7 @@ handle_call({any_request, RequestType, PDCID, BinaryRequest, Func, ReqPid}, _Fro
 	    ReqIdBinary = inter_dc_txn:req_id_to_bin(ReqId),
 	    FullRequest = <<VersionBinary/binary,ReqIdBinary/binary,RequestType,BinaryRequest/binary>>,
 	    ok = erlzmq:send(Socket,FullRequest),
-	    RequestEntry = #request_cache_entry{request_type=RequestType,req_id_binary=ReqIdBinary,req_pid=ReqPid,
+	    RequestEntry = #request_cache_entry{request_type=RequestType,req_id_binary=ReqIdBinary,
 						func=Func,pdcid={DCID,SendPartition},binary_req=FullRequest},
 	    {reply, ok, req_sent(ReqIdBinary, RequestEntry, State)};
 	%% If socket not found

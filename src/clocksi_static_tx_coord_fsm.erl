@@ -88,7 +88,7 @@ start_link(From, Clientclock, Operations, Properties) ->
     start_link(From, Clientclock, Operations, Properties, false).
 
 start_link(From, Clientclock, Operations) ->
-    start_link(From, Clientclock, Operations, [{update_clock,true}]).
+    start_link(From, Clientclock, Operations, antidote:get_default_txn_properties()).
 
 start_link(From, Operations) ->
     start_link(From, ignore, Operations).

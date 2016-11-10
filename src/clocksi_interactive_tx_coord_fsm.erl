@@ -105,13 +105,13 @@ start_link(From, Clientclock, Properties, StayAlive) ->
     end.
 
 start_link(From, Clientclock) ->
-    start_link(From, Clientclock, [{update_clock, true}]).
+    start_link(From, Clientclock, antidote:get_default_txn_properties()).
 
 start_link(From,Clientclock,Properties) ->
     start_link(From,Clientclock,Properties,false).
 
 start_link(From) ->
-    start_link(From, ignore, [{update_clock, true}]).
+    start_link(From, ignore, antidote:get_default_txn_properties()).
 
 finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -186,7 +186,6 @@ create_transaction_record(ClientClock, StayAlive, From, IsStatic, Properties) ->
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
-			       server_pid = Name,
 			       vec_snapshot_time = SnapshotTime,
 			       txn_id = TransactionId,
 			       properties = Properties},
@@ -719,7 +718,6 @@ wait_for_clock(Clock) ->
             %% No need to wait
             {ok, VecSnapshotTime};
         false ->
-	    lager:info("Waiting in interactive tx coord!!! vec time ~p, clock ~p", [VecSnapshotTime,Clock]),
             %% wait for snapshot time to catch up with Client Clock
             timer:sleep(10),
             wait_for_clock(Clock)

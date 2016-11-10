@@ -26,7 +26,6 @@
 
 -record(descriptor, {
  dcid :: dcid(),
- partition_list :: [partition_id()],
  partition_num :: non_neg_integer(),
  publishers :: [socket_address()],
  logreaders :: [socket_address()]
@@ -38,7 +37,6 @@
 	  request_type :: inter_dc_message_type(),
 	  func :: function() | undefined,
 	  req_id_binary :: binary(),
-	  req_pid :: pid() | {fsm, pid()},
 	  pdcid :: pdcid(),
 	  binary_req :: binary()
 	 }).

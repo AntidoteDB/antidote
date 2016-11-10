@@ -30,11 +30,6 @@
 -define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
 -define(OPS_THRESHOLD, 50).
-%% Snapshots for non replicated keys arent generated
-%% After the following number of updates to non replicated
-%% keys are made, the following will force a fake snapshot
-%% to be generated, so that garbage collection is done
--define(EXTERNAL_OP_SS_GEN, 5).
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
 -define(RESIZE_THRESHOLD, 5).
@@ -370,12 +365,10 @@ internal_get_ops(Key, Type, MinTime, SnapshotTime, DCID, _MatState = #mat_state{
     SnapshotGetRespPrev = 
 	case Result of
 	    {error, no_snapshot} ->
-		lager:info("going to the log for the ops!!!!!!!!!!!!!!!!! ~n ~n ~n ~n ~n ~n ~n ~n", []),
 		LogId = log_utilities:get_logid_from_key(Key),
 		[Node] = log_utilities:get_preflist_from_key(Key),
 		MinSnapshotTime = vectorclock:set_clock_of_dc(DCID, MinTime, vectorclock:new()),
-		Res = logging_vnode:get_range(Node, LogId, MinSnapshotTime, SnapshotTime, Type, Key),
-		Res;
+		logging_vnode:get_range(Node, LogId, MinSnapshotTime, SnapshotTime, Type, Key);
 	    {LatestSnapshot1,SnapshotCommitTime1} ->
 		case ets:lookup(OpsCache, Key) of
 		    [] ->
@@ -654,11 +647,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
 			       {3,1}),
     {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
     %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
-    IsExternal = case clocksi_readitem_fsm:is_external(Key,[]) of
-		     false -> false;
-		     _ -> true
-		 end,
-    case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) or (IsExternal and ((NewId rem ?EXTERNAL_OP_SS_GEN) == 0)) of
+    case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,

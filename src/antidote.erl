@@ -43,7 +43,9 @@
          delete_object/1,
          register_pre_hook/3,
          register_post_hook/3,
-         unregister_hook/2
+         unregister_hook/2,
+	 get_default_txn_properties/0,
+	 get_txn_property/2
         ]).
 
 %% ==========================================================
@@ -70,8 +72,7 @@
          clocksi_iupdate/4,
          clocksi_iprepare/1,
          clocksi_full_icommit/1,
-         clocksi_icommit/1,
-	 get_txn_property/2]).
+         clocksi_icommit/1]).
 %% ===========================================================
 
 %% Public API
@@ -553,6 +554,11 @@ execute_ops([{read, {Key, Type}}|Rest], TxId, ReadSet) ->
     {ok, Value} = clocksi_iread(TxId, Key, Type),
     execute_ops(Rest, TxId, [Value|ReadSet]).
 
+-spec get_default_txn_properties() -> txn_properties().
+get_default_txn_properties() ->
+    [{update_clock, true}].
+
+-spec get_txn_property(atom(), txn_properties()) -> atom().
 get_txn_property(update_clock, Properties) ->
     case lists:keyfind(update_clock, 1, Properties) of
 	false ->
