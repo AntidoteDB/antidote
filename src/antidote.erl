@@ -156,12 +156,18 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
         {error, Reason} ->
             {error, Reason};
         Operations ->
-            case StayAlive of
+
+            TxPid = case StayAlive of
                 true ->
-                    TxPid = whereis(clocksi_interactive_tx_coord_fsm:generate_name(self())),
-                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock, {update_objects, Operations}});
+                    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
                 false ->
-                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, StayAlive, {update_objects, Operations}])
+                    undefined
+            end,
+            case TxPid of
+                undefined ->
+                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, StayAlive, {update_objects, Operations}]);
+                TxPid ->
+                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock, {update_objects, Operations}}, ?OP_TIMEOUT)
             end,
             receive
                 {ok, CommitTime} ->

@@ -53,7 +53,8 @@
 -export([start_link/2,
          start_link/1,
          start_link/3,
-         start_link/4]).
+         start_link/4,
+         start_link/5]).
 
 %% Callbacks
 -export([init/1,
@@ -70,6 +71,7 @@
     init_state/3,
     perform_update/5,
     perform_read/4,
+    execute_op/2,
     execute_op/3,
     receive_logging_responses/2,
     finish_op/3,
@@ -104,7 +106,12 @@ start_link(From, Clientclock, UpdateClock, StayAlive, Operations) ->
     end.
 -spec start_link(pid(), clock_time() | ignore, atom(), boolean()) -> {ok, pid()}.
 start_link(From, Clientclock, UpdateClock, StayAlive) ->
-    start_link(From, Clientclock, UpdateClock, StayAlive, []).
+    case StayAlive of
+        true ->
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+        false ->
+            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+    end.
 
 -spec start_link(pid(), clock_time() | ignore, atom()) -> {ok, pid()}.
 start_link(From, Clientclock) ->
@@ -130,8 +137,10 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 %% @doc Initialize the state.
 init([From, ClientClock, UpdateClock, StayAlive]) ->
     {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))};
+%% @doc Init static transaction with Operations.
 init([From, ClientClock, UpdateClock, StayAlive, Operations]) ->
-    {ok, {execute_op, Operations}, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, true))}.
+    State = start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, true, true)),
+    {ok, execute_op, State#tx_coord_state{operations = Operations, from = From}, 0}.
 
 init_state(StayAlive, FullCommit, IsStatic) ->
     #tx_coord_state{
@@ -161,14 +170,19 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 start_tx({start_tx, From, ClientClock, UpdateClock, Operation}, SD0) ->
     {next_state, {execute_op, Operation}, start_tx_internal(From, ClientClock, UpdateClock, SD0#tx_coord_state{is_static = true}), 0}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
+start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
-    From ! {ok, TransactionId},
+    case IsStatic of
+        true ->
+            ok;
+        false ->
+            From ! {ok, TransactionId}
+    end,
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
                                 boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
-create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) ->
+create_transaction_record(ClientClock, UpdateClock, StayAlive, From, _IsStatic) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
     {ok, SnapshotTime} = case ClientClock of
@@ -186,12 +200,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic) -
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     Name = case StayAlive of
                true ->
-                   case IsStatic of
-                       true ->
-                           clocksi_static_tx_coord_fsm:generate_name(From);
-                       false ->
-                           generate_name(From)
-                   end;
+                   generate_name(From);
                false ->
                    self()
            end,
@@ -336,6 +345,8 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
 %% update kept for backwards compatibility with tests.
+execute_op(timeout, State = #tx_coord_state{operations = Operations, from = From}) ->
+    execute_op(Operations, From, State).
 execute_op({update, Args}, Sender, SD0) ->
     execute_op({update_objects, [Args]}, Sender, SD0);
     
@@ -398,7 +409,7 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 				true ->
                     case IsStatic of
                         true ->
-                            {next_state, prepare, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}, 0};
+                            prepare(S0);
                         false ->
                             gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
                             {next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}}
@@ -411,8 +422,7 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 				S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
 	end.
 
-
-%% @doc this state sends a prepare message to all updated partitions and goes
+%% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
     transaction = Transaction, num_to_read=NumToRead,
@@ -444,7 +454,7 @@ prepare(SD0 = #tx_coord_state{
                 SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
 
-%% @doc state called when 2pc is forced independently of the number of partitions
+%% @doc function called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
 prepare_2pc(SD0 = #tx_coord_state{
     transaction = Transaction,
@@ -480,7 +490,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                     true ->
                         ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
                         {next_state, receive_committed,
-                            S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
+                            S0#tx_coord_state{num_to_ack = length(Updated_partitions), commit_time = MaxPrepareTime, state = committing}};
                     false ->
                         gen_fsm:reply(From, {ok, MaxPrepareTime}),
                         {next_state, committing_2pc,
@@ -491,7 +501,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                     true ->
                         ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
                         {next_state, receive_committed,
-                            S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
+                            S0#tx_coord_state{num_to_ack = length(Updated_partitions), commit_time = MaxPrepareTime, state = committing}};
                     false ->
                         gen_fsm:reply(From, {ok, MaxPrepareTime}),
                         {next_state, committing,
@@ -632,7 +642,7 @@ receive_aborted(_, S0) ->
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state
-                {from = From, transaction = Transaction, return_accumulator= ReadSet,
+                {from = From, transaction = Transaction, return_accumulator= ReturnAcc,
                  state = TxState, commit_time = CommitTime,
                  full_commit = FullCommit,
                  is_static = IsStatic, stay_alive = StayAlive,
@@ -646,7 +656,7 @@ reply_to_client(SD = #tx_coord_state
                             false ->
                                 {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
                             true ->
-                                {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.vec_snapshot_time}}
+                                {ok, {TxId, ReturnAcc, Transaction#transaction.vec_snapshot_time}}
                         end;
                     committed ->
                         %% Execute post_commit_hooks
@@ -660,14 +670,27 @@ reply_to_client(SD = #tx_coord_state
                             false ->
                                 {ok, {TxId, CausalClock}};
                             true ->
-                                {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
+                                {ok, CausalClock}
                         end;
                     aborted ->
                         {aborted, TxId};
                     Reason ->
                         {TxId, Reason}
                 end,
-            _Res = gen_fsm:reply(From, Reply);
+        %% todo: the following two checks are needed until we make the read_objects
+        %% todo: static operation avoid calling this method through the static_tx_coord
+        case IsStatic of
+            false ->
+                _Res = gen_fsm:reply(From, Reply);
+            true ->
+                case TxState of
+                    committed_read_only ->
+                        gen_fsm:reply(From, Reply);
+                    _->
+                        lager:info("from is ~p, reply is ~p",[From, Reply]),
+                        From ! Reply
+                end
+        end;
        true -> ok
     end,
     case StayAlive of
