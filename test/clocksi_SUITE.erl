@@ -47,6 +47,7 @@
          clocksi_multiple_read_update_test/1,
          clocksi_concurrency_test/1,
          clocksi_parallel_ops_test/1,
+         clocksi_static_parallel_writes_test/1,
          spawn_read/5,
          spawn_com/2]).
 
@@ -95,7 +96,8 @@ all() -> [clocksi_test1,
          clocksi_multiple_test_certification_check,
          clocksi_multiple_read_update_test,
          clocksi_concurrency_test,
-         clocksi_parallel_ops_test].
+         clocksi_parallel_ops_test,
+         clocksi_static_parallel_writes_test].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
@@ -801,3 +803,46 @@ clocksi_parallel_ops_test(Config) ->
     ?assertMatch({ok, [6,2,3,4,5]}, Res2),
     {ok, _CT2} = rpc:call(Node, antidote, commit_transaction, [TxId2]).
 
+%% doc The following test tests sending multiple updates in a single
+%% update_objects call.
+%% it also tests that the coordinator StaysAlive after the first transaction,
+%% and serves the request from the second one.
+clocksi_static_parallel_writes_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    Node = hd(Nodes),
+    Bucket = test_bucket,
+    Bound_object1 = {parallel_key6, antidote_crdt_counter, Bucket},
+    Bound_object2 = {parallel_key7, antidote_crdt_counter, Bucket},
+    Bound_object3 = {parallel_key8, antidote_crdt_counter, Bucket},
+    Bound_object4 = {parallel_key9, antidote_crdt_counter, Bucket},
+    Bound_object5 = {parallel_key10, antidote_crdt_counter, Bucket},
+    %% update 5 different objects
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [],
+        [{Bound_object1, increment, 1},
+            {Bound_object2, increment, 2},
+            {Bound_object3, increment, 3},
+            {Bound_object4, increment, 4},
+            {Bound_object5, increment, 5}], true]),
+
+    lager:info("updated 5 objects no problem"),
+
+    {ok, Res, CT1} = rpc:call(Node, antidote, read_objects, [CT, [], [Bound_object1,
+        Bound_object2,Bound_object3,Bound_object4,Bound_object5]]),
+    ?assertMatch([1,2,3,4,5], Res),
+
+    lager:info("read 5 objects no problem"),
+
+    %% update 5 times the first object.
+    {ok, CT2} = rpc:call(Node, antidote, update_objects, [CT1, [],
+        [{Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1}], true]),
+
+    lager:info("updated 5 times the sabe object, no problem"),
+
+    {ok, Res1, _CT4} = rpc:call(Node, antidote, read_objects, [CT2, [], [Bound_object1]]),
+    ?assertMatch([6], Res1),
+    lager:info("result is correct after reading those updates. Test passed."),
+    pass.

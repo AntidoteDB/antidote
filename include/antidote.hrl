@@ -214,7 +214,7 @@
           commit_protocol :: term(),
           state :: active | prepared | committing | committed | undefined
                  | aborted | committed_read_only,
-          operations :: undefined | list(),
+          operations :: undefined | list() | {update_objects, list()},
           return_accumulator :: list() | ok | {error, reason()},
           internal_read_set :: orddict:orddict(),
           is_static :: boolean(),
