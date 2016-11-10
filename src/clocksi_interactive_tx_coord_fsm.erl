@@ -687,7 +687,6 @@ reply_to_client(SD = #tx_coord_state
                     committed_read_only ->
                         gen_fsm:reply(From, Reply);
                     _->
-                        lager:info("from is ~p, reply is ~p",[From, Reply]),
                         From ! Reply
                 end
         end;
