@@ -20,4 +20,4 @@ RUN cd /tmp && \
     make rel && \
     make clean
 
-CMD /opt/antidote/_build/default/rel/antidote/bin/env
+CMD /opt/antidote/_build/default/rel/antidote/bin/env foreground

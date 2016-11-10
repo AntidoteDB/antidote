@@ -10,6 +10,11 @@ if [ -z "$PB_PORT" ]; then
   export PB_PORT=8087
 fi
 
+# Protocol buffer port.
+if [ -z "$PB_IP" ]; then
+  export PB_IP="127.0.0.1"
+fi
+
 # Pub/sub port.
 if [ -z "$PUBSUB_PORT" ]; then
   export PUBSUB_PORT=8086
@@ -18,6 +23,16 @@ fi
 # Logeader port.
 if [ -z "$LOGREADER_PORT" ]; then
   export LOGREADER_PORT=8085
+fi
+
+# Ring State directory.
+if [ -z "$RING_STATE_DIR" ]; then
+  export RING_STATE_DIR="data/ring"
+fi
+
+# Platform data directory.
+if [ -z "$PLATFORM_DATA_DIR" ]; then
+  export PLATFORM_DATA_DIR="data"
 fi
 
 # If we're running in Mesos...
@@ -87,4 +102,4 @@ echo "IP: ${IP}"
 echo "HOSTNAME: ${HOSTNAME}"
 
 RELNAME="`dirname \"$0\"`"/antidote
-exec ${RELNAME} foreground "$@"
+exec ${RELNAME} "$@"

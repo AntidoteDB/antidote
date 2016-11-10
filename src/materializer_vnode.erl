@@ -138,13 +138,13 @@ init([Partition]) ->
     OpsCache = open_table(Partition, ops_cache),
     SnapshotCache = open_table(Partition, snapshot_cache),
     IsReady = case application:get_env(antidote,recover_from_log) of
-		  {ok, true} ->
-		      lager:info("Checking for logs to init materializer ~p", [Partition]),
-		      riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
-		      false;
-		  _ ->
-		      true
-	      end,
+                {ok, true} ->
+                    lager:debug("Checking for logs to init materializer ~p", [Partition]),
+                    riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+                    false;
+                _ ->
+                    true
+    end,
     {ok, #mat_state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
 -spec load_from_log_to_tables(partition_id(), #mat_state{}) -> ok | {error, reason()}.
@@ -263,28 +263,28 @@ handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender, State) ->
 
 handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
     IsReady = try
-		  case load_from_log_to_tables(Partition, State) of
-		      ok ->
-		          lager:info("Finished loading from log to materializer on partition ~w", [Partition]),
-			  true;
-		      {error, not_ready} ->
-			  false;
-		      {error, Reason} ->
-			  lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
-			  true
-		  end
-	      catch
-		  _:Reason1 ->
-		      lager:debug("Error loading from log ~w, will retry", [Reason1]),
-		      false
-	      end,
+                case load_from_log_to_tables(Partition, State) of
+                    ok ->
+                        lager:debug("Finished loading from log to materializer on partition ~w", [Partition]),
+                        true;
+                    {error, not_ready} ->
+                        false;
+                    {error, Reason} ->
+                        lager:error("Unable to load logs from disk: ~w, continuing", [Reason]),
+                        true
+                end
+            catch
+                _:Reason1 ->
+                    lager:debug("Error loading from log ~w, will retry", [Reason1]),
+                    false
+            end,
     ok = case IsReady of
-	     false ->
-		 riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
-		 ok;
-	     true ->
-		 ok
-	 end,
+            false ->
+                riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
+                ok;
+            true ->
+                ok
+    end,
     {noreply, State#mat_state{is_ready=IsReady}};
 
 handle_command(_Message, _Sender, State) ->
