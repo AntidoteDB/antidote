@@ -463,12 +463,10 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{ant
 %%	io:format("snap time : ~p  min snap time : ~p~n", [dict:to_list(MatSnapshot#materialized_snapshot.snapshot_time), dict:to_list(MinSnapshotTime)]),
 	Operations = antidote_db:get_ops(AntidoteDB, Key, MatSnapshot#materialized_snapshot.snapshot_time, MinSnapshotTime),
 %%	io:format("FilteredOps length : ~p ~n", [length(Operations)]),
-	MaxOpVC = get_newest_vc(Operations),
+	SnapshotVc = get_vc_for_snapshot(Operations),
 	OPS = clocksi_payload_to_op(Operations),
 	Snapshot = clocksi_materializer:materialize_eager(Type, MatSnapshot#materialized_snapshot.value, OPS),
-	%% TODO CUAL ES EL COMMIT TIME PARA EL NUEVO SNAPPPPPP???? el maximo de las ops por ahora
-	%% No hay que incrementar el dc local en uno al crear el snap???
-	NewMatSnap = #materialized_snapshot{last_op_id = 0, value = Snapshot, snapshot_time = MaxOpVC},
+	NewMatSnap = #materialized_snapshot{last_op_id = 0, value = Snapshot, snapshot_time = SnapshotVc},
 	case TxId of
 		ignore ->
 %%			io:format("SNAP : ~p ~n", [NewMatSnap]),
@@ -478,17 +476,19 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{ant
 	end,
 	{ok, NewMatSnap#materialized_snapshot.value}.
 
-get_newest_vc(OPS) ->
-	lists:foldr(fun newest_vc/2, vectorclock:new(), OPS).
+get_vc_for_snapshot(OPS) ->
+	lists:foldr(fun update_vc/2, vectorclock:new(), OPS).
 
-newest_vc(ClockSiPayload, Acc) ->
+update_vc(ClockSiPayload, Acc) ->
 	VC = get_op_time(ClockSiPayload),
-	case vectorclock:gt(VC, Acc) of
-		true ->
-			VC;
-		false ->
-			Acc
-	end.
+	dict:fold(fun(DcId, OpTime, VCAcc) ->
+		case vectorclock:get_clock_of_dc(DcId, VCAcc) < OpTime of
+			true ->
+				vectorclock:set_clock_of_dc(DcId, OpTime, VCAcc);
+			false ->
+				VCAcc
+		end
+			  end, Acc, VC).
 
 clocksi_payload_to_op(OPS) ->
 	lists:map(fun (ClockSiPayload) -> ClockSiPayload#clocksi_payload.op_param end, OPS).
@@ -958,5 +958,13 @@ read_nonexisting_key_generic(MatState) ->
     Type = riak_dt_gcounter,
     {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1,1}, {dc2, 0}]), ignore, MatState),
     ?assertEqual(0, Type:value(ReadResult)).
+
+update_vc_test() ->
+	Payload1 = #clocksi_payload{
+		snapshot_time = vectorclock:from_list([{dc1, 1}, {dc2, 3}]),
+		commit_time = {dc2, 4}
+	},
+	VC = vectorclock:from_list([{dc1, 5}, {dc2, 1}]),
+	?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 4}]), update_vc(Payload1, VC)).
 
 -endif.
