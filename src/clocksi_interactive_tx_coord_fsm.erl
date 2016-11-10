@@ -442,7 +442,7 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}},
             %%TODO: type is hard-coded..
             SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
             Value2 = Type:value(SnapshotAfterMyUpdates),
-            ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
+            ReadSet1 = replace(ReadSet, Key, Value2),
             NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
             case NumToRead of
                 1 ->
@@ -799,6 +799,13 @@ wait_for_clock(Clock) ->
             timer:sleep(10),
             wait_for_clock(Clock)
     end.
+
+replace([], _, _) ->
+    error;
+replace([Key|Rest], Key, NewKey) ->
+    [NewKey|Rest];
+replace([NotMyKey|Rest], Key, NewKey) ->
+    [NotMyKey|replace(Rest, Key, NewKey)].
 
 -ifdef(TEST).
 
