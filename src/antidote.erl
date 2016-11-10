@@ -167,7 +167,7 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
                 undefined ->
                     {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, StayAlive, {update_objects, Operations}]);
                 TxPid ->
-                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock, {update_objects, Operations}}, ?OP_TIMEOUT)
+                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock, {update_objects, Operations}})
             end,
             receive
                 {ok, CommitTime} ->
