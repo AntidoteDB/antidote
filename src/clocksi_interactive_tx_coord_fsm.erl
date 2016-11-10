@@ -722,18 +722,11 @@ reply_to_client(SD = #tx_coord_state
                     Reason ->
                         {TxId, Reason}
                 end,
-        %% todo: the following two checks are needed until we make the read_objects
-        %% todo: static operation avoid calling this method through the static_tx_coord
         case IsStatic of
             false ->
                 _Res = gen_fsm:reply(From, Reply);
             true ->
-                case TxState of
-                    committed_read_only ->
-                        gen_fsm:reply(From, Reply);
-                    _->
                         From ! Reply
-                end
         end;
        true -> ok
     end,
