@@ -28,7 +28,7 @@
 -endif.
 
 %% API
--export([start_link/2]).
+-export([start_link/3]).
 
 %% Callbacks
 -export([init/1,
@@ -71,10 +71,10 @@
 %%      reading from ets tables shared by the clock_si and materializer
 %%      vnodes, they should be started on the same physical nodes as
 %%      the vnodes with the same partition.
--spec start_link(partition_id(),non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Partition,Id) ->
+-spec start_link(antidote_db:antidote_db(), partition_id(),non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(AntidoteDB, Partition,Id) ->
     Addr = node(),
-    gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
+    gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [AntidoteDB, Partition,Id], []).
 
 -spec start_read_servers(antidote_db:antidote_db(), partition_id(),non_neg_integer()) -> 0.
 start_read_servers(AntidoteDB, Partition, Count) ->
