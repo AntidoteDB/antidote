@@ -394,7 +394,7 @@ handle_command({get_active_txns}, _Sender,
     #state{partition = Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
 
-handle_command(get_dbs, _Sender,
+handle_command(get_antidote_db, _Sender,
     #state{antidote_db = AntidoteDB} = State) ->
     {reply, AntidoteDB, State};
 
