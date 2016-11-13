@@ -31,7 +31,7 @@ Rebar3 will now pull all the dependencies it needs from Github, and build
 the application, and make an Erlang "release" of a single node.  If all
 went well (if it didn't, contact [antidotedb-support](https://groups.google.com/forum/#!forum/antidotedb-support)), then you should be able to start a node:
 
-    15:55:05:antidote $ _build/default/rel/antidote/bin/antidote console
+    15:55:05:antidote $ make console
     (elided)
     Eshell V5.10.3  (abort with ^G)
     (antidote@127.0.0.1)1>
@@ -131,7 +131,7 @@ Here we see how to update and read a counter.
 
 Start a node (if you haven't done it yet):
 
-    _build/default/rel/antidote/bin/antidote console
+    make console
 
 #### Writing
 
