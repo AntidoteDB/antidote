@@ -131,7 +131,7 @@ Here we see how to update and read a counter.
 
 Start a node (if you haven't done it yet):
 
-    _build/default/rel/antidote/bin/antidote console
+    make console
 
 #### Writing
 
