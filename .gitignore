@@ -24,4 +24,8 @@ docs/.idea/
 log/
 data/
 compile_commands.json
-.idea/
+data.*/
+log.*/
+erl_crash.dump
+rebar3.crashdump
+test/.rebar3/erlcinfo
