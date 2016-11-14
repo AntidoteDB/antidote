@@ -36,8 +36,8 @@
          execute_op/3,
          execute_op/2,
          code_change/4,
-    append/3,
-    asyn_append/4,
+         append/3,
+         asyn_append/4,
          handle_event/3,
          handle_info/3,
          handle_sync_event/4,
@@ -136,10 +136,11 @@ generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws, _Rs) -
 append(_Node,_LogId,_LogRecord) ->
     {ok, {0,node}}.
 
-asyn_append(_Node, _LogId, _LogRecord, Pid) ->
-    case Pid of ignore ->
+asyn_append(_Node, _LogId, _LogRecord, ReplyTo) ->
+    case ReplyTo of ignore ->
         ok;
-        _ -> gen_fsm:send_event(Pid, {ok, 0})
+        {_,_,Pid} ->
+            gen_fsm:send_event(Pid, {ok, 0})
     end,
     ok.
 
