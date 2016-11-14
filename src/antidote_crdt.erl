@@ -37,8 +37,8 @@
                 antidote_crdt_set_rw,
                 antidote_crdt_integer,
                 antidote_crdt_map_aw,
-                antidote_crdt_fat_counter,
-                antidote_crdt_map_x
+                antidote_crdt_map_x,
+                antidote_crdt_fat_counter
                ]).
 
 -export([is_type/1

@@ -41,7 +41,7 @@
 
 %% API
 -export([new/0, value/1, update/2, equal/2,
-  to_binary/1, from_binary/1, is_operation/1, downstream/2, require_state_downstream/1]).
+  to_binary/1, from_binary/1, is_operation/1, downstream/2, require_state_downstream/1, is_bottom/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -139,13 +139,6 @@ update_x({{Key, Type}, {ok, Op}}, Map) ->
       dict:store({Key, Type}, NewValueUpdated, Map)
   end;
 update_x({{_Key, _Type}, none}, Map) ->
-  % case dict:find({Key, Type}, Map) of
-  %   {ok, State} ->
-  %     dict:store({Key, Type}, State, Map);
-  %   error ->
-  %     NewValue = Type:new(),
-  %     dict:store({Key, Type}, NewValue, Map)
-  % end.
   Map.
 
 update_y({Key, Type}, Map) ->
@@ -196,6 +189,7 @@ is_operation(Operation) ->
         andalso lists:all(fun(Key) -> is_operation({remove, Key}) end, Removes)
         andalso lists:all(fun(Op) -> is_operation({update, Op}) end, Updates);
     {reset, {}} -> true;
+    is_bottom -> true;
     _ ->
       false
   end.
@@ -204,7 +198,8 @@ distinct([]) -> true;
 distinct([X|Xs]) ->
   not lists:member(X, Xs) andalso distinct(Xs).
 
-
+is_bottom(Map) ->
+  Map == new().
 
 
 %% ===================================================================
@@ -215,7 +210,7 @@ distinct([X|Xs]) ->
 % reset1_test() ->
 %   Map0 = new(),
 %   % DC1: a.incr
-%   {ok, Incr1} = downstream({update, {{a, antidote_crdt_integer}, {increment, 1}}}, Map0),
+%   {ok, Incr1} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 1}}}, Map0),
 %   {ok, Map1a} = update(Incr1, Map0),
 %   % DC1 reset
 %   {ok, Reset1} = downstream({reset, {}}, Map1a),
@@ -223,7 +218,7 @@ distinct([X|Xs]) ->
 %   % io:format("Reset1 = ~p~n", [Reset1]),
 %   {ok, Map1b} = update(Reset1, Map1a),
 %   % DC2 a.remove
-%   {ok, Remove1} = downstream({remove, {a, antidote_crdt_integer}}, Map0),
+%   {ok, Remove1} = downstream({remove, {a, antidote_crdt_big_counter}}, Map0),
 %   {ok, Map2a} = update(Remove1, Map0),
 %   % DC2 --> DC1
 %   {ok, Map1c} = update(Remove1, Map1b),
@@ -231,7 +226,7 @@ distinct([X|Xs]) ->
 %   {ok, Reset2} = downstream({reset, {}}, Map1c),
 %   {ok, Map1d} = update(Reset2, Map1c),
 %   % DC1: a.incr
-%   {ok, Incr2} = downstream({update, {{a, antidote_crdt_integer}, {increment, 0}}}, Map1d),
+%   {ok, Incr2} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 0}}}, Map1d),
 %   {ok, Map1e} = update(Incr2, Map1d),
 
 %   io:format("Map0 = ~p~n", [Map0]),
@@ -248,12 +243,12 @@ distinct([X|Xs]) ->
 %   io:format("Map1e = ~p~n", [Map1e]),
 
 %   ?assertEqual([], value(Map0)),
-%   ?assertEqual([{{a, antidote_crdt_integer}, 1}], value(Map1a)),
+%   ?assertEqual([{{a, antidote_crdt_big_counter}, 1}], value(Map1a)),
 %   ?assertEqual([], value(Map1b)),
 %   ?assertEqual([], value(Map2a)),
 %   ?assertEqual([], value(Map1c)),
 %   ?assertEqual([], value(Map1d)),
-%   ?assertEqual([{{a, antidote_crdt_integer}, 1}], value(Map1e)).
+%   ?assertEqual([{{a, antidote_crdt_big_counter}, 1}], value(Map1e)).
 
 
 reset2_test() ->
@@ -291,10 +286,10 @@ reset2_test() ->
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [a]}], value(Map1a)),
-  ?assertEqual([], value(Map1b)),
+  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1b)),
   ?assertEqual([], value(Map2a)),
-  ?assertEqual([], value(Map1c)),
-  ?assertEqual([], value(Map1d)),
+  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1c)),
+  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1d)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [b]}], value(Map1e)).
 
 

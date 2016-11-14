@@ -55,7 +55,7 @@ nestedOps(Operations, {_,Type}=Key) ->
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
 nestedSpec(antidote_crdt_map_x, Ops) -> spec(Ops);
-nestedSpec(antidote_crdt_set_rw, Ops) -> rem_wins_set_spec(Ops);
+nestedSpec(antidote_crdt_set_rw, Ops) -> prop_crdt_set_rw:rem_wins_set_spec(Ops).
 % nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
 % nestedSpec(antidote_crdt_integer, Ops) -> prop_crdt_integer:spec(Ops).
 
