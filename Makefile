@@ -1,7 +1,7 @@
 REBAR = $(shell pwd)/rebar3
 .PHONY: rel test relgentlerain
 
-all: compile #test compile-riak-test
+all: compile
 
 compile:
 	$(REBAR) compile
@@ -9,7 +9,7 @@ compile:
 clean:
 	$(REBAR) clean
 
-distclean: clean relclean #cleanplt
+distclean: clean relclean
 	$(REBAR) clean --all
 
 cleantests:
@@ -17,10 +17,17 @@ cleantests:
 	rm -rf logs/
 
 shell:
-	$(REBAR) shell
+	$(REBAR) shell --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
+
+# same as shell, but automatically reloads code when changed
+# to install add `{plugins, [rebar3_auto]}.` to ~/.config/rebar3/rebar.config
+# the tool requires inotifywait (sudo apt install inotify-tools)
+# see https://github.com/vans163/rebar3_auto or http://blog.erlware.org/rebar3-auto-comile-and-load-plugin/ 
+auto:
+	$(REBAR) auto --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
 
 rel:
-	$(REBAR) release --overlay_vars rel/vars.config
+	$(REBAR) release
 
 relclean:
 	rm -rf _build/default/rel
@@ -36,7 +43,28 @@ stage :
 
 include tools.mk
 
+# Tutorial targets.
+
 tutorial:
 	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
 	docker run -t -i cmeiklejohn/antidote-tutorial
 
+# Mesos targets.
+
+foreground: rel
+	./_build/default/rel/antidote/bin/env foreground
+
+console: rel
+	./_build/default/rel/antidote/bin/env console
+
+mesos-docker-build:
+	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
+
+mesos-docker-run: mesos-docker-build
+	docker run -t -i cmeiklejohn/antidote-mesos
+
+mesos-docker-build-dev:
+	docker build -f Dockerfiles/antidote-mesos-dev -t cmeiklejohn/antidote-mesos-dev .
+
+mesos-docker-run-dev: mesos-docker-build-dev
+	docker run -t -i cmeiklejohn/antidote-mesos-dev
