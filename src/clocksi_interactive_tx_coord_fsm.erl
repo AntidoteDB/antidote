@@ -149,7 +149,7 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
     From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
+    SD#tx_coord_state{transaction=Transaction, num_to_read=0, keepalive_from = From}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
                                 boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
@@ -665,8 +665,17 @@ handle_sync_event(_Event, _From, _StateName, StateData) ->
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _SD) ->
-    ok.
+terminate(normal, _SN, _SD) ->
+  ok;
+% if there is a crash and this is a keepalive fsm, send the error to the owning process
+terminate(Reason, SN, #tx_coord_state{keepalive_from = Pid}=SD) ->
+    case Pid of
+    undefined ->
+        ok;
+    _ ->
+        Pid ! {error, crashed},
+        ok
+  end.
 
 %%%===================================================================
 %%% Internal Functions

@@ -400,9 +400,14 @@ clocksi_istart_tx(Clock, KeepAlive) ->
     receive
         {ok, TxId} ->
             {ok, TxId};
+        {error, crashed} when KeepAlive ->
+          % try again without KeepAlive
+          clocksi_istart_tx(Clock, false);
         Other ->
             {error, Other}
     end.
+
+
 
 clocksi_istart_tx(Clock) ->
     clocksi_istart_tx(Clock, false).
