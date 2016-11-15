@@ -668,7 +668,7 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 terminate(normal, _SN, _SD) ->
   ok;
 % if there is a crash and this is a keepalive fsm, send the error to the owning process
-terminate(Reason, SN, #tx_coord_state{keepalive_from = Pid}=SD) ->
+terminate(_Reason, _SN, #tx_coord_state{keepalive_from = Pid}) ->
     case Pid of
     undefined ->
         ok;

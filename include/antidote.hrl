@@ -194,7 +194,7 @@
 %% where:
 %%    from: the pid of the calling process.
 %%    keepalive_from: the pid of the process, which started the transaction, 
-                      used for sending errors on crashes
+%%                    used for sending errors on crashes
 %%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
 %%    updated_partitions: the partitions where update operations take place.
 %%    num_to_ack: when sending prepare_commit,
