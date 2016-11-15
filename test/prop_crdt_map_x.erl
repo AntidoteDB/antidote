@@ -55,9 +55,9 @@ nestedOps(Operations, {_,Type}=Key) ->
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
 nestedSpec(antidote_crdt_map_x, Ops) -> spec(Ops);
-nestedSpec(antidote_crdt_set_rw, Ops) -> prop_crdt_set_rw:rem_wins_set_spec(Ops).
 % nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
-% nestedSpec(antidote_crdt_integer, Ops) -> prop_crdt_integer:spec(Ops).
+% nestedSpec(antidote_crdt_big_counter, Ops) -> prop_crdt_big_counter:big_counter_spec(Ops);
+nestedSpec(antidote_crdt_set_rw, Ops) -> prop_crdt_set_rw:rem_wins_set_spec(Ops).
 
 % normalizes operations (update-lists into single update-operations)
 normalizeOp({Clock, {update, List}}, _) when is_list(List) ->
@@ -103,8 +103,8 @@ removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
 nestedOp(Size) ->
   oneof(
     [
-      % {{key(), antidote_crdt_integer}, prop_crdt_integer:op()},
-      % {{key(), antidote_crdt_orset}, prop_crdt_orset:set_op()}
+      % {{key(), prop_crdt_big_counter}, prop_crdt_big_counter:big_counter_op()},
+      % {{key(), antidote_crdt_orset}, prop_crdt_orset:set_op()},
       {{key(), antidote_crdt_set_rw}, prop_crdt_set_rw:set_op()}
     ]
     ++
@@ -118,7 +118,6 @@ nestedOp(Size) ->
 typed_key() -> {key(), crdt_type()}.
 
 crdt_type() ->
-  % oneof([antidote_crdt_integer, antidote_crdt_orset, antidote_crdt_map_x]).
   oneof([antidote_crdt_set_rw, antidote_crdt_map_x]).
 
 key() ->

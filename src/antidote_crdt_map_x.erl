@@ -123,12 +123,12 @@ generate_downstream_remove({Key, Type}, CurrentMap) ->
 
 -spec update(effect(), state()) -> {ok, state()}.
 update({Updates, Removes}, State) ->
-  State2 = lists:foldl(fun(E, S) -> update_x(E, S)  end, State, Updates),
-  State3 = lists:foldl(fun(E, S) -> update_x(E, S)  end, State2, Removes),
-  State4 = lists:foldl(fun({{Key, Type}, _}, S) -> update_y({Key, Type}, S)  end, State3, Removes),
+  State2 = lists:foldl(fun(E, S) -> update_entry(E, S)  end, State, Updates),
+  State3 = dict:fold(fun(K, V, S) -> remove_obsolete(K, V, S)  end, new(), State2),
+  State4 = lists:foldl(fun(E, S) -> remove_entry(E, S)  end, State3, Removes),
   {ok, State4}.
 
-update_x({{Key, Type}, {ok, Op}}, Map) ->
+update_entry({{Key, Type}, {ok, Op}}, Map) ->
   case dict:find({Key, Type}, Map) of
     {ok, State} ->
       {ok, UpdatedState} = Type:update(Op, State),
@@ -137,24 +137,32 @@ update_x({{Key, Type}, {ok, Op}}, Map) ->
       NewValue = Type:new(),
       {ok, NewValueUpdated} = Type:update(Op, NewValue),
       dict:store({Key, Type}, NewValueUpdated, Map)
-  end;
-update_x({{_Key, _Type}, none}, Map) ->
-  Map.
+  end.
 
-update_y({Key, Type}, Map) ->
+remove_entry({{Key, Type}, {ok, Op}}, Map) ->
   case dict:find({Key, Type}, Map) of
     {ok, State} ->
-      case Type:is_operation(is_bottom) andalso Type:is_bottom(State) of
+      {ok, UpdatedState} = Type:update(Op, State),
+      Map1 = dict:store({Key, Type}, UpdatedState, Map),
+      case Type:is_operation(is_bottom) andalso Type:is_bottom(UpdatedState) of
         true ->
-          dict:erase({Key, Type}, Map);
+          dict:erase({Key, Type}, Map1);
         false ->
-          Map
+          Map1
       end;
     error ->
       Map
+  end;
+remove_entry({{_Key, _Type}, none}, Map) ->
+  Map.
+
+remove_obsolete({Key, Type}, Val, Map) ->
+  case Type:is_operation(is_bottom) andalso Type:is_bottom(Val) of
+    false ->
+      dict:store({Key, Type}, Val, Map);
+    true ->
+      Map
   end.
-
-
 
 equal(Map1, Map2) ->
     Map1 == Map2. % TODO better implementation (recursive equals)
@@ -207,48 +215,46 @@ is_bottom(Map) ->
 %% ===================================================================
 -ifdef(TEST).
 
-% reset1_test() ->
-%   Map0 = new(),
-%   % DC1: a.incr
-%   {ok, Incr1} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 1}}}, Map0),
-%   {ok, Map1a} = update(Incr1, Map0),
-%   % DC1 reset
-%   {ok, Reset1} = downstream({reset, {}}, Map1a),
-%   % io:format("Map1a = ~p~n", [Map1a]),
-%   % io:format("Reset1 = ~p~n", [Reset1]),
-%   {ok, Map1b} = update(Reset1, Map1a),
-%   % DC2 a.remove
-%   {ok, Remove1} = downstream({remove, {a, antidote_crdt_big_counter}}, Map0),
-%   {ok, Map2a} = update(Remove1, Map0),
-%   % DC2 --> DC1
-%   {ok, Map1c} = update(Remove1, Map1b),
-%   % DC1 reset
-%   {ok, Reset2} = downstream({reset, {}}, Map1c),
-%   {ok, Map1d} = update(Reset2, Map1c),
-%   % DC1: a.incr
-%   {ok, Incr2} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 0}}}, Map1d),
-%   {ok, Map1e} = update(Incr2, Map1d),
+reset1_test() ->
+  Map0 = new(),
+  % DC1: a.incr
+  {ok, Incr1} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 1}}}, Map0),
+  {ok, Map1a} = update(Incr1, Map0),
+  % DC1 reset
+  {ok, Reset1} = downstream({reset, {}}, Map1a),
+  {ok, Map1b} = update(Reset1, Map1a),
+  % DC2 a.remove
+  {ok, Remove1} = downstream({remove, {a, antidote_crdt_big_counter}}, Map0),
+  {ok, Map2a} = update(Remove1, Map0),
+  % DC2 --> DC1
+  {ok, Map1c} = update(Remove1, Map1b),
+  % DC1 reset
+  {ok, Reset2} = downstream({reset, {}}, Map1c),
+  {ok, Map1d} = update(Reset2, Map1c),
+  % DC1: a.incr
+  {ok, Incr2} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 2}}}, Map1d),
+  {ok, Map1e} = update(Incr2, Map1d),
 
-%   io:format("Map0 = ~p~n", [Map0]),
-%   io:format("Incr1 = ~p~n", [Incr1]),
-%   io:format("Map1a = ~p~n", [Map1a]),
-%   io:format("Reset1 = ~p~n", [Reset1]),
-%   io:format("Map1b = ~p~n", [Map1b]),
-%   io:format("Remove1 = ~p~n", [Remove1]),
-%   io:format("Map2a = ~p~n", [Map2a]),
-%   io:format("Map1c = ~p~n", [Map1c]),
-%   io:format("Reset2 = ~p~n", [Reset2]),
-%   io:format("Map1d = ~p~n", [Map1d]),
-%   io:format("Incr2 = ~p~n", [Incr2]),
-%   io:format("Map1e = ~p~n", [Map1e]),
+  io:format("Map0 = ~p~n", [Map0]),
+  io:format("Incr1 = ~p~n", [Incr1]),
+  io:format("Map1a = ~p~n", [Map1a]),
+  io:format("Reset1 = ~p~n", [Reset1]),
+  io:format("Map1b = ~p~n", [Map1b]),
+  io:format("Remove1 = ~p~n", [Remove1]),
+  io:format("Map2a = ~p~n", [Map2a]),
+  io:format("Map1c = ~p~n", [Map1c]),
+  io:format("Reset2 = ~p~n", [Reset2]),
+  io:format("Map1d = ~p~n", [Map1d]),
+  io:format("Incr2 = ~p~n", [Incr2]),
+  io:format("Map1e = ~p~n", [Map1e]),
 
-%   ?assertEqual([], value(Map0)),
-%   ?assertEqual([{{a, antidote_crdt_big_counter}, 1}], value(Map1a)),
-%   ?assertEqual([], value(Map1b)),
-%   ?assertEqual([], value(Map2a)),
-%   ?assertEqual([], value(Map1c)),
-%   ?assertEqual([], value(Map1d)),
-%   ?assertEqual([{{a, antidote_crdt_big_counter}, 1}], value(Map1e)).
+  ?assertEqual([], value(Map0)),
+  ?assertEqual([{{a, antidote_crdt_big_counter}, 1}], value(Map1a)),
+  ?assertEqual([{{a, antidote_crdt_big_counter}, 0}], value(Map1b)),
+  ?assertEqual([], value(Map2a)),
+  ?assertEqual([{{a, antidote_crdt_big_counter}, 0}], value(Map1c)),
+  ?assertEqual([{{a, antidote_crdt_big_counter}, 0}], value(Map1d)),
+  ?assertEqual([{{a, antidote_crdt_big_counter}, 2}], value(Map1e)).
 
 
 reset2_test() ->
@@ -286,14 +292,54 @@ reset2_test() ->
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [a]}], value(Map1a)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1b)),
+  ?assertEqual([], value(Map1b)),
   ?assertEqual([], value(Map2a)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1c)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1d)),
+  ?assertEqual([], value(Map1c)),
+  ?assertEqual([], value(Map1d)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [b]}], value(Map1e)).
 
+prop1_test() ->
+  Map0 = new(),
+  % DC1: s.add
+  {ok, Add1} = downstream({update, {{a, antidote_crdt_map_x}, {update,{{a, antidote_crdt_set_rw},{add,a}}}}}, Map0),
+  {ok, Map1a} = update(Add1, Map0),
+
+  % DC1 reset
+  {ok, Reset1} = downstream({remove,{a,antidote_crdt_map_x}}, Map1a),
+  {ok, Map1b} = update(Reset1, Map1a),
+
+  io:format("Map0 = ~p~n", [Map0]),
+  io:format("Add1 = ~p~n", [Add1]),
+  io:format("Map1a = ~p~n", [Map1a]),
+  io:format("Reset1 = ~p~n", [Reset1]),
+  io:format("Map1b = ~p~n", [Map1b]),
+
+  ?assertEqual([], value(Map0)),
+  ?assertEqual([{{a, antidote_crdt_map_x},[{{a, antidote_crdt_set_rw},[a]}]}], value(Map1a)),
+  ?assertEqual([], value(Map1b)).
+
+prop2_test() ->
+  Map0 = new(),
+  % DC1: update remove
+  {ok, Add1} = downstream({update, [{{b, antidote_crdt_map_x}, {remove,{a, antidote_crdt_set_rw}}}]}, Map0),
+  {ok, Map1a} = update(Add1, Map0),
+
+  % DC2 remove
+  {ok, Remove2} = downstream({remove,{b,antidote_crdt_map_x}}, Map0),
+  {ok, Map2a} = update(Remove2, Map0),
+
+  % pull DC2 -> DC1
+  {ok, Map1b} = update(Remove2, Map1a),
+
+  io:format("Map0 = ~p~n", [Map0]),
+  io:format("Add1 = ~p~n", [Add1]),
+  io:format("Map1a = ~p~n", [Map1a]),
+  io:format("Remove2 = ~p~n", [Remove2]),
+  io:format("Map1b = ~p~n", [Map1b]),
+
+  ?assertEqual([], value(Map0)),
+  ?assertEqual([], value(Map1a)),
+  ?assertEqual([], value(Map2a)),
+  ?assertEqual([], value(Map1b)).
 
 -endif.
-
-
-
