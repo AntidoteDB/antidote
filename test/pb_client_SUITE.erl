@@ -42,7 +42,7 @@
   update_set_read_test/1,
   static_transaction_test/1,
   crdt_integer_test/1,
-  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1]).
+  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1, client_fail_test/1, client_fail_test2/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -71,6 +71,8 @@ all() -> [start_stop_test,
         simple_transaction_test,
         read_write_test,
         get_empty_crdt_test,
+        client_fail_test,
+        client_fail_test2,
         pb_test_counter_read_write,
         pb_test_set_read_write,
         pb_empty_txn_clock_test,
@@ -119,6 +121,39 @@ get_empty_crdt_test(_Config) ->
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    ?assertMatch(true, antidotec_counter:is_type(Val)).
+
+
+client_fail_test(_Config) ->
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
+    {ok, TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    % Client fails and starts next transaction:
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+    _Disconnected = antidotec_pb_socket:stop(Pid),
+    ?assertMatch(true, antidotec_counter:is_type(Val)).
+
+
+client_fail_test2(_Config) ->
+    {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
+    {ok, TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    % Client fails and starts next transaction:
+    {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
+
+    {ok, TxId2} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId2),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId2),
+
+    {ok, TxId3} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId3),
+    {ok, _} = antidotec_pb:commit_transaction(Pid, TxId3),
+
     _Disconnected = antidotec_pb_socket:stop(Pid),
     ?assertMatch(true, antidotec_counter:is_type(Val)).
 
