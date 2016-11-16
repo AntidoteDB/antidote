@@ -326,8 +326,11 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 		_:_Reason ->
 			ok
 	end,
-	ok.
+	ok;
 
+%% Terminate in the AntidoteDB case. DB will be closed in the clocksi_vnode, so there is nothing to do here.
+terminate(_Reason, _State) ->
+	ok.
 
 
 %%---------------- Internal Functions -------------------%%
@@ -654,8 +657,8 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache, antidot
     end;
 
 op_insert_gc(Key, DownstreamOp, _State = #mat_state{antidote_db = AntidoteDB})->
-%%	io:format("OP TIME : ~p ~n", [dict:to_list(OpTime)]).
-	antidote_db:put_op(AntidoteDB, Key, get_op_time(DownstreamOp), DownstreamOp).
+	ok = antidote_db:put_op(AntidoteDB, Key, get_op_time(DownstreamOp), DownstreamOp),
+	true.
 
 % Given a clocksi_payload, returnes the commit time of the op
 get_op_time(ClockSiPayload) ->
