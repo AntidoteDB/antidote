@@ -971,4 +971,43 @@ update_vc_test() ->
 	VC = vectorclock:from_list([{dc1, 5}, {dc2, 1}]),
 	?assertEqual(vectorclock:from_list([{dc1, 5}, {dc2, 4}]), update_vc(Payload1, VC)).
 
+%% This test checks that after closing an AntidoteDB, if you open it again,
+%% nothing is lost, and no extra code is needed to make it work.
+open_same_antidote_db_twice_test() ->
+	eleveldb:destroy("test_db", []),
+	{ok, DB} = antidote_db:new("test_db", leveldb),
+	MatState = #mat_state{antidote_db = DB},
+
+	Key = mycount,
+	DC1 = 1,
+	Type = antidote_crdt_counter,
+
+	%% Check the Key has no ops and therefore return 0
+	{ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2}]), ignore, MatState),
+	?assertEqual(0, Type:value(Res0)),
+
+	%% Insert 2 increment ops and check the value is 2 now
+	op_insert_gc(Key, generate_payload(10, 11, Res0, a1), MatState),
+	op_insert_gc(Key, generate_payload(20, 21, Res0, a2), MatState),
+	{ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 22}]), ignore, MatState),
+	?assertEqual(2, Type:value(Res2)),
+
+	%% Close DB
+	antidote_db:close(DB),
+
+	%% Re-open DB
+	{ok, DB1} = antidote_db:new("test_db", leveldb),
+	MatState1 = #mat_state{antidote_db = DB1},
+
+	%% Check that value didn't change despite the db closed and reopend
+	{ok, Res3} = internal_read(Key, Type, vectorclock:from_list([{DC1, 22}]), ignore, MatState1),
+	?assertEqual(2, Type:value(Res3)),
+
+	%% Insert another op and check it's value
+	op_insert_gc(Key, generate_payload(30, 31, Res3, a3), MatState1),
+	{ok, Res4} = internal_read(Key, Type, vectorclock:from_list([{DC1, 32}]), ignore, MatState1),
+	?assertEqual(3, Type:value(Res4)),
+
+	antidote_db:close_and_destroy(DB1, "test_db").
+
 -endif.
