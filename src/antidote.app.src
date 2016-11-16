@@ -17,7 +17,7 @@
                   antidote_pb,
                   erlzmq,
                   rand_compat,
-                  eleveldb
+                  antidote_db
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables
