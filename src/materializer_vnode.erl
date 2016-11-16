@@ -115,9 +115,9 @@ store_ss(Key, Snapshot, CommitTime) ->
                                         materializer_vnode_master).
 
 init([Partition]) ->
-	AntidoteDB = clocksi_vnode:get_antidote_db(Partition),
-	case AntidoteDB of
-		undefined ->
+	%% Setup the mat_state depending on the backend configured
+	case application:get_env(antidote, antidote_db) of
+		{ok, false} ->
 			OpsCache = open_table(Partition, ops_cache),
 			SnapshotCache = open_table(Partition, snapshot_cache),
 			IsReady = case application:get_env(antidote, recover_from_log) of
@@ -130,6 +130,7 @@ init([Partition]) ->
 					  end,
 			{ok, #mat_state{is_ready = IsReady, partition = Partition, ops_cache = OpsCache, snapshot_cache = SnapshotCache, antidote_db = undefined}};
 		_ ->
+			AntidoteDB = clocksi_vnode:get_antidote_db(Partition),
 			{ok, #mat_state{is_ready = true, partition = Partition, ops_cache = undefined, snapshot_cache = undefined, antidote_db = AntidoteDB}}
 	end.
 
