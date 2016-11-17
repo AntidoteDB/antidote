@@ -178,10 +178,23 @@ start_static_transaction(TransactionKind, ListOfOperations, StayAlive, ClientCau
                 TxPid ->
                     ok = gen_fsm:send_event(TxPid, {start_tx, self(), ClientCausalVC, update_clock, {TransactionKind, ListOfOperations}})
             end,
+    receive
+        {ok, TxId} ->
+            {ok, TxId};
+        {error, coordinator_finishing_previous_txn} ->
+            %% When KeepAlive = true, if the previous coordinator
+            %% is still finishing the previous transaction,
+            %% start a new one.
+            {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientCausalVC, update_clock, false]),
             receive
-                Reply ->
-                    Reply
-            end.
+                {ok, TxId} ->
+                    {ok, TxId};
+                Other ->
+                    Other
+            end;
+        Other ->
+            Other
+    end.
 
 
 %% @doc This function is used temporarily to unify the

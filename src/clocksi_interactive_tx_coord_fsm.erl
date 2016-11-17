@@ -579,7 +579,7 @@ single_committing({committed, CommitTime}, S0 = #tx_coord_state{from = From, ful
             {next_state, committing_single,
                 S0#tx_coord_state{commit_time = CommitTime, state = committing}};
         true ->
-            reply_to_client(S0#tx_coord_state{prepare_time = CommitTime, commit_time = CommitTime, state = committed})
+            reply_to_client(S0#tx_coord_state{prepare_time = CommitTime, commit_time = CommitTime, state = committed, num_to_ack = 0})
     end;
 
 single_committing(abort, S0 = #tx_coord_state{from = _From}) ->
@@ -641,7 +641,19 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
             reply_to_client(S0#tx_coord_state{state = committed});
         _ ->
             {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
-    end.
+    end;
+
+
+%% @doc after replying to a client, the coordinator waits for acks from the
+%%      vnodes in this state. If that client tries to issue a new transaction
+%%      to this same coordinator (which happens when keepalive=true), the coordinator
+%%      will reply an error
+receive_committed({start_tx, From, _ClientClock, _UpdateClock, _Operations}, State) ->
+    From ! {error, coordinator_finishing_previous_txn},
+    {next_state, receive_committed, State#tx_coord_state{stay_alive = false}};
+receive_committed({start_tx, From, _ClientClock, _UpdateClock}, State) ->
+    From ! {error, coordinator_finishing_previous_txn},
+    {next_state, receive_committed, State#tx_coord_state{stay_alive = false}}.
 
 %% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
@@ -677,7 +689,7 @@ abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
 receive_aborted(ack_abort, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
     case NumToAck of
         1 ->
-            reply_to_client(S0#tx_coord_state{state = aborted});
+            reply_to_client(S0#tx_coord_state{state = aborted, num_to_ack = 0});
         _ ->
             {next_state, receive_aborted, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
     end;
@@ -690,8 +702,10 @@ receive_aborted(_, S0) ->
 reply_to_client(SD = #tx_coord_state
                 {from = From, transaction = Transaction, return_accumulator= ReturnAcc,
                  state = TxState, commit_time = CommitTime,
-                 full_commit = FullCommit,
-                 is_static = IsStatic, stay_alive = StayAlive,
+                    num_to_ack = NumToAck,
+                    stay_alive = StayAlive,
+                    full_commit = FullCommit,
+                 is_static = IsStatic,
                  client_ops = ClientOps}) ->
     if undefined =/= From ->
             TxId = Transaction#transaction.txn_id,
@@ -731,12 +745,18 @@ reply_to_client(SD = #tx_coord_state
         end;
        true -> ok
     end,
-    case StayAlive of
-        true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
-        false ->
-            {stop, normal, SD}
+    case NumToAck of
+        0 ->
+            case StayAlive of
+                true ->
+                    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+                false ->
+                    {stop, normal, SD}
+            end;
+        _ ->
+            {next_state, receive_committed, SD}
     end.
+
 
 execute_post_commit_hooks(Ops) ->
     lists:foreach(
