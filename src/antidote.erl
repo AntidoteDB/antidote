@@ -445,12 +445,7 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
-            case gen_fsm:sync_send_event(CoordFsmPid,
-                                         {update, {Key, Type, OpParams}}, ?OP_TIMEOUT) of
-                ok -> ok;
-                {aborted, _} -> {error, aborted};
-                {error, Reason} -> {error, Reason}
-            end;
+            gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}, ?OP_TIMEOUT);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -472,7 +467,12 @@ clocksi_full_icommit({_, _, CoordFsmPid})->
 
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
 clocksi_iprepare({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT).
+    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT) of
+        {error, {aborted, TxId}} ->
+            {aborted, TxId};
+        Reply ->
+            Reply
+    end.
 
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
