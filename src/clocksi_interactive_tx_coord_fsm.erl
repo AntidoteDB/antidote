@@ -169,7 +169,8 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 
 %% Used by static update and read transactions
 start_tx({start_tx, From, ClientClock, UpdateClock, Operation}, SD0) ->
-    {next_state, {execute_op, Operation}, start_tx_internal(From, ClientClock, UpdateClock, SD0#tx_coord_state{is_static = true}), 0}.
+    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock,
+                                                SD0#tx_coord_state{is_static = true, operations = Operation, from = From}), 0}.
 
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
@@ -718,15 +719,15 @@ reply_to_client(SD = #tx_coord_state
                                 {ok, CausalClock}
                         end;
                     aborted ->
-                        {aborted, TxId};
+                        {error, {aborted, TxId}};
                     Reason ->
                         {TxId, Reason}
                 end,
-        case IsStatic of
+        case is_pid(From) of
             false ->
                 _Res = gen_fsm:reply(From, Reply);
             true ->
-                        From ! Reply
+                From ! Reply
         end;
        true -> ok
     end,

@@ -139,8 +139,6 @@ update_objects(Updates, TxId) ->
             case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
                 ok ->
                     ok;
-                {aborted, TxId} ->
-                    {error, {aborted, TxId}};
                 {error, Reason} ->
                     {error, Reason}
             end
