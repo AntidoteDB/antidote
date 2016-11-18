@@ -24,7 +24,9 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         start_metrics_collection/0
+        ]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -39,6 +41,15 @@
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+%% Stats collector is not started with the supervisor. It has to be explicitly started
+start_metrics_collection() ->
+     StatsCollector = {
+                        antidote_stats_collector,
+                        {antidote_stats_collector, start_link, []},
+                        permanent, 5000, worker, [antidote_stats_collector]
+                      },
+    supervisor:start_child(?MODULE, StatsCollector).
 
 %% ===================================================================
 %% Supervisor callbacks
