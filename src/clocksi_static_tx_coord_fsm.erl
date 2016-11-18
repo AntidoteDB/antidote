@@ -125,7 +125,7 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
                                                        {Key,Type,OpParams},
                                                        Acc#tx_coord_state.updated_partitions,
                                                        Transaction,undefined, 
-                                                       Acc#tx_coord_state.client_ops) of
+                                                       Acc#tx_coord_state.client_ops,[]) of
 					            {error,Reason} ->   {error, Reason};
 					            {NewUpdatedPartitions, NewClientOps} -> 
                                                         Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions,

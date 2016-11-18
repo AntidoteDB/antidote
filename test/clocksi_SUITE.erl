@@ -766,7 +766,6 @@ clocksi_parallel_writes_test(Config) ->
     Bound_object4 = {parallel_key4, antidote_crdt_counter, Bucket},
     Bound_object5 = {parallel_key5, antidote_crdt_counter, Bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    ct:print("Txid ~p", [TxId]),
     
     %% update 5 different objects
     ok = rpc:call(Node, antidote, update_objects,

@@ -69,7 +69,7 @@
 -export([create_transaction_record/5,
     start_tx/2,
     init_state/3,
-    perform_update/5,
+    perform_update/6,
     perform_read/4,
     execute_op/2,
     execute_op/3,
@@ -241,7 +241,7 @@ perform_singleitem_update(Key, Type, Params) ->
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, []) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, [],[]) of
                 {ok, DownstreamRecord} ->
                     Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
@@ -299,11 +299,11 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
             end,
             {error, Reason};
         {ok, Snapshot} ->
-            Type:value(Snapshot)
+            Snapshot
     end.
 
 
-perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
+perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
     {Key, Type, Param} = Args,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -316,7 +316,7 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps) ->
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
         {Key, Type, Param1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet, InternalReadSet) of
                 {ok, DownstreamRecord} ->
                     NewUpdatedPartitions =
                         case WriteSet of
@@ -363,23 +363,25 @@ execute_op({OpType, Args}, Sender,
                     prepare(SD0#tx_coord_state{from = Sender, commit_protocol = Args})
             end;
         read ->
-            case perform_read(Args, Updated_partitions, Transaction, Sender) of
+            {Key, Type} = Args,
+            case perform_read({Key, Type}, Updated_partitions, Transaction, Sender) of
                 {error, _Reason} ->
                     abort(SD0);
                 ReadResult ->
-                    {reply, {ok, ReadResult}, execute_op, SD0}
+                    InternalReadSet=orddict:store(Key, ReadResult, SD0#tx_coord_state.internal_read_set),
+                    {reply, {ok, Type:value(ReadResult)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
 	    update_objects ->
 		    ExecuteUpdates =
-                fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps}) ->
-                    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps) of
+                fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps, internal_read_set=InternalReadSet}) ->
+                    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps, InternalReadSet) of
                         {error, Reason} ->
                             Acc#tx_coord_state{return_accumulator= {error, Reason}};
                         {NewUpdatedPartitions, NewClientOps} ->
                             NewNumToRead = Acc#tx_coord_state.num_to_read,
                             Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
                                 updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
-			        end
+                    end
 		    end,
 		    NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
 		    case NewCoordState#tx_coord_state.num_to_read > 0 of
