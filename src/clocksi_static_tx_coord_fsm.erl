@@ -136,8 +136,8 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
                                             IndexNode = hd(Preflist),
                                             ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
                                             NumToRead = Acc#tx_coord_state.num_to_read+1,
-                                            ReadSet = Acc#tx_coord_state.read_set,
-                                            Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
+                                            ReadSet = Acc#tx_coord_state.return_accumulator,
+                                            Acc#tx_coord_state{num_to_read=NumToRead, return_accumulator=[Key|ReadSet]}
 				    end
 			end
 		end,    
@@ -182,7 +182,7 @@ receive_prepared({prepared, ReceivedPrepareTime},
 
 receive_prepared({ok, {Key, Type, Snapshot}},
                  S0=#tx_coord_state{num_to_read=NumToRead,
-                            read_set=ReadSet,
+                            return_accumulator=ReadSet,
                             commit_time=CommitTime,
                             transaction=Transaction,
                             updated_partitions=UpdatedPartitions,
@@ -198,19 +198,19 @@ receive_prepared({ok, {Key, Type, Snapshot}},
                     case NumToCommit of
                         0 ->
                             clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed_read_only, 
-                            read_set=lists:reverse(ReadSet1)});
+                            return_accumulator=lists:reverse(ReadSet1)});
                         _ ->
                             ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
                             {next_state, receive_committed,
-                               S0#tx_coord_state{num_to_ack=NumToCommit, read_set=lists:reverse(ReadSet1), state=committing}}
+                               S0#tx_coord_state{num_to_ack=NumToCommit, return_accumulator=lists:reverse(ReadSet1), state=committing}}
                     end;
                 _ ->
                     {next_state, receive_prepared, S0#tx_coord_state{num_to_read= NumToRead-1,
-                            read_set=ReadSet1}}
+                            return_accumulator=ReadSet1}}
             end;
         _ ->
             {next_state, receive_prepared,
-             S0#tx_coord_state{read_set=ReadSet1, num_to_read = NumToRead-1}}
+             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_read = NumToRead-1}}
     end;
 
 receive_prepared(abort, S0) ->
@@ -221,7 +221,7 @@ receive_prepared(timeout, S0) ->
 
 single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
                             num_to_read=NumToRead,
-                            read_set=ReadSet,
+                            return_accumulator=ReadSet,
                             num_to_ack=NumToAck}) ->
     %%TODO: type is hard-coded..
     Value = Type:value(Snapshot),
@@ -231,14 +231,14 @@ single_committing({ok, {Key, Type, Snapshot}}, S0=#tx_coord_state{
             case NumToAck of
                 0 ->
                     clocksi_interactive_tx_coord_fsm:reply_to_client(S0#tx_coord_state{state=committed,
-                    read_set=lists:reverse(ReadSet1)});
+                    return_accumulator=lists:reverse(ReadSet1)});
                 _ ->
                     {next_state, single_committing, S0#tx_coord_state{num_to_read= NumToRead-1,
-                            read_set=ReadSet1}}
+                            return_accumulator=ReadSet1}}
             end;
         _ ->
             {next_state, single_committing,
-             S0#tx_coord_state{read_set=ReadSet1, num_to_read = NumToRead-1}}
+             S0#tx_coord_state{return_accumulator=ReadSet1, num_to_read = NumToRead-1}}
     end;
 
 single_committing({committed, CommitTime}, S0=#tx_coord_state{from=From, full_commit=FullCommit, num_to_read=NumToRead}) ->

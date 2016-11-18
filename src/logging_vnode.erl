@@ -38,7 +38,7 @@
          asyn_read/2,
 	 get_stable_time/1,
          read/2,
-         asyn_append/3,
+         asyn_append/4,
          append/3,
          append_commit/3,
          append_group/4,
@@ -124,11 +124,11 @@ read(Node, Log) ->
                                         ?LOGGING_MASTER).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
--spec asyn_append(preflist(), key(), #log_operation{}) -> ok.
-asyn_append(Preflist, Log, LogOperation) ->
-    riak_core_vnode_master:command(Preflist,
-                                   {append, Log, LogOperation},
-                                   {fsm, undefined, self(), ?SYNC_LOG},
+-spec asyn_append(index_node(), key(), #log_operation{}, sender()) -> ok.
+asyn_append(IndexNode, Log, LogOperation, ReplyTo) ->
+    riak_core_vnode_master:command(IndexNode,
+                                   {append, Log, LogOperation, ?SYNC_LOG},
+                                   ReplyTo,
                                    ?LOGGING_MASTER).
 
 %% @doc synchronous append operation payload
@@ -719,7 +719,7 @@ handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) -
 	    NewCommittedOpsDict = 
 		lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
 				    case ((MinSnapshotTime == undefined) orelse
-									   (not vectorclock:gt(SnapshotTime, MinSnapshotTime))) of
+									   (not vectorclock:all_dots_greater(SnapshotTime, MinSnapshotTime))) of
 					true ->
 					    CommittedDownstreamOp =
 						#clocksi_payload{
