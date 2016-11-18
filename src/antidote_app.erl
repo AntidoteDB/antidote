@@ -57,7 +57,8 @@ start(_StartType, _StartArgs) ->
             ok = riak_core_node_watcher_events:add_guarded_handler(antidote_node_event_handler, []),
             ok = riak_api_pb_service:register(?SERVICES),
 
-	    _IsRestart = inter_dc_manager:check_node_restart(),
+	          _IsRestart = inter_dc_manager:check_node_restart(),
+            antidote_sup:start_metrics_collection(),
 
             {ok, Pid};
         {error, Reason} ->
