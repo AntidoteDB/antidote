@@ -151,12 +151,18 @@ update_objects(Clock, Properties, Updates) ->
     {ok, snapshot_time()} | {error, reason()}.
 update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
-update_objects(Clock, _Properties, Updates, StayAlive) ->
+update_objects(ClientCausalVC, _Properties, Updates, StayAlive) ->
     case check_and_format_ops(Updates) of
         {error, Reason} ->
             {error, Reason};
         Operations ->
+            start_static_transaction(update_objects, Operations, StayAlive, ClientCausalVC)
+    end.
 
+%% @doc The following function is called by the static versions of read and update_objects
+%%      to execute a static transaction.
+-spec start_static_transaction(update_objects | read_objects, list(), boolean(), vectorclock()) -> {ok, vectorclock()} | {error, reason()}.
+start_static_transaction(TransactionKind, ListOfOperations, StayAlive, ClientCausalVC) ->
             TxPid = case StayAlive of
                 true ->
                     whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
@@ -165,17 +171,15 @@ update_objects(Clock, _Properties, Updates, StayAlive) ->
             end,
             case TxPid of
                 undefined ->
-                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, update_clock, StayAlive, {update_objects, Operations}]);
+                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientCausalVC, update_clock, StayAlive, {TransactionKind, ListOfOperations}]);
                 TxPid ->
-                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, update_clock, {update_objects, Operations}})
+                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), ClientCausalVC, update_clock, {TransactionKind, ListOfOperations}})
             end,
             receive
-                {ok, CommitTime} ->
-                    {ok, CommitTime};
-                {error, Reason} ->
-                    {error, Reason}
-            end
-    end.
+                Reply ->
+                    Reply
+            end.
+
 
 %% @doc This function is used temporarily to unify the
 %% interfaces of old and new transactions. It should
@@ -440,12 +444,7 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
-            case gen_fsm:sync_send_event(CoordFsmPid,
-                                         {update, {Key, Type, OpParams}}, ?OP_TIMEOUT) of
-                ok -> ok;
-                {aborted, _} -> {error, aborted};
-                {error, Reason} -> {error, Reason}
-            end;
+            gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}, ?OP_TIMEOUT);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -467,7 +466,12 @@ clocksi_full_icommit({_, _, CoordFsmPid})->
 
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
 clocksi_iprepare({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT).
+    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT) of
+        {error, {aborted, TxId}} ->
+            {aborted, TxId};
+        Reply ->
+            Reply
+    end.
 
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->
