@@ -32,6 +32,8 @@
 %% API
 -export([
 	 send/2,
+	 update_last_log_id/2,
+	 start_timer/1,
 	 send_stable_time/2]).
 
 %% VNode methods
@@ -55,7 +57,7 @@
 -record(state, {
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
-  last_log_id :: log_opid(),
+  last_log_id :: #op_number{},
   timer :: any()
 }).
 
@@ -65,8 +67,17 @@
 %% The transaction will be buffered until all the operations in a transaction are collected,
 %% and then the transaction will be broadcasted via interDC.
 %% WARNING: only LOCALLY COMMITED operations (not from remote DCs) should be sent to log_sender_vnode.
--spec send(partition_id(), #operation{}) -> ok.
-send(Partition, Operation) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, Operation}).
+-spec send(partition_id(), #log_record{}) -> ok.
+send(Partition, LogRecord) -> dc_utilities:call_vnode(Partition, inter_dc_log_sender_vnode_master, {log_event, LogRecord}).
+
+%% Start the heartbeat timer
+-spec start_timer(partition_id()) -> ok.
+start_timer(Partition) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {start_timer}).
+
+%% After restarting from failure, load the operation id of the last operation sent by this DC
+%% Otherwise the stable time won't advance as the receving DC will be thinking it is getting old messages
+-spec update_last_log_id(partition_id(), #op_number{}) -> ok.
+update_last_log_id(Partition, OpId) -> dc_utilities:call_vnode_sync(Partition, inter_dc_log_sender_vnode_master, {update_last_log_id, OpId}).
 
 %% Send the stable time to this vnode, no transaction in the future will commit with a smaller time
 -spec send_stable_time(partition_id(), non_neg_integer()) -> ok.
@@ -81,7 +92,7 @@ init([Partition]) ->
   {ok, #state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
-    last_log_id = 0,
+    last_log_id = #op_number{},
     timer = none
   }}.
 
@@ -89,10 +100,15 @@ init([Partition]) ->
 handle_command({start_timer}, _Sender, State) ->
     {reply, ok, set_timer(true, State)};
 
+handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = Partition}) ->
+    lager:debug("Updating last log id at partition ~w to: ~w", [Partition, OpId]),
+    {reply, ok, State#state{last_log_id = OpId}};
+
 %% Handle the new operation
-handle_command({log_event, Operation}, _Sender, State) ->
+%% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
+handle_command({log_event, LogRecord}, _Sender, State) ->
   %% Use the txn_assembler to check if the complete transaction was collected.
-  {Result, NewBufState} = log_txn_assembler:process(Operation, State#state.buffer),
+  {Result, NewBufState} = log_txn_assembler:process(LogRecord, State#state.buffer),
   State1 = State#state{buffer = NewBufState},
   State2 = case Result of
     %% If the transaction was collected
@@ -114,7 +130,7 @@ handle_command({hello}, _Sender, State) ->
 %% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
     get_stable_time(State#state.partition),
-    {noreply, set_timer(State)}.
+    {noreply, State}.
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
     {stop, not_implemented, State}.

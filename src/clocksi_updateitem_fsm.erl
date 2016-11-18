@@ -56,9 +56,9 @@ init([Coordinator, VecSnapshotTime, Partition]) ->
 %%      if local clock is behinf, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 check_clock(timeout, SD0=#state{vclock=Vclock}) ->
-    DcId = dc_utilities:get_my_dc_id(),
+    DcId = dc_meta_data_utilities:get_my_dc_id(),
     T_TS = vectorclock:get_clock_of_dc(DcId, Vclock),
-    Time = clocksi_vnode:now_microsec(dc_utilities:now()),
+    Time = dc_utilities:now_microsec(),
     Newclock = dict:erase(DcId, Vclock),
     case T_TS > Time of
         true ->

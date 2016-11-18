@@ -1,0 +1,29 @@
+FROM ubuntu:xenial
+
+MAINTAINER Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>
+
+ENV ANTIDOTE_BRANCH "master"
+ENV ANTIDOTE_REPOSITORY "https://github.com/SyncFree/antidote.git"
+
+RUN cd /tmp && \
+    apt-get update && \
+    apt-get -y install wget build-essential make gcc ruby-dev git expect gnuplot curl && \
+    apt-get -y install libncurses5-dev libssl-dev && \
+    wget http://packages.erlang-solutions.com/erlang-solutions_1.0_all.deb && \
+    dpkg -i erlang-solutions_1.0_all.deb && \
+    apt-get update && \
+    apt-get -y install erlang && \
+    cd /opt && \
+    git clone $ANTIDOTE_REPOSITORY -b $ANTIDOTE_BRANCH && \
+    cd antidote && \
+    make && \
+    make rel && \
+    make clean
+
+# Distributed Erlang Port Mapper
+EXPOSE 4368
+
+# Default ports for Antidote
+EXPOSE 8085 8086 8087 8099
+
+CMD /opt/antidote/_build/default/rel/antidote/bin/env console

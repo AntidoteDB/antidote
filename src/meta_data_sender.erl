@@ -61,10 +61,10 @@
 -record(state, {
 	  table :: ets:tid(),
 	  table2 :: ets:tid(),
-	  last_result :: dict(),
+	  last_result :: dict:dict(),
 	  name :: atom(),
 	  update_function :: fun((term(),term())->boolean()),
-	  merge_function :: fun((dict())->dict()),
+	  merge_function :: fun((dict:dict())->dict:dict()),
 	  should_check_nodes :: boolean()}).
 
 %% ===================================================================
@@ -104,7 +104,7 @@
 %% was designed with light heart-beat type meta-data in mind.
 
 
--spec start_link(atom(),fun((term(),term())->boolean()), fun((dict())->dict()), dict(), dict()) -> {ok,pid()} | ignore | {error,term()}.
+-spec start_link(atom(),fun((term(),term())->boolean()), fun((dict:dict())->dict:dict()), dict:dict(), dict:dict()) -> {ok,pid()} | ignore | {error,term()}.
 start_link(Name,UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
 		       ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
@@ -114,11 +114,11 @@ start(Name) ->
     gen_fsm:sync_send_event(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)),
 			    start).
 
--spec put_meta_dict(atom(),partition_id(), dict()) -> ok.
+-spec put_meta_dict(atom(),partition_id(), dict:dict()) -> ok.
 put_meta_dict(Name,Partition,Dict) ->
     put_meta_dict(Name, Partition, Dict, undefined).
 
--spec put_meta_dict(atom(),partition_id(), dict(), fun((dict(),dict())->dict()) | undefined) -> ok.
+-spec put_meta_dict(atom(),partition_id(), dict:dict(), fun((dict:dict(),dict:dict())->dict:dict()) | undefined) -> ok.
 put_meta_dict(Name,Partition, Dict, Func) ->
     case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
@@ -130,7 +130,6 @@ put_meta_dict(Name,Partition, Dict, Func) ->
 			 _ ->
 			     Func(Dict, get_meta_dict(Name,Partition))
 		     end,
-	    %% lager:info("put partition ~p, dict ~p", [Partition,dict:to_list(Dict)]),
 	    true = ets:insert(get_name(Name,?META_TABLE_NAME), {Partition, Result}),
 	    ok
     end.
@@ -161,7 +160,7 @@ put_meta_data(Name, Partition, Key, Value, Func) ->
 	    put_meta_dict(Name, Partition, NewDict, undefined)
     end.
 
--spec get_meta_dict(atom(),partition_id()) -> dict() | undefined.
+-spec get_meta_dict(atom(),partition_id()) -> dict:dict() | undefined.
 get_meta_dict(Name,Partition) ->
     case ets:info(get_name(Name,?META_TABLE_NAME)) of
 	undefined ->
@@ -187,7 +186,7 @@ remove_partition(Name,Partition) ->
 
 %% Add info about a new DC. This info could be
 %% used by other modules to communicate to other DC
--spec get_merged_data(atom()) -> dict() | undefined.
+-spec get_merged_data(atom()) -> dict:dict() | undefined.
 get_merged_data(Name) ->
     case ets:info(get_name(Name, ?META_TABLE_STABLE_NAME)) of
 	undefined ->
@@ -263,7 +262,7 @@ terminate(_Reason, _SN, _SD) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
--spec get_meta_data(atom(),fun((dict()) -> dict()),boolean()) -> {true,dict()} | false.
+-spec get_meta_data(atom(),fun((dict:dict()) -> dict:dict()),boolean()) -> {true,dict:dict()} | false.
 get_meta_data(Name, MergeFunc, CheckNodes) ->
     TablesReady = case ets:info(get_name(Name,?REMOTE_META_TABLE_NAME)) of
 		      undefined ->
@@ -283,7 +282,6 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 	    {NodeList,PartitionList,WillChange} = ?GET_NODE_AND_PARTITION_LIST(),
 	    RemoteDict = dict:from_list(ets:tab2list(get_name(Name,?REMOTE_META_TABLE_NAME))),
 	    LocalDict = dict:from_list(ets:tab2list(get_name(Name,?META_TABLE_NAME))),
-	    %% lager:info("node ~p partition ~p will change ~p remote ~p, local ~p", [NodeList,PartitionList,WillChange,dict:to_list(RemoteDict),dict:to_list(LocalDict)]),
 	    %% Be sure that you are only checking active nodes
 	    %% This isnt the most efficent way to do this because are checking the list
 	    %% of nodes and partitions every time to see if any have been removed/added
@@ -334,11 +332,10 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 			{RemoteDict,LocalDict}
 		end,
 	    LocalMerged = MergeFunc(NewLocal),
-	    %% lager:info("newlocal ~p newremote ~p localmerged ~p", [dict:to_list(NewLocal),dict:to_list(NewRemote),dict:to_list(LocalMerged)]),
 	    {WillChange,dict:store(local_merged, LocalMerged, NewRemote)}
     end.
 
--spec update_stable(dict(), dict(), fun((term(),term()) -> boolean())) -> {boolean(),dict()}.
+-spec update_stable(dict:dict(), dict:dict(), fun((term(),term()) -> boolean())) -> {boolean(),dict:dict()}.
 update_stable(LastResult,NewDict,UpdateFunc) ->
     dict:fold(fun(DcId, Time, {Bool,Acc}) ->
 		      Last = case dict:find(DcId, LastResult) of

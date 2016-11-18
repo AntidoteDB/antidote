@@ -96,7 +96,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}). 
+    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -197,35 +197,27 @@ abort(ListofNodes, TxId) ->
             ?CLOCKSI_MASTER)
     end, ok, ListofNodes).
 
-
 get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(node()) ++ atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
-
 
 %% @doc Initializes all data structures that vnode needs to track information
 %%      the transactions it participates on.
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
-    loop_until_started(Partition, ?READ_CONCURRENCY),
-    Node = node(),
-    true = clocksi_readitem_fsm:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
         read_servers = ?READ_CONCURRENCY,
         prepared_dict = orddict:new()}}.
 
-
 %% @doc The table holding the prepared transactions is shared with concurrent
 %%      readers, so they can safely check if a key they are reading is being updated.
 %%      This function checks whether or not all tables have been intialized or not yet.
 %%      Returns true if the have, false otherwise.
 check_tables_ready() ->
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_table_ready(PartitionList).
-
 
 check_table_ready([]) ->
     true;
@@ -247,7 +239,6 @@ check_table_ready([{Partition, Node} | Rest]) ->
             false
     end.
 
-
 open_table(Partition) ->
     case ets:info(get_cache_name(Partition, prepared)) of
 	undefined ->
@@ -255,7 +246,7 @@ open_table(Partition) ->
 		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
 	_ ->
 	    %% Other vnode hasn't finished closing tables
-	    lager:info("Unable to open ets table in clocksi vnode, retrying"),
+	    lager:debug("Unable to open ets table in clocksi vnode, retrying"),
 	    timer:sleep(100),
 	    try
 		ets:delete(get_cache_name(Partition, prepared))
@@ -302,8 +293,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    %lager:info("Trying to prepare ~w,WS ~w", [Transaction, WriteSet]),
-    PrepareTime = now_microsec(dc_utilities:now()),
+    PrepareTime = dc_utilities:now_microsec(),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of
         {ok, _} ->
@@ -325,7 +315,7 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    PrepareTime = now_microsec(dc_utilities:now()),
+    PrepareTime = dc_utilities:now_microsec(),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
@@ -373,10 +363,10 @@ handle_command({abort, Transaction, Updates}, _Sender,
     #state{partition = _Partition} = State) ->
     TxId = Transaction#transaction.txn_id,
     case Updates of
-        [{Key, _Type, {_Op, _Actor}} | _Rest] ->
+        [{Key, _Type,  _Update} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
-            LogRecord = #log_record{tx_id = TxId, op_type = abort, op_payload = {}},
+            LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
             %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
             NewPreparedDict = case Result of
@@ -446,14 +436,14 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
     case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
-                [{Key, _, {_Op, _Actor}} | _] ->
+                [{Key, _Type, _Update} | _] ->
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
-                    NewPrepare = now_microsec(dc_utilities:now()),
+                    NewPrepare = dc_utilities:now_microsec(),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
 		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
-                    LogRecord = #log_record{tx_id = TxId,
+                    LogRecord = #log_operation{tx_id = TxId,
                         op_type = prepare,
-                        op_payload = NewPrepare},
+                        log_payload = #prepare_log_payload{prepare_time = NewPrepare}},
                     LogId = log_utilities:get_logid_from_key(Key),
                     [Node] = log_utilities:get_preflist_from_key(Key),
                     Result = logging_vnode:append(Node, LogId, LogRecord),
@@ -467,7 +457,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
     Acc;
-set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) ->
+set_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, Acc) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
@@ -484,20 +474,21 @@ set_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, Acc) 
 
 reset_prepared(_PreparedTx, [], _TxId, _Time, _ActiveTxs) ->
     ok;
-reset_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId, Time, ActiveTxs) ->
+reset_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId, Time, ActiveTxs) ->
     %% Could do this more efficiently in case of multiple updates to the same key
     true = ets:insert(PreparedTx, {Key, [{TxId, Time} | dict:fetch(Key, ActiveTxs)]}),
+    lager:debug("Inserted preparing txn to PreparedTxns list ~p, [{Key, TxId, Time}]"),
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
     TxId = Transaction#transaction.txn_id,
-    DcId = dc_utilities:get_my_dc_id(),
-    LogRecord = #log_record{tx_id = TxId,
-        op_type = commit,
-        op_payload = {{DcId, TxCommitTime},
-            Transaction#transaction.vec_snapshot_time}},
+    DcId = dc_meta_data_utilities:get_my_dc_id(),
+    LogRecord = #log_operation{tx_id = TxId,
+			    op_type = commit,
+			    log_payload = #commit_log_payload{commit_time = {DcId, TxCommitTime},
+							     snapshot_time = Transaction#transaction.vec_snapshot_time}},
     case Updates of
-        [{Key, _Type, {_Op, _Param}} | _Rest] ->
+        [{Key, _Type, _Update} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of
 		{ok, true} ->
 		    lists:foreach(fun({K, _, _}) -> true = ets:insert(CommittedTx, {K, TxCommitTime}) end,
@@ -526,18 +517,18 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %% @doc clean_and_notify:
 %%      This function is used for cleanning the state a transaction
 %%      stores in the vnode while it is being procesed. Once a
-%%      transaction commits or aborts, it is necessary to clean the 
+%%      transaction commits or aborts, it is necessary to clean the
 %%      prepared record of a transaction T. There are three possibility
 %%      when trying to clean a record:
 %%      1. The record is prepared by T (with T's TxId).
-%%          If T is being committed, this is the normal. If T is being 
-%%          aborted, it means T successfully prepared here, but got 
+%%          If T is being committed, this is the normal. If T is being
+%%          aborted, it means T successfully prepared here, but got
 %%          aborted somewhere else.
 %%          In both cases, we should remove the record.
 %%      2. The record is empty.
 %%          This can only happen when T is being aborted. What can only
 %%          only happen is as follows: when T tried to prepare, someone
-%%          else has already prepared, which caused T to abort. Then 
+%%          else has already prepared, which caused T to abort. Then
 %%          before the partition receives the abort message of T, the
 %%          prepared transaction gets processed and the prepared record
 %%          is removed.
@@ -545,7 +536,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 %%      3. The record is prepared by another transaction M.
 %%          This can only happen when T is being aborted. We can not
 %%          remove M's prepare record, so we should not do anything
-%%          either. 
+%%          either.
 clean_and_notify(TxId, Updates, #state{
     prepared_tx = PreparedTx, prepared_dict = PreparedDict}) ->
     ok = clean_prepared(PreparedTx, Updates, TxId),
@@ -558,7 +549,7 @@ clean_and_notify(TxId, Updates, #state{
 
 clean_prepared(_PreparedTx, [], _TxId) ->
     ok;
-clean_prepared(PreparedTx, [{Key, _Type, {_Op, _Actor}} | Rest], TxId) ->
+clean_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId) ->
     ActiveTxs = case ets:lookup(PreparedTx, Key) of
                     [] ->
                         [];
@@ -580,7 +571,7 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
     case application:get_env(antidote, txn_cert) of
-        {ok, true} -> 
+        {ok, true} ->
         %io:format("AAAAH"),
         certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
         _  -> true
@@ -591,11 +582,11 @@ certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
 certification_with_check(_, [], _, _) ->
     true;
 certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
-    SnapshotTime = TxId#tx_id.snapshot_time,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
     {Key, _, _} = H,
     case ets:lookup(CommittedTx, Key) of
         [{Key, CommitTime}] ->
-            case CommitTime > SnapshotTime of
+            case CommitTime > TxLocalStartTime of
                 true ->
                     false;
                 false ->
@@ -615,8 +606,7 @@ certification_with_check(TxId, [H | T], CommittedTx, PreparedTx) ->
             end
     end.
 
-check_prepared(TxId, PreparedTx, Key) ->
-    _SnapshotTime = TxId#tx_id.snapshot_time,
+check_prepared(_TxId, PreparedTx, Key) ->
     case ets:lookup(PreparedTx, Key) of
         [] ->
             true;
@@ -625,10 +615,10 @@ check_prepared(TxId, PreparedTx, Key) ->
     end.
 
 -spec update_materializer(DownstreamOps :: [{key(), type(), op()}],
-    Transaction :: tx(), TxCommitTime :: {term(), term()}) ->
+    Transaction :: tx(), TxCommitTime :: non_neg_integer()) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
-    DcId = dc_utilities:get_my_dc_id(),
+    DcId = dc_meta_data_utilities:get_my_dc_id(),
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun({Key, Type, Op}, AccIn) ->
 			     CommittedDownstreamOp =
@@ -666,7 +656,7 @@ reverse_and_filter_updates_per_key(Updates, Key) ->
 get_min_prep(OrdDict) ->
     case OrdDict of
 	[] ->
-	    {ok, clocksi_vnode:now_microsec(dc_utilities:now())};
+	    {ok, dc_utilities:now_microsec()};
 	[{Time,_TxId}|_] ->
 	    {ok, Time}
     end.

@@ -45,7 +45,7 @@
 
 %% State
 -record(state, {
-  sockets :: dict() % DCID -> socket
+  sockets :: dict:dict() % DCID -> socket
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -62,7 +62,9 @@ del_dc(DCID) -> gen_server:call(?MODULE, {del_dc, DCID}, ?COMM_TIMEOUT).
 start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 init([]) -> {ok, #state{sockets = dict:new()}}.
 
-handle_call({add_dc, DCID, Publishers}, _From, State) ->
+handle_call({add_dc, DCID, Publishers}, _From, OldState) ->
+    %% First delete the DC if it is alread connected
+    {_, State} = del_dc(DCID, OldState),
     case connect_to_nodes(Publishers, []) of
 	{ok, Sockets} ->
 	    %% TODO maybe intercept a situation where the vnode location changes and reflect it in sub socket filer rules,
@@ -73,13 +75,8 @@ handle_call({add_dc, DCID, Publishers}, _From, State) ->
     end;
 
 handle_call({del_dc, DCID}, _From, State) ->
-    case dict:find(DCID, State#state.sockets) of
-      {ok, Sockets} ->
-	    lists:foreach(fun zmq_utils:close_socket/1, Sockets),
-	    {reply, ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
-	error ->
-	    {reply, ok, State}
-    end.
+    {Resp, NewState} = del_dc(DCID, State),
+    {reply, Resp, NewState}.
 
 %% handle an incoming interDC transaction from a remote node.
 handle_info({zmq, _Socket, BinaryMsg, _Flags}, State) ->
@@ -94,6 +91,15 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 terminate(_Reason, State) ->
   F = fun({_, Sockets}) -> lists:foreach(fun zmq_utils:close_socket/1, Sockets) end,
   lists:foreach(F, dict:to_list(State#state.sockets)).
+
+del_dc(DCID, State) ->
+    case dict:find(DCID, State#state.sockets) of
+	{ok, Sockets} ->
+	    lists:foreach(fun zmq_utils:close_socket/1, Sockets),
+	    {ok, State#state{sockets = dict:erase(DCID, State#state.sockets)}};
+	error ->
+	    {ok, State}
+    end.
 
 connect_to_nodes([], Acc) ->
     {ok, Acc};

@@ -29,7 +29,9 @@
 -export([get_preflist_from_key/1,
          get_logid_from_key/1,
          remove_node_from_preflist/1,
-         get_my_node/1
+         get_my_node/1,
+         log_record_version/0,
+         check_log_record_version/1
         ]).
 
 %% @doc get_logid_from_key computes the log identifier from a key
@@ -47,7 +49,6 @@ get_logid_from_key(Key) ->
 -spec get_preflist_from_key(key()) -> preflist().
 get_preflist_from_key(Key) ->
     ConvertedKey = convert_key(Key),
-    %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     get_primaries_preflist(ConvertedKey).
 
 %% @doc get_primaries_preflist returns the preflist with the primary
@@ -57,15 +58,11 @@ get_preflist_from_key(Key) ->
 %%
 -spec get_primaries_preflist(non_neg_integer()) -> preflist().
 get_primaries_preflist(Key)->
-    %{ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    %Itr = chashbin:iterator(Key, CHBin),
-    %{Primaries, _} = chashbin:itr_pop(?N, Itr),
-    %Primaries.
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
-    Pos = Key rem length(PartitionList) + 1,
-    [lists:nth(Pos, PartitionList)].
+    NumPartitions = dc_meta_data_utilities:get_num_partitions(),
+    Pos = Key rem NumPartitions + 1,
+    [dc_meta_data_utilities:get_partition_at_index(Pos)].
 
+-spec get_my_node(partition_id()) -> node().
 get_my_node(Partition) ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:index_owner(Ring, Partition).
@@ -103,6 +100,20 @@ convert_key(Key) ->
                     abs(crypto:bytes_to_integer(HashedKey))
             end
     end.
+
+-spec log_record_version() -> non_neg_integer().
+log_record_version() -> ?LOG_RECORD_VERSION.
+
+
+%% Check the version of the log record and convert
+%% to a different version if necessary
+%% Checked when loading the log from disk, or
+%% when log messages are recieved from another DC
+-spec check_log_record_version(#log_record{}) -> #log_record{}.
+check_log_record_version(LogRecord) ->
+    %% Only support one version for now
+    ?LOG_RECORD_VERSION = LogRecord#log_record.version,
+    LogRecord.
 
 -ifdef(TEST).
 

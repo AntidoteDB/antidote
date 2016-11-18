@@ -121,17 +121,23 @@ execute_batch_ops(execute, Sender, SD=#tx_coord_state{operations = Operations,
 			    _ ->
 				    case Operation of
 				        {update, {Key, Type, OpParams}} ->
-					        case clocksi_interactive_tx_coord_fsm:perform_update({Key,Type,OpParams},Acc#tx_coord_state.updated_partitions,Transaction,undefined) of
+					        case clocksi_interactive_tx_coord_fsm:perform_update(
+                                                       {Key,Type,OpParams},
+                                                       Acc#tx_coord_state.updated_partitions,
+                                                       Transaction,undefined, 
+                                                       Acc#tx_coord_state.client_ops) of
 					            {error,Reason} ->   {error, Reason};
-					            NewUpdatedPartitions ->  Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions}
+					            {NewUpdatedPartitions, NewClientOps} -> 
+                                                        Acc#tx_coord_state{updated_partitions= NewUpdatedPartitions,
+                                                                           client_ops = NewClientOps}
 					        end;
 				        {read, {Key, Type}} ->
-                            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-                            IndexNode = hd(Preflist),
-					        ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                            NumToRead = Acc#tx_coord_state.num_to_read+1,
-                            ReadSet = Acc#tx_coord_state.read_set,
-                            Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
+                                            Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
+                                            IndexNode = hd(Preflist),
+                                            ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                                            NumToRead = Acc#tx_coord_state.num_to_read+1,
+                                            ReadSet = Acc#tx_coord_state.read_set,
+                                            Acc#tx_coord_state{num_to_read=NumToRead, read_set=[Key|ReadSet]}
 				    end
 			end
 		end,    

@@ -1,3 +1,5 @@
+-include("antidote_message_types.hrl").
+
 -record(recvr_state,
         {lastRecvd :: orddict:orddict(), %TODO: this may not be required
          lastCommitted :: orddict:orddict(),
@@ -14,10 +16,12 @@
 -record(interdc_txn, {
  dcid :: dcid(),
  partition :: partition_id(),
- prev_log_opid :: log_opid() | none, %% the value is *none* if the transaction is read directly from the log
+ prev_log_opid :: #op_number{} | none, %% the value is *none* if the transaction is read directly from the log
  snapshot :: snapshot_time(),
- timestamp :: non_neg_integer(),
- operations :: [operation()] %% if the OP list is empty, the message is a HEARTBEAT
+ timestamp :: clock_time(),
+ last_update_opid :: undefined | #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort)
+ bucket :: bucket(),
+ log_records :: [#log_record{}] %% if the OP list is empty, the message is a HEARTBEAT
 }).
 
 -record(descriptor, {
@@ -26,3 +30,23 @@
  publishers :: [socket_address()],
  logreaders :: [socket_address()]
 }).
+
+%% This keeps information about an inter-dc request that
+%% is waiting for a reply
+-record(request_cache_entry, {
+	  request_type :: inter_dc_message_type(),
+	  func :: function() | undefined,
+	  req_id_binary :: binary(),
+	  pdcid :: pdcid(),
+	  binary_req :: binary()
+	 }).
+
+%% This keeps information about an inter-dc request
+%% on the site that is performing the query
+-record(inter_dc_query_state, {
+	  request_type :: inter_dc_message_type(),
+	  zmq_id :: term(),
+	  request_id_num_binary :: binary(),
+	  local_pid :: pid()
+	 }).
+	  

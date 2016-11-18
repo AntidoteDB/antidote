@@ -51,10 +51,14 @@
 %% Spawn
 -record(state, {partition :: partition_id(),
 		id :: non_neg_integer(),
-		ops_cache :: cache_id(),
-		snapshot_cache :: cache_id(),
-		prepared_cache :: cache_id(),
+		mat_state :: #mat_state{},
+		prepared_cache ::  cache_id(),
 		self :: atom()}).
+
+%% TODO: allow properties for reads
+%% -type external_read_property() :: {external_read, dcid(), dc_and_commit_time(), snapshot_time()}.
+%% -type read_property() :: external_read_property().
+%% -type read_property_list() :: [read_property()].
 
 %%%===================================================================
 %%% API
@@ -72,7 +76,7 @@ start_link(Partition,Id) ->
     Addr = node(),
     gen_server:start_link({global,generate_server_name(Addr,Partition,Id)}, ?MODULE, [Partition,Id], []).
 
--spec start_read_servers(partition_id(),non_neg_integer()) -> non_neg_integer().
+-spec start_read_servers(partition_id(),non_neg_integer()) -> 0.
 start_read_servers(Partition, Count) ->
     Addr = node(),
     start_read_servers_internal(Addr, Partition, Count).
@@ -89,7 +93,7 @@ read_data_item({Partition,Node},Key,Type,Transaction) ->
 			{perform_read,Key,Type,Transaction},infinity)
     catch
         _:Reason ->
-            lager:error("Exception caught: ~p, starting read server to fix", [Reason]),
+            lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
 	    check_server_ready([{Partition,Node}]),
             read_data_item({Partition,Node},Key,Type,Transaction)
     end.
@@ -104,8 +108,7 @@ async_read_data_item({Partition,Node},Key,Type,Transaction, Coordinator) ->
 %%      Returns true if they have been, false otherwise.
 -spec check_servers_ready() -> boolean().
 check_servers_ready() ->
-    {ok, CHBin} = riak_core_ring_manager:get_chash_bin(),
-    PartitionList = chashbin:to_list(CHBin),
+    PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_server_ready(PartitionList).
 
 -spec check_server_ready([index_node()]) -> boolean().
@@ -145,6 +148,7 @@ check_partition_ready(Node,Partition,Num) ->
 %%% Internal
 %%%===================================================================
 
+-spec start_read_servers_internal(node(), partition_id(), non_neg_integer()) -> non_neg_integer().
 start_read_servers_internal(_Node,_Partition,0) ->
     0;
 start_read_servers_internal(Node, Partition, Num) ->
@@ -154,7 +158,7 @@ start_read_servers_internal(Node, Partition, Num) ->
     {error,{already_started, _}} ->
 	    start_read_servers_internal(Node, Partition, Num-1);
 	Err ->
-	    lager:info("Unable to start clocksi read server for ~w, will retry", [Err]),
+	    lager:debug("Unable to start clocksi read server for ~w, will retry", [Err]),
 	    try
 		gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
 	    catch
@@ -163,8 +167,8 @@ start_read_servers_internal(Node, Partition, Num) ->
 	    end,
 	    start_read_servers_internal(Node, Partition, Num)
     end.
-	    
 
+-spec stop_read_servers_internal(node(), partition_id(), non_neg_integer()) -> ok.
 stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
 stop_read_servers_internal(Node,Partition, Num) ->
@@ -176,87 +180,99 @@ stop_read_servers_internal(Node,Partition, Num) ->
     end,
     stop_read_servers_internal(Node, Partition, Num-1).
 
-
+-spec generate_server_name(node(), partition_id(), non_neg_integer()) -> atom().
 generate_server_name(Node, Partition, Id) ->
     list_to_atom(integer_to_list(Id) ++ integer_to_list(Partition) ++ atom_to_list(Node)).
 
+-spec generate_random_server_name(node(), partition_id()) -> atom().
 generate_random_server_name(Node, Partition) ->
-    generate_server_name(Node, Partition, random:uniform(?READ_CONCURRENCY)).
+    generate_server_name(Node, Partition, rand_compat:uniform(?READ_CONCURRENCY)).
 
 init([Partition, Id]) ->
     Addr = node(),
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
     PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
+    MatState = #mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition,is_ready=false},
     Self = generate_server_name(Addr,Partition,Id),
-    {ok, #state{partition=Partition, id=Id, ops_cache=OpsCache,
-		snapshot_cache=SnapshotCache,
+    {ok, #state{partition=Partition, id=Id,
+		mat_state = MatState,
 		prepared_cache=PreparedCache,self=Self}}.
 
-handle_call({perform_read, Key, Type, Transaction},Coordinator,
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+handle_call({perform_read, Key, Type, Transaction},Coordinator,SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0};
 
 handle_call({go_down},_Sender,SD0) ->
     {stop,shutdown,ok,SD0}.
 
-handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0}.
 
-perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition) ->
-    case check_clock(Key,Transaction,PreparedCache,Partition) of
+-spec perform_read_internal(pid(), key(), type(), #transaction{}, [], #state{}) ->
+				   ok.
+perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
+		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+    %% TODO: Add support for read properties
+    PropertyList = [],
+    TxId = Transaction#transaction.txn_id,
+    TxLocalStartTime = TxId#tx_id.local_start_time,
+    case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
 	{not_ready,Time} ->
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-        lager:info("Not ready"),
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;
 	ready ->
-	    return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition)
+	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
-check_clock(Key,Transaction,PreparedCache,Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    T_TS = TxId#tx_id.snapshot_time,
-    Time = clocksi_vnode:now_microsec(dc_utilities:now()),
-    case T_TS > Time of
+-spec check_clock(key(),clock_time(),ets:tid(),partition_id()) ->
+			 {not_ready, clock_time()} | ready.
+check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
+    Time = dc_utilities:now_microsec(),
+    case TxLocalStartTime > Time of
         true ->
-	    {not_ready, (T_TS - Time) div 1000 +1};
+	    {not_ready, (TxLocalStartTime - Time) div 1000 +1};
         false ->
-	    check_prepared(Key,Transaction,PreparedCache,Partition)
+	    check_prepared(Key,TxLocalStartTime,PreparedCache,Partition)
     end.
 
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
 %%      if they could violate the correctness of the read
-check_prepared(Key,Transaction,PreparedCache,Partition) ->
-    TxId = Transaction#transaction.txn_id,
-    SnapshotTime = TxId#tx_id.snapshot_time,
+-spec check_prepared(key(),clock_time(),ets:tid(),partition_id()) ->
+			    ready | {not_ready, ?SPIN_WAIT}.
+check_prepared(Key,TxLocalStartTime,PreparedCache,Partition) ->
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
-    check_prepared_list(Key,SnapshotTime,ActiveTxs).
+    check_prepared_list(Key, TxLocalStartTime, ActiveTxs).
 
-check_prepared_list(_Key,_SnapshotTime,[]) ->
+-spec check_prepared_list(key(),clock_time(),[{txid(),clock_time()}]) ->
+				 ready | {not_ready, ?SPIN_WAIT}.
+check_prepared_list(_Key,_TxLocalStartTime,[]) ->
     ready;
-check_prepared_list(Key,SnapshotTime,[{_TxId,Time}|Rest]) ->
-    case Time =< SnapshotTime of
+check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
+    case Time =< TxLocalStartTime of
     true ->
         {not_ready, ?SPIN_WAIT};
     false ->
-        check_prepared_list(Key,SnapshotTime,Rest)
+        check_prepared_list(Key,TxLocalStartTime,Rest)
     end.
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
-return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
+-spec return({fsm,pid()} | pid(),key(),type(),#transaction{},[],#state{}) -> ok.
+return(Coordinator,Key,Type,Transaction,PropertyList,
+       #state{mat_state=MatState}) ->
+    %% TODO: Add support for read properties
+    PropertyList = [],
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
-    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId,OpsCache,SnapshotCache, Partition) of
+    case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, MatState) of
         {ok, Snapshot} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
@@ -274,10 +290,8 @@ return(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,Partition) ->
     end,
     ok.
 
-
-handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},
-	    SD0=#state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,prepared_cache=PreparedCache,partition=Partition}) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Partition),
+handle_info({perform_read_cast, Coordinator, Key, Type, Transaction},SD0) ->
+    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0};
 
 handle_info(_Info, StateData) ->
@@ -293,4 +307,3 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 terminate(_Reason, _SD) ->
     ok.
-

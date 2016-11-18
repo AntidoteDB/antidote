@@ -1,89 +1,70 @@
-REBAR = $(shell pwd)/rebar
-.PHONY: rel deps test relgentlerain
+REBAR = $(shell pwd)/rebar3
+.PHONY: rel test relgentlerain
 
-all: deps compile test compile-riak-test
+all: compile
 
-compile: deps
+compile:
 	$(REBAR) compile
-
-compile-riak-test: compile
-	$(REBAR) skip_deps=true riak_test_compile
-
-deps:
-	$(REBAR) get-deps
 
 clean:
 	$(REBAR) clean
-	rm -rf riak_test/ebin
+
+distclean: clean relclean
+	$(REBAR) clean --all
 
 cleantests:
-	rm -rf riak_test/ebin
+	rm -f test/*.beam
+	rm -rf logs/
 
-distclean: clean devclean relclean cleanplt
-	$(REBAR) delete-deps
+shell:
+	$(REBAR) shell --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
 
-rel: all
-	$(REBAR) generate
+# same as shell, but automatically reloads code when changed
+# to install add `{plugins, [rebar3_auto]}.` to ~/.config/rebar3/rebar.config
+# the tool requires inotifywait (sudo apt install inotify-tools)
+# see https://github.com/vans163/rebar3_auto or http://blog.erlware.org/rebar3-auto-comile-and-load-plugin/ 
+auto:
+	$(REBAR) auto --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
+
+rel:
+	$(REBAR) release
+
+relclean:
+	rm -rf _build/default/rel
 
 relgentlerain: export TXN_PROTOCOL=gentlerain
 relgentlerain: relclean cleantests rel
 
-relnocert: export NO_CERTIFICATION = true
+relnocert: export NO_CERTIFICATION=true
 relnocert: relclean cleantests rel
 
-relclean:
-	rm -rf rel/antidote
-
-stage : rel
-	$(foreach dep,$(wildcard deps/*), rm -rf rel/antidote/lib/$(shell basename $(dep))-* && ln -sf $(abspath $(dep)) rel/antidote/lib;)
-	$(foreach app,$(wildcard apps/*), rm -rf rel/antidote/lib/$(shell basename $(app))-* && ln -sf $(abspath $(app)) rel/antidote/lib;)
-
-currentdevrel: stagedevrel compile-riak-test
-	riak_test/bin/antidote-current.sh
-
-riak-test: currentdevrel
-	$(foreach dep,$(wildcard riak_test/*.erl), ../riak_test/riak_test -v -c antidote -t $(dep);)
-
-stage-riak-test: all
-	$(foreach dep,$(wildcard riak_test/*.erl), ../riak_test/riak_test -v -c antidote -t $(dep);)
-
-##
-## Developer targets
-##
-##  devN - Make a dev build for node N
-##  stagedevN - Make a stage dev build for node N (symlink libraries)
-##  devrel - Make a dev build for 1..$DEVNODES
-##  stagedevrel Make a stagedev build for 1..$DEVNODES
-##
-##  Example, make a 68 node devrel cluster
-##    make stagedevrel DEVNODES=68
-
-.PHONY : stagedevrel devrel
-
-DEVNODES ?= 3
-
-# 'seq' is not available on all *BSD, so using an alternate in awk
-SEQ = $(shell awk 'BEGIN { for (i = 1; i < '$(DEVNODES)'; i++) printf("%i ", i); print i ;exit(0);}')
-
-$(eval stagedevrel : $(foreach n,$(SEQ),stagedev$(n)))
-$(eval devrel : $(foreach n,$(SEQ),dev$(n)))
-
-dev% : all
-	mkdir -p dev
-	rel/gen_dev $@ rel/vars/dev_vars.config.src rel/vars/$@_vars.config
-	(cd rel && $(REBAR) generate target_dir=../dev/$@ overlay_vars=vars/$@_vars.config)
-
-stagedev% : dev%
-	  $(foreach dep,$(wildcard deps/*), rm -rf dev/$^/lib/$(shell basename $(dep))* && ln -sf $(abspath $(dep)) dev/$^/lib;)
-	  $(foreach app,$(wildcard apps/*), rm -rf dev/$^/lib/$(shell basename $(app))* && ln -sf $(abspath $(app)) dev/$^/lib;)
-
-devclean: clean
-	rm -rf dev
-
-DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	xmerl webtool eunit syntax_tools compiler mnesia public_key snmp
+stage :
+	$(REBAR) release -d
 
 include tools.mk
 
-typer:
-	typer --annotate -I ../ --plt $(PLT) -r src
+# Tutorial targets.
+
+tutorial:
+	docker build -f Dockerfiles/antidote-tutorial -t cmeiklejohn/antidote-tutorial .
+	docker run -t -i cmeiklejohn/antidote-tutorial
+
+# Mesos targets.
+
+foreground: rel
+	./_build/default/rel/antidote/bin/env foreground
+
+console: rel
+	./_build/default/rel/antidote/bin/env console
+
+mesos-docker-build:
+	docker build -f Dockerfiles/antidote-mesos -t cmeiklejohn/antidote-mesos .
+
+mesos-docker-run: mesos-docker-build
+	docker run -t -i cmeiklejohn/antidote-mesos
+
+mesos-docker-build-dev:
+	docker build -f Dockerfiles/antidote-mesos-dev -t cmeiklejohn/antidote-mesos-dev .
+
+mesos-docker-run-dev: mesos-docker-build-dev
+	docker run -t -i cmeiklejohn/antidote-mesos-dev
