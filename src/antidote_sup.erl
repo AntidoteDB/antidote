@@ -107,10 +107,6 @@ init(_Args) ->
 			  permanent, 5000, supervisor,
 			  [meta_data_sender_sup]},
 
-    % StatsSup =  {antidote_stats_sup,
-    %                        {antidote_stats_sup, start_link, []},
-    %                        permanent, 5000, supervisor, [antidote_stats_sup]},
-
     LogResponseReaderSup = {inter_dc_query_response_sup,
 			  {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]},
 			  permanent, 5000, supervisor,
@@ -137,5 +133,4 @@ init(_Args) ->
        MetaDataManagerSup,
        MetaDataSenderSup,
        BCounterManager,
-       LogResponseReaderSup
-       ]}}.
+       LogResponseReaderSup]}}.
