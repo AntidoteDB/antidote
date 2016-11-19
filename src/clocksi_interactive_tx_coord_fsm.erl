@@ -351,7 +351,7 @@ execute_op(timeout, State = #tx_coord_state{operations = Operations, from = From
     execute_op(Operations, From, State).
 execute_op({update, Args}, Sender, SD0) ->
     execute_op({update_objects, [Args]}, Sender, SD0);
-    
+
 execute_op({OpType, Args}, Sender,
     SD0 = #tx_coord_state{transaction = Transaction,
                           updated_partitions = Updated_partitions
