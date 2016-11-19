@@ -134,7 +134,7 @@ clocksi_test1(Config) ->
                       {read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result2),
     {ok, {_, ReadSet2, _}}=Result2,
-    ?assertMatch([0,1], ReadSet2),
+    ?assertMatch([0,0], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
@@ -767,7 +767,7 @@ clocksi_parallel_ops_test(Config) ->
     Bound_object4 = {parallel_key4, antidote_crdt_counter, Bucket},
     Bound_object5 = {parallel_key5, antidote_crdt_counter, Bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
-    
+
     %% update 5 different objects
     ok = rpc:call(Node, antidote, update_objects,
         [[{Bound_object1, increment, 1},
@@ -782,7 +782,7 @@ clocksi_parallel_ops_test(Config) ->
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object1,
         Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId]),
     ?assertMatch({ok, [1,2,3,4,5]}, Res),
-    
+
     %% update 5 times the first object.
     ok = rpc:call(Node, antidote, update_objects,
         [[{Bound_object1, increment, 1},
