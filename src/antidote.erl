@@ -221,7 +221,7 @@ check_and_format_ops(Updates) ->
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
 
--spec read_objects(vectorclock(), list(), [bound_object()], boolean()) ->
+-spec read_objects(vectorclock(), any(), [bound_object()], boolean()) ->
                         {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
