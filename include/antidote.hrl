@@ -203,7 +203,7 @@
 %%----------------------------------------------------------------------
 
 -record(tx_coord_state, {
-          from :: undefined | {pid(), term()},
+          from :: undefined | {pid(), term()} | pid(),
           transaction :: undefined | tx(),
           updated_partitions :: list(),
           client_ops :: list(), % list of upstream updates, used for post commit hooks
