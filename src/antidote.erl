@@ -107,20 +107,25 @@ commit_transaction(TxId) ->
 
 -spec read_objects(Objects::[bound_object()], TxId::txid())
                   -> {ok, [term()]} | {error, reason()}.
-read_objects(Objects, TxId) ->
-    %%TODO: Transaction co-ordinator handles multiple reads
-    %% Executes each read as in a interactive transaction
-    Results = lists:map(fun({Key, Type, Bucket}) ->
-                                case clocksi_iread(TxId, {Key, Bucket}, Type) of
-                                    {ok, Res} ->
-                                        Res;
-                                    {error, _Reason} ->
-                                        error
+read_objects(BoundObjects, TxId) ->
+    {_, _, CoordFsmPid} = TxId,
+    NewObjects = lists:map(fun({Key, Type, Bucket}) ->
+                                case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
+                                    ok ->
+                                        {{Key, Bucket}, Type};
+                                    {error, Reason} ->
+                                        lager:debug("typing problem, check your ops! ~n~p", [Reason]),
+                                        {error, Reason}
                                 end
-                        end, Objects),
-    case lists:member(error, Results) of
-        true -> {error, read_failed}; %% TODO: Capture the reason for error
-        false -> {ok, Results}
+                           end, BoundObjects),
+    case lists:member({error, type_check}, NewObjects) of
+        true -> {error, type_check};
+        false ->
+            case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
+                     {ok, Res} ->
+                         {ok, Res};
+                     {error, Reason} -> {error, Reason}
+                 end
     end.
 
 -spec update_objects([{bound_object(), op_name(), op_param()}], txid())
@@ -216,6 +221,8 @@ check_and_format_ops(Updates) ->
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
 
+-spec read_objects(vectorclock(), any(), [bound_object()], boolean()) ->
+                        {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
              fun({Key, Type, Bucket}) ->
@@ -252,11 +259,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                 {ok, gr} ->
                     case Args of
                         [_Op] -> %% Single object read = read latest value
-                            case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
-                                {ok, {_TxId, Result, CommitTime}} ->
-                                    {ok, Result, CommitTime};
-                                {error, Reason} -> {error, Reason}
-                            end;
+                            start_static_transaction(read_objects, Objects, StayAlive, Clock);
                         [_|_] -> %% Read Multiple objects  = read from a snapshot
                             %% Snapshot includes all updates committed at time GST
                             %% from local and remore replicas
