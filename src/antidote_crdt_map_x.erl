@@ -40,7 +40,7 @@
 -behaviour(antidote_crdt).
 
 %% API
--export([new/0, value/1, update/2, equal/2,
+-export([new/0, value/1, update/2, equal/2, get/2,
   to_binary/1, from_binary/1, is_operation/1, downstream/2, require_state_downstream/1, is_bottom/1]).
 
 -ifdef(TEST).
@@ -61,14 +61,25 @@
 -type effect() ::
      {Adds::[nested_downstream()], Removed::[nested_downstream()]}.
 -type nested_downstream() :: {typedKey(), none | {ok, Effect::term()}}.
+-type value() :: orddict:orddict(typedKey(), term()).
 
 -spec new() -> state().
 new() ->
     dict:new().
 
--spec value(state()) -> [{typedKey(), Value::term()}].
+-spec value(state()) -> value().
 value(Map) ->
   lists:sort([{{Key, Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
+
+% get a value from the map
+% returns empty value if the key is not present in the map
+-spec get(typedKey(), value()) -> term().
+get({_K,Type}=Key, Map) ->
+  case orddict:find(Key, Map) of
+    {ok, Val} -> Val;
+    error -> Type:value(Type:new())
+  end.
+
 
 -spec require_state_downstream(op()) -> boolean().
 require_state_downstream(_Op) ->
