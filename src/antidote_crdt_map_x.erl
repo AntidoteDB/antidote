@@ -74,7 +74,7 @@ value(Map) ->
 % get a value from the map
 % returns empty value if the key is not present in the map
 -spec get(typedKey(), value()) -> term().
-get({_K,Type}=Key, Map) ->
+get({_K, Type}=Key, Map) ->
   case orddict:find(Key, Map) of
     {ok, Val} -> Val;
     error -> Type:value(Type:new())
@@ -312,11 +312,11 @@ reset2_test() ->
 prop1_test() ->
   Map0 = new(),
   % DC1: s.add
-  {ok, Add1} = downstream({update, {{a, antidote_crdt_map_x}, {update,{{a, antidote_crdt_set_rw},{add,a}}}}}, Map0),
+  {ok, Add1} = downstream({update, {{a, antidote_crdt_map_x}, {update, {{a, antidote_crdt_set_rw}, {add, a}}}}}, Map0),
   {ok, Map1a} = update(Add1, Map0),
 
   % DC1 reset
-  {ok, Reset1} = downstream({remove,{a,antidote_crdt_map_x}}, Map1a),
+  {ok, Reset1} = downstream({remove, {a, antidote_crdt_map_x}}, Map1a),
   {ok, Map1b} = update(Reset1, Map1a),
 
   io:format("Map0 = ~p~n", [Map0]),
@@ -326,17 +326,17 @@ prop1_test() ->
   io:format("Map1b = ~p~n", [Map1b]),
 
   ?assertEqual([], value(Map0)),
-  ?assertEqual([{{a, antidote_crdt_map_x},[{{a, antidote_crdt_set_rw},[a]}]}], value(Map1a)),
+  ?assertEqual([{{a, antidote_crdt_map_x}, [{{a, antidote_crdt_set_rw}, [a]}]}], value(Map1a)),
   ?assertEqual([], value(Map1b)).
 
 prop2_test() ->
   Map0 = new(),
   % DC1: update remove
-  {ok, Add1} = downstream({update, [{{b, antidote_crdt_map_x}, {remove,{a, antidote_crdt_set_rw}}}]}, Map0),
+  {ok, Add1} = downstream({update, [{{b, antidote_crdt_map_x}, {remove, {a, antidote_crdt_set_rw}}}]}, Map0),
   {ok, Map1a} = update(Add1, Map0),
 
   % DC2 remove
-  {ok, Remove2} = downstream({remove,{b,antidote_crdt_map_x}}, Map0),
+  {ok, Remove2} = downstream({remove, {b, antidote_crdt_map_x}}, Map0),
   {ok, Map2a} = update(Remove2, Map0),
 
   % pull DC2 -> DC1
