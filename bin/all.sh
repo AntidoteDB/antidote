@@ -10,7 +10,7 @@ i=$1
    ./bin/build-releases.sh ${i}
    echo "launching nodes..."
    ./bin/launch-nodes.sh ${i}
-   sleep ${i}*3
+   sleep $(($i*3))
    echo "creating arg files..."
    ./bin/create-vm-file.sh ${i}
    echo "joining into cluster..."
