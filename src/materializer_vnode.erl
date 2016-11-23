@@ -78,6 +78,7 @@ start_vnode(I) ->
 %%      are in shared memory, allowing concurrent reads.
 -spec read(key(), type(), snapshot_time(), txid(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, MatState = #mat_state{ops_cache = OpsCache, antidote_db = undefined}) ->
+	lager:info("READ ETS ~n", []),
 	case ets:info(OpsCache) of
 		undefined ->
 			riak_core_vnode_master:sync_command({MatState#mat_state.partition, node()},
@@ -94,6 +95,7 @@ read(Key, Type, SnapshotTime, TxId, MatState) ->
 
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
 get_cache_name(Partition,Base) ->
+	lager:info("READ ANTIDOTE DB ~n", []),
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 %%@doc write operation to cache for future read, updates are stored
@@ -116,6 +118,7 @@ store_ss(Key, Snapshot, CommitTime) ->
 
 init([Partition]) ->
 	%% Setup the mat_state depending on the backend configured
+	lager:info("init MAT VNODE ~p ~n", [Partition]),
 	case application:get_env(antidote, antidote_db) of
 		{ok, false} ->
 			OpsCache = open_table(Partition, ops_cache),
@@ -229,8 +232,15 @@ handle_command({check_ready},_Sender,State = #mat_state{antidote_db = undefined,
     Result2 = Result and IsReady,
     {reply, Result2, State};
 
-handle_command({check_ready}, _Sender, State) ->
-	{reply, true, State};
+handle_command({check_ready}, _Sender, State = #mat_state{antidote_db = AntidoteDB, is_ready=IsReady}) ->
+	Result = case AntidoteDB of
+				 undefined ->
+					 false;
+				 _ ->
+					 true
+			 end,
+	Result2 = Result and IsReady,
+	{reply, Result2, State};
 
 handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
 	{reply, read(Key, Type, SnapshotTime, TxId, State), State};
@@ -372,7 +382,8 @@ internal_read(Key, Type, MinSnapshotTime, TxId, State) ->
     internal_read(Key, Type, MinSnapshotTime, TxId, false, State).
 
 internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache, antidote_db = undefined}) ->
-    %% First look for any existing snapshots in the cache that is compatible with
+	lager:info("internal_read ETS ~n", []),
+	%% First look for any existing snapshots in the cache that is compatible with
     %% Result is a tuple where on success:
     %%     1st element is the snapshot of type #materialized_snapshot{}
     %%     2nd element is the commit time of the snapshost or igore if it is a new (empty) snapshot
@@ -458,27 +469,38 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
     end;
 
 internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{antidote_db = AntidoteDB}) ->
+	lager:info("internal_read ANTIDOTE DB ~p~n", [AntidoteDB]),
+	%% Get the the most recent snapshot or a new one if there isn't one in the range searched
 	MatSnapshot = case antidote_db:get_snapshot(AntidoteDB, Key, MinSnapshotTime) of
 				   {ok, Snap} ->
 					   Snap;
 				   _ ->
 					   #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type), snapshot_time = vectorclock:new()}
 			   end,
-%%	io:format("snap time : ~p  min snap time : ~p~n", [dict:to_list(MatSnapshot#materialized_snapshot.snapshot_time), dict:to_list(MinSnapshotTime)]),
+	%% Get the operations to apply to the snapshot
 	Operations = antidote_db:get_ops(AntidoteDB, Key, MatSnapshot#materialized_snapshot.snapshot_time, MinSnapshotTime),
-%%	io:format("FilteredOps length : ~p ~n", [length(Operations)]),
-	SnapshotVc = get_vc_for_snapshot(Operations),
-	OPS = clocksi_payload_to_op(Operations),
-	Snapshot = clocksi_materializer:materialize_eager(Type, MatSnapshot#materialized_snapshot.value, OPS),
-	NewMatSnap = #materialized_snapshot{last_op_id = 0, value = Snapshot, snapshot_time = SnapshotVc},
-	case TxId of
-		ignore ->
-%%			io:format("SNAP : ~p ~n", [NewMatSnap]),
-			internal_store_ss(Key, NewMatSnap, MinSnapshotTime, ShouldGc, State);
+	case length(Operations) of
+		0 ->
+			%% If there are no ops to apply, return old value
+			{ok, MatSnapshot#materialized_snapshot.value};
 		_ ->
-			materializer_vnode:store_ss(Key, NewMatSnap, MinSnapshotTime)
-	end,
-	{ok, NewMatSnap#materialized_snapshot.value}.
+			%% Calculate the VC for the new snapshot
+			SnapshotVc = get_vc_for_snapshot(Operations),
+
+			%% Apply the ops to the old snapshot and create a new materialized_snapshot with the VC and the new value
+			OpParamList = clocksi_payload_to_op(Operations),
+			Snapshot = clocksi_materializer:materialize_eager(Type, MatSnapshot#materialized_snapshot.value, OpParamList),
+			NewMatSnap = #materialized_snapshot{last_op_id = 0, value = Snapshot, snapshot_time = SnapshotVc},
+
+			%% Store the new snapshot
+			case TxId of
+				ignore ->
+					internal_store_ss(Key, NewMatSnap, MinSnapshotTime, ShouldGc, State);
+				_ ->
+					materializer_vnode:store_ss(Key, NewMatSnap, MinSnapshotTime)
+			end,
+			{ok, NewMatSnap#materialized_snapshot.value}
+	end.
 
 get_vc_for_snapshot(OPS) ->
 	lists:foldr(fun update_vc/2, vectorclock:new(), OPS).
