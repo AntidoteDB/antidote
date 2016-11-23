@@ -73,6 +73,7 @@
     perform_read/4,
     execute_op/2,
     execute_op/3,
+    receive_read_objects_result/2,
     receive_logging_responses/2,
     finish_op/3,
     prepare/1,
@@ -168,7 +169,8 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
 
 %% Used by static update and read transactions
 start_tx({start_tx, From, ClientClock, UpdateClock, Operation}, SD0) ->
-    {next_state, {execute_op, Operation}, start_tx_internal(From, ClientClock, UpdateClock, SD0#tx_coord_state{is_static = true}), 0}.
+    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock,
+                                                SD0#tx_coord_state{is_static = true, operations = Operation, from = From}), 0}.
 
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
@@ -349,7 +351,7 @@ execute_op(timeout, State = #tx_coord_state{operations = Operations, from = From
     execute_op(Operations, From, State).
 execute_op({update, Args}, Sender, SD0) ->
     execute_op({update_objects, [Args]}, Sender, SD0);
-    
+
 execute_op({OpType, Args}, Sender,
     SD0 = #tx_coord_state{transaction = Transaction,
                           updated_partitions = Updated_partitions
@@ -371,6 +373,16 @@ execute_op({OpType, Args}, Sender,
                     InternalReadSet=orddict:store(Key, ReadResult, SD0#tx_coord_state.internal_read_set),
                     {reply, {ok, Type:value(ReadResult)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
+        read_objects ->
+            ExecuteReads = fun({Key, Type}, Acc) ->
+                PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
+                IndexNode = hd(PrefList),
+                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                ReadSet = Acc#tx_coord_state.return_accumulator,
+                Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
+            end,
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
+            {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
 	    update_objects ->
 		    ExecuteUpdates =
                 fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps, internal_read_set=InternalReadSet}) ->
@@ -423,6 +435,38 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 			{next_state, receive_logging_responses,
 				S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
 	end.
+
+receive_read_objects_result({ok, {Key, Type, Snapshot}},
+  CoordState= #tx_coord_state{num_to_read = NumToRead,
+      return_accumulator= ReadSet,
+      internal_read_set = InternalReadSet}) ->
+            %%TODO: type is hard-coded..
+            SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
+            Value2 = Type:value(SnapshotAfterMyUpdates),
+            ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
+            NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
+            case NumToRead of
+                1 ->
+                    gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+                    {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+                _ ->
+                    {next_state, receive_read_objects_result,
+                        CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
+            end.
+
+%% The following function is used to apply the updates that were performed by the running
+%% transaction, to the result returned by a read.
+-spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, type(), snapshot()) -> snapshot().
+apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
+    Preflist=?LOG_UTIL:get_preflist_from_key(Key),
+    IndexNode=hd(Preflist),
+    case lists:keyfind(IndexNode, 1, CoordState#tx_coord_state.updated_partitions) of
+        false->
+            Snapshot;
+        {IndexNode, WS}->
+            FileteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
+            _SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
+    end.
 
 %% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
@@ -675,22 +719,15 @@ reply_to_client(SD = #tx_coord_state
                                 {ok, CausalClock}
                         end;
                     aborted ->
-                        {aborted, TxId};
+                        {error, {aborted, TxId}};
                     Reason ->
                         {TxId, Reason}
                 end,
-        %% todo: the following two checks are needed until we make the read_objects
-        %% todo: static operation avoid calling this method through the static_tx_coord
-        case IsStatic of
+        case is_pid(From) of
             false ->
                 _Res = gen_fsm:reply(From, Reply);
             true ->
-                case TxState of
-                    committed_read_only ->
-                        gen_fsm:reply(From, Reply);
-                    _->
-                        From ! Reply
-                end
+                From ! Reply
         end;
        true -> ok
     end,
@@ -804,13 +841,13 @@ empty_prepare_test(Pid) ->
 timeout_test(Pid) ->
     fun() ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {timeout, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_abort_test(Pid) ->
     fun() ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_success_test(Pid) ->
@@ -824,7 +861,7 @@ update_multi_abort_test1(Pid) ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_abort_test2(Pid) ->
@@ -832,7 +869,7 @@ update_multi_abort_test2(Pid) ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_success_test(Pid) ->
@@ -861,7 +898,7 @@ read_success_test(Pid) ->
 
 downstream_fail_test(Pid) ->
     fun() ->
-        ?assertMatch({aborted, _},
+        ?assertMatch({error, {aborted , _}},
             gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
