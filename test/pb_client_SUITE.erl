@@ -129,7 +129,7 @@ get_empty_crdt_test(_Config) ->
 client_fail_test(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
-    {ok, TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, _TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
     % Client fails and starts next transaction:
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
@@ -141,7 +141,7 @@ client_fail_test(_Config) ->
 client_fail_test2(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
-    {ok, TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
+    {ok, _TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
     % Client fails and starts next transaction:
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),

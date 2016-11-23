@@ -65,8 +65,9 @@
 	 abort/2,
 	 handle_event/3,
 	 handle_info/3,
-         handle_sync_event/4,
-	 terminate/3]).
+     handle_sync_event/4,
+	 terminate/3,
+     replace/3]).
 
 %% States
 -export([execute_batch_ops/3]).
