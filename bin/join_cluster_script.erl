@@ -31,7 +31,7 @@
 main([Number, HostName]) ->
     ets:new(main_node_table, [named_table, public]),
     NumNodes = list_to_integer(Number),
-    io:format("STARTING SCRIPT TO JOIN CLUSTER OF ~p NODES~n~n", [NumNodes]),
+    io:format("~nSTARTING SCRIPT TO JOIN CLUSTER OF ~p NODES~n~n", [NumNodes]),
 
     Node1 = list_to_atom("antidote1@"++HostName),
     Node2 = list_to_atom("antidote2@"++HostName),
@@ -45,7 +45,8 @@ main([Number, HostName]) ->
         erlang:set_cookie(Node, antidote)
     end, Nodes),
     join_cluster(Nodes),
-    io:format("~n~nSUCCESS! Finished building cluster! ~n~nSuccesfully joined nodes: ~w", [Nodes]);
+    io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
+    io:format("~nSUCCESS! Finished building cluster!~n");
 main(_) ->
     usage().
 
@@ -149,7 +150,7 @@ kill_and_restart_nodes(NodeList, Config) ->
 -spec brutal_kill_nodes([node()]) -> [node()].
 brutal_kill_nodes(NodeList) ->
     lists:map(fun(Node) ->
-        io:format("Killing node ~p", [Node]),
+        io:format("Killing node ~p~n", [Node]),
         OSPidToKill = rpc:call(Node, os, getpid, []),
         %% try a normal kill first, but set a timer to
         %% kill -9 after 5 seconds just in case
@@ -171,7 +172,7 @@ kill_nodes(NodeList) ->
 restart_nodes(NodeList, Config) ->
     pmap(fun(Node) ->
         start_node(get_node_name(Node), Config),
-        ct:print("Waiting until vnodes are restarted at node ~w", [Node]),
+        io:format("Waiting until vnodes are restarted at node ~w~n", [Node]),
         wait_until_ring_converged([Node]),
         wait_until(Node,fun wait_init:check_ready/1),
         Node
@@ -197,7 +198,7 @@ start_node(Name, Config) ->
             PrivDir = proplists:get_value(priv_dir, Config),
             NodeDir = filename:join([PrivDir, Node]),
 
-            ct:print("Node dir: ~p",[NodeDir]),
+            io:format("Node dir: ~p~n",[NodeDir]),
 
             ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir]),
             ok = rpc:call(Node, application, load, [lager]),
@@ -226,11 +227,11 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
 
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
-            ct:print("Node ~p started",[Node]),
+            io:format("Node ~p started~n",[Node]),
 
             Node;
         {error, Reason, Node} ->
-            ct:print("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
+            io:format("Error starting node ~w, reason ~w, will retry~n", [Node, Reason]),
             ct_slave:stop(Name),
             wait_until_offline(Node),
             start_node(Name, Config)
@@ -260,7 +261,7 @@ connect_cluster(Nodes) ->
 
     pmap(fun(Cluster) ->
         Node1 = hd(Cluster),
-        ct:print("Waiting until vnodes start on node ~p", [Node1]),
+        io:format("Waiting until vnodes start on node ~p~n", [Node1]),
         wait_until_registered(Node1, inter_dc_pub),
         wait_until_registered(Node1, inter_dc_query_receive_socket),
         wait_until_registered(Node1, inter_dc_query_response_sup),
@@ -272,11 +273,11 @@ connect_cluster(Nodes) ->
         ok = rpc:call(Node1, logging_vnode, set_sync_log, [true])
     end, Clusters),
     Descriptors = descriptors(Clusters),
-    ct:print("the clusters ~w", [Clusters]),
+    io:format("the clusters ~w~n", [Clusters]),
     Res = [ok || _ <- Clusters],
     pmap(fun(Cluster) ->
         Node = hd(Cluster),
-        ct:print("Making node ~p observe other DCs...", [Node]),
+        io:format("Making node ~p observe other DCs...~n", [Node]),
         %% It is safe to make the DC observe itself, the observe() call will be ignored silently.
         Res = rpc:call(Node, inter_dc_manager, observe_dcs_sync, [Descriptors])
     end, Clusters),
@@ -288,7 +289,7 @@ connect_cluster(Nodes) ->
 
 % Waits until a certain registered name pops up on the remote node.
 wait_until_registered(Node, Name) ->
-    ct:print("Wait until ~p is up on ~p", [Name,Node]),
+    io:format("Wait until ~p is up on ~p~n", [Name,Node]),
     F = fun() ->
         Registered = rpc:call(Node, erlang, registered, []),
         lists:member(Name, Registered)
@@ -347,9 +348,9 @@ join_cluster(Nodes) ->
 owners_according_to(Node, MainNode) ->
     case rpc:call(Node, riak_core_ring_manager, get_raw_ring, []) of
         {ok, Ring} ->
-%%            io:format("Ring ~p", [Ring]),
+%%            io:format("Ring ~p~n", [Ring]),
             Owners = [Owner || {_Idx, Owner} <- rpc:call(MainNode, riak_core_ring, all_owners, [Ring])],
-            io:format("Owners ~p", [lists:usort(Owners)]),
+            io:format("Owners ~p~n", [lists:usort(Owners)]),
             lists:usort(Owners);
         {badrpc, _}=BadRpc ->
 %%            io:format("Badrpc"),
@@ -360,7 +361,7 @@ owners_according_to(Node, MainNode) ->
 staged_join(Node, PNode) ->
     timer:sleep(5000),
     R = rpc:call(Node, riak_core, staged_join, [PNode]),
-    io:format("[join] ~p to (~p): ~p", [Node, PNode, R]),
+    io:format("[join] ~p to (~p): ~p~n", [Node, PNode, R]),
     ?assertEqual(ok, R),
     ok.
 
@@ -416,7 +417,7 @@ maybe_wait_for_changes(Node) ->
 %% on-going or pending ownership transfers.
 -spec wait_until_no_pending_changes([node()]) -> ok | fail.
 wait_until_no_pending_changes(Nodes) ->
-%%    io:format("Wait until no pending changes on ~p", [Nodes]),
+%%    io:format("Wait until no pending changes on ~p~n", [Nodes]),
     F = fun() ->
         rpc:multicall(Nodes, riak_core_vnode_manager, force_handoffs, []),
         {Rings, BadNodes} = rpc:multicall(Nodes, riak_core_ring_manager, get_raw_ring, []),
@@ -438,7 +439,7 @@ wait_until(Fun) when is_function(Fun) ->
 %% @doc Given a list of nodes, wait until all nodes are considered ready.
 %%      See {@link wait_until_ready/1} for definition of ready.
 wait_until_nodes_ready(Nodes) ->
-%%    io:format("Wait until nodes are ready : ~p", [Nodes]),
+%%    io:format("Wait until nodes are ready : ~p~n", [Nodes]),
     [?assertEqual(ok, wait_until(Node, fun is_ready/2)) || Node <- Nodes, hd(Nodes)],
     ok.
 
@@ -455,7 +456,7 @@ is_ready(Node, MainNode) ->
     end.
 
 wait_until_nodes_agree_about_ownership(Nodes) ->
-%%    io:format("Wait until nodes agree about ownership ~p", [Nodes]),
+%%    io:format("Wait until nodes agree about ownership ~p~n", [Nodes]),
     Results = [ wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
     ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
 
@@ -484,7 +485,7 @@ is_ring_ready(Node, MainNode) ->
 %% @doc Given a list of nodes, wait until all nodes believe the ring has
 %%      converged (ie. `riak_core_ring:is_ready' returns `true').
 wait_until_ring_converged(Nodes) ->
-%%    io:format("Wait until ring converged on ~p", [Nodes]),
+%%    io:format("Wait until ring converged on ~p~n", [Nodes]),
     [?assertEqual(ok, wait_until(Node, fun is_ring_ready/2)) || Node <- Nodes, hd(Nodes)],
     ok.
 
@@ -536,7 +537,7 @@ wait_ready(Node) ->
 %% except it takes as input a sinlge physical node instead of a list
 -spec check_ready(node()) -> boolean().
 check_ready(Node) ->
-    io:format("Checking if node ~w is ready ~n", [Node]),
+    io:format("Checking if node ~w is ready ~n~n", [Node]),
     case rpc:call(Node,clocksi_vnode,check_tables_ready,[]) of
         true ->
             case rpc:call(Node,clocksi_readitem_fsm,check_servers_ready,[]) of
@@ -545,21 +546,21 @@ check_ready(Node) ->
                         true ->
                             case rpc:call(Node,stable_meta_data_server,check_tables_ready,[]) of
                                 true ->
-                                    io:format("Node ~w is ready! ~n", [Node]),
+                                    io:format("Node ~w is ready! ~n~n", [Node]),
                                     true;
                                 false ->
-                                    io:format("Node ~w is not ready ~n", [Node]),
+                                    io:format("Node ~w is not ready ~n~n", [Node]),
                                     false
                             end;
                         false ->
-                            io:format("Node ~w is not ready ~n", [Node]),
+                            io:format("Node ~w is not ready ~n~n", [Node]),
                             false
                     end;
                 false ->
-                    io:format("Checking if node ~w is ready ~n", [Node]),
+                    io:format("Checking if node ~w is ready ~n~n", [Node]),
                     false
             end;
         false ->
-            io:format("Checking if node ~w is ready ~n", [Node]),
+            io:format("Checking if node ~w is ready ~n~n", [Node]),
             false
     end.
