@@ -10,9 +10,11 @@ i=$1
    ./bin/build-releases.sh ${i}
    echo "launching nodes..."
    ./bin/launch-nodes.sh ${i}
-    sleep $(($i*3))
-    echo "creating arg files..."
-   ./bin/create-vm-file.sh ${i}
-   echo "joining into cluster..."
-   ./bin/join-nodes-into-cluster.sh ${i}
-  sleep 1
+      sleep $(($i*3))
+   echo "joining nodes in a cluster"
+   ./bin/join_cluster_script.erl ${i} ${HOSTNAME}
+#    echo "creating arg files..."
+#   ./bin/create-vm-file.sh ${i}
+#   echo "joining into cluster..."
+#   ./bin/join-nodes-into-cluster.sh ${i}
+#  sleep 1

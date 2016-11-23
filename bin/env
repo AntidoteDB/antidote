@@ -55,6 +55,7 @@ if [ ! -z "$MESOS_TASK_ID" ]; then
       export NODE_NAME=antidote@${IP}
     fi
   fi
+  echo "HOSTNAME IS ${HOSTNAME}"
 
   # Else, default to IP.
   if [ -z "$NODE_NAME" ]; then
