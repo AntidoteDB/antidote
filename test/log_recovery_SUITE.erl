@@ -64,7 +64,9 @@ read_pncounter_log_recovery_test(Config) ->
     FirstNode = hd(Nodes),
 
     case rpc:call(FirstNode, application, get_env, [antidote, enable_logging]) of
-        {ok, true} ->
+        {ok, false} ->
+            pass;
+        _ ->
             Type = antidote_crdt_counter,
             Key = log_value_test,
             Obj = {Key, Type, bucket},
@@ -91,8 +93,7 @@ read_pncounter_log_recovery_test(Config) ->
             {ok, [ReadResult3], _CT} = rpc:call(FirstNode, antidote, read_objects,
                 [CommitTime, [], [Obj]]),
             ?assertEqual(15, ReadResult3),
-            lager:info("read_pncounter_log_recovery_test finished");
-        {ok, false} ->
+            lager:info("read_pncounter_log_recovery_test finished"),
             pass
     end.
 

@@ -83,7 +83,7 @@ cluster_failure_test(Config) ->
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
             pass;
-        {ok, true} ->
+        _ ->
             Key1 = cluster_failure_test,
             Type = antidote_crdt_counter,
 
@@ -173,7 +173,7 @@ multiple_cluster_failure_test(Config) ->
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
             pass;
-        {ok, true} ->
+        _ ->
             Node2 = hd(Cluster2),
 
             Key1 = multiple_cluster_failure_test,
@@ -265,7 +265,7 @@ update_during_cluster_failure_test(Config) ->
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
             pass;
-        {ok, true} ->
+        _ ->
 
             Key1 = update_during_cluster_failure_test,
             Type = antidote_crdt_counter,

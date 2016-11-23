@@ -229,7 +229,9 @@ failure_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
-        {ok, true} ->
+        {ok, false} ->
+            pass;
+        _ ->
             Type = antidote_crdt_counter,
             Key = failure_test,
             WriteResult1 = rpc:call(Node1,
@@ -275,8 +277,6 @@ failure_test(Config) ->
             {ok, {_,[ReadSet1],_} }= ReadResult2,
             ?assertEqual(3, ReadSet1),
             lager:info("Done Read in Node3"),
-            pass;
-        {ok, false} ->
             pass
     end.
 
