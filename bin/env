@@ -45,21 +45,25 @@ if [ ! -z "$MESOS_TASK_ID" ]; then
   # Caveat: there's only one antidote supported per node because of
   # EPMD, so we will address it by name@IP.
 
+
+  # Receive the host name from the parameters
+  if [ -z "$INSTANCE_NAME" ]; then
+      export INSTANCE_NAME=antidote
+      fi
+
   # Choose the hostname for the epmd long name if the hostname exists
   # and if it resolves through the resolver; using a resolvable name
   # that's only resolvable with resolv.conf won't work for long names.
   if [ ! -z "$HOSTNAME" ]; then
     if /usr/bin/dig ${HOSTNAME} | grep -q 'NXDOMAIN'
-      export NODE_NAME=antidote@${HOSTNAME}
+      export NODE_NAME=${INSTANCE_NAME}@${HOSTNAME}
     then
-      export NODE_NAME=antidote@${IP}
+      export NODE_NAME=${INSTANCE_NAME}@${IP}
     fi
   fi
-  echo "HOSTNAME IS ${HOSTNAME}"
-
   # Else, default to IP.
   if [ -z "$NODE_NAME" ]; then
-    export NODE_NAME=andtidote@${IP}
+    export NODE_NAME=${INSTANCE_NAME}@${IP}
   fi
 
   # Handoff port.
@@ -82,7 +86,7 @@ if [ -z "$IP" ]; then
 fi
 
 if [ -z "$NODE_NAME" ]; then
-  export NODE_NAME=antidote@${IP}
+  export NODE_NAME=${INSTANCE_NAME}@${IP}
 fi
 
 if [ -z "$COOKIE" ]; then
@@ -102,5 +106,5 @@ echo "COOKIE: ${COOKIE}"
 echo "IP: ${IP}"
 echo "HOSTNAME: ${HOSTNAME}"
 
-RELNAME="`dirname \"$0\"`"/antidote
+RELNAME="`dirname \"$0\"`"/${INSTANCE_NAME}
 exec ${RELNAME} "$@"
