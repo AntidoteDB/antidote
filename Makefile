@@ -27,7 +27,7 @@ auto:
 	$(REBAR) auto --name='antidote@127.0.0.1' --setcookie antidote --config config/sys-debug.config
 
 rel:
-	$(REBAR) release
+	$(REBAR) release -n antidote
 
 relclean:
 	rm -rf _build/default/rel
