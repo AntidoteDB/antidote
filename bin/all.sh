@@ -12,8 +12,3 @@ i=$1
       sleep $(($i*3))
    echo "joining Antidote nodes into a cluster"
    ./bin/join_cluster_script.erl ${i} 127.0.0.1
-#    echo "creating arg files..."
-#   ./bin/create-vm-file.sh ${i}
-#   echo "joining into cluster..."
-#   ./bin/join-nodes-into-cluster.sh ${i}
-#  sleep 1
