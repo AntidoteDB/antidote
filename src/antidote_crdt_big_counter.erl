@@ -45,15 +45,15 @@
 -type op() ::
     {increment, integer()}
     | {decrement, integer()}
-    | reset.
+    | {reset, {}}.
 -type effect() ::
       {integer(), uniqueToken()}
-      | {{reset, {}}, Overridden::[uniqueToken()]}.
+      | [uniqueToken()].
 
 %% @doc Create a new, empty big counter
 -spec new() -> state().
 new() ->
-    [{0, unique()}].
+    [].
 
 %% @doc The value of this counter is equal to the sum of all the values
 %% having tokens.
@@ -72,7 +72,7 @@ downstream(Op, BigCtr) ->
             {ok, {-Value, Token}};
         {reset, {}} ->
             Overridden = [Tok || {_, Tok} <- BigCtr],
-            {ok, Overridden}
+            {ok, lists:sort(Overridden)}
     end.
 
 -spec unique() -> uniqueToken().
@@ -83,21 +83,11 @@ unique() ->
 -spec update(effect(), state()) -> {ok, state()}.
 update({Value, Token}, BigCtr) ->
     % insert new value
-    {ok, insert_sorted({Value, Token}, BigCtr)};
+    {ok, BigCtr ++ [{Value, Token}]};
 update(Overridden, BigCtr) ->
-  BigCtr2 = [{V, T} || {V, T} <- BigCtr, not lists:member(T, Overridden)],
-  case BigCtr2 == [] of
-    true ->
-        {ok, new()};
-    false ->
-        {ok, BigCtr2}
-  end.
-
-% insert value into sorted list
-insert_sorted(A, []) -> [A];
-insert_sorted(A, [X|Xs]) when A < X -> [A, X|Xs];
-insert_sorted(A, [X|Xs]) -> [X|insert_sorted(A, Xs)].
-
+  SortedBigCtr = lists:sort(fun({_, A}, {_, B}) -> A =< B end, BigCtr),
+  BigCtr2 = [{V, T} || {V, T} <- SortedBigCtr, not lists:member(T, Overridden)],
+  {ok, BigCtr2}.
 
 -spec equal(state(), state()) -> boolean().
 equal(BigCtr1, BigCtr2) ->
@@ -124,11 +114,10 @@ is_bottom(BigCtr) ->
 is_operation({increment, Value}) when is_integer(Value) -> true;
 is_operation({decrement, Value}) when is_integer(Value)-> true;
 is_operation({reset, {}}) -> true;
-is_operation(is_bottom) -> true;
 is_operation(_) -> false.
 
-require_state_downstream(_) ->
-     true.
+require_state_downstream(Op) ->
+  Op == {reset, {}}.
 
 
 
@@ -137,5 +126,27 @@ require_state_downstream(_) ->
 %% ===================================================================
 -ifdef(TEST).
 
+new_test() ->
+    ?assertEqual(0, value(new())).
+
+%% @doc test the correctness of increment without parameter.
+update_increment_test() ->
+    BigCnt0 = new(),
+    {ok, Increment1} = downstream({increment, 5}, BigCnt0),
+    {ok, BigCnt1} = update(Increment1, BigCnt0),
+    {ok, Decrement1} = downstream({decrement, 2}, BigCnt1),
+    {ok, BigCnt2} = update(Decrement1, BigCnt1),
+    {ok, Increment2} = downstream({increment, 1}, BigCnt2),
+    {ok, BigCnt3} = update(Increment2, BigCnt2),
+    {ok, Reset1} = downstream({reset, {}}, BigCnt3),
+    {ok, BigCnt4} = update(Reset1, BigCnt3),
+    {ok, Decrement2} = downstream({decrement, 2}, BigCnt4),
+    {ok, BigCnt5} = update(Decrement2, BigCnt4),
+    ?assertEqual(0, value(BigCnt0)),
+    ?assertEqual(5, value(BigCnt1)),
+    ?assertEqual(3, value(BigCnt2)),
+    ?assertEqual(4, value(BigCnt3)),
+    ?assertEqual(0, value(BigCnt4)),
+    ?assertEqual(-2, value(BigCnt5)).
 
 -endif.

@@ -194,7 +194,6 @@ is_operation({remove, _Elem}) ->
     true;
 is_operation({remove_all, L}) when is_list(L) -> true;
 is_operation({reset, {}}) -> true;
-is_operation(is_bottom) -> true;
 is_operation(_) -> false.
 
 is_bottom(RWSet) ->
