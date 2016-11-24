@@ -45,6 +45,6 @@
          %staleness and record it in exometer which can be read by monitoring
          %tools. It is false by default. Changing this parameter during run time
          %has no effect.
-         {collect_metric_staleness, false}
+         {collect_metric_staleness, false}, {auto_start_read_servers, true}
         ]}
  ]}.
