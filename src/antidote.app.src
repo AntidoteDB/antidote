@@ -39,6 +39,9 @@
   %%                stored to disk (this is very slow in the current logging setup)
   %%        false -> all updates are sent to the operating system to be stored to disk (eventually), but are not guaranteed to be stored durably on disk
   %%                 when the reply is sent
+  %% %% auto_start_read_servers:
+  %%        true -> read servers will start automatically. It should be set to true when Antidote will be run in a single node/machine.
+  %%        false -> read servers will not start automatically. It should be set to false when Antidote will be run in a cluster, and later on start them.
   {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
          {recover_meta_data_on_start, true}, {sync_log, false},
          %setting collect_metrics_staleness = true periodically calculates
