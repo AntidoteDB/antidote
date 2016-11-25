@@ -54,6 +54,7 @@ get_descriptor() ->
 %% This will connect the list of local nodes to the DC given by the descriptor
 %% When a connecting to a new DC, Nodes will be all the nodes in the local DC
 %% Otherwise this will be called with a single node that is reconnecting (for example after one of the nodes in the DC crashes and restarts)
+%% Note this is an internal function, to instruct the local DC to connect to a new DC the observe_dcs_sync(Descriptors) function should be used
 -spec observe_dc(#descriptor{}, [node()]) -> ok | inter_dc_conn_err().
 observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}, Nodes) ->
     PartitionsNumLocal = dc_utilities:get_partitions_num(),
