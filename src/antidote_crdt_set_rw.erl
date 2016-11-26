@@ -37,6 +37,9 @@
 %%
 %% An element is in the set, if its set of tombstone-tokens is empty.
 %% An add-operation will remove the current tombstones of an element.
+%% 
+%% In this implementation of the RWSet, we remove entries for elements having no tokens
+%% (i.e. AddTokens == [] and RemoveTokens == [])
 
 %% @end
 -module(antidote_crdt_set_rw).
@@ -87,7 +90,7 @@ new() ->
 
 -spec value(set()) -> [member()].
 value(RWSet) ->
-  [Elem || {Elem, {AddTokens, []}} <- RWSet, AddTokens =/= []].
+  [Elem || {Elem, {_, []}} <- RWSet].
 
 -spec downstream(set_op(), set()) -> {ok, downstream_op()}.
 downstream({add, Elem}, RWSet) ->
