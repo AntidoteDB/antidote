@@ -29,6 +29,8 @@
 %% The name BigCounter has no semantic relation with the BigSet. It is only named this
 %% way because it potentially grows big and is not state efficient.
 
+-module(antidote_crdt_big_counter).
+
 -behaviour(antidote_crdt).
 
 -ifdef(TEST).
