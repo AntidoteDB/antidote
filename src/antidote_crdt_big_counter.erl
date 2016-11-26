@@ -19,10 +19,10 @@
 %% -------------------------------------------------------------------
 
 %% antidote_crdt_big_counter: A convergent, replicated, operation based Big Counter
-%% The state of this big counter is list of pairs where each pair is an integer 
+%% The state of this big counter is list of pairs where each pair is an integer
 %% and a related token.
 %% Basically when the counter recieves {incrment, N} or {decrement, N} it generates
-%% a pair {N, NewToken}. 
+%% a pair {N, NewToken}.
 %% On update, all seen tokens are removed and the new pair is then added to the state.
 %% This token keeps growing ("Big" Counter) but it useful as it allows the reset
 %% functionaility, On reset(), all seen tokens are removed.
