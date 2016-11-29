@@ -6,8 +6,9 @@ install:
   - make
   - ./rebar3 update
 script:
-  - make systests
+  - make test
   - make reltest
+  - make systests
 notifications:
   email: christopher.meiklejohn@gmail.com
 sudo: required
