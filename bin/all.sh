@@ -2,7 +2,7 @@
 
 export RELX_REPLACE_OS_VARS=true
 i=$1
-    ./bin/start_wombat.sh
+#    ./bin/start_wombat.sh
    echo "stopping Antidote nodes..."
    ./bin/stop-nodes.sh ${i}
       echo "cleanning old Antidote releases and building new ones..."
