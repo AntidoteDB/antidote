@@ -18,26 +18,26 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_big_counter).
+-module(prop_crdt_fat_counter).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_big_counter_spec/0, big_counter_op/0, big_counter_spec/1]).
+-export([prop_fat_counter_spec/0, fat_counter_op/0, fat_counter_spec/1]).
 
 
-prop_big_counter_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_big_counter, fun big_counter_op/0, fun big_counter_spec/1).
+prop_fat_counter_spec() ->
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_fat_counter, fun fat_counter_op/0, fun fat_counter_spec/1).
 
 
-big_counter_spec(Operations1) ->
+fat_counter_spec(Operations1) ->
   Operations = crdt_properties:filter_resets(Operations1),
   lists:sum([X || {_, {increment, X}} <- Operations])
     - lists:sum([X || {_, {decrement, X}} <- Operations]).
 
 % generates a random counter operation
-big_counter_op() ->
+fat_counter_op() ->
   oneof([
     {increment, integer()},
     {decrement, integer()},

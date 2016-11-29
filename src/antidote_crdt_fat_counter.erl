@@ -18,18 +18,16 @@
 %%
 %% -------------------------------------------------------------------
 
-%% antidote_crdt_big_counter: A convergent, replicated, operation based Big Counter
-%% The state of this big counter is list of pairs where each pair is an integer
+%% antidote_crdt_fat_counter: A convergent, replicated, operation based Fat Counter
+%% The state of this fat counter is list of pairs where each pair is an integer
 %% and a related token.
 %% Basically when the counter recieves {incrment, N} or {decrement, N} it generates
 %% a pair {N, NewToken}.
 %% On update, all seen tokens are removed and the new pair is then added to the state.
-%% This token keeps growing ("Big" Counter) but it useful as it allows the reset
+%% This token keeps growing ("Fat" Counter) but it useful as it allows the reset
 %% functionaility, On reset(), all seen tokens are removed.
-%% The name BigCounter has no semantic relation with the BigSet. It is only named this
-%% way because it potentially grows big and is not state efficient.
 
--module(antidote_crdt_big_counter).
+-module(antidote_crdt_fat_counter).
 
 -behaviour(antidote_crdt).
 
@@ -59,7 +57,7 @@
       {integer(), uniqueToken()}
       | [uniqueToken()].
 
-%% @doc Create a new, empty big counter
+%% @doc Create a new, empty fat counter
 -spec new() -> state().
 new() ->
     [].
@@ -67,12 +65,12 @@ new() ->
 %% @doc The value of this counter is equal to the sum of all the values
 %% having tokens.
 -spec value(state()) -> integer().
-value(BigCounter) ->
-    lists:sum([V || {V, _} <- BigCounter]).
+value(FatCounter) ->
+    lists:sum([V || {V, _} <- FatCounter]).
 
 
 -spec downstream(op(), state()) -> {ok, effect()}.
-downstream(Op, BigCtr) ->
+downstream(Op, FatCtr) ->
     Token = unique(),
     case Op of
         {increment, Value} when is_integer(Value) ->
@@ -80,7 +78,7 @@ downstream(Op, BigCtr) ->
         {decrement, Value} when is_integer(Value) ->
             {ok, {-Value, Token}};
         {reset, {}} ->
-            Overridden = [Tok || {_, Tok} <- BigCtr],
+            Overridden = [Tok || {_, Tok} <- FatCtr],
             {ok, lists:sort(Overridden)}
     end.
 
@@ -90,32 +88,32 @@ unique() ->
 
 
 -spec update(effect(), state()) -> {ok, state()}.
-update({Value, Token}, BigCtr) ->
+update({Value, Token}, FatCtr) ->
     % insert new value
-    {ok, BigCtr ++ [{Value, Token}]};
-update(Overridden, BigCtr) ->
-  SortedBigCtr = lists:sort(fun({_, A}, {_, B}) -> A =< B end, BigCtr),
-  BigCtr2 = [{V, T} || {V, T} <- SortedBigCtr, not lists:member(T, Overridden)],
-  {ok, BigCtr2}.
+    {ok, FatCtr ++ [{Value, Token}]};
+update(Overridden, FatCtr) ->
+  SortedFatCtr = lists:sort(fun({_, A}, {_, B}) -> A =< B end, FatCtr),
+  FatCtr2 = [{V, T} || {V, T} <- SortedFatCtr, not lists:member(T, Overridden)],
+  {ok, FatCtr2}.
 
 -spec equal(state(), state()) -> boolean().
-equal(BigCtr1, BigCtr2) ->
-    BigCtr1 == BigCtr2.
+equal(FatCtr1, FatCtr2) ->
+    FatCtr1 == FatCtr2.
 
 -define(TAG, 85).
 -define(V1_VERS, 1).
 
 -spec to_binary(state()) -> binary().
-to_binary(BigCtr) ->
-    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(BigCtr))/binary>>.
+to_binary(FatCtr) ->
+    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(FatCtr))/binary>>.
 
 %% @doc Decode binary
 -spec from_binary(binary()) -> {ok, state()} | {error, term()}.
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     {ok, riak_dt:from_binary(Bin)}.
 
-is_bottom(BigCtr) ->
-  BigCtr == new().
+is_bottom(FatCtr) ->
+  FatCtr == new().
 
 %% @doc The following operation verifies
 %%      that Operation is supported by this particular CRDT.
@@ -140,22 +138,22 @@ new_test() ->
 
 %% @doc test the correctness of increment without parameter.
 update_increment_test() ->
-    BigCnt0 = new(),
-    {ok, Increment1} = downstream({increment, 5}, BigCnt0),
-    {ok, BigCnt1} = update(Increment1, BigCnt0),
-    {ok, Decrement1} = downstream({decrement, 2}, BigCnt1),
-    {ok, BigCnt2} = update(Decrement1, BigCnt1),
-    {ok, Increment2} = downstream({increment, 1}, BigCnt2),
-    {ok, BigCnt3} = update(Increment2, BigCnt2),
-    {ok, Reset1} = downstream({reset, {}}, BigCnt3),
-    {ok, BigCnt4} = update(Reset1, BigCnt3),
-    {ok, Decrement2} = downstream({decrement, 2}, BigCnt4),
-    {ok, BigCnt5} = update(Decrement2, BigCnt4),
-    ?assertEqual(0, value(BigCnt0)),
-    ?assertEqual(5, value(BigCnt1)),
-    ?assertEqual(3, value(BigCnt2)),
-    ?assertEqual(4, value(BigCnt3)),
-    ?assertEqual(0, value(BigCnt4)),
-    ?assertEqual(-2, value(BigCnt5)).
+    FatCnt0 = new(),
+    {ok, Increment1} = downstream({increment, 5}, FatCnt0),
+    {ok, FatCnt1} = update(Increment1, FatCnt0),
+    {ok, Decrement1} = downstream({decrement, 2}, FatCnt1),
+    {ok, FatCnt2} = update(Decrement1, FatCnt1),
+    {ok, Increment2} = downstream({increment, 1}, FatCnt2),
+    {ok, FatCnt3} = update(Increment2, FatCnt2),
+    {ok, Reset1} = downstream({reset, {}}, FatCnt3),
+    {ok, FatCnt4} = update(Reset1, FatCnt3),
+    {ok, Decrement2} = downstream({decrement, 2}, FatCnt4),
+    {ok, FatCnt5} = update(Decrement2, FatCnt4),
+    ?assertEqual(0, value(FatCnt0)),
+    ?assertEqual(5, value(FatCnt1)),
+    ?assertEqual(3, value(FatCnt2)),
+    ?assertEqual(4, value(FatCnt3)),
+    ?assertEqual(0, value(FatCnt4)),
+    ?assertEqual(-2, value(FatCnt5)).
 
 -endif.
