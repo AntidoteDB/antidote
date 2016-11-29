@@ -5,7 +5,13 @@
 -define(PORT, 8087).
 
 load(Dep) ->
-    true = code:add_pathz(filename:dirname(escript:script_name()) ++ "/../_build/test/lib/" ++ Dep ++ "/ebin").
+    Path = filename:dirname(escript:script_name()) ++ "/../_build/test/lib/" ++ Dep ++ "/ebin",
+    case code:add_pathz(Path) of
+        true ->
+            true;
+        Err ->
+            erlang:error({could_not_load, Path, Err})
+    end.
 
 main(_) ->
     % load required code
