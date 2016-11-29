@@ -32,6 +32,9 @@ rel:
 relclean:
 	rm -rf _build/default/rel
 
+reltest: rel
+	test/release_test.sh
+
 relgentlerain: export TXN_PROTOCOL=gentlerain
 relgentlerain: relclean cleantests rel
 

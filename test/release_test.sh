@@ -10,8 +10,6 @@ popd > /dev/null
 
 
 cd $ROOT
-# make the release
-make rel
 
 # Start Antidote
 ./_build/default/rel/antidote/bin/env start
