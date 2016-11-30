@@ -41,7 +41,8 @@
   %%                 when the reply is sent
   %% %% auto_start_read_servers:
   %%        true -> read servers will start automatically. It should be set to true when Antidote will be run in a single node/machine.
-  %%        false -> read servers will not start automatically. It should be set to false when Antidote will be run in a cluster, and later on start them.
+  %%        false -> read servers will not start automatically. It should be set to false when many Antidote instances will be run in a cluster.
+  %%                 In this case, a inter_dc_manager:start_bg_processes(stable) needs to be issued per antidote instance after joining the cluster.
   {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
          {recover_meta_data_on_start, true}, {sync_log, false},
          %setting collect_metrics_staleness = true periodically calculates
