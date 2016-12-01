@@ -66,7 +66,7 @@ new() ->
 %% having tokens.
 -spec value(state()) -> integer().
 value(FatCounter) ->
-    lists:sum([V || {_, [V]} <- FatCounter]).
+    lists:sum([V || {_, V} <- FatCounter]).
 
 
 -spec downstream(op(), state()) -> {ok, effect()}.
@@ -89,7 +89,7 @@ unique() ->
 -spec update(effect(), state()) -> {ok, state()}.
 update({Token, Value}, FatCtr) ->
     % insert new value
-    {ok, orddict:append(Token, Value, FatCtr)};
+    {ok, orddict:store(Token, Value, FatCtr)};
 update(Overridden, FatCtr) ->
   {ok, apply_downstreams(Overridden, FatCtr)}.
 
