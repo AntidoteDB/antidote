@@ -48,25 +48,25 @@
         ]).
 
 -type uniqueToken() :: term().
--type state() :: [{integer(), uniqueToken()}].
+-type state() :: orddict:orddict(uniqueToken(), integer()).
 -type op() ::
     {increment, integer()}
     | {decrement, integer()}
     | {reset, {}}.
 -type effect() ::
-      {integer(), uniqueToken()}
+      {uniqueToken(), integer()}
       | [uniqueToken()].
 
 %% @doc Create a new, empty fat counter
 -spec new() -> state().
 new() ->
-    [].
+    orddict:new().
 
 %% @doc The value of this counter is equal to the sum of all the values
 %% having tokens.
 -spec value(state()) -> integer().
 value(FatCounter) ->
-    lists:sum([V || {V, _} <- FatCounter]).
+    lists:sum([V || {_, [V]} <- FatCounter]).
 
 
 -spec downstream(op(), state()) -> {ok, effect()}.
@@ -74,12 +74,11 @@ downstream(Op, FatCtr) ->
     Token = unique(),
     case Op of
         {increment, Value} when is_integer(Value) ->
-            {ok, {Value, Token}};
+            {ok, {Token, Value}};
         {decrement, Value} when is_integer(Value) ->
-            {ok, {-Value, Token}};
+            {ok, {Token, -Value}};
         {reset, {}} ->
-            Overridden = [Tok || {_, Tok} <- FatCtr],
-            {ok, lists:sort(Overridden)}
+            {ok, orddict:fetch_keys(FatCtr)}
     end.
 
 -spec unique() -> uniqueToken().
@@ -88,13 +87,26 @@ unique() ->
 
 
 -spec update(effect(), state()) -> {ok, state()}.
-update({Value, Token}, FatCtr) ->
+update({Token, Value}, FatCtr) ->
     % insert new value
-    {ok, FatCtr ++ [{Value, Token}]};
+    {ok, orddict:append(Token, Value, FatCtr)};
 update(Overridden, FatCtr) ->
-  SortedFatCtr = lists:sort(fun({_, A}, {_, B}) -> A =< B end, FatCtr),
-  FatCtr2 = [{V, T} || {V, T} <- SortedFatCtr, not lists:member(T, Overridden)],
-  {ok, FatCtr2}.
+  {ok, apply_downstreams(Overridden, FatCtr)}.
+
+%% @private apply a list of downstream ops to a given orset
+apply_downstreams([], FatCtr) ->
+  FatCtr;
+apply_downstreams(_Tokens, []) ->
+  [];
+apply_downstreams([Token1|TokensRest]=Tokens, [{Token2, Value2}|FatCtrRest]=FatCtr) ->
+  if
+    Token1 == Token2 ->
+      apply_downstreams(TokensRest, FatCtrRest);
+    Token1 > Token2 ->
+      [{Token2, Value2} | apply_downstreams(Tokens, FatCtrRest)];
+    true ->
+      apply_downstreams(TokensRest, FatCtr)
+  end.
 
 -spec equal(state(), state()) -> boolean().
 equal(FatCtr1, FatCtr2) ->
@@ -149,6 +161,11 @@ update_increment_test() ->
     {ok, FatCnt4} = update(Reset1, FatCnt3),
     {ok, Decrement2} = downstream({decrement, 2}, FatCnt4),
     {ok, FatCnt5} = update(Decrement2, FatCnt4),
+    io:format("FatCnt0 = ~p~n", [FatCnt0]),
+    io:format("Increment1 = ~p~n", [Increment1]),
+    io:format("FatCnt1 = ~p~n", [FatCnt1]),
+    io:format("Decrement1 = ~p~n", [Decrement1]),
+    io:format("FatCnt2 = ~p~n", [FatCnt2]),
     ?assertEqual(0, value(FatCnt0)),
     ?assertEqual(5, value(FatCnt1)),
     ?assertEqual(3, value(FatCnt2)),
