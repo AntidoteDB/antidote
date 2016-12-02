@@ -17,18 +17,31 @@ main(_) ->
     % load required code
     [load(Dep) || Dep <- ["riak_pb", "antidote_pb", "protobuffs"]],
 
-    Key = <<"release_test_key">>,
     {ok, Pid} = try_connect(10),
     % Try to read something:
+    ok = test_transaction(Pid, 20).
+
+test_transaction(Pid, Tries) ->
+    Key = <<"release_test_key">>,
     Bound_object = {Key, antidote_crdt_counter, <<"release_test_key_bucket">>},
-    {ok, Tx2} = antidotec_pb:start_transaction(Pid, ignore, {}),
-    {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx2),
-    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx2),
-    Value = antidotec_counter:value(Val),
-    true = Value >= 0,
-    _Disconnected = antidotec_pb_socket:stop(Pid),
-    io:format("Release is working!~n"),
-    ok.
+    io:format("Starting Test transaction~n"),
+    case antidotec_pb:start_transaction(Pid, ignore, {}) of
+        {error, Reason} when Tries > 0 ->
+            io:format("Could not start transaction: ~p~n", [Reason]),
+            timer:sleep(1000),
+            io:format("Retrying to start transaction ...~n"),
+            test_transaction(Pid, Tries - 1);
+        {ok, Tx} ->
+            io:format("Reading counter~n"),
+            {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx),
+            io:format("Commiting transaction~n"),
+            {ok, _} = antidotec_pb:commit_transaction(Pid, Tx),
+            Value = antidotec_counter:value(Val),
+            true = Value >= 0,
+            _Disconnected = antidotec_pb_socket:stop(Pid),
+            io:format("Release is working!~n"),
+            ok
+    end.
 
 try_connect(Tries) ->
      case antidotec_pb_socket:start(?ADDRESS, ?PORT) of
