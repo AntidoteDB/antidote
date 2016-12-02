@@ -33,14 +33,21 @@ test_transaction(Pid, Tries) ->
             test_transaction(Pid, Tries - 1);
         {ok, Tx} ->
             io:format("Reading counter~n"),
-            {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], Tx),
-            io:format("Commiting transaction~n"),
-            {ok, _} = antidotec_pb:commit_transaction(Pid, Tx),
-            Value = antidotec_counter:value(Val),
-            true = Value >= 0,
-            _Disconnected = antidotec_pb_socket:stop(Pid),
-            io:format("Release is working!~n"),
-            ok
+            case antidotec_pb:read_objects(Pid, [Bound_object], Tx) of
+                {error, Reason} when Tries > 0 ->
+                    io:format("Could not read Counter: ~p~n", [Reason]),
+                    timer:sleep(1000),
+                    io:format("Retrying to start transaction ...~n"),
+                    test_transaction(Pid, Tries - 1);
+                {ok, [Val]} ->
+                    io:format("Commiting transaction~n"),
+                    {ok, _} = antidotec_pb:commit_transaction(Pid, Tx),
+                    Value = antidotec_counter:value(Val),
+                    true = Value >= 0,
+                    _Disconnected = antidotec_pb_socket:stop(Pid),
+                    io:format("Release is working!~n"),
+                    ok
+            end
     end.
 
 try_connect(Tries) ->
