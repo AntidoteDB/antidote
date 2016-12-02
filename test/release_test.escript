@@ -27,7 +27,7 @@ main(_) ->
     Value = antidotec_counter:value(Val),
     true = Value >= 0,
     _Disconnected = antidotec_pb_socket:stop(Pid),
-    io:format("Release is working, counter = ~p!~n", [Value]),
+    io:format("Release is working!~n"),
     ok.
 
 try_connect(Tries) ->
