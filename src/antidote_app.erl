@@ -70,7 +70,7 @@ start(_StartType, _StartArgs) ->
                     %% start read servers
                     inter_dc_manager:start_bg_processes(stable);
                 _->
-                    dont_start_read_servers
+                    ok %dont_start_read_servers
             end,
             {ok, Pid};
         {error, Reason} ->
