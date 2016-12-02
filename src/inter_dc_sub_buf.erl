@@ -52,7 +52,7 @@ new_state(PDCID) ->
   pdcid = PDCID,
   last_observed_opid = init,
   queue = queue:new(),
-  logging_enabled=EnableLogging
+  logging_enabled = EnableLogging
 }.
 
 -spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #state{}) -> #state{}.
@@ -90,7 +90,7 @@ process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buff
   process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #state{queue = Queue, last_observed_opid = Last, logging_enabled=EnableLogging}) ->
+process_queue(State = #state{queue = Queue, last_observed_opid = Last, logging_enabled = EnableLogging}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
@@ -103,7 +103,7 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last, logging_e
           Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
           process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
 
-      %% If the transaction seems to come after an unknown transaction, ask the remote log
+      %% If the transaction seems to come after an unknown transaction, ask the remote origin log
         gt ->
 	        case EnableLogging of
 		        true ->
