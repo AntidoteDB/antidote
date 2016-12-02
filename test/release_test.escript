@@ -17,11 +17,11 @@ main(_) ->
     % load required code
     [load(Dep) || Dep <- ["riak_pb", "antidote_pb", "protobuffs"]],
 
-    {ok, Pid} = try_connect(10),
     % Try to read something:
-    ok = test_transaction(Pid, 20).
+    ok = test_transaction(20).
 
-test_transaction(Pid, Tries) ->
+test_transaction(Tries) ->
+    {ok, Pid} = try_connect(10),
     Key = <<"release_test_key">>,
     Bound_object = {Key, antidote_crdt_counter, <<"release_test_key_bucket">>},
     io:format("Starting Test transaction~n"),
@@ -30,7 +30,7 @@ test_transaction(Pid, Tries) ->
             io:format("Could not start transaction: ~p~n", [Reason]),
             timer:sleep(1000),
             io:format("Retrying to start transaction ...~n"),
-            test_transaction(Pid, Tries - 1);
+            test_transaction(Tries - 1);
         {ok, Tx} ->
             io:format("Reading counter~n"),
             case antidotec_pb:read_objects(Pid, [Bound_object], Tx) of
@@ -38,7 +38,7 @@ test_transaction(Pid, Tries) ->
                     io:format("Could not read Counter: ~p~n", [Reason]),
                     timer:sleep(1000),
                     io:format("Retrying to start transaction ...~n"),
-                    test_transaction(Pid, Tries - 1);
+                    test_transaction(Tries - 1);
                 {ok, [Val]} ->
                     io:format("Commiting transaction~n"),
                     {ok, _} = antidotec_pb:commit_transaction(Pid, Tx),
