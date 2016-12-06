@@ -62,33 +62,42 @@ all() -> [read_pncounter_log_recovery_test].
 read_pncounter_log_recovery_test(Config) ->    
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    Type = antidote_crdt_counter,
-    Key = log_value_test,
-    Obj = {Key, Type, bucket},
-    
-    {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
-    increment_counter(FirstNode, Obj, 15),
-    %% value from old snapshot is 0
-    {ok, [ReadResult1]} = rpc:call(FirstNode,
-        antidote, read_objects, [[Obj], TxId]),
-    ?assertEqual(0, ReadResult1),
-    %% read value in txn is 15
-    {ok, [ReadResult2], CommitTime} = rpc:call(FirstNode,
-        antidote, read_objects, [ignore, [], [Obj]]),
 
-    ?assertEqual(15, ReadResult2),
+    case rpc:call(FirstNode, application, get_env, [antidote, enable_logging]) of
+        {ok, false} ->
+            pass;
+        _ ->
+            Type = antidote_crdt_counter,
+            Key = log_value_test,
+            Obj = {Key, Type, bucket},
 
-    lager:info("Killing and restarting the nodes"),
-    %% Shut down the nodes
-    Nodes = test_utils:kill_and_restart_nodes(Nodes,Config),
-    lager:info("Vnodes are started up"),
-    lager:info("Nodes: ~p", [Nodes]),
+            {ok, TxId} = rpc:call(FirstNode, antidote, start_transaction, [ignore, []]),
+            increment_counter(FirstNode, Obj, 15),
+            %% value from old snapshot is 0
+            {ok, [ReadResult1]} = rpc:call(FirstNode,
+                antidote, read_objects, [[Obj], TxId]),
+            ?assertEqual(0, ReadResult1),
+            %% read value in txn is 15
+            {ok, [ReadResult2], CommitTime} = rpc:call(FirstNode,
+                antidote, read_objects, [ignore, [], [Obj]]),
 
-    %% Read the value again
-    {ok, [ReadResult3], _CT} = rpc:call(FirstNode, antidote, read_objects,
-             [CommitTime, [], [Obj]]),
-    ?assertEqual(15, ReadResult3),
-    lager:info("read_pncounter_log_recovery_test finished").
+            ?assertEqual(15, ReadResult2),
+
+            lager:info("Killing and restarting the nodes"),
+            %% Shut down the nodes
+            Nodes = test_utils:kill_and_restart_nodes(Nodes,Config),
+            lager:info("Vnodes are started up"),
+            lager:info("Nodes: ~p", [Nodes]),
+
+            %% Read the value again
+            {ok, [ReadResult3], _CT} = rpc:call(FirstNode, antidote, read_objects,
+                [CommitTime, [], [Obj]]),
+            ?assertEqual(15, ReadResult3),
+            lager:info("read_pncounter_log_recovery_test finished"),
+            pass
+    end.
+
+
 
 %% Auxiliary method o increment a counter N times.
 increment_counter(_FirstNode, _Key, 0) ->
