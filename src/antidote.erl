@@ -128,7 +128,7 @@ read_objects(BoundObjects, TxId) ->
                  end
     end.
 
--spec update_objects([{bound_object(), op_name(), op_param()}], txid())
+-spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
     {_, _, CoordFsmPid} = TxId,
@@ -147,12 +147,12 @@ update_objects(Updates, TxId) ->
     end.
 
 %% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}]) ->
+-spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}]) ->
                             {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
 
--spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}], boolean()) ->
+-spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}], boolean()) ->
     {ok, snapshot_time()} | {error, reason()}.
 update_objects(_Clock, _Properties, [], _StayAlive) ->
     {ok, vectorclock:new()};
@@ -166,7 +166,7 @@ update_objects(ClientCausalVC, _Properties, Updates, StayAlive) ->
 
 %% @doc The following function is called by the static versions of read and update_objects
 %%      to execute a static transaction.
--spec start_static_transaction(update_objects | read_objects, list(), boolean(), vectorclock()) -> {ok, vectorclock()} | {error, reason()}.
+-spec start_static_transaction(update_objects | read_objects, list(), boolean(), vectorclock()) -> {ok, snapshot_time()} | {error, reason()}.
 start_static_transaction(TransactionKind, ListOfOperations, StayAlive, ClientCausalVC) ->
             TxPid = case StayAlive of
                 true ->
@@ -194,14 +194,14 @@ start_static_transaction(TransactionKind, ListOfOperations, StayAlive, ClientCau
 %% some systests that call updates with
 %% {Operation, Params} (as a single parameter),
 %% and Operation, Params (two separate parameters).
--spec check_and_format_ops([{key(), type(), bucket(), op(), op_param()} | {key(), type(), bucket(), {op(), op_param()}}]) ->
-                                [{{key(), bucket()}, type(), {op(), op_param()}}] | {error, reason()}.
+-spec check_and_format_ops([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(),op_param()}}]) ->
+                                [{{key(), bucket()}, type(), {op_name(), op_param()}}] | {error, reason()}.
 check_and_format_ops(Updates) ->
     try
         lists:map(fun(Update) ->
             {Key, Type, Bucket, Op} = case Update of
-                {{K, T, B}, O} ->
-                    {K, T, B, O};
+                {{K, T, B}, {O, P}} ->
+                    {K, T, B, {O, P}};
                 {{K, T, B}, O, P} ->
                     {K, T, B, {O, P}}
             end,
