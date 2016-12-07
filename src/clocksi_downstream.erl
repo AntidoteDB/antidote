@@ -21,27 +21,36 @@
 
 -include("antidote.hrl").
 
--export([generate_downstream_op/6]).
+-export([generate_downstream_op/7]).
 
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
 -spec generate_downstream_op(Transaction :: tx(), Node :: index_node(), Key :: key(),
-    Type :: type(), Update :: op_param(), list()) ->
+  Type :: type(), Update :: op_param(), list(), orddict:orddict()) ->
     {ok, op()} | {error, atom()}.
-generate_downstream_op(Transaction, Node, Key, Type, Update, WriteSet) ->
-    %% TODO: Check if read can be omitted for some types and ops
-    case clocksi_vnode:read_data_item(Node,
-                                      Transaction,
-                                      Key,
-                                      Type,
-                                      WriteSet) of
-        {ok, Snapshot} ->
+generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, InternalReadSet) ->
+    %% TODO: Check if read can be omitted for some types as registers
+    Result=case orddict:find(Key, InternalReadSet) of
+        {ok, S}->
+            S;
+        error->
+            case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+                {ok, S}->
+                    S;
+                {error, Reason}->
+                    {error, Reason}
+            end
+    end,
+    case Result of
+        {error, R}->
+            {error, R}; %% {error, Reason} is returned here.
+        Snapshot->
             case Type of
-                antidote_crdt_bcounter -> %% bcounter data-type.
-                    bcounter_mgr:generate_downstream(Key,Update,Snapshot);
-                _ ->
+                antidote_crdt_bcounter->
+                    %% bcounter data-type.
+                    bcounter_mgr:generate_downstream(Key, Update, Snapshot);
+                _->
                     Type:downstream(Update, Snapshot)
-            end;
-        {error, Reason} -> {error, Reason}
+            end
     end.

@@ -143,7 +143,7 @@
 
 -record(transaction, {snapshot_time :: clock_time(),
                       vec_snapshot_time :: snapshot_time(),
-		      properties :: txn_properties(),
+		                  properties :: txn_properties(),
                       txn_id :: txid()}).
 
 -record(materialized_snapshot, {last_op_id :: op_num(),  %% This is the opid of the latest op in the list
@@ -205,7 +205,7 @@
 %%----------------------------------------------------------------------
 
 -record(tx_coord_state, {
-          from :: undefined | {pid(), term()},
+          from :: undefined | {pid(), term()} | pid(),
           transaction :: undefined | tx(),
           updated_partitions :: list(),
           client_ops :: list(), % list of upstream updates, used for post commit hooks
@@ -216,12 +216,13 @@
           commit_protocol :: term(),
           state :: active | prepared | committing | committed | undefined
                  | aborted | committed_read_only,
-          operations :: undefined | list(),
-          read_set :: list(),
+          operations :: undefined | list() | {update_objects, list()},
+          return_accumulator :: list() | ok | {error, reason()},
+          internal_read_set :: orddict:orddict(),
           is_static :: boolean(),
           full_commit :: boolean(),
-	  properties :: txn_properties(),
-	  stay_alive :: boolean()}).
+	        properties :: txn_properties(),
+	        stay_alive :: boolean()}).
 
 %% The record is using during materialization to keep the
 %% state needed to materilze an object from the cache (or log)

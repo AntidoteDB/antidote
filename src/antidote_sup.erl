@@ -24,7 +24,9 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         start_metrics_collection/0
+        ]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -40,6 +42,15 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+%% Stats collector is not started with the supervisor. It has to be explicitly started
+start_metrics_collection() ->
+     StatsCollector = {
+                        antidote_stats_collector,
+                        {antidote_stats_collector, start_link, []},
+                        permanent, 5000, worker, [antidote_stats_collector]
+                      },
+    supervisor:start_child(?MODULE, StatsCollector).
+
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
@@ -52,10 +63,6 @@ init(_Args) ->
     ClockSIMaster = { clocksi_vnode_master,
                       {riak_core_vnode_master, start_link, [clocksi_vnode]},
                       permanent, 5000, worker, [riak_core_vnode_master]},
-
-    ClockSIsTxCoordSup =  { clocksi_static_tx_coord_sup,
-                           {clocksi_static_tx_coord_sup, start_link, []},
-                           permanent, 5000, supervisor, [clockSI_static_tx_coord_sup]},
 
     ClockSIiTxCoordSup =  { clocksi_interactive_tx_coord_sup,
                             {clocksi_interactive_tx_coord_sup, start_link, []},
@@ -106,7 +113,6 @@ init(_Args) ->
      {{one_for_one, 5, 10},
       [LoggingMaster,
        ClockSIMaster,
-       ClockSIsTxCoordSup,
        ClockSIiTxCoordSup,
        ClockSIReadSup,
        MaterializerMaster,

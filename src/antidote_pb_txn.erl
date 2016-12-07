@@ -77,7 +77,7 @@ process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
 		     {} -> [];
 		     Prop -> Prop
 		 end,
-    Response = antidote:start_transaction(Clock, Properties, true),
+    Response = antidote:start_transaction(Clock, Properties, false),
     case Response of
         {ok, TxId} ->
             {reply, antidote_pb_codec:encode(start_transaction_response,
@@ -167,7 +167,7 @@ process(#apbstaticupdateobjects{
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
-    Response = antidote:update_objects(Clock, Properties, Updates, true),
+    Response = antidote:update_objects(Clock, Properties, Updates, false),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
@@ -191,7 +191,7 @@ process(#apbstaticreadobjects{
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-    Response = antidote:read_objects(Clock, Properties, Objects, true),
+    Response = antidote:read_objects(Clock, Properties, Objects, false),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,

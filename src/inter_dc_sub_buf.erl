@@ -35,12 +35,15 @@
 %%%% API --------------------------------------------------------------------+
 
 -spec new_state(pdcid()) -> #inter_dc_sub_buf{}.
-new_state(PDCID) -> #inter_dc_sub_buf{
-  state_name = normal,
-  pdcid = PDCID,
-  last_observed_opid = init,
-  queue = queue:new()
-}.
+new_state(PDCID) -> 
+  {ok, EnableLogging} = application:get_env(antidote, enable_logging),
+  #inter_dc_sub_buf{
+    state_name = normal,
+    pdcid = PDCID,
+    last_observed_opid = init,
+    queue = queue:new(),
+    logging_enabled = EnableLogging
+  }.
 
 -spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #inter_dc_sub_buf{}) -> #inter_dc_sub_buf{}.
 process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid = {DCID, Partition}}) ->
@@ -77,7 +80,7 @@ process({log_reader_resp, Txns}, State = #inter_dc_sub_buf{queue = Queue, state_
   process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last}) ->
+process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last, logging_enabled = EnableLogging}) ->
   case queue:peek(Queue) of
     empty -> State#inter_dc_sub_buf{state_name = normal};
     {value, Txn} ->
@@ -90,22 +93,30 @@ process_queue(State = #inter_dc_sub_buf{queue = Queue, last_observed_opid = Last
           Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
           process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max});
 
-      %% If the transaction seems to come after an unknown transaction, ask the remote log
+      %% If the transaction seems to come after an unknown transaction, ask the remote origin log
         gt ->
-          lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-		     [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
-          case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
-            ok ->
-              State#inter_dc_sub_buf{state_name = buffering};
-            _ ->
-              lager:warning("Failed to send log query to DC, will retry on next ping message"),
-              State#inter_dc_sub_buf{state_name = normal}
-          end;
+        case EnableLogging of
+          true ->
+            lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
+		          [TxnLast, Last, State#inter_dc_sub_buf.pdcid]),
+            case query(State#inter_dc_sub_buf.pdcid, State#inter_dc_sub_buf.last_observed_opid + 1, TxnLast) of
+              ok ->
+                State#inter_dc_sub_buf{state_name = buffering};
+              _  ->
+                lager:warning("Failed to send log query to DC, will retry on next ping message"),
+                State#inter_dc_sub_buf{state_name = normal}
+            end;
+	          false -> %% we deliver the transaction as we can't ask anything to the remote log
+			             %% as logging to disk is disabled.
+			        deliver(Txn),
+			        Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
+			        process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue), last_observed_opid = Max})
+	        end;
 
       %% If the transaction has an old value, drop it.
         lt ->
-	      lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
-	      process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
+	        lager:warning("Dropping duplicate message ~w, last time was ~w", [Txn, Last]),
+	        process_queue(State#inter_dc_sub_buf{queue = queue:drop(Queue)})
       end
   end.
 

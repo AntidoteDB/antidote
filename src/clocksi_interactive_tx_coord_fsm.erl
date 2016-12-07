@@ -53,7 +53,8 @@
 -export([start_link/2,
          start_link/1,
          start_link/3,
-         start_link/4]).
+         start_link/4,
+         start_link/5]).
 
 %% Callbacks
 -export([init/1,
@@ -69,9 +70,12 @@
     start_tx/2,
     init_state/4,
     get_snapshot_time/0,
-    perform_update/5,
+    perform_update/6,
     perform_read/4,
+    execute_op/2,
     execute_op/3,
+    receive_read_objects_result/2,
+    receive_logging_responses/2,
     finish_op/3,
     prepare/1,
     prepare_2pc/1,
@@ -86,30 +90,41 @@
     abort/1,
     abort/2,
     perform_singleitem_read/4,
-    perform_singleitem_get/4,
     perform_singleitem_update/5,
+    perform_singleitem_get/4,
     reply_to_client/1,
-    wait_for_clock/1,
     generate_name/1]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
+-spec start_link(pid(), clock_time() | ignore, txn_properties(), boolean(), [op_param()]) -> {ok, pid()}.
+start_link(From, Clientclock, Properties, StayAlive, Operations) ->
+    case StayAlive of
+        true ->
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Properties, StayAlive, Operations], []);
+        false ->
+            gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive, Operations], [])
+    end.
+-spec start_link(pid(), clock_time() | ignore, txn_properties(), boolean()) -> {ok, pid()}.
 start_link(From, Clientclock, Properties, StayAlive) ->
     case StayAlive of
-	true ->
-	    gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Properties, StayAlive], []);
-	false ->
-	    gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive], [])
+        true ->
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Properties, StayAlive], []);
+        false ->
+            gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive], [])
     end.
 
+-spec start_link(pid(), clock_time() | ignore) -> {ok, pid()}.
 start_link(From, Clientclock) ->
     start_link(From, Clientclock, antidote:get_default_txn_properties()).
 
-start_link(From,Clientclock,Properties) ->
-    start_link(From,Clientclock,Properties,false).
+-spec start_link(pid(), clock_time() | ignore, txn_properties()) -> {ok, pid()}.
+start_link(From, Clientclock, Properties) ->
+    start_link(From, Clientclock, Properties, false).
 
+-spec start_link(pid()) -> {ok, pid()}.
 start_link(From) ->
     start_link(From, ignore, antidote:get_default_txn_properties()).
 
@@ -124,7 +139,11 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 
 %% @doc Initialize the state.
 init([From, ClientClock, Properties, StayAlive]) ->
-    {ok, execute_op, start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, false, false, Properties))}.
+    {ok, execute_op, start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, false, false, Properties))};
+%% @doc Init static transaction with Operations.
+init([From, ClientClock, Properties, StayAlive, Operations]) ->
+    State = start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, true, true, Properties)),
+    {ok, execute_op, State#tx_coord_state{operations = Operations, from = From}, 0}.
 
 init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     #tx_coord_state{
@@ -138,7 +157,8 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
        from=undefined,
        full_commit=FullCommit,
        is_static=IsStatic,
-       read_set=[],
+       return_accumulator=[],
+       internal_read_set=orddict:new(),
        stay_alive = StayAlive,
        properties = Properties
       }.
@@ -147,17 +167,27 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
-start_tx({start_tx, From, ClientClock, Properties}, SD0) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, SD0)}.
+start_tx({start_tx, From, ClientClock, Properties}, SD) ->
+    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, SD)};
 
-start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive = StayAlive}) ->
+%% Used by static update and read transactions
+start_tx({start_tx, From, ClientClock, Properties, Operation}, SD) ->
+    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
+                                                SD#tx_coord_state{is_static = true, operations = Operation, from = From}), 0}.
+
+start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
     {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
-    From ! {ok, TransactionId},
-    SD#tx_coord_state{transaction=Transaction, num_to_read=0, properties = Properties}.
+    case IsStatic of
+        true ->
+            ok;
+        false ->
+            From ! {ok, TransactionId}
+    end,
+    SD#tx_coord_state{transaction = Transaction, num_to_read = 0, properties = Properties}.
 
--spec create_transaction_record(snapshot_time() | ignore,
-				boolean(), pid() | undefined, boolean(), Properties::txn_properties()) -> {tx(), txid()}.
-create_transaction_record(ClientClock, StayAlive, From, IsStatic, Properties) ->
+-spec create_transaction_record(snapshot_time() | ignore, 
+                                boolean(), pid() | undefined, boolean(), txn_properties()) -> {tx(), txid()}.
+create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
     {ok, SnapshotTime} = case ClientClock of
@@ -175,57 +205,53 @@ create_transaction_record(ClientClock, StayAlive, From, IsStatic, Properties) ->
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     Name = case StayAlive of
                true ->
-                   case IsStatic of
-                       true ->
-                           clocksi_static_tx_coord_fsm:generate_name(From);
-                       false ->
-                           generate_name(From)
-                   end;
+                   generate_name(From);
                false ->
                    self()
            end,
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
-			       vec_snapshot_time = SnapshotTime,
-			       txn_id = TransactionId,
-			       properties = Properties},
+        vec_snapshot_time = SnapshotTime,
+        txn_id = TransactionId,
+        properties = Properties},
     {Transaction, TransactionId}.
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(snapshot_time() | ignore, key(), type(), clocksi_readitem_fsm:read_property_list()) ->
-				     {ok, val(), snapshot_time()} | {error, reason()}.
+-spec perform_singleitem_read(snapshot_time() | ignore, key(), type(), clocksi_readitem_fsm:read_property_list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Clock, Key, Type, Properties) ->
     perform_singleitem_operation(Clock, Key,Type,object_value,Properties).
 
 %% @doc This is the same as perform_singleitem_read, except returns
 %%      the object state instead of its value
 -spec perform_singleitem_get(snapshot_time() | ignore, key(), type(), clocksi_readitem_fsm:read_property_list()) ->
-{ok, term(), snapshot_time()} | {error, reason()}.
+    {ok, term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_get(Clock, Key, Type, Properties) ->
     perform_singleitem_operation(Clock, Key,Type,object_state,Properties).
 
 -spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), object_state | object_value, clocksi_readitem_fsm:read_property_list()) ->
-					  {ok, val() | term(), snapshot_time()} | {error, reason()}.
+                    {ok, val() | term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
+    %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction, []) of
+    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction,[]) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
             ReadResult =
-		case ReturnType of
-		    object_state -> Snapshot;
-		    object_value -> Type:value(Snapshot)
-		end,
+              case ReturnType of
+                object_state -> Snapshot;
+                object_value -> Type:value(Snapshot)
+              end,
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
             {ok, ReadResult, CommitTime}
     end.
+
 
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
@@ -233,17 +259,18 @@ perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
 -spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
+    %OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, []) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, [],[]) of
                 {ok, DownstreamRecord} ->
                     Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
-					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
+                        log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
                     case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
@@ -296,11 +323,11 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
             end,
             {error, Reason};
         {ok, Snapshot} ->
-            Type:value(Snapshot)
+            Snapshot
     end.
 
 
-perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
+perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
     {Key, Type, Param} = Args,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
@@ -313,7 +340,7 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
         {Key, Type, Param1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet, InternalReadSet) of
                 {ok, DownstreamRecord} ->
                     NewUpdatedPartitions =
                         case WriteSet of
@@ -323,36 +350,14 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
                                 lists:keyreplace(IndexNode, 1, Updated_partitions,
                                                  {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
                         end,
-                    case Sender of
-                        undefined ->
-                            ok;
-                        _ ->
-                            gen_fsm:reply(Sender, ok)
-                    end,
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
-					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
+                        log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
-                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
-                        {ok, _} ->
-                            {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
-                        Error ->
-                            case Sender of
-                                undefined ->
-                                    ok;
-                                _ ->
-                                    _Res = gen_fsm:reply(Sender, {error, Error})
-                            end,
-                            {error, Error}
-                    end;
+                    ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, {fsm, undefined, self()}),
+                    {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
                 {error, Reason} ->
-                    case Sender of
-                        undefined ->
-                            ok;
-                        _ ->
-                            _Res = gen_fsm:reply(Sender, {error, Reason})
-                    end,
                     {error, Reason}
             end;
         {error, Reason} ->
@@ -363,10 +368,15 @@ perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
+%% update kept for backwards compatibility with tests.
+execute_op(timeout, State = #tx_coord_state{operations = Operations, from = From}) ->
+    execute_op(Operations, From, State).
+execute_op({update, Args}, Sender, SD0) ->
+    execute_op({update_objects, [Args]}, Sender, SD0);
+
 execute_op({OpType, Args}, Sender,
     SD0 = #tx_coord_state{transaction = Transaction,
-                          updated_partitions = Updated_partitions,
-                          client_ops = ClientOps
+                          updated_partitions = Updated_partitions
                          }) ->
     case OpType of
         prepare ->
@@ -377,25 +387,110 @@ execute_op({OpType, Args}, Sender,
                     prepare(SD0#tx_coord_state{from = Sender, commit_protocol = Args})
             end;
         read ->
-            case perform_read(Args, Updated_partitions, Transaction, Sender) of
+            {Key, Type} = Args,
+            case perform_read({Key, Type}, Updated_partitions, Transaction, Sender) of
                 {error, _Reason} ->
                     abort(SD0);
                 ReadResult ->
-                    {reply, {ok, ReadResult}, execute_op, SD0}
+                    InternalReadSet=orddict:store(Key, ReadResult, SD0#tx_coord_state.internal_read_set),
+                    {reply, {ok, Type:value(ReadResult)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
-        update ->
-            case perform_update(Args, Updated_partitions, Transaction, Sender, ClientOps) of
-                {error, _Reason} ->
-                    abort(SD0#tx_coord_state{from = Sender});
-                {NewUpdatedPartitions, NewClientOps} ->
-                    {next_state, execute_op,
-                        SD0#tx_coord_state{updated_partitions = NewUpdatedPartitions,
-                                          client_ops = NewClientOps}}
+        read_objects ->
+            ExecuteReads = fun({Key, Type}, Acc) ->
+                PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
+                IndexNode = hd(PrefList),
+                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                ReadSet = Acc#tx_coord_state.return_accumulator,
+                Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
+            end,
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
+            {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
+        update_objects ->
+            ExecuteUpdates =
+                fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps, internal_read_set=InternalReadSet}) ->
+                    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps, InternalReadSet) of
+                        {error, Reason} ->
+                            Acc#tx_coord_state{return_accumulator= {error, Reason}};
+                        {NewUpdatedPartitions, NewClientOps} ->
+                            NewNumToRead = Acc#tx_coord_state.num_to_read,
+                            Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
+                                updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
+                    end
+            end,
+            NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
+            case NewCoordState#tx_coord_state.num_to_read > 0 of
+                true ->
+                    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
+                false ->
+                    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
             end
     end.
 
 
-%% @doc this state sends a prepare message to all updated partitions and goes
+%% @doc This state reached after an execute_op(update_objects[Params]).
+%% update_objects calls the perform_update function, which asynchronously
+%% sends a log operation per update, to the vnode responsible of the updated
+%% key. After sending all those messages, the coordinator reaches this state
+%% to receive the responses of the vnodes.
+receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
+                            return_accumulator= ReturnAcc, is_static = IsStatic}) ->
+    NewAcc = case Response of
+        {error, Reason} -> {error, Reason};
+        {ok, _OpId} -> ReturnAcc;
+        timeout -> ReturnAcc
+    end,
+    case NumToReply > 1 of
+        false ->
+            case (NewAcc == ok) of
+                true ->
+                    case IsStatic of
+                        true ->
+                            prepare(S0);
+                        false ->
+                            gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
+                            {next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}}
+                    end;
+                false ->
+                    abort(S0)
+            end;
+        true ->
+            {next_state, receive_logging_responses,
+                S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
+    end.
+
+receive_read_objects_result({ok, {Key, Type, Snapshot}},
+  CoordState= #tx_coord_state{num_to_read = NumToRead,
+      return_accumulator= ReadSet,
+      internal_read_set = InternalReadSet}) ->
+            %%TODO: type is hard-coded..
+            SnapshotAfterMyUpdates = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
+            Value2 = Type:value(SnapshotAfterMyUpdates),
+            ReadSet1 = replace_first(ReadSet, Key, Value2),
+            NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
+            case NumToRead of
+                1 ->
+                    gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+                    {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+                _ ->
+                    {next_state, receive_read_objects_result,
+                        CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
+            end.
+
+%% The following function is used to apply the updates that were performed by the running
+%% transaction, to the result returned by a read.
+-spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, type(), snapshot()) -> snapshot().
+apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
+    Preflist=?LOG_UTIL:get_preflist_from_key(Key),
+    IndexNode=hd(Preflist),
+    case lists:keyfind(IndexNode, 1, CoordState#tx_coord_state.updated_partitions) of
+        false->
+            Snapshot;
+        {IndexNode, WS}->
+            FileteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
+            _SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
+    end.
+
+%% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
     transaction = Transaction, num_to_read=NumToRead,
@@ -427,7 +522,7 @@ prepare(SD0 = #tx_coord_state{
                 SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
 
-%% @doc state called when 2pc is forced independently of the number of partitions
+%% @doc function called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
 prepare_2pc(SD0 = #tx_coord_state{
     transaction = Transaction,
@@ -463,7 +558,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                     true ->
                         ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
                         {next_state, receive_committed,
-                            S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
+                            S0#tx_coord_state{num_to_ack = length(Updated_partitions), commit_time = MaxPrepareTime, state = committing}};
                     false ->
                         gen_fsm:reply(From, {ok, MaxPrepareTime}),
                         {next_state, committing_2pc,
@@ -474,7 +569,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                     true ->
                         ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, MaxPrepareTime),
                         {next_state, receive_committed,
-                            S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
+                            S0#tx_coord_state{num_to_ack = length(Updated_partitions), commit_time = MaxPrepareTime, state = committing}};
                     false ->
                         gen_fsm:reply(From, {ok, MaxPrepareTime}),
                         {next_state, committing,
@@ -558,7 +653,7 @@ committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
-%%	committed the tx and finishes operation.
+%%  committed the tx and finishes operation.
 %%      Should we retry sending the committed message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?
@@ -597,7 +692,7 @@ abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
-%%	aborted the tx and finishes operation.
+%%  aborted the tx and finishes operation.
 %%      Should we retry sending the aborted message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?
@@ -615,7 +710,7 @@ receive_aborted(_, S0) ->
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state
-                {from = From, transaction = Transaction, read_set = ReadSet,
+                {from = From, transaction = Transaction, return_accumulator= ReturnAcc,
                  state = TxState, commit_time = CommitTime,
                  full_commit = FullCommit,
                  is_static = IsStatic, stay_alive = StayAlive,
@@ -629,7 +724,7 @@ reply_to_client(SD = #tx_coord_state
                             false ->
                                 {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
                             true ->
-                                {ok, {TxId, lists:reverse(ReadSet), Transaction#transaction.vec_snapshot_time}}
+                                {ok, {TxId, ReturnAcc, Transaction#transaction.vec_snapshot_time}}
                         end;
                     committed ->
                         %% Execute post_commit_hooks
@@ -643,21 +738,26 @@ reply_to_client(SD = #tx_coord_state
                             false ->
                                 {ok, {TxId, CausalClock}};
                             true ->
-                                {ok, {TxId, lists:reverse(ReadSet), CausalClock}}
+                                {ok, CausalClock}
                         end;
                     aborted ->
-                        {aborted, TxId};
+                        {error, {aborted, TxId}};
                     Reason ->
                         {TxId, Reason}
                 end,
-            _Res = gen_fsm:reply(From, Reply);
+        case is_pid(From) of
+            false ->
+                _Res = gen_fsm:reply(From, Reply);
+            true ->
+                From ! Reply
+        end;
        true -> ok
     end,
     case StayAlive of
-	true ->
-	    {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, [])};
-	false ->
-	    {stop, normal, SD}
+        true ->
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, [])};
+        false ->
+            {stop, normal, SD}
     end.
 
 execute_post_commit_hooks(Ops) ->
@@ -723,6 +823,15 @@ wait_for_clock(Clock) ->
             wait_for_clock(Clock)
     end.
 
+%% Replaces the first occurrence of an entry;
+%% yields error if there the element to be replaced is not in the list
+replace_first([], _, _) ->
+    error;
+replace_first([Key|Rest], Key, NewKey) ->
+    [NewKey|Rest];
+replace_first([NotMyKey|Rest], Key, NewKey) ->
+    [NotMyKey|replace_first(Rest, Key, NewKey)].
+
 -ifdef(TEST).
 
 main_test_() ->
@@ -763,13 +872,13 @@ empty_prepare_test(Pid) ->
 timeout_test(Pid) ->
     fun() ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {timeout, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_abort_test(Pid) ->
     fun() ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_success_test(Pid) ->
@@ -783,7 +892,7 @@ update_multi_abort_test1(Pid) ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_abort_test2(Pid) ->
@@ -791,7 +900,7 @@ update_multi_abort_test2(Pid) ->
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
         ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+        ?assertMatch({error, {aborted , _}}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_success_test(Pid) ->
@@ -820,7 +929,7 @@ read_success_test(Pid) ->
 
 downstream_fail_test(Pid) ->
     fun() ->
-        ?assertEqual({error, mock_downstream_fail},
+        ?assertMatch({error, {aborted , _}},
             gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
