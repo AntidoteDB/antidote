@@ -29,61 +29,38 @@
 ]).
 
 
-%% This should be called like (e.g.): $join_cluster_script.erl 3 2, and will connect local releases antidote3 and antidote4
-main([local, NodeFrom, NodesNum]) ->
+%% This should be called like (e.g.): $join_dcs_script.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'
+main(ClusterHeadStrings) ->
     erlang:set_cookie(node(), antidote),
-    FromNode = list_to_integer(NodeFrom),
-    NumNodes = list_to_integer(NodesNum),
-    HostName = "127.0.0.1",
-    Node1 = list_to_atom("antidote1@"++HostName),
-    Node2 = list_to_atom("antidote2@"++HostName),
-    Node3 = list_to_atom("antidote3@"++HostName),
-    Node4 = list_to_atom("antidote4@"++HostName),
-    Node5 = list_to_atom("antidote5@"++HostName),
-    AllNodes = [Node1, Node2,
-            Node3, Node4, Node5],
-    Nodes = lists:sublist(AllNodes, FromNode, NumNodes),
-    io:format("~nSTARTING SCRIPT TO JOIN CLUSTER OF NODES:~n~p~n", [Nodes]),
-    join_cluster(Nodes),
-    io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
-    io:format("~nSUCCESS! Finished building cluster!~n");
 
 
-%% This should be called like (e.g.): $join_cluster_script.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'
-main(NodesListString) ->
-    erlang:set_cookie(node(), antidote),
-    Nodes =
+    ClusterHeads =
         try
             lists:foldl(fun(NodeString, Acc) ->
                 Node = list_to_atom(NodeString),
                 lists:append([Node], Acc)
-            end, [], NodesListString)
+            end, [], ClusterHeadStrings)
         catch
             _:_  ->
                 bad_input_format
         end,
-    case Nodes of
+    case ClusterHeads of
         bad_input_format ->
             usage();
         _->
-            io:format("~nSTARTING SCRIPT TO JOIN CLUSTER OF NODES:~n~p~n", [Nodes]),
-            lists:foreach(fun (Node) -> erlang:set_cookie(Node, antidote) end, Nodes),
-            join_cluster(Nodes),
-            io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
-            io:format("~nSUCCESS! Finished building cluster!~n")
+            io:format("~nSTARTING SCRIPT TO JOIN DCs OF NODES:~n~p~n", [ClusterHeads]),
+            connect_cluster(ClusterHeads),
+            io:format("~nSuccesfully connected clusters: ~w~n", [ClusterHeads]),
+            io:format("~nSUCCESS! Finished connecting DC clusters!~n")
     end.
 
 usage() ->
-    io:format("This should be called like (e.g.): $join_cluster_script.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'"),
+    io:format("This should be called like (e.g.): $join_dcs_script.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'"),
     halt(1).
 
 -include_lib("eunit/include/eunit.hrl").
 
 %%-compile({parse_transform, lager_transform}).
-
-
-
-
 
 
 at_init_testsuite() ->
