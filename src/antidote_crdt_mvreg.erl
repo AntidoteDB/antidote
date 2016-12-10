@@ -160,8 +160,6 @@ reset_test() ->
     R3 = upd({reset, {}}, R2),
     ?assertEqual([], value(R3)),
     ?assertEqual(true, is_bottom(R3)).
-    
-
 
 
 -endif.

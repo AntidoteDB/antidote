@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_map_x).
+-module(prop_crdt_map_rr).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
