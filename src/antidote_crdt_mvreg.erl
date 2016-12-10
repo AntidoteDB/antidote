@@ -44,7 +44,8 @@
           to_binary/1,
           from_binary/1,
           is_operation/1,
-          require_state_downstream/1
+          require_state_downstream/1,
+          is_bottom/1
         ]).
 
 
@@ -136,12 +137,31 @@ is_operation(_) -> false.
 require_state_downstream(_) ->
      true.
 
+is_bottom(State) -> State == new().
 
 
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+
+upd(Update, State) ->
+    {ok, Downstream} = downstream(Update, State),
+    {ok, Res} = update(Downstream, State),
+    Res.
+
+reset_test() ->
+    R1 = new(),
+    ?assertEqual([], value(R1)),
+    ?assertEqual(true, is_bottom(R1)),
+    R2 = upd({assign, <<"a">>}, R1),
+    ?assertEqual([<<"a">>], value(R2)),
+    ?assertEqual(false, is_bottom(R2)),
+    R3 = upd({reset, {}}, R2),
+    ?assertEqual([], value(R3)),
+    ?assertEqual(true, is_bottom(R3)).
+    
+
 
 
 -endif.
