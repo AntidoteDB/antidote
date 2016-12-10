@@ -27,7 +27,7 @@
 -export([prop_map_spec/0]).
 
 prop_map_spec() ->
- crdt_properties:crdt_satisfies_partial_spec(antidote_crdt_map_x, fun op/0, fun spec/2).
+ crdt_properties:crdt_satisfies_partial_spec(antidote_crdt_map_rr, fun op/0, fun spec/2).
 
 
 spec(Operations1, Value) ->
@@ -43,7 +43,7 @@ spec(Operations1, Value) ->
           io:format("Operations = ~p~n", [Operations]),
           io:format("GroupedByKey = ~p~n", [GroupedByKey])
         end,
-        nestedSpec(Type, Ops, antidote_crdt_map_x:get({Key,Type}, Value))
+        nestedSpec(Type, Ops, antidote_crdt_map_rr:get({Key,Type}, Value))
       )
     end,
   conjunction(
@@ -65,7 +65,7 @@ nestedOps(Operations, {_,Type}=Key) ->
     end,
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
-nestedSpec(antidote_crdt_map_x, Ops, Value) -> spec(Ops, Value);
+nestedSpec(antidote_crdt_map_rr, Ops, Value) -> spec(Ops, Value);
 % nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
 % nestedSpec(antidote_crdt_big_counter, Ops) -> prop_crdt_big_counter:big_counter_spec(Ops);
 nestedSpec(antidote_crdt_set_rw, Ops, Value) ->
@@ -121,7 +121,7 @@ nestedOp(Size) ->
     ++
     if
       Size > 1 ->
-        [{{key(), antidote_crdt_map_x}, ?LAZY(op(Size div 2))}];
+        [{{key(), antidote_crdt_map_rr}, ?LAZY(op(Size div 2))}];
       true -> []
     end
     ).
@@ -129,7 +129,7 @@ nestedOp(Size) ->
 typed_key() -> {key(), crdt_type()}.
 
 crdt_type() ->
-  oneof([antidote_crdt_set_rw, antidote_crdt_map_x]).
+  oneof([antidote_crdt_set_rw, antidote_crdt_map_rr]).
 
 key() ->
   oneof([key1,key2,key3,key4]).
