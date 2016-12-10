@@ -37,6 +37,9 @@
 %%
 %% An element is in the set, if its set of tombstone-tokens is empty.
 %% An add-operation will remove the current tombstones of an element.
+%%
+%% In this implementation of the RWSet, we remove entries for elements having no tokens
+%% (i.e. AddTokens == [] and RemoveTokens == [])
 
 %% @end
 -module(antidote_crdt_set_rw).
@@ -51,6 +54,7 @@
           to_binary/1,
           from_binary/1,
           is_operation/1,
+          is_bottom/1,
           require_state_downstream/1
         ]).
 
@@ -86,7 +90,7 @@ new() ->
 
 -spec value(set()) -> [member()].
 value(RWSet) ->
-  [Elem || {Elem, {AddTokens, []}} <- RWSet, AddTokens =/= []].
+  [Elem || {Elem, {_, []}} <- RWSet].
 
 -spec downstream(set_op(), set()) -> {ok, downstream_op()}.
 downstream({add, Elem}, RWSet) ->
@@ -144,7 +148,9 @@ unique() ->
 
 -spec update(downstream_op(), set()) -> {ok, set()}.
   update(DownstreamOp, RWSet) ->
-    {ok, apply_downstreams(DownstreamOp, RWSet)}.
+    RWSet1 = apply_downstreams(DownstreamOp, RWSet),
+    RWSet2 = [Entry || {_, {AddTokens, RemoveTokens}} = Entry <- RWSet1, AddTokens =/= [] orelse RemoveTokens =/= []],
+    {ok, RWSet2}.
 
 %% @private apply a list of downstream ops to a given orset
 apply_downstreams([], RWSet) ->
@@ -192,6 +198,9 @@ is_operation({remove, _Elem}) ->
 is_operation({remove_all, L}) when is_list(L) -> true;
 is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
+
+is_bottom(RWSet) ->
+  RWSet == new().
 
 require_state_downstream(_) -> true.
 
@@ -368,5 +377,24 @@ prop4_test() ->
   ?assertEqual([a], value(Set2a)),
   ?assertEqual([], value(Set3a)),
   ?assertEqual([a], value(Set2b)).
+
+  prop5_test() ->
+  Set0 = new(),
+  % DC2 add a
+  {ok, Add2Effect} = downstream({add, a}, Set0),
+  {ok, Set2a} = update(Add2Effect, Set0),
+  % DC3 reset
+  {ok, Reset2Effect} = downstream({reset, {}}, Set2a),
+  {ok, Set2b} = update(Reset2Effect, Set2a),
+
+  io:format("Reset2Effect = ~p~n", [Reset2Effect]),
+  io:format("Add2Effect = ~p~n", [Add2Effect]),
+
+  io:format("Set2a = ~p~n", [Set2a]),
+  io:format("Set2b = ~p~n", [Set2b]),
+
+  ?assertEqual([a], value(Set2a)),
+  ?assertEqual([], Set2b),
+  ?assertEqual([], value(Set2b)).
 
 -endif.
