@@ -303,10 +303,10 @@ reset2_test() ->
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [a]}], value(Map1a)),
-  ?assertEqual([{{s,antidote_crdt_set_rw},[]}], value(Map1b)),
+  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1b)),
   ?assertEqual([], value(Map2a)),
-  ?assertEqual([{{s,antidote_crdt_set_rw},[]}], value(Map1c)),
-  ?assertEqual([{{s,antidote_crdt_set_rw},[]}], value(Map1d)),
+  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1c)),
+  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1d)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [b]}], value(Map1e)).
 
 prop1_test() ->
