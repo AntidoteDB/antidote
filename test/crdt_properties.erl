@@ -25,7 +25,14 @@
 
 
 
--export([crdt_satisfies_spec/3, clock_le/2, subcontext/2, filter_resets/1]).
+-export([
+  crdt_satisfies_spec/3,
+  crdt_satisfies_partial_spec/3,
+  spec_to_partial/1,
+  clock_le/2,
+  subcontext/2,
+  filter_resets/1
+]).
 
 -export_type([clocked_operation/0]).
 
@@ -51,11 +58,22 @@
 %% this checks whether the implementation satisfies a given CRDT specification
 %% Crdt: module name of the CRDT to test
 %% OperationGen: proper generator for generating a single random CRDT operation
-%% Spec: A function which takes a list of {Clock,Operation} pairs. The clock can be used to determine the happens-before relation between operations
+%% Spec: A function which takes a list of {Clock,Operation} pairs and returns the expected value of the CRDT.
+%% The clock can be used to determine the happens-before relation between operations
 -spec crdt_satisfies_spec(atom(), fun(() -> proper_types:raw_type()), fun(([clocked_operation()]) -> term())) -> proper:forall_clause().
 crdt_satisfies_spec(Crdt, OperationGen, Spec) ->
   ?FORALL(Ops, generateOps(OperationGen),
       checkSpec(Crdt, Ops, Spec)
+    ).
+
+%% this checks whether the implementation satisfies a given partial CRDT specification
+%% Crdt: module name of the CRDT to test
+%% OperationGen: proper generator for generating a single random CRDT operation
+%% Spec: A function which takes a list of {Clock,Operation} pairs and the value of the CRDT and checks some relation between them.
+-spec crdt_satisfies_partial_spec(atom(), fun(() -> proper_types:raw_type()), fun(([clocked_operation()], term()) -> proper:test())) -> proper:forall_clause().
+crdt_satisfies_partial_spec(Crdt, OperationGen, Spec) ->
+  ?FORALL(Ops, generateOps(OperationGen),
+      checkPartialSpec(Crdt, Ops, Spec)
     ).
 
 
@@ -88,9 +106,26 @@ filter_resets(Operations) ->
     % such that no reset comes after the operation
     [] == [ResetClock || ResetClock <- ResetClocks, clock_le(Clock, ResetClock)]].
 
-
 % executes/checks the specification
 checkSpec(Crdt, Ops, Spec) ->
+  checkPartialSpec(Crdt, Ops, spec_to_partial(Spec)).
+
+% converts a full specification (returning a CRDT value) to a partial specification
+-spec spec_to_partial(fun(([clocked_operation()]) -> term())) -> fun(([clocked_operation()], term()) -> proper:test()).
+spec_to_partial(Spec) ->
+  fun(Operations, RValue) ->
+    SpecValue = Spec(Operations),
+    ?WHENFAIL(
+      begin
+        io:format("Expected value: ~p~n", [SpecValue]),
+        io:format("Actual value  : ~p~n", [RValue])
+      end,
+      SpecValue == RValue
+    )
+  end.
+
+% executes/checks the specification
+checkPartialSpec(Crdt, Ops, Spec) ->
   % check that the CRDT is registered:
   true = antidote_crdt:is_type(Crdt),
   % check that all generated operatiosn are valid:
@@ -119,15 +154,11 @@ checkSpecEnd(Crdt, Spec, EndState, R) ->
     {Clock, Op} <- (maps:get(Replica, EndState))#test_replica_state.operations,
     clock_le(Clock, RClock)],
 
-  SpecValue = Spec(VisibleOperations),
   ?WHENFAIL(
     begin
-%%      printState(EndState),
-      io:format("Reading value on ~p~n", [R]),
-      io:format("Expected value: ~p~n", [SpecValue]),
-      io:format("Actual value  : ~p~n", [RValue])
+      io:format("Checking value on ~p~n", [R])
     end,
-    SpecValue == RValue
+    Spec(VisibleOperations, RValue)
   ).
 
 
