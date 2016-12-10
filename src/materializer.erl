@@ -92,7 +92,7 @@ update_pncounter_test() ->
     Type = antidote_crdt_counter,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
-    Op = {increment, 1},
+    Op = 1,
     {ok, Counter2} = update_snapshot(Type, Counter, Op),
     ?assertEqual(1, Type:value(Counter2)).
 
@@ -101,10 +101,10 @@ materializer_counter_withlog_test() ->
     Type = antidote_crdt_counter,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
-    Ops = [{increment, 1},
-           {increment, 1},
-           {increment, 2},
-           {increment, 3}
+    Ops = [1,
+           1,
+           2,
+           3
           ],
     Counter2 = materialize_eager(Type, Counter, Ops),
     ?assertEqual(7, Type:value(Counter2)).
