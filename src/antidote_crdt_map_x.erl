@@ -229,13 +229,13 @@ is_bottom(Map) ->
 reset1_test() ->
   Map0 = new(),
   % DC1: a.incr
-  {ok, Incr1} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 1}}}, Map0),
+  {ok, Incr1} = downstream({update, {{a, antidote_crdt_fat_counter}, {increment, 1}}}, Map0),
   {ok, Map1a} = update(Incr1, Map0),
   % DC1 reset
   {ok, Reset1} = downstream({reset, {}}, Map1a),
   {ok, Map1b} = update(Reset1, Map1a),
   % DC2 a.remove
-  {ok, Remove1} = downstream({remove, {a, antidote_crdt_big_counter}}, Map0),
+  {ok, Remove1} = downstream({remove, {a, antidote_crdt_fat_counter}}, Map0),
   {ok, Map2a} = update(Remove1, Map0),
   % DC2 --> DC1
   {ok, Map1c} = update(Remove1, Map1b),
@@ -243,7 +243,7 @@ reset1_test() ->
   {ok, Reset2} = downstream({reset, {}}, Map1c),
   {ok, Map1d} = update(Reset2, Map1c),
   % DC1: a.incr
-  {ok, Incr2} = downstream({update, {{a, antidote_crdt_big_counter}, {increment, 2}}}, Map1d),
+  {ok, Incr2} = downstream({update, {{a, antidote_crdt_fat_counter}, {increment, 2}}}, Map1d),
   {ok, Map1e} = update(Incr2, Map1d),
 
   io:format("Map0 = ~p~n", [Map0]),
@@ -260,12 +260,12 @@ reset1_test() ->
   io:format("Map1e = ~p~n", [Map1e]),
 
   ?assertEqual([], value(Map0)),
-  ?assertEqual([{{a, antidote_crdt_big_counter}, 1}], value(Map1a)),
-  ?assertEqual([{{a, antidote_crdt_big_counter}, 0}], value(Map1b)),
+  ?assertEqual([{{a, antidote_crdt_fat_counter}, 1}], value(Map1a)),
+  ?assertEqual([{{a, antidote_crdt_fat_counter}, 0}], value(Map1b)),
   ?assertEqual([], value(Map2a)),
-  ?assertEqual([{{a, antidote_crdt_big_counter}, 0}], value(Map1c)),
-  ?assertEqual([{{a, antidote_crdt_big_counter}, 0}], value(Map1d)),
-  ?assertEqual([{{a, antidote_crdt_big_counter}, 2}], value(Map1e)).
+  ?assertEqual([{{a, antidote_crdt_fat_counter}, 0}], value(Map1c)),
+  ?assertEqual([{{a, antidote_crdt_fat_counter}, 0}], value(Map1d)),
+  ?assertEqual([{{a, antidote_crdt_fat_counter}, 2}], value(Map1e)).
 
 
 reset2_test() ->
@@ -288,25 +288,25 @@ reset2_test() ->
   {ok, Add2} = downstream({update, {{s, antidote_crdt_set_rw}, {add, b}}}, Map1d),
   {ok, Map1e} = update(Add2, Map1d),
 
-  io:format("Map0 = ~p~n", [Map0]),
-  io:format("Add1 = ~p~n", [Add1]),
-  io:format("Map1a = ~p~n", [Map1a]),
-  io:format("Reset1 = ~p~n", [Reset1]),
-  io:format("Map1b = ~p~n", [Map1b]),
+  io:format("Map0 = ~p~n"   , [value(Map0)]),
+  io:format("Add1 = ~p~n"   , [Add1]),
+  io:format("Map1a = ~p~n"  , [value(Map1a)]),
+  io:format("Reset1 = ~p~n" , [Reset1]),
+  io:format("Map1b = ~p~n"  , [value(Map1b)]),
   io:format("Remove1 = ~p~n", [Remove1]),
-  io:format("Map2a = ~p~n", [Map2a]),
-  io:format("Map1c = ~p~n", [Map1c]),
-  io:format("Reset2 = ~p~n", [Reset2]),
-  io:format("Map1d = ~p~n", [Map1d]),
-  io:format("Add2 = ~p~n", [Add2]),
-  io:format("Map1e = ~p~n", [Map1e]),
+  io:format("Map2a = ~p~n"  , [value(Map2a)]),
+  io:format("Map1c = ~p~n"  , [value(Map1c)]),
+  io:format("Reset2 = ~p~n" , [Reset2]),
+  io:format("Map1d = ~p~n"  , [value(Map1d)]),
+  io:format("Add2 = ~p~n"   , [Add2]),
+  io:format("Map1e = ~p~n"  , [value(Map1e)]),
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [a]}], value(Map1a)),
-  ?assertEqual([], value(Map1b)),
+  ?assertEqual([{{s,antidote_crdt_set_rw},[]}], value(Map1b)),
   ?assertEqual([], value(Map2a)),
-  ?assertEqual([], value(Map1c)),
-  ?assertEqual([], value(Map1d)),
+  ?assertEqual([{{s,antidote_crdt_set_rw},[]}], value(Map1c)),
+  ?assertEqual([{{s,antidote_crdt_set_rw},[]}], value(Map1d)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [b]}], value(Map1e)).
 
 prop1_test() ->
@@ -327,7 +327,7 @@ prop1_test() ->
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{a, antidote_crdt_map_x}, [{{a, antidote_crdt_set_rw}, [a]}]}], value(Map1a)),
-  ?assertEqual([], value(Map1b)).
+  ?assertEqual([{{a, antidote_crdt_map_x}, [{{a, antidote_crdt_set_rw}, []}]}], value(Map1b)).
 
 prop2_test() ->
   Map0 = new(),
