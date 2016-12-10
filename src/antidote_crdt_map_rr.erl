@@ -154,12 +154,11 @@ remove_entry({{Key, Type}, {ok, Op}}, Map) ->
   case dict:find({Key, Type}, Map) of
     {ok, State} ->
       {ok, UpdatedState} = Type:update(Op, State),
-      Map1 = dict:store({Key, Type}, UpdatedState, Map),
-      case Type:is_operation(is_bottom) andalso Type:is_bottom(UpdatedState) of
+      case is_bottom(Type, UpdatedState) of
         true ->
-          dict:erase({Key, Type}, Map1);
+          dict:erase({Key, Type}, Map);
         false ->
-          Map1
+          dict:store({Key, Type}, UpdatedState, Map)
       end;
     error ->
       Map
@@ -168,12 +167,15 @@ remove_entry({{_Key, _Type}, none}, Map) ->
   Map.
 
 remove_obsolete({Key, Type}, Val, Map) ->
-  case Type:is_operation(is_bottom) andalso Type:is_bottom(Val) of
+  case is_bottom(Type, Val) of
     false ->
       dict:store({Key, Type}, Val, Map);
     true ->
       Map
   end.
+
+is_bottom(Type, State) ->
+  erlang:function_exported(Type, is_bottom, 1) andalso Type:is_bottom(State).
 
 equal(Map1, Map2) ->
     Map1 == Map2. % TODO better implementation (recursive equals)
@@ -261,10 +263,10 @@ reset1_test() ->
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{a, antidote_crdt_fat_counter}, 1}], value(Map1a)),
-  ?assertEqual([{{a, antidote_crdt_fat_counter}, 0}], value(Map1b)),
+  ?assertEqual([], value(Map1b)),
   ?assertEqual([], value(Map2a)),
-  ?assertEqual([{{a, antidote_crdt_fat_counter}, 0}], value(Map1c)),
-  ?assertEqual([{{a, antidote_crdt_fat_counter}, 0}], value(Map1d)),
+  ?assertEqual([], value(Map1c)),
+  ?assertEqual([], value(Map1d)),
   ?assertEqual([{{a, antidote_crdt_fat_counter}, 2}], value(Map1e)).
 
 
@@ -303,10 +305,10 @@ reset2_test() ->
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [a]}], value(Map1a)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1b)),
+  ?assertEqual([], value(Map1b)),
   ?assertEqual([], value(Map2a)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1c)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, []}], value(Map1d)),
+  ?assertEqual([], value(Map1c)),
+  ?assertEqual([], value(Map1d)),
   ?assertEqual([{{s, antidote_crdt_set_rw}, [b]}], value(Map1e)).
 
 prop1_test() ->
@@ -327,7 +329,7 @@ prop1_test() ->
 
   ?assertEqual([], value(Map0)),
   ?assertEqual([{{a, antidote_crdt_map_rr}, [{{a, antidote_crdt_set_rw}, [a]}]}], value(Map1a)),
-  ?assertEqual([{{a, antidote_crdt_map_rr}, [{{a, antidote_crdt_set_rw}, []}]}], value(Map1b)).
+  ?assertEqual([], value(Map1b)).
 
 prop2_test() ->
   Map0 = new(),
@@ -352,5 +354,31 @@ prop2_test() ->
   ?assertEqual([], value(Map1a)),
   ?assertEqual([], value(Map2a)),
   ?assertEqual([], value(Map1b)).
+
+upd(Update, State) ->
+    {ok, Downstream} = downstream(Update, State),
+    {ok, Res} = update(Downstream, State),
+    Res.
+
+remove_test() ->
+  M1 = new(),
+  ?assertEqual([], value(M1)),
+  ?assertEqual(true, is_bottom(M1)),
+  M2 = upd({update, [
+      {{<<"a">>, antidote_crdt_orset}, {add, <<"1">>}},
+      {{<<"b">>, antidote_crdt_mvreg}, {assign, <<"2">>}},
+      {{<<"c">>, antidote_crdt_fat_counter}, {increment, 1}}
+    ]}, M1),
+  ?assertEqual([
+      {{<<"a">>, antidote_crdt_orset}, [<<"1">>]},
+      {{<<"b">>, antidote_crdt_mvreg}, [<<"2">>]},
+      {{<<"c">>, antidote_crdt_fat_counter}, 1}
+  ], value(M2)),
+  ?assertEqual(false, is_bottom(M2)),
+  M3 = upd({reset, {}}, M2),
+  io:format("M3 state = ~p~n", [dict:to_list(M3)]),
+  ?assertEqual([], value(M3)),
+  ?assertEqual(true, is_bottom(M3)),
+  ok.
 
 -endif.

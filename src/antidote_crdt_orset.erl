@@ -55,7 +55,8 @@
           to_binary/1,
           from_binary/1,
           is_operation/1,
-          require_state_downstream/1
+          require_state_downstream/1,
+          is_bottom/1
         ]).
 
 -behaviour(antidote_crdt).
@@ -220,6 +221,8 @@ require_state_downstream({add_all, _}) -> true;
 require_state_downstream({remove, _}) -> true;
 require_state_downstream({remove_all, _}) -> true;
 require_state_downstream({reset, {}}) -> true.
+
+is_bottom(State) -> State == new().
 
 %% ===================================================================
 %% EUnit tests
