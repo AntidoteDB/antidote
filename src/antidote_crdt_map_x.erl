@@ -218,7 +218,7 @@ distinct([X|Xs]) ->
   not lists:member(X, Xs) andalso distinct(Xs).
 
 is_bottom(Map) ->
-  Map == new().
+  dict:is_empty(Map).
 
 
 %% ===================================================================
