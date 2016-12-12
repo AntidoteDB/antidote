@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable -name setup@127.0.0.1 -cookie antidote -mnesia debug verbose
+%%! -smp enable -name join_dcs@127.0.0.1 -cookie antidote
 -mode(compile).
 
 -export([at_init_testsuite/0,
