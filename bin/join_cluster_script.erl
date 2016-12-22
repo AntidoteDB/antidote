@@ -1,5 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
+%%! -smp enable -name join_cluster@127.0.0.1 -cookie antidote
 -mode(compile).
 
 -export([at_init_testsuite/0,
