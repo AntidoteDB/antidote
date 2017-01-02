@@ -87,13 +87,17 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, TxId, Key, Type, Updates) ->
+    io:format("read_data_item CLOCKSI_VNODE METHOD ~n", []),
     case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId) of
         {ok, Snapshot} ->
+            io:format("read_data_item OK SNAPSHOT ~n", []),
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
             Snapshot2 = clocksi_materializer:materialize_eager
             (Type, Snapshot, Updates2),
+            io:format("read_data_item OK SNAPSHOT2 ~p ~n", [Snapshot2]),
             {ok, Snapshot2};
         {error, Reason} ->
+            io:format("read_data_item ERROR ~n", []),
             {error, Reason}
     end.
 
@@ -207,13 +211,17 @@ get_cache_name(Partition, Base) ->
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
+    lager:info("init clocksivnode METHOD ~p~n", [Partition]),
     AntidoteDB = case application:get_env(antidote, antidote_db) of
                      {ok, true} ->
-                         {ok, DB} = antidote_db:new(get_cache_name(antidote_db, Partition), leveldb),
+                         lager:info("new DB ~n", []),
+                         {ok, DB} = antidote_db:new(atom_to_list(get_cache_name(Partition, antidote_db)), leveldb),
+                         lager:info("opened DB ~p ~n", [DB]),
                          DB;
                      _ ->
                          undefined
                  end,
+    lager:info("init clocksivnode OK ~p ~n", [AntidoteDB]),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
@@ -325,20 +333,26 @@ handle_command({single_commit, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
+    lager:info("single_commit_sync clock_si_vnode ~n", []),
     PrepareTime = dc_utilities:now_microsec(),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
+    lager:info("single_commit_sync clock_si_vnode RESULT ~p ~n", [Result]),
     case Result of
         {ok, _} ->
             ResultCommit = commit(Transaction, NewPrepare, WriteSet, CommittedTx, NewState),
             case ResultCommit of
                 {ok, committed, NewPreparedDict2} ->
+                    lager:info("single_commit_sync clock_si_vnode RESULT committed ~n", []),
                     {reply, {committed, NewPrepare}, NewState#state{prepared_dict = NewPreparedDict2}};
                 {error, materializer_failure} ->
+                    lager:info("single_commit_sync clock_si_vnode RESULT materializer_failure ~n", []),
                     {reply, {error, materializer_failure}, NewState};
                 {error, timeout} ->
+                    lager:info("single_commit_sync clock_si_vnode RESULT timeout ~n", []),
                     {reply, {error, timeout}, NewState};
                 {error, no_updates} ->
+                    lager:info("single_commit_sync clock_si_vnode RESULT no_updates ~n", []),
                     {reply, no_tx_record, NewState}
             end;
         {error, timeout} ->
@@ -394,8 +408,9 @@ handle_command({get_active_txns}, _Sender,
     #state{partition = Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
 
-handle_command(get_antidote_db, _Sender,
+handle_command({get_antidote_db}, _Sender,
     #state{antidote_db = AntidoteDB} = State) ->
+    lager:info("handle_command get_antidote_db ~n", []),
     {reply, AntidoteDB, State};
 
 handle_command(_Message, _Sender, State) ->
@@ -516,18 +531,23 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 		_ ->
 		    ok
 	    end,
+            lager:info("single_commit_sync clock_si_vnode  commit ~n", []),
             LogId = log_utilities:get_logid_from_key(Key),
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
                 {ok, _} ->
+                    lager:info("single_commit_sync clock_si_vnode append_commit update_materializer ~n", []),
                     case update_materializer(Updates, Transaction, TxCommitTime) of
                         ok ->
+                            lager:info("single_commit_sync clock_si_vnode append_commit update_materializer ~n", []),
                             NewPreparedDict = clean_and_notify(TxId, Updates, State),
                             {ok, committed, NewPreparedDict};
                         error ->
+                            lager:info("single_commit_sync clock_si_vnode append_commit materializer_failure ~n", []),
                             {error, materializer_failure}
                     end;
                 {error, timeout} ->
+                    lager:info("single_commit_sync clock_si_vnode append_commit timout ~n", []),
                     {error, timeout}
             end;
         _ ->
@@ -638,7 +658,9 @@ check_prepared(_TxId, PreparedTx, Key) ->
     Transaction :: tx(), TxCommitTime :: non_neg_integer()) ->
     ok | error.
 update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
+    lager:info("clock_si_vnode update_materializer METHOD ~n", []),
     DcId = dc_meta_data_utilities:get_my_dc_id(),
+    lager:info("update_materializer DC ID ~p~n", [DcId]),
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
     UpdateFunction = fun({Key, Type, Op}, AccIn) ->
 			     CommittedDownstreamOp =
@@ -651,8 +673,11 @@ update_materializer(DownstreamOps, Transaction, TxCommitTime) ->
 				    txid = Transaction#transaction.txn_id},
 			     [materializer_vnode:update(Key, CommittedDownstreamOp) | AccIn]
 		     end,
+    lager:info("clock_si_vnode  update_materializer FUNC ~n", []),
     Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
+    lager:info("clock_si_vnode  update_materializer RESULTS ~n", []),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
+    lager:info("clock_si_vnode  update_materializer failures ~p ~n", [Failures]),
     case Failures of
         [] ->
             ok;
@@ -693,10 +718,10 @@ get_time([{Time,TxId} | Rest], TxIdCheck) ->
     end.
 
 get_antidote_db(Partition) ->
-    riak_core_vnode_master:sync_command({Partition, node()},
-        get_antidote_db,
-        clocksi_vnode_master,
-        infinity).
+    lager:info("PARTITION ~p NODE ~p ~n", [Partition, node()]),
+    riak_core_vnode_master:sync_spawn_command({Partition, node()},
+        {get_antidote_db},
+        clocksi_vnode_master).
 
 -ifdef(TEST).
 

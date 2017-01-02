@@ -271,6 +271,7 @@ append(Key, Type, OpParams) ->
     case materializer:check_operations([{update,
                                          {Key, Type, OpParams}}]) of
         ok ->
+            lager:info("MAT CHECK OPS OK ~n", []),
             clocksi_interactive_tx_coord_fsm:
                 perform_singleitem_update(Key, Type, OpParams);
         {error, Reason} ->
@@ -311,6 +312,7 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
         {error, Reason} ->
             {error, Reason};
         ok ->
+            lager:info("MAT CHECK OPS OK ~n", []),
 	    TxPid = case KeepAlive of
 			true ->
 			    whereis(clocksi_static_tx_coord_fsm:generate_name(self()));
@@ -319,9 +321,11 @@ clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
 		    end,
 	    CoordPid = case TxPid of
 			   undefined ->
+                   lager:info("COORD PID undefined : ~n", []),
 			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock, KeepAlive]),
 			       CoordFsmPid;
 			   TxPid ->
+                   lager:info("COORD PID : ~p ~n", [TxPid]),
 			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, UpdateClock}),
 			       TxPid
 		       end,

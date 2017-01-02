@@ -219,16 +219,19 @@ perform_singleitem_update(Key, Type, Params) ->
         {Key, Type, Params1} ->
             case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, []) of
                 {ok, DownstreamRecord} ->
+                    io:format("perform_singleitem_update OK RECORD ~p ~n", [DownstreamRecord]),
                     Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     [Node] = Preflist,
+                    io:format("perform_singleitem_update PRE  LOGGING VNODE ~n", []),
                     case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
                         {ok, _} ->
                             case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
                                 {committed, CommitTime} ->
+                                    io:format("single_commit_sync COMMITED ~p ~n", [CommitTime]),
                                     %% Execute post commit hook
                                     _Res = case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
                                                {error, Reason} ->
@@ -241,11 +244,14 @@ perform_singleitem_update(Key, Type, Params) ->
                                                      DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
                                     {ok, {TxId, [], CausalClock}};
                                 abort ->
+                                    io:format("single_commit_sync ABORTED ~n", []),
                                     {error, aborted};
                                 {error, Reason} ->
+                                    io:format("single_commit_sync ERROR ~p ~n", [Reason]),
                                     {error, Reason}
                             end;
                         Error ->
+                            io:format("single_commit_sync logging ERROR ~p ~n", [Error]),
                             {error, Error}
                     end;
                 {error, Reason} ->
