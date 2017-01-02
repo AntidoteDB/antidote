@@ -308,6 +308,7 @@ append(Key, Type, OpParams) ->
     case materializer:check_operations([{update,
                                          {Key, Type, OpParams}}]) of
         ok ->
+            lager:info("MAT CHECK OPS OK ~n", []),
             clocksi_interactive_tx_coord_fsm:
                 perform_singleitem_update(Key, Type, OpParams);
         {error, Reason} ->

@@ -88,11 +88,13 @@ stop_read_servers(Partition, Count) ->
 
 -spec read_data_item(index_node(), key(), type(), tx()) -> {error, term()} | {ok, snapshot()}.
 read_data_item({Partition,Node},Key,Type,Transaction) ->
+    lager:info("read_data_item CLOCKSI_READ_ITEM_FSM METHOD ~n", []),
     try
 	gen_server:call({global,generate_random_server_name(Node,Partition)},
 			{perform_read,Key,Type,Transaction},infinity)
     catch
         _:Reason ->
+            lager:info("read_data_item ERROR ~p ~n", [Reason]),
             lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
 	    check_server_ready([{Partition,Node}]),
             read_data_item({Partition,Node},Key,Type,Transaction)
@@ -116,18 +118,22 @@ check_server_ready([]) ->
     true;
 check_server_ready([{Partition,Node}|Rest]) ->
     try
+        lager:info("check_server_ready method ~n", []),
 	Result = riak_core_vnode_master:sync_command({Partition,Node},
 						     {check_servers_ready},
 						     ?CLOCKSI_MASTER,
 						     infinity),
 	case Result of
 	    false ->
+            lager:info("check_server_ready FALSE ~n", []),
 		false;
 	    true ->
+            lager:info("check_server_ready TRUE ~n", []),
 		check_server_ready(Rest)
 	end
     catch
 	_:_Reason ->
+%%        io:format("check_server_ready ERROR ~p ~n", [Reason]),
 	    false
     end.
 
@@ -205,6 +211,7 @@ init([AntidoteDB, Partition, Id]) ->
 		prepared_cache=PreparedCache,self=Self}}.
 
 handle_call({perform_read, Key, Type, Transaction},Coordinator,SD0) ->
+    lager:info("handle_call perform_read METHOD ~n", []),
     ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
     {noreply,SD0};
 
@@ -220,6 +227,7 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
     %% TODO: Add support for read properties
+    lager:info("perform_read_internal METHOD ~n", []),
     PropertyList = [],
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
@@ -274,11 +282,13 @@ check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
 return(Coordinator,Key,Type,Transaction,PropertyList,
        #state{mat_state=MatState}) ->
     %% TODO: Add support for read properties
+    lager:info("return METHOD ~n", []),
     PropertyList = [],
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, MatState) of
         {ok, Snapshot} ->
+            lager:info("return OK SNAP ~p ~n", [Snapshot]),
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
                     gen_fsm:send_event(Sender, {ok, {Key, Type, Snapshot}});
@@ -286,6 +296,7 @@ return(Coordinator,Key,Type,Transaction,PropertyList,
                     _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
             end;
         {error, Reason} ->
+            lager:info("return ERROR ~p ~n", [Reason]),
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
                     gen_fsm:send_event(Sender, {error, Reason});

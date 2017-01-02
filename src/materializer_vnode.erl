@@ -137,6 +137,13 @@ init([Partition]) ->
 			{ok, #mat_state{is_ready = true, partition = Partition, ops_cache = undefined, snapshot_cache = undefined, antidote_db = AntidoteDB}}
 	end.
 
+%%check_mat_state_for_antidote_db(MatState = #mat_state{partition = Partition, antidote_db = missing}) ->
+%%	AntidoteDB = clocksi_vnode:get_antidote_db(Partition),
+%%	MatState#mat_state{antidote_db = AntidoteDB};
+%%
+%%check_mat_state_for_antidote_db(MatState) ->
+%%	MatState.
+
 -spec load_from_log_to_tables(partition_id(), #mat_state{}) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, State) ->
     LogId = [Partition],
@@ -232,24 +239,30 @@ handle_command({check_ready},_Sender,State = #mat_state{antidote_db = undefined,
     Result2 = Result and IsReady,
     {reply, Result2, State};
 
-handle_command({check_ready}, _Sender, State = #mat_state{antidote_db = AntidoteDB, is_ready=IsReady}) ->
-	Result = case AntidoteDB of
-				 undefined ->
-					 false;
-				 _ ->
-					 true
-			 end,
-	Result2 = Result and IsReady,
-	{reply, Result2, State};
+handle_command({check_ready}, _Sender, State = #mat_state{antidote_db = _AntidoteDB, is_ready=_IsReady}) ->
+%%	Result = case AntidoteDB of
+%%				 undefined ->
+%%					 false;
+%%				 missing ->
+%%					 false;
+%%				 _ ->
+%%					 true
+%%			 end,
+%%	Result2 = Result and IsReady,
+	{reply, true, State};
 
 handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
+%%	NewState = check_mat_state_for_antidote_db(State),
 	{reply, read(Key, Type, SnapshotTime, TxId, State), State};
 
 handle_command({update, Key, DownstreamOp}, _Sender, State) ->
+	lager:info("materializer_vnode update METHOD ~p ~n", [State]),
+%%	NewState = check_mat_state_for_antidote_db(State),
 	true = op_insert_gc(Key, DownstreamOp, State),
 	{reply, ok, State};
 
 handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender, State) ->
+%%	NewState = check_mat_state_for_antidote_db(State),
 	internal_store_ss(Key, Snapshot, CommitTime, false, State),
 	{noreply, State};
 
