@@ -341,7 +341,7 @@ web_ports(dev4) ->
 %% Build clusters
 join_cluster(Nodes) ->
     %% Ensure each node owns 100% of it's own ring
-    [?assertEqual([Node], owners_according_to(Node, hd(Nodes))) || Node <- Nodes],
+    [[Node] = owners_according_to(Node, hd(Nodes)) || Node <- Nodes],
     %% Join nodes
     [Node1|OtherNodes] = Nodes,
     case OtherNodes of
@@ -356,11 +356,11 @@ join_cluster(Nodes) ->
             try_nodes_ready(Nodes, 3, 500)
     end,
 
-    ?assertEqual(ok, wait_until_nodes_ready(Nodes)),
+    ok = wait_until_nodes_ready(Nodes),
 
     %% Ensure each node owns a portion of the ring
     wait_until_nodes_agree_about_ownership(Nodes),
-    ?assertEqual(ok, wait_until_no_pending_changes(Nodes)),
+    ok = wait_until_no_pending_changes(Nodes),
     wait_until_ring_converged(Nodes),
     wait_until(hd(Nodes),fun check_ready/1),
     ok.
@@ -384,7 +384,6 @@ staged_join(Node, PNode) ->
     timer:sleep(5000),
     R = rpc:call(Node, riak_core, staged_join, [PNode]),
     io:format("[join] ~p to (~p): ~p~n", [Node, PNode, R]),
-    ?assertEqual(ok, R),
     ok.
 
 plan_and_commit(Node) ->
@@ -446,7 +445,7 @@ wait_until_no_pending_changes(Nodes) ->
         Changes = [rpc:call(hd(Nodes), riak_core_ring, pending_changes, [Ring]) =:= [] || {ok, Ring} <- Rings ],
         BadNodes =:= [] andalso length(Changes) =:= length(Nodes) andalso lists:all(fun(T) -> T end, Changes)
     end,
-    ?assertEqual(ok, wait_until(F)),
+    ok = wait_until(F),
     ok.
 
 %% @doc Utility function used to construct test predicates. Retries the
@@ -462,7 +461,7 @@ wait_until(Fun) when is_function(Fun) ->
 %%      See {@link wait_until_ready/1} for definition of ready.
 wait_until_nodes_ready(Nodes) ->
 %%    io:format("Wait until nodes are ready : ~p~n", [Nodes]),
-    [?assertEqual(ok, wait_until(Node, fun is_ready/2)) || Node <- Nodes, hd(Nodes)],
+    [ok = wait_until(Node, fun is_ready/2) || Node <- Nodes, hd(Nodes)],
     ok.
 
 %% @private
@@ -480,7 +479,7 @@ is_ready(Node, MainNode) ->
 wait_until_nodes_agree_about_ownership(Nodes) ->
 %%    io:format("Wait until nodes agree about ownership ~p~n", [Nodes]),
     Results = [ wait_until_owners_according_to(Node, Nodes) || Node <- Nodes ],
-    ?assert(lists:all(fun(X) -> ok =:= X end, Results)).
+    lists:all(fun(X) -> ok =:= X end, Results).
 
 %% @doc Convenience wrapper for wait_until for the myriad functions that
 %% take a node as single argument.
@@ -492,7 +491,7 @@ wait_until_owners_according_to(Node, Nodes) ->
     F = fun(N) ->
         owners_according_to(N, hd(Nodes)) =:= SortedNodes
     end,
-    ?assertEqual(ok, wait_until(Node, F)),
+    ok = wait_until(Node, F),
     ok.
 
 %% @private
@@ -508,7 +507,7 @@ is_ring_ready(Node, MainNode) ->
 %%      converged (ie. `riak_core_ring:is_ready' returns `true').
 wait_until_ring_converged(Nodes) ->
 %%    io:format("Wait until ring converged on ~p~n", [Nodes]),
-    [?assertEqual(ok, wait_until(Node, fun is_ring_ready/2)) || Node <- Nodes, hd(Nodes)],
+    [ok = wait_until(Node, fun is_ring_ready/2) || Node <- Nodes, hd(Nodes)],
     ok.
 
 %%%% Build clusters for all test suites.
