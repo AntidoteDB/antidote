@@ -44,7 +44,7 @@
   update_set_read_test/1,
   static_transaction_test/1,
   crdt_integer_test/1,
-  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1]).
+  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1, crdt_map_rr_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -87,7 +87,8 @@ all() -> [start_stop_test,
         crdt_set_rw_test,
         crdt_gmap_test,
         crdt_map_aw_test,
-        update_reg_test].
+        update_reg_test,
+        crdt_map_rr_test].
 
 start_stop_test(_Config) ->
     lager:info("Verifying pb connection..."),
@@ -436,6 +437,73 @@ crdt_map_aw_test(_Config) ->
   ]},
   ?assertEqual(ExpectedRes, Val),
   _Disconnected = antidotec_pb_socket:stop(Pid1).
+
+
+crdt_map_rr_test(_Config) ->
+  Key = <<"pb_client_SUITE_crdt_map_rr_test">>,
+  {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+  Bound_object = {Key, antidote_crdt_map_rr, <<"bucket">>},
+  {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, update, {{<<"a">>, antidote_crdt_integer}, {set, 42}}}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, update, [
+      {{<<"b">>, antidote_crdt_mvreg}, {assign, <<"X">>}},
+      {{<<"b1">>, antidote_crdt_mvreg}, {assign, <<"X1">>}},
+      {{<<"b2">>, antidote_crdt_mvreg}, {assign, <<"X2">>}},
+      {{<<"b3">>, antidote_crdt_mvreg}, {assign, <<"X3">>}},
+      {{<<"b4">>, antidote_crdt_mvreg}, {assign, <<"X4">>}},
+      {{<<"b5">>, antidote_crdt_mvreg}, {assign, <<"X5">>}},
+      {{<<"c">>, antidote_crdt_mvreg}, {assign, <<"Paul">>}},
+      {{<<"d">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"e">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"f">>, antidote_crdt_fat_counter}, {increment , 7}},
+      {{<<"g">>, antidote_crdt_map_rr}, {update, [
+        {{<<"q">>, antidote_crdt_mvreg}, {assign, <<"Hello">>}},
+        {{<<"x">>, antidote_crdt_fat_counter}, {increment, 17}}
+      ]}},
+      {{<<"h">>, antidote_crdt_map_rr}, {update, [
+        {{<<"x">>, antidote_crdt_fat_counter}, {increment, 15}}
+      ]}}
+    ]}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [
+    {Bound_object, remove, {<<"b1">>, antidote_crdt_mvreg}}], Tx1),
+  ok = antidotec_pb:update_objects(Pid1,
+    [{Bound_object, remove, [
+      {<<"b2">>, antidote_crdt_mvreg},
+      {<<"b3">>, antidote_crdt_mvreg}]}
+    ], Tx1),
+  ok = antidotec_pb:update_objects(Pid1,
+    [{Bound_object, batch,
+      {[ % updates
+        {{<<"i">>, antidote_crdt_mvreg}, {assign, <<"X">>}}
+      ],[ % removes
+        {<<"b4">>, antidote_crdt_mvreg},
+        {<<"b5">>, antidote_crdt_mvreg}
+      ]}}
+    ], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [
+      {Bound_object, remove, {<<"g">>, antidote_crdt_map_rr}}], Tx1),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+  %% Read committed updated
+  {ok, Tx3} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  {ok, [Val]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx3),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
+  ExpectedRes = {map, [
+    {{<<"a">>, antidote_crdt_integer}, 42},
+    {{<<"b">>, antidote_crdt_mvreg}, [<<"X">>]},
+    {{<<"c">>, antidote_crdt_mvreg}, [<<"Paul">>]},
+    {{<<"d">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"e">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"f">>, antidote_crdt_fat_counter}, 7},
+    {{<<"h">>, antidote_crdt_map_rr}, [
+      {{<<"x">>, antidote_crdt_fat_counter}, 15}
+    ]},
+    {{<<"i">>, antidote_crdt_mvreg}, [<<"X">>]}
+  ]},
+  ?assertEqual(ExpectedRes, Val),
+  _Disconnected = antidotec_pb_socket:stop(Pid1).
+
 
 
 static_transaction_test(_Config) ->
