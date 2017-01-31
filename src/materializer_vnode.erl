@@ -133,7 +133,9 @@ init([Partition]) ->
 					  end,
 			{ok, #mat_state{is_ready = IsReady, partition = Partition, ops_cache = OpsCache, snapshot_cache = SnapshotCache, antidote_db = undefined}};
 		_ ->
+			lager:info("I'm NODE ~p ~n", [node()]),
 			AntidoteDB = clocksi_vnode:get_antidote_db(Partition),
+			lager:info("got DB ~p NODE ~p ~n", [AntidoteDB, node()]),
 			{ok, #mat_state{is_ready = true, partition = Partition, ops_cache = undefined, snapshot_cache = undefined, antidote_db = AntidoteDB}}
 	end.
 
