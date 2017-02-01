@@ -31,14 +31,9 @@
 -export([
   get_descriptor/0,
   start_bg_processes/1,
-  observe_dc/1,
-  observe_dc_sync/1,
-  observe/1,
-  observe_dcs/1,
   observe_dcs_sync/1,
   dc_successfully_started/0,
   check_node_restart/0,
-  forget_dc/1,
   forget_dcs/1,
   drop_ping/1]).
 
@@ -56,8 +51,12 @@ get_descriptor() ->
     logreaders = LogReaders
   }}.
 
--spec observe_dc(#descriptor{}) -> ok | inter_dc_conn_err().
-observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}) ->
+%% This will connect the list of local nodes to the DC given by the descriptor
+%% When a connecting to a new DC, Nodes will be all the nodes in the local DC
+%% Otherwise this will be called with a single node that is reconnecting (for example after one of the nodes in the DC crashes and restarts)
+%% Note this is an internal function, to instruct the local DC to connect to a new DC the observe_dcs_sync(Descriptors) function should be used
+-spec observe_dc(#descriptor{}, [node()]) -> ok | inter_dc_conn_err().
+observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}, Nodes) ->
     PartitionsNumLocal = dc_utilities:get_partitions_num(),
     case PartitionsNumRemote == PartitionsNumLocal of
 	false ->
@@ -72,7 +71,6 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 		    %% Announce the new publisher addresses to all subscribers in this DC.
 		    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
 		    %% But we want to balance the work, so all nodes take part in subscribing.
-		    Nodes = dc_utilities:get_my_dc_nodes(),
 		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES)
 	    end
     end.
@@ -82,7 +80,7 @@ observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, 
 connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
 connect_nodes(_Nodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->
-    ok = forget_dc(Desc),
+    ok = forget_dcs([Desc]),
     {error, connection_error};    
 connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
     case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
@@ -184,7 +182,7 @@ check_node_restart() ->
 			       end, Responses2),
 	    %% Reconnect this node to other DCs
 	    OtherDCs = dc_meta_data_utilities:get_dc_descriptors(),
-	    Responses3 = reconnect_dcs_after_restart(OtherDCs),
+	    Responses3 = reconnect_dcs_after_restart(OtherDCs, MyNode),
 	    %% Ensure all connections were successful, crash otherwise
 	    Responses3 = [X = ok || X <- Responses3],
 	    true;
@@ -192,19 +190,22 @@ check_node_restart() ->
 	    false
     end.
 
--spec reconnect_dcs_after_restart([#descriptor{}]) -> [ok | inter_dc_conn_err()].
-reconnect_dcs_after_restart(Descriptors) ->
-    ok = forget_dcs(Descriptors),
-    observe_dcs_sync(Descriptors).
+-spec reconnect_dcs_after_restart([#descriptor{}], node()) -> [ok | inter_dc_conn_err()].
+reconnect_dcs_after_restart(Descriptors, MyNode) ->
+    ok = forget_dcs(Descriptors, [MyNode]),
+    observe_dcs_sync(Descriptors, [MyNode]).
 
--spec observe_dcs([#descriptor{}]) -> [ok | inter_dc_conn_err()].
-observe_dcs(Descriptors) -> lists:map(fun observe_dc/1, Descriptors).
-
+%% This should be called when connecting the local DC to a new external DC
 -spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    observe_dcs_sync(Descriptors, Nodes).
+
+-spec observe_dcs_sync([#descriptor{}], [node()]) -> [ok | inter_dc_conn_err()].
+observe_dcs_sync(Descriptors, Nodes) ->
     {ok, SS} = dc_utilities:get_stable_snapshot(),
     DCs = lists:map(fun(DC) ->
-			    {observe_dc(DC), DC}
+			    {observe_dc(DC, Nodes), DC}
 		    end, Descriptors),
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
 			  case Res of
@@ -218,24 +219,25 @@ observe_dcs_sync(Descriptors) ->
 		  end, DCs),
     [Result1 || {Result1, _DC1} <- DCs].
 
--spec observe_dc_sync(#descriptor{}) -> ok | inter_dc_conn_err().
-observe_dc_sync(Descriptor) ->
-    [Res] = observe_dcs_sync([Descriptor]),
-    Res.
-
--spec forget_dc(#descriptor{}) -> ok.
-forget_dc(#descriptor{dcid = DCID}) ->
+-spec forget_dc(#descriptor{}, [node()]) -> ok.
+forget_dc(#descriptor{dcid = DCID}, Nodes) ->
   case DCID == dc_meta_data_utilities:get_my_dc_id() of
     true -> ok;
     false ->
       lager:info("Forgetting DC ~p", [DCID]),
-      Nodes = dc_utilities:get_my_dc_nodes(),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_query, del_dc, [DCID]) end, Nodes),
       lists:foreach(fun(Node) -> ok = rpc:call(Node, inter_dc_sub, del_dc, [DCID]) end, Nodes)
   end.
 
 -spec forget_dcs([#descriptor{}]) -> ok.
-forget_dcs(Descriptors) -> lists:foreach(fun forget_dc/1, Descriptors).
+forget_dcs(Descriptors) ->
+    Nodes = dc_utilities:get_my_dc_nodes(),
+    forget_dcs(Descriptors,Nodes).
+
+-spec forget_dcs([#descriptor{}],[node()]) -> ok.
+forget_dcs(Descriptors,Nodes) -> lists:foreach(fun(Descriptor) ->
+						       forget_dc(Descriptor,Nodes)
+					       end , Descriptors).
 
 %% Tell nodes within the DC to drop heartbeat ping messages from other
 %% DCs, used for debugging
@@ -249,10 +251,6 @@ drop_ping(DropPing) ->
 
 %%%%%%%%%%%%%
 %% Utils
-
-observe(DcNodeAddress) ->
-  {ok, Desc} = rpc:call(DcNodeAddress, inter_dc_manager, get_descriptor, []),
-  observe_dc(Desc).
 
 wait_for_stable_snapshot(DCID, MinValue) ->
   case DCID == dc_meta_data_utilities:get_my_dc_id() of

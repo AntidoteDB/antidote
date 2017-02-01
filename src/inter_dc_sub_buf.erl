@@ -36,6 +36,7 @@
 -record(state, {
   state_name :: normal | buffering,
   pdcid :: pdcid(),
+  logging_enabled :: boolean(),
   last_observed_opid :: non_neg_integer() | init,
   queue :: queue:queue()
 }).
@@ -44,11 +45,14 @@
 
 %% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
 -spec new_state(pdcid()) -> #state{}.
-new_state(PDCID) -> #state{
+new_state(PDCID) ->
+	{ok, EnableLogging} = application:get_env(antidote, enable_logging),
+	#state{
   state_name = normal,
   pdcid = PDCID,
   last_observed_opid = init,
-  queue = queue:new()
+  queue = queue:new(),
+  logging_enabled = EnableLogging
 }.
 
 -spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #state{}) -> #state{}.
@@ -86,7 +90,7 @@ process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buff
   process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
+process_queue(State = #state{queue = Queue, last_observed_opid = Last, logging_enabled = EnableLogging}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
@@ -99,17 +103,25 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
           Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
           process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max});
 
-      %% If the transaction seems to come after an unknown transaction, ask the remote log
+      %% If the transaction seems to come after an unknown transaction, ask the remote origin log
         gt ->
-          lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
-		     [TxnLast, Last, State#state.pdcid]),
-          case query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
-            ok ->
-              State#state{state_name = buffering};
-            _ ->
-              lager:warning("Failed to send log query to DC, will retry on next ping message"),
-              State#state{state_name = normal}
-          end;
+	        case EnableLogging of
+		        true ->
+			        lager:info("Whoops, lost message. New is ~p, last was ~p. Asking the remote DC ~p",
+				        [TxnLast, Last, State#state.pdcid]),
+			        case query(State#state.pdcid, State#state.last_observed_opid + 1, TxnLast) of
+				        ok ->
+					        State#state{state_name = buffering};
+				        _ ->
+					        lager:warning("Failed to send log query to DC, will retry on next ping message"),
+					        State#state{state_name = normal}
+			        end;
+		        false -> %% we deliver the transaction as we can't ask anything to the remote log
+			             %% as logging to disk is disabled.
+			        deliver(Txn),
+			        Max = (inter_dc_txn:last_log_opid(Txn))#op_number.local,
+			        process_queue(State#state{queue = queue:drop(Queue), last_observed_opid = Max})
+	        end;
 
       %% If the transaction has an old value, drop it.
         lt ->

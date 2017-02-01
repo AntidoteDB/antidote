@@ -107,81 +107,122 @@ commit_transaction(TxId) ->
 
 -spec read_objects(Objects::[bound_object()], TxId::txid())
                   -> {ok, [term()]} | {error, reason()}.
-read_objects(Objects, TxId) ->
-    %%TODO: Transaction co-ordinator handles multiple reads
-    %% Executes each read as in a interactive transaction
-    Results = lists:map(fun({Key, Type, Bucket}) ->
-                                case clocksi_iread(TxId, {Key, Bucket}, Type) of
-                                    {ok, Res} ->
-                                        Res;
-                                    {error, _Reason} ->
-                                        error
+read_objects(BoundObjects, TxId) ->
+    {_, _, CoordFsmPid} = TxId,
+    NewObjects = lists:map(fun({Key, Type, Bucket}) ->
+                                case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
+                                    ok ->
+                                        {{Key, Bucket}, Type};
+                                    {error, Reason} ->
+                                        lager:debug("typing problem, check your ops! ~n~p", [Reason]),
+                                        {error, Reason}
                                 end
-                        end, Objects),
-    case lists:member(error, Results) of
-        true -> {error, read_failed}; %% TODO: Capture the reason for error
-        false -> {ok, Results}
+                           end, BoundObjects),
+    case lists:member({error, type_check}, NewObjects) of
+        true -> {error, type_check};
+        false ->
+            case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
+                     {ok, Res} ->
+                         {ok, Res};
+                     {error, Reason} -> {error, Reason}
+                 end
     end.
 
--spec update_objects([{bound_object(), op_name(), op_param()}], txid())
+-spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    %% Execute each update as in an interactive transaction
-    Results = lists:map(
-                fun({{Key, Type, Bucket}, Op, OpParam}) ->
-                        case clocksi_iupdate(TxId, {Key, Bucket}, Type,
-                                             {Op, OpParam}) of
-                            ok -> ok;
-                            {error, Reason} ->
-                                lager:debug("Update failed. Reason : ~p",[Reason]),
-                                error
-                        end
-                end, Updates),
-    case lists:member(error, Results) of
-       true -> {error, update_failed}; %% TODO: Capture the reason for error
-       false -> ok
+    {_, _, CoordFsmPid} = TxId,
+    case check_and_format_ops(Updates) of
+        {error, Reason} ->
+            {error, Reason};
+        Operations ->
+            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
+                ok ->
+                    ok;
+                {aborted, TxId} ->
+                    {error, {aborted, TxId}};
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time() | ignore , term(), [{bound_object(), op_name(), op_param()}]) ->
+-spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}]) ->
                             {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     update_objects(Clock, Properties, Updates, false).
 
-update_objects(Clock, _Properties, Updates, StayAlive) ->
-    Operations = lists:map(
-                   fun({{Key, Type, Bucket}, Op, OpParam}) ->
-                           {update, {{Key, Bucket}, Type, {Op,OpParam}}}
-                   end,
-                   Updates),
-    SingleKey = case Operations of
-                    [_O] -> %% Single key update
-                        case Clock of
-                            ignore -> true;
-                            _ -> false
-                        end;
-                    [_H|_T] -> false
-                end,
-    case SingleKey of
-        true ->  %% if single key, execute the fast path
-            [{update, {K, T, Op}}] = Operations,
-            case append(K, T, Op) of
-                {ok, {_TxId, [], CT}} ->
-                    {ok, CT};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        false ->
-            case clocksi_execute_tx(Clock, Operations, update_clock, StayAlive) of
-                {ok, {_TxId, [], CommitTime}} ->
-                    {ok, CommitTime};
-                {error, Reason} -> {error, Reason}
-            end
+-spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}], boolean()) ->
+    {ok, snapshot_time()} | {error, reason()}.
+update_objects(_Clock, _Properties, [], _StayAlive) ->
+    {ok, vectorclock:new()};
+update_objects(ClientCausalVC, _Properties, Updates, StayAlive) ->
+    case check_and_format_ops(Updates) of
+        {error, Reason} ->
+            {error, Reason};
+        Operations ->
+            start_static_transaction(update_objects, Operations, StayAlive, ClientCausalVC)
     end.
+
+%% @doc The following function is called by the static versions of read and update_objects
+%%      to execute a static transaction.
+-spec start_static_transaction(update_objects | read_objects, list(), boolean(), vectorclock()) -> {ok, snapshot_time()} | {error, reason()}.
+start_static_transaction(TransactionKind, ListOfOperations, StayAlive, ClientCausalVC) ->
+            TxPid = case StayAlive of
+                true ->
+                    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
+                false ->
+                    undefined
+            end,
+            case TxPid of
+                undefined ->
+                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientCausalVC, update_clock, StayAlive, {TransactionKind, ListOfOperations}]);
+                TxPid ->
+                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), ClientCausalVC, update_clock, {TransactionKind, ListOfOperations}})
+            end,
+            receive
+                Reply ->
+                    Reply
+            end.
+
+
+%% @doc This function is used temporarily to unify the
+%% interfaces of old and new transactions. It should
+%% be removed once tests call only the new interface.
+%% It checks the format of the
+%% operation for compatibility with
+%% some systests that call updates with
+%% {Operation, Params} (as a single parameter),
+%% and Operation, Params (two separate parameters).
+-spec check_and_format_ops([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(),op_param()}}]) ->
+                                [{{key(), bucket()}, type(), {op_name(), op_param()}}] | {error, reason()}.
+check_and_format_ops(Updates) ->
+    try
+        lists:map(fun(Update) ->
+            {Key, Type, Bucket, Op} = case Update of
+                {{K, T, B}, {O, P}} ->
+                    {K, T, B, {O, P}};
+                {{K, T, B}, O, P} ->
+                    {K, T, B, {O, P}}
+            end,
+            case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
+                ok ->
+                    {{Key, Bucket}, Type, Op};
+                {error, Reason} ->
+                    throw(Reason)
+            end
+        end, Updates)
+    catch
+        _:Reason ->
+            {error, Reason}
+    end.
+
 
 read_objects(Clock, Properties, Objects) ->
     read_objects(Clock, Properties, Objects, false).
 
+-spec read_objects(vectorclock(), any(), [bound_object()], boolean()) ->
+                        {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, _Properties, Objects, StayAlive) ->
     Args = lists:map(
              fun({Key, Type, Bucket}) ->
@@ -218,11 +259,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
                 {ok, gr} ->
                     case Args of
                         [_Op] -> %% Single object read = read latest value
-                            case clocksi_execute_tx(Clock, Args, update_clock, StayAlive) of
-                                {ok, {_TxId, Result, CommitTime}} ->
-                                    {ok, Result, CommitTime};
-                                {error, Reason} -> {error, Reason}
-                            end;
+                            start_static_transaction(read_objects, Objects, StayAlive, Clock);
                         [_|_] -> %% Read Multiple objects  = read from a snapshot
                             %% Snapshot includes all updates committed at time GST
                             %% from local and remore replicas
@@ -308,33 +345,14 @@ read(Key, Type) ->
 -spec clocksi_execute_tx(Clock :: snapshot_time(),
                          [client_op()],snapshot_time(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_execute_tx(Clock, Operations, UpdateClock, KeepAlive) ->
-    case materializer:check_operations(Operations) of
+    {ok, TxId} = start_transaction(Clock, [UpdateClock], KeepAlive),
+    ReadSet = execute_ops(Operations, TxId, []),
+    {ok, CommitTime} = commit_transaction(TxId),
+    case ReadSet of
         {error, Reason} ->
             {error, Reason};
-        ok ->
-            lager:info("MAT CHECK OPS OK ~n", []),
-	    TxPid = case KeepAlive of
-			true ->
-			    whereis(clocksi_static_tx_coord_fsm:generate_name(self()));
-			false ->
-			    undefined
-		    end,
-	    CoordPid = case TxPid of
-			   undefined ->
-                   lager:info("COORD PID undefined : ~n", []),
-			       {ok, CoordFsmPid} = clocksi_static_tx_coord_sup:start_fsm([self(), Clock, Operations, UpdateClock, KeepAlive]),
-			       CoordFsmPid;
-			   TxPid ->
-                   lager:info("COORD PID : ~p ~n", [TxPid]),
-			       ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Operations, UpdateClock}),
-			       TxPid
-		       end,
-	    case gen_fsm:sync_send_event(CoordPid, execute, ?OP_TIMEOUT) of
-		{aborted, Info} ->
-		    {error, {aborted, Info}};
-		Other ->
-		    Other
-	    end
+        _ ->
+            {ok, {TxId, ReadSet, CommitTime}}
     end.
 
 clocksi_execute_tx(Clock, Operations, UpdateClock) ->
@@ -430,12 +448,7 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
 clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
     case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
-            case gen_fsm:sync_send_event(CoordFsmPid,
-                                         {update, {Key, Type, OpParams}}, ?OP_TIMEOUT) of
-                ok -> ok;
-                {aborted, _} -> {error, aborted};
-                {error, Reason} -> {error, Reason}
-            end;
+            gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}, ?OP_TIMEOUT);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -457,7 +470,12 @@ clocksi_full_icommit({_, _, CoordFsmPid})->
 
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
 clocksi_iprepare({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT).
+    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT) of
+        {error, {aborted, TxId}} ->
+            {aborted, TxId};
+        Reply ->
+            Reply
+    end.
 
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
 clocksi_icommit({_, _, CoordFsmPid})->

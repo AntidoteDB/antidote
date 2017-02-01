@@ -66,7 +66,7 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> 
+all() ->
     [simple_replication_test,
      failure_test,
      blocking_test,
@@ -228,52 +228,58 @@ multiple_writes(Node, Key, ReplyTo) ->
 failure_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Type = antidote_crdt_counter,
-    Key = failure_test,
-    WriteResult1 = rpc:call(Node1,
-                            antidote, append,
-                            [Key, Type, {increment, 1}]),
-    ?assertMatch({ok, _}, WriteResult1),
+    case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
+        {ok, false} ->
+            pass;
+        _ ->
+            Type = antidote_crdt_counter,
+            Key = failure_test,
+            WriteResult1 = rpc:call(Node1,
+                antidote, append,
+                [Key, Type, {increment, 1}]),
+            ?assertMatch({ok, _}, WriteResult1),
 
-    %% Simulate failure of NODE3 by stoping the receiver
-    {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
-    {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
+            %% Simulate failure of NODE3 by stoping the receiver
+            {ok, D1} = rpc:call(Node1, inter_dc_manager, get_descriptor, []),
+            {ok, D2} = rpc:call(Node2, inter_dc_manager, get_descriptor, []),
 
-    ok = rpc:call(Node3, inter_dc_manager, forget_dcs, [[D1, D2]]),
+            ok = rpc:call(Node3, inter_dc_manager, forget_dcs, [[D1, D2]]),
 
-    WriteResult2 = rpc:call(Node1,
-                            antidote, append,
-                            [Key, Type, {increment, 1}]),
-    ?assertMatch({ok, _}, WriteResult2),
-    %% Induce some delay
-    rpc:call(Node3, antidote, read,
-             [Key, Type]),
+            WriteResult2 = rpc:call(Node1,
+                antidote, append,
+                [Key, Type, {increment, 1}]),
+            ?assertMatch({ok, _}, WriteResult2),
+            %% Induce some delay
+            rpc:call(Node3, antidote, read,
+                [Key, Type]),
 
-    WriteResult3 = rpc:call(Node1,
-                            antidote, append,
-                            [Key, Type, {increment, 1}]),
-    ?assertMatch({ok, _}, WriteResult3),
-    {ok,{_,_,CommitTime}}=WriteResult3,
-    ReadResult = rpc:call(Node1, antidote, read,
-                          [Key, Type]),
-    ?assertEqual({ok, 3}, ReadResult),
-    lager:info("Done append in Node1"),
+            WriteResult3 = rpc:call(Node1,
+                antidote, append,
+                [Key, Type, {increment, 1}]),
+            ?assertMatch({ok, _}, WriteResult3),
+            {ok,{_,_,CommitTime}}=WriteResult3,
+            ReadResult = rpc:call(Node1, antidote, read,
+                [Key, Type]),
+            ?assertEqual({ok, 3}, ReadResult),
+            lager:info("Done append in Node1"),
 
-    %% NODE3 comes back
-    [ok, ok] = rpc:call(Node3, inter_dc_manager, observe_dcs_sync, [[D1, D2]]),
-    ReadResult3 = rpc:call(Node2,
-                           antidote, clocksi_read,
-                           [CommitTime, Key, Type]),
-    {ok, {_,[ReadSet2],_} }= ReadResult3,
-    ?assertEqual(3, ReadSet2),
-    lager:info("Done read from Node2"),
-    ReadResult2 = rpc:call(Node3,
-                           antidote, clocksi_read,
-                           [CommitTime, Key, Type]),
-    {ok, {_,[ReadSet1],_} }= ReadResult2,
-    ?assertEqual(3, ReadSet1),
-    lager:info("Done Read in Node3"),
-    pass.
+            %% NODE3 comes back
+            [ok, ok] = rpc:call(Node3, inter_dc_manager, observe_dcs_sync, [[D1, D2]]),
+            ReadResult3 = rpc:call(Node2,
+                antidote, clocksi_read,
+                [CommitTime, Key, Type]),
+            {ok, {_,[ReadSet2],_} }= ReadResult3,
+            ?assertEqual(3, ReadSet2),
+            lager:info("Done read from Node2"),
+            ReadResult2 = rpc:call(Node3,
+                antidote, clocksi_read,
+                [CommitTime, Key, Type]),
+            {ok, {_,[ReadSet1],_} }= ReadResult2,
+            ?assertEqual(3, ReadSet1),
+            lager:info("Done Read in Node3"),
+            pass
+    end.
+
    
 %% This is to test a situation where interDC transactions
 %% can be blocked depending on the timing of transactions

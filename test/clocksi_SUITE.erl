@@ -46,6 +46,8 @@
          clocksi_multiple_test_certification_check/1,
          clocksi_multiple_read_update_test/1,
          clocksi_concurrency_test/1,
+         clocksi_parallel_ops_test/1,
+         clocksi_static_parallel_writes_test/1,
          spawn_read/5,
          spawn_com/2]).
 
@@ -93,7 +95,9 @@ all() -> [clocksi_test1,
          clocksi_test_certification_check,
          clocksi_multiple_test_certification_check,
          clocksi_multiple_read_update_test,
-         clocksi_concurrency_test].
+         clocksi_concurrency_test,
+         clocksi_parallel_ops_test,
+         clocksi_static_parallel_writes_test].
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
@@ -130,7 +134,7 @@ clocksi_test1(Config) ->
                       {read, {Key1, Type}}]]),
     ?assertMatch({ok, _}, Result2),
     {ok, {_, ReadSet2, _}}=Result2,
-    ?assertMatch([0,0], ReadSet2),
+    ?assertMatch([0,1], ReadSet2),
 
     %% Update is persisted && update to multiple keys are atomic
     Result3=rpc:call(FirstNode, antidote, clocksi_execute_tx,
@@ -749,3 +753,96 @@ clocksi_concurrency_test(Config) ->
              ?assertEqual({ok, 2}, Result),
              pass
      end.
+
+%% doc The following test checks multiple updates/reads using
+%% read/update_objects. It also checks that reads are returned
+%% in the same order they were sent.
+clocksi_parallel_ops_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    Node = hd(Nodes),
+    Bucket = test_bucket,
+    Bound_object1 = {parallel_key1, antidote_crdt_counter, Bucket},
+    Bound_object2 = {parallel_key2, antidote_crdt_counter, Bucket},
+    Bound_object3 = {parallel_key3, antidote_crdt_counter, Bucket},
+    Bound_object4 = {parallel_key4, antidote_crdt_counter, Bucket},
+    Bound_object5 = {parallel_key5, antidote_crdt_counter, Bucket},
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+
+    %% update 5 different objects
+    ok = rpc:call(Node, antidote, update_objects,
+        [[{Bound_object1, increment, 1},
+            {Bound_object2, increment, 2},
+                {Bound_object3, increment, 3},
+                    {Bound_object4, increment, 4},
+                        {Bound_object5, increment, 5}],
+                            TxId]),
+
+    %% read the objects in the same transaction to see that the updates
+    %% are seen.
+    Res = rpc:call(Node, antidote, read_objects, [[Bound_object1,
+        Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId]),
+    ?assertMatch({ok, [1,2,3,4,5]}, Res),
+
+    %% update 5 times the first object.
+    ok = rpc:call(Node, antidote, update_objects,
+        [[{Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1}],
+            TxId]),
+    %% see that these updates are seen too.
+    Res1 = rpc:call(Node, antidote, read_objects, [[Bound_object1], TxId]),
+    ?assertMatch({ok, [6]}, Res1),
+    {ok, _CT} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+
+    %% start a new transaction that reads the updated objects.
+    {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object1,
+        Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId2]),
+    ?assertMatch({ok, [6,2,3,4,5]}, Res2),
+    {ok, _CT2} = rpc:call(Node, antidote, commit_transaction, [TxId2]).
+
+%% doc The following test tests sending multiple updates in a single
+%% update_objects call.
+%% it also tests that the coordinator StaysAlive after the first transaction,
+%% and serves the request from the second one.
+clocksi_static_parallel_writes_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    Node = hd(Nodes),
+    Bucket = test_bucket,
+    Bound_object1 = {parallel_key6, antidote_crdt_counter, Bucket},
+    Bound_object2 = {parallel_key7, antidote_crdt_counter, Bucket},
+    Bound_object3 = {parallel_key8, antidote_crdt_counter, Bucket},
+    Bound_object4 = {parallel_key9, antidote_crdt_counter, Bucket},
+    Bound_object5 = {parallel_key10, antidote_crdt_counter, Bucket},
+    %% update 5 different objects
+    {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, [],
+        [{Bound_object1, increment, 1},
+            {Bound_object2, increment, 2},
+            {Bound_object3, increment, 3},
+            {Bound_object4, increment, 4},
+            {Bound_object5, increment, 5}], true]),
+
+    lager:info("updated 5 objects no problem"),
+
+    {ok, Res, CT1} = rpc:call(Node, antidote, read_objects, [CT, [], [Bound_object1,
+        Bound_object2,Bound_object3,Bound_object4,Bound_object5], true]),
+    ?assertMatch([1,2,3,4,5], Res),
+
+    lager:info("read 5 objects no problem"),
+
+    %% update 5 times the first object.
+    {ok, CT2} = rpc:call(Node, antidote, update_objects, [CT1, [],
+        [{Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1},
+            {Bound_object1, increment, 1}], true]),
+
+    lager:info("updated 5 times the sabe object, no problem"),
+
+    {ok, Res1, _CT4} = rpc:call(Node, antidote, read_objects, [CT2, [], [Bound_object1], true]),
+    ?assertMatch([6], Res1),
+    lager:info("result is correct after reading those updates. Test passed."),
+    pass.

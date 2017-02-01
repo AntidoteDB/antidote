@@ -20,4 +20,10 @@ RUN cd /tmp && \
     make rel && \
     make clean
 
+# Distributed Erlang Port Mapper
+EXPOSE 4368
+
+# Default ports for Antidote
+EXPOSE 8085 8086 8087 8099
+
 CMD /opt/antidote/_build/default/rel/antidote/bin/env console

@@ -10,6 +10,11 @@ if [ -z "$PB_PORT" ]; then
   export PB_PORT=8087
 fi
 
+# Protocol buffer port.
+if [ -z "$PB_IP" ]; then
+  export PB_IP="127.0.0.1"
+fi
+
 # Pub/sub port.
 if [ -z "$PUBSUB_PORT" ]; then
   export PUBSUB_PORT=8086

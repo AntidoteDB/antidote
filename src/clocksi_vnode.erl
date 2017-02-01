@@ -408,9 +408,9 @@ handle_command({get_active_txns}, _Sender,
     #state{partition = Partition} = State) ->
     {reply, get_active_txns_internal(Partition), State};
 
-handle_command({get_antidote_db}, _Sender,
+handle_command({get_antidote_db}, Sender,
     #state{antidote_db = AntidoteDB} = State) ->
-    lager:info("handle_command get_antidote_db ~n", []),
+    lager:info("handle_command get_antidote_db SENDER ~p ANTIDOTEDB REF ~p ~n", [Sender, AntidoteDB]),
     {reply, AntidoteDB, State};
 
 handle_command(_Message, _Sender, State) ->
@@ -719,7 +719,7 @@ get_time([{Time,TxId} | Rest], TxIdCheck) ->
 
 get_antidote_db(Partition) ->
     lager:info("PARTITION ~p NODE ~p ~n", [Partition, node()]),
-    riak_core_vnode_master:sync_spawn_command({Partition, node()},
+    riak_core_vnode_master:sync_command({Partition, node()},
         {get_antidote_db},
         clocksi_vnode_master).
 

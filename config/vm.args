@@ -24,8 +24,8 @@
 ## Increase distribution port buffer size.
 +zdbbl 32768
 
-## Enable multi_time_warp.
-+C multi_time_warp
+## Disable time_warp, because Antidote is not time-warp safe at the moment (see https://github.com/SyncFree/antidote/issues/226)
++C no_time_warp
 
 ## The following section is required beacuse variable replacement can
 ## only occur with string, not integers.
