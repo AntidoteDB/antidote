@@ -1,5 +1,5 @@
 ---
-title: 
+title:
 keywords: homepage
 tags: [index]
 toc: false
@@ -107,6 +107,9 @@ Antidote is the first to provide all of these features in one data store:
 *  Horizontal scalability by partitioning of the key space
 *  Operation-based CRDT support
 *  Partial Replication
+
+The [Whitepaper](https://syncfree.lip6.fr/index.php/white-papers) gives a comprehensive
+overview of Antidote's design goals.
 
 Hint: Some features are still experimental and are not available on the master branch.
 
