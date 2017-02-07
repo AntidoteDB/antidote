@@ -160,7 +160,7 @@
 -type dc_and_commit_time() ::  {dcid(), clock_time()}.
 
 -record(tx_id, {local_start_time :: clock_time(),
-  server_pid :: atom()}).
+  server_pid :: atom() | pid()}).
 -record(clocksi_payload, {key :: key(),
   type :: type(),
   op_param :: op(),
