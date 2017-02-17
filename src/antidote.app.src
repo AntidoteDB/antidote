@@ -43,5 +43,5 @@
   %% log_staleness:
   %%        true -> the materializer vnode will log staleness in log files that can later be processed.
   %%        false -> this option will be disabled.
-  {env, [{txn_cert, true}, {txn_prot, physics}, {enable_logging, true}, {recover_from_log, true}, {recover_meta_data_on_start, true}, {sync_log, false}, {log_staleness, false}]}
+  {env, [{txn_cert, false}, {txn_prot, physics}, {enable_logging, false}, {recover_from_log, false}, {recover_meta_data_on_start, true}, {sync_log, false}, {log_staleness, true}]}
  ]}.

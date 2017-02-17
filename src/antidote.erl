@@ -80,8 +80,8 @@ stop() ->
 
 -spec start_transaction(Clock::snapshot_time() | ignore , Properties::txn_properties(), boolean())
                        -> {ok, txid()} | {error, reason()}.
-start_transaction(Clock, _Properties, KeepAlive) ->
-    clocksi_istart_tx(Clock, KeepAlive).
+start_transaction(Clock, _Properties, _KeepAlive) ->
+    clocksi_istart_tx(Clock, false).
 
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
                        -> {ok, txid()} | {error, reason()}.
