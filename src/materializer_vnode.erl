@@ -205,24 +205,33 @@ file_to_table(FileName, Continuation, TableName)->
 	lager:info("merging file ~p from Continuation ~p ", [DirAndFileName, Continuation]),
 	case (lists:sublist(FileName, 1, length("StalenessLog")) == "StalenessLog") of
 		true -> %% this is a staleness log file, process it
-			case Continuation of
+			LogStatus=case Continuation of
 				start ->
 					lager:info("openning file"),
-					disk_log:open([{name, DirAndFileName}]);
+					State=disk_log:open([{name, DirAndFileName}]),
+					lager:info("openning log returned: ~p",[State]),
+					State;
 				_->
 					do_nothing
 			end,
-			case disk_log:chunk(DirAndFileName, Continuation) of
-				eof ->
-					lager:info("closing file"),
+			case LogStatus of
+				{error, _} ->
+					lager:info("no such log file"),
 					disk_log:close(DirAndFileName),
 					ok;
-				{NextContinuation, List} ->
-					lists:foreach(fun(Info) ->
-						lager:info("inserting into table: ~p", [{Info, 1}]),
-						ets:insert(TableName, {Info,1})
-					end, List),
-					file_to_table(DirAndFileName, NextContinuation, TableName)
+				_->
+					case disk_log:chunk(DirAndFileName, Continuation) of
+						eof ->
+							lager:info("closing file"),
+							disk_log:close(DirAndFileName),
+							ok;
+						{NextContinuation, List} ->
+							lists:foreach(fun(Info) ->
+								lager:info("inserting into table: ~p", [{Info, 1}]),
+								ets:insert(TableName, {Info,1})
+							end, List),
+							file_to_table(DirAndFileName, NextContinuation, TableName)
+					end
 			end;
 		false -> %% nothing to do, not a staleness file.
 			ok
