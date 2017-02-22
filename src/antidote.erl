@@ -108,7 +108,6 @@ commit_transaction(TxId) ->
 -spec read_objects(Objects::[bound_object()], TxId::txid())
                   -> {ok, [term()]} | {error, reason()}.
 read_objects(BoundObjects, TxId) ->
-    {_, _, CoordFsmPid} = TxId,
     NewObjects = lists:map(fun({Key, Type, Bucket}) ->
                                 case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
                                     ok ->
@@ -121,7 +120,7 @@ read_objects(BoundObjects, TxId) ->
     case lists:member({error, type_check}, NewObjects) of
         true -> {error, type_check};
         false ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
+            case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
                      {ok, Res} ->
                          {ok, Res};
                      {error, Reason} -> {error, Reason}
@@ -131,12 +130,11 @@ read_objects(BoundObjects, TxId) ->
 -spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
                     -> ok | {error, reason()}.
 update_objects(Updates, TxId) ->
-    {_, _, CoordFsmPid} = TxId,
     case check_and_format_ops(Updates) of
         {error, Reason} ->
             {error, Reason};
         Operations ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
+            case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {update_objects, Operations}, ?OP_TIMEOUT) of
                 ok ->
                     ok;
                 {aborted, TxId} ->
@@ -432,10 +430,10 @@ clocksi_istart_tx() ->
     clocksi_istart_tx(ignore, false).
 
 -spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
-clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
+clocksi_iread(TxId, Key, Type) ->
     case materializer:check_operations([{read, {Key, Type}}]) of
         ok ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}, ?OP_TIMEOUT) of
+            case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {read, {Key, Type}}, ?OP_TIMEOUT) of
                 {ok, Res} -> {ok, Res};
                 {error, Reason} -> {error, Reason}
             end;
@@ -444,10 +442,10 @@ clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
     end.
 
 -spec clocksi_iupdate(txid(), key(), type(), term()) -> ok | {error, reason()}.
-clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
+clocksi_iupdate(TxId, Key, Type, OpParams) ->
     case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
         ok ->
-            gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}, ?OP_TIMEOUT);
+            gen_fsm:sync_send_event(TxId#tx_id.server_pid, {update, {Key, Type, OpParams}}, ?OP_TIMEOUT);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -459,17 +457,17 @@ clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
 %%      To keep with the current api this is still done in 2 steps,
 %%      but should be changed when the new transaction api is decided
 -spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}} | {error, reason()}.
-clocksi_full_icommit({_, _, CoordFsmPid})->
-    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}, ?OP_TIMEOUT) of
+clocksi_full_icommit(TxId)->
+    case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {prepare, empty}, ?OP_TIMEOUT) of
         {ok,_PrepareTime} ->
-            gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT);
+            gen_fsm:sync_send_event(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
         Msg ->
             Msg
     end.
 
 -spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
-clocksi_iprepare({_, _, CoordFsmPid})->
-    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT) of
+clocksi_iprepare(TxId)->
+    case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {prepare, two_phase}, ?OP_TIMEOUT) of
         {error, {aborted, TxId}} ->
             {aborted, TxId};
         Reply ->
@@ -477,8 +475,8 @@ clocksi_iprepare({_, _, CoordFsmPid})->
     end.
 
 -spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
-clocksi_icommit({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT).
+clocksi_icommit(TxId)->
+    gen_fsm:sync_send_event(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT).
 
 %%% Snapshot read for Gentlerain protocol
 gr_snapshot_read(ClientClock, Args) ->
