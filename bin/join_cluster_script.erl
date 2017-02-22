@@ -1,5 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
+%%! -smp enable -name join_cluster@127.0.0.1 -cookie antidote
 -mode(compile).
 
 -export([at_init_testsuite/0,
@@ -29,23 +30,23 @@
 
 
 %% This should be called like (e.g.): $join_cluster_script.erl 3 2, and will connect local releases antidote3 and antidote4
-main([local, NodeFrom, NodesNum]) ->
-    erlang:set_cookie(node(), antidote),
-    FromNode = list_to_integer(NodeFrom),
-    NumNodes = list_to_integer(NodesNum),
-    HostName = "127.0.0.1",
-    Node1 = list_to_atom("antidote1@"++HostName),
-    Node2 = list_to_atom("antidote2@"++HostName),
-    Node3 = list_to_atom("antidote3@"++HostName),
-    Node4 = list_to_atom("antidote4@"++HostName),
-    Node5 = list_to_atom("antidote5@"++HostName),
-    AllNodes = [Node1, Node2,
-            Node3, Node4, Node5],
-    Nodes = lists:sublist(AllNodes, FromNode, NumNodes),
-    io:format("~nSTARTING SCRIPT TO JOIN CLUSTER OF NODES:~n~p~n", [Nodes]),
-    join_cluster(Nodes),
-    io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
-    io:format("~nSUCCESS! Finished building cluster!~n");
+%%main([local, NodeFrom, NodesNum]) ->
+%%    erlang:set_cookie(node(), antidote),
+%%    FromNode = list_to_integer(NodeFrom),
+%%    NumNodes = list_to_integer(NodesNum),
+%%    HostName = "127.0.0.1",
+%%    Node1 = list_to_atom("antidote1@"++HostName),
+%%    Node2 = list_to_atom("antidote2@"++HostName),
+%%    Node3 = list_to_atom("antidote3@"++HostName),
+%%    Node4 = list_to_atom("antidote4@"++HostName),
+%%    Node5 = list_to_atom("antidote5@"++HostName),
+%%    AllNodes = [Node1, Node2,
+%%            Node3, Node4, Node5],
+%%    Nodes = lists:sublist(AllNodes, FromNode, NumNodes),
+%%    io:format("~nSTARTING SCRIPT TO JOIN CLUSTER OF NODES:~n~p~n", [Nodes]),
+%%    join_cluster(Nodes),
+%%    io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
+%%    io:format("~nSUCCESS! Finished building cluster!~n");
 
 
 %% This should be called like (e.g.): $join_cluster_script.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'
