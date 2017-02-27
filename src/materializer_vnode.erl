@@ -332,8 +332,8 @@ is_empty(State=#mat_state{ops_cache=OpsCache, antidote_db = undefined}) ->
             {false, State}
     end;
 
-is_empty(_State) ->
-	false.
+is_empty(State) ->
+	{true, State}.
 
 delete(State=#mat_state{ops_cache=_OpsCache}) ->
     {ok, State}.
