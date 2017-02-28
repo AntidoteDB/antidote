@@ -11,7 +11,6 @@
                   riak_api,
                   riak_core,
                   antidote_crdt,
-                  antidote_utils,
                   cuttlefish,
                   riak_dt,
                   antidote_pb,
