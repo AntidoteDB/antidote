@@ -223,7 +223,7 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
     PropertyList = [],
     case check_clock(Key,Transaction,PreparedCache,Partition, MatState) of
 	{not_ready,Time} ->
-		lager:info("waiting for clock to catch up"),
+%%		lager:info("waiting for clock to catch up"),
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
 	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
 	    ok;

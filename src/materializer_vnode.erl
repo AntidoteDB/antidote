@@ -187,7 +187,7 @@ merge_staleness_files_into_table() ->
 		{error, Reason} ->
 			{error, Reason};
 		{ok, FileList} ->
-			lager:info("got file list: ~p",[FileList]),
+%%			lager:info("got file list: ~p",[FileList]),
 			StalenessTable = ets:new(staleness_table, [duplicate_bag, named_table, public]),
 			lists:foreach(fun(FileName) ->
 				ok = file_to_table(FileName, start, StalenessTable, "StalenessLog")
@@ -225,7 +225,7 @@ file_to_table(FileName, Continuation, TableName, FileKind)->
 							ok;
 						{NextContinuation, List} ->
 							lists:foreach(fun(Info) ->
-								lager:info("inserting into table: ~p", [{Info, 1}]),
+%%								lager:info("inserting into table: ~p", [{Info, 1}]),
 								ets:insert(TableName, {Info,1})
 							end, List),
 							file_to_table(DirAndFileName, NextContinuation, TableName, FileKind)
@@ -317,7 +317,7 @@ handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
 handle_command({get_staleness_log}, _Sender, State) ->
-	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
+%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
 	{reply, {ok, State#mat_state.staleness_log}, State};
 
 handle_command({open_staleness_log}, _Sender, State) ->
