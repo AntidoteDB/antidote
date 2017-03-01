@@ -195,8 +195,10 @@ init([Partition, Id]) ->
     Addr = node(),
     OpsCache = materializer_vnode:get_cache_name(Partition,ops_cache),
     SnapshotCache = materializer_vnode:get_cache_name(Partition,snapshot_cache),
+    {ok, StalenessLog} = materializer_vnode:get_staleness_log(Partition),
     PreparedCache = clocksi_vnode:get_cache_name(Partition,prepared),
-    MatState = #mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,partition=Partition,is_ready=false},
+    MatState = #mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache,
+        partition=Partition,is_ready=false, staleness_log = StalenessLog},
     Self = generate_server_name(Addr,Partition,Id),
     {ok, #state{partition=Partition, id=Id,
 		mat_state = MatState,
@@ -216,10 +218,10 @@ handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
 -spec perform_read_internal(pid(), key(), type(), #transaction{}, [], #state{}) ->
 				   ok.
 perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
-		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition, mat_state = MatState}) ->
     %% TODO: Add support for read properties
     PropertyList = [],
-    case check_clock(Key,Transaction,PreparedCache,Partition) of
+    case check_clock(Key,Transaction,PreparedCache,Partition, MatState) of
 	{not_ready,Time} ->
 		lager:info("waiting for clock to catch up"),
 	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
@@ -234,9 +236,9 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
--spec check_clock(key(),transaction(),ets:tid(),partition_id()) ->
+-spec check_clock(key(),transaction(),ets:tid(),partition_id(), mat_state()) ->
 	{not_ready, clock_time()} | ready.
-check_clock(Key, Transaction, PreparedCache, Partition) ->
+check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
 	Time = dc_utilities:now_microsec(),
     case Transaction#transaction.transactional_protocol of
         physics ->
@@ -250,6 +252,11 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
                     DepUpboundScalar= vectorclock:get_clock_of_dc(MyDC, DepUpbound),
                     case DepUpboundScalar > Time of
                         true ->
+                            case MatState#mat_state.staleness_log of
+                                staleness_log_disabled -> dites_bonjour;
+                                StalenessLog ->
+                                    materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+                            end,
                             % lager:debug("Waiting... Reason: clock skew"),
                             {not_ready, (DepUpboundScalar - Time) div 1000 + 1};
                         false ->
@@ -261,10 +268,24 @@ check_clock(Key, Transaction, PreparedCache, Partition) ->
                 T_TS = TxId#tx_id.local_start_time,
                 case T_TS > Time of
                 true ->
+                    case MatState#mat_state.staleness_log of
+                        no_staleness_log -> dites_bonjour;
+                        StalenessLog ->
+                            materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+                    end,
                     % lager:info("Waiting... Reason: clock skew"),
                     {not_ready, (T_TS - Time) div 1000 + 1};
                 false ->
-                    check_prepared(Key, Transaction, PreparedCache, Partition)
+                    case check_prepared(Key, Transaction, PreparedCache, Partition) of
+                        ready -> ready;
+                        NotReady ->
+                            case MatState#mat_state.staleness_log of
+                                no_staleness_log -> dites_bonjour;
+                                StalenessLog ->
+                                    materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared)
+                            end,
+                            NotReady
+                    end
             end
     end.
 

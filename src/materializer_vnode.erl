@@ -54,7 +54,7 @@
 	op_not_already_in_snapshot/2,
 	create_empty_materialized_snapshot_record/2,
 	log_number_of_non_applied_ops/2,
-	merge_staleness_files_into_table/0]).
+	merge_staleness_files_into_table/0, get_staleness_log/1, log_number_of_non_applied_ops/3]).
 
 %% Callbacks
 -export([init/1,
@@ -143,6 +143,14 @@ open_staleness_log(Partition) ->
 			{error, Reason}
 	end.
 
+-spec get_staleness_log(partition()) -> {ok, staleness_log_disabled | term()}.
+get_staleness_log(Partition) ->
+	riak_core_vnode_master:sync_command({Partition, node()},
+		{get_staleness_log},
+		materializer_vnode_master).
+
+
+
 %% @doc This function is used only for benchmark purposes.
 %% It logs on disk the number of operations and snapshots
 %% that it had to leave out to build the transaction's snapshot.
@@ -160,6 +168,9 @@ log_number_of_non_applied_ops(MatState = #mat_state{staleness_log=StalenessLog},
 		_->
 			log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps)
 	end.
+
+log_number_of_non_applied_ops(StalenessLog, Partition, BlockingOp)->
+	log_number_of_non_applied_ops(#mat_state{staleness_log = StalenessLog, partition = Partition}, BlockingOp).
 
 -spec log_number_of_non_applied_snapshot_and_ops_internal(atom(), non_neg_integer())-> ok | {error, {no_such_log, atom()}}.
 log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps)->
@@ -179,18 +190,18 @@ merge_staleness_files_into_table() ->
 			lager:info("got file list: ~p",[FileList]),
 			StalenessTable = ets:new(staleness_table, [duplicate_bag, named_table, public]),
 			lists:foreach(fun(FileName) ->
-				ok = file_to_table(FileName, start, StalenessTable)
+				ok = file_to_table(FileName, start, StalenessTable, "StalenessLog")
 			end, FileList),
 			StalenessTable
 	end.
 
 
--spec file_to_table(string(), start | disk_log:continuation(), atom()) -> ok.
-file_to_table(FileName, Continuation, TableName)->
+-spec file_to_table(string(), start | disk_log:continuation(), atom(), string()) -> ok.
+file_to_table(FileName, Continuation, TableName, FileKind)->
 	%% add the directory and remove the .LOG extension.
 	DirAndFileName = "./data/" ++ lists:sublist(FileName, length(FileName)-4),
 	lager:info("merging file ~p from Continuation ~p ", [DirAndFileName, Continuation]),
-	case (lists:sublist(FileName, 1, length("StalenessLog")) == "StalenessLog") of
+	case (lists:sublist(FileName, 1, length("StalenessLog")) == FileKind) of
 		true -> %% this is a staleness log file, process it
 			LogStatus=case Continuation of
 				start ->
@@ -217,7 +228,7 @@ file_to_table(FileName, Continuation, TableName)->
 								lager:info("inserting into table: ~p", [{Info, 1}]),
 								ets:insert(TableName, {Info,1})
 							end, List),
-							file_to_table(DirAndFileName, NextContinuation, TableName)
+							file_to_table(DirAndFileName, NextContinuation, TableName, FileKind)
 					end
 			end;
 		false -> %% nothing to do, not a staleness file.
@@ -304,6 +315,10 @@ check_table_ready([{Partition,Node}|Rest]) ->
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
+
+handle_command({get_staleness_log}, _Sender, State) ->
+	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
+	{reply, {ok, State#mat_state.staleness_log}, State};
 
 handle_command({open_staleness_log}, _Sender, State) ->
 	case application:get_env(antidote, log_staleness) of
