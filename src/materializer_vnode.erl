@@ -125,20 +125,7 @@ init([Partition]) ->
 		      true
 	      end,
 	%% the following log is used in benchmarks to measure how old returned snapshots are.
-	StalenessLog=case application:get_env(antidote, log_staleness) of
-		{ok, true}->
-			case open_staleness_log(Partition) of
-				{ok, LogName} ->
-					lager:info("Opened staleness log ~p", [LogName]),
-					LogName;
-				{error, Reason} ->
-					lager:error("Failed to open log for partition ~p. ~n Error was ~p", [Partition, Reason]),
-					staleness_log_disabled
-			end;
-		_->
-			staleness_log_disabled
-	end,
-    {ok, #mat_state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache, staleness_log=StalenessLog}}.
+    {ok, #mat_state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache, staleness_log=staleness_log_disabled}}.
 
 
 %% opens the log file for staleness.
@@ -317,6 +304,21 @@ check_table_ready([{Partition,Node}|Rest]) ->
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
+
+handle_command({open_staleness_log}, _Sender, State) ->
+	case application:get_env(antidote, log_staleness) of
+		{ok, true} ->
+			case open_staleness_log(State#mat_state.partition) of
+				{ok, LogName} ->
+					lager:info("Opened staleness log ~p", [LogName]),
+					{reply, ok, State#mat_state{staleness_log = LogName}};
+				{error, Reason} ->
+					lager:error("Failed to open log for partition ~p. ~n Error was ~p", [State#mat_state.partition, Reason]),
+					{reply, ok, State#mat_state{staleness_log = staleness_log_disabled}}
+			end;
+		_ ->
+			{reply, ok, State#mat_state{staleness_log = staleness_log_disabled}}
+	end;
 
 handle_command({check_ready},_Sender,State = #mat_state{partition=Partition, is_ready=IsReady}) ->
     Result = case ets:info(get_cache_name(Partition,ops_cache)) of

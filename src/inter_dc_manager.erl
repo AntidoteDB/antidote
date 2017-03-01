@@ -111,6 +111,7 @@ start_bg_processes(MetaDataName) ->
     ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(materializer_vnode_master),
+    ok =
     lists:foreach(fun(Node) ->
 			  true = wait_init:wait_ready(Node),
 			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
@@ -134,6 +135,11 @@ start_bg_processes(MetaDataName) ->
     ok = lists:foreach(fun({_, true}) ->
 			       ok
 		       end, Responses2),
+    Responses3 = dc_utilities:bcast_vnode_sync(materializer_vnode_master, {open_staleness_log}),
+    %% Be sure they all started ok, crash otherwise
+    ok = lists:foreach(fun({_, ok}) ->
+        ok
+    end, Responses3),
     ok.
 
 %% This should be called once the DC is up and running successfully
