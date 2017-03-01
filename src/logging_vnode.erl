@@ -732,7 +732,7 @@ handle_commit(TxId, OpPayload, T, Key, Transaction, Ops, CommittedOpsDict) ->
 	    NewCommittedOpsDict =
 		lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
 				    case ((MinSnapshotTime == undefined) orelse
-									   (not vectorclock:all_dots_greater(SnapshotTime, MinSnapshotTime))) of
+									   (not vectorclock:strict_ge(SnapshotTime, MinSnapshotTime))) of
 					true ->
 					    CommittedDownstreamOp =
 						#operation_payload{
