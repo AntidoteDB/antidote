@@ -21,7 +21,7 @@ main(NodesListString) ->
             usage();
         _->
             lists:foreach(fun (Node) -> rpc:call(Node, inter_dc_manager, start_bg_processes, [stable]) end, Nodes),
-            io:format("~nSuccesfully sent  rpc:call(Node, inter_dc_manager, start_bg_processes, [stable]) end, Nodes) to nodes: ~w~n", [Nodes]),
+            io:format("~nSuccesfully sent  rpc:call(Node, inter_dc_manager, start_bg_processes, [stable]) end, Nodes) to nodes: ~w~n", [Nodes])
     end.
 
 usage() ->
