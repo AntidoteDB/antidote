@@ -35,6 +35,7 @@ update more than one object in a consistent manner.
 {% include image.html file="architecture.png" %}
 
 Each partition in AntidoteDB mainly consists of the following four components:
+
 ### Log
 This module implements a log-based persistent
   layer. Updates are stored in a log, which is persisted to disk for
