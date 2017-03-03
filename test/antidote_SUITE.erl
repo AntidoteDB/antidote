@@ -69,22 +69,22 @@ all() ->
 dummy_test(Config) ->
   [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
   ct:print("Test on ~p!",[Node1]),
-  %timer:sleep(10000),
-  %application:set_env(antidote, txn_cert, true),
-  %application:set_env(antidote, txn_prot, clocksi),
   Key = antidote_key,
   Type = antidote_crdt_counter,
+  Bucket = antidote_bucket,
+  Object = {Key, Type, Bucket},
+  Update = {Object, increment, 1},
 
-  {ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
-  {ok,_} = rpc:call(Node1, antidote, append, [Key, Type, {increment, 1}]),
-  {ok,_} = rpc:call(Node2, antidote, append, [Key, Type, {increment, 1}]),
-
-  % Propagation of updates
+  {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
+  {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
+  {ok,_} = rpc:call(Node2, antidote, update_objects, [ignore, [], [Update]]),
+  %% Propagation of updates
   F = fun() ->
-    rpc:call(Node2, antidote, read, [Key, Type])
-    end,
+            {ok, [Val], _CommitTime} = rpc:call(Node2, antidote, read_objects, [ignore, [], [Object]]),
+            Val
+  end,
   Delay = 100,
   Retry = 360000 div Delay, %wait for max 1 min
-  ok = test_utils:wait_until_result(F, {ok, 3}, Retry, Delay),
+  ok = test_utils:wait_until_result(F, 3, Retry, Delay),
 
   ok.
