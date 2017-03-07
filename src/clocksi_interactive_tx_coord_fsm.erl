@@ -719,7 +719,12 @@ reply_to_client(SD = #tx_coord_state
                                 {ok, CausalClock}
                         end;
                     aborted ->
-                        {error, {aborted, TxId}};
+                        case ReturnAcc of
+                            {error, Reason} ->
+                              {error, Reason};
+                            _ ->
+                              {error, {aborted, TxId}}
+                        end;
                     Reason ->
                         {TxId, Reason}
                 end,
