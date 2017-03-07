@@ -43,7 +43,8 @@
           static_txn_single_object/1,
           static_txn_single_object_clock/1,
           static_txn_multi_objects/1,
-          interactive_txn/1]).
+          interactive_txn/1,
+          random_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -71,7 +72,8 @@ all() ->
      static_txn_single_object,
      static_txn_single_object_clock,
      static_txn_multi_objects,
-     interactive_txn
+     interactive_txn,
+     random_test
     ].
 
 dummy_test(Config) ->
@@ -201,3 +203,38 @@ txn_seq_update_check(Node, TxId, Updates) ->
               Res = rpc:call(Node, antidote, update_objects, [[Update], TxId]),
               ?assertMatch(ok, Res)
             end, Updates).
+
+%% Test that perform NumWrites increments to the key:key1.
+%%      Each increment is sent to a random node of the cluster.
+%%      Test normal behavior of the antidote
+%%      Performs a read to the first node of the cluster to check whether all the
+%%      increment operations where successfully applied.
+%%  Variables:  N:  Number of nodes
+%%              Nodes: List of the nodes that belong to the built cluster
+random_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    N = length(Nodes),
+
+    % Distribute the updates randomly over all DCs
+    NumWrites = 100,
+    ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid nondeterminism in tests
+
+    Obj = {log_test_key1, antidote_crdt_counter, antidote_bucket},
+    F = fun(Elem) ->
+            Node = lists:nth(Elem, Nodes),
+            ct:print("Inc at node: ~p",[Node]),
+            {ok,_} = rpc:call(Node, antidote, update_objects,
+                                [ignore, [], [{Obj, increment, 1}]])
+        end,
+    lists:foreach(F, ListIds),
+
+    FirstNode = hd(Nodes),
+
+    G = fun() ->
+            {ok, [Res], _} = rpc:call(FirstNode, antidote, read_objects, [ignore, [], [Obj]]),
+            Res
+        end,
+    Delay = 1000,
+    Retry = 360000 div Delay, %wait for max 1 min
+    ok = test_utils:wait_until_result(G, NumWrites, Retry, Delay),
+    pass.
