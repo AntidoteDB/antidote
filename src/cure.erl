@@ -136,7 +136,7 @@ read_objects(Clock, Properties, Objects) ->
 
 -spec read_objects(vectorclock(), any(), [bound_object()], boolean()) ->
                           {ok, list(), vectorclock()} | {error, reason()}.
-read_objects(Clock, _Properties, Objects, StayAlive) ->
+read_objects(Clock, Properties, Objects, StayAlive) ->
     FormattedObjects = format_read_params(Objects),
     SingleKey = case FormattedObjects of
                     [_O] -> %% Single key update
@@ -155,7 +155,11 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
-                    start_static_transaction(read_objects, FormattedObjects, StayAlive, Clock);
+                    %start_static_transaction(read_objects, FormattedObjects, StayAlive, Clock);
+                    {ok, TxId} = start_transaction(Clock, Properties),
+                    {ok, Result} = read_objects(Objects, TxId),
+                    {ok, CommitTime} = commit_transaction(TxId),
+                    {ok, Result, CommitTime};
                 {ok, gr} ->
                     case FormattedObjects of
                         [_Op] -> %% Single object read = read latest value
