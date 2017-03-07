@@ -39,7 +39,11 @@
          all/0]).
 
 %% tests
--export([dummy_test/1]).
+-export([dummy_test/1,
+          static_txn_single_object/1,
+          static_txn_single_object_clock/1,
+          static_txn_multi_objects/1,
+          interactive_txn/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -63,7 +67,11 @@ end_per_testcase(_, _) ->
 
 all() ->
     [
-     dummy_test
+     dummy_test,
+     static_txn_single_object,
+     static_txn_single_object_clock,
+     static_txn_multi_objects,
+     interactive_txn
     ].
 
 dummy_test(Config) ->
@@ -88,3 +96,108 @@ dummy_test(Config) ->
   ok = test_utils:wait_until_result(F, 3, Retry, Delay),
 
   ok.
+
+static_txn_single_object(Config) ->
+  [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+  Key = antidote_key_static1,
+  Type = antidote_crdt_counter,
+  Bucket = antidote_bucket,
+  Object = {Key, Type, Bucket},
+  Update = {Object, increment, 1},
+
+  {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
+  {ok, [Val], _} = rpc:call(Node1, antidote, read_objects, [ignore, [], [Object]]),
+  ?assertEqual(1, Val).
+
+static_txn_single_object_clock(Config) ->
+  [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+  Key = antidote_key_static2,
+  Type = antidote_crdt_counter,
+  Bucket = antidote_bucket,
+  Object = {Key, Type, Bucket},
+  Update = {Object, increment, 1},
+
+  {ok, Clock1} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
+  {ok, [Val1], Clock2} = rpc:call(Node1, antidote, read_objects, [Clock1, [], [Object]]),
+  ?assertEqual(1, Val1),
+  {ok, Clock3} = rpc:call(Node1, antidote, update_objects, [Clock2, [], [Update]]),
+  {ok, [Val2], _Clock4} = rpc:call(Node1, antidote, read_objects, [Clock3, [], [Object]]),
+  ?assertEqual(2, Val2).
+
+static_txn_multi_objects(Config) ->
+  [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+  Type = antidote_crdt_counter,
+  Bucket = antidote_bucket,
+  Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
+  IncValues = [1,2,3,4],
+  Objects = lists:map(fun(Key) ->
+                          {Key, Type, Bucket}
+                      end, Keys
+                     ),
+  Updates = lists:map(fun({Object, IncVal}) ->
+                        {Object, increment, IncVal}
+                      end, lists:zip(Objects, IncValues)),
+
+  {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], Updates]),
+  {ok, Res, _} = rpc:call(Node1, antidote, read_objects, [ignore, [], Objects]),
+  ?assertEqual([1, 2, 3, 4], Res).
+
+  static_txn_multi_objects_clock(Config) ->
+    [Node1 | _Nodes] = proplists:get_value(nodes, Config),
+    Type = antidote_crdt_counter,
+    Bucket = antidote_bucket,
+    Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
+    IncValues = [1,2,3,4],
+    Objects = lists:map(fun(Key) ->
+                            {Key, Type, Bucket}
+                        end, Keys
+                       ),
+    Updates = lists:map(fun({Object, IncVal}) ->
+                          {Object, increment, IncVal}
+                        end, lists:zip(Objects, IncValues)),
+
+    {ok, Clock1} = rpc:call(Node1, antidote, update_objects, [ignore, [], Updates]),
+    {ok, Res, Clock2} = rpc:call(Node1, antidote, read_objects, [Clock1, [], Objects]),
+    ?assertEqual([1, 2, 3, 4], Res),
+
+    {ok, Clock3} = rpc:call(Node1, antidote, update_objects, [Clock2, [], Updates]),
+    {ok, Res, _} = rpc:call(Node1, antidote, read_objects, [Clock3, [], Objects]),
+    ?assertEqual([2, 4, 6, 8], Res).
+
+interactive_txn(Config) ->
+  [Node | _Nodes] = proplists:get_value(nodes, Config),
+  Type = antidote_crdt_counter,
+  Bucket = antidote_bucket,
+  Keys = [antidote_int_m1, antidote_int_m2, antidote_int_m3, antidote_int_m4],
+  IncValues = [1,2,3,4],
+  Objects = lists:map(fun(Key) ->
+                          {Key, Type, Bucket}
+                      end, Keys
+                     ),
+  Updates = lists:map(fun({Object, IncVal}) ->
+                        {Object, increment, IncVal}
+                      end, lists:zip(Objects, IncValues)),
+  {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+  %% update objects one by one.
+  txn_seq_update_check(Node, TxId, Updates),
+  %% read objects one by one
+  txn_seq_read_check(Node, TxId, Objects, [1,2,3,4]),
+  {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId]),
+
+  {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [Clock, []]),
+  %% read objects all at once
+  {ok, Res} = rpc:call(Node, antidote, read_objects, [Objects, TxId2]),
+  {ok, _} = rpc:call(Node, antidote, commit_transaction, [TxId2]),
+  ?assertEqual([1, 2, 3, 4], Res).
+
+txn_seq_read_check(Node, TxId, Objects, ExpectedValues) ->
+  lists:map(fun({Object, Expected}) ->
+              {ok, [Val]} = rpc:call(Node, antidote, read_objects, [[Object], TxId]),
+              ?assertEqual(Expected, Val)
+            end, lists:zip(Objects, ExpectedValues)).
+
+txn_seq_update_check(Node, TxId, Updates) ->
+  lists:map(fun(Update) ->
+              Res = rpc:call(Node, antidote, update_objects, [[Update], TxId]),
+              ?assertMatch(ok, Res)
+            end, Updates).
