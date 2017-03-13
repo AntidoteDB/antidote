@@ -35,6 +35,11 @@ if [ -z "$PLATFORM_DATA_DIR" ]; then
   export PLATFORM_DATA_DIR="data"
 fi
 
+# Receive the host name from the parameters
+if [ -z "$INSTANCE_NAME" ]; then
+  export INSTANCE_NAME=antidote
+fi
+
 # If we're running in Mesos...
 if [ ! -z "$MESOS_TASK_ID" ]; then
   # Choose publicly routable IP.
@@ -44,12 +49,6 @@ if [ ! -z "$MESOS_TASK_ID" ]; then
 
   # Caveat: there's only one antidote supported per node because of
   # EPMD, so we will address it by name@IP.
-
-
-  # Receive the host name from the parameters
-  if [ -z "$INSTANCE_NAME" ]; then
-      export INSTANCE_NAME=antidote
-      fi
 
   # Choose the hostname for the epmd long name if the hostname exists
   # and if it resolves through the resolver; using a resolvable name
@@ -75,6 +74,13 @@ if [ ! -z "$MESOS_TASK_ID" ]; then
 
   # Logeader port.
   export LOGREADER_PORT=${PORT4}
+
+  echo "MESOS_TASK_ID: ${MESOS_TASK_ID}"
+  echo "PORT0: ${PORT0}"
+  echo "PORT1: ${PORT1}"
+  echo "PORT2: ${PORT2}"
+  echo "PORT3: ${PORT3}"
+  echo "PORT4: ${PORT4}"
 fi
 
 # Assume 127.0.0.1 as bind host.
@@ -93,16 +99,10 @@ fi
 
 export RELX_REPLACE_OS_VARS=true
 
-#echo "MESOS_TASK_ID: ${MESOS_TASK_ID}"
-#echo "PORT0: ${PORT0}"
-#echo "PORT1: ${PORT1}"
-#echo "PORT2: ${PORT2}"
-#echo "PORT3: ${PORT3}"
-#echo "PORT4: ${PORT4}"
-#echo "NODE_NAME: ${NODE_NAME}"
-#echo "COOKIE: ${COOKIE}"
-#echo "IP: ${IP}"
-#echo "HOSTNAME: ${HOSTNAME}"
+echo "NODE_NAME: ${NODE_NAME}"
+echo "COOKIE: ${COOKIE}"
+echo "IP: ${IP}"
+echo "HOSTNAME: ${HOSTNAME}"
 
 RELNAME="`dirname \"$0\"`"/${INSTANCE_NAME}
 exec ${RELNAME} "$@"
