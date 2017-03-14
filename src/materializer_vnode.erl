@@ -54,7 +54,7 @@
 	op_not_already_in_snapshot/2,
 	create_empty_materialized_snapshot_record/2,
 	log_number_of_non_applied_ops/2,
-	merge_staleness_files_into_table/0, get_staleness_log/1, log_number_of_non_applied_ops/3]).
+	merge_staleness_files_into_table/0, get_staleness_log/1, log_number_of_non_applied_ops/3, truncate_all_staleness_logs/0]).
 
 %% Callbacks
 -export([init/1,
@@ -148,6 +148,10 @@ get_staleness_log(Partition) ->
 	riak_core_vnode_master:sync_command({Partition, node()},
 		{get_staleness_log},
 		materializer_vnode_master).
+
+-spec truncate_all_staleness_logs() -> {ok | term()}.
+truncate_all_staleness_logs() ->
+	dc_utilities:bcast_vnode_sync(materializer_vnode_master, {truncate_staleness_log}).
 
 
 
@@ -315,6 +319,10 @@ check_table_ready([{Partition,Node}|Rest]) ->
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
+
+handle_command({truncate_staleness_log}, _Sender, State) ->
+%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
+	{reply, {disk_log:truncate(State#mat_state.staleness_log)}, State};
 
 handle_command({get_staleness_log}, _Sender, State) ->
 %%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
