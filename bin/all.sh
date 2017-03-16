@@ -9,6 +9,6 @@ i=$1
    ./bin/build-releases.sh ${i}
    echo "launching Antidote nodes..."
    ./bin/launch-nodes.sh ${i}
-      sleep $(($i*3))
-   echo "joining Antidote nodes into a cluster"
-   ./bin/join_cluster_script.erl 1 ${i} 127.0.0.1
+#      sleep $(($i*3))
+#   echo "joining Antidote nodes into a cluster"
+#   ./bin/join_cluster_script.erl 1 ${i} 127.0.0.1
