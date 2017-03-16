@@ -106,16 +106,20 @@ connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
 start_bg_processes(MetaDataName) ->
     %% Start the meta-data senders
     Nodes = dc_utilities:get_my_dc_nodes(),
-    %% Ensure vnodes are running and meta_data
-    ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
-    ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
-    ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(materializer_vnode_master),
     Responses3 = dc_utilities:bcast_vnode_sync(materializer_vnode_master, {open_staleness_log}),
-    %% Be sure they all started ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->
         ok
     end, Responses3),
+    %% Ensure vnodes are running and meta_data
+    ok = dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
+%%    lager:info("starting clocksi vnodes"),
+    ok = dc_utilities:ensure_all_vnodes_running_master(clocksi_vnode_master),
+%%    lager:info("done clocksi vnodes"),
+    ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
+
+    %% Be sure they all started ok, crash otherwise
+
     ok =
     lists:foreach(fun(Node) ->
 			  true = wait_init:wait_ready(Node),

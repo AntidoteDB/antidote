@@ -185,7 +185,7 @@ log_number_of_non_applied_ops(MatState = #mat_state{staleness_log=StalenessLog},
 				{log_number_of_non_applied_snapshot_and_ops, NumberOfNonAppliedOps},
 				materializer_vnode_master);
 		_->
-			lager:info("IM THE ONE!"),
+%%			lager:info("IM THE ONE!"),
 			log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps)
 	end.
 

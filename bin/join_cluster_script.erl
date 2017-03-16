@@ -48,7 +48,8 @@ main(NodesListString) ->
             io:format("~nSTARTING SCRIPT TO JOIN CLUSTER OF NODES:~n~p~n", [Nodes]),
             lists:foreach(fun (Node) -> erlang:set_cookie(Node, antidote) end, Nodes),
             join_cluster(Nodes),
-            lists:foreach(fun (Node) -> rpc:call(Node, inter_dc_manager, start_bg_processes, [stable]) end, Nodes),
+%%            lists:foreach(fun (Node) -> rpc:call(Node, inter_dc_manager, start_bg_processes, [stable]) end, Nodes),
+            rpc:call(hd(Nodes), inter_dc_manager, start_bg_processes, [stable]),
             io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
             io:format("~nSUCCESS! Finished building cluster!~n")
     end.
@@ -343,7 +344,7 @@ join_cluster(Nodes) ->
     wait_until_nodes_agree_about_ownership(Nodes),
     ok = wait_until_no_pending_changes(Nodes),
     wait_until_ring_converged(Nodes),
-    wait_until(hd(Nodes),fun check_ready/1),
+%%    wait_until(hd(Nodes),fun check_ready/1),
     ok.
 
 %% @doc Return a list of nodes that own partitions according to the ring
