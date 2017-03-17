@@ -255,7 +255,7 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
                             case MatState#mat_state.staleness_log of
                                 staleness_log_disabled -> dites_bonjour;
                                 StalenessLog ->
-                                    materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+                                    ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
                             end,
                             % lager:debug("Waiting... Reason: clock skew"),
                             {not_ready, (DepUpboundScalar - Time) div 1000 + 1};
@@ -271,7 +271,7 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
                     case MatState#mat_state.staleness_log of
                         no_staleness_log -> dites_bonjour;
                         StalenessLog ->
-                            materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+                            ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
                     end,
                     % lager:info("Waiting... Reason: clock skew"),
                     {not_ready, (T_TS - Time) div 1000 + 1};
@@ -282,7 +282,7 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
                             case MatState#mat_state.staleness_log of
                                 no_staleness_log -> dites_bonjour;
                                 StalenessLog ->
-                                    materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared)
+                                    ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared)
                             end,
                             NotReady
                     end

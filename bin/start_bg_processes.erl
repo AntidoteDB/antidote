@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable -name join_cluster@127.0.0.1 -cookie antidote
+%%! -smp enable -name start_bg_proc@127.0.0.1 -cookie antidote
 -mode(compile).
 
 %% This should be called like (e.g.): start_bg_processes.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'

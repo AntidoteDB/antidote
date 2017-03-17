@@ -54,7 +54,7 @@
 	op_not_already_in_snapshot/2,
 	create_empty_materialized_snapshot_record/2,
 	log_number_of_non_applied_ops/2,
-	merge_staleness_files_into_table/0, get_staleness_log/1, log_number_of_non_applied_ops/3]).
+	merge_staleness_files_into_table/0, get_staleness_log/1, log_number_of_non_applied_ops/3, truncate_all_staleness_logs/0, sync_all_staleness_logs/0, reopen_all_staleness_logs/0, close_all_staleness_logs/0]).
 
 %% Callbacks
 -export([init/1,
@@ -133,11 +133,13 @@ init([Partition]) ->
 %% is set to true in antidote.app.src
 -spec open_staleness_log(non_neg_integer() | ets:tid()) -> {'error',reason()} | {'ok', string()}.
 open_staleness_log(Partition) ->
-	LogFile = "StalenessLog-" ++ integer_to_list(Partition) ++ "-" ++ integer_to_list(dc_utilities:now_microsec()),
+	LogFile = "StalenessLog-" ++ integer_to_list(Partition),
 	LogPath=filename:join(
 		app_helper:get_env(riak_core, platform_data_dir), LogFile),
 	case disk_log:open([{name, LogPath}]) of
 		{ok, Log}->
+			{ok, Log};
+		{repaired,Log, _, _} ->
 			{ok, Log};
 		{error, Reason}->
 			{error, Reason}
@@ -148,6 +150,22 @@ get_staleness_log(Partition) ->
 	riak_core_vnode_master:sync_command({Partition, node()},
 		{get_staleness_log},
 		materializer_vnode_master).
+
+-spec truncate_all_staleness_logs() -> {ok | term()}.
+truncate_all_staleness_logs() ->
+	dc_utilities:bcast_vnode_sync(materializer_vnode_master, {truncate_staleness_log}).
+
+-spec sync_all_staleness_logs() -> {ok | term()}.
+sync_all_staleness_logs() ->
+	dc_utilities:bcast_vnode_sync(materializer_vnode_master, {sync_staleness_log}).
+
+-spec reopen_all_staleness_logs() -> {ok | term()}.
+reopen_all_staleness_logs() ->
+	dc_utilities:bcast_vnode_sync(materializer_vnode_master, {reopen_staleness_log}).
+
+-spec close_all_staleness_logs() -> {ok | term()}.
+close_all_staleness_logs() ->
+	dc_utilities:bcast_vnode_sync(materializer_vnode_master, {close_staleness_log}).
 
 
 
@@ -161,11 +179,13 @@ log_number_of_non_applied_ops(MatState = #mat_state{staleness_log=StalenessLog},
 		staleness_log_disabled->
 			ok;
 		undefined->
+			lager:info("got undefined, sending to the right vnode..."),
 			%% asynchronously send message to the right vnode.
 			riak_core_vnode_master:command({MatState#mat_state.partition, node()},
 				{log_number_of_non_applied_snapshot_and_ops, NumberOfNonAppliedOps},
 				materializer_vnode_master);
 		_->
+%%			lager:info("IM THE ONE!"),
 			log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps)
 	end.
 
@@ -188,7 +208,14 @@ merge_staleness_files_into_table() ->
 			{error, Reason};
 		{ok, FileList} ->
 %%			lager:info("got file list: ~p",[FileList]),
-			StalenessTable = ets:new(staleness_table, [duplicate_bag, named_table, public]),
+			StalenessTable=case ets:info(staleness_table) of
+				undefined -> %table does not exist, create it
+					ets:new(staleness_table, [duplicate_bag, named_table, public]);
+				_-> %empty the table
+					lager:info("DELETTING ALL ITEMS FROM STALENESS_TABLE"),
+					true=ets:delete_all_objects(staleness_table),
+					staleness_table
+			end,
 			lists:foreach(fun(FileName) ->
 				ok = file_to_table(FileName, start, StalenessTable, "StalenessLog")
 			end, FileList),
@@ -199,10 +226,10 @@ merge_staleness_files_into_table() ->
 -spec file_to_table(string(), start | disk_log:continuation(), atom(), string()) -> ok.
 file_to_table(FileName, Continuation, TableName, FileKind)->
 	%% add the directory and remove the .LOG extension.
-	DirAndFileName = "./data/" ++ lists:sublist(FileName, length(FileName)-4),
-	lager:info("merging file ~p from Continuation ~p ", [DirAndFileName, Continuation]),
+%%	lager:info("merging file ~p from Continuation ~p ", [DirAndFileName, Continuation]),
 	case (lists:sublist(FileName, 1, length("StalenessLog")) == FileKind) of
 		true -> %% this is a staleness log file, process it
+			DirAndFileName = "./data/" ++ lists:sublist(FileName, length(FileName)-4),
 			LogStatus=case Continuation of
 				start ->
 					lager:info("openning file"),
@@ -315,6 +342,22 @@ check_table_ready([{Partition,Node}|Rest]) ->
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
+
+handle_command({truncate_staleness_log}, _Sender, State) ->
+%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
+	{reply, {disk_log:truncate(State#mat_state.staleness_log)}, State};
+
+handle_command({close_staleness_log}, _Sender, State) ->
+	%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
+	{reply, {disk_log:close(State#mat_state.staleness_log)}, State};
+
+handle_command({reopen_staleness_log}, _Sender, State) ->
+	%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
+	{reply, {disk_log:open([{name, State#mat_state.staleness_log}])}, State};
+
+handle_command({sync_staleness_log}, _Sender, State) ->
+	%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
+	{reply, {disk_log:sync(State#mat_state.staleness_log)}, State};
 
 handle_command({get_staleness_log}, _Sender, State) ->
 %%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
