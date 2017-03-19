@@ -48,8 +48,9 @@ main(NodesListString) ->
             io:format("~nSTARTING SCRIPT TO JOIN CLUSTER OF NODES:~n~p~n", [Nodes]),
             lists:foreach(fun (Node) -> erlang:set_cookie(Node, antidote) end, Nodes),
             join_cluster(Nodes),
-%%            lists:foreach(fun (Node) -> rpc:call(Node, inter_dc_manager, start_bg_processes, [stable]) end, Nodes),
+            io:format("~nSTARTING BACKGROUND PROCESSES"),
             rpc:call(hd(Nodes), inter_dc_manager, start_bg_processes, [stable]),
+            io:format("~nDONE STARTING BACKGROUND PROCESSES"),
             io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
             io:format("~nSUCCESS! Finished building cluster!~n")
     end.
