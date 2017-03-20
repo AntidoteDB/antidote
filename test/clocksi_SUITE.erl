@@ -267,7 +267,6 @@ clocksi_test5(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
     lager:info("Test2 started"),
-    Type = antidote_crdt_counter,
     Key1=clocksi_test5_key1,
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
@@ -297,7 +296,6 @@ clocksi_single_key_update_read_test(Config) ->
     lager:info("Test3 started"),
     FirstNode = hd(Nodes),
     Key = clocksi_single_key_update_read_test_key1,
-    Type = antidote_crdt_counter,
     {ok, CommitTime} = update_counters(FirstNode, [Key, Key], [1,1], ignore, static),
     check_read_key(FirstNode, Key, antidote_crdt_counter, 2, CommitTime, static),
 
@@ -308,7 +306,6 @@ clocksi_single_key_update_read_test(Config) ->
 clocksi_multiple_key_update_read_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
-    Type = antidote_crdt_counter,
     Key1 = clocksi_multiple_key_update_read_test_key1,
     Key2 = clocksi_multiple_key_update_read_test_key2,
     Key3 = clocksi_multiple_key_update_read_test_key3,
@@ -327,7 +324,6 @@ clocksi_test4(Config) ->
     lager:info("Test4 started"),
     FirstNode = hd(Nodes),
     Key1 = clocksi_test4_key1,
-    Type = antidote_crdt_counter,
     {ok, TxId1} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
     check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, TxId1),
 
@@ -344,8 +340,6 @@ clocksi_test_read_time(Config) ->
     Key1 = clocksi_test_read_time_key1,
     FirstNode = hd(Nodes),
     LastNode= lists:last(Nodes),
-
-    Type = antidote_crdt_counter,
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
     lager:info("Tx1 Started, id : ~p", [TxId]),
@@ -429,7 +423,6 @@ clocksi_test_certification_check(Config) ->
 clocksi_test_certification_check_run(Nodes) ->
     lager:info("clockSI_test_certification_check started"),
     Key1 = clockSI_test_certification_check_key1,
-    Type = antidote_crdt_counter,
 
     FirstNode = hd(Nodes),
     LastNode = lists:last(Nodes),
@@ -472,7 +465,6 @@ clocksi_multiple_test_certification_check_run(Nodes) ->
     Key1 = clocksi_multiple_test_certification_check_key1,
     Key2 = clocksi_multiple_test_certification_check_key2,
     Key3 = clocksi_multiple_test_certification_check_key3,
-    Type = antidote_crdt_counter,
 
     FirstNode = hd(Nodes),
     LastNode = lists:last(Nodes),

@@ -183,7 +183,7 @@ atomicity_test(Config) ->
             pass
     end.
 
-atomic_write_txn(Node, Key1, Key2, Key3, Type) ->
+atomic_write_txn(Node, Key1, Key2, Key3, _Type) ->
     update_counters(Node, [Key1, Key2, Key3], [1,1,1], ignore, static).
 
 atomic_read_txn(Node, Key1, Key2, Key3, Type) ->

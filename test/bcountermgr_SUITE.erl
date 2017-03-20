@@ -173,10 +173,6 @@ execute_op_success(Node, Op, Key, Amount, Actor, Try) ->
             execute_op_success(Node, Op, Key, Amount, Actor, Try -1)
     end.
 
-read(Node, Key) ->
-    ct:print("Read  ~p", [Key]),
-    rpc:call(Node, antidote, read_objects, [ignore, [], [{Key, ?TYPE, ?BUCKET}]]).
-
 read_si(Node, Key, CommitTime) ->
     ct:print("Read si  ~p", [Key]),
     rpc:call(Node, antidote, read_objects, [CommitTime, [], [{Key, ?TYPE, ?BUCKET}]]).

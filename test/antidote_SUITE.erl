@@ -43,6 +43,7 @@
          static_txn_single_object/1,
          static_txn_single_object_clock/1,
          static_txn_multi_objects/1,
+         static_txn_multi_objects_clock/1,
          interactive_txn/1,
          random_test/1]).
 
@@ -72,6 +73,7 @@ all() ->
      static_txn_single_object,
      static_txn_single_object_clock,
      static_txn_multi_objects,
+     static_txn_multi_objects_clock,
      interactive_txn,
      random_test
     ].

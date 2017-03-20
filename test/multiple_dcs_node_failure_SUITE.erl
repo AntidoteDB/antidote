@@ -224,14 +224,6 @@ update_during_cluster_failure_test(Config) ->
 check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
     check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId).
 
-check_read_keys(Node, Keys, Type, Expected, Clock, TxId) ->
-    Objects = lists:map(fun(Key) ->
-                                {Key, Type, ?BUCKET}
-                        end,
-                        Keys
-                       ),
-    check_read(Node, Objects, Expected, Clock, TxId).
-
 check_read(Node, Objects, Expected, Clock, TxId) ->
     case TxId of
         static ->
