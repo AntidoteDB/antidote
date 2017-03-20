@@ -150,7 +150,7 @@ static_txn_multi_objects_clock(Config) ->
     [Node1 | _Nodes] = proplists:get_value(nodes, Config),
     Type = antidote_crdt_counter,
     Bucket = antidote_bucket,
-    Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
+    Keys = [antidote_static_mc1, antidote_static_mc2, antidote_static_mc3, antidote_static_mc4],
     IncValues = [1,2,3,4],
     Objects = lists:map(fun(Key) ->
                                 {Key, Type, Bucket}
@@ -161,12 +161,12 @@ static_txn_multi_objects_clock(Config) ->
                         end, lists:zip(Objects, IncValues)),
 
     {ok, Clock1} = rpc:call(Node1, antidote, update_objects, [ignore, [], Updates]),
-    {ok, Res, Clock2} = rpc:call(Node1, antidote, read_objects, [Clock1, [], Objects]),
-    ?assertEqual([1, 2, 3, 4], Res),
+    {ok, Res1, Clock2} = rpc:call(Node1, antidote, read_objects, [Clock1, [], Objects]),
+    ?assertEqual([1, 2, 3, 4], Res1),
 
     {ok, Clock3} = rpc:call(Node1, antidote, update_objects, [Clock2, [], Updates]),
-    {ok, Res, _} = rpc:call(Node1, antidote, read_objects, [Clock3, [], Objects]),
-    ?assertEqual([2, 4, 6, 8], Res).
+    {ok, Res2, _} = rpc:call(Node1, antidote, read_objects, [Clock3, [], Objects]),
+    ?assertEqual([2, 4, 6, 8], Res2).
 
 interactive_txn(Config) ->
     [Node | _Nodes] = proplists:get_value(nodes, Config),
