@@ -7,7 +7,9 @@ tarAll () {
     local result_f_name="node-${own_node_name}$1-StalenessResults.tar"
     cd
     cd antidote
-    tar czf "../${result_f_name} ${datafolder}"
+    command="tar czf ../${result_f_name} ${datafolder}"
+    echo "[NODE] $own_node_name : running "$command
+    $command
 }
 
 
