@@ -8,9 +8,9 @@ systests: rel
 	rm -f test/*.beam
 	mkdir -p logs
 ifdef SUITE
-	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -suite test/${SUITE}
+	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -suite test/${SUITE} -cover test/antidote.coverspec
 else
-	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -dir test
+	ct_run -pa ./_build/default/lib/*/ebin -logdir logs -dir test -cover test/antidote.coverspec
 endif
 
 docs:
