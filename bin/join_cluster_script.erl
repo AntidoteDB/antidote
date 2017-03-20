@@ -49,7 +49,7 @@ main(NodesListString) ->
             lists:foreach(fun (Node) -> erlang:set_cookie(Node, antidote) end, Nodes),
             join_cluster(Nodes),
             io:format("~nSTARTING BACKGROUND PROCESSES"),
-            rpc:call(hd(Nodes), inter_dc_manager, start_bg_processes, [stable]),
+%%            rpc:call(hd(Nodes), inter_dc_manager, start_bg_processes, [stable]),
             io:format("~nDONE STARTING BACKGROUND PROCESSES"),
             io:format("~nSuccesfully joined nodes: ~w~n", [Nodes]),
             io:format("~nSUCCESS! Finished building cluster!~n")
@@ -345,7 +345,7 @@ join_cluster(Nodes) ->
     wait_until_nodes_agree_about_ownership(Nodes),
     ok = wait_until_no_pending_changes(Nodes),
     wait_until_ring_converged(Nodes),
-%%    wait_until(hd(Nodes),fun check_ready/1),
+    wait_until(hd(Nodes),fun check_ready/1),
     ok.
 
 %% @doc Return a list of nodes that own partitions according to the ring
@@ -539,24 +539,33 @@ wait_ready(Node) ->
 
 %% @doc This function provides the same functionality as wait_ready_nodes
 %% except it takes as input a sinlge physical node instead of a list
--spec check_ready(node()) -> boolean().
+-spec check_ready(node()) ->
+    boolean().
 check_ready(Node) ->
     io:format("Checking if node ~w is ready ~n~n", [Node]),
-    case rpc:call(Node,clocksi_vnode,check_tables_ready,[]) of
+    case rpc:call(Node, clocksi_vnode, check_tables_ready, []) of
         true ->
-            case rpc:call(Node,clocksi_readitem_fsm,check_servers_ready,[]) of
+            case rpc:call(Node, materializer_vnode, check_tables_ready, []) of
                 true ->
-                    case rpc:call(Node,materializer_vnode,check_tables_ready,[]) of
-                        true ->
-                            case rpc:call(Node,stable_meta_data_server,check_tables_ready,[]) of
+                    Responses3 = rpc:call(Node, dc_utilities, bcast_vnode_sync, [materializer_vnode_master, {open_staleness_log}]),
+                    case lists:foreach(fun({_, ok}) ->
+                        ok end, Responses3) of
+                        ok ->
+                            case rpc:call(Node, clocksi_readitem_fsm, check_servers_ready, []) of
                                 true ->
-                                    io:format("Node ~w is ready! ~n~n", [Node]),
-                                    true;
+                                    case rpc:call(Node, stable_meta_data_server, check_tables_ready, []) of
+                                        true ->
+                                            io:format("Node ~w is ready! ~n~n", [Node]),
+                                            true;
+                                        false ->
+                                            io:format("Node ~w is not ready ~n~n", [Node]),
+                                            false
+                                    end;
                                 false ->
                                     io:format("Node ~w is not ready ~n~n", [Node]),
                                     false
                             end;
-                        false ->
+                        _ ->
                             io:format("Node ~w is not ready ~n~n", [Node]),
                             false
                     end;
