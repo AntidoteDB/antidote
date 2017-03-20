@@ -912,7 +912,7 @@ read_success_test(Pid) ->
 
 downstream_fail_test(Pid) ->
     fun() ->
-        ?assertMatch({error, {aborted , _}},
+        ?assertMatch({error, _},
             gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
