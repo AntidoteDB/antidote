@@ -565,6 +565,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 						        DepUpbound=Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 						        NewSnapshotVC=case DepUpbound==NewVC of
 							        true->
+								        lager:info("this should not happen, DepUpbound = ", [DepUpbound] ),
 								        _NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec()-?PHYSICS_THRESHOLD, NewVC);
 							        false->
 								        DepUpbound
@@ -590,12 +591,17 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                          [{_, SnapshotDict}] ->
 %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
                              case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
-                                 {undefined, NumberOfSnap} ->
+                                 {undefined, _NumberOfSnap} ->
 	                                 lager:info("~nno snapshot in the cache for key: ~p",[Key]),
+	                                 lager:info("Metadata: ~w", [UpdatedTxnRecord#transaction.physics_read_metadata]),
+	                                 lager:info("SnapshotDict: ~w", [SnapshotDict]),
+	                                 lager:info("OpsLen: ~w", [Len]),
 %%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
 %%	                                 lager:info("~n TXN Snapshot is : ~p",[UpdatedTxnRecord#transaction.snapshot_vc]),
 %%	                                 lager:info("~n Old DepUpbound Snapshot is : ~p",[Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound]),
-	                                 {undefined, NumberOfSnap};
+%%	                                 {undefined, NumberOfSnap};
+	                                 {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
+	                                 {BlankSSRecord, BlankSSCommitParams, 1};
                                  {{SCP, LS}, NumberOfSnap} ->
 	                                 case is_record(LS, materialized_snapshot) of
 		                                 true -> {LS, SCP, NumberOfSnap};

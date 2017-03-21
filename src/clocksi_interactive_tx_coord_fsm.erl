@@ -948,12 +948,13 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
-%%    Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
+    Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
-%%    DcId = ?DC_META_UTIL:get_my_dc_id(),
-%%    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
+%%    lager:info("VecSnapshotTime=~p", [VecSnapshotTime]),
+    DcId = ?DC_META_UTIL:get_my_dc_id(),
+    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
 %%    lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
-    {ok, VecSnapshotTime}.
+    {ok, SnapshotTime}.
 
 
 -spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
