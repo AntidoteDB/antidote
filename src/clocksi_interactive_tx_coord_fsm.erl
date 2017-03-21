@@ -180,19 +180,32 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
            end,
     case Protocol of
         physics ->
-            create_physics_tx_record(Name);
+            create_physics_tx_record(Name, ClientClock, UpdateClock);
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)
     end.
 
 %% @@doc: creates a transaction record for the physics protocol
--spec create_physics_tx_record(pid())-> transaction().
-create_physics_tx_record(Name)->
+-spec create_physics_tx_record(pid(), clock_time(), clock_time())-> transaction().
+create_physics_tx_record(Name, ClientClock, UpdateClock)->
+    {ok, StableVector} = case ClientClock of
+        ignore ->
+            get_snapshot_time();
+        _ ->
+            case UpdateClock of
+                update_clock ->
+                    get_snapshot_time(ClientClock);
+                no_update_clock ->
+                    {ok, ClientClock}
+            end
+    end,
     PhysicsReadMetadata = #physics_read_metadata{
-        dep_upbound = vectorclock:new(),
-        commit_time_lowbound = vectorclock:new()},
-    Now = dc_utilities:now_microsec(),
-    TransactionId = #tx_id{local_start_time= Now, server_pid = Name},
+        dep_upbound = StableVector,
+        commit_time_lowbound = StableVector},
+%%    Now = dc_utilities:now_microsec(),
+    DcId = ?DC_UTIL:get_my_dc_id(),
+    LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, StableVector),
+    TransactionId = #tx_id{local_start_time= LocalClock, server_pid = Name},
     #transaction{
         transactional_protocol = physics,
         physics_read_metadata = PhysicsReadMetadata,
@@ -551,37 +564,39 @@ update_physics_metadata(State, ignore) ->
     State;
 
 update_physics_metadata(State, ReadMetadata) ->
-    {CommitVC, DepVC, ReadTimeVC} = ReadMetadata,
+    {CommitVC, _DepVC, _ReadTimeVC} = ReadMetadata,
     NewVC = vectorclock:new(),
     case CommitVC of
         NewVC ->
             State;
         _ ->
-            Transaction = State#tx_coord_state.transaction,
+%%            Transaction = State#tx_coord_state.transaction,
             VersionMax = State#tx_coord_state.version_max,
             NewVersionMax = vectorclock:max([VersionMax, CommitVC]),
-            CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-            DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-            NewDepUpB=
-                case DepUpbound of
-                    NewVC->
-                        ReadTimeVC;
-                    _->
-                        vectorclock:min([ReadTimeVC, DepUpbound])
-                end,
-            NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
+%%            CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+%%            DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%            NewDepUpB=
+%%                case DepUpbound of
+%%                    NewVC->
+%%                        ReadTimeVC;
+%%                    _->
+%%                        vectorclock:min([ReadTimeVC, DepUpbound])
+%%                end,
+%%            NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
 %%            lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
 %%            lager:info("~nDepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-%%            lager:info("~nNewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-%%            lager:info("~nVersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
-            NewTransaction = Transaction#transaction{
-                physics_read_metadata = #physics_read_metadata{
-                    %%Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
-                    dep_upbound = NewDepUpB,
-                    commit_time_lowbound = NewCTLowB}},
+            %%            lager:info("~nNewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+            %%            lager:info("~nVersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
+%%            NewTransaction = Transaction#transaction{
+            %%                physics_read_metadata = #physics_read_metadata{
+            %%                    Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
+            %%                    dep_upbound = NewDepUpB,
+            %%                    commit_time_lowbound = NewCTLowB}},
             State#tx_coord_state{
-%%        keys_access_time = NewKeysAccessTime,
-                version_max = NewVersionMax, transaction = NewTransaction}
+                %%        keys_access_time = NewKeysAccessTime,
+                version_max = NewVersionMax
+                %%            , transaction = NewTransaction
+            }
     end.
 
 
@@ -933,12 +948,12 @@ get_snapshot_time(ClientClock) ->
 
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
-    Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
+%%    Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
-    DcId = ?DC_META_UTIL:get_my_dc_id(),
-    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
+%%    DcId = ?DC_META_UTIL:get_my_dc_id(),
+%%    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
 %%    lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
-    {ok, SnapshotTime}.
+    {ok, VecSnapshotTime}.
 
 
 -spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
