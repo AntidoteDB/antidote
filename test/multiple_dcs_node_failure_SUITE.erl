@@ -42,12 +42,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
+-define(BUCKET, "multiple_dcs_node_failure").
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
     Clusters = test_utils:set_up_clusters_common(Config),
     Nodes = lists:flatten(Clusters),
-    
+
     %Ensure that the clocksi protocol is used
     test_utils:pmap(fun(Node) ->
         rpc:call(Node, application, set_env,
@@ -55,7 +56,7 @@ init_per_suite(Config) ->
 
     %Check that indeed clocksi is running
     {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
-   
+
     [{clusters, Clusters}|Config].
 
 end_per_suite(Config) ->
@@ -67,7 +68,7 @@ init_per_testcase(_Case, Config) ->
 end_per_testcase(_, _) ->
     ok.
 
-all() -> 
+all() ->
     [multiple_cluster_failure_test,
      cluster_failure_test,
      update_during_cluster_failure_test].
@@ -84,80 +85,37 @@ cluster_failure_test(Config) ->
         {ok, false} ->
             pass;
         _ ->
-            Key1 = cluster_failure_test,
+            Key = cluster_failure_test,
             Type = antidote_crdt_counter,
 
+            update_counters(Node1, [Key], [1], ignore, static),
+            update_counters(Node1, [Key], [1], ignore, static),
+            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
 
-            WriteResult1 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult1),
-            WriteResult2 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult2),
-            WriteResult3 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult3),
-            {ok,{_,_,CommitTime}}=WriteResult3,
-            ReadResult = rpc:call(Node1, antidote, read,
-                [Key1, Type]),
-            ?assertEqual({ok, 3}, ReadResult),
+            check_read_key(Node1, Key, Type, 3, ignore, static),
 
             %% Kill and restart a node an be sure everyhing works
             ct:print("Killing and restarting node ~w", [Node1]),
             [Node1] = test_utils:kill_and_restart_nodes([Node1],Config),
 
             ct:print("Done append in Node1"),
-            ReadResult2 = rpc:call(Node3,
-                antidote, clocksi_read,
-                [CommitTime, Key1, Type], ?RPC_TIMEOUT),
-            {ok, {_,[ReadSet1],_} }= ReadResult2,
-            ?assertEqual(3, ReadSet1),
+            check_read_key(Node3, Key, Type, 3, CommitTime, static),
             ct:print("Done Read in Node3"),
-            ReadResult3 = rpc:call(Node2,
-                antidote, clocksi_read,
-                [CommitTime, Key1, Type], ?RPC_TIMEOUT),
-            {ok, {_,[ReadSet2],_} }= ReadResult3,
-            ?assertEqual(3, ReadSet2),
+            check_read_key(Node2, Key, Type, 3, CommitTime, static),
 
             ct:print("Done first round of read, I am gonna append"),
-            WriteResult4= rpc:call(Node2,
-                antidote, clocksi_bulk_update,
-                [ CommitTime,
-                    [{update, {Key1, Type, {increment, 1}}}]]),
-            ?assertMatch({ok, _}, WriteResult4),
-            {ok,{_,_,CommitTime2}}=WriteResult4,
+            {ok, CommitTime2} = update_counters(Node2, [Key], [1], CommitTime, static),
             ct:print("Done append in Node2"),
-            WriteResult5= rpc:call(Node3,
-                antidote, clocksi_bulk_update,
-                [CommitTime2,
-                    [{update, {Key1, Type, {increment, 1}}}]]),
-            ?assertMatch({ok, _}, WriteResult5),
-            {ok,{_,_,CommitTime3}}=WriteResult5,
+            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
             ct:print("Done append in Node3"),
             ct:print("Done waiting, I am gonna read"),
 
-            SnapshotTime =
-                CommitTime3,
-            ReadResult4 = rpc:call(Node1,
-                antidote, clocksi_read,
-                [SnapshotTime, Key1, Type]),
-            {ok, {_,[ReadSet4],_} }= ReadResult4,
-            ?assertEqual(5, ReadSet4),
+            SnapshotTime = CommitTime3,
+            check_read_key(Node1, Key, Type, 5, SnapshotTime, static),
             ct:print("Done read in Node1"),
-            ReadResult5 = rpc:call(Node2,
-                antidote, clocksi_read,
-                [SnapshotTime,Key1, Type]),
-            {ok, {_,[ReadSet5],_} }= ReadResult5,
-            ?assertEqual(5, ReadSet5),
+            check_read_key(Node2, Key, Type, 5, SnapshotTime, static),
             ct:print("Done read in Node2"),
-            ReadResult6 = rpc:call(Node3,
-                antidote, clocksi_read,
-                [SnapshotTime,Key1, Type]),
-            {ok, {_,[ReadSet6],_} }= ReadResult6,
-            ?assertEqual(5, ReadSet6),
+            check_read_key(Node3, Key, Type, 5, SnapshotTime, static),
             pass
     end.
 
@@ -176,79 +134,31 @@ multiple_cluster_failure_test(Config) ->
         _ ->
             Node2 = hd(Cluster2),
 
-            Key1 = multiple_cluster_failure_test,
+            Key = multiple_cluster_failure_test,
             Type = antidote_crdt_counter,
 
-            WriteResult1 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult1),
-            WriteResult2 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult2),
-            WriteResult3 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult3),
-            {ok,{_,_,CommitTime}}=WriteResult3,
-            ReadResult = rpc:call(Node1, antidote, read,
-                [Key1, Type]),
-            ?assertEqual({ok, 3}, ReadResult),
+            update_counters(Node1, [Key], [1], ignore, static),
+            update_counters(Node1, [Key], [1], ignore, static),
+            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
+            check_read_key(Node1, Key, Type, 3, CommitTime, static),
 
             %% Kill and restart a node an be sure everyhing works
             ct:print("Killing and restarting node ~w", [Node1]),
             [Node1] = test_utils:kill_and_restart_nodes([Node1],Config),
 
             ct:print("Done append in Node1"),
-            ReadResult2 = rpc:call(Node3,
-                antidote, clocksi_read,
-                [CommitTime, Key1, Type], ?RPC_TIMEOUT),
-            {ok, {_,[ReadSet1],_} }= ReadResult2,
-            ?assertEqual(3, ReadSet1),
-            ct:print("Done Read in Node3"),
-            ReadResult3 = rpc:call(Node2,
-                antidote, clocksi_read,
-                [CommitTime, Key1, Type], ?RPC_TIMEOUT),
-            {ok, {_,[ReadSet2],_} }= ReadResult3,
-            ?assertEqual(3, ReadSet2),
+            check_read_key(Node2, Key, Type, 3, CommitTime, static),
+            check_read_key(Node3, Key, Type, 3, CommitTime, static),
 
             ct:print("Done first round of read, I am gonna append"),
-            WriteResult4= rpc:call(Node2,
-                antidote, clocksi_bulk_update,
-                [ CommitTime,
-                    [{update, {Key1, Type, {increment, 1}}}]]),
-            ?assertMatch({ok, _}, WriteResult4),
-            {ok,{_,_,CommitTime2}}=WriteResult4,
-            ct:print("Done append in Node2"),
-            WriteResult5= rpc:call(Node3,
-                antidote, clocksi_bulk_update,
-                [CommitTime2,
-                    [{update, {Key1, Type, {increment, 1}}}]]),
-            ?assertMatch({ok, _}, WriteResult5),
-            {ok,{_,_,CommitTime3}}=WriteResult5,
-            ct:print("Done append in Node3"),
+            {ok, CommitTime2} = update_counters(Node2, [Key], [1], ignore, static),
+            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
             ct:print("Done waiting, I am gonna read"),
 
-            SnapshotTime =
-                CommitTime3,
-            ReadResult4 = rpc:call(Node1,
-                antidote, clocksi_read,
-                [SnapshotTime, Key1, Type]),
-            {ok, {_,[ReadSet4],_} }= ReadResult4,
-            ?assertEqual(5, ReadSet4),
-            ct:print("Done read in Node1"),
-            ReadResult5 = rpc:call(Node2,
-                antidote, clocksi_read,
-                [SnapshotTime,Key1, Type]),
-            {ok, {_,[ReadSet5],_} }= ReadResult5,
-            ?assertEqual(5, ReadSet5),
-            ct:print("Done read in Node2"),
-            ReadResult6 = rpc:call(Node3,
-                antidote, clocksi_read,
-                [SnapshotTime,Key1, Type]),
-            {ok, {_,[ReadSet6],_} }= ReadResult6,
-            ?assertEqual(5, ReadSet6),
+            SnapshotTime = CommitTime3,
+            check_read_key(Node1, Key, Type, 5, SnapshotTime, static),
+            check_read_key(Node2, Key, Type, 5, SnapshotTime, static),
+            check_read_key(Node3, Key, Type, 5, SnapshotTime, static),
             pass
     end.
 
@@ -267,25 +177,13 @@ update_during_cluster_failure_test(Config) ->
             pass;
         _ ->
 
-            Key1 = update_during_cluster_failure_test,
+            Key = update_during_cluster_failure_test,
             Type = antidote_crdt_counter,
 
-            WriteResult1 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult1),
-            WriteResult2 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult2),
-            WriteResult3 = rpc:call(Node1,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult3),
-            {ok,{_,_,CommitTime}}=WriteResult3,
-            ReadResult = rpc:call(Node1, antidote, read,
-                [Key1, Type]),
-            ?assertEqual({ok, 3}, ReadResult),
+            update_counters(Node1, [Key], [1], ignore, static),
+            update_counters(Node1, [Key], [1], ignore, static),
+            {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
+            check_read_key(Node1, Key, Type, 3, CommitTime, static),
             ct:print("Done append in Node1"),
 
             %% Kill a node
@@ -293,20 +191,7 @@ update_during_cluster_failure_test(Config) ->
             [Node1] = test_utils:brutal_kill_nodes([Node1]),
 
             %% Be sure the other DC works while the node is down
-            WriteResult3a = rpc:call(Node2,
-                antidote, append,
-                [Key1, Type, {increment, 1}]),
-            ?assertMatch({ok, _}, WriteResult3a),
-            {ok,{_,_,CommitTime3a}}=WriteResult3a,
-            ReadResult3a = rpc:call(Node2, antidote, read,
-                [Key1, Type]),
-            ct:print("read result3a ~p", [ReadResult3a]),
-
-            ReadResult3b = rpc:call(Node3,
-                antidote, clocksi_read,
-                [CommitTime3a, Key1, Type]),
-            {ok, {_,[ReadSet3b],_} }= ReadResult3b,
-            ct:print("read result3b ~p", [ReadSet3b]),
+            {ok, CommitTime3a} = update_counters(Node2, [Key], [1], ignore, static),
 
             %% Start the node back up and be sure everything works
             ct:print("Restarting node ~w", [Node1]),
@@ -318,62 +203,51 @@ update_during_cluster_failure_test(Config) ->
                 max(T1,T2)
             end, CommitTime, CommitTime3a),
 
+            check_read_key(Node1, Key, Type, 4, Time, static),
+            ct:print("Done Read in Node1"),
 
-            ReadResult2a = rpc:call(Node1,
-                antidote, clocksi_read,
-                [Time, Key1, Type], ?RPC_TIMEOUT),
-            {ok, {_,[ReadSet1a],_} }= ReadResult2a,
-            ?assertEqual(4, ReadSet1a),
+            check_read_key(Node3, Key, Type, 4, Time, static),
             ct:print("Done Read in Node3"),
-
-            ReadResult2 = rpc:call(Node3,
-                antidote, clocksi_read,
-                [Time, Key1, Type], ?RPC_TIMEOUT),
-            {ok, {_,[ReadSet1],_} }= ReadResult2,
-            ?assertEqual(4, ReadSet1),
-            ct:print("Done Read in Node3"),
-            ReadResult3 = rpc:call(Node2,
-                antidote, clocksi_read,
-                [Time, Key1, Type], ?RPC_TIMEOUT),
-            {ok, {_,[ReadSet2],_} }= ReadResult3,
-            ?assertEqual(4, ReadSet2),
-
+            check_read_key(Node2, Key, Type, 4, Time, static),
             ct:print("Done first round of read, I am gonna append"),
-            WriteResult4= rpc:call(Node2,
-                antidote, clocksi_bulk_update,
-                [Time,
-                    [{update, {Key1, Type, {increment, 1}}}]]),
-            ?assertMatch({ok, _}, WriteResult4),
-            {ok,{_,_,CommitTime2}}=WriteResult4,
-            ct:print("Done append in Node2"),
-            WriteResult5= rpc:call(Node3,
-                antidote, clocksi_bulk_update,
-                [CommitTime2,
-                    [{update, {Key1, Type, {increment, 1}}}]]),
-            ?assertMatch({ok, _}, WriteResult5),
-            {ok,{_,_,CommitTime3}}=WriteResult5,
-            ct:print("Done append in Node3"),
-            ct:print("Done waiting, I am gonna read"),
 
-            SnapshotTime =
-                CommitTime3,
-            ReadResult4 = rpc:call(Node1,
-                antidote, clocksi_read,
-                [SnapshotTime, Key1, Type]),
-            {ok, {_,[ReadSet4],_} }= ReadResult4,
-            ?assertEqual(6, ReadSet4),
-            ct:print("Done read in Node1"),
-            ReadResult5 = rpc:call(Node2,
-                antidote, clocksi_read,
-                [SnapshotTime,Key1, Type]),
-            {ok, {_,[ReadSet5],_} }= ReadResult5,
-            ?assertEqual(6, ReadSet5),
-            ct:print("Done read in Node2"),
-            ReadResult6 = rpc:call(Node3,
-                antidote, clocksi_read,
-                [SnapshotTime,Key1, Type]),
-            {ok, {_,[ReadSet6],_} }= ReadResult6,
-            ?assertEqual(6, ReadSet6),
+            {ok, CommitTime2} = update_counters(Node2, [Key], [1], Time, static),
+            {ok, CommitTime3} = update_counters(Node3, [Key], [1], CommitTime2, static),
+
+            SnapshotTime = CommitTime3,
+            check_read_key(Node1, Key, Type, 6, SnapshotTime, static),
+            check_read_key(Node2, Key, Type, 6, SnapshotTime, static),
+            check_read_key(Node3, Key, Type, 6, SnapshotTime, static),
             pass
     end.
-  
+
+check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
+    check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId).
+
+check_read(Node, Objects, Expected, Clock, TxId) ->
+    case TxId of
+        static ->
+            {ok, Res, CT} = rpc:call(Node, cure, read_objects, [Clock, [], Objects], ?RPC_TIMEOUT),
+            ?assertEqual(Expected, Res),
+            {ok, Res, CT};
+        _ ->
+            {ok, Res} = rpc:call(Node, cure, read_objects, [Objects, TxId], ?RPC_TIMEOUT),
+            ?assertEqual(Expected, Res),
+            {ok, Res}
+    end.
+
+update_counters(Node, Keys, IncValues, Clock, TxId) ->
+    Updates = lists:map(fun({Key, Inc}) ->
+                                {{Key, antidote_crdt_counter, ?BUCKET}, increment, Inc}
+                        end,
+                        lists:zip(Keys, IncValues)
+                       ),
+
+    case TxId of
+        static ->
+            {ok, CT} = rpc:call(Node, cure, update_objects, [Clock, [], Updates], ?RPC_TIMEOUT),
+            {ok, CT};
+        _->
+            ok = rpc:call(Node, cure, update_objects, [Updates, TxId], ?RPC_TIMEOUT),
+            ok
+    end.

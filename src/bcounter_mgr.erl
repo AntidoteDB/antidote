@@ -95,7 +95,9 @@ handle_cast({transfer, {Key,Amount,Requester}}, #state{last_transfers=LT}=State)
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     case can_process(Key, Requester, NewLT) of
         true ->
-            antidote:append(Key, ?DATA_TYPE, {transfer, {Amount, Requester, MyDCId}}),
+            {SKey, Bucket} = Key,
+            BObj = {SKey, ?DATA_TYPE, Bucket},
+            antidote:update_objects(ignore, [], [{BObj, transfer, {Amount, Requester, MyDCId}}]),
             {noreply, State#state{last_transfers=orddict:store({Key, Requester}, erlang:timestamp(), NewLT)}};
         _ ->
             {noreply, State#state{last_transfers=NewLT}}
@@ -154,7 +156,9 @@ request_remote(0, _Key) -> 0;
 
 request_remote(RequiredSum, Key) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-    {ok,Obj} = antidote:read(Key, ?DATA_TYPE),
+    {SKey, Bucket} = Key,
+    BObj = {SKey, ?DATA_TYPE, Bucket},
+    {ok, [Obj], _} = antidote:read_objects(ignore, [], [BObj]),
     PrefList= pref_list(Obj),
     lists:foldl(
       fun({RemoteId, AvailableRemotely}, Remaining0) ->
@@ -224,5 +228,3 @@ can_process(Key, Requester, LastTransfers) ->
         true -> false
     end
     .
-
-
