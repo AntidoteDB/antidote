@@ -572,7 +572,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 						        end,
 						        Transaction#transaction{snapshot_vc=NewSnapshotVC}
 %%							        no_compatible_operation_found ->
-%%								        lager:info("there no_compatible_operation_found, Len = ~p", [Len]),
+%%						    		        lager:info("there no_compatible_operation_found, Len = ~p", [Len]),
 %%								        case Len of 1 ->
 %%									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 %%									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
@@ -584,31 +584,37 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 				        Transaction
 		        end,
 %%	        lager:info("~n UpdatedTxnRecord ~p  ",[UpdatedTxnRecord]),
-            Result = case ets:lookup(SnapshotCache, Key) of
-                         [] ->
-	                         {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
-                             {BlankSSRecord, BlankSSCommitParams, 1};
-                         [{_, SnapshotDict}] ->
-%%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
-                             case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
-                                 {undefined, _NumberOfSnap} ->
-	                                 lager:info("~nno snapshot in the cache for key: ~p",[Key]),
-	                                 lager:info("Metadata: ~w", [UpdatedTxnRecord#transaction.physics_read_metadata]),
-	                                 lager:info("SnapshotDict: ~w", [SnapshotDict]),
-	                                 lager:info("OpsLen: ~w", [Len]),
-%%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
-%%	                                 lager:info("~n TXN Snapshot is : ~p",[UpdatedTxnRecord#transaction.snapshot_vc]),
-%%	                                 lager:info("~n Old DepUpbound Snapshot is : ~p",[Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound]),
-%%	                                 {undefined, NumberOfSnap};
-	                                 {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
-	                                 {BlankSSRecord, BlankSSCommitParams, 1};
-                                 {{SCP, LS}, NumberOfSnap} ->
-	                                 case is_record(LS, materialized_snapshot) of
-		                                 true -> {LS, SCP, NumberOfSnap};
-		                                 false -> {error, bad_returned_record}
-	                                 end
-                             end
-                     end,
+            Result = case Type of
+	            antidote_crdt_lwwreg -> %no need to get snapshot to materialize
+		            {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
+		            {BlankSSRecord, BlankSSCommitParams, 1};
+	            _->
+		            case ets:lookup(SnapshotCache, Key) of
+			            [] ->
+				            {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
+				            {BlankSSRecord, BlankSSCommitParams, 1};
+			            [{_, SnapshotDict}] ->
+				            %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
+				            case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
+					            {undefined, NumberOfSnap} ->
+						            lager:info("~nno snapshot in the cache for key: ~p",[Key]),
+						            lager:info("Metadata: ~w", [UpdatedTxnRecord#transaction.physics_read_metadata]),
+						            lager:info("SnapshotDict: ~w", [SnapshotDict]),
+						            lager:info("OpsLen: ~w", [Len]),
+						            %%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
+						            %%	                                 lager:info("~n TXN Snapshot is : ~p",[UpdatedTxnRecord#transaction.snapshot_vc]),
+						            %%	                                 lager:info("~n Old DepUpbound Snapshot is : ~p",[Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound]),
+						            %%	                                 {undefined, NumberOfSnap};
+						            {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
+						            {BlankSSRecord, BlankSSCommitParams, NumberOfSnap};
+					            {{SCP, LS}, NumberOfSnap} ->
+						            case is_record(LS, materialized_snapshot) of
+							            true -> {LS, SCP, NumberOfSnap};
+							            false -> {error, bad_returned_record}
+						            end
+				            end
+		            end
+            end,
 	        SnapshotGetResponse =
                 case Result of
 	                {undefined, NumberOfSnapshot} ->

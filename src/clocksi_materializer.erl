@@ -218,8 +218,14 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 	     end,
     case Result of
 	{ok, NewOpList1, NewLastOpCt, false, NewSS1, NewHole, NewNumberOfNonAppliedOps} ->
-	    materialize_intern(Type,NewOpList1, FirstNotIncludedOperationId,NewHole, InitSnapshotCommitParams,
-		    Transaction,Rest,NewLastOpCt,NewSS1, PositionInOpList, NewNumberOfNonAppliedOps);
+		case ((Type == antidote_crdt_lwwreg) andalso (NewSS1 == true)) of
+			true -> % lww, stop here, we dont need more ops.
+				materialize_intern(Type,NewOpList1, FirstNotIncludedOperationId,NewHole, InitSnapshotCommitParams,
+					Transaction,[],NewLastOpCt,NewSS1, PositionInOpList, NewNumberOfNonAppliedOps);
+			false ->
+				materialize_intern(Type,NewOpList1, FirstNotIncludedOperationId,NewHole, InitSnapshotCommitParams,
+					Transaction,Rest,NewLastOpCt,NewSS1, PositionInOpList, NewNumberOfNonAppliedOps)
+		end;
 	{ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole, NewNumberOfNonAppliedOps} ->
 	    case OpId - 1 =<FirstNotIncludedOperationId of
 		true ->
