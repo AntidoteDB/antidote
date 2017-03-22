@@ -49,4 +49,4 @@ code_change(_OldVsn, Ctx, _Extra) ->
 
 %% Context is a NIF object handle
 get() ->
-    gen_server:call(?MODULE, get_context).
+    gen_server:call(?MODULE, get_context, infinity).

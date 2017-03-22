@@ -68,7 +68,7 @@
 -spec perform_request(inter_dc_message_type(), pdcid(), binary(), fun((binary(),#request_cache_entry{})->ok))
 		     -> ok | unknown_dc.
 perform_request(RequestType, PDCID, BinaryRequest, Func) ->
-    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}).
+    gen_server:call(?MODULE, {any_request, RequestType, PDCID, BinaryRequest, Func}, infinity).
 
 %% Adds the address of the remote DC to the list of available sockets.
 -spec add_dc(dcid(), [socket_address()]) -> ok.

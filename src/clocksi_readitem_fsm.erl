@@ -163,7 +163,7 @@ start_read_servers_internal(Node, Partition, Num) ->
 	Err ->
 	    lager:debug("Unable to start clocksi read server for ~w, will retry", [Err]),
 	    try
-		gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
+		gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down}, infinity)
 	    catch
 		_:_Reason->
 		    ok
@@ -176,7 +176,7 @@ stop_read_servers_internal(_Node,_Partition,0) ->
     ok;
 stop_read_servers_internal(Node,Partition, Num) ->
     try
-	gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down})
+	gen_server:call({global,generate_server_name(Node,Partition,Num)},{go_down}, infinity)
     catch
 	_:_Reason->
 	    ok
