@@ -88,7 +88,7 @@ read_all_meta_data() ->
 sync_meta_data() ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {broadcast_meta_data}, infinity)
+			       ok = gen_server:call({global,generate_server_name(Node)}, {broadcast_meta_data})
 		       end, NodeList).
 
 %% Broadcasts a list of key, value pairs to all nodes in the DC
@@ -96,7 +96,7 @@ sync_meta_data() ->
 broadcast_meta_data_list(KeyValueList) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, KeyValueList, false}, infinity)
+			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, KeyValueList, false})
 		       end, NodeList).    
 
 %% Broadcasts a key, value pair to all nodes in the DC
@@ -113,7 +113,7 @@ broadcast_meta_data(Key, Value) ->
 broadcast_meta_data_internal(Key, Value, IsEnv) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, [{Key, Value}], IsEnv}, infinity)
+			       ok = gen_server:call({global,generate_server_name(Node)}, {update_meta_data, [{Key, Value}], IsEnv})
 		       end, NodeList).    
 
 %% Broadcasts a key, value pair to all nodes in the DC
@@ -123,7 +123,7 @@ broadcast_meta_data_internal(Key, Value, IsEnv) ->
 broadcast_meta_data_merge(Key, Value, MergeFunc, InitFunc) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {merge_meta_data, Key, Value, MergeFunc, InitFunc, infinity})
+			       ok = gen_server:call({global,generate_server_name(Node)}, {merge_meta_data, Key, Value, MergeFunc, InitFunc})
 		       end, NodeList).    
 
 
@@ -191,7 +191,7 @@ handle_call({broadcast_meta_data}, _Sender, State = #state{table = Table}) ->
     NodeList = dc_utilities:get_my_dc_nodes(),
     List = ets:tab2list(Table),
     ok = lists:foreach(fun(Node) ->
-			       ok = gen_server:call({global,generate_server_name(Node)}, {sync_meta_data, List}, infinity)
+			       ok = gen_server:call({global,generate_server_name(Node)}, {sync_meta_data, List})
 		       end, NodeList),
     {reply, ok, State};
 

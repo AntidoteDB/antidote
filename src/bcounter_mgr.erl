@@ -69,7 +69,7 @@ init([]) ->
 %% is generated.
 generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-    gen_server:call(?MODULE, {consume, Key, {decrement, {V,MyDCId}}, BCounter}, infinity);
+    gen_server:call(?MODULE, {consume, Key, {decrement, {V,MyDCId}}, BCounter});
 
 %% @doc Processes an increment operation for the bounded counter.
 %% Operation is always safe.
