@@ -169,6 +169,10 @@ check_node_restart() ->
 	    ok = dc_utilities:ensure_local_vnodes_running_master(clocksi_vnode_master),
 	    ok = dc_utilities:ensure_local_vnodes_running_master(logging_vnode_master),
 	    ok = dc_utilities:ensure_local_vnodes_running_master(materializer_vnode_master),
+        Resp = dc_utilities:bcast_vnode_sync(materializer_vnode_master, {open_staleness_log}),
+        ok = lists:foreach(fun({_, ok}) ->
+            ok
+        end, Resp),
 	    wait_init:wait_ready(MyNode),
 	    ok = dc_utilities:check_registered(meta_data_sender_sup),
 	    ok = dc_utilities:check_registered(meta_data_manager_sup),
