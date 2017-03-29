@@ -179,26 +179,39 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
                    self()
            end,
     case Protocol of
+        ec->
+            create_ec_record(Name);
         physics ->
             create_physics_tx_record(Name, ClientClock, UpdateClock);
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)
     end.
 
+
+create_ec_record(Name)->
+    TransactionId = #tx_id{server_pid = Name},
+    #transaction{
+        transactional_protocol = ec,
+        txn_id = TransactionId,
+        physics_read_metadata=undefined}.
+
+
+% todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the physics protocol
 -spec create_physics_tx_record(pid(), clock_time(), clock_time())-> transaction().
-create_physics_tx_record(Name, ClientClock, UpdateClock)->
-    {ok, StableVector} = case ClientClock of
-        ignore ->
-            get_snapshot_time();
-        _ ->
-            case UpdateClock of
-                update_clock ->
-                    get_snapshot_time(ClientClock);
-                no_update_clock ->
-                    {ok, ClientClock}
-            end
-    end,
+create_physics_tx_record(Name, _ClientClock, _UpdateClock)->
+    {ok, StableVector} =
+%%        case ClientClock of
+%%        ignore ->
+            get_snapshot_time(),
+%%        _ ->
+%%            case UpdateClock of
+%%                update_clock ->
+%%                    get_snapshot_time(ClientClock);
+%%                no_update_clock ->
+%%                    {ok, ClientClock}
+%%            end
+%%    end,
     PhysicsReadMetadata = #physics_read_metadata{
         dep_upbound = StableVector,
         commit_time_lowbound = StableVector},
@@ -211,20 +224,23 @@ create_physics_tx_record(Name, ClientClock, UpdateClock)->
         physics_read_metadata = PhysicsReadMetadata,
         txn_id = TransactionId}.
 
+
+% todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the clocksi and gr protocol
 -spec create_cure_gr_tx_record(pid(), clock_time(), clock_time(), clocksi|gr)->transaction().
-create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)->
-    {ok, SnapshotTime} = case ClientClock of
-        ignore ->
-            get_snapshot_time();
-        _ ->
-            case UpdateClock of
-                update_clock ->
-                    get_snapshot_time(ClientClock);
-                no_update_clock ->
-                    {ok, ClientClock}
-            end
-    end,
+create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol)->
+    {ok, SnapshotTime} =
+%%        case ClientClock of
+%%        ignore ->
+            get_snapshot_time(),
+%%        _ ->
+%%            case UpdateClock of
+%%                update_clock ->
+%%                    get_snapshot_time(ClientClock);
+%%                no_update_clock ->
+%%                    {ok, ClientClock}
+%%            end
+%%    end,
     DcId = ?DC_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
