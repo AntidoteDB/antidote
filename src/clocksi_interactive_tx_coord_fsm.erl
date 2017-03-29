@@ -958,9 +958,9 @@ terminate(_Reason, _SN, _SD) ->
 %%     1.ClientClock, which is the last clock of the system the client
 %%       starting this transaction has seen, and
 %%     2.machine's local time, as returned by erlang:now().
--spec get_snapshot_time(snapshot_time()) -> {ok, snapshot_time()}.
-get_snapshot_time(ClientClock) ->
-    wait_for_clock(ClientClock).
+%%-spec get_snapshot_time(snapshot_time()) -> {ok, snapshot_time()}.
+%%get_snapshot_time(ClientClock) ->
+%%    wait_for_clock(ClientClock).
 
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
@@ -973,19 +973,19 @@ get_snapshot_time() ->
     {ok, SnapshotTime}.
 
 
--spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
-wait_for_clock(Clock) ->
-    {ok, VecSnapshotTime} = get_snapshot_time(),
-    case vectorclock:ge(VecSnapshotTime, Clock) of
-        true ->
-            %% No need to wait
-            {ok, VecSnapshotTime};
-        false ->
-            lager:info("waiting for clock"),
-            %% wait for snapshot time to catch up with Client Clock
-            timer:sleep(3),
-            wait_for_clock(Clock)
-    end.
+%%-spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
+%%wait_for_clock(Clock) ->
+%%    {ok, VecSnapshotTime} = get_snapshot_time(),
+%%    case vectorclock:ge(VecSnapshotTime, Clock) of
+%%        true ->
+%%            %% No need to wait
+%%            {ok, VecSnapshotTime};
+%%        false ->
+%%            lager:info("waiting for clock"),
+%%            %% wait for snapshot time to catch up with Client Clock
+%%            timer:sleep(3),
+%%            wait_for_clock(Clock)
+%%    end.
 
 -ifdef(TEST).
 
