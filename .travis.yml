@@ -9,6 +9,7 @@ script:
   - make test
   - make dialyzer
   - make lint
+  - echo "{plugins, [rebar3_proper]}." > ~/.config/rebar3/rebar.config
   - ./rebar3 proper -n 1000
 sudo: required
 dist: trusty
