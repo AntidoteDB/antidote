@@ -3,6 +3,8 @@ otp_release:
   - 18.3
   - 19.1
 install:
+  - mkdir -p ~/.config/rebar3/
+  - echo "{plugins, [rebar3_proper]}." > ~/.config/rebar3/rebar.config
   - make
   - ./rebar3 update
 script:
