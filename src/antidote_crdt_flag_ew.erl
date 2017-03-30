@@ -54,13 +54,13 @@ new() ->
   antidote_crdt_flag:new().
 
 -spec value(flag_ew()) -> boolean().
-value(DisableTokens) ->
-  DisableTokens == [].
+value(EnableTokens) ->
+  EnableTokens =/= [].
 
 -spec downstream(antidote_crdt_flag:op(), flag_ew()) -> {ok, antidote_crdt_flag:downstream_op()}.
-downstream({enable, {}}, Tokens) ->
-  {ok, {Tokens, []}};
 downstream({disable, {}}, Tokens) ->
+  {ok, {Tokens, []}};
+downstream({enable, {}}, Tokens) ->
   {ok, {Tokens, [antidote_crdt_flag:unique()]}};
 downstream({reset, {}}, Tokens) ->
   {ok, {Tokens, []}}.
@@ -107,8 +107,8 @@ require_state_downstream(A) -> antidote_crdt_flag:require_state_downstream(A).
   io:format("Flag1a = ~p~n", [Flag1a]),
   io:format("Flag1b = ~p~n", [Flag1b]),
 
-  ?assertEqual(true, value(Flag0)),
+  ?assertEqual(false, value(Flag0)),
   ?assertEqual(true, value(Flag1a)),
-  ?assertEqual(true, value(Flag1b)).
+  ?assertEqual(false, value(Flag1b)).
 
 -endif.

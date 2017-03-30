@@ -31,12 +31,12 @@ prop_flag_dw_spec() ->
 
 
 spec(Operations) ->
-  [Clock || {Clock, {enable, {}}} <- Operations,
+  [Clock || {Clock, {disable, {}}} <- Operations,
       % all values, such that not overridden by other assign
-      [] == [Clock2 || {Clock2, {disable, {}}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)],
+      [] == [Clock2 || {Clock2, {enable, {}}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)],
       % and not overridden by reset
       [] == [Clock3 || {Clock3, {reset, {}}} <- Operations, crdt_properties:clock_le(Clock, Clock3)]
-    ] =/= [].
+    ] == [].
 
 % generates a random operation
 op() ->

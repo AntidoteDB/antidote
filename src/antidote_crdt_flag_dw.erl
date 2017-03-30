@@ -54,13 +54,13 @@ new() ->
   antidote_crdt_flag:new().
 
 -spec value(flag_dw()) -> boolean().
-value(EnableTokens) ->
-  EnableTokens =/= [].
+value(DisableTokens) ->
+  DisableTokens == [].
 
 -spec downstream(antidote_crdt_flag:op(), flag_dw()) -> {ok, antidote_crdt_flag:downstream_op()}.
-downstream({enable, {}}, Tokens) ->
-  {ok, {Tokens, [antidote_crdt_flag:unique()]}};
 downstream({disable, {}}, Tokens) ->
+  {ok, {Tokens, [antidote_crdt_flag:unique()]}};
+downstream({enable, {}}, Tokens) ->
   {ok, {Tokens, []}};
 downstream({reset, {}}, Tokens) ->
   {ok, {Tokens, []}}.
