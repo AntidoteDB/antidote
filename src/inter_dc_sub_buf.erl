@@ -34,6 +34,7 @@
 
 %% State
 -record(state, {
+    txn_prot :: term(),
   state_name :: normal | buffering,
   pdcid :: pdcid(),
   last_observed_opid :: non_neg_integer() | init,
@@ -44,11 +45,14 @@
 
 %% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
 -spec new_state(pdcid()) -> #state{}.
-new_state(PDCID) -> #state{
-  state_name = normal,
-  pdcid = PDCID,
-  last_observed_opid = init,
-  queue = queue:new()
+new_state(PDCID) ->
+    Protocol=application:get_env(antidote, txn_prot),
+    #state{
+      txn_prot = Protocol,
+      state_name = normal,
+      pdcid = PDCID,
+      last_observed_opid = init,
+      queue = queue:new()
 }.
 
 -spec process({txn, #interdc_txn{}} | {log_reader_resp, [#interdc_txn{}]}, #state{}) -> #state{}.
@@ -56,6 +60,7 @@ process({txn, Txn}, State = #state{last_observed_opid = init, pdcid = {DCID, Par
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
     %% you can check for duplocates or lost messages
+    lager:info("TXN=~p", [Txn]),
     Result = try
 		 logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
 					 DCID, Partition)
@@ -86,13 +91,16 @@ process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buff
   process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
+process_queue(State = #state{queue = Queue, last_observed_opid = Last, txn_prot = Protocol}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
       TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
-      case cmp(TxnLast, Last) of
-
+      Compare = case Protocol of
+          ec -> eq;
+          _-> cmp(TxnLast, Last)
+      end,
+      case Compare of
       %% If the received transaction is immediately after the last observed one
         eq ->
           deliver(Txn),
@@ -119,7 +127,8 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   end.
 
 -spec deliver(#interdc_txn{}) -> ok.
-deliver(Txn) -> inter_dc_dep_vnode:handle_transaction(Txn).
+deliver(Txn) ->
+    inter_dc_dep_vnode:handle_transaction(Txn).
 
 %% TODO: consider dropping messages if the queue grows too large.
 %% The lost messages would be then fetched again by the log_reader.

@@ -216,15 +216,26 @@ observe_dcs(Descriptors) -> lists:map(fun observe_dc/1, Descriptors).
 
 -spec observe_dcs_sync([#descriptor{}]) -> [ok | inter_dc_conn_err()].
 observe_dcs_sync(Descriptors) ->
-    {ok, SS} = dc_utilities:get_stable_snapshot(),
+    {ok, Protocol}=application:get_env(antidote, txn_prot),
+    {ok, SS} = case Protocol of
+        ec ->
+            {ok, vectorclock:new()};
+        _->
+            dc_utilities:get_stable_snapshot()
+    end,
     DCs = lists:map(fun(DC) ->
 			    {observe_dc(DC), DC}
 		    end, Descriptors),
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
 			  case Res of
 			      ok ->
-				  Value = vectorclock:get_clock_of_dc(DCID, SS),
-				  wait_for_stable_snapshot(DCID, Value),
+                  case Protocol of
+                      ec ->
+                          dont_wait;
+                      _->
+                          Value = vectorclock:get_clock_of_dc(DCID, SS),
+                          wait_for_stable_snapshot(DCID, Value)
+                  end,
 				  ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
 			      _ ->
 				  ok

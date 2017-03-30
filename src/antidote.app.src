@@ -32,7 +32,7 @@
   %%        true -> on node start will load any operations stored on the disk log to the in memory cache of the key-value store
   %%        false -> on node start the state of the key-value store will be empty
   %% recover_meta_data_on_start:
-  %%        true -> meta-data state will be loaded from disk on restart including connection state between other DCs and node names and configurations,
+  %%        true -> meta-data state will be loaded from 1disk on restart including connection state between other DCs and node names and configurations,
   %%                nodes will automatically reconnect to other dcs on restart
   %%        false -> meta-data concering node names and connections to other dcs will not be loaded on restart
   %% sync_log:
@@ -44,7 +44,7 @@
   %%        true -> the materializer vnode will log staleness in log files that can later be processed.
   %%        false -> this option will be disabled.
      {env, [{txn_cert, false},
-         {txn_prot, physics},
+         {txn_prot, ec},
          {enable_logging, false},
          {recover_from_log, false},
          {recover_meta_data_on_start, true},

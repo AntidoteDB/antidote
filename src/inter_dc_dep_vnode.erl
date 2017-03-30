@@ -66,7 +66,8 @@
 %% Passes the received transaction to the dependency buffer.
 %% At this point no message can be lost (the transport layer must ensure all transactions are delivered reliably).
 -spec handle_transaction(#interdc_txn{}) -> ok.
-handle_transaction(Txn=#interdc_txn{partition = P}) -> dc_utilities:call_local_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
+handle_transaction(Txn=#interdc_txn{partition = P}) ->
+  dc_utilities:call_local_vnode_sync(P, inter_dc_dep_vnode_master, {txn, Txn}).
 
 %% After restarting from failure, load the vectorclock of the max times of all the updates received from other DCs
 %% Otherwise new updates from other DCs will be blocked
@@ -117,14 +118,20 @@ try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = 
     {update_clock(State, DCID, Timestamp), true};
 
 %% Store the normal transaction
-try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
+try_store(State=#state{transactional_protocol = Protocol}, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant.
   %% Therefore, we remove it prior to further checks.
-  Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.causal_dependencies),
-  CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
+  ShouldApply = case Protocol of
+    ec ->
+      true;
+    _->
+      Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.causal_dependencies),
+      CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
+      vectorclock:ge(CurrentClock, Dependencies)
+  end,
 
   %% Check if the current clock is greater than or equal to the dependency vector
-  case vectorclock:ge(CurrentClock, Dependencies) of
+  case ShouldApply of
 
     %% If not, the transaction will not be stored right now.
     %% Still need to update the timestamp for that DC, up to 1 less than the

@@ -189,7 +189,8 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
 
 
 create_ec_record(Name)->
-    TransactionId = #tx_id{server_pid = Name},
+    Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
+    TransactionId = #tx_id{local_start_time = Now, server_pid = Name},
     #transaction{
         transactional_protocol = ec,
         txn_id = TransactionId,
@@ -419,35 +420,18 @@ execute_op({OpType, Args}, Sender,
                     SD1=case Transaction#transaction.transactional_protocol of
                         physics->
                             update_physics_metadata(SD0, CommitParams);
-                        Protocol when ((Protocol==gr)or(Protocol==clocksi))->
+                        Protocol when ((Protocol==gr)or(Protocol==clocksi)or(Protocol==ec))->
                             SD0
                     end,
                     InternalReadSet=orddict:store(key, ReadResult, SD1#tx_coord_state.internal_read_set),
                     {reply, {ok, Type:value(Snapshot)}, execute_op, SD1#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
 	    read_objects ->
-%%            lager:debug("got to read: ~p", [Args]),
-            NewTransaction = case Transaction#transaction.transactional_protocol of
-                physics ->
-                    NewVC = vectorclock:new(),
-                    case ((Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound == NewVC) and
-                        (Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound == NewVC) and
-                        (length(Args) > 1)) of
-                        true ->
-                            PhysicsClock = vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec() - ?PHYSICS_THRESHOLD, NewVC),
-                            PhysicsMetadata = #physics_read_metadata{dep_upbound = PhysicsClock, commit_time_lowbound = PhysicsClock},
-                            Transaction#transaction{physics_read_metadata = PhysicsMetadata};
-                        false ->
-                            Transaction
-                    end;
-                Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                    Transaction
-            end,
             ExecuteReads = fun({Key, Type}, Acc) ->
                 PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
                 IndexNode = hd(PrefList),
 %%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
-                ok = clocksi_vnode:async_read_data_item(IndexNode, NewTransaction, Key, Type),
+                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
                 ReadSet = Acc#tx_coord_state.return_accumulator,
                 Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
                            end,
@@ -513,7 +497,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
     SD1 = case TransactionalProtocol of
               physics ->
                   update_physics_metadata(CoordState, SnapshotCommitParams);
-              Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
                   CoordState
           end,
     case NumToRead of
@@ -561,7 +545,7 @@ update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, 
                 ignore -> vectorclock:new()
             end,
             {PhysicsTempCoordState, {DownstreamOp, DownstreamOpCommitVC}};
-        Prot when ((Prot==gr)or(Prot==clocksi))->
+        Prot when ((Prot==gr)or(Prot==clocksi)or(Prot==ec))->
             {InitCoordState, DownstreamOp}
     end,
     NewUpdatedPartitions = case lists:keyfind(IndexNode, 1, UpdatedPartitions) of
@@ -682,7 +666,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
     PrepareParams = case Transaction#transaction.transactional_protocol of
                         physics ->
                             {MaxPrepareTime, DependencyVC};
-                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
                             {MaxPrepareTime, no_dep_vc}
                     end,
     case NumToAck of 1 ->
@@ -852,6 +836,30 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case Transaction#transaction.transactional_protocol of
+                    ec ->
+                        case TxState of
+                            committed_read_only ->
+                                case IsStatic of
+                                    false ->
+                                        {ok, {TxId, vectorclock:new()}};
+                                    true ->
+                                        {ok, {TxId, lists:reverse(ReturnReadSet), vectorclock:new()}}
+                                end;
+                            committed ->
+                                %% Execute post_commit_hooks
+                                _Result = execute_post_commit_hooks(ClientOps),
+                                %% TODO: What happens if commit hook fails?
+                                case IsStatic of
+                                    false ->
+                                        {ok, {TxId, vectorclock:new()}};
+                                    true ->
+                                        {ok, {TxId, lists:reverse(ReturnReadSet), vectorclock:new()}}
+                                end;
+                            aborted ->
+                                {aborted, TxId};
+                            Reason ->
+                                {TxId, Reason}
+                        end;
                     Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
                         case TxState of
                             committed_read_only ->

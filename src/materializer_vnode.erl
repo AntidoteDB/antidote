@@ -35,7 +35,7 @@
 -define(RESIZE_THRESHOLD, 5).
 %% Only store the new SS if the following number of ops
 %% were applied to the previous SS
--define(MIN_OP_STORE_SS, 1).
+-define(MIN_OP_STORE_SS, 3).
 %% Expected time to wait until the logging vnode is up
 -define(LOG_STARTUP_WAIT, 1000).
 
@@ -580,7 +580,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%								        end
 %%						        end
 				        end;
-			        Protocol when ((Protocol == clocksi) or (Protocol == gr)) ->
+			        Protocol when ((Protocol == clocksi) or (Protocol == gr) or (Protocol == ec)) ->
 				        Transaction
 		        end,
 %%	        lager:info("~n UpdatedTxnRecord ~p  ",[UpdatedTxnRecord]),
@@ -738,7 +738,7 @@ create_empty_materialized_snapshot_record(Transaction, Type) ->
 	case Transaction#transaction.transactional_protocol of
         physics ->
 	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {NewVC, NewVC, NewVC}};
-        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
             {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, NewVC}
     end.
 
@@ -815,6 +815,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
 				 end
 			 end,
 	    NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]),
+%%	        lager:info("new tuple is : ~p", [NewTuple]),
 	    true = ets:insert(OpsCache, NewTuple);
 	false ->
 %%		lager:info("~n~WONT GC!!!"),
@@ -824,36 +825,46 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
 -spec prune_ops({non_neg_integer(),tuple()}, snapshot_time())->
 		       {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
-prune_ops({Len,OpsTuple}, Threshold)->
-    %% should write custom function for this in the vector_orddict
-    %% or have to just traverse the entire list?
-    %% since the list is ordered, can just stop when all values of
-    %% the op is smaller (i.e. not concurrent)
-    %% So can add a stop function to ordered_filter
-    %% Or can have the filter function return a tuple, one vale for stopping
-    %% one for including
-%%	lager:info ("~n old tuple : ~n~p", [OpsTuple]),
-	{NewSize, NewOps}=check_filter(fun({_OpId, Op})->
-		BaseSnapshotVC=Op#operation_payload.dependency_vc,
-		{DcId, CommitTime}=Op#operation_payload.dc_and_commit_time,
-		CommitVC=vectorclock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
-		(op_not_already_in_snapshot(Threshold, CommitVC))
-	%%	    case Result of
-	%%		    true -> lager:info("~nHAVE TO KEEP THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
-	%%			                [CommitVC, BaseSnapshotVC]);
-	%%		    false ->
-	%%			    lager:info("~nWILL REMOVE THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
-	%%				    [CommitVC, BaseSnapshotVC])
-	%%	    end,
-	%%        Result
-	end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
-%%	lager:info ("~n new tuple : ~n~p ~n ARE THEY THE SAME? ", [NewOps]),
-    case NewSize of
-	0 ->
-	    First = element(?FIRST_OP+Len,OpsTuple),
-	    {1,[{?FIRST_OP,First}]};
-	_ -> {NewSize,NewOps}
-    end.
+prune_ops({Len, OpsTuple}, Threshold) ->
+	%% should write custom function for this in the vector_orddict
+	%% or have to just traverse the entire list?
+	%% since the list is ordered, can just stop when all values of
+	%% the op is smaller (i.e. not concurrent)
+	%% So can add a stop function to ordered_filter
+	%% Or can have the filter function return a tuple, one vale for stopping
+	%% one for including
+	case application:get_env(antidote, txn_prot) of
+		{ok, ec} ->
+%%			lager:info("OpsTuple = ~p", [OpsTuple]),
+			First = element(?FIRST_OP+Len-1, OpsTuple),
+%%			lager:info("First = ~p", [First]),
+%%			lager:info("returning = ~p", [{1, [{?FIRST_OP, First}]}]),
+
+			{1, [{?FIRST_OP, First}]};
+		_ ->
+			{NewSize, NewOps} = check_filter(fun({_OpId, Op}) ->
+				BaseSnapshotVC = Op#operation_payload.dependency_vc,
+				{DcId, CommitTime} = Op#operation_payload.dc_and_commit_time,
+				CommitVC = vectorclock:set_clock_of_dc(DcId, CommitTime, BaseSnapshotVC),
+				(op_not_already_in_snapshot(Threshold, CommitVC))
+			%%	    case Result of
+			%%		    true -> lager:info("~nHAVE TO KEEP THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
+			%%			                [CommitVC, BaseSnapshotVC]);
+			%%		    false ->
+			%%			    lager:info("~nWILL REMOVE THIS OP! ~n CommitVC = ~p ~n Oldest Snapshot CT = ~p",
+			%%				    [CommitVC, BaseSnapshotVC])
+			%%	    end,
+			%%        Result
+			end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
+			case NewSize of
+				0 ->
+					First = element(?FIRST_OP+Len, OpsTuple),
+					{1, [{?FIRST_OP, First}]};
+				_ ->
+					{NewSize, NewOps}
+			end
+	end.
+
 
 %% This function will go through a tuple of operations, filtering out the operations
 %% that are out of date (given by the input function Fun), and returning a list

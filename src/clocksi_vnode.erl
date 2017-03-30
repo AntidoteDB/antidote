@@ -323,7 +323,7 @@ handle_command({single_commit, Transaction, WriteSet, DependencyVC}, _Sender,
             CommitParams = case Transaction#transaction.transactional_protocol of
                                physics ->
                                    {NewPrepareTime, DependencyVC};
-                               Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
+                               Protocol when ((Protocol == gr) or (Protocol== clocksi) or (Protocol== ec)) ->
                                    {NewPrepareTime, Transaction#transaction.snapshot_vc}
                            end,
             ResultCommit = commit(Transaction, CommitParams, WriteSet, CommittedTx, NewState),
@@ -647,7 +647,7 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
                         txid = Transaction#transaction.txn_id},
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
                              end;
-        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol== ec)) ->
             {{DcId, CommitTime}, _SnapshotVC} = CommitParams,
             UpdateFunction = fun({Key, Type, Op}, AccIn) ->
                 CommittedDownstreamOp =
@@ -682,7 +682,7 @@ reverse_and_filter_updates_per_key(Updates, Key, Transaction) ->
                         Acc
                 end
                         end, [], Updates);
-        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
             lists:foldl(fun({KeyPrime, _Type, Op}, Acc) ->
                 case KeyPrime == Key of
                     true ->

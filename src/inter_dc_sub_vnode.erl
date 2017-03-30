@@ -51,6 +51,7 @@
 %% State
 -record(state, {
   partition :: non_neg_integer(),
+  txn_prot :: term(),
   buffer_fsms :: dict:dict() %% dcid -> buffer
 }).
 
@@ -68,7 +69,10 @@ deliver_log_reader_resp(BinaryRep,_RequestCacheEntry) ->
 
 %%%% VNode methods ----------------------------------------------------------+
 
-init([Partition]) -> {ok, #state{partition = Partition, buffer_fsms = dict:new()}}.
+init([Partition]) ->
+  %beware, protocol takes, e.g.  {ok, clocksi}
+  Protocol = application:get_env(antidote, txn_prot),
+  {ok, #state{partition = Partition, buffer_fsms = dict:new(), txn_prot = Protocol}}.
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 handle_command({txn, Txn = #interdc_txn{dcid = DCID}}, _Sender, State) ->
@@ -102,7 +106,7 @@ call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_su
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of
     {ok, Buf} -> Buf;
-    error -> inter_dc_sub_buf:new_state({DCID, State#state.partition})
+    _ -> inter_dc_sub_buf:new_state({DCID, State#state.partition})
   end.
 
 set_buf(DCID, Buf, State) -> State#state{buffer_fsms = dict:store(DCID, Buf, State#state.buffer_fsms)}.
