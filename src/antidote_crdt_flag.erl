@@ -27,14 +27,14 @@
 
 %% Callbacks
 -export([ new/0,
-          downstream/2,
           update/2,
           equal/2,
           to_binary/1,
           from_binary/1,
           is_operation/1,
           is_bottom/1,
-          require_state_downstream/1
+          require_state_downstream/1,
+          unique/0
         ]).
 
 -ifdef(TEST).
@@ -42,7 +42,7 @@
 -endif.
 
 -export_type([flag/0, binary_flag/0, op/0]).
--opaque flag() :: {tokens(), tokens()}.
+-opaque flag() :: tokens().
 
 -type binary_flag() :: binary(). %% A binary that from_binary/1 will operate on.
 
@@ -51,33 +51,24 @@
     | {disable, {}}
     | {reset, {}}.
 
-%% CurrentTokens, EnableTokens, DisableTokens
--type downstream_op() :: {tokens(), tokens(), tokens()}.
+%% SeenTokens, NewTokens
+-type downstream_op() :: {tokens(), tokens()}.
 
 -type token() :: term().
 -type tokens() :: [token()].
 
 -spec new() -> flag().
 new() ->
-  {[], []}.
-
--spec downstream(op(), flag()) -> {ok, downstream_op()}.
-downstream({enable, {}}, {EnableTokens, DisableTokens}) ->
-  {ok, {EnableTokens ++ DisableTokens, [unique()], []}};
-downstream({disable, {}}, {EnableTokens, DisableTokens}) ->
-  {ok, {EnableTokens ++ DisableTokens, [], [unique()]}};
-downstream({reset, {}}, {EnableTokens, DisableTokens}) ->
-  {ok, {EnableTokens ++ DisableTokens, [], []}}.
+  [].
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
     crypto:strong_rand_bytes(20).
 
 -spec update(downstream_op(), flag()) -> {ok, flag()}.
-  update({SeenTokens, ToEnable, ToDisable}, {CurrentEnableTokens, CurrentDisableTokens}) ->
-    EnableTokens = (CurrentEnableTokens ++ ToEnable) -- SeenTokens,
-    DisableTokens = (CurrentDisableTokens ++ ToDisable) -- SeenTokens,
-    {ok, {EnableTokens, DisableTokens}}.
+  update({SeenTokens, NewTokens}, CurrentTokens) ->
+    FinalTokens = (CurrentTokens ++ NewTokens) -- SeenTokens,
+    {ok, FinalTokens}.
 
 -spec equal(flag(), flag()) -> boolean().
   equal(Flag1, Flag2) ->

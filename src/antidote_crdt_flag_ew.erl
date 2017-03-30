@@ -49,19 +49,21 @@
 -export_type([flag_ew/0]).
 -opaque flag_ew() :: antidote_crdt_flag:flag().
 
--type op() :: antidote_crdt_flag:op().
-
 -spec new() -> flag_ew().
 new() ->
   antidote_crdt_flag:new().
 
 -spec value(flag_ew()) -> boolean().
-value({A, _}) ->
-  A =/= [].
+value(DisableTokens) ->
+  DisableTokens == [].
 
--spec downstream(op(), flag_ew()) -> {ok, antidote_crdt_flag:downstream_op()}.
-  downstream(A, B) ->
-    antidote_crdt_flag:downstream(A, B).
+-spec downstream(antidote_crdt_flag:op(), flag_ew()) -> {ok, antidote_crdt_flag:downstream_op()}.
+downstream({enable, {}}, Tokens) ->
+  {ok, {Tokens, []}};
+downstream({disable, {}}, Tokens) ->
+  {ok, {Tokens, [antidote_crdt_flag:unique()]}};
+downstream({reset, {}}, Tokens) ->
+  {ok, {Tokens, []}}.
 
 -spec update(antidote_crdt_flag:downstream_op(), flag_ew()) -> {ok, flag_ew()}.
   update(A, B) ->
@@ -105,8 +107,8 @@ require_state_downstream(A) -> antidote_crdt_flag:require_state_downstream(A).
   io:format("Flag1a = ~p~n", [Flag1a]),
   io:format("Flag1b = ~p~n", [Flag1b]),
 
-  ?assertEqual(false, value(Flag0)),
+  ?assertEqual(true, value(Flag0)),
   ?assertEqual(true, value(Flag1a)),
-  ?assertEqual(false, value(Flag1b)).
+  ?assertEqual(true, value(Flag1b)).
 
 -endif.
