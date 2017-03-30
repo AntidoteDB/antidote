@@ -159,7 +159,7 @@
 
 -record(transaction, {
     snapshot_time :: snapshot_time(),
-    vec_snapshot_time,
+    vec_snapshot_time :: snapshot_time(),
     txn_id :: txid()
 }).
 
