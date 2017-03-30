@@ -144,21 +144,21 @@ init([From, ClientClock, UpdateClock, StayAlive, Operations]) ->
     {ok, execute_op, State#tx_coord_state{operations = Operations, from = From}, 0}.
 
 init_state(StayAlive, FullCommit, IsStatic) ->
-    #tx_coord_state{
-       transaction = undefined,
-       updated_partitions=[],
-       client_ops=[],
-       prepare_time=0,
-       num_to_read=0,
-       num_to_ack=0,
-       operations=undefined,
-       from=undefined,
-       full_commit=FullCommit,
-       is_static=IsStatic,
-       return_accumulator=[],
-       internal_read_set=orddict:new(),
-       stay_alive = StayAlive
-      }.
+    #tx_coord_state {
+        transaction = undefined,
+        updated_partitions = [],
+        client_ops = [],
+        prepare_time = 0,
+        num_to_read = 0,
+        num_to_ack = 0,
+        operations = undefined,
+        from = undefined,
+        full_commit = FullCommit,
+        is_static = IsStatic,
+        return_accumulator = [],
+        internal_read_set = orddict:new(),
+        stay_alive = StayAlive
+    }.
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
