@@ -20,9 +20,9 @@ main(NodesListString) ->
         bad_input_format ->
             usage();
         _->
-%%            lists:foreach(fun (Node) -> rpc:call(Node, materializer_vnode, sync_all_staleness_logs, []) end, Nodes),
-            rpc:call(hd(Nodes), materializer_vnode, sync_all_staleness_logs, []),
-            io:format("~nSuccesfully sent  rpc:call(Node, materializer_vnode, sync_all_staleness_logs, []) end, Nodes) to node: ~w~n", [hd(Nodes)])
+            lists:foreach(fun (Node) -> rpc:call(Node, materializer_vnode, sync_all_staleness_logs, []) end, Nodes),
+%%            rpc:call(hd(Nodes), materializer_vnode, sync_all_staleness_logs, []),
+            io:format("~nSuccesfully sent  rpc:call(Node, materializer_vnode, sync_all_staleness_logs, []) end, Nodes) to nodes: ~w~n", [Nodes])
     end.
 
 usage() ->
