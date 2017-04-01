@@ -67,9 +67,9 @@
     stop/1]).
 
 %% States
--export([create_transaction_record/6,
+-export([create_transaction_record/7,
     start_tx/2,
-    init_state/4,
+    init_state/5,
     perform_update/3,
     perform_read/4,
     execute_op/3,
@@ -126,10 +126,11 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 %% @doc Initialize the state.
 init([From, ClientClock, UpdateClock, StayAlive]) ->
     {ok, Protocol} = ?APPLICATION:get_env(antidote, txn_prot),
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false, Protocol))}.
+    {ok, Strict} = ?APPLICATION:get_env(antidote, stable_strict),
+    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false, Protocol, Strict))}.
 
 
-init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
+init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict) ->
     #tx_coord_state{
        transactional_protocol = Protocol,
         transaction = undefined,
@@ -146,6 +147,7 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol) ->
         return_accumulator= [],
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
+        stable_strict=Strict,
         %% The following are needed by the physics protocol
         version_max = vectorclock:new()
     }.
@@ -157,14 +159,14 @@ generate_name(From) ->
 start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol}) ->
-    Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol),
+start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol, stable_strict=Strict}) ->
+    Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol, Strict),
     From ! {ok, Transaction#transaction.txn_id},
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-  boolean(), pid() | undefined, boolean(), atom()) -> transaction().
-create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol) ->
+  boolean(), pid() | undefined, boolean(), atom(), boolean()) -> transaction().
+create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol, Strict) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
     Name = case StayAlive of
@@ -182,9 +184,9 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
         ec->
             create_ec_record(Name);
         physics ->
-            create_physics_tx_record(Name, ClientClock, UpdateClock);
+            create_physics_tx_record(Name, ClientClock, UpdateClock, Strict);
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol)
+            create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol, Strict)
     end.
 
 
@@ -199,12 +201,12 @@ create_ec_record(Name)->
 
 % todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the physics protocol
--spec create_physics_tx_record(pid(), clock_time(), clock_time())-> transaction().
-create_physics_tx_record(Name, _ClientClock, _UpdateClock)->
+-spec create_physics_tx_record(pid(), clock_time(), clock_time(), boolean())-> transaction().
+create_physics_tx_record(Name, _ClientClock, _UpdateClock, Strict)->
     {ok, StableVector} =
 %%        case ClientClock of
 %%        ignore ->
-            get_snapshot_time(),
+            get_snapshot_time(Strict),
 %%        _ ->
 %%            case UpdateClock of
 %%                update_clock ->
@@ -228,12 +230,12 @@ create_physics_tx_record(Name, _ClientClock, _UpdateClock)->
 
 % todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the clocksi and gr protocol
--spec create_cure_gr_tx_record(pid(), clock_time(), clock_time(), clocksi|gr)->transaction().
-create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol)->
+-spec create_cure_gr_tx_record(pid(), clock_time(), clock_time(), clocksi|gr, boolean())->transaction().
+create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol, Strict)->
     {ok, SnapshotTime} =
 %%        case ClientClock of
 %%        ignore ->
-            get_snapshot_time(),
+            get_snapshot_time(Strict),
 %%        _ ->
 %%            case UpdateClock of
 %%                update_clock ->
@@ -260,7 +262,8 @@ create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol)->
 perform_singleitem_read(Key, Type) ->
 %%    todo: there should be a better way to get the Protocol.
     {ok, Protocol} = application:get_env(antidote, txn_prot),
-    Transaction= create_transaction_record(ignore, update_clock, false, undefined, true, Protocol),
+    {ok, Strict} = application:get_env(antidote, stable_strict),
+    Transaction= create_transaction_record(ignore, update_clock, false, undefined, true, Protocol, Strict),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
@@ -832,7 +835,7 @@ receive_aborted(_, S0) ->
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator= ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
-    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps}) ->
+    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case Transaction#transaction.transactional_protocol of
@@ -924,7 +927,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
     end,
     case StayAlive of
         true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol)};
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict)};
         false ->
             {stop, normal, SD}
     end.
@@ -970,16 +973,20 @@ terminate(_Reason, _SN, _SD) ->
 %%get_snapshot_time(ClientClock) ->
 %%    wait_for_clock(ClientClock).
 
--spec get_snapshot_time() -> {ok, snapshot_time()}.
-get_snapshot_time() ->
+-spec get_snapshot_time(boolean()) -> {ok, snapshot_time()}.
+get_snapshot_time(Strict) ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
 %%    lager:info("VecSnapshotTime=~p", [VecSnapshotTime]),
-    DcId = ?DC_META_UTIL:get_my_dc_id(),
-    SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
-%%    lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
-    {ok, SnapshotTime}.
-
+    case Strict of
+        true ->
+            {ok, VecSnapshotTime};
+        false ->
+            DcId = ?DC_META_UTIL:get_my_dc_id(),
+            SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
+            %%lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
+            {ok, SnapshotTime}
+    end.
 
 %%-spec wait_for_clock(snapshot_time()) -> {ok, snapshot_time()}.
 %%wait_for_clock(Clock) ->
@@ -1098,7 +1105,7 @@ downstream_fail_test(Pid) ->
 
 
 get_snapshot_time_test() ->
-    {ok, SnapshotTime} = get_snapshot_time(),
+    {ok, SnapshotTime} = get_snapshot_time(false),
     ?assertMatch([{mock_dc, _}], vectorclock:to_list(SnapshotTime)).
 
 wait_for_clock_test() ->

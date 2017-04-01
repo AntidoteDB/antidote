@@ -201,7 +201,7 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
 
 %% Update the clock value associated with the given DCID from the perspective of this partition.
 -spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
-update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
+update_clock(State = #state{last_updated = LastUpdated, partition=Partition}, DCID, Timestamp) ->
   %% Should we decrement the timestamp value by 1?
   NewVectorClock= vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
 
@@ -211,23 +211,23 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
   %% and that there is always the next one arriving shortly.
   %% This causes the stable_snapshot to tick more slowly, which is an expected behaviour.
   Now = dc_utilities:now_millisec(),
-  NewLastUpdated = case Now > LastUpdated + ?VECTORCLOCK_UPDATE_PERIOD of
+  case Now > LastUpdated + ?VECTORCLOCK_UPDATE_PERIOD of
     %% Stable snapshot was not updated for the defined period of time.
     %% Push the changes and update the last_updated parameter to the current timestamp.
     %% WARNING: this update must push the whole contents of the partition vectorclock,
     %% not just the current DCID/Timestamp pair in the arguments.
     %% Failure to do so may lead to a deadlock during the connection phase.
     true ->
-
-      %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewVectorClock),
-
-      Now;
+        %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
+        {ok, Min} = clocksi_vnode:sync_get_min_prepared(Partition),
+        MyDc = dc_meta_data_utilities:get_my_dc_id(),
+        NewVectorClock2 = vectorclock:set_clock_of_dc(MyDc, Min, NewVectorClock),
+        ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewVectorClock2),
+        State#state{vectorclock =NewVectorClock2, last_updated = Now};
     %% Stable snapshot was recently updated, no need to do so.
-    false -> LastUpdated
-  end,
-
-  State#state{vectorclock =NewVectorClock, last_updated = NewLastUpdated}.
+    false ->
+        State#state{vectorclock =NewVectorClock, last_updated = LastUpdated}
+  end.
 
 %% Get the current vectorclock from the perspective of this partition, with the updated entry for current DC.
 -spec get_partition_clock(#state{}) -> vectorclock().

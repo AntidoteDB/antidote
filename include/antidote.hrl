@@ -268,6 +268,7 @@
     is_static :: boolean(),
     full_commit :: boolean(),
     stay_alive :: boolean(),
+    stable_strict :: boolean(),
     %% The following is needed by the physics protocol
     version_max :: vectorclock()
 }).

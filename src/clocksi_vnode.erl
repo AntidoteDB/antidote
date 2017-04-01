@@ -28,6 +28,7 @@
     async_read_data_item/4,
     get_cache_name/2,
     send_min_prepared/1,
+    sync_get_min_prepared/1,
     get_active_txns_key/3,
     get_active_txns/2,
     prepare/2,
@@ -151,6 +152,9 @@ get_active_txns_internal(TableName) ->
 
 send_min_prepared(Partition) ->
     dc_utilities:call_local_vnode(Partition, clocksi_vnode_master, {send_min_prepared}).
+
+sync_get_min_prepared(Partition) ->
+    dc_utilities:call_local_vnode_sync(Partition, clocksi_vnode_master, {sync_get_min_prepared}).
 
 %% @doc Sends a prepare request to a Node involved in a tx identified by TxId
 prepare(ListofNodes, Transaction) ->
@@ -280,6 +284,11 @@ handle_command({send_min_prepared}, _Sender,
     {ok, Time} = get_min_prep(PreparedDict),
     dc_utilities:call_local_vnode(Partition, logging_vnode_master, {send_min_prepared, Time}),
     {noreply, State};
+
+handle_command({sync_get_min_prepared}, _Sender,
+	       State = #state{prepared_dict = PreparedDict}) ->
+    {ok, Time} = get_min_prep(PreparedDict),
+    {reply, {ok, Time}, State};
 
 handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
     loop_until_started(Partition, Serv),
