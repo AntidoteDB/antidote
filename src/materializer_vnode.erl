@@ -344,8 +344,9 @@ handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
 handle_command({truncate_staleness_log}, _Sender, State) ->
-%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
-	{reply, {disk_log:truncate(State#mat_state.staleness_log)}, State};
+	Reply = disk_log:truncate(State#mat_state.staleness_log),
+	lager:info("Truncating Log: ~p replied with ~p", [State#mat_state.staleness_log, Reply]),
+	{reply, {Reply}, State};
 
 handle_command({close_staleness_log}, _Sender, State) ->
 	%%	lager:info("replying ~p", [{ok, State#mat_state.staleness_log}]),
