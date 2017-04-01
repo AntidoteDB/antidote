@@ -977,14 +977,16 @@ terminate(_Reason, _SN, _SD) ->
 get_snapshot_time(Strict) ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
-%%    lager:info("VecSnapshotTime=~p", [VecSnapshotTime]),
+%%    lager:info("MY STRICT SNAPSHOT TIME IS : ~p",[VecSnapshotTime]),
+
+    %%    lager:info("VecSnapshotTime=~p", [VecSnapshotTime]),
     case Strict of
         true ->
             {ok, VecSnapshotTime};
         false ->
             DcId = ?DC_META_UTIL:get_my_dc_id(),
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
-            %%lager:debug("MY SNAPSHOT TIME IS : ~p",[SnapshotTime]),
+%%            lager:info("MY FRESH SNAPSHOT TIME IS : ~p",[SnapshotTime]),
             {ok, SnapshotTime}
     end.
 

@@ -47,7 +47,7 @@
          {txn_prot, ec},
          {stable_strict, true},
          {enable_logging, false},
-         {recover_from_log, false},
+         {recover_from_log, true},
          {recover_meta_data_on_start, true},
          {sync_log, false},
          {log_staleness, true}]}

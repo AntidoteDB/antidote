@@ -35,6 +35,7 @@
 -spec generate_downstream_op(Key :: key(),  Type :: type(), Update :: op(), CoordState :: #tx_coord_state{}) ->
 	{ok, op(), vectorclock()|{vectorclock(), vectorclock()}, boolean()} | {error, reason()}.
 generate_downstream_op(Key, Type, Update, CoordState)->
+%%	lager:info("Key ~p~n, Type ~p~n, Update ~p~n, CoordState ~p~n" , [Key, Type, Update, CoordState]),
 	Transaction = CoordState#tx_coord_state.transaction,
 	InternalReadSet = CoordState#tx_coord_state.internal_read_set,
 	Preflist = ?LOG_UTIL:get_preflist_from_key(Key),

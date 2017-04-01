@@ -60,7 +60,7 @@ process({txn, Txn}, State = #state{last_observed_opid = init, pdcid = {DCID, Par
     %% If this is the first txn received (i.e. if last_observed_opid = init) then check the log
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
     %% you can check for duplocates or lost messages
-    lager:info("TXN=~p", [Txn]),
+%%    lager:info("TXN=~p", [Txn]),
     Result = try
 		 logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
 					 DCID, Partition)
