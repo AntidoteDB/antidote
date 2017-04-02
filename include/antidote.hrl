@@ -12,7 +12,7 @@
 -define(OP_TIMEOUT, infinity).
 -define(COORD_TIMEOUT, infinity).
 -define(COMM_TIMEOUT, infinity).
--define(ZMQ_TIMEOUT, 5000).
+-define(ZMQ_TIMEOUT, 50000).
 -define(NUM_W, 2).
 -define(NUM_R, 2).
 -define(DEFAULT_PUBSUB_PORT, 8086).
@@ -60,12 +60,12 @@
 %% that read.
 -define(SPIN_WAIT, 0).
 %% HEARTBEAT_PERIOD: Period of sending the heartbeat messages in interDC layer
--define(HEARTBEAT_PERIOD, 1000).
+-define(HEARTBEAT_PERIOD, 100).
 %% VECTORCLOCK_UPDATE_PERIOD: Period of updates of the stable snapshot per partition
--define(VECTORCLOCK_UPDATE_PERIOD, 100).
+-define(VECTORCLOCK_UPDATE_PERIOD, 10).
 %% This is the time that nodes will sleep inbetween sending meta-data
 %% to other physical nodes within the DC
--define(META_DATA_SLEEP, 1000).
+-define(META_DATA_SLEEP, 10).
 -define(META_TABLE_NAME, a_meta_data_table).
 -define(REMOTE_META_TABLE_NAME, a_remote_meta_data_table).
 -define(META_TABLE_STABLE_NAME, a_meta_data_table_stable).
@@ -82,7 +82,7 @@
 %% Period during which transfer requests from the same DC to the same key are ignored.
 -define(GRACE_PERIOD, 1000000). % in Microseconds
 %% Time to forget a pending request.
--define(REQUEST_TIMEOUT, 500000). % In Microseconds
+-define(REQUEST_TIMEOUT, 5000000). % In Microseconds
 %% Frequency at which manager requests remote resources.
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
@@ -151,9 +151,9 @@
 -define(MIN, 1).
 
 %% DELTA has the same meaning as in the clock-SI paper.
--define(DELTA, 10000).
+-define(DELTA, 0).
 
--define(CLOCKSI_TIMEOUT, 1000).
+-define(CLOCKSI_TIMEOUT, 10000).
 
 -record(operation_payload, {
     key :: key(),

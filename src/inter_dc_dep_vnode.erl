@@ -118,29 +118,29 @@ try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = 
     {update_clock(State, DCID, Timestamp), true};
 
 %% Store the normal transaction
-try_store(State=#state{transactional_protocol = Protocol}, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
+try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
   %% The transactions are delivered reliably and in order, so the entry for originating DC is irrelevant.
   %% Therefore, we remove it prior to further checks.
-  ShouldApply = case Protocol of
-    ec ->
-      true;
-    _->
-      Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.causal_dependencies),
-      CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
-      vectorclock:ge(CurrentClock, Dependencies)
-  end,
+%%  ShouldApply = case Protocol of
+%%    ec ->
+%%      true;
+%%    _->
+%%      Dependencies = vectorclock:set_clock_of_dc(DCID, 0, Txn#interdc_txn.causal_dependencies),
+%%      CurrentClock = vectorclock:set_clock_of_dc(DCID, 0, get_partition_clock(State)),
+%%      vectorclock:ge(CurrentClock, Dependencies)
+%%  end,
 
   %% Check if the current clock is greater than or equal to the dependency vector
-  case ShouldApply of
+%%  case ShouldApply of
 
     %% If not, the transaction will not be stored right now.
     %% Still need to update the timestamp for that DC, up to 1 less than the
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
-    false -> {update_clock(State, DCID, Timestamp-1), false};
+%%    false -> {update_clock(State, DCID, Timestamp-1), false};
 
     %% If so, store the transaction
-    true ->
+%%    true ->
       %% Put the operations in the log
       {ok, _} = logging_vnode:append_group({Partition,node()},
 					   [Partition], Ops, false),
@@ -153,8 +153,8 @@ try_store(State=#state{transactional_protocol = Protocol}, Txn=#interdc_txn{dcid
       ok = lists:foreach(fun(Op) ->
 %%        lager:info("~n~n Op = ~p", [Op]),
         materializer_vnode:update(Op#operation_payload.key, Op, Transaction) end, ClockSiOps),
-      {update_clock(State, DCID, Timestamp), true}
-  end.
+      {update_clock(State, DCID, Timestamp), true}.
+%%  end.
 
 handle_command({set_dependency_clock, Vector}, _Sender, State) ->
     {reply, ok, State#state{vectorclock = Vector}};
@@ -230,10 +230,10 @@ update_clock(State = #state{last_updated = LastUpdated, partition=Partition}, DC
   end.
 
 %% Get the current vectorclock from the perspective of this partition, with the updated entry for current DC.
--spec get_partition_clock(#state{}) -> vectorclock().
-get_partition_clock(State) ->
-  %% Return the vectorclock associated with the current state, but update the local entry with the current timestamp
-  vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
+%%-spec get_partition_clock(#state{}) -> vectorclock().
+%%get_partition_clock(State) ->
+%%   Return the vectorclock associated with the current state, but update the local entry with the current timestamp
+%%  vectorclock:set_clock_of_dc(dc_meta_data_utilities:get_my_dc_id(), dc_utilities:now_microsec(), State#state.vectorclock).
 
 %% Utility function: converts the transaction to a list of operation_payload ops.
 -spec updates_to_operation_payloads(#interdc_txn{}) -> list(operation_payload()).
