@@ -75,12 +75,13 @@ downstream({reset, {}}, {EnableTokens, DisableTokens}) ->
     {ok, {FinalEnableTokens, FinalDisableTokens}}.
 
 -spec equal(flag_dw(), flag_dw()) -> boolean().
-  equal(A, B) ->
-    antidote_crdt_flag:equal(A, B).
+  equal(Flag1, Flag2) ->
+    Flag1 == Flag2.
 
 -spec to_binary(flag_dw()) -> antidote_crdt_flag:binary_flag().
   to_binary(Flag) ->
-    antidote_crdt_flag:to_binary(Flag).
+    %% @TODO something smarter
+    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Flag))/binary>>.
 
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     %% @TODO something smarter

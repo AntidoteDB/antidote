@@ -26,9 +26,7 @@
 
 
 %% Callbacks
--export([ equal/2,
-          to_binary/1,
-          from_binary/1,
+-export([ from_binary/1,
           is_operation/1,
           require_state_downstream/1,
           unique/0
@@ -55,17 +53,8 @@
 unique() ->
     crypto:strong_rand_bytes(20).
 
--spec equal(flag(), flag()) -> boolean().
-  equal(Flag1, Flag2) ->
-    Flag1 == Flag2. % Everything inside is ordered, so this should work
-
 -define(TAG, 77).
 -define(V1_VERS, 1).
-
--spec to_binary(flag()) -> binary_flag().
-to_binary(Flag) ->
-    %% @TODO something smarter
-    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Flag))/binary>>.
 
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     %% @TODO something smarter
