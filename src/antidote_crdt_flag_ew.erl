@@ -49,15 +49,18 @@
 -export_type([flag_ew/0]).
 -opaque flag_ew() :: antidote_crdt_flag:flag().
 
+%% SeenTokens, NewTokens
+-type downstream_op() :: {antidote_crdt_flag:tokens(), antidote_crdt_flag:tokens()}.
+
 -spec new() -> flag_ew().
 new() ->
-  antidote_crdt_flag:new().
+  [].
 
 -spec value(flag_ew()) -> boolean().
 value(EnableTokens) ->
   EnableTokens =/= [].
 
--spec downstream(antidote_crdt_flag:op(), flag_ew()) -> {ok, antidote_crdt_flag:downstream_op()}.
+-spec downstream(antidote_crdt_flag:op(), flag_ew()) -> {ok, downstream_op()}.
 downstream({disable, {}}, Tokens) ->
   {ok, {Tokens, []}};
 downstream({enable, {}}, Tokens) ->
@@ -65,9 +68,10 @@ downstream({enable, {}}, Tokens) ->
 downstream({reset, {}}, Tokens) ->
   {ok, {Tokens, []}}.
 
--spec update(antidote_crdt_flag:downstream_op(), flag_ew()) -> {ok, flag_ew()}.
-  update(A, B) ->
-    antidote_crdt_flag:update(A, B).
+-spec update(downstream_op(), flag_ew()) -> {ok, flag_ew()}.
+  update({SeenTokens, NewTokens}, CurrentTokens) ->
+    FinalTokens = (CurrentTokens ++ NewTokens) -- SeenTokens,
+    {ok, FinalTokens}.
 
 -spec equal(flag_ew(), flag_ew()) -> boolean().
   equal(A, B) ->
@@ -83,7 +87,8 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
 
 is_operation(A) -> antidote_crdt_flag:is_operation(A).
 
-is_bottom(A) -> antidote_crdt_flag:is_bottom(A).
+is_bottom(Flag) ->
+  Flag == new().
 
 require_state_downstream(A) -> antidote_crdt_flag:require_state_downstream(A).
 

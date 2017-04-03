@@ -26,13 +26,10 @@
 
 
 %% Callbacks
--export([ new/0,
-          update/2,
-          equal/2,
+-export([ equal/2,
           to_binary/1,
           from_binary/1,
           is_operation/1,
-          is_bottom/1,
           require_state_downstream/1,
           unique/0
         ]).
@@ -51,24 +48,12 @@
     | {disable, {}}
     | {reset, {}}.
 
-%% SeenTokens, NewTokens
--type downstream_op() :: {tokens(), tokens()}.
-
 -type token() :: term().
 -type tokens() :: [token()].
-
--spec new() -> flag().
-new() ->
-  [].
 
 %% @doc generate a unique identifier (best-effort).
 unique() ->
     crypto:strong_rand_bytes(20).
-
--spec update(downstream_op(), flag()) -> {ok, flag()}.
-  update({SeenTokens, NewTokens}, CurrentTokens) ->
-    FinalTokens = (CurrentTokens ++ NewTokens) -- SeenTokens,
-    {ok, FinalTokens}.
 
 -spec equal(flag(), flag()) -> boolean().
   equal(Flag1, Flag2) ->
@@ -90,9 +75,6 @@ is_operation({enable, {}}) -> true;
 is_operation({disable, {}}) -> true;
 is_operation({reset, {}}) -> true;
 is_operation(_) -> false.
-
-is_bottom(Flag) ->
-  Flag == new().
 
 require_state_downstream(_) -> true.
 
