@@ -277,14 +277,15 @@ should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transactio
 %%					lager:info("~n OP COMPATIBLE, WILL INCLUDE"),
 					%% the operation must be included
 					%% now update the commit time of our output
-					FinalCT=vectorclock:max([PrevOpCT, OpCommitVC]),
+%%					FinalCT=vectorclock:max([PrevOpCT, OpCommitVC]),
 					%% now update the dependency time of our output
-					FinalDep=vectorclock:max([PrevOpDep, OpDependencyVC]),
+%%					FinalDep=vectorclock:max([PrevOpDep, OpDependencyVC]),
 					%% the Operation Read time is not updated as we assume
 					%% operations to be ordered from newer to older, and
 					%% the final read time is given by the newest included op.
 %%					lager:info("~n REPLYING ~p", [{true, false, {vectorclock:to_list(FinalCT), vectorclock:to_list(FinalDep), vectorclock:to_list(PrevOpRT)}}]),
-					{true, false, {FinalCT, FinalDep, PrevOpRT}};
+%%					{true, false, {FinalCT, FinalDep, PrevOpRT}};
+					{true, false, {OpCommitVC, OpDependencyVC, PrevOpRT}};
 
 				false->
 %%					lager:info("~n OP INCOMPATIBLE, WILL  NOT NOT NOT INCLUDE"),
@@ -304,6 +305,7 @@ should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transactio
 should_apply_operation(Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Transaction, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
+%%	lager:info("Transaction ~p", [Transaction]),
 	SnapshotTime = Transaction#transaction.snapshot_vc,
 	TxId = Transaction#transaction.txn_id,
 	OpSSCommit = vectorclock:set_clock_of_dc(OpDc, OpCommitTime, OperationSnapshotTime),

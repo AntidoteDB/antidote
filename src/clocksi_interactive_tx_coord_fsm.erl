@@ -195,8 +195,7 @@ create_ec_record(Name)->
     TransactionId = #tx_id{local_start_time = Now, server_pid = Name},
     #transaction{
         transactional_protocol = ec,
-        txn_id = TransactionId,
-        physics_read_metadata=undefined}.
+        txn_id = TransactionId}.
 
 
 % todo remove this changes done for basho_bench
@@ -214,17 +213,14 @@ create_physics_tx_record(Name, _ClientClock, _UpdateClock, Strict)->
 %%                no_update_clock ->
 %%                    {ok, ClientClock}
 %%            end
-%%    end,
-    PhysicsReadMetadata = #physics_read_metadata{
-        dep_upbound = StableVector,
-        commit_time_lowbound = StableVector},
+%%    end
 %%    Now = dc_utilities:now_microsec(),
     DcId = ?DC_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, StableVector),
     TransactionId = #tx_id{local_start_time= LocalClock, server_pid = Name},
     #transaction{
+        snapshot_vc = StableVector,
         transactional_protocol = physics,
-        physics_read_metadata = PhysicsReadMetadata,
         txn_id = TransactionId}.
 
 
@@ -251,8 +247,7 @@ create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol, Strict)->
     #transaction{snapshot_clock = LocalClock,
         transactional_protocol = Protocol,
         snapshot_vc = SnapshotTime,
-        txn_id = TransactionId,
-        physics_read_metadata=undefined}.
+        txn_id = TransactionId}.
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
@@ -835,7 +830,7 @@ receive_aborted(_, S0) ->
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator= ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
-    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict}) ->
+    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict, version_max = MaxVersion}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case Transaction#transaction.transactional_protocol of
@@ -891,7 +886,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
                                 {TxId, Reason}
                         end;
                     physics ->
-                        TxnDependencyVC = case Transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound of
+                        TxnDependencyVC = case MaxVersion of
                                               ignore ->
                                                   lager:info("got ignore as dependency VC"),
                                                   vectorclock:new();

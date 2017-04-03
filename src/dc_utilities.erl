@@ -236,44 +236,45 @@ check_registered(Name) ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    TxnProt=application:get_env(antidote, txn_prot),
-    case TxnProt of
-        ec ->
-            {ok, vectorclock:new()};
-        _->
+%%    TxnProt=application:get_env(antidote, txn_prot),
+%%    case TxnProt of
+%%        ec ->
+%%            {ok, vectorclock:new()};
+%%        _->
             case meta_data_sender:get_merged_data(stable) of
                 undefined ->
+                    lager:info("metadata is not ready, sleeping"),
                 %% The snapshot isn't realy yet, need to wait for startup
-                timer:sleep(10),
+                timer:sleep(5),
                 get_stable_snapshot();
             SS ->
-                    case TxnProt of
-                        {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
+%%                    case TxnProt of
+%%                        {ok, Protocol} when ((Protocol == physics) orelse (Protocol == clocksi)) ->
                             %% This is fine if transactions coordinators exists on the ring (i.e. they have access
                             %% to riak core meta-data) otherwise will have to change this
-                            {ok, SS};
-                        {ok, gr} ->
-                            %% For gentlerain use the same format as clocksi
-                            %% But, replicate GST to all entries in the dict
-                            StableSnapshot = SS,
-                            case vectorclock:size(StableSnapshot) of
-                                0 ->
-                                    {ok, StableSnapshot};
-                                _ ->
-                                    ListTime = dict:fold(
-                                                 fun(_Key, Value, Acc) ->
-                                                         [Value | Acc ]
-                                                 end, [], StableSnapshot),
-                                    GST = lists:min(ListTime),
-                                    {ok, vectorclock:map(
-                                           fun(_K, _V) ->
-                                                   GST
-                                           end,
-                                           StableSnapshot)}
-                            end
-                    end
-            end
-    end.
+                            {ok, SS}
+%%                        {ok, gr} ->
+%%                             For gentlerain use the same format as clocksi
+%%                             But, replicate GST to all entries in the dict
+%%                            StableSnapshot = SS,
+%%                            case vectorclock:size(StableSnapshot) of
+%%                                0 ->
+%%                                    {ok, StableSnapshot};
+%%                                _ ->
+%%                                    ListTime = dict:fold(
+%%                                                 fun(_Key, Value, Acc) ->
+%%                                                         [Value | Acc ]
+%%                                                 end, [], StableSnapshot),
+%%                                    GST = lists:min(ListTime),
+%%                                    {ok, vectorclock:map(
+%%                                           fun(_K, _V) ->
+%%                                                   GST
+%%                                           end,
+%%                                           StableSnapshot)}
+%%                            end
+%%                    end
+            end.
+%%    end.
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->

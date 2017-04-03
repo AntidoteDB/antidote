@@ -167,15 +167,7 @@
     snapshot_clock :: snapshot_time(),
     transactional_protocol :: transactional_protocol(),
     snapshot_vc :: vectorclock(),
-    txn_id :: txid() | no_txn_inserting_from_log,
-    physics_read_metadata :: physics_read_metadata()}).
-
-
--record(physics_read_metadata, {
-    dep_upbound :: vectorclock() | undefined,
-    commit_time_lowbound :: vectorclock() | undefined
-}).
-
+    txn_id :: txid() | no_txn_inserting_from_log}).
 
 -record(materialized_snapshot, {last_op_id :: op_num(),  %% This is the opid of the latest op in the list
        				                         %% of ops for this key included in this snapshot
@@ -215,8 +207,6 @@
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()} | {error, connection_error}}.
 
 %%physics
--type physics_read_metadata() :: #physics_read_metadata{} | undefined. %undefined when using any protocol that's not PhysiCS.
-
 
 -type txn_properties() :: term().
 -type op_name() :: atom().

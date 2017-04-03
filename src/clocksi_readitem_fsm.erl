@@ -304,13 +304,7 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
 	ready | {not_ready, ?SPIN_WAIT}.
 check_prepared(Key,Transaction,PreparedCache,Partition) ->
     TxId = Transaction#transaction.txn_id,
-    SnapshotTime = case Transaction#transaction.transactional_protocol of
-        physics ->
-            vectorclock:get_clock_of_dc(dc_utilities:get_my_dc_id(),
-                Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound);
-        Protocol when ((Protocol==gr) or (Protocol==clocksi) or (Protocol == ec)) ->
-            TxId#tx_id.local_start_time
-    end,
+    SnapshotTime = TxId#tx_id.local_start_time,
     {ok, ActiveTxs} = clocksi_vnode:get_active_txns_key(Key,Partition,PreparedCache),
     check_prepared_list(Key,SnapshotTime,ActiveTxs).
 

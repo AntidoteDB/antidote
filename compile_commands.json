@@ -1,10 +1,14 @@
 [
-{ "file"      : "/Users/alek/antidote/_build/default/lib/erlzmq/c_src/erlzmq_nif.c"
-, "directory" : "/Users/alek/antidote/_build/default/lib/erlzmq"
-, "command"   : "cc -c -Ic_src -Ideps/zeromq3/include -g -Wall -fPIC -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" /Users/alek/antidote/_build/default/lib/erlzmq/c_src/erlzmq_nif.c -o /Users/alek/antidote/_build/default/lib/erlzmq/c_src/erlzmq_nif.o"
+{ "file"      : "c_src/eleveldb.cc"
+, "directory" : "/Users/alek/antidote/_build/default/lib/eleveldb"
+, "command"   : "c++ -c -Wall -O3 -fPIC -mmacosx-version-min=10.8 -g -Wall -fPIC -MMD -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" -O3 -Wall -I c_src/leveldb/include -I c_src/leveldb -I c_src/system/include -mmacosx-version-min=10.8 c_src/eleveldb.cc -o c_src/eleveldb.o"
 },
-{ "file"      : "/Users/alek/antidote/_build/default/lib/erlzmq/c_src/vector.c"
-, "directory" : "/Users/alek/antidote/_build/default/lib/erlzmq"
-, "command"   : "cc -c -Ic_src -Ideps/zeromq3/include -g -Wall -fPIC -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" /Users/alek/antidote/_build/default/lib/erlzmq/c_src/vector.c -o /Users/alek/antidote/_build/default/lib/erlzmq/c_src/vector.o"
+{ "file"      : "c_src/refobjects.cc"
+, "directory" : "/Users/alek/antidote/_build/default/lib/eleveldb"
+, "command"   : "c++ -c -Wall -O3 -fPIC -mmacosx-version-min=10.8 -g -Wall -fPIC -MMD -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" -O3 -Wall -I c_src/leveldb/include -I c_src/leveldb -I c_src/system/include -mmacosx-version-min=10.8 c_src/refobjects.cc -o c_src/refobjects.o"
+},
+{ "file"      : "c_src/workitems.cc"
+, "directory" : "/Users/alek/antidote/_build/default/lib/eleveldb"
+, "command"   : "c++ -c -Wall -O3 -fPIC -mmacosx-version-min=10.8 -g -Wall -fPIC -MMD -I\"/opt/local/lib/erlang/lib/erl_interface-3.9.1/include\" -I\"/opt/local/lib/erlang/erts-8.1/include\" -O3 -Wall -I c_src/leveldb/include -I c_src/leveldb -I c_src/system/include -mmacosx-version-min=10.8 c_src/workitems.cc -o c_src/workitems.o"
 }
 ]

@@ -563,28 +563,19 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%							        no_operation_to_define_snapshot ->
 %%%%								        lager:debug("there no_operation_to_define_snapshot"),
 						        NewVC=vectorclock:new(),
-						        DepUpbound=Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-						        NewSnapshotVC=case DepUpbound==NewVC of
+						        SnapVC=Transaction#transaction.snapshot_vc,
+						        NewSnapshotVC=case SnapVC==NewVC of
 							        true->
-								        lager:info("this should not happen, DepUpbound = ", [DepUpbound] ),
+								        lager:info("this should not happen, DepUpbound = ", [SnapVC] ),
 								        _NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec()-?PHYSICS_THRESHOLD, NewVC);
 							        false->
-								        DepUpbound
+										SnapVC
 						        end,
 						        Transaction#transaction{snapshot_vc=NewSnapshotVC}
-%%							        no_compatible_operation_found ->
-%%						    		        lager:info("there no_compatible_operation_found, Len = ~p", [Len]),
-%%								        case Len of 1 ->
-%%									        JokerVC = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-%%									        {Transaction#transaction{snapshot_vc = JokerVC}, {JokerVC, JokerVC, JokerVC}};
-%%									        _->   {Transaction, {error, no_compatible_operation_found}}
-%%								        end
-%%						        end
 				        end;
 			        Protocol when ((Protocol == clocksi) or (Protocol == gr) or (Protocol == ec)) ->
 				        Transaction
 		        end,
-%%	        lager:info("~n UpdatedTxnRecord ~p  ",[UpdatedTxnRecord]),
             Result = case Type of
 	            antidote_crdt_lwwreg -> %no need to get snapshot to materialize
 		            {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
@@ -599,7 +590,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 				            case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
 					            {undefined, NumberOfSnap} ->
 						            lager:info("~nno snapshot in the cache for key: ~p",[Key]),
-						            lager:info("Metadata: ~w", [UpdatedTxnRecord#transaction.physics_read_metadata]),
+						            lager:info("Metadata: ~w", [UpdatedTxnRecord#transaction.snapshot_vc]),
 						            lager:info("SnapshotDict: ~w", [SnapshotDict]),
 						            lager:info("OpsLen: ~w", [Len]),
 						            %%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),

@@ -440,6 +440,7 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%%===================================================================
 
 prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
+%%    lager:info("Transaction ~p", [Transaction]),
     TxId = Transaction#transaction.txn_id,
     case certification_check(Transaction, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
