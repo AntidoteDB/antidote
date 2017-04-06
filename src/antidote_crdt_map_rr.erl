@@ -39,7 +39,6 @@
 %%  2- checks if the state of the entry after the reset is bottom (its initial state)
 %%    if bottom, delete the entry from the map
 %%    if not bottom, keep the entry
-%%  
 %%
 %% An entry exists in a map, if there is at least one update (inserts included) on the key, which is not followed by a remove
 %%
