@@ -31,7 +31,8 @@
   spec_to_partial/1,
   clock_le/2,
   subcontext/2,
-  filter_resets/1
+  filter_resets/1,
+  latest_operations/1
 ]).
 
 -export_type([clocked_operation/0]).
@@ -105,6 +106,15 @@ filter_resets(Operations) ->
     {Clock, Op} <- Operations,
     % such that no reset comes after the operation
     [] == [ResetClock || ResetClock <- ResetClocks, clock_le(Clock, ResetClock)]].
+
+%% returns only those operations, which are not followed by another operation
+%% also removes all reset operations
+latest_operations(Operations) ->
+  [Op ||
+    {Clock, Op} <- Operations,
+    Op =/= {reset, {}},
+    [] == [C || {C, _} <- Operations, C =/= Clock, clock_le(Clock, C)]].
+
 
 % executes/checks the specification
 checkSpec(Crdt, Ops, Spec) ->

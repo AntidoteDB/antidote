@@ -32,14 +32,7 @@ prop_mvreg_spec() ->
 
 
 spec(Operations) ->
-  Values =
-    [Val || {Clock, {assign, Val}} <- Operations,
-      % all values, such that not overridden by other assign
-      [] == [Clock2 || {Clock2, {assign, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)],
-      % and not overridden by reset
-      [] == [Clock3 || {Clock3, {reset, {}}} <- Operations, crdt_properties:clock_le(Clock, Clock3)]
-    ],
-  lists:sort(Values).
+  lists:sort([Val || {assign, Val}  <- crdt_properties:latest_operations(Operations)]).
 
 
 

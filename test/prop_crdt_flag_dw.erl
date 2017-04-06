@@ -31,25 +31,14 @@ prop_flag_dw_spec() ->
 
 
 spec(Operations) ->
-  [Clock || {Clock, {disable, {}}} <- Operations,
-      % all values, such that not overridden by other assign
-      [] == [Clock2 || {Clock2, {enable, {}}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)],
-      % and not overridden by reset
-      [] == [Clock3 || {Clock3, {reset, {}}} <- Operations, crdt_properties:clock_le(Clock, Clock3)]
-    ] == [] andalso [Clockx || {Clockx, {enable, {}}} <- Operations,
-      % all values, such that not overridden by other assign
-      [] == [Clockx2 || {Clockx2, {disable, {}}} <- Operations, Clockx =/= Clockx2, crdt_properties:clock_le(Clockx, Clockx2)],
-      % and not overridden by reset
-      [] == [Clockx3 || {Clockx3, {reset, {}}} <- Operations, crdt_properties:clock_le(Clockx, Clockx3)]
-    ] =/= [].
+  LatestOps = crdt_properties:latest_operations(Operations),
+  Enables = [enable || {enable, {}} <- LatestOps],
+  Disables = [disable || {disable, {}} <- LatestOps],
+  % returns true, when there is an enable-operation and no disable operation among the latest operations:
+  Enables =/= [] andalso Disables == [].
 
 % generates a random operation
 op() ->
-  % frequency([
-  %   {5, {enable, {}}},
-  %   {5, {disable, {}}},
-  %   {1, {reset, {}}}
-  % ]).
   oneof([
     {enable, {}},
     {disable, {}},
