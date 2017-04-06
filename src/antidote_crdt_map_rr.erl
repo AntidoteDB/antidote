@@ -18,22 +18,33 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module antidote_crdt_map - A add-wins map
+%% @doc module antidote_crdt_map_rr - A CRDT map datatype with a reset functionality
 %%
-%% This map forwards all operations to the embedded CRDTs.
-%% Deleting a key tries to reset the entry to its initial state
+%% Inserting a new element in the map:
+%%  if element already there -> do nothing
+%%  if not create a map entry where value is initial state of the embedded
+%%    data type (a call to the create function of the embedded data type)
 %%
-%% An element exists in a map, if there is at least one update on the key, which is not followed by a remove
+%% Update operations on entries(embedded CRDTs) are calls to the update fucntions of the entries.
+%%
+%% Deleting an entry in the map:
+%%  1- calls the reset function of this entry (tries to reset entry to its initial state)
+%%    As reset only affects operations that are locally (where reset was invoked) seen
+%%    i.e. operations on the same entry that are concurrent to the reset operation are
+%%    not affected and their effect should be observable once delivered.
+%%
+%%  if there were no operations concurrent to the reset (all operations where in the causal past of the reset),
+%%  then the state of the entry is bottom (the initial state of the entry)
+%%
+%%  2- checks if the state of the entry after the reset is bottom (its initial state)
+%%    if bottom, delete the entry from the map
+%%    if not bottom, keep the entry
+%%  
+%%
+%% An entry exists in a map, if there is at least one update (inserts included) on the key, which is not followed by a remove
 %%
 %% Resetting the map means removing all the current entries
 %%
-%% Implementation note:
-%% The implementation of Add-wins semantic is the same as in orset:
-%% Each element has a set of add-tokens.
-%% An entry is in the map, if the set of add-tokens is not empty.
-%% When an entry is removed, the value is still kept in the state, so that
-%% concurrent updates can be reconciled.
-%% This could be optimized for certain types
 
 -module(antidote_crdt_map_rr).
 
