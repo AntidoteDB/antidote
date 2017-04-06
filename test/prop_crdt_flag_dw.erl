@@ -18,28 +18,30 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_mvreg).
+-module(prop_crdt_flag_dw).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_mvreg_spec/0]).
+-export([prop_flag_dw_spec/0, op/0, spec/1]).
 
-
-prop_mvreg_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_mvreg, fun op/0, fun spec/1).
+prop_flag_dw_spec() ->
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_flag_dw, fun op/0, fun spec/1).
 
 
 spec(Operations) ->
-  lists:sort([Val || {assign, Val}  <- crdt_properties:latest_operations(Operations)]).
+  LatestOps = crdt_properties:latest_operations(Operations),
+  Enables = [enable || {enable, {}} <- LatestOps],
+  Disables = [disable || {disable, {}} <- LatestOps],
+  % returns true, when there is an enable-operation and no disable operation among the latest operations:
+  Enables =/= [] andalso Disables == [].
 
-
-
-% generates a random counter operation
+% generates a random operation
 op() ->
-  frequency([
-    {5, {assign, oneof([a,b,c,d,e,f,g,h,i])}},
-    {1, {reset, {}}}
+  oneof([
+    {enable, {}},
+    {disable, {}},
+    {reset, {}}
   ]).
 
