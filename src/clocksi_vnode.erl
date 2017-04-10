@@ -312,7 +312,11 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
         {error, no_updates} ->
             {reply, {error, no_tx_record}, State#state{prepared_dict = NewPreparedDict}};
         {error, write_conflict} ->
+            {reply, abort, State#state{prepared_dict = NewPreparedDict}};
+        Error ->
+            lager:error("Unexpected return, aborting : ~p", [Error]),
             {reply, abort, State#state{prepared_dict = NewPreparedDict}}
+
     end;
 
 %% @doc This is the only partition being updated by a transaction,
