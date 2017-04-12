@@ -349,61 +349,93 @@ perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps, Intern
 %% update kept for backwards compatibility with tests.
 execute_op(timeout, State = #tx_coord_state{operations = Operations, from = From}) ->
     execute_op(Operations, From, State).
+
 execute_op({update, Args}, Sender, SD0) ->
     execute_op({update_objects, [Args]}, Sender, SD0);
 
-execute_op({OpType, Args}, Sender,
-    SD0 = #tx_coord_state{transaction = Transaction,
-                          updated_partitions = Updated_partitions
-                         }) ->
-    case OpType of
-        prepare ->
-            case Args of
-                two_phase ->
-                    prepare_2pc(SD0#tx_coord_state{from = Sender, commit_protocol = Args});
-                _ ->
-                    prepare(SD0#tx_coord_state{from = Sender, commit_protocol = Args})
-            end;
-        read ->
-            {Key, Type} = Args,
-            case perform_read({Key, Type}, Updated_partitions, Transaction, Sender) of
-                {error, _Reason} ->
-                    abort(SD0);
-                ReadResult ->
-                    InternalReadSet=orddict:store(Key, ReadResult, SD0#tx_coord_state.internal_read_set),
-                    {reply, {ok, Type:value(ReadResult)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
-            end;
-        read_objects ->
-            ExecuteReads = fun({Key, Type}, Acc) ->
-                PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
-                IndexNode = hd(PrefList),
-                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                ReadSet = Acc#tx_coord_state.return_accumulator,
-                Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
-            end,
-            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
-            {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
-	    update_objects ->
-		    ExecuteUpdates =
-                fun({Key, Type, UpdateParams}, Acc = #tx_coord_state{updated_partitions=UpdatedPartitions, client_ops=ClientOps, internal_read_set=InternalReadSet}) ->
-                    case perform_update({Key, Type, UpdateParams}, UpdatedPartitions, Transaction, Sender, ClientOps, InternalReadSet) of
-                        {error, Reason} ->
-                            Acc#tx_coord_state{return_accumulator= {error, Reason}};
-                        {NewUpdatedPartitions, NewClientOps} ->
-                            NewNumToRead = Acc#tx_coord_state.num_to_read,
-                            Acc#tx_coord_state{num_to_read =  NewNumToRead+1,
-                                updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}
-                    end
-		    end,
-		    NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
-		    case NewCoordState#tx_coord_state.num_to_read > 0 of
-			    true ->
-				    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
-			    false ->
-				    {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
-		    end
+execute_op({OpType, Args}, Sender, State) ->
+    execute_command(OpType, Args, Sender, State).
+
+%% @doc Execute the commit protocol
+execute_command(prepare, Protocol, Sender, State0) ->
+    State = State0#tx_coord_state{from=Sender, commit_protocol=Protocol},
+    case Protocol of
+        two_phase ->
+            prepare_2pc(State);
+        _ ->
+            prepare(State)
+    end;
+
+%% @doc Perform a single read
+execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
+    transaction=Transaction,
+    internal_read_set=InternalReadSet,
+    updated_partitions=UpdatedPartitions
+}) ->
+    case perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) of
+        {error, _} ->
+            abort(State);
+        ReadResult ->
+            NewInternalReadSet = orddict:store(Key, ReadResult, InternalReadSet),
+            {reply, {ok, Type:value(ReadResult)}, execute_op, State#tx_coord_state{internal_read_set=NewInternalReadSet}}
+    end;
+
+%% @doc Read a batch of Objects
+execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transaction=Transaction}) ->
+    ExecuteReads = fun({Key, Type}, AccState) ->
+        Partition = key_partition(Key),
+        ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
+        ReadSet = AccState#tx_coord_state.return_accumulator,
+        AccState#tx_coord_state{return_accumulator=[Key | ReadSet]}
+    end,
+
+    NewCoordState = lists:foldl(
+        ExecuteReads,
+        State#tx_coord_state{num_to_read=length(Objects), return_accumulator=[]},
+        Objects
+    ),
+
+    {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from=Sender}};
+
+%% @doc Perform update operations on a batch of Objects
+execute_command(update_objects, UpdateOps, Sender, State = #tx_coord_state{transaction=Transaction}) ->
+    ExecuteUpdates = fun(Ops, AccState=#tx_coord_state{
+        client_ops=ClientOps0,
+        internal_read_set=ReadSet,
+        updated_partitions=UpdatedPartitions0
+    }) ->
+        case perform_update(Ops, UpdatedPartitions0, Transaction, Sender, ClientOps0, ReadSet) of
+            {error, _}=Err ->
+                AccState#tx_coord_state{return_accumulator=Err};
+
+            {UpdatedPartitions, ClientOps} ->
+                NumToRead = AccState#tx_coord_state.num_to_read,
+                AccState#tx_coord_state{
+                    client_ops=ClientOps,
+                    num_to_read=NumToRead + 1,
+                    updated_partitions=UpdatedPartitions
+                }
+        end
+    end,
+
+    NewCoordState = lists:foldl(
+        ExecuteUpdates,
+        State#tx_coord_state{num_to_read=0, return_accumulator=ok},
+        UpdateOps
+    ),
+
+    LoggingState = NewCoordState#tx_coord_state{from=Sender},
+    case LoggingState#tx_coord_state.num_to_read > 0 of
+        true ->
+            {next_state, receive_logging_responses, LoggingState};
+        false ->
+            {next_state, receive_logging_responses, LoggingState, 0}
     end.
 
+%% @doc Get the partition from a key
+key_partition(Key) ->
+    [Partition | _] = ?LOG_UTIL:get_preflist_from_key(Key),
+    Partition.
 
 %% @doc This state reached after an execute_op(update_objects[Params]).
 %% update_objects calls the perform_update function, which asynchronously
