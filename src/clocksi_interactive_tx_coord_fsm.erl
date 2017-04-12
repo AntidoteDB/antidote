@@ -470,31 +470,41 @@ key_partition(Key) ->
 %% sends a log operation per update, to the vnode responsible of the updated
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
-receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
-	                        return_accumulator= ReturnAcc, is_static = IsStatic}) ->
-	NewAcc = case Response of
-		{error, Reason} -> {error, Reason};
-		{ok, _OpId} -> ReturnAcc;
-		timeout -> ReturnAcc
-	end,
-	case NumToReply > 1 of
-		false ->
-			case (NewAcc == ok) of
-				true ->
+receive_logging_responses(Response, S0 = #tx_coord_state{
+    is_static=IsStatic,
+    num_to_read=NumToReply,
+    return_accumulator=ReturnAcc
+}) ->
+
+    NewAcc = case Response of
+        {error, _r}=Err -> Err;
+        {ok, _OpId} -> ReturnAcc;
+        timeout -> ReturnAcc
+    end,
+
+    case NumToReply > 1 of
+        true ->
+            {next_state, receive_logging_responses, S0#tx_coord_state{
+                num_to_read=NumToReply - 1,
+                return_accumulator=NewAcc
+            }};
+
+        false ->
+            case NewAcc of
+                ok ->
                     case IsStatic of
                         true ->
                             prepare(S0);
+
                         false ->
                             gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
-                            {next_state, execute_op, S0#tx_coord_state{num_to_read = 0, return_accumulator= []}}
+                            {next_state, execute_op, S0#tx_coord_state{num_to_read=0, return_accumulator=[]}}
                     end;
-				false ->
-					abort(S0)
-			end;
-		true ->
-			{next_state, receive_logging_responses,
-				S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
-	end.
+
+                _ ->
+                    abort(S0)
+            end
+    end.
 
 receive_read_objects_result({ok, {Key, Type, Snapshot}},
   CoordState= #tx_coord_state{num_to_read = NumToRead,
