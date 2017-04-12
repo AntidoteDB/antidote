@@ -305,42 +305,70 @@ perform_read(Args, Updated_partitions, Transaction, Sender) ->
     end.
 
 
-perform_update(Args, Updated_partitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
-    {Key, Type, Param} = Args,
-    Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
-    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
-                   false ->
-                       [];
-                   {IndexNode, WS} ->
-                       WS
-               end,
+perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
+    {Key, Type, Param} = Op,
+    Partition = key_partition(Key),
+
+    WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
+        false ->
+            [];
+        {Partition, WS} ->
+            WS
+    end,
+
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
-        {Key, Type, Param1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Param1, WriteSet, InternalReadSet) of
-                {ok, DownstreamRecord} ->
-                    NewUpdatedPartitions =
-                        case WriteSet of
-                            [] ->
-                                [{IndexNode, [{Key, Type, DownstreamRecord}]} | Updated_partitions];
-                            _ ->
-                                lists:keyreplace(IndexNode, 1, Updated_partitions,
-                                                 {IndexNode, [{Key, Type, DownstreamRecord} | WriteSet]})
-                        end,
-                    TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_operation{tx_id = TxId, op_type = update,
-					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
-                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
-                    [Node] = Preflist,
-                    ok = ?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, {fsm, undefined, self()}),
-	                {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
         {error, Reason} ->
             lager:debug("Execute pre-commit hook failed ~p", [Reason]),
-            {error, Reason}
+            {error, Reason};
+
+        {Key, Type, Param1} ->
+
+            %% Generate all the possible operations
+            GenerateResult = ?CLOCKSI_DOWNSTREAM:generate_downstream_op(
+                Transaction,
+                Partition,
+                Key,
+                Type,
+                Param1,
+                WriteSet,
+                InternalReadSet
+            ),
+
+            case GenerateResult of
+                {error, Reason} ->
+                    {error, Reason};
+
+                {ok, DownstreamRecord} ->
+
+                    NewUpdatedPartitions = case WriteSet of
+                        [] ->
+                            [{Partition, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
+                        _ ->
+                            %% Update the write set entry with the new record
+                            lists:keyreplace(
+                                Partition,
+                                1,
+                                UpdatedPartitions,
+                                {Partition, [{Key, Type, DownstreamRecord} | WriteSet]}
+                            )
+                    end,
+
+                    LogRecord = #log_operation{
+                        op_type=update,
+                        tx_id=Transaction#transaction.txn_id,
+                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
+                    },
+
+                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+                    ok = ?LOGGING_VNODE:asyn_append(
+                        Partition,
+                        LogId,
+                        LogRecord,
+                        {fsm, undefined, self()}
+                    ),
+	                {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]}
+            end
     end.
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
@@ -399,12 +427,12 @@ execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transacti
 
 %% @doc Perform update operations on a batch of Objects
 execute_command(update_objects, UpdateOps, Sender, State = #tx_coord_state{transaction=Transaction}) ->
-    ExecuteUpdates = fun(Ops, AccState=#tx_coord_state{
+    ExecuteUpdates = fun(Op, AccState=#tx_coord_state{
         client_ops=ClientOps0,
         internal_read_set=ReadSet,
         updated_partitions=UpdatedPartitions0
     }) ->
-        case perform_update(Ops, UpdatedPartitions0, Transaction, Sender, ClientOps0, ReadSet) of
+        case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0, ReadSet) of
             {error, _}=Err ->
                 AccState#tx_coord_state{return_accumulator=Err};
 
