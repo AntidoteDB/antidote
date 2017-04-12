@@ -281,29 +281,27 @@ perform_singleitem_update(Key, Type, Params) ->
             {error, Reason}
     end.
 
-perform_read(Args, Updated_partitions, Transaction, Sender) ->
-    {Key, Type} = Args,
-    Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
-    WriteSet = case lists:keyfind(IndexNode, 1, Updated_partitions) of
-                   false ->
-                       [];
-                   {IndexNode, WS} ->
-                       WS
-               end,
-    case ?CLOCKSI_VNODE:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
+    Partition = key_partition(Key),
+
+    WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
+        false ->
+            [];
+        {Partition, WS} ->
+            WS
+    end,
+
+    case ?CLOCKSI_VNODE:read_data_item(Partition, Transaction, Key, Type, WriteSet) of
+        {ok, Snapshot} ->
+            Snapshot;
+
         {error, Reason} ->
             case Sender of
-                undefined ->
-                    ok;
-                _ ->
-                    _Res = gen_fsm:reply(Sender, {error, Reason})
+                undefined -> ok;
+                _ -> gen_fsm:reply(Sender, {error, Reason})
             end,
-            {error, Reason};
-        {ok, Snapshot} ->
-            Snapshot
+            {error, Reason}
     end.
-
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
     {Key, Type, Param} = Op,
@@ -394,7 +392,7 @@ execute_command(prepare, Protocol, Sender, State0) ->
             prepare(State)
     end;
 
-%% @doc Perform a single read
+%% @doc Perform a single read, synchronous
 execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
     transaction=Transaction,
     internal_read_set=InternalReadSet,
@@ -408,7 +406,7 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
             {reply, {ok, Type:value(ReadResult)}, execute_op, State#tx_coord_state{internal_read_set=NewInternalReadSet}}
     end;
 
-%% @doc Read a batch of Objects
+%% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
         Partition = key_partition(Key),
@@ -482,6 +480,7 @@ receive_logging_responses(Response, S0 = #tx_coord_state{
         timeout -> ReturnAcc
     end,
 
+    %% Loop back to the same state until we process all the replies
     case NumToReply > 1 of
         true ->
             {next_state, receive_logging_responses, S0#tx_coord_state{
@@ -506,36 +505,52 @@ receive_logging_responses(Response, S0 = #tx_coord_state{
             end
     end.
 
-receive_read_objects_result({ok, {Key, Type, Snapshot}},
-  CoordState= #tx_coord_state{num_to_read = NumToRead,
-      return_accumulator= ReadSet,
-      internal_read_set = InternalReadSet}) ->
-            %%TODO: type is hard-coded..
-            SnapshotAfterMyUpdates = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
-            Value2 = Type:value(SnapshotAfterMyUpdates),
-            ReadSet1 = replace_first(ReadSet, Key, Value2),
-            NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
-            case NumToRead of
-                1 ->
-                    gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
-                    {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
-                _ ->
-                    {next_state, receive_read_objects_result,
-                        CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
-            end.
+%% @doc After asynchronously reading a batch of keys, collect the responses here
+receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_state{
+    num_to_read=NumToRead,
+    return_accumulator=ReadSet,
+    internal_read_set=InternalReadSet
+}) ->
+
+    %% TODO: type is hard-coded..
+    UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
+    Value = Type:value(UpdatedSnapshot),
+
+    UpdatedReadSet = replace_first(ReadSet, Key, Value),
+    NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
+
+    %% Loop back to the same state until we process all the replies
+    case NumToRead > 1 of
+        true ->
+            {next_state, receive_read_objects_result, CoordState#tx_coord_state{
+                num_to_read=NumToRead - 1,
+                return_accumulator=UpdatedReadSet,
+                internal_read_set=NewInternalReadSet
+            }};
+
+        false ->
+            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(UpdatedReadSet)}),
+            {next_state, execute_op, CoordState#tx_coord_state{num_to_read=0, internal_read_set=NewInternalReadSet}}
+    end.
 
 %% The following function is used to apply the updates that were performed by the running
 %% transaction, to the result returned by a read.
 -spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, type(), snapshot()) -> snapshot().
 apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
-    Preflist=?LOG_UTIL:get_preflist_from_key(Key),
-    IndexNode=hd(Preflist),
-    case lists:keyfind(IndexNode, 1, CoordState#tx_coord_state.updated_partitions) of
-        false->
+    Partition = key_partition(Key),
+    Found = lists:keyfind(
+        Partition,
+        1,
+        CoordState#tx_coord_state.updated_partitions
+    ),
+
+    case Found of
+        false ->
             Snapshot;
-        {IndexNode, WS}->
+
+        {Partition, WS} ->
             FileteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key),
-            _SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
+            clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
     end.
 
 %% @doc this function sends a prepare message to all updated partitions and goes
