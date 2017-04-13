@@ -119,21 +119,22 @@ processStalenessTable(StalenessTable, OutputFileName) ->
     io:format("String ~p~n", [String]),
 
     file:write(FileHandler, String),
-    FinalString=processStalenessTableInternal("", StalenessTable, TotalReads, 1),
+    FinalString=processStalenessTableInternal("", StalenessTable, TotalReads, 1, TotalReads),
     file:write(FileHandler, FinalString++"\n"),
     io:format("FinalString ~p~n", [FinalString]),
 
     file:close(FileHandler).
 
-processStalenessTableInternal(InitString, StalenessTable, TotalReads, Number) ->
+processStalenessTableInternal(InitString, StalenessTable, TotalReads, Number, ZeroCount) ->
     NumberOfNumber = length(ets:lookup(staleness_table, Number)),
     io:format("Number of  ~p: ~p~n", [Number, NumberOfNumber]),
+    UpdatedZeroCount=ZeroCount - NumberOfNumber,
     case NumberOfNumber of
         0 ->
-            InitString;
+            integer_to_list(UpdatedZeroCount) ++ "\t" ++ InitString;
         _ ->
             String = InitString ++ "\t" ++ integer_to_list(NumberOfNumber),
-            processStalenessTableInternal(String, StalenessTable, TotalReads, Number+1)
+            processStalenessTableInternal(String, StalenessTable, TotalReads, Number+1, UpdatedZeroCount)
     end.
 
 
