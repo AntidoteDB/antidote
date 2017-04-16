@@ -45,9 +45,9 @@
   %%        false -> this option will be disabled.
      {env, [{txn_cert, false},
          {txn_prot, physics},
-         {stable_strict, true},
+         {stable_strict, false},
          {enable_logging, false},
-         {recover_from_log, true},
+         {recover_from_log, false},
          {recover_meta_data_on_start, true},
          {sync_log, false},
          {log_staleness, true}]}

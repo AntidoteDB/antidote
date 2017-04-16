@@ -115,7 +115,8 @@ processStalenessTable(StalenessTable, OutputFileName) ->
     io:format("Prepared ~p~n", [Prepared]),
     io:format("TotalReads ~p~n", [TotalReads]),
 
-    String = LoadString ++ "\t" ++ integer_to_list(TotalReads) ++ "\t" ++ integer_to_list(ClockSkew) ++ "\t" ++ integer_to_list(Prepared),
+    String = LoadString ++ "\t" ++ integer_to_list(TotalReads) ++ "\t"
+        ++ integer_to_list(ClockSkew) ++ "\t" ++ integer_to_list(Prepared)++ "\t",
     io:format("String ~p~n", [String]),
 
     file:write(FileHandler, String),
