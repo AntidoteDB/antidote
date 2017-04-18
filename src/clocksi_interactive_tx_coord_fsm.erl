@@ -352,22 +352,21 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
                             )
                     end,
 
-                    LogRecord = #log_operation{
-                        op_type=update,
-                        tx_id=Transaction#transaction.txn_id,
-                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
-                    },
-
-                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
-                    ok = ?LOGGING_VNODE:asyn_append(
-                        Partition,
-                        LogId,
-                        LogRecord,
-                        {fsm, undefined, self()}
-                    ),
-	                {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]}
+                    ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamRecord),
+                    {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]}
             end
     end.
+
+-spec async_log_propagation(index_node(), txid(), key(), type(), op()) -> ok.
+async_log_propagation(Partition, TxId, Key, Type, Record) ->
+    LogRecord = #log_operation{
+        op_type=update,
+        tx_id=TxId,
+        log_payload=#update_log_payload{key=Key, type=Type, op=Record}
+    },
+
+    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+    ?LOGGING_VNODE:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
 
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
