@@ -776,55 +776,64 @@ receive_aborted(_, S0) ->
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #tx_coord_state
-                {from = From, transaction = Transaction, return_accumulator= ReturnAcc,
-                 state = TxState, commit_time = CommitTime,
-                 full_commit = FullCommit,
-                 is_static = IsStatic, stay_alive = StayAlive,
-                 client_ops = ClientOps}) ->
-    if undefined =/= From ->
+reply_to_client(SD = #tx_coord_state{
+    from=From,
+    state=TxState,
+    is_static=IsStatic,
+    stay_alive=StayAlive,
+    client_ops=ClientOps,
+    commit_time=CommitTime,
+    full_commit=FullCommit,
+    transaction=Transaction,
+    return_accumulator=ReturnAcc
+}) ->
+    case From of
+        undefined ->
+            ok;
+
+        Node ->
             TxId = Transaction#transaction.txn_id,
-            Reply =
-                case TxState of
-                    committed_read_only ->
-                        case IsStatic of
-                            false ->
-                                {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
-                            true ->
-                                {ok, {TxId, ReturnAcc, Transaction#transaction.vec_snapshot_time}}
-                        end;
-                    committed ->
-                        %% Execute post_commit_hooks
-                        _Result = execute_post_commit_hooks(ClientOps),
-                        %% TODO: What happens if commit hook fails?
-                        DcId = ?DC_META_UTIL:get_my_dc_id(),
-                        CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                         DcId, CommitTime,
-                                         Transaction#transaction.vec_snapshot_time),
-                        case IsStatic of
-                            false ->
-                                {ok, {TxId, CausalClock}};
-                            true ->
-                                {ok, CausalClock}
-                        end;
-                    aborted ->
-                        case ReturnAcc of
-                            {error, Reason} ->
-                              {error, Reason};
-                            _ ->
-                              {error, {aborted, TxId}}
-                        end;
-                    Reason ->
-                        {TxId, Reason}
-                end,
-        case is_pid(From) of
-            false ->
-                _Res = gen_fsm:reply(From, Reply);
-            true ->
-                From ! Reply
-        end;
-       true -> ok
+            Reply = case TxState of
+                committed_read_only ->
+                    case IsStatic of
+                        false ->
+                            {ok, {TxId, Transaction#transaction.vec_snapshot_time}};
+                        true ->
+                            {ok, {TxId, ReturnAcc, Transaction#transaction.vec_snapshot_time}}
+                    end;
+
+                committed ->
+                    %% Execute post_commit_hooks
+                    _Result = execute_post_commit_hooks(ClientOps),
+                    %% TODO: What happens if commit hook fails?
+                    DcId = ?DC_META_UTIL:get_my_dc_id(),
+                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                    case IsStatic of
+                        false ->
+                            {ok, {TxId, CausalClock}};
+                        true ->
+                            {ok, CausalClock}
+                    end;
+
+                aborted ->
+                    case ReturnAcc of
+                        {error, Reason} ->
+                            {error, Reason};
+                        _ ->
+                            {error, {aborted, TxId}}
+                    end;
+
+                Reason ->
+                    {TxId, Reason}
+            end,
+            case is_pid(Node) of
+                false ->
+                    gen_fsm:reply(Node, Reply);
+                true ->
+                    From ! Reply
+            end
     end,
+
     case StayAlive of
         true ->
             {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
