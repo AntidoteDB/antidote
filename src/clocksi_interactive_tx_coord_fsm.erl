@@ -556,8 +556,12 @@ apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
 %% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
-    transaction = Transaction, num_to_read=NumToRead,
-    updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
+    from=From,
+    num_to_read=NumToRead,
+    full_commit=FullCommit,
+    transaction=Transaction,
+    updated_partitions=Updated_partitions
+}) ->
     case Updated_partitions of
         [] ->
             Snapshot_time = Transaction#transaction.snapshot_time,
@@ -566,23 +570,23 @@ prepare(SD0 = #tx_coord_state{
                     case FullCommit of
                         true ->
                             reply_to_client(SD0#tx_coord_state{state = committed_read_only});
+
                         false ->
                             gen_fsm:reply(From, {ok, Snapshot_time}),
                             {next_state, committing, SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}}
                     end;
                 _ ->
-                    {next_state, receive_prepared,
-                        SD0#tx_coord_state{state = prepared}}
+                    {next_state, receive_prepared, SD0#tx_coord_state{state = prepared}}
             end;
+
         [_] ->
             ok = ?CLOCKSI_VNODE:single_commit(Updated_partitions, Transaction),
-            {next_state, single_committing,
-                SD0#tx_coord_state{state = committing, num_to_ack = 1}};
+            {next_state, single_committing, SD0#tx_coord_state{state = committing, num_to_ack = 1}};
+
         [_|_] ->
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack = length(Updated_partitions),
-            {next_state, receive_prepared,
-                SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
+            {next_state, receive_prepared, SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
 
 %% @doc function called when 2pc is forced independently of the number of partitions
@@ -829,14 +833,13 @@ reply_to_client(SD = #tx_coord_state
     end.
 
 execute_post_commit_hooks(Ops) ->
-    lists:foreach(
-      fun({Key, Type, Update}) ->
-              case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
-                  {error, Reason} ->
-                      lager:info("Post commit hook failed. Reason ~p", [Reason]);
-                  _ -> ok
-              end
-      end, lists:reverse(Ops)).
+    lists:foreach(fun({Key, Type, Update}) ->
+        case antidote_hooks:execute_post_commit_hook(Key, Type, Update) of
+            {error, Reason} ->
+                lager:info("Post commit hook failed. Reason ~p", [Reason]);
+            _ -> ok
+        end
+    end, lists:reverse(Ops)).
 
 %% =============================================================================
 
