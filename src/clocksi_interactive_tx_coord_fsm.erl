@@ -244,35 +244,51 @@ perform_singleitem_update(Key, Type, Params) ->
                 {ok, DownstreamRecord} ->
                     Updated_partitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_operation{tx_id = TxId, op_type = update,
-					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
+                    LogRecord = #log_operation{
+                        tx_id=TxId,
+                        op_type=update,
+                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
+                    },
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
                     case ?LOGGING_VNODE:append(Partition, LogId, LogRecord) of
                         {ok, _} ->
                             case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
                                 {committed, CommitTime} ->
+
                                     %% Execute post commit hook
-                                    _Res = case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
-                                               {error, Reason} ->
-                                                   lager:info("Post commit hook failed. Reason ~p", [Reason]);
-                                               _ -> ok
-                                           end,
+                                    case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+                                        {error, Reason} ->
+                                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                                        _ ->
+                                            ok
+                                    end,
+
                                     TxId = Transaction#transaction.txn_id,
                                     DcId = ?DC_META_UTIL:get_my_dc_id(),
+
                                     CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                                     DcId, CommitTime, Transaction#transaction.vec_snapshot_time),
+                                        DcId,
+                                        CommitTime,
+                                        Transaction#transaction.vec_snapshot_time
+                                    ),
+
                                     {ok, {TxId, [], CausalClock}};
+
                                 abort ->
                                     {error, aborted};
+
                                 {error, Reason} ->
                                     {error, Reason}
                             end;
+
                         Error ->
                             {error, Error}
                     end;
+
                 {error, Reason} ->
                     {error, Reason}
             end;
+
         {error, Reason} ->
             {error, Reason}
     end.

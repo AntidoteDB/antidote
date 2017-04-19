@@ -88,8 +88,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId) of
         {ok, Snapshot} ->
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-            Snapshot2 = clocksi_materializer:materialize_eager
-            (Type, Snapshot, Updates2),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
             {ok, Snapshot2};
         {error, Reason} ->
             {error, Reason}

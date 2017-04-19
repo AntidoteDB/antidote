@@ -79,13 +79,16 @@ start_vnode(I) ->
 -spec read(key(), type(), snapshot_time(), txid(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, MatState = #mat_state{ops_cache = OpsCache}) ->
     case ets:info(OpsCache) of
-	undefined ->
-	    riak_core_vnode_master:sync_command({MatState#mat_state.partition,node()},
-						{read,Key,Type,SnapshotTime,TxId},
-						materializer_vnode_master,
-						infinity);
-	_ ->
-	    internal_read(Key, Type, SnapshotTime, TxId, MatState)
+        undefined ->
+            riak_core_vnode_master:sync_command(
+                {MatState#mat_state.partition,node()},
+                {read,Key,Type,SnapshotTime,TxId},
+                materializer_vnode_master,
+                infinity
+            );
+
+        _ ->
+            internal_read(Key, Type, SnapshotTime, TxId, MatState)
     end.
 
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
@@ -326,7 +329,7 @@ internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},Co
 		   end,
     %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
     %% insert requests for the same snapshot could have occured
-    ShouldInsert = 
+    ShouldInsert =
 	case vector_orddict:size(SnapshotDict) > 0 of
 	    true ->
 		{_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
@@ -547,7 +550,7 @@ tuple_to_key(Tuple,ToList) ->
     Key = element(1, Tuple),
     {Length,ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
-    Ops = 
+    Ops =
 	case ToList of
 	    true ->
 		tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]);
