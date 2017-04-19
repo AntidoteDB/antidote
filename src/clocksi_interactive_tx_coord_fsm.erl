@@ -219,9 +219,8 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, _IsStatic) 
 -spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
-    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
+    Partition = key_partition(Key),
+    case clocksi_readitem_fsm:read_data_item(Partition, Key, Type, Transaction) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
@@ -231,27 +230,24 @@ perform_singleitem_read(Key, Type) ->
             {ok, ReadResult, CommitTime}
     end.
 
-
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
+    Partition = key_partition(Key),
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, IndexNode, Key, Type, Params1, [],[]) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, [],[]) of
                 {ok, DownstreamRecord} ->
-                    Updated_partitions = [{IndexNode, [{Key, Type, DownstreamRecord}]}],
+                    Updated_partitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
                     LogRecord = #log_operation{tx_id = TxId, op_type = update,
 					    log_payload = #update_log_payload{key = Key, type = Type, op = DownstreamRecord}},
                     LogId = ?LOG_UTIL:get_logid_from_key(Key),
-                    [Node] = Preflist,
-                    case ?LOGGING_VNODE:append(Node, LogId, LogRecord) of
+                    case ?LOGGING_VNODE:append(Partition, LogId, LogRecord) of
                         {ok, _} ->
                             case ?CLOCKSI_VNODE:single_commit_sync(Updated_partitions, Transaction) of
                                 {committed, CommitTime} ->
