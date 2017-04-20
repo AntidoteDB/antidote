@@ -96,7 +96,7 @@ materialize(Type, Transaction, #snapshot_get_response{
 	{ok, OpList, NewLastOp, LastOpCt, IsNewSS, NumberOfNonAppliedOps}=
 		materialize_intern(Type, [], LastOp, FirstId, ProtocolIndependentSnapshotCommitParams, Transaction,
 			Ops, PrevOpCommitParams, false, 0, 0),
-	ok=materializer_vnode:log_number_of_non_applied_ops(MatState, NumberOfNonAppliedOps),
+	ok=materializer_vnode:log_number_of_non_applied_ops(MatState, NumberOfNonAppliedOps, Transaction#transaction.txn_id),
 	case apply_operations(Type, Snapshot, 0, OpList) of
 		{ok, NewSS, Count}->
 			{ok, NewSS, NewLastOp, LastOpCt, IsNewSS, Count};

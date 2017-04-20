@@ -286,7 +286,7 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
                     case MatState#mat_state.staleness_log of
                         no_staleness_log -> dites_bonjour;
                         StalenessLog ->
-                            ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared)
+                            ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared, Transaction#transaction.txn_id)
                     end,
                     NotReady
             end;
