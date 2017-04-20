@@ -240,8 +240,8 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 	{not_ready, clock_time()} | ready.
 check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
     %%                @todo: reinsert the clockskew check, removed for benchmarking
-    Time = dc_utilities:now_microsec(),
-    case Transaction#transaction.transactional_protocol of
+    %%	Time = dc_utilities:now_microsec(),
+%%    case Transaction#transaction.transactional_protocol of
 %%        physics ->
 %%            DepUpbound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
 %%            case
@@ -250,55 +250,52 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
 %%                    ready;
 %%                false ->
 %%                    MyDC = dc_utilities:get_my_dc_id(),
-%%                    DepUpboundScalar = vectorclock:get_clock_of_dc(MyDC, DepUpbound),
+%%                    DepUpboundScalar= vectorclock:get_clock_of_dc(MyDC, DepUpbound),
 %%                    case DepUpboundScalar > Time of
 %%                        true ->
 %%                            case MatState#mat_state.staleness_log of
-%%                                staleness_log_disabled ->
-%%                                    dites_bonjour;
+%%                                staleness_log_disabled -> dites_bonjour;
 %%                                StalenessLog ->
-%%                                    ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+%%                                    ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
 %%                            end,
 %%                            % lager:debug("Waiting... Reason: clock skew"),
-%%                            {not_ready, (DepUpboundScalar-Time) div 1000+1};
+%%                            {not_ready, (DepUpboundScalar - Time) div 1000 + 1};
 %%                        false ->
 %%                            ready
 %%                    end
 %%            end;
-        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            TxId = Transaction#transaction.txn_id,
-            T_TS = TxId#tx_id.local_start_time,
-            case T_TS > Time of
-                true ->
+%%            Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
+%%                TxId = Transaction#transaction.txn_id,
+%%                T_TS = TxId#tx_id.local_start_time,
+%%                case T_TS > Time of
+%%                true ->
+%%                    case MatState#mat_state.staleness_log of
+%%                        no_staleness_log -> dites_bonjour;
+%%                        StalenessLog ->
+%%                            ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+%%                    end,
+%%                    % lager:info("Waiting... Reason: clock skew"),
+%%                    {not_ready, (T_TS - Time) div 1000 + 1};
+%%                false ->
+    case Transaction#transaction.transactional_protocol of
+        Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
+            case check_prepared(Key, Transaction, PreparedCache, Partition) of
+                ready ->
+                    ready;
+                NotReady ->
                     case MatState#mat_state.staleness_log of
-                        no_staleness_log ->
-                            dites_bonjour;
+                        no_staleness_log -> dites_bonjour;
                         StalenessLog ->
-                            ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+                            ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared)
                     end,
-                    % lager:info("Waiting... Reason: clock skew"),
-                    {not_ready, (T_TS-Time) div 1000+1};
-                false ->
-                    case Transaction#transaction.transactional_protocol of
-                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                            case check_prepared(Key, Transaction, PreparedCache, Partition) of
-                                ready ->
-                                    ready;
-                                NotReady ->
-                                    case MatState#mat_state.staleness_log of
-                                        no_staleness_log ->
-                                            dites_bonjour;
-                                        StalenessLog ->
-                                            ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared)
-                                    end,
-                                    NotReady
-                            end;
-                        _ ->
-                            ready
-                    end
+                    NotReady
             end;
-        _-> yea
+        _->
+            ready
     end.
+
+%%            end
+%%    end.
 
 %% @doc check_prepared: Check if there are any transactions
 %%      being prepared on the tranaction being read, and
