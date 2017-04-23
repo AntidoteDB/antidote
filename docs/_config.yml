@@ -28,9 +28,9 @@ exclude:
   - .gitignore
 # these are the files and directories that jekyll will exclude from the build
 
-feedback_subject_line: Antidote
+feedback_subject_line: Feedback on Antidote
 
-feedback_email: 
+feedback_email: antidotedb.com
 # used as a contact email for the Feedback link in the top navigation bar
 
 # feedback_disable: true
