@@ -16,3 +16,5 @@ topnav_dropdowns:
           external_url: https://github.com/SyncFree/antidote
         - title: Syncfree Project
           external_url: https://syncfree.lip6.fr
+        - title: Lightkone Project
+          external_url: https://lightkone.eu
