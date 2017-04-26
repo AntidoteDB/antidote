@@ -348,90 +348,168 @@ internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},Co
 internal_read(Key, Type, MinSnapshotTime, TxId, State) ->
     internal_read(Key, Type, MinSnapshotTime, TxId, false, State).
 
-internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}) ->
-    %% First look for any existing snapshots in the cache that is compatible with
-    %% Result is a tuple where on success:
-    %%     1st element is the snapshot of type #materialized_snapshot{}
-    %%     2nd element is the commit time of the snapshost or igore if it is a new (empty) snapshot
-    %%     3rd is a boolean that is true if the snapshot returned is the most recent one in the cache
-    %% or on failure the tuple is
-    %%    {error, no_snapshot}
-    Result = case ets:lookup(SnapshotCache, Key) of
-		 [] ->
-		     %% First time reading this key, store an empty snapshot in the cache
-		     BlankSS = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
-		     case TxId of
-			 ignore ->
-			     internal_store_ss(Key,BlankSS,vectorclock:new(),false,State);
-			 _ ->
-			     materializer_vnode:store_ss(Key,BlankSS,vectorclock:new())
-		     end,
-		     {BlankSS,ignore,true};
-		 [{_, SnapshotDict}] ->
-		     case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
-			 {undefined, _IsF} ->
-			     {error, no_snapshot};
-			 {{SnapshotCommitTime, LatestSnapshot},IsFirst}->
-			     {LatestSnapshot,SnapshotCommitTime,IsFirst}
-		     end
-	     end,
-    %% Now check for any additional operations that might be needed to apply to the snapshot
-    %% If no snapshot was returned, operations are returned from the log
-    %% Otherwise operations are taken from the in-memory cache (any snapshot in the cache
-    %% will have any more recent operations also in the cache so no need to go to the log)
-    %% The value returned is of type #snapshot_get_response{}
-    SnapshotGetResp =
-	case Result of
-	    {error, no_snapshot} ->
-		LogId = log_utilities:get_logid_from_key(Key),
-		[Node] = log_utilities:get_preflist_from_key(Key),
-		logging_vnode:get(Node, LogId, MinSnapshotTime, Type, Key);
-	    {LatestSnapshot1,SnapshotCommitTime1,IsFirst1} ->
-		case ets:lookup(OpsCache, Key) of
-		    [] ->
-			#snapshot_get_response{number_of_ops = 0, ops_list = [],
-					       materialized_snapshot = LatestSnapshot1,
-					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1};
-		    [Tuple] ->
-			{Key,Length1,_OpId,_ListLen,AllOps} = tuple_to_key(Tuple,false),
-			#snapshot_get_response{number_of_ops = Length1, ops_list = AllOps,
-					       materialized_snapshot = LatestSnapshot1,
-					       snapshot_time = SnapshotCommitTime1, is_newest_snapshot = IsFirst1}
-		end
-	end,
-    %% Now apply the operations to the snapshot
-    case SnapshotGetResp#snapshot_get_response.number_of_ops of
-	0 ->
-	    {ok, SnapshotGetResp#snapshot_get_response.materialized_snapshot#materialized_snapshot.value};
-	_Len ->
-	    case clocksi_materializer:materialize(Type, TxId, MinSnapshotTime, SnapshotGetResp) of
-		{ok, Snapshot, NewLastOp, CommitTime, NewSS, OpAddedCount} ->
-		    %% the following checks for the case there were no snapshots and there were operations, but none was applicable
-		    %% for the given snapshot_time
-		    %% But is the snapshot not safe?
-		    case CommitTime of
-			ignore ->
-			    {ok, Snapshot};
-			_ ->
-			    case (NewSS and SnapshotGetResp#snapshot_get_response.is_newest_snapshot and
-				  (OpAddedCount >= ?MIN_OP_STORE_SS)) orelse ShouldGc of
-				%% Only store the snapshot if it would be at the end of the list and has new operations added to the
-				%% previous snapshot
-				true ->
-				    case TxId of
-					ignore ->
-					    internal_store_ss(Key,#materialized_snapshot{last_op_id = NewLastOp,value = Snapshot},CommitTime,ShouldGc,State);
-					_ ->
-					    materializer_vnode:store_ss(Key,#materialized_snapshot{last_op_id = NewLastOp, value = Snapshot},CommitTime)
-				    end;
-				_ ->
-				    ok
-			    end,
-			    {ok, Snapshot}
-		    end;
-		{error, Reason} ->
-		    {error, Reason}
-	    end
+internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State) ->
+    %% First get the most recent snapshot older than the specified time
+    SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
+
+    %% Now apply the operations to the snapshot, and return a materialized value
+    materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp).
+
+%% @doc Get the most recent snapshot from the cache (smaller thant the given commit time) for a given key.
+%%
+%%      If there's no in-memory suitable snapshot, it will fetch it from the replication log.
+%%
+-spec get_from_snapshot_cache(
+    TxId :: txid() | ignore,
+    Key :: key(),
+    Type :: type(),
+    MinSnaphsotTime :: snapshot_time(),
+    State :: #mat_state{}
+) -> #snapshot_get_response{}.
+
+get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #mat_state{
+    ops_cache=OpsCache,
+    snapshot_cache=SnapshotCache
+}) ->
+    case ets:lookup(SnapshotCache, Key) of
+        [] ->
+            EmptySnapshot = #materialized_snapshot{
+                last_op_id=0,
+                value=clocksi_materializer:new(Type)
+            },
+            store_snapshot(TxId, Key, EmptySnapshot, vectorclock:new(), false, State),
+            %% Create a base version committed at time ignore, i.e. bottom
+            BaseVersion = {{ignore, EmptySnapshot}, true},
+            update_snapshot_from_cache(BaseVersion, Key, OpsCache);
+
+        [{_, SnapshotDict}] ->
+            case vector_orddict:get_smaller(MinSnaphsotTime, SnapshotDict) of
+                {undefined, _} ->
+                    %% No in-memory snapshot, get it from replication log
+                    get_from_snapshot_log(Key, Type, MinSnaphsotTime);
+
+                FoundVersion ->
+                    %% Snapshot was present, now update it with the operations found in the cache.
+                    %%
+                    %% Operations are taken from the in-memory cache.
+                    %% Any snapshot already in the cache will have more recent operations
+                    %% also in the cache, so no need to hit the log.
+                    update_snapshot_from_cache(FoundVersion, Key, OpsCache)
+            end
+    end.
+
+-spec get_from_snapshot_log(key(), type(), snapshot_time()) -> #snapshot_get_response{}.
+get_from_snapshot_log(Key, Type, SnapshotTime) ->
+    LogId = log_utilities:get_logid_from_key(Key),
+    Partition = log_utilities:get_key_partition(Key),
+    logging_vnode:get(Partition, LogId, SnapshotTime, Type, Key).
+
+%% @doc Store a new key snapshot in the in-memory cache at the given commit time.
+%%
+%%      If `ShouldGC` is true, it will try to prune the in-memory cache before inserting.
+%%
+-spec store_snapshot(
+    TxId :: txid() | ignore,
+    Key :: key(),
+    Snapshot :: #materialized_snapshot{},
+    Time :: snapshot_time(),
+    ShouldGC :: boolean(),
+    MatState :: #mat_state{}
+) -> ok.
+
+store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, MatState) ->
+    case TxId of
+        ignore ->
+            internal_store_ss(Key, Snapshot, Time, ShouldGC, MatState),
+            ok;
+        _ ->
+            materializer_vnode:store_ss(Key, Snapshot, Time)
+    end.
+
+%% @doc Given a snapshot from the cache, update it from the ops cache.
+-spec update_snapshot_from_cache(
+    {{snapshot_time() | ignore, #materialized_snapshot{}}, boolean()},
+    key(),
+    cache_id()
+) -> #snapshot_get_response{}.
+
+update_snapshot_from_cache(SnapshotResponse, Key, OpsCache) ->
+    {{SnapshotCommitTime, LatestSnapshot}, IsFirst} = SnapshotResponse,
+    {Ops, OpsLen} = fetch_updates_from_cache(OpsCache, Key),
+    #snapshot_get_response{
+        ops_list=Ops,
+        number_of_ops=OpsLen,
+        is_newest_snapshot=IsFirst,
+        snapshot_time=SnapshotCommitTime,
+        materialized_snapshot=LatestSnapshot
+    }.
+
+%% @doc Given a key, get all the operations in the ops cache.
+%%
+%%      Will also return how many operations were in the cache.
+%%
+-spec fetch_updates_from_cache(cache_id(), key()) -> {[op_and_id()] | tuple(), integer()}.
+fetch_updates_from_cache(OpsCache, Key) ->
+    case ets:lookup(OpsCache, Key) of
+        [] ->
+            {[], 0};
+
+        [Tuple] ->
+            {Key, Length, _OpId, _ListLen, CachedOps} = tuple_to_key(Tuple, false),
+            {CachedOps, Length}
+    end.
+
+-spec materialize_snapshot(
+    txid() | ignore,
+    key(),
+    type(),
+    snapshot_time(),
+    boolean(),
+    #mat_state{},
+    #snapshot_get_response{}
+) -> {ok, snapshot_time()} | {error, reason()}.
+
+materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _MatState, #snapshot_get_response{
+    number_of_ops=0,
+    materialized_snapshot=Snapshot
+}) ->
+    {ok, Snapshot#materialized_snapshot.value};
+
+materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, MatState, SnapshotResponse = #snapshot_get_response{
+    is_newest_snapshot=IsNewest
+}) ->
+    case clocksi_materializer:materialize(Type, TxId, SnapshotTime, SnapshotResponse) of
+        {error, Reason} ->
+            {error, Reason};
+
+        {ok, MaterializedSnapshot, NewLastOp, CommitTime, WasUpdated, OpsAdded} ->
+            %% the following checks for the case there were no snapshots and there were operations,
+            %% but none was applicable for the given snapshot_time
+            %% But is the snapshot not safe?
+            case CommitTime of
+                ignore ->
+                    {ok, MaterializedSnapshot};
+
+                _ ->
+                    %% Check if we need to refresh the cache
+                    SufficientOps = OpsAdded >= ?MIN_OP_STORE_SS,
+                    ShouldRefreshCache = WasUpdated and IsNewest and SufficientOps,
+
+                    %% Only store the snapshot if it would be at the end of the list and
+                    %% has new operations added to the previous snapshot
+                    ok = case ShouldRefreshCache orelse ShouldGC of
+                        false ->
+                            ok;
+
+                        true ->
+                            ToCache = #materialized_snapshot{
+                                last_op_id=NewLastOp,
+                                value=MaterializedSnapshot
+                            },
+                            store_snapshot(TxId, Key, ToCache, CommitTime, ShouldGC, MatState)
+                     end,
+                    {ok, MaterializedSnapshot}
+            end
     end.
 
 %% Should be called doesn't belong in SS
