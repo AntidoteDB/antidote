@@ -185,7 +185,7 @@ Or in a single call:
     {ok, Res, _CommitTime} = antidote:read_objects(ignore, [], [CounterObj]).
     [CounterVal] = Res.
 
-More about the API is described [here](/rawapi.html).
+More about the API is described [here](/antidote/rawapi.html).
 
 Running Tests
 -------------
