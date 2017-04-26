@@ -219,7 +219,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, _IsStatic) 
 -spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
-    Partition = key_partition(Key),
+    Partition = ?LOG_UTIL:get_key_partition(Key),
     case clocksi_readitem_fsm:read_data_item(Partition, Key, Type, Transaction) of
         {error, Reason} ->
             {error, Reason};
@@ -236,7 +236,7 @@ perform_singleitem_read(Key, Type) ->
 -spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Key, Type, Params) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
-    Partition = key_partition(Key),
+    Partition = ?LOG_UTIL:get_key_partition(Key),
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
@@ -294,7 +294,7 @@ perform_singleitem_update(Key, Type, Params) ->
     end.
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
-    Partition = key_partition(Key),
+    Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
         false ->
@@ -317,7 +317,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
     {Key, Type, Param} = Op,
-    Partition = key_partition(Key),
+    Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
         false ->
@@ -420,7 +420,7 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
-        Partition = key_partition(Key),
+        Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadSet = AccState#tx_coord_state.return_accumulator,
         AccState#tx_coord_state{return_accumulator=[Key | ReadSet]}
@@ -468,11 +468,6 @@ execute_command(update_objects, UpdateOps, Sender, State = #tx_coord_state{trans
         false ->
             {next_state, receive_logging_responses, LoggingState, 0}
     end.
-
-%% @doc Get the partition from a key
-key_partition(Key) ->
-    [Partition | _] = ?LOG_UTIL:get_preflist_from_key(Key),
-    Partition.
 
 %% @doc This state reached after an execute_op(update_objects[Params]).
 %% update_objects calls the perform_update function, which asynchronously
@@ -548,7 +543,7 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
 %% transaction, to the result returned by a read.
 -spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, type(), snapshot()) -> snapshot().
 apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
-    Partition = key_partition(Key),
+    Partition = ?LOG_UTIL:get_key_partition(Key),
     Found = lists:keyfind(
         Partition,
         1,

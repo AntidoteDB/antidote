@@ -99,8 +99,7 @@ get_cache_name(Partition,Base) ->
 %%     one at a time into the ets tables
 -spec update(key(), clocksi_payload()) -> ok | {error, reason()}.
 update(Key, DownstreamOp) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
+    IndexNode = log_utilities:get_key_partition(Key),
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp},
                                         materializer_vnode_master).
 
@@ -108,8 +107,7 @@ update(Key, DownstreamOp) ->
 %%     one at a time into the ets table
 -spec store_ss(key(), #materialized_snapshot{}, snapshot_time()) -> ok.
 store_ss(Key, Snapshot, CommitTime) ->
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
+    IndexNode = log_utilities:get_key_partition(Key),
     riak_core_vnode_master:command(IndexNode, {store_ss,Key, Snapshot, CommitTime},
                                         materializer_vnode_master).
 

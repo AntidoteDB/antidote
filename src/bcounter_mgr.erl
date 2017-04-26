@@ -175,8 +175,7 @@ request_remote(RequiredSum, Key) ->
       end, RequiredSum, PrefList).
 
 do_request(MyDCId, RemoteId, Key, Amount) ->
-    Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
-    {LocalPartition, _} = hd(Preflist),
+    {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
     BinaryMsg = term_to_binary({request_permissions,
                                 {transfer, {Key, Amount, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
     inter_dc_query:perform_request(?BCOUNTER_REQUEST, {RemoteId, LocalPartition},
