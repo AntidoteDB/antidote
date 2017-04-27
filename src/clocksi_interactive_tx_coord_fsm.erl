@@ -220,7 +220,7 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, _IsStatic) 
 perform_singleitem_read(Key, Type) ->
     {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Partition = ?LOG_UTIL:get_key_partition(Key),
-    case clocksi_readitem_fsm:read_data_item(Partition, Key, Type, Transaction) of
+    case clocksi_readitem_server:read_data_item(Partition, Key, Type, Transaction) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->

@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_readitem_fsm).
+-module(clocksi_readitem_server).
 
 -behavior(gen_server).
 
