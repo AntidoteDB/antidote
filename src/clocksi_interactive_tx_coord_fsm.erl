@@ -316,7 +316,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     end.
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
-    {Key, Type, Param} = Op,
+    {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
@@ -327,20 +327,20 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
     end,
 
     %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Param) of
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Update) of
         {error, Reason} ->
             lager:debug("Execute pre-commit hook failed ~p", [Reason]),
             {error, Reason};
 
-        {Key, Type, Param1} ->
+        {Key, Type, PostHookUpdate} ->
 
-            %% Generate all the possible operations
+            %% Generate the appropiate state operations based on older snapshots
             GenerateResult = ?CLOCKSI_DOWNSTREAM:generate_downstream_op(
                 Transaction,
                 Partition,
                 Key,
                 Type,
-                Param1,
+                PostHookUpdate,
                 WriteSet,
                 InternalReadSet
             ),
@@ -349,25 +349,34 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
                 {error, Reason} ->
                     {error, Reason};
 
-                {ok, DownstreamRecord} ->
+                {ok, DownstreamOp} ->
+                    ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
 
-                    NewUpdatedPartitions = case WriteSet of
-                        [] ->
-                            [{Partition, [{Key, Type, DownstreamRecord}]} | UpdatedPartitions];
-                        _ ->
-                            %% Update the write set entry with the new record
-                            lists:keyreplace(
-                                Partition,
-                                1,
-                                UpdatedPartitions,
-                                {Partition, [{Key, Type, DownstreamRecord} | WriteSet]}
-                            )
-                    end,
+                    %% Append to the writeset of the updated partition
+                    GeneratedUpdate = {Key, Type, DownstreamOp},
+                    NewUpdatedPartitions = append_updated_partitions(
+                        UpdatedPartitions,
+                        WriteSet,
+                        Partition,
+                        GeneratedUpdate
+                    ),
 
-                    ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamRecord),
-                    {NewUpdatedPartitions, [{Key, Type, Param1} | ClientOps]}
+                    UpdatedOps = [{Key, Type, PostHookUpdate} | ClientOps],
+                    {NewUpdatedPartitions, UpdatedOps}
             end
     end.
+
+%% @doc Add new updates to the write set of the given partition.
+%%
+%%      If there's no write set, create a new one.
+%%
+append_updated_partitions(UpdatedPartitions, [], Partition, Update) ->
+    [{Partition, [Update]} | UpdatedPartitions];
+
+append_updated_partitions(UpdatedPartitions, WriteSet, Partition, Update) ->
+    %% Update the write set entry with the new record
+    AllUpdates = {Partition, [Update | WriteSet]},
+    lists:keyreplace(Partition, 1, UpdatedPartitions, AllUpdates).
 
 -spec async_log_propagation(index_node(), txid(), key(), type(), op()) -> ok.
 async_log_propagation(Partition, TxId, Key, Type, Record) ->
