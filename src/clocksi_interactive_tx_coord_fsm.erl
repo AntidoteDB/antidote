@@ -431,8 +431,8 @@ execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transacti
     ExecuteReads = fun({Key, Type}, AccState) ->
         Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
-        ReadSet = AccState#tx_coord_state.return_accumulator,
-        AccState#tx_coord_state{return_accumulator=[Key | ReadSet]}
+        ReadKeys = AccState#tx_coord_state.return_accumulator,
+        AccState#tx_coord_state{return_accumulator=[Key | ReadKeys]}
     end,
 
     NewCoordState = lists:foldl(
@@ -523,29 +523,31 @@ receive_logging_responses(Response, S0 = #tx_coord_state{
 %% @doc After asynchronously reading a batch of keys, collect the responses here
 receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_state{
     num_to_read=NumToRead,
-    return_accumulator=ReadSet,
-    internal_read_set=InternalReadSet
+    return_accumulator=ReadKeys,
+    internal_read_set=ReadSet
 }) ->
 
     %% TODO: type is hard-coded..
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
     Value = Type:value(UpdatedSnapshot),
 
-    UpdatedReadSet = replace_first(ReadSet, Key, Value),
-    NewInternalReadSet = orddict:store(Key, Snapshot, InternalReadSet),
+    %% Swap keys with their appropiate read values
+    ReadValues = replace_first(ReadKeys, Key, Value),
+    %% TODO: Why use the old snapshot, instead of UpdatedSnapshot?
+    NewReadSet = orddict:store(Key, Snapshot, ReadSet),
 
     %% Loop back to the same state until we process all the replies
     case NumToRead > 1 of
         true ->
             {next_state, receive_read_objects_result, CoordState#tx_coord_state{
                 num_to_read=NumToRead - 1,
-                return_accumulator=UpdatedReadSet,
-                internal_read_set=NewInternalReadSet
+                return_accumulator=ReadValues,
+                internal_read_set=NewReadSet
             }};
 
         false ->
-            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(UpdatedReadSet)}),
-            {next_state, execute_op, CoordState#tx_coord_state{num_to_read=0, internal_read_set=NewInternalReadSet}}
+            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadValues)}),
+            {next_state, execute_op, CoordState#tx_coord_state{num_to_read=0, internal_read_set=NewReadSet}}
     end.
 
 %% The following function is used to apply the updates that were performed by the running
