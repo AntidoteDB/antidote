@@ -73,3 +73,8 @@ entries:
     - title: 0.0.1 Release notes
       url: /release_notes_001.html
       output: web, pdf
+
+  - title: Quick Start
+    output: web, pdf
+    url: /quick_start.html
+
