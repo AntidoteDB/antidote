@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(clocksi_readitem_fsm).
+-module(clocksi_readitem_server).
 
 -behavior(gen_server).
 
@@ -200,31 +200,33 @@ init([Partition, Id]) ->
 		prepared_cache=PreparedCache,self=Self}}.
 
 handle_call({perform_read, Key, Type, Transaction},Coordinator,SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
-    {noreply,SD0};
+    ok = perform_read_internal(Coordinator, Key, Type, Transaction, [], SD0),
+    {noreply, SD0};
 
 handle_call({go_down},_Sender,SD0) ->
-    {stop,shutdown,ok,SD0}.
+    {stop, shutdown, ok, SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction}, SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,[],SD0),
-    {noreply,SD0}.
+    ok = perform_read_internal(Coordinator, Key, Type, Transaction, [], SD0),
+    {noreply, SD0}.
 
--spec perform_read_internal(pid(), key(), type(), #transaction{}, [], #state{}) ->
-				   ok.
-perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
-		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+-spec perform_read_internal(pid(), key(), type(), #transaction{}, [], #state{}) -> ok.
+perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0 = #state{
+    prepared_cache=PreparedCache,
+    partition=Partition
+}) ->
+
     %% TODO: Add support for read properties
     PropertyList = [],
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
     case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
-	{not_ready,Time} ->
-	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
-	    ok;
-	ready ->
-	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
+        {not_ready,Time} ->
+            %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+	        _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction}),
+	        ok;
+        ready ->
+            return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -237,9 +239,9 @@ check_clock(Key,TxLocalStartTime,PreparedCache,Partition) ->
     Time = dc_utilities:now_microsec(),
     case TxLocalStartTime > Time of
         true ->
-	    {not_ready, (TxLocalStartTime - Time) div 1000 +1};
+            {not_ready, (TxLocalStartTime - Time) div 1000 +1};
         false ->
-	    check_prepared(Key,TxLocalStartTime,PreparedCache,Partition)
+            check_prepared(Key,TxLocalStartTime,PreparedCache,Partition)
     end.
 
 %% @doc check_prepared: Check if there are any transactions
@@ -257,10 +259,10 @@ check_prepared_list(_Key,_TxLocalStartTime,[]) ->
     ready;
 check_prepared_list(Key,TxLocalStartTime,[{_TxId,Time}|Rest]) ->
     case Time =< TxLocalStartTime of
-    true ->
-        {not_ready, ?SPIN_WAIT};
-    false ->
-        check_prepared_list(Key,TxLocalStartTime,Rest)
+        true ->
+            {not_ready, ?SPIN_WAIT};
+        false ->
+            check_prepared_list(Key,TxLocalStartTime,Rest)
     end.
 
 %% @doc return:

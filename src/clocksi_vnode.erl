@@ -85,18 +85,17 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, TxId, Key, Type, Updates) ->
-    case clocksi_readitem_fsm:read_data_item(Node, Key, Type, TxId) of
+    case clocksi_readitem_server:read_data_item(Node, Key, Type, TxId) of
         {ok, Snapshot} ->
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
-            Snapshot2 = clocksi_materializer:materialize_eager
-            (Type, Snapshot, Updates2),
+            Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
             {ok, Snapshot2};
         {error, Reason} ->
             {error, Reason}
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_fsm:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}).
+    clocksi_readitem_server:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -260,7 +259,7 @@ open_table(Partition) ->
 loop_until_started(_Partition, 0) ->
     0;
 loop_until_started(Partition, Num) ->
-    Ret = clocksi_readitem_fsm:start_read_servers(Partition, Num),
+    Ret = clocksi_readitem_server:start_read_servers(Partition, Num),
     loop_until_started(Partition, Ret).
 
 handle_command({hello}, _Sender, State) ->
@@ -284,7 +283,7 @@ handle_command({send_min_prepared}, _Sender,
 handle_command({check_servers_ready}, _Sender, SD0 = #state{partition = Partition, read_servers = Serv}) ->
     loop_until_started(Partition, Serv),
     Node = node(),
-    Result = clocksi_readitem_fsm:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
+    Result = clocksi_readitem_server:check_partition_ready(Node, Partition, ?READ_CONCURRENCY),
     {reply, Result, SD0};
 
 handle_command({prepare, Transaction, WriteSet}, _Sender,
@@ -365,7 +364,7 @@ handle_command({abort, Transaction, Updates}, _Sender,
     case Updates of
         [{Key, _Type,  _Update} | _Rest] ->
             LogId = log_utilities:get_logid_from_key(Key),
-            [Node] = log_utilities:get_preflist_from_key(Key),
+            Node = log_utilities:get_key_partition(Key),
             LogRecord = #log_operation{tx_id = TxId, op_type = abort, log_payload = #abort_log_payload{}},
             Result = logging_vnode:append(Node,LogId, LogRecord),
             %% Result = logging_vnode:append(Node, LogId, {TxId, aborted}),
@@ -424,7 +423,7 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
         _:Reason ->
             lager:error("Error closing table ~p", [Reason])
     end,
-    clocksi_readitem_fsm:stop_read_servers(Partition, ?READ_CONCURRENCY),
+    clocksi_readitem_server:stop_read_servers(Partition, ?READ_CONCURRENCY),
     ok.
 
 %%%===================================================================
@@ -445,7 +444,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
                         op_type = prepare,
                         log_payload = #prepare_log_payload{prepare_time = NewPrepare}},
                     LogId = log_utilities:get_logid_from_key(Key),
-                    [Node] = log_utilities:get_preflist_from_key(Key),
+                    Node = log_utilities:get_key_partition(Key),
                     Result = logging_vnode:append(Node, LogId, LogRecord),
                     {Result, NewPrepare, NewPreparedDict};
                 _ ->
@@ -497,7 +496,7 @@ commit(Transaction, TxCommitTime, Updates, CommittedTx, State) ->
 		    ok
 	    end,
             LogId = log_utilities:get_logid_from_key(Key),
-            [Node] = log_utilities:get_preflist_from_key(Key),
+            Node = log_utilities:get_key_partition(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
                 {ok, _} ->
                     case update_materializer(Updates, Transaction, TxCommitTime) of

@@ -44,20 +44,20 @@
          terminate/3]).
 
 -export([get_my_dc_id/0,
-	 get_clock_of_dc/2, 
-	 get_preflist_from_key/1,
-	 read_data_item/5,
-	 generate_downstream_op/7,
-	 get_logid_from_key/1,
-	 update_data_item/5,
-	 prepare/2,
-	 value/1,
-	 set_clock_of_dc/3,
-	 abort/2,
-	 commit/3,
-	 single_commit/2,
-	 get_stable_snapshot/0
-        ]).
+         get_clock_of_dc/2,
+         get_preflist_from_key/1,
+         read_data_item/5,
+         generate_downstream_op/7,
+         get_key_partition/1,
+         get_logid_from_key/1,
+         update_data_item/5,
+         prepare/2,
+         value/1,
+         set_clock_of_dc/3,
+         abort/2,
+         commit/3,
+         single_commit/2,
+         get_stable_snapshot/0]).
 
 -record(state, {
         key :: atom()}).
@@ -85,6 +85,10 @@ set_clock_of_dc(_,_,Clock) ->
 
 get_clock_of_dc(_DcId, _SnapshotTime) ->
     0.
+
+get_key_partition(_Key) ->
+    {ok, Pid} = mock_partition_fsm:start_link(),
+    Pid.
 
 get_preflist_from_key(_Key) ->
     {ok, Pid} = mock_partition_fsm:start_link(),

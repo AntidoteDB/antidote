@@ -35,6 +35,8 @@ relclean:
 reltest: rel
 	test/release_test.sh
 
+check: distclean cleantests test reltest dialyzer
+
 relgentlerain: export TXN_PROTOCOL=gentlerain
 relgentlerain: relclean cleantests rel
 

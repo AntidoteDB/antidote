@@ -26,7 +26,8 @@
 -endif.
 
 
--export([get_preflist_from_key/1,
+-export([get_key_partition/1,
+         get_preflist_from_key/1,
          get_logid_from_key/1,
          remove_node_from_preflist/1,
          get_my_node/1,
@@ -43,6 +44,12 @@ get_logid_from_key(Key) ->
     %HashedKey = riak_core_util:chash_key({?BUCKET, term_to_binary(Key)}),
     PreflistAnn = get_preflist_from_key(Key),
     remove_node_from_preflist(PreflistAnn).
+
+%% @doc get_key_partition returns the most probable node where a given
+%%      key's logfile will be located.
+-spec get_key_partition(key()) -> index_node().
+get_key_partition(Key) ->
+    hd(get_preflist_from_key(Key)).
 
 %% @doc get_preflist_from_key returns a preference list where a given
 %%      key's logfile will be located.
