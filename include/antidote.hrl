@@ -253,6 +253,8 @@
 %%    updated_partitions: the partitions where update operations take place.
 %%    num_to_ack: when sending prepare_commit,
 %%                number of partitions that have acked.
+%%    num_to_read: when sending read requests
+%%                 number of partitions that are asked.
 %%    prepare_time: transaction prepare time.
 %%    commit_time: transaction commit time.
 %%    state: state of the transaction: {active|prepared|committing|committed}
