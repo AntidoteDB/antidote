@@ -36,14 +36,14 @@
 create_snapshot(Type) ->
     Type:new().
 
-%% @doc Applies an operation to a snapshot of a crdt. 
+%% @doc Applies an operation to a snapshot of a crdt.
 %%      This function yields an error if the crdt does not have a corresponding update operation.
 -spec update_snapshot(type(), snapshot(), op()) -> {ok, snapshot()} | {error, reason()}.
 update_snapshot(Type, Snapshot, Op) ->
     try
         Type:update(Op, Snapshot)
     catch
-        _:_ -> 
+        _:_ ->
             {error, unexpected_format}
     end.
 

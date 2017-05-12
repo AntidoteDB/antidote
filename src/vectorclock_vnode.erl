@@ -54,8 +54,8 @@
 
 -ignore_xref([start_vnode/1]).
 
--define(META_PREFIX, {partition,vectorclock}).
--define(META_PREFIX_SS, {partition_ss,vectorclock}).
+-define(META_PREFIX, {partition, vectorclock}).
+-define(META_PREFIX_SS, {partition_ss, vectorclock}).
 
 %% Vnode state
 -record(state, {
@@ -65,7 +65,7 @@
 
 %%%% API --------------------------------------------------------------------+
 
-get_stable_snapshot() -> riak_core_metadata:get(?META_PREFIX_SS, 1, [{default,dict:new()}]).
+get_stable_snapshot() -> riak_core_metadata:get(?META_PREFIX_SS, 1, [{default, dict:new()}]).
 
 recalculate_stable_snapshot(Partition) ->
   dc_utilities:call_vnode(Partition, vectorclock_vnode_master, calculate_stable_snapshot).
@@ -124,25 +124,25 @@ metadata_maybe_list(Prefix) ->
     Normal -> Normal
   end.
 
-handle_handoff_command( _Message , _Sender, State) -> 
+handle_handoff_command( _Message , _Sender, State) ->
     {noreply, State}.
-handoff_starting(_TargetNode, State) -> 
+handoff_starting(_TargetNode, State) ->
     {true, State}.
-handoff_cancelled(State) -> 
+handoff_cancelled(State) ->
     {ok, State}.
-handoff_finished(_TargetNode, State) -> 
+handoff_finished(_TargetNode, State) ->
     {ok, State}.
-handle_handoff_data(_Data, State) -> 
+handle_handoff_data(_Data, State) ->
     {reply, ok, State}.
-encode_handoff_item(Key, Operation) -> 
+encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
-is_empty(State) -> 
+is_empty(State) ->
     {true, State}.
-delete(State) -> 
+delete(State) ->
     {ok, State}.
-handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
+handle_coverage(_Req, _KeySpaces, _Sender, State) ->
     {stop, not_implemented, State}.
-handle_exit(_Pid, _Reason, State) -> 
+handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
-terminate(_Reason, _State) -> 
+terminate(_Reason, _State) ->
     ok.

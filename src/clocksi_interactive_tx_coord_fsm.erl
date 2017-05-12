@@ -119,8 +119,8 @@ start_link(From, Clientclock) ->
     start_link(From, Clientclock, update_clock).
 
 -spec start_link(pid(), clock_time() | ignore) -> {ok, pid()}.
-start_link(From,Clientclock,UpdateClock) ->
-    start_link(From,Clientclock,UpdateClock,false).
+start_link(From, Clientclock, UpdateClock) ->
+    start_link(From, Clientclock, UpdateClock, false).
 
 -spec start_link(pid()) -> {ok, pid()}.
 start_link(From) ->
@@ -186,7 +186,7 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
                                 boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, _IsStatic) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
-    _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
+    _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
     {ok, SnapshotTime} = case ClientClock of
                              ignore ->
                                  get_snapshot_time();
@@ -240,7 +240,7 @@ perform_singleitem_update(Key, Type, Params) ->
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, [],[]) of
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, [], []) of
                 {ok, DownstreamRecord} ->
                     Updated_partitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
                     TxId = Transaction#transaction.txn_id,
@@ -737,7 +737,7 @@ committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
     end.
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
-%%	committed the tx and finishes operation.
+%%      committed the tx and finishes operation.
 %%      Should we retry sending the committed message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?
@@ -776,7 +776,7 @@ abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
-%%	aborted the tx and finishes operation.
+%%      aborted the tx and finishes operation.
 %%      Should we retry sending the aborted message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?

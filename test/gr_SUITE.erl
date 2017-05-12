@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% This module tests gentlerain read,write and snapshot read operations
+%% This module tests gentlerain read, write and snapshot read operations
 
 -module(gr_SUITE).
 
@@ -92,8 +92,8 @@ read_multiple_test(Config) ->
     {ok, _} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O1, increment, 1}]]),
     O2 = {o2, antidote_crdt_counter, bucket},
     {ok, CT} = rpc:call(Node, antidote, update_objects, [ignore, {}, [{O2, increment, 1}]]),
-    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [CT, {}, [O1,O2]]),
-    ?assertMatch([1,1], Res).
+    {ok, Res, _} = rpc:call(Node, antidote, read_objects, [CT, {}, [O1, O2]]),
+    ?assertMatch([1, 1], Res).
 
 replication_test(Config) ->
     lager:info("Replication Test"),
@@ -110,4 +110,4 @@ replication_test(Config) ->
     lager:info("Read r1 from DC2: ~p", [Res1]), %% Result could be 0 or 1, there is no guarantee
     {ok, Res2, _} = rpc:call(Node2, antidote, read_objects, [CT2, {}, [O1, O2]]),
     %% Since CT1 < CT2, any snapshot that includes second write must include first write
-    ?assertMatch([1,1], Res2).
+    ?assertMatch([1, 1], Res2).

@@ -31,10 +31,10 @@
          all/0]).
 
 -export([multiple_writes/3,
-	 replicated_set_test/1,
+         replicated_set_test/1,
          simple_replication_test/1,
          failure_test/1,
-	 blocking_test/1,
+         blocking_test/1,
          parallel_writes_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -110,21 +110,21 @@ parallel_writes_test(Config) ->
     Key = parallel_writes_test,
     Type = antidote_crdt_counter,
     Pid = self(),
-    spawn(?MODULE, multiple_writes,[Node1,Key,Pid]),
-    spawn(?MODULE, multiple_writes,[Node2,Key,Pid]),
-    spawn(?MODULE, multiple_writes,[Node3,Key,Pid]),
+    spawn(?MODULE, multiple_writes, [Node1, Key, Pid]),
+    spawn(?MODULE, multiple_writes, [Node2, Key, Pid]),
+    spawn(?MODULE, multiple_writes, [Node3, Key, Pid]),
     Result = receive
         {ok, CT1} ->
             receive
                 {ok, CT2} ->
                 receive
                     {ok, CT3} ->
-                        Time = dict:merge(fun(_K, T1,T2) ->
-                                                  max(T1,T2)
+                        Time = dict:merge(fun(_K, T1, T2) ->
+                                                  max(T1, T2)
                                           end,
                                           CT3, dict:merge(
-                                                 fun(_K, T1,T2) ->
-                                                         max(T1,T2)
+                                                 fun(_K, T1, T2) ->
+                                                         max(T1, T2)
                                                  end,
                                                  CT1, CT2)),
 
@@ -206,7 +206,7 @@ blocking_test(Config) ->
     {ok, CommitTime2} = update_counters(Node2, [Key], [1], ignore, static),
 
     %% Besure you can read the updates at DC1 and DC2
-    CommitTime3 = vectorclock:max([CommitTime1,CommitTime2]),
+    CommitTime3 = vectorclock:max([CommitTime1, CommitTime2]),
     check_read_key(Node1, Key, Type, 2, CommitTime3, static),
     check_read_key(Node2, Key, Type, 2, CommitTime3, static),
 
@@ -231,17 +231,17 @@ replicated_set_test(Config) ->
 
     %% add 100 elements to the set on Node 1 while simultaneously reading on Node2
     CommitTimes = lists:map(fun(N) ->
-				    lager:info("Writing ~p to set", [N]),
-				    {ok, CommitTime} = update_sets(Node1, [Key1], [{add, N}], ignore),
-				    timer:sleep(200),
-				    CommitTime
-			    end, lists:seq(1, 100)),
+                                lager:info("Writing ~p to set", [N]),
+                                {ok, CommitTime} = update_sets(Node1, [Key1], [{add, N}], ignore),
+                                timer:sleep(200),
+                                CommitTime
+                            end, lists:seq(1, 100)),
 
     LastCommitTime = lists:last(CommitTimes),
     lager:info("last commit time was ~p.", [LastCommitTime]),
 
     %% now read on Node2
-    check_read_key(Node2, Key1, Type, lists:seq(1,100), LastCommitTime, static),
+    check_read_key(Node2, Key1, Type, lists:seq(1, 100), LastCommitTime, static),
     pass.
 
 %% internal

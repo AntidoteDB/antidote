@@ -69,7 +69,7 @@ init([]) ->
 %% is generated.
 generate_downstream(Key, {decrement, {V, _}}, BCounter) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-    gen_server:call(?MODULE, {consume, Key, {decrement, {V,MyDCId}}, BCounter});
+    gen_server:call(?MODULE, {consume, Key, {decrement, {V, MyDCId}}, BCounter});
 
 %% @doc Processes an increment operation for the bounded counter.
 %% Operation is always safe.
@@ -90,7 +90,7 @@ process_transfer({transfer, TransferOp}) ->
 %% Callbacks
 %% ===================================================================
 
-handle_cast({transfer, {Key,Amount,Requester}}, #state{last_transfers=LT}=State) ->
+handle_cast({transfer, {Key, Amount, Requester}}, #state{last_transfers=LT}=State) ->
     NewLT = cancel_consecutive_req(LT, ?GRACE_PERIOD),
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
     case can_process(Key, Requester, NewLT) of
@@ -103,9 +103,9 @@ handle_cast({transfer, {Key,Amount,Requester}}, #state{last_transfers=LT}=State)
             {noreply, State#state{last_transfers=NewLT}}
     end.
 
-handle_call({consume, Key, {Op,{Amount,_}}, BCounter}, _From, #state{req_queue=RQ}=State) ->
+handle_call({consume, Key, {Op, {Amount, _}}, BCounter}, _From, #state{req_queue=RQ}=State) ->
     MyDCId = dc_meta_data_utilities:get_my_dc_id(),
-    case ?DATA_TYPE:generate_downstream_check({Op,Amount}, MyDCId, BCounter, Amount) of
+    case ?DATA_TYPE:generate_downstream_check({Op, Amount}, MyDCId, BCounter, Amount) of
         {error, no_permissions} = FailedResult ->
             Available = ?DATA_TYPE:localPermissions(MyDCId, BCounter),
             UpdtQueue=queue_request(Key, Amount - Available, RQ),
@@ -114,7 +114,7 @@ handle_call({consume, Key, {Op,{Amount,_}}, BCounter}, _From, #state{req_queue=R
             {reply, Result, State}
     end.
 
-handle_info(transfer_periodic, #state{req_queue=RQ0,transfer_timer=OldTimer}=State) ->
+handle_info(transfer_periodic, #state{req_queue=RQ0, transfer_timer=OldTimer}=State) ->
     erlang:cancel_timer(OldTimer),
     RQ = clear_pending_req(RQ0, ?REQUEST_TIMEOUT),
     RQNew = orddict:fold(
@@ -134,7 +134,7 @@ handle_info(transfer_periodic, #state{req_queue=RQ0,transfer_timer=OldTimer}=Sta
                       end
               end, orddict:new(), RQ),
     NewTimer=erlang:send_after(?TRANSFER_FREQ, self(), transfer_periodic),
-    {noreply,State#state{transfer_timer=NewTimer, req_queue=RQNew}}.
+    {noreply, State#state{transfer_timer=NewTimer, req_queue=RQNew}}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -149,7 +149,7 @@ queue_request(Key, Amount, RequestsQueue) ->
                       {ok, Value} -> Value;
                       error -> orddict:new()
                   end,
-    CurrTime = 	erlang:timestamp(),
+    CurrTime = erlang:timestamp(),
     orddict:store(Key, [{Amount, CurrTime} | QueueForKey], RequestsQueue).
 
 request_remote(0, _Key) -> 0;
@@ -199,19 +199,19 @@ pref_list(Obj) ->
                   end, [], OtherDCIds)).
 
 %% Request response - do nothing.
-request_response(_BinaryRep,_RequestCacheEntry) -> ok.
+request_response(_BinaryRep, _RequestCacheEntry) -> ok.
 
 cancel_consecutive_req(LastTransfers, Period) ->
-    CurrTime = 	erlang:timestamp(),
+    CurrTime = erlang:timestamp(),
     orddict:filter(
       fun(_, Timeout) ->
-              timer:now_diff(Timeout,CurrTime) < Period end, LastTransfers).
+              timer:now_diff(Timeout, CurrTime) < Period end, LastTransfers).
 
 clear_pending_req(LastRequests, Period) ->
-    CurrTime = 	erlang:timestamp(),
+    CurrTime = erlang:timestamp(),
     orddict:filter(fun(_, ListRequests) ->
                    FilteredList = lists:filter(fun({_, Timeout}) ->
-                                   timer:now_diff(Timeout,CurrTime) < Period end, ListRequests),
+                                   timer:now_diff(Timeout, CurrTime) < Period end, ListRequests),
                    length(FilteredList) /= 0
                    end , LastRequests).
 

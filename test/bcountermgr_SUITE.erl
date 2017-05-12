@@ -139,7 +139,7 @@ conditional_write_test_run(Config) ->
     {ok, TxId1} = rpc:call(Node1, antidote, start_transaction, [AfterIncrement, []]),
     {ok, _} = rpc:call(Node1, antidote, read_objects, [[BObj], TxId1]),
     %% Execute a transaction on the last node which performs a write operation.
-    {ok, TxId2} = rpc:call(Node2,antidote, start_transaction, [AfterIncrement, []]),
+    {ok, TxId2} = rpc:call(Node2, antidote, start_transaction, [AfterIncrement, []]),
     ok = rpc:call(Node2, antidote, update_objects,
              [[{BObj, decrement, {3, r1}}], TxId2]),
     End1 = rpc:call(Node2, antidote, commit_transaction, [TxId2]),

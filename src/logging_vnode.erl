@@ -33,10 +33,10 @@
 
 %% API
 -export([start_vnode/1,
-	 is_sync_log/0,
-	 set_sync_log/1,
+         is_sync_log/0,
+         set_sync_log/1,
          asyn_read/2,
-	 get_stable_time/1,
+         get_stable_time/1,
          read/2,
          asyn_append/4,
          append/3,
@@ -46,9 +46,9 @@
          asyn_read_from/3,
          read_from/3,
          get/5,
-	 get_all/4,
-	 request_bucket_op_id/4,
-	 request_op_id/3]).
+         get_all/4,
+         request_bucket_op_id/4,
+         request_op_id/3]).
 
 -export([init/1,
          terminate/2,
@@ -68,15 +68,15 @@
 -ignore_xref([start_vnode/1]).
 
 -record(state, {partition :: partition_id(),
-		enable_log_to_disk :: boolean(), %% this enables or disables logging to disk.
-		logs_map :: dict:dict(),
-		op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
-		recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
-	                                            %% of the last operation appended to this log, this value
-		                                    %% is sent to the interdc dependcy module, so it knows up to
+                enable_log_to_disk :: boolean(), %% this enables or disables logging to disk.
+                logs_map :: dict:dict(),
+                op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
+                recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
+                                                    %% of the last operation appended to this log, this value
+                                                    %% is sent to the interdc dependcy module, so it knows up to
                                                     %% what time updates from other DCs have been receieved (after crash and restart)
-		senders_awaiting_ack :: dict:dict(),
-		last_read :: term()}).
+                senders_awaiting_ack :: dict:dict(),
+                last_read :: term()}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -99,7 +99,7 @@ asyn_read_from(Preflist, Log, From) ->
 read_from(Node, LogId, From) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read_from, LogId, From},
-					?LOGGING_MASTER).
+                                        ?LOGGING_MASTER).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
 -spec asyn_read(preflist(), key()) -> ok.
@@ -113,8 +113,8 @@ asyn_read(Preflist, Log) ->
 -spec get_stable_time({partition(), node()}) -> ok.
 get_stable_time(Node) ->
     riak_core_vnode_master:command(Node,
-				   {get_stable_time},
-				   ?LOGGING_MASTER).
+                                   {get_stable_time},
+                                   ?LOGGING_MASTER).
 
 %% @doc Sends a `read' synchronous command to the Logs in `Node'
 -spec read({partition(), node()}, key()) -> {error, term()} | {ok, [term()]}.
@@ -161,20 +161,20 @@ append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
 -spec asyn_append_group(index_node(), key(), [#log_record{}], boolean()) -> ok.
 asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
     riak_core_vnode_master:command(IndexNode,
-				   {append_group, LogId, LogRecordList, IsLocal, is_sync_log()},
-				   ?LOGGING_MASTER,
-				   infinity).
+                                   {append_group, LogId, LogRecordList, IsLocal, is_sync_log()},
+                                   ?LOGGING_MASTER,
+                                   infinity).
 
 %% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
 %% desired operations so a new snapshot can be created.
 %% It returns a #log_get_response{} record which is defined in antidote.hrl
 -spec get(index_node(), key(), vectorclock(), term(), key()) ->
-		 #snapshot_get_response{} | {error, term()}.
+         #snapshot_get_response{} | {error, term()}.
 get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
-					{get, LogId, MinSnapshotTime, Type, Key},
-					?LOGGING_MASTER,
-					infinity).
+                                        {get, LogId, MinSnapshotTime, Type, Key},
+                                        ?LOGGING_MASTER,
+                                        infinity).
 
 %% @doc Given the logid and position in the log (given by continuation) and a dict
 %% of non_commited operations up to this position returns
@@ -185,32 +185,32 @@ get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
 %% Otherwise if the end of the file is reached it returns a tuple
 %% where the first elelment is 'eof' and the second is a dict of commited operations
 -spec get_all(index_node(), log_id(), start | disk_log:continuation(), dict:dict()) ->
-		     {disk_log:continuation(), dict:dict(), dict:dict()} | {eof, dict:dict()} | {error, term()}.
+             {disk_log:continuation(), dict:dict(), dict:dict()} | {eof, dict:dict()} | {error, term()}.
 get_all(IndexNode, LogId, Continuation, PrevOps) ->
     riak_core_vnode_master:sync_command(IndexNode, {get_all, LogId, Continuation, PrevOps},
-					?LOGGING_MASTER,
-					infinity).
+                                        ?LOGGING_MASTER,
+                                        infinity).
 
 %% @doc Gets the last id of operations stored in the log for the given DCID
 -spec request_op_id(index_node(), dcid(), partition()) -> {ok, non_neg_integer()}.
 request_op_id(IndexNode, DCID, Partition) ->
-    riak_core_vnode_master:sync_command(IndexNode, {get_op_id,DCID,Partition},
-					?LOGGING_MASTER,
-					infinity).
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, DCID, Partition},
+                                        ?LOGGING_MASTER,
+                                        infinity).
 
 %% @doc Gets the last id of operations stored in the log for the given bucket from the given DCID
 -spec request_bucket_op_id(index_node(), dcid(), bucket(), partition()) -> {ok, non_neg_integer()}.
 request_bucket_op_id(IndexNode, DCID, Bucket, Partition) ->
-    riak_core_vnode_master:sync_command(IndexNode, {get_op_id,DCID,Bucket,Partition},
-					?LOGGING_MASTER,
-					infinity).
+    riak_core_vnode_master:sync_command(IndexNode, {get_op_id, DCID, Bucket, Partition},
+                                        ?LOGGING_MASTER,
+                                        infinity).
 
 %% @doc Returns true if syncrounous logging is enabled
 %%      False otherwise.
 %%      Uses environment variable "sync_log" set in antidote.app.src
 -spec is_sync_log() -> boolean().
 is_sync_log() ->
-    dc_meta_data_utilities:get_env_meta_data(sync_log,false).
+    dc_meta_data_utilities:get_env_meta_data(sync_log, false).
 
 %% @doc Takes as input a boolean to set whether or not items will
 %%      be logged synchronously at this DC (sends a broadcast to update
@@ -219,7 +219,7 @@ is_sync_log() ->
 %%      If false, items will be logged asynchronously
 -spec set_sync_log(boolean()) -> ok.
 set_sync_log(Value) ->
-    dc_meta_data_utilities:store_env_meta_data(sync_log,Value).
+    dc_meta_data_utilities:store_env_meta_data(sync_log, Value).
 
 %% @doc Opens the persistent copy of the Log.
 %%      The name of the Log in disk is a combination of the the word
@@ -233,16 +233,16 @@ init([Partition]) ->
     lager:debug("Opening logs for partition ~w", [Partition]),
     case open_logs(LogFile, Preflists, dict:new(), OpIdTable, vectorclock:new()) of
         {error, Reason} ->
-	    lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
+            lager:error("ERROR: opening logs for partition ~w, reason ~w", [Partition, Reason]),
             {error, Reason};
-        {Map,MaxVector} ->
-	    {ok, EnableLoggingToDisk} = application:get_env(antidote, enable_logging),
+        {Map, MaxVector} ->
+            {ok, EnableLoggingToDisk} = application:get_env(antidote, enable_logging),
             {ok, #state{partition=Partition,
                         logs_map=Map,
                         op_id_table=OpIdTable,
-			recovered_vector=MaxVector,
+                        recovered_vector=MaxVector,
                         senders_awaiting_ack=dict:new(),
-			enable_log_to_disk=EnableLoggingToDisk,
+                        enable_log_to_disk=EnableLoggingToDisk,
                         last_read=start}}
     end.
 
@@ -251,12 +251,12 @@ handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
 handle_command({get_op_id, DCID, Partition}, _Sender, State=#state{op_id_table = OpIdTable}) ->
-    OpId = get_op_id(OpIdTable,{[Partition],DCID}),
+    OpId = get_op_id(OpIdTable, {[Partition], DCID}),
     #op_number{local = Local, global = _Global} = OpId,
     {reply, {ok, Local}, State};
 
 handle_command({get_op_id, DCID, Bucket, Partition}, _Sender, State=#state{op_id_table = OpIdTable}) ->
-    OpId = get_op_id(OpIdTable,{[Partition],Bucket,DCID}),
+    OpId = get_op_id(OpIdTable, {[Partition], Bucket, DCID}),
     #op_number{local = Local, global = _Global} = OpId,
     {reply, {ok, Local}, State};
 
@@ -266,26 +266,26 @@ handle_command({start_timer, undefined}, Sender, State) ->
     handle_command({start_timer, Sender}, Sender, State);
 handle_command({start_timer, Sender}, _, State = #state{partition=Partition, op_id_table=OpIdTable, recovered_vector=MaxVector}) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-    OpId = get_op_id(OpIdTable,{[Partition],MyDCID}),
+    OpId = get_op_id(OpIdTable, {[Partition], MyDCID}),
     IsReady = try
-		  ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
-		  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId),
-		  ok = inter_dc_log_sender_vnode:start_timer(Partition),
-		  true
-	      catch
-		  _:Reason ->
-		      lager:debug("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
-		      false
-	      end,
+                  ok = inter_dc_dep_vnode:set_dependency_clock(Partition, MaxVector),
+                  ok = inter_dc_log_sender_vnode:update_last_log_id(Partition, OpId),
+                  ok = inter_dc_log_sender_vnode:start_timer(Partition),
+                  true
+              catch
+                  _:Reason ->
+                      lager:debug("Error updating inter_dc_log_sender_vnode last sent log id: ~w, will retry", [Reason]),
+                      false
+              end,
     case IsReady of
-	true ->
-	    riak_core_vnode:reply(Sender, ok);
-	false ->
-	    riak_core_vnode:send_command_after(?LOG_SENDER_STARTUP_WAIT, {start_timer, Sender})
+        true ->
+            riak_core_vnode:reply(Sender, ok);
+        false ->
+            riak_core_vnode:send_command_after(?LOG_SENDER_STARTUP_WAIT, {start_timer, Sender})
     end,
     {noreply, State};
 
-%% @doc Read command: Returns the phyiscal time of the 
+%% @doc Read command: Returns the phyiscal time of the
 %%      clocksi vnode for which no transactions will commit with smaller time
 %%      Output: {ok, Time}
 handle_command({send_min_prepared, Time}, _Sender,
@@ -300,13 +300,13 @@ handle_command({read, LogId}, _Sender,
                #state{partition=Partition, logs_map=Map}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-	    %% TODO should continue reading with the continuation??
+            %% TODO should continue reading with the continuation??
             ok = disk_log:sync(Log),
-	    {Continuation,Ops} = read_internal(Log,start,[]),
+            {Continuation, Ops} = read_internal(Log, start, []),
             case Continuation of
                 error -> {reply, {error, Ops}, State};
                 eof -> {reply, {ok, Ops}, State}
-	    end;
+            end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -323,12 +323,12 @@ handle_command({read_from, LogId, _From}, _Sender,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
-	    %% TODO should continue reading with the continuation??
-            {Continuation, Ops} = 
+            %% TODO should continue reading with the continuation??
+            {Continuation, Ops} =
                 case disk_log:chunk(Log, Lastread) of
                     {error, Reason} -> {error, Reason};
-                    {C, O} -> {C,O};
-                    {C, O, _} -> {C,O};
+                    {C, O} -> {C, O};
+                    {C, O, _} -> {C, O};
                     eof -> {eof, []}
                 end,
             case Continuation of
@@ -353,29 +353,29 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition,
-		      enable_log_to_disk=EnableLog}=State) ->
+              enable_log_to_disk=EnableLog}=State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
-	    MyDCID = dc_meta_data_utilities:get_my_dc_id(),
-	    %% all operations update the per log, operation id
-	    OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
-	    #op_number{local = Local, global = Global} = OpId,
-	    NewOpId = OpId#op_number{local =  Local + 1, global = Global + 1},
-	    true = update_ets_op_id({LogId,MyDCID},NewOpId,OpIdTable),
-	    %% non commit operations update the bucket id number to keep track
-	    %% of the number of updates per bucket
-	    NewBucketOpId = 
-		case LogOperation#log_operation.op_type of
-		    update ->
-			Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
-			BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
-			#op_number{local = BLocal, global = BGlobal} = BOpId,
-			NewBOpId = BOpId#op_number{local = BLocal + 1, global = BGlobal + 1},
-			true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable),
-			NewBOpId;
-		    _ ->
-			NewOpId
-		end,		    
+            MyDCID = dc_meta_data_utilities:get_my_dc_id(),
+            %% all operations update the per log, operation id
+            OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
+            #op_number{local = Local, global = Global} = OpId,
+            NewOpId = OpId#op_number{local =  Local + 1, global = Global + 1},
+            true = update_ets_op_id({LogId, MyDCID}, NewOpId, OpIdTable),
+            %% non commit operations update the bucket id number to keep track
+            %% of the number of updates per bucket
+            NewBucketOpId =
+            case LogOperation#log_operation.op_type of
+                update ->
+                    Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
+                    BOpId = get_op_id(OpIdTable, {LogId, Bucket, MyDCID}),
+                    #op_number{local = BLocal, global = BGlobal} = BOpId,
+                    NewBOpId = BOpId#op_number{local = BLocal + 1, global = BGlobal + 1},
+                    true = update_ets_op_id({LogId, Bucket, MyDCID}, NewBOpId, OpIdTable),
+                    NewBOpId;
+                _ ->
+                    NewOpId
+            end,
             LogRecord = #log_record{
               version = log_utilities:log_record_version(),
               op_number = NewOpId,
@@ -383,18 +383,18 @@ handle_command({append, LogId, LogOperation, Sync}, _Sender,
               log_operation = LogOperation},
             case insert_log_record(Log, LogId, LogRecord, EnableLog) of
                 {ok, NewOpId} ->
-		    inter_dc_log_sender_vnode:send(Partition, LogRecord),
-		    case Sync of
-			true ->
-			    case disk_log:sync(Log) of
-				ok ->
-				    {reply, {ok, OpId}, State};
-				{error, Reason} ->
-				    {reply, {error, Reason}, State}
-			    end;
-			false ->
-			    {reply, {ok, OpId}, State}
-		    end;
+                    inter_dc_log_sender_vnode:send(Partition, LogRecord),
+                    case Sync of
+                    true ->
+                        case disk_log:sync(Log) of
+                        ok ->
+                            {reply, {ok, OpId}, State};
+                        {error, Reason} ->
+                            {reply, {error, Reason}, State}
+                        end;
+                    false ->
+                        {reply, {ok, OpId}, State}
+                    end;
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
             end;
@@ -413,74 +413,74 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
                #state{logs_map=Map,
                       op_id_table=OpIdTable,
                       partition=Partition,
-		      enable_log_to_disk=EnableLog}=State) ->
+                      enable_log_to_disk=EnableLog}=State) ->
     MyDCID = dc_meta_data_utilities:get_my_dc_id(),
     {ErrorList, SuccList, UpdatedLogs} =
-	lists:foldl(fun(LogRecordOrg, {AccErr, AccSucc, UpdatedLogs}) ->
-			    LogRecord = log_utilities:check_log_record_version(LogRecordOrg),
-			    case get_log_from_map(Map, Partition, LogId) of
-				{ok, Log} ->
-				    %% Generate the new operation ID
-				    %% This is only stored in memory to count the total number
-				    %% of operations, since the input operations should
-				    %% have already been assigned an op id number since
-				    %% they are coming from an external DC
-				    OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
-				    #op_number{local = _Local, global = Global} = OpId,
-				    NewOpId = OpId#op_number{global = Global + 1},
-				    %% Should assign the opid as follows if this function starts being
-				    %% used for operations generated locally
-				    %% NewOpId = 
-				    %% 	case IsLocal of
-				    %% 	    true ->
-				    %% 		OpId#op_number{local =  Local + 1, global = Global + 1};
-				    %% 	    false ->
-				    %% 		OpId#op_number{global = Global + 1}
-				    %% 	end,
-				    true = update_ets_op_id({LogId,MyDCID},NewOpId,OpIdTable),
-				    LogOperation = LogRecord#log_record.log_operation,
-				    case LogOperation#log_operation.op_type of
-					update ->
-					    Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
-					    BOpId = get_op_id(OpIdTable, {LogId,Bucket,MyDCID}),
-					    #op_number{local = _BLocal, global = BGlobal} = BOpId,
-					    NewBOpId = BOpId#op_number{global = BGlobal + 1},
-					    true = update_ets_op_id({LogId,Bucket,MyDCID},NewBOpId,OpIdTable);
-					_ ->
-					    true
-				    end,
-				    ExternalOpNum = LogRecord#log_record.op_number,
-				    case insert_log_record(Log, LogId, LogRecord, EnableLog) of
-					{ok, ExternalOpNum} ->
-					    %% Would need to uncomment this is local ops are sent to this function
-					    %% case IsLocal of
-					    %% 	true -> inter_dc_log_sender_vnode:send(Partition, Operation);
-					    %% 	false -> ok
-					    %% end,
-					    {AccErr, AccSucc ++ [NewOpId], ordsets:add_element(Log,UpdatedLogs)};
-					{error, Reason} ->
-					    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
-				    end;
-				{error, Reason} ->
-				    {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
-			    end
-		    end, {[],[], ordsets:new()}, LogRecordList),
+        lists:foldl(fun(LogRecordOrg, {AccErr, AccSucc, UpdatedLogs}) ->
+                        LogRecord = log_utilities:check_log_record_version(LogRecordOrg),
+                        case get_log_from_map(Map, Partition, LogId) of
+                            {ok, Log} ->
+                                %% Generate the new operation ID
+                                %% This is only stored in memory to count the total number
+                                %% of operations, since the input operations should
+                                %% have already been assigned an op id number since
+                                %% they are coming from an external DC
+                                OpId = get_op_id(OpIdTable, {LogId, MyDCID}),
+                                #op_number{local = _Local, global = Global} = OpId,
+                                NewOpId = OpId#op_number{global = Global + 1},
+                                %% Should assign the opid as follows if this function starts being
+                                %% used for operations generated locally
+                                %% NewOpId =
+                                %%     case IsLocal of
+                                %%         true ->
+                                %%         OpId#op_number{local =  Local + 1, global = Global + 1};
+                                %%         false ->
+                                %%         OpId#op_number{global = Global + 1}
+                                %%     end,
+                                true = update_ets_op_id({LogId, MyDCID}, NewOpId, OpIdTable),
+                                LogOperation = LogRecord#log_record.log_operation,
+                                case LogOperation#log_operation.op_type of
+                                    update ->
+                                        Bucket = (LogOperation#log_operation.log_payload)#update_log_payload.bucket,
+                                        BOpId = get_op_id(OpIdTable, {LogId, Bucket, MyDCID}),
+                                        #op_number{local = _BLocal, global = BGlobal} = BOpId,
+                                        NewBOpId = BOpId#op_number{global = BGlobal + 1},
+                                        true = update_ets_op_id({LogId, Bucket, MyDCID}, NewBOpId, OpIdTable);
+                                    _ ->
+                                        true
+                                end,
+                                ExternalOpNum = LogRecord#log_record.op_number,
+                                case insert_log_record(Log, LogId, LogRecord, EnableLog) of
+                                    {ok, ExternalOpNum} ->
+                                        %% Would need to uncomment this is local ops are sent to this function
+                                        %% case IsLocal of
+                                        %%     true -> inter_dc_log_sender_vnode:send(Partition, Operation);
+                                        %%     false -> ok
+                                        %% end,
+                                        {AccErr, AccSucc ++ [NewOpId], ordsets:add_element(Log, UpdatedLogs)};
+                                    {error, Reason} ->
+                                        {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
+                                end;
+                            {error, Reason} ->
+                                {AccErr ++ [{reply, {error, Reason}, State}], AccSucc, UpdatedLogs}
+                        end
+                end, {[], [], ordsets:new()}, LogRecordList),
     %% Sync the updated logs if necessary
     case Sync of
-	true ->
-	    ordsets:fold(fun(Log,_Acc) ->
-				 ok = disk_log:sync(Log)
-			 end, ok, UpdatedLogs);
-	false ->
-	    ok
+        true ->
+            ordsets:fold(fun(Log, _Acc) ->
+                             ok = disk_log:sync(Log)
+                         end, ok, UpdatedLogs);
+        false ->
+            ok
     end,
     case ErrorList of
-	[] ->
-	    [SuccId|_T] = SuccList,
-	    {reply, {ok, SuccId}, State};
-	[Error|_T] ->
-	    %%Error
-	    {reply, Error, State}
+        [] ->
+            [SuccId|_T] = SuccList,
+            {reply, {ok, SuccId}, State};
+        [Error|_T] ->
+            %%Error
+            {reply, Error, State}
     end;
 
 handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
@@ -492,17 +492,17 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 {eof, CommittedOpsForKeyDict} ->
-		    CommittedOpsForKey =
-			case dict:find(Key, CommittedOpsForKeyDict) of
-			    {ok, Val} ->
-				Val;
-			    error ->
-				[]
-			end,
-		    {reply, #snapshot_get_response{number_of_ops = length(CommittedOpsForKey), ops_list = CommittedOpsForKey,
-						   materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
-						   snapshot_time = vectorclock:new(), is_newest_snapshot = false},
-		     State}
+                    CommittedOpsForKey =
+                        case dict:find(Key, CommittedOpsForKeyDict) of
+                            {ok, Val} ->
+                            Val;
+                            error ->
+                            []
+                        end,
+                    {reply, #snapshot_get_response{number_of_ops = length(CommittedOpsForKey), ops_list = CommittedOpsForKey,
+                                                   materialized_snapshot = #materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)},
+                                                   snapshot_time = vectorclock:new(), is_newest_snapshot = false},
+                     State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -513,17 +513,17 @@ handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
 %% The resut is a dict, with a list of ops per key
 %% The following spec is only for reference
 %% -spec handle_command({get_all, log_id(), disk_log:continuation() | start, dict:dict()}, term(), #state{}) ->
-%% 			   {reply, {error, reason()} | dict:dict(), #state{}}.
+%%                {reply, {error, reason()} | dict:dict(), #state{}}.
 handle_command({get_all, LogId, Continuation, Ops}, _Sender,
-	       #state{logs_map = Map, partition = Partition} = State) ->
+           #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
-	    case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
+            case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommittedOpsForKeyDict ->
-		    {reply, CommittedOpsForKeyDict, State}
+                    {reply, CommittedOpsForKeyDict, State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
@@ -532,27 +532,27 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
 handle_command(_Message, _Sender, State) ->
     {noreply, State}.
 
--spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(),clocksi_payload()}]) ->
-			   {error | eof, [{non_neg_integer(),clocksi_payload()}]}.
+-spec read_internal(log_id(), disk_log:continuation() | start | eof | error, [{non_neg_integer(), clocksi_payload()}]) ->
+               {error | eof, [{non_neg_integer(), clocksi_payload()}]}.
 read_internal(_Log, error, Ops) ->
     {error, Ops};
 read_internal(_Log, eof, Ops) ->
     {eof, Ops};
 read_internal(Log, Continuation, Ops) ->
-    {NewContinuation, NewOps} = 
-	case disk_log:chunk(Log, Continuation) of
-	    {C, O} -> {C,O};
-	    {C, O, _} -> {C,O};
-	    eof -> {eof, []}
-	end,
+    {NewContinuation, NewOps} =
+        case disk_log:chunk(Log, Continuation) of
+            {C, O} -> {C, O};
+            {C, O, _} -> {C, O};
+            eof -> {eof, []}
+        end,
     read_internal(Log, NewContinuation, Ops ++ NewOps).
 
--spec reverse_and_add_op_id([clocksi_payload()],non_neg_integer(),[{non_neg_integer(),clocksi_payload()}]) ->
-				   [{non_neg_integer(),clocksi_payload()}].
-reverse_and_add_op_id([],_Id,Acc) ->
+-spec reverse_and_add_op_id([clocksi_payload()], non_neg_integer(), [{non_neg_integer(), clocksi_payload()}]) ->
+                   [{non_neg_integer(), clocksi_payload()}].
+reverse_and_add_op_id([], _Id, Acc) ->
     Acc;
-reverse_and_add_op_id([Next|Rest],Id,Acc) ->
-    reverse_and_add_op_id(Rest,Id+1,[{Id,Next}|Acc]).
+reverse_and_add_op_id([Next|Rest], Id, Acc) ->
+    reverse_and_add_op_id(Rest, Id+1, [{Id, Next}|Acc]).
 
 %% Gets the id of the last operation that was put in the log
 %% and the maximum vectorclock of the commited transactions stored in the log
@@ -560,127 +560,127 @@ reverse_and_add_op_id([Next|Rest],Id,Acc) ->
 get_last_op_from_log(Log, Continuation, ClockTable, PrevMaxVector) ->
     ok = disk_log:sync(Log),
     case disk_log:chunk(Log, Continuation) of
-	eof ->
-	    {eof, PrevMaxVector};
-	{error, Reason} ->
-	    {error, Reason};
-	{NewContinuation, NewTerms} ->
-	    NewMaxVector = get_max_op_numbers(NewTerms,ClockTable,PrevMaxVector),
-	    get_last_op_from_log(Log, NewContinuation,ClockTable,NewMaxVector);
-	{NewContinuation, NewTerms, BadBytes} ->
+        eof ->
+            {eof, PrevMaxVector};
+        {error, Reason} ->
+            {error, Reason};
+        {NewContinuation, NewTerms} ->
+            NewMaxVector = get_max_op_numbers(NewTerms, ClockTable, PrevMaxVector),
+            get_last_op_from_log(Log, NewContinuation, ClockTable, NewMaxVector);
+        {NewContinuation, NewTerms, BadBytes} ->
             case BadBytes > 0 of
                 true -> {error, bad_bytes};
                 false ->
-		    NewMaxVector = get_max_op_numbers(NewTerms,ClockTable,PrevMaxVector),
-		    get_last_op_from_log(Log,NewContinuation,ClockTable,NewMaxVector)
-	    end
+                NewMaxVector = get_max_op_numbers(NewTerms, ClockTable, PrevMaxVector),
+                get_last_op_from_log(Log, NewContinuation, ClockTable, NewMaxVector)
+            end
     end.
 
 %% This is called when the vnode starts and loads into the cache
 %% the id of the last operation appened to the log, so that new ops will
 %% be assigned corret ids (after crash and restart)
--spec get_max_op_numbers([{log_id(),#log_record{}}],cache_id(),vectorclock()) -> vectorclock().
-get_max_op_numbers([],_ClockTable,MaxVector) ->
+-spec get_max_op_numbers([{log_id(), #log_record{}}], cache_id(), vectorclock()) -> vectorclock().
+get_max_op_numbers([], _ClockTable, MaxVector) ->
     MaxVector;
-get_max_op_numbers([{LogId, LogRecord}|Rest],ClockTable,PrevMaxVector) ->
+get_max_op_numbers([{LogId, LogRecord}|Rest], ClockTable, PrevMaxVector) ->
     #log_record{op_number = NewOp, bucket_op_number = NewBucketOp, log_operation = LogOperation}
-	= log_utilities:check_log_record_version(LogRecord),
+        = log_utilities:check_log_record_version(LogRecord),
     #log_operation{op_type = OpType,
-		log_payload = LogPayload
-	       } = LogOperation,
-    #op_number{node = {_,DCID}} = NewBucketOp,
+                   log_payload = LogPayload
+           } = LogOperation,
+    #op_number{node = {_, DCID}} = NewBucketOp,
     NewMaxVector =
-	case OpType of
-	    commit ->
-		#commit_log_payload{commit_time = {DCID, TxCommitTime}} = LogPayload,
-		vectorclock:set_clock_of_dc(DCID, TxCommitTime, PrevMaxVector);
-	    update ->
-		%% Update the per bucket opid count
-		Bucket = LogPayload#update_log_payload.bucket,
-		true = update_ets_op_id({LogId,Bucket,DCID},NewBucketOp,ClockTable),
-		PrevMaxVector;
-	    _ ->
-		PrevMaxVector
-	end,
+        case OpType of
+            commit ->
+                #commit_log_payload{commit_time = {DCID, TxCommitTime}} = LogPayload,
+                vectorclock:set_clock_of_dc(DCID, TxCommitTime, PrevMaxVector);
+            update ->
+                %% Update the per bucket opid count
+                Bucket = LogPayload#update_log_payload.bucket,
+                true = update_ets_op_id({LogId, Bucket, DCID}, NewBucketOp, ClockTable),
+                PrevMaxVector;
+            _ ->
+                PrevMaxVector
+        end,
     %% Update the total opid count
-    true = update_ets_op_id({LogId,DCID},NewOp,ClockTable),
-    get_max_op_numbers(Rest,ClockTable,NewMaxVector).
+    true = update_ets_op_id({LogId, DCID}, NewOp, ClockTable),
+    get_max_op_numbers(Rest, ClockTable, NewMaxVector).
 
 %% After appeded an operation to the log, increment the op id
--spec update_ets_op_id({log_id(),dcid()} | {log_id(),bucket(),dcid()}, #op_number{}, cache_id()) -> true.
-update_ets_op_id(Key,NewOp,ClockTable) ->
+-spec update_ets_op_id({log_id(), dcid()} | {log_id(), bucket(), dcid()}, #op_number{}, cache_id()) -> true.
+update_ets_op_id(Key, NewOp, ClockTable) ->
     #op_number{local = Num, global = GlobalNum} = NewOp,
-    case ets:lookup(ClockTable,Key) of
-	[] ->
-	    ets:insert(ClockTable,{Key,NewOp});
-	[{Key,#op_number{local = OldNum, global = OldGlobal}}] ->
-	    case ((Num > OldNum) or (GlobalNum > OldGlobal)) of
-		true ->
-		    ets:insert(ClockTable,{Key,NewOp});
-		false ->
-		    true
-	    end
+    case ets:lookup(ClockTable, Key) of
+        [] ->
+            ets:insert(ClockTable, {Key, NewOp});
+        [{Key, #op_number{local = OldNum, global = OldGlobal}}] ->
+            case ((Num > OldNum) or (GlobalNum > OldGlobal)) of
+                true ->
+                    ets:insert(ClockTable, {Key, NewOp});
+                false ->
+                    true
+            end
     end.
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
 %% TODO: upgrade to newer erlang version so can use dict type spec
 %% -spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(),
-%% 		       dict:dict(txid(),[any_log_payload()]), dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}]), load_all | load_per_chunk) ->
-%%  			      {disk_log:continuation(), dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}
-%%  				  | {error, reason()} | {eof, dict:dict(key(),[{non_neg_integer(),#clocksi_payload()}])}.
+%%                dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), #clocksi_payload()}]), load_all | load_per_chunk) ->
+%%                    {disk_log:continuation(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), #clocksi_payload()}])}
+%%                    | {error, reason()} | {eof, dict:dict(key(), [{non_neg_integer(), #clocksi_payload()}])}.
 -spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(), dict:dict(), dict:dict(), load_all | load_per_chunk) ->
-			      {disk_log:continuation(), dict:dict(), dict:dict()}
-				  | {error, reason()} | {eof, dict:dict()}.
+                  {disk_log:continuation(), dict:dict(), dict:dict()}
+                  | {error, reason()} | {eof, dict:dict()}.
 get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
-	    {eof, finish_op_load(CommittedOpsDict)};
+            {eof, finish_op_load(CommittedOpsDict)};
         {error, Reason} ->
             {error, Reason};
         {NewContinuation, NewTerms} ->
             {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
-	    case LoadAll of
-		load_all ->
-		    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
-		load_per_chunk ->
-		    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
-	    end;
+            case LoadAll of
+                load_all ->
+                    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+                load_per_chunk ->
+                    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
+            end;
         {NewContinuation, NewTerms, BadBytes} ->
             case BadBytes > 0 of
                 true -> {error, bad_bytes};
                 false ->
-		    {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
-		    case LoadAll of
-			load_all ->
-			    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
-			load_per_chunk ->
-			    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
-		    end
+                    {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
+                    case LoadAll of
+                        load_all ->
+                            get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+                        load_per_chunk ->
+                            {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
+                    end
             end
     end.
 
 %% TODO: upgrade to newer erlang version so can use dict type spec
-%%-spec finish_op_load(dict:dict(key(),clocksi_payload())) -> dict:dict(key(),[{non_neg_integer(),clocksi_payload()}]).
+%%-spec finish_op_load(dict:dict(key(), clocksi_payload())) -> dict:dict(key(), [{non_neg_integer(), clocksi_payload()}]).
 -spec finish_op_load(dict:dict()) -> dict:dict().
 finish_op_load(CommittedOpsDict) ->
     dict:fold(fun(Key1, CommittedOps, Acc) ->
-		      dict:store(Key1, reverse_and_add_op_id(CommittedOps,0,[]), Acc)
-	      end, dict:new(), CommittedOpsDict).
+                  dict:store(Key1, reverse_and_add_op_id(CommittedOps, 0, []), Acc)
+              end, dict:new(), CommittedOpsDict).
 
 %% @doc Given a list of log_records, this method filters the ones corresponding to Key.
 %% If key is undefined then is returns all records for all keys
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
 %% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
-%% 			   dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])) ->
-%% 				  {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload()])}.
--spec filter_terms_for_key([{non_neg_integer(),#log_record{}}],key(),snapshot_time(),
-			   dict:dict(),dict:dict()) -> {dict:dict(),dict:dict()}.
+%% -spec filter_terms_for_key([{non_neg_integer(), #log_record{}}], key(), snapshot_time(),
+%%                dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload()])) ->
+%%                   {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload()])}.
+-spec filter_terms_for_key([{non_neg_integer(), #log_record{}}], key(), snapshot_time(),
+               dict:dict(), dict:dict()) -> {dict:dict(), dict:dict()}.
 filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
-filter_terms_for_key([{_,LogRecord}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+filter_terms_for_key([{_, LogRecord}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
     #log_record{log_operation = LogOperation} = log_utilities:check_log_record_version(LogRecord),
     #log_operation{tx_id = TxId, op_type = OpType, log_payload = OpPayload} = LogOperation,
     case OpType of
@@ -693,10 +693,10 @@ filter_terms_for_key([{_,LogRecord}|T], Key, MinSnapshotTime, Ops, CommittedOpsD
     end.
 
 %% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
-%% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
-%% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict:dict(),dict:dict()) -> {dict:dict(),dict:dict()}.
+%% -spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(), #operation{}}], key(), snapshot_time() | undefined,
+%%             dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
+%%                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+-spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined, dict:dict(), dict:dict()) -> {dict:dict(), dict:dict()}.
 handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
     case (Key == {key, Key1}) or (Key == undefined) of
@@ -708,36 +708,36 @@ handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) 
     end.
 
 %% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec handle_update(txid(), #commit_log_payload{}, [{non_neg_integer(),#operation{}}], key(), snapshot_time() | undefined,
-%% 		    dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])) ->
-%% 			   {dict:dict(txid(),[any_log_payload()]),dict:dict(key(),[#clocksi_payload{}])}.
--spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(),#log_record{}}], key(), snapshot_time() | undefined, dict:dict(),dict:dict()) -> {dict:dict(),dict:dict()}.
+%% -spec handle_update(txid(), #commit_log_payload{}, [{non_neg_integer(), #operation{}}], key(), snapshot_time() | undefined,
+%%             dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
+%%                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+-spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined, dict:dict(), dict:dict()) -> {dict:dict(), dict:dict()}.
 handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
-	    NewCommittedOpsDict = 
-		lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
-				    case ((MinSnapshotTime == undefined) orelse
-									   (not vectorclock:all_dots_greater(SnapshotTime, MinSnapshotTime))) of
-					true ->
-					    CommittedDownstreamOp =
-						#clocksi_payload{
-						   key = KeyInternal,
-						   type = Type,
-						   op_param = Op,
-						   snapshot_time = SnapshotTime,
-						   commit_time = {DcId, TxCommitTime},
-						   txid = TxId},
-					    dict:append(KeyInternal, CommittedDownstreamOp, Acc);
-					false ->
-					    Acc
-				    end
-			    end, CommittedOpsDict, OpsList),
-	    filter_terms_for_key(T, Key, MinSnapshotTime, dict:erase(TxId,Ops),
-				 NewCommittedOpsDict);
-	error ->
-	    filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+            NewCommittedOpsDict =
+                lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
+                                case ((MinSnapshotTime == undefined) orelse
+                                                   (not vectorclock:all_dots_greater(SnapshotTime, MinSnapshotTime))) of
+                                true ->
+                                    CommittedDownstreamOp =
+                                    #clocksi_payload{
+                                       key = KeyInternal,
+                                       type = Type,
+                                       op_param = Op,
+                                       snapshot_time = SnapshotTime,
+                                       commit_time = {DcId, TxCommitTime},
+                                       txid = TxId},
+                                    dict:append(KeyInternal, CommittedDownstreamOp, Acc);
+                                false ->
+                                    Acc
+                                end
+                            end, CommittedOpsDict, OpsList),
+            filter_terms_for_key(T, Key, MinSnapshotTime, dict:erase(TxId, Ops),
+                     NewCommittedOpsDict);
+        error ->
+            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
     end.
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
@@ -827,7 +827,7 @@ no_elements([], _Map) ->
     true;
 no_elements([LogId|Rest], Map) ->
     case dict:find(LogId, Map) of
-        {ok, Log} -> 
+        {ok, Log} ->
             case disk_log:chunk(Log, start) of
                 eof ->
                     no_elements(Rest, Map);
@@ -850,9 +850,9 @@ no_elements([LogId|Rest], Map) ->
 %%                               the log in the system. dict:dict() type.
 %%                      MaxVector: The version vector time of the last
 %%                               operation appended to the logs
--spec open_logs(string(), [preflist()], dict:dict(), cache_id(), vectorclock()) -> {dict:dict(),vectorclock()} | {error, reason()}.
+-spec open_logs(string(), [preflist()], dict:dict(), cache_id(), vectorclock()) -> {dict:dict(), vectorclock()} | {error, reason()}.
 open_logs(_LogFile, [], Map, _ClockTable, MaxVector) ->
-    {Map,MaxVector};
+    {Map, MaxVector};
 open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
     PartitionList = log_utilities:remove_node_from_preflist(Next),
     PreflistString = string:join(
@@ -862,12 +862,12 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
                 app_helper:get_env(riak_core, platform_data_dir), LogId),
     case disk_log:open([{name, LogPath}]) of
         {ok, Log} ->
-	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
+            {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
             lager:debug("Opened log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, MaxVector);
         {repaired, Log, _, _} ->
-	    {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
+            {eof, NewMaxVector} = get_last_op_from_log(Log, start, ClockTable, MaxVector),
             lager:debug("Repaired log ~p, last op ids are ~p, max vector is ~p", [Log, ets:tab2list(ClockTable), dict:to_list(NewMaxVector)]),
             Map2 = dict:store(PartitionList, Log, Map),
             open_logs(LogFile, Rest, Map2, ClockTable, NewMaxVector);
@@ -905,10 +905,10 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
     join_logs(T, F, JointAcc).
 
 fold_log(Log, Continuation, F, Acc) ->
-    case  disk_log:chunk(Log,Continuation) of 
+    case  disk_log:chunk(Log, Continuation) of
         eof ->
             Acc;
-        {Next,Ops} ->
+        {Next, Ops} ->
             NewAcc = lists:foldl(F, Acc, Ops),
             fold_log(Log, Next, F, NewAcc)
     end.
@@ -927,11 +927,11 @@ fold_log(Log, Continuation, F, Acc) ->
 -spec insert_log_record(log(), log_id(), #log_record{}, boolean()) -> {ok, #op_number{}} | {error, reason()}.
 insert_log_record(Log, LogId, LogRecord, EnableLogging) ->
     Result = case EnableLogging of
-		 true ->
-		     disk_log:log(Log, {LogId, LogRecord});
-		 false ->
-		     ok
-	     end,
+                 true ->
+                     disk_log:log(Log, {LogId, LogRecord});
+                 false ->
+                     ok
+             end,
     case Result of
         ok ->
             {ok, LogRecord#log_record.op_number};
@@ -946,23 +946,23 @@ insert_log_record(Log, LogId, LogRecord, EnableLogging) ->
 %%      Return: true | false
 %%
 -spec preflist_member(partition(), preflist()) -> boolean().
-preflist_member(Partition,Preflist) ->
+preflist_member(Partition, Preflist) ->
     lists:any(fun({P, _}) -> P =:= Partition end, Preflist).
 
--spec get_op_id(cache_id(), {log_id(),dcid()} | {log_id(),bucket(),dcid()}) -> #op_number{}.
-get_op_id(ClockTable,{LogId,DCID}) ->
-    case ets:lookup(ClockTable,{LogId,DCID}) of
-	[] ->
-	    #op_number{node = {node(), DCID}, global = 0, local = 0};
-	[{{LogId,DCID}, Val2}] ->
-	    Val2
+-spec get_op_id(cache_id(), {log_id(), dcid()} | {log_id(), bucket(), dcid()}) -> #op_number{}.
+get_op_id(ClockTable, {LogId, DCID}) ->
+    case ets:lookup(ClockTable, {LogId, DCID}) of
+        [] ->
+            #op_number{node = {node(), DCID}, global = 0, local = 0};
+        [{{LogId, DCID}, Val2}] ->
+            Val2
     end;
-get_op_id(ClockTable,{LogId,Bucket,DCID}) ->
-    case ets:lookup(ClockTable,{LogId,Bucket,DCID}) of
-	[] ->
-	    #op_number{node = {node(), DCID}, global = 0, local = 0};
-	[{{LogId,Bucket,DCID}, Val2}] ->
-	    Val2
+get_op_id(ClockTable, {LogId, Bucket, DCID}) ->
+    case ets:lookup(ClockTable, {LogId, Bucket, DCID}) of
+        [] ->
+            #op_number{node = {node(), DCID}, global = 0, local = 0};
+        [{{LogId, Bucket, DCID}, Val2}] ->
+            Val2
     end.
 
 -ifdef(TEST).
@@ -976,20 +976,20 @@ get_log_from_map_test() ->
     Dict4 = dict:store([antidote3, c], value3, Dict3),
     Dict5 = dict:store([antidote4, c], value4, Dict4),
     ?assertEqual({ok, value3}, get_log_from_map(Dict5, undefined,
-            [antidote3,c])),
+            [antidote3, c])),
     ?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5,
             undefined, [antidote5, c])).
 
 %% @doc Testing that preflist_member returns true when there is a
 %%      match.
 preflist_member_true_test() ->
-    Preflist = [{partition1, node},{partition2, node},{partition3, node}],
+    Preflist = [{partition1, node}, {partition2, node}, {partition3, node}],
     ?assertEqual(true, preflist_member(partition1, Preflist)).
 
 %% @doc Testing that preflist_member returns false when there is no
 %%      match.
 preflist_member_false_test() ->
-    Preflist = [{partition1, node},{partition2, node},{partition3, node}],
+    Preflist = [{partition1, node}, {partition2, node}, {partition3, node}],
     ?assertEqual(false, preflist_member(partition5, Preflist)).
 
 -endif.

@@ -31,10 +31,10 @@
 
 %% API
 -export([
-	 send/2,
-	 update_last_log_id/2,
-	 start_timer/1,
-	 send_stable_time/2]).
+     send/2,
+     update_last_log_id/2,
+     start_timer/1,
+     send_stable_time/2]).
 
 %% VNode methods
 -export([
@@ -132,25 +132,25 @@ handle_command(ping, _Sender, State) ->
     get_stable_time(State#state.partition),
     {noreply, State}.
 
-handle_coverage(_Req, _KeySpaces, _Sender, State) -> 
+handle_coverage(_Req, _KeySpaces, _Sender, State) ->
     {stop, not_implemented, State}.
-handle_exit(_Pid, _Reason, State) -> 
+handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
-handoff_starting(_TargetNode, State) -> 
+handoff_starting(_TargetNode, State) ->
     {true, State}.
 handoff_cancelled(State) ->
     {ok, set_timer(State)}.
-handoff_finished(_TargetNode, State) -> 
+handoff_finished(_TargetNode, State) ->
     {ok, State}.
-handle_handoff_command( _Message , _Sender, State) -> 
+handle_handoff_command( _Message , _Sender, State) ->
     {noreply, State}.
-handle_handoff_data(_Data, State) -> 
+handle_handoff_data(_Data, State) ->
     {reply, ok, State}.
-encode_handoff_item(Key, Operation) -> 
+encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
-is_empty(State) -> 
+is_empty(State) ->
     {true, State}.
-delete(State) -> 
+delete(State) ->
     {ok, State}.
 terminate(_Reason, State) ->
     _ = del_timer(State),
@@ -168,27 +168,27 @@ del_timer(State = #state{timer = Timer}) ->
 %% Cancels the previous ping timer and sets a new one.
 -spec set_timer(#state{}) -> #state{}.
 set_timer(State) ->
-    set_timer(false,State).
+    set_timer(false, State).
 
 -spec set_timer(boolean(), #state{}) -> #state{}.
 set_timer(First, State = #state{partition = Partition}) ->
     case First of
-	true ->
-	    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-	    Node = riak_core_ring:index_owner(Ring, Partition),
-	    MyNode = node(),
-	    case Node of
-		MyNode ->
-		    State1 = del_timer(State),
-		    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)};
-		_Other ->
-		    State
-	    end;
-	false ->
-	    State1 = del_timer(State),
-	    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)}
+        true ->
+            {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+            Node = riak_core_ring:index_owner(Ring, Partition),
+            MyNode = node(),
+            case Node of
+                MyNode ->
+                    State1 = del_timer(State),
+                    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)};
+                _Other ->
+                    State
+            end;
+        false ->
+            State1 = del_timer(State),
+            State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)}
     end.
-		
+
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.

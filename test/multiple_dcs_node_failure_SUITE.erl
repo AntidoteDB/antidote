@@ -96,7 +96,7 @@ cluster_failure_test(Config) ->
 
             %% Kill and restart a node an be sure everyhing works
             ct:print("Killing and restarting node ~w", [Node1]),
-            [Node1] = test_utils:kill_and_restart_nodes([Node1],Config),
+            [Node1] = test_utils:kill_and_restart_nodes([Node1], Config),
 
             ct:print("Done append in Node1"),
             check_read_key(Node3, Key, Type, 3, CommitTime, static),
@@ -127,7 +127,7 @@ cluster_failure_test(Config) ->
 %% and propagated to other DCs
 multiple_cluster_failure_test(Config) ->
     [Cluster1, Cluster2 | _Rest] = proplists:get_value(clusters, Config),
-    [Node1,Node3|_] = Cluster1,
+    [Node1, Node3|_] = Cluster1,
     case rpc:call(Node1, application, get_env, [antidote, enable_logging]) of
         {ok, false} ->
             pass;
@@ -144,7 +144,7 @@ multiple_cluster_failure_test(Config) ->
 
             %% Kill and restart a node an be sure everyhing works
             ct:print("Killing and restarting node ~w", [Node1]),
-            [Node1] = test_utils:kill_and_restart_nodes([Node1],Config),
+            [Node1] = test_utils:kill_and_restart_nodes([Node1], Config),
 
             ct:print("Done append in Node1"),
             check_read_key(Node2, Key, Type, 3, CommitTime, static),
@@ -195,12 +195,12 @@ update_during_cluster_failure_test(Config) ->
 
             %% Start the node back up and be sure everything works
             ct:print("Restarting node ~w", [Node1]),
-            [Node1] = test_utils:restart_nodes([Node1],Config),
+            [Node1] = test_utils:restart_nodes([Node1], Config),
 
             %% Take the max of the commit times to be sure
             %% to read all updateds
-            Time = dict:merge(fun(_K, T1,T2) ->
-                max(T1,T2)
+            Time = dict:merge(fun(_K, T1, T2) ->
+                max(T1, T2)
             end, CommitTime, CommitTime3a),
 
             check_read_key(Node1, Key, Type, 4, Time, static),

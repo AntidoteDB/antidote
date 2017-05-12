@@ -81,28 +81,28 @@ partition_to_indexnode(Partition) ->
 -spec get_all_partitions() -> [partition_id()].
 get_all_partitions() ->
     try
-	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
-	CHash = riak_core_ring:chash(Ring),
-	Nodes = chash:nodes(CHash),
-	[I || {I, _} <- Nodes]
+        {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+        CHash = riak_core_ring:chash(Ring),
+        Nodes = chash:nodes(CHash),
+        [I || {I, _} <- Nodes]
     catch
-	_Ex:Res ->
-	    lager:debug("Error loading partition names: ~p, will retry", [Res]),
-	    get_all_partitions()
+        _Ex:Res ->
+            lager:debug("Error loading partition names: ~p, will retry", [Res]),
+            get_all_partitions()
     end.
 
 %% Returns a list of all partition indcies plus the node each
 %% belongs to
--spec get_all_partitions_nodes() -> [{partition_id(),node()}].
+-spec get_all_partitions_nodes() -> [{partition_id(), node()}].
 get_all_partitions_nodes() ->
     try
-	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
-	CHash = riak_core_ring:chash(Ring),
-	chash:nodes(CHash)
+        {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+        CHash = riak_core_ring:chash(Ring),
+        chash:nodes(CHash)
     catch
-	_Ex:Res ->
-	    lager:debug("Error loading partition-node names ~p, will retry", [Res]),
-	    get_all_partitions_nodes()
+        _Ex:Res ->
+            lager:debug("Error loading partition-node names ~p, will retry", [Res]),
+            get_all_partitions_nodes()
     end.
 
 %% Returns the partition indices hosted by the local (caller) node.
@@ -170,28 +170,28 @@ ensure_all_vnodes_running(VnodeType) ->
     end.
 
 %% Internal function that loops until a given vnode type is running
--spec bcast_vnode_check_up(atom(),{hello},[partition_id()]) -> ok.
-bcast_vnode_check_up(_VMaster,_Request,[]) ->
+-spec bcast_vnode_check_up(atom(), {hello}, [partition_id()]) -> ok.
+bcast_vnode_check_up(_VMaster, _Request, []) ->
     ok;
-bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
+bcast_vnode_check_up(VMaster, Request, [P|Rest]) ->
     Err = try
-	      case call_vnode_sync(P,VMaster,Request) of
-		  ok ->
-		      false;
-		  _Msg ->
-		      true
-	      end
-	  catch
-	      _Ex:_Res ->
-		  true
-	  end,
+              case call_vnode_sync(P, VMaster, Request) of
+                  ok ->
+                      false;
+                  _Msg ->
+                      true
+              end
+          catch
+              _Ex:_Res ->
+                  true
+          end,
     case Err of
-	true ->
-	    lager:debug("Vnode not up retrying, ~p, ~p", [VMaster,P]),
-	    timer:sleep(1000),
-	    bcast_vnode_check_up(VMaster,Request,[P|Rest]);
-	false ->
-	    bcast_vnode_check_up(VMaster,Request,Rest)
+        true ->
+            lager:debug("Vnode not up retrying, ~p, ~p", [VMaster, P]),
+            timer:sleep(1000),
+            bcast_vnode_check_up(VMaster, Request, [P|Rest]);
+        false ->
+            bcast_vnode_check_up(VMaster, Request, Rest)
     end.
 
 %% Loops until all vnodes of a given type are running
@@ -199,14 +199,14 @@ bcast_vnode_check_up(VMaster,Request,[P|Rest]) ->
 -spec ensure_local_vnodes_running_master(atom()) -> ok.
 ensure_local_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
-    bcast_vnode_check_up(VnodeType,{hello},get_my_partitions()).
+    bcast_vnode_check_up(VnodeType, {hello}, get_my_partitions()).
 
 %% Loops until all vnodes of a given type are running on all
 %% nodes in the cluster
 -spec ensure_all_vnodes_running_master(atom()) -> ok.
 ensure_all_vnodes_running_master(VnodeType) ->
     check_registered(VnodeType),
-    bcast_vnode_check_up(VnodeType,{hello}, get_all_partitions()).
+    bcast_vnode_check_up(VnodeType, {hello}, get_all_partitions()).
 
 %% Prints to the console the staleness between this DC and all
 %% other DCs that it is connected to
@@ -214,21 +214,21 @@ ensure_all_vnodes_running_master(VnodeType) ->
 check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
-    dict:fold(fun(DcId,Time,_Acc) ->
-		      io:format("~w staleness: ~w ms ~n", [DcId,(Now-Time)/1000]),
-		      ok
-	      end, ok, SS).
+    dict:fold(fun(DcId, Time, _Acc) ->
+                  io:format("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]),
+                  ok
+              end, ok, SS).
 
 %% Loops until a process with the given name is registered locally
 -spec check_registered(atom()) -> ok.
 check_registered(Name) ->
     case whereis(Name) of
-	undefined ->
-      lager:debug("Wait for ~p to register", [Name]),
-	    timer:sleep(100),
-	    check_registered(Name);
-	_ ->
-	    ok
+        undefined ->
+            lager:debug("Wait for ~p to register", [Name]),
+            timer:sleep(100),
+            check_registered(Name);
+        _ ->
+            ok
     end.
 
 %% @doc get_stable_snapshot: Returns stable snapshot time
@@ -238,10 +238,10 @@ check_registered(Name) ->
 get_stable_snapshot() ->
     case meta_data_sender:get_merged_data(stable) of
         undefined ->
-	    %% The snapshot isn't realy yet, need to wait for startup
-	    timer:sleep(10),
-	    get_stable_snapshot();
-	SS ->
+            %% The snapshot isn't realy yet, need to wait for startup
+            timer:sleep(10),
+            get_stable_snapshot();
+        SS ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
@@ -271,13 +271,13 @@ get_stable_snapshot() ->
 
 -spec get_partition_snapshot(partition_id()) -> snapshot_time().
 get_partition_snapshot(Partition) ->
-  case meta_data_sender:get_meta_dict(stable,Partition) of
-	  undefined ->
-	    %% The partition isn't ready yet, wait for startup
-	    timer:sleep(10),
-	    get_partition_snapshot(Partition);
-	SS ->
-	    SS
+    case meta_data_sender:get_meta_dict(stable, Partition) of
+        undefined ->
+            %% The partition isn't ready yet, wait for startup
+            timer:sleep(10),
+            get_partition_snapshot(Partition);
+        SS ->
+            SS
     end.
 
 %% Returns the minimum value in the stable vector snapshot time
@@ -311,11 +311,11 @@ get_scalar_stable_time() ->
 -spec check_registered_global(atom()) -> ok.
 check_registered_global(Name) ->
     case global:whereis_name(Name) of
-	undefined ->
-	    timer:sleep(100),
-	    check_registered_global(Name);
-	_ ->
-	    ok
+        undefined ->
+            timer:sleep(100),
+            check_registered_global(Name);
+        _ ->
+            ok
     end.
 
 
