@@ -539,7 +539,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
             CommitTime = lists:foldl(fun({CT1, _ST}, Acc) ->
                                          vectorclock:min([CT1, Acc])
                                      end, CT, vector_orddict:to_list(PrunedSnapshots)),
-            {Key, Length, OpId, ListLen, OpsDict} = 
+            {Key, Length, OpId, ListLen, OpsDict} =
                 case ets:lookup(OpsCache, Key) of
                     [] ->
                         {Key, 0, 0, 0, {}};
