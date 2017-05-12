@@ -45,7 +45,7 @@
 -spec new() -> vectorclock().
 new() ->
     dict:new().
-          
+
 -spec get_clock_of_dc(any(), vectorclock()) -> non_neg_integer().
 get_clock_of_dc(Key, VectorClock) ->
   case dict:find(Key, VectorClock) of
@@ -64,12 +64,12 @@ from_list(List) ->
 -spec max([vectorclock()]) -> vectorclock().
 max([]) -> new();
 max([V]) -> V;
-max([V1,V2|T]) -> max([merge(fun erlang:max/2, V1, V2)|T]).
+max([V1, V2|T]) -> max([merge(fun erlang:max/2, V1, V2)|T]).
 
 -spec min([vectorclock()]) -> vectorclock().
 min([]) -> new();
 min([V]) -> V;
-min([V1,V2|T]) -> min([merge(fun erlang:min/2, V1, V2)|T]).
+min([V1, V2|T]) -> min([merge(fun erlang:min/2, V1, V2)|T]).
 
 -spec merge(fun((non_neg_integer(), non_neg_integer()) -> non_neg_integer()), vectorclock(), vectorclock()) -> vectorclock().
 merge(F, V1, V2) ->
@@ -108,28 +108,28 @@ all_dots_smaller(V1, V2) -> for_all_keys(fun(A, B) -> A < B end, V1, V2).
 all_dots_greater(V1, V2) -> for_all_keys(fun(A, B) -> A > B end, V1, V2).
 
 -spec gt(vectorclock(), vectorclock()) -> boolean().
-gt(V1,V2) -> ge(V1,V2) and (not eq(V1,V2)).
+gt(V1, V2) -> ge(V1, V2) and (not eq(V1, V2)).
 
 -spec lt(vectorclock(), vectorclock()) -> boolean().
-lt(V1,V2) -> le(V1,V2) and (not eq(V1,V2)).
+lt(V1, V2) -> le(V1, V2) and (not eq(V1, V2)).
 
 -ifdef(TEST).
 
 vectorclock_test() ->
-    V1 = vectorclock:from_list([{1,5},{2,4},{3,5},{4,6}]),
-    V2 = vectorclock:from_list([{1,4}, {2,3}, {3,4},{4,5}]),
-    V3 = vectorclock:from_list([{1,5}, {2,4}, {3,4},{4,5}]),
-    V4 = vectorclock:from_list([{1,6},{2,3},{3,1},{4,7}]),
-    V5 = vectorclock:from_list([{1,6},{2,7}]),
-    ?assertEqual(all_dots_greater(V1,V2), true),
-    ?assertEqual(all_dots_smaller(V2,V1), true),
-    ?assertEqual(all_dots_greater(V1,V3), false),
-    ?assertEqual(gt(V1,V3), true),
-    ?assertEqual(gt(V1,V1), false),
-    ?assertEqual(ge(V1,V4), false),
-    ?assertEqual(le(V1,V4), false),
-    ?assertEqual(eq(V1,V4), false),
-    ?assertEqual(ge(V1,V5), false).
+    V1 = vectorclock:from_list([{1, 5}, {2, 4}, {3, 5}, {4, 6}]),
+    V2 = vectorclock:from_list([{1, 4}, {2, 3}, {3, 4}, {4, 5}]),
+    V3 = vectorclock:from_list([{1, 5}, {2, 4}, {3, 4}, {4, 5}]),
+    V4 = vectorclock:from_list([{1, 6}, {2, 3}, {3, 1}, {4, 7}]),
+    V5 = vectorclock:from_list([{1, 6}, {2, 7}]),
+    ?assertEqual(all_dots_greater(V1, V2), true),
+    ?assertEqual(all_dots_smaller(V2, V1), true),
+    ?assertEqual(all_dots_greater(V1, V3), false),
+    ?assertEqual(gt(V1, V3), true),
+    ?assertEqual(gt(V1, V1), false),
+    ?assertEqual(ge(V1, V4), false),
+    ?assertEqual(le(V1, V4), false),
+    ?assertEqual(eq(V1, V4), false),
+    ?assertEqual(ge(V1, V5), false).
 
 vectorclock_max_test() ->
   V1 = vectorclock:from_list([{1, 5}, {2, 4}]),

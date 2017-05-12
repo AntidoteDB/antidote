@@ -81,7 +81,7 @@ get_my_node(Partition) ->
 %%
 -spec remove_node_from_preflist(preflist()) -> [partition_id()].
 remove_node_from_preflist(Preflist) ->
-    F = fun({P,_}) -> P end,
+    F = fun({P, _}) -> P end,
     lists:map(F, Preflist).
 
 %% @doc Convert key. If the key is integer(or integer in form of binary),
@@ -92,14 +92,14 @@ convert_key(Key) ->
     case is_binary(Key) of
         true ->
             KeyInt = (catch list_to_integer(binary_to_list(Key))),
-            case is_integer(KeyInt) of 
+            case is_integer(KeyInt) of
                 true -> abs(KeyInt);
                 false ->
                     HashedKey = riak_core_util:chash_key({?BUCKET, Key}),
                     abs(crypto:bytes_to_integer(HashedKey))
             end;
         false ->
-            case is_integer(Key) of 
+            case is_integer(Key) of
                 true ->
                     abs(Key);
                 false ->

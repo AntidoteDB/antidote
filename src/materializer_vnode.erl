@@ -45,13 +45,13 @@
 
 %% API
 -export([start_vnode/1,
-	 check_tables_ready/0,
+         check_tables_ready/0,
          read/5,
-	 get_cache_name/2,
-	 store_ss/3,
+         get_cache_name/2,
+         store_ss/3,
          update/2,
-	 tuple_to_key/2,
-	 belongs_to_snapshot_op/3]).
+         tuple_to_key/2,
+         belongs_to_snapshot_op/3]).
 
 %% Callbacks
 -export([init/1,
@@ -68,7 +68,7 @@
          handle_coverage/4,
          handle_exit/3]).
 
--type op_and_id() :: {non_neg_integer(),#clocksi_payload{}}.
+-type op_and_id() :: {non_neg_integer(), #clocksi_payload{}}.
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -81,8 +81,8 @@ read(Key, Type, SnapshotTime, TxId, MatState = #mat_state{ops_cache = OpsCache})
     case ets:info(OpsCache) of
         undefined ->
             riak_core_vnode_master:sync_command(
-                {MatState#mat_state.partition,node()},
-                {read,Key,Type,SnapshotTime,TxId},
+                {MatState#mat_state.partition, node()},
+                {read, Key, Type, SnapshotTime, TxId},
                 materializer_vnode_master,
                 infinity
             );
@@ -91,8 +91,8 @@ read(Key, Type, SnapshotTime, TxId, MatState = #mat_state{ops_cache = OpsCache})
             internal_read(Key, Type, SnapshotTime, TxId, MatState)
     end.
 
--spec get_cache_name(non_neg_integer(),atom()) -> atom().
-get_cache_name(Partition,Base) ->
+-spec get_cache_name(non_neg_integer(), atom()) -> atom().
+get_cache_name(Partition, Base) ->
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 %%@doc write operation to cache for future read, updates are stored
@@ -108,13 +108,13 @@ update(Key, DownstreamOp) ->
 -spec store_ss(key(), #materialized_snapshot{}, snapshot_time()) -> ok.
 store_ss(Key, Snapshot, CommitTime) ->
     IndexNode = log_utilities:get_key_partition(Key),
-    riak_core_vnode_master:command(IndexNode, {store_ss,Key, Snapshot, CommitTime},
+    riak_core_vnode_master:command(IndexNode, {store_ss, Key, Snapshot, CommitTime},
                                         materializer_vnode_master).
 
 init([Partition]) ->
     OpsCache = open_table(Partition, ops_cache),
     SnapshotCache = open_table(Partition, snapshot_cache),
-    IsReady = case application:get_env(antidote,recover_from_log) of
+    IsReady = case application:get_env(antidote, recover_from_log) of
                 {ok, true} ->
                     lager:debug("Checking for logs to init materializer ~p", [Partition]),
                     riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
@@ -133,42 +133,42 @@ load_from_log_to_tables(Partition, State) ->
 -spec loop_until_loaded({partition_id(), node()}, log_id(), start | disk_log:continuation(), dict:dict(), #mat_state{}) -> ok | {error, reason()}.
 loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
     case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
-	{error, Reason} ->
-	    {error, Reason};
-	{NewContinuation, NewOps, OpsDict} ->
-	    load_ops(OpsDict, State),
-	    loop_until_loaded(Node, LogId, NewContinuation, NewOps, State);
-	{eof, OpsDict} ->
-	    load_ops(OpsDict, State),
-	    ok
+        {error, Reason} ->
+            {error, Reason};
+        {NewContinuation, NewOps, OpsDict} ->
+            load_ops(OpsDict, State),
+            loop_until_loaded(Node, LogId, NewContinuation, NewOps, State);
+        {eof, OpsDict} ->
+            load_ops(OpsDict, State),
+            ok
     end.
 
 -spec load_ops(dict:dict(), #mat_state{}) -> true.
 load_ops(OpsDict, State) ->
     dict:fold(fun(Key, CommittedOps, _Acc) ->
-		      lists:foreach(fun({_OpId,Op}) ->
-					    #clocksi_payload{key = Key} = Op,
-					    op_insert_gc(Key, Op, State)
-				    end, CommittedOps)
-	      end, true, OpsDict).
+                  lists:foreach(fun({_OpId, Op}) ->
+                                    #clocksi_payload{key = Key} = Op,
+                                    op_insert_gc(Key, Op, State)
+                                end, CommittedOps)
+              end, true, OpsDict).
 
 -spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
 open_table(Partition, Name) ->
     case ets:info(get_cache_name(Partition, Name)) of
-	undefined ->
-	    ets:new(get_cache_name(Partition, Name),
-		    [set, protected, named_table, ?TABLE_CONCURRENCY]);
-	_ ->
-	    %% Other vnode hasn't finished closing tables
-	    lager:debug("Unable to open ets table in materializer vnode, retrying"),
-	    timer:sleep(100),
-	    try
-		ets:delete(get_cache_name(Partition, Name))
-	    catch
-		_:_Reason->
-		    ok
-	    end,
-	    open_table(Partition, Name)
+        undefined ->
+            ets:new(get_cache_name(Partition, Name),
+                [set, protected, named_table, ?TABLE_CONCURRENCY]);
+        _ ->
+            %% Other vnode hasn't finished closing tables
+            lager:debug("Unable to open ets table in materializer vnode, retrying"),
+            timer:sleep(100),
+            try
+                ets:delete(get_cache_name(Partition, Name))
+            catch
+                _:_Reason->
+                    ok
+            end,
+            open_table(Partition, Name)
     end.
 
 %% @doc The tables holding the updates and snapshots are shared with concurrent
@@ -180,42 +180,42 @@ check_tables_ready() ->
     PartitionList = dc_utilities:get_all_partitions_nodes(),
     check_table_ready(PartitionList).
 
--spec check_table_ready([{partition_id(),node()}]) -> boolean().
+-spec check_table_ready([{partition_id(), node()}]) -> boolean().
 check_table_ready([]) ->
     true;
-check_table_ready([{Partition,Node}|Rest]) ->
+check_table_ready([{Partition, Node}|Rest]) ->
     Result =
-	try
-	    riak_core_vnode_master:sync_command({Partition,Node},
-						{check_ready},
-						materializer_vnode_master,
-						infinity)
-	catch
-	    _:_Reason ->
-		false
-	end,
+        try
+            riak_core_vnode_master:sync_command({Partition, Node},
+                                                {check_ready},
+                                                materializer_vnode_master,
+                                                infinity)
+        catch
+            _:_Reason ->
+                false
+        end,
     case Result of
-	true ->
-	    check_table_ready(Rest);
-	false ->
-	    false
+        true ->
+            check_table_ready(Rest);
+        false ->
+            false
     end.
 
 handle_command({hello}, _Sender, State) ->
   {reply, ok, State};
 
-handle_command({check_ready},_Sender,State = #mat_state{partition=Partition, is_ready=IsReady}) ->
-    Result = case ets:info(get_cache_name(Partition,ops_cache)) of
-		 undefined ->
-		     false;
-		 _ ->
-		     case ets:info(get_cache_name(Partition,snapshot_cache)) of
-			 undefined ->
-			     false;
-			 _ ->
-			     true
-		     end
-	     end,
+handle_command({check_ready}, _Sender, State = #mat_state{partition=Partition, is_ready=IsReady}) ->
+    Result = case ets:info(get_cache_name(Partition, ops_cache)) of
+                 undefined ->
+                     false;
+                 _ ->
+                     case ets:info(get_cache_name(Partition, snapshot_cache)) of
+                         undefined ->
+                             false;
+                         _ ->
+                             true
+                     end
+             end,
     Result2 = Result and IsReady,
     {reply, Result2, State};
 
@@ -223,11 +223,11 @@ handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
     {reply, read(Key, Type, SnapshotTime, TxId, State), State};
 
 handle_command({update, Key, DownstreamOp}, _Sender, State) ->
-    true = op_insert_gc(Key, DownstreamOp,State),
+    true = op_insert_gc(Key, DownstreamOp, State),
     {reply, ok, State};
 
 handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender, State) ->
-    internal_store_ss(Key,Snapshot,CommitTime,false,State),
+    internal_store_ss(Key, Snapshot, CommitTime, false, State),
     {noreply, State};
 
 handle_command(load_from_log, _Sender, State=#mat_state{partition=Partition}) ->
@@ -263,8 +263,8 @@ handle_handoff_command(?FOLD_REQ{foldfun=Fun, acc0=Acc0},
                        _Sender,
                        State = #mat_state{ops_cache = OpsCache}) ->
     F = fun(Key, A) ->
-		[Key1|_] = tuple_to_list(Key),
-                Fun(Key1, Key, A)
+            [Key1|_] = tuple_to_list(Key),
+            Fun(Key1, Key, A)
         end,
     Acc = ets:foldl(F, Acc0, OpsCache),
     {reply, Acc, State}.
@@ -303,13 +303,13 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotCache}) ->
+terminate(_Reason, _State=#mat_state{ops_cache=OpsCache, snapshot_cache=SnapshotCache}) ->
     try
-	ets:delete(OpsCache),
-	ets:delete(SnapshotCache)
+        ets:delete(OpsCache),
+        ets:delete(SnapshotCache)
     catch
-	_:_Reason->
-	    ok
+        _:_Reason->
+            ok
     end,
     ok.
 
@@ -318,28 +318,28 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache,snapshot_cache=SnapshotC
 %%---------------- Internal Functions -------------------%%
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
-internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},CommitTime,ShouldGc,State = #mat_state{snapshot_cache=SnapshotCache}) ->
+internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, CommitTime, ShouldGc, State = #mat_state{snapshot_cache=SnapshotCache}) ->
     SnapshotDict = case ets:lookup(SnapshotCache, Key) of
-		       [] ->
-			   vector_orddict:new();
-		       [{_, SnapshotDictA}] ->
-			   SnapshotDictA
-		   end,
+                       [] ->
+                           vector_orddict:new();
+                       [{_, SnapshotDictA}] ->
+                           SnapshotDictA
+                   end,
     %% Check if this snapshot is newer than the ones already in the cache. Since reads are concurrent multiple
     %% insert requests for the same snapshot could have occured
     ShouldInsert =
-	case vector_orddict:size(SnapshotDict) > 0 of
-	    true ->
-		{_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
-		((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
-	    false -> true
-	end,
-    case (ShouldInsert or ShouldGc)of
-	true ->
-	    SnapshotDict1 = vector_orddict:insert_bigger(CommitTime,Snapshot,SnapshotDict),
-	    snapshot_insert_gc(Key,SnapshotDict1,ShouldGc,State);
-	false ->
-	    false
+        case vector_orddict:size(SnapshotDict) > 0 of
+            true ->
+                {_Vector, #materialized_snapshot{last_op_id = OldOpId}} = vector_orddict:first(SnapshotDict),
+                ((NewOpId - OldOpId) >= ?MIN_OP_STORE_SS);
+            false -> true
+        end,
+    case (ShouldInsert or ShouldGc) of
+        true ->
+            SnapshotDict1 = vector_orddict:insert_bigger(CommitTime, Snapshot, SnapshotDict),
+            snapshot_insert_gc(Key, SnapshotDict1, ShouldGc, State);
+        false ->
+            false
     end.
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
@@ -516,69 +516,70 @@ materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, MatState, Snapshot
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
 -spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
-belongs_to_snapshot_op(ignore, {_OpDc,_OpCommitTime}, _OpSs) ->
+belongs_to_snapshot_op(ignore, {_OpDc, _OpCommitTime}, _OpSs) ->
     true;
-belongs_to_snapshot_op(SSTime, {OpDc,OpCommitTime}, OpSs) ->
-    OpSs1 = dict:store(OpDc,OpCommitTime,OpSs),
-    not vectorclock:le(OpSs1,SSTime).
+belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
+    OpSs1 = dict:store(OpDc, OpCommitTime, OpSs),
+    not vectorclock:le(OpSs1, SSTime).
 
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
-                         boolean(),#mat_state{}) -> true.
+                         boolean(), #mat_state{}) -> true.
 snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache})->
     %% Perform the garbage collection when the size of the snapshot dict passed the threshold
     %% or when a GC is forced (a GC is forced after every ?OPS_THRESHOLD ops are inserted into the cache)
     %% Should check op size here also, when run from op gc
     case ((vector_orddict:size(SnapshotDict))>=?SNAPSHOT_THRESHOLD) orelse ShouldGc of
         true ->
-	    %% snapshots are no longer totally ordered
-	    PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
+            %% snapshots are no longer totally ordered
+            PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp=vector_orddict:last(PrunedSnapshots),
             {CT, _S} = FirstOp,
-	    CommitTime = lists:foldl(fun({CT1,_ST}, Acc) ->
-					     vectorclock:min([CT1, Acc])
-				     end, CT, vector_orddict:to_list(PrunedSnapshots)),
-	    {Key,Length,OpId,ListLen,OpsDict} = case ets:lookup(OpsCache, Key) of
-						    [] ->
-							{Key, 0, 0, 0, {}};
-						    [Tuple] ->
-							tuple_to_key(Tuple,false)
-						end,
-            {NewLength,PrunedOps}=prune_ops({Length,OpsDict}, CommitTime),
+            CommitTime = lists:foldl(fun({CT1, _ST}, Acc) ->
+                                         vectorclock:min([CT1, Acc])
+                                     end, CT, vector_orddict:to_list(PrunedSnapshots)),
+            {Key, Length, OpId, ListLen, OpsDict} =
+                case ets:lookup(OpsCache, Key) of
+                    [] ->
+                        {Key, 0, 0, 0, {}};
+                    [Tuple] ->
+                        tuple_to_key(Tuple, false)
+                end,
+            {NewLength, PrunedOps}=prune_ops({Length, OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-	    %% Check if the pruned ops are larger or smaller than the previous list size
-	    %% if so create a larger or smaller list (by dividing or multiplying by 2)
-	    %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
-	    NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
-			     true ->
-				 ListLen * 2;
-			     false ->
-				 HalfListLen = ListLen div 2,
-				 case HalfListLen =< ?OPS_THRESHOLD of
-				     true ->
-					 %% Don't shrink list, already minimun size
-					 ListLen;
-				     false ->
-					 %% Only shrink if shrinking would leave some space for new ops
-					 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
-					     true ->
-						 HalfListLen;
-					     false ->
-						 ListLen
-					 end
-				 end
-			 end,
-	    NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen,0,[{1,Key},{2,{NewLength,NewListLen}},{3,OpId}|PrunedOps]),
-	    true = ets:insert(OpsCache, NewTuple);
-	false ->
-            true = ets:insert(SnapshotCache, {Key, SnapshotDict})
+        %% Check if the pruned ops are larger or smaller than the previous list size
+        %% if so create a larger or smaller list (by dividing or multiplying by 2)
+        %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
+        NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
+                         true ->
+                             ListLen * 2;
+                         false ->
+                             HalfListLen = ListLen div 2,
+                         case HalfListLen =< ?OPS_THRESHOLD of
+                             true ->
+                                 %% Don't shrink list, already minimun size
+                                 ListLen;
+                             false ->
+                                 %% Only shrink if shrinking would leave some space for new ops
+                                 case HalfListLen - ?RESIZE_THRESHOLD > NewLength of
+                                     true ->
+                                         HalfListLen;
+                                     false ->
+                                         ListLen
+                                 end
+                         end
+                     end,
+        NewTuple = erlang:make_tuple(?FIRST_OP+NewListLen, 0, [{1, Key}, {2, {NewLength, NewListLen}}, {3, OpId}|PrunedOps]),
+        true = ets:insert(OpsCache, NewTuple);
+    false ->
+        true = ets:insert(SnapshotCache, {Key, SnapshotDict})
     end.
 
 %% @doc Remove from OpsDict all operations that have committed before Threshold.
--spec prune_ops({non_neg_integer(),tuple()}, snapshot_time())->
-		       {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
-prune_ops({Len,OpsTuple}, Threshold)->
+-spec prune_ops({non_neg_integer(), tuple()}, snapshot_time())->
+               {non_neg_integer(), [{non_neg_integer(), op_and_id()}]}.
+prune_ops({Len, OpsTuple}, Threshold)->
     %% should write custom function for this in the vector_orddict
     %% or have to just traverse the entire list?
     %% since the list is ordered, can just stop when all values of
@@ -586,15 +587,15 @@ prune_ops({Len,OpsTuple}, Threshold)->
     %% So can add a stop function to ordered_filter
     %% Or can have the filter function return a tuple, one vale for stopping
     %% one for including
-    {NewSize,NewOps} = check_filter(fun({_OpId,Op}) ->
-					    OpCommitTime=Op#clocksi_payload.commit_time,
-					    (belongs_to_snapshot_op(Threshold,OpCommitTime,Op#clocksi_payload.snapshot_time))
-				    end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
+    {NewSize, NewOps} = check_filter(fun({_OpId, Op}) ->
+                                         OpCommitTime=Op#clocksi_payload.commit_time,
+                                         (belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
+                                     end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
     case NewSize of
-	0 ->
-	    First = element(?FIRST_OP+Len,OpsTuple),
-	    {1,[{?FIRST_OP,First}]};
-	_ -> {NewSize,NewOps}
+        0 ->
+            First = element(?FIRST_OP+Len, OpsTuple),
+            {1, [{?FIRST_OP, First}]};
+        _ -> {NewSize, NewOps}
     end.
 
 %% This function will go through a tuple of operations, filtering out the operations
@@ -602,42 +603,42 @@ prune_ops({Len,OpsTuple}, Threshold)->
 %% of the remaining operations and the size of that list
 %% It is used during garbage collection to filter out operations that are older than any
 %% of the cached snapshots
--spec check_filter(fun(({non_neg_integer(),#clocksi_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
-		   non_neg_integer(),tuple(),non_neg_integer(),[{non_neg_integer(),op_and_id()}]) ->
-			  {non_neg_integer(),[{non_neg_integer(),op_and_id()}]}.
-check_filter(_Fun,Id,Last,_NewId,_Tuple,NewSize,NewOps) when (Id == Last) ->
-    {NewSize,NewOps};
-check_filter(Fun,Id,Last,NewId,Tuple,NewSize,NewOps) ->
+-spec check_filter(fun(({non_neg_integer(), #clocksi_payload{}}) -> boolean()), non_neg_integer(), non_neg_integer(),
+           non_neg_integer(), tuple(), non_neg_integer(), [{non_neg_integer(), op_and_id()}]) ->
+              {non_neg_integer(), [{non_neg_integer(), op_and_id()}]}.
+check_filter(_Fun, Id, Last, _NewId, _Tuple, NewSize, NewOps) when (Id == Last) ->
+    {NewSize, NewOps};
+check_filter(Fun, Id, Last, NewId, Tuple, NewSize, NewOps) ->
     Op = element(Id, Tuple),
     case Fun(Op) of
-	true ->
-	    check_filter(Fun,Id+1,Last,NewId+1,Tuple,NewSize+1,[{NewId,Op}|NewOps]);
-	false ->
-	    check_filter(Fun,Id+1,Last,NewId,Tuple,NewSize,NewOps)
+        true ->
+            check_filter(Fun, Id+1, Last, NewId+1, Tuple, NewSize+1, [{NewId, Op}|NewOps]);
+        false ->
+            check_filter(Fun, Id+1, Last, NewId, Tuple, NewSize, NewOps)
     end.
 
 %% This is an internal function used to convert the tuple stored in ets
 %% to a tuple and list usable by the materializer
 %% The second argument if true will convert the ops tuple to a list of ops
 %% Otherwise it will be kept as a tuple
--spec tuple_to_key(tuple(),boolean()) -> {any(),integer(),non_neg_integer(),non_neg_integer(),
-					  [op_and_id()]|tuple()}.
-tuple_to_key(Tuple,ToList) ->
+-spec tuple_to_key(tuple(), boolean()) -> {any(), integer(), non_neg_integer(), non_neg_integer(),
+                      [op_and_id()]|tuple()}.
+tuple_to_key(Tuple, ToList) ->
     Key = element(1, Tuple),
-    {Length,ListLen} = element(2, Tuple),
+    {Length, ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
     Ops =
-	case ToList of
-	    true ->
-		tuple_to_key_int(?FIRST_OP,Length+?FIRST_OP,Tuple,[]);
-	    false ->
-		Tuple
-	end,
-    {Key,Length,OpId,ListLen,Ops}.
-tuple_to_key_int(Next,Next,_Tuple,Acc) ->
+        case ToList of
+            true ->
+                tuple_to_key_int(?FIRST_OP, Length+?FIRST_OP, Tuple, []);
+            false ->
+                Tuple
+        end,
+    {Key, Length, OpId, ListLen, Ops}.
+tuple_to_key_int(Next, Next, _Tuple, Acc) ->
     Acc;
-tuple_to_key_int(Next,Last,Tuple,Acc) ->
-    tuple_to_key_int(Next+1,Last,Tuple,[element(Next,Tuple)|Acc]).
+tuple_to_key_int(Next, Last, Tuple, Acc) ->
+    tuple_to_key_int(Next+1, Last, Tuple, [element(Next, Tuple)|Acc]).
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
@@ -646,26 +647,26 @@ tuple_to_key_int(Next,Last,Tuple,Acc) ->
 -spec op_insert_gc(key(), clocksi_payload(), #mat_state{}) -> true.
 op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
     case ets:member(OpsCache, Key) of
-	false ->
-	    ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD,0,[{1,Key},{2,{0,?OPS_THRESHOLD}}]));
-	true ->
-	    ok
+        false ->
+            ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD, 0, [{1, Key}, {2, {0, ?OPS_THRESHOLD}}]));
+        true ->
+            ok
     end,
     NewId = ets:update_counter(OpsCache, Key,
-			       {3,1}),
-    {Length,ListLen} = ets:lookup_element(OpsCache, Key, 2),
+                               {3, 1}),
+    {Length, ListLen} = ets:lookup_element(OpsCache, Key, 2),
     %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
     case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
             Type=DownstreamOp#clocksi_payload.type,
             SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
-	    %% Here is where the GC is done (with the 5th argument being "true", GC is performed by the internal read
+            %% Here is where the GC is done (with the 5th argument being "true", GC is performed by the internal read
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, true, State),
-	    %% Have to get the new ops dict because the interal_read can change it
-	    {Length1,ListLen1} = ets:lookup_element(OpsCache, Key, 2),
-	    true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length1+1,ListLen1}}]);
+            %% Have to get the new ops dict because the interal_read can change it
+            {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
+            true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1+1, ListLen1}}]);
         false ->
-	    true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP,{NewId,DownstreamOp}}, {2,{Length+1,ListLen}}])
+            true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length+1, ListLen}}])
     end.
 
 -ifdef(TEST).
@@ -673,26 +674,26 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
 %% @doc Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time
 belongs_to_snapshot_test()->
-	CommitTime1a= 1,
-	CommitTime2a= 1,
-	CommitTime1b= 1,
-	CommitTime2b= 7,
-	SnapshotClockDC1 = 5,
-	SnapshotClockDC2 = 5,
-	CommitTime3a= 5,
-	CommitTime4a= 5,
-	CommitTime3b= 10,
-	CommitTime4b= 10,
+    CommitTime1a= 1,
+    CommitTime2a= 1,
+    CommitTime1b= 1,
+    CommitTime2b= 7,
+    SnapshotClockDC1 = 5,
+    SnapshotClockDC2 = 5,
+    CommitTime3a= 5,
+    CommitTime4a= 5,
+    CommitTime3b= 10,
+    CommitTime4b= 10,
 
-	SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-	?assertEqual(true, belongs_to_snapshot_op(
-			     vectorclock:from_list([{1, CommitTime1a},{2,CommitTime1b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-	?assertEqual(true, belongs_to_snapshot_op(
-			     vectorclock:from_list([{1, CommitTime2a},{2,CommitTime2b}]), {2, SnapshotClockDC2}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot_op(
-			      vectorclock:from_list([{1, CommitTime3a},{2,CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-	?assertEqual(false, belongs_to_snapshot_op(
-			      vectorclock:from_list([{1, CommitTime4a},{2,CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
+    SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
+    ?assertEqual(true, belongs_to_snapshot_op(
+                 vectorclock:from_list([{1, CommitTime1a}, {2, CommitTime1b}]), {1, SnapshotClockDC1}, SnapshotVC)),
+    ?assertEqual(true, belongs_to_snapshot_op(
+                 vectorclock:from_list([{1, CommitTime2a}, {2, CommitTime2b}]), {2, SnapshotClockDC2}, SnapshotVC)),
+    ?assertEqual(false, belongs_to_snapshot_op(
+                  vectorclock:from_list([{1, CommitTime3a}, {2, CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
+    ?assertEqual(false, belongs_to_snapshot_op(
+                  vectorclock:from_list([{1, CommitTime4a}, {2, CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 
 %% @doc This tests to make sure when garbage collection happens, no updates are lost
 gc_test() ->
@@ -705,60 +706,60 @@ gc_test() ->
     %% Make 10 snapshots
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
-    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1,2}]),ignore, MatState),
+    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2}]), ignore, MatState),
     ?assertEqual(0, Type:value(Res0)),
 
-    op_insert_gc(Key, generate_payload(10,11,Res0,a1), MatState),
-    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,12}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(10, 11, Res0, a1), MatState),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 12}]), ignore, MatState),
     ?assertEqual(1, Type:value(Res1)),
 
-    op_insert_gc(Key, generate_payload(20,21,Res1,a2), MatState),
-    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,22}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(20, 21, Res1, a2), MatState),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 22}]), ignore, MatState),
     ?assertEqual(2, Type:value(Res2)),
 
-    op_insert_gc(Key, generate_payload(30,31,Res2,a3), MatState),
-    {ok, Res3} = internal_read(Key, Type, vectorclock:from_list([{DC1,32}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(30, 31, Res2, a3), MatState),
+    {ok, Res3} = internal_read(Key, Type, vectorclock:from_list([{DC1, 32}]), ignore, MatState),
     ?assertEqual(3, Type:value(Res3)),
 
-    op_insert_gc(Key, generate_payload(40,41,Res3,a4), MatState),
-    {ok, Res4} = internal_read(Key, Type, vectorclock:from_list([{DC1,42}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(40, 41, Res3, a4), MatState),
+    {ok, Res4} = internal_read(Key, Type, vectorclock:from_list([{DC1, 42}]), ignore, MatState),
     ?assertEqual(4, Type:value(Res4)),
 
-    op_insert_gc(Key, generate_payload(50,51,Res4,a5), MatState),
-    {ok, Res5} = internal_read(Key, Type, vectorclock:from_list([{DC1,52}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(50, 51, Res4, a5), MatState),
+    {ok, Res5} = internal_read(Key, Type, vectorclock:from_list([{DC1, 52}]), ignore, MatState),
     ?assertEqual(5, Type:value(Res5)),
 
-    op_insert_gc(Key, generate_payload(60,61,Res5,a6), MatState),
-    {ok, Res6} = internal_read(Key, Type, vectorclock:from_list([{DC1,62}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(60, 61, Res5, a6), MatState),
+    {ok, Res6} = internal_read(Key, Type, vectorclock:from_list([{DC1, 62}]), ignore, MatState),
     ?assertEqual(6, Type:value(Res6)),
 
-    op_insert_gc(Key, generate_payload(70,71,Res6,a7), MatState),
-    {ok, Res7} = internal_read(Key, Type, vectorclock:from_list([{DC1,72}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(70, 71, Res6, a7), MatState),
+    {ok, Res7} = internal_read(Key, Type, vectorclock:from_list([{DC1, 72}]), ignore, MatState),
     ?assertEqual(7, Type:value(Res7)),
 
-    op_insert_gc(Key, generate_payload(80,81,Res7,a8), MatState),
-    {ok, Res8} = internal_read(Key, Type, vectorclock:from_list([{DC1,82}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(80, 81, Res7, a8), MatState),
+    {ok, Res8} = internal_read(Key, Type, vectorclock:from_list([{DC1, 82}]), ignore, MatState),
     ?assertEqual(8, Type:value(Res8)),
 
-    op_insert_gc(Key, generate_payload(90,91,Res8,a9), MatState),
-    {ok, Res9} = internal_read(Key, Type, vectorclock:from_list([{DC1,92}]),ignore, MatState),
+    op_insert_gc(Key, generate_payload(90, 91, Res8, a9), MatState),
+    {ok, Res9} = internal_read(Key, Type, vectorclock:from_list([{DC1, 92}]), ignore, MatState),
     ?assertEqual(9, Type:value(Res9)),
 
-    op_insert_gc(Key, generate_payload(100,101,Res9,a10), MatState),
+    op_insert_gc(Key, generate_payload(100, 101, Res9, a10), MatState),
 
     %% Insert some new values
 
-    op_insert_gc(Key, generate_payload(15,111,Res1,a11), MatState),
-    op_insert_gc(Key, generate_payload(16,121,Res1,a12), MatState),
+    op_insert_gc(Key, generate_payload(15, 111, Res1, a11), MatState),
+    op_insert_gc(Key, generate_payload(16, 121, Res1, a12), MatState),
 
     %% Trigger the clean
-    {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1,102}]),ignore, MatState),
+    {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1, 102}]), ignore, MatState),
     ?assertEqual(10, Type:value(Res10)),
 
-    op_insert_gc(Key, generate_payload(102,131,Res9,a13), MatState),
+    op_insert_gc(Key, generate_payload(102, 131, Res9, a13), MatState),
 
     %% Be sure you didn't loose any updates
-    {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1,142}]),ignore, MatState),
+    {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, MatState),
     ?assertEqual(13, Type:value(Res13)).
 
 %% @doc This tests to make sure operation lists can be large and resized
@@ -771,36 +772,36 @@ large_list_test() ->
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
     %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
-    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1,2}]),ignore, MatState),
+    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2}]), ignore, MatState),
     ?assertEqual(0, Type:value(Res0)),
 
     lists:foreach(fun(Val) ->
-			  op_insert_gc(Key, generate_payload(10,11+Val,Res0,Val), MatState)
-		  end, lists:seq(1,1000)),
+                      op_insert_gc(Key, generate_payload(10, 11+Val, Res0, Val), MatState)
+                  end, lists:seq(1, 1000)),
 
-    {ok, Res1000} = internal_read(Key, Type, vectorclock:from_list([{DC1,2000}]),ignore, MatState),
+    {ok, Res1000} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2000}]), ignore, MatState),
     ?assertEqual(1000, Type:value(Res1000)),
 
     %% Now check everything is ok as the list shrinks from generating new snapshots
     lists:foreach(fun(Val) ->
-    			  op_insert_gc(Key, generate_payload(10+Val,11+Val,Res0,Val), MatState),
-    			  {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1,2000}]),ignore, MatState),
-    			  ?assertEqual(Val, Type:value(Res))
-    		  end, lists:seq(1001,1100)).
+                      op_insert_gc(Key, generate_payload(10+Val, 11+Val, Res0, Val), MatState),
+                      {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2000}]), ignore, MatState),
+                      ?assertEqual(Val, Type:value(Res))
+                  end, lists:seq(1001, 1100)).
 
-generate_payload(SnapshotTime,CommitTime,Prev,_Name) ->
+generate_payload(SnapshotTime, CommitTime, Prev, _Name) ->
     Key = mycount,
     Type = antidote_crdt_counter,
     DC1 = 1,
 
-    {ok,Op1} = Type:downstream({increment, 1}, Prev),
+    {ok, Op1} = Type:downstream({increment, 1}, Prev),
     #clocksi_payload{key = Key,
-		     type = Type,
-		     op_param = Op1,
-		     snapshot_time = vectorclock:from_list([{DC1,SnapshotTime}]),
-		     commit_time = {DC1,CommitTime},
-		     txid = 1
-		    }.
+                     type = Type,
+                     op_param = Op1,
+                     snapshot_time = vectorclock:from_list([{DC1, SnapshotTime}]),
+                     commit_time = {DC1, CommitTime},
+                     txid = 1
+                    }.
 
 seq_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
@@ -812,31 +813,31 @@ seq_write_test() ->
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
     %% Insert one increment
-    {ok,Op1} = Type:downstream({increment,1},S1),
+    {ok, Op1} = Type:downstream({increment, 1}, S1),
     DownstreamOp1 = #clocksi_payload{key = Key,
                                      type = Type,
                                      op_param = Op1,
-                                     snapshot_time = vectorclock:from_list([{DC1,10}]),
+                                     snapshot_time = vectorclock:from_list([{DC1, 10}]),
                                      commit_time = {DC1, 15},
                                      txid = 1
                                     },
-    op_insert_gc(Key,DownstreamOp1, MatState),
-    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]),ignore, MatState),
+    op_insert_gc(Key, DownstreamOp1, MatState),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 16}]), ignore, MatState),
     ?assertEqual(1, Type:value(Res1)),
     %% Insert second increment
-    {ok,Op2} = Type:downstream({increment,1},S1),
+    {ok, Op2} = Type:downstream({increment, 1}, S1),
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
                       op_param = Op2,
-                      snapshot_time=vectorclock:from_list([{DC1,16}]),
-                      commit_time = {DC1,20},
+                      snapshot_time=vectorclock:from_list([{DC1, 16}]),
+                      commit_time = {DC1, 20},
                       txid=2},
 
-    op_insert_gc(Key,DownstreamOp2, MatState),
-    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,21}]), ignore, MatState),
+    op_insert_gc(Key, DownstreamOp2, MatState),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 21}]), ignore, MatState),
     ?assertEqual(2, Type:value(Res2)),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}]), ignore, MatState),
+    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1, 16}]), ignore, MatState),
     ?assertEqual(1, Type:value(ReadOld)).
 
 multipledc_write_test() ->
@@ -851,32 +852,32 @@ multipledc_write_test() ->
 
 
     %% Insert one increment in DC1
-    {ok,Op1} = Type:downstream({increment,1},S1),
+    {ok, Op1} = Type:downstream({increment, 1}, S1),
     DownstreamOp1 = #clocksi_payload{key = Key,
                                      type = Type,
                                      op_param = Op1,
-                                     snapshot_time = vectorclock:from_list([{DC2,0}, {DC1,10}]),
+                                     snapshot_time = vectorclock:from_list([{DC2, 0}, {DC1, 10}]),
                                      commit_time = {DC1, 15},
                                      txid = 1
                                     },
-    op_insert_gc(Key,DownstreamOp1,MatState),
-    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1,16},{DC2,0}]), ignore, MatState),
+    op_insert_gc(Key, DownstreamOp1, MatState),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 16}, {DC2, 0}]), ignore, MatState),
     ?assertEqual(1, Type:value(Res1)),
 
     %% Insert second increment in other DC
-    {ok,Op2} = Type:downstream({increment,1},S1),
+    {ok, Op2} = Type:downstream({increment, 1}, S1),
     DownstreamOp2 = DownstreamOp1#clocksi_payload{
                       op_param = Op2,
-                      snapshot_time=vectorclock:from_list([{DC2,16}, {DC1,16}]),
-                      commit_time = {DC2,20},
+                      snapshot_time=vectorclock:from_list([{DC2, 16}, {DC1, 16}]),
+                      commit_time = {DC2, 20},
                       txid=2},
 
-    op_insert_gc(Key,DownstreamOp2,MatState),
-    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}, {DC2,21}]), ignore, MatState),
+    op_insert_gc(Key, DownstreamOp2, MatState),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 16}, {DC2, 21}]), ignore, MatState),
     ?assertEqual(2, Type:value(Res2)),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1,15}, {DC2,15}]), ignore, MatState),
+    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1, 15}, {DC2, 15}]), ignore, MatState),
     ?assertEqual(1, Type:value(ReadOld)).
 
 concurrent_write_test() ->
@@ -890,38 +891,38 @@ concurrent_write_test() ->
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
     %% Insert one increment in DC1
-    {ok,Op1} = Type:downstream({increment,1},S1),
+    {ok, Op1} = Type:downstream({increment, 1}, S1),
     DownstreamOp1 = #clocksi_payload{key = Key,
                                      type = Type,
                                      op_param = Op1,
-                                     snapshot_time = vectorclock:from_list([{DC1,0}, {DC2,0}]),
+                                     snapshot_time = vectorclock:from_list([{DC1, 0}, {DC2, 0}]),
                                      commit_time = {DC2, 1},
                                      txid = 1
                                     },
-    op_insert_gc(Key,DownstreamOp1,MatState),
-    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC2,1}, {DC1,0}]), ignore, MatState),
+    op_insert_gc(Key, DownstreamOp1, MatState),
+    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC2, 1}, {DC1, 0}]), ignore, MatState),
     ?assertEqual(1, Type:value(Res1)),
 
     %% Another concurrent increment in other DC
-    {ok, Op2} = Type:downstream({increment,1},S1),
+    {ok, Op2} = Type:downstream({increment, 1}, S1),
     DownstreamOp2 = #clocksi_payload{ key = Key,
-				      type = Type,
-				      op_param = Op2,
-				      snapshot_time=vectorclock:from_list([{DC1,0}, {DC2,0}]),
-				      commit_time = {DC1, 1},
-				      txid=2},
-    op_insert_gc(Key,DownstreamOp2,MatState),
+                                      type = Type,
+                                      op_param = Op2,
+                                      snapshot_time=vectorclock:from_list([{DC1, 0}, {DC2, 0}]),
+                                      commit_time = {DC1, 1},
+                                      txid=2},
+    op_insert_gc(Key, DownstreamOp2, MatState),
 
     %% Read different snapshots
-    {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1,1}, {DC2, 0}]), ignore, MatState),
+    {ok, ReadDC1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 1}, {DC2, 0}]), ignore, MatState),
     ?assertEqual(1, Type:value(ReadDC1)),
     io:format("Result1 = ~p", [ReadDC1]),
-    {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1,0},{DC2,1}]), ignore, MatState),
+    {ok, ReadDC2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 0}, {DC2, 1}]), ignore, MatState),
     io:format("Result2 = ~p", [ReadDC2]),
     ?assertEqual(1, Type:value(ReadDC2)),
 
     %% Read snapshot including both increments
-    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC2,1}, {DC1,1}]), ignore, MatState),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC2, 1}, {DC1, 1}]), ignore, MatState),
     ?assertEqual(2, Type:value(Res2)).
 
 %% Check that a read to a key that has never been read or updated, returns the CRDTs initial value
@@ -931,7 +932,7 @@ read_nonexisting_key_test() ->
     SnapshotCache = ets:new(snapshot_cache, [set]),
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
     Type = riak_dt_gcounter,
-    {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1,1}, {dc2, 0}]), ignore, MatState),
+    {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1, 1}, {dc2, 0}]), ignore, MatState),
     ?assertEqual(0, Type:value(ReadResult)).
 
 -endif.

@@ -25,34 +25,34 @@
 -include("inter_dc_repl.hrl").
 
 -export([start_link/1,
-	 get_entries/2,
+        get_entries/2,
      request_permissions/2,
-	 generate_server_name/1]).
+         generate_server_name/1]).
 -export([init/1,
-	 handle_cast/2,
-	 handle_call/3,
-	 handle_info/2,
-	 terminate/2,
-	 code_change/3]).
+         handle_cast/2,
+         handle_call/3,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
 
 -record(state, {
-	  id :: non_neg_integer()}).
+      id :: non_neg_integer()}).
 
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
--spec start_link(non_neg_integer()) -> {ok,pid()} | ignore | {error,term()}.
+-spec start_link(non_neg_integer()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Num) ->
-    gen_server:start_link({local,generate_server_name(Num)}, ?MODULE, [Num], []).
+    gen_server:start_link({local, generate_server_name(Num)}, ?MODULE, [Num], []).
 
--spec get_entries(binary(),#inter_dc_query_state{}) -> ok.
-get_entries(BinaryQuery,QueryState) ->
-    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries,BinaryQuery,QueryState}).
+-spec get_entries(binary(), #inter_dc_query_state{}) -> ok.
+get_entries(BinaryQuery, QueryState) ->
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {get_entries, BinaryQuery, QueryState}).
 
--spec request_permissions(binary(),#inter_dc_query_state{}) -> ok.
-request_permissions(BinaryRequest,QueryState) ->
-    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions,BinaryRequest,QueryState}).
+-spec request_permissions(binary(), #inter_dc_query_state{}) -> ok.
+request_permissions(BinaryRequest, QueryState) ->
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions, BinaryRequest, QueryState}).
 
 %% ===================================================================
 %% gen_server callbacks
@@ -61,20 +61,20 @@ request_permissions(BinaryRequest,QueryState) ->
 init([Num]) ->
     {ok, #state{id=Num}}.
 
-handle_cast({get_entries,BinaryQuery,QueryState}, State) ->
-    {read_log,Partition, From, To} = binary_to_term(BinaryQuery),
-    Entries = get_entries_internal(Partition,From,To),
-    BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(),Partition},Entries}),
+handle_cast({get_entries, BinaryQuery, QueryState}, State) ->
+    {read_log, Partition, From, To} = binary_to_term(BinaryQuery),
+    Entries = get_entries_internal(Partition, From, To),
+    BinaryResp = term_to_binary({{dc_meta_data_utilities:get_my_dc_id(), Partition}, Entries}),
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
-    FullResponse = <<BinaryPartition/binary,BinaryResp/binary>>,
-    ok = inter_dc_query_receive_socket:send_response(FullResponse,QueryState),
+    FullResponse = <<BinaryPartition/binary, BinaryResp/binary>>,
+    ok = inter_dc_query_receive_socket:send_response(FullResponse, QueryState),
     {noreply, State};
 
-handle_cast({request_permissions,BinaryRequest,QueryState}, State) ->
+handle_cast({request_permissions, BinaryRequest, QueryState}, State) ->
     {request_permissions, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
     BinaryResp = BinaryRequest,
     ok = bcounter_mgr:process_transfer(Operation),
-    ok = inter_dc_query_receive_socket:send_response(BinaryResp,QueryState),
+    ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
     {noreply, State};
 
 handle_cast(_Info, State) ->
@@ -88,11 +88,11 @@ handle_info(_Info, State) ->
 
 -spec get_entries_internal(partition_id(), log_opid(), log_opid()) -> [#interdc_txn{}].
 get_entries_internal(Partition, From, To) ->
-  Node = case lists:member(Partition,dc_utilities:get_my_partitions()) of
-	     true -> node();
-	     false ->
-		 log_utilities:get_my_node(Partition)
-	 end,
+  Node = case lists:member(Partition, dc_utilities:get_my_partitions()) of
+             true -> node();
+             false ->
+                 log_utilities:get_my_node(Partition)
+         end,
   Logs = log_read_range(Partition, Node, From, To),
   Asm = log_txn_assembler:new_state(),
   {OpLists, _} = log_txn_assembler:process_all(Logs, Asm),

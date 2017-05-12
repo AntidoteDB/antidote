@@ -51,7 +51,7 @@ process(LogRecord, State) ->
     _ -> {none, State#state{op_buffer = dict:store(TxId, NewTxnBuf, State#state.op_buffer)}}
   end.
 
--spec process_all([#log_record{}],#state{}) -> {[[#log_record{}]],#state{}}.
+-spec process_all([#log_record{}], #state{}) -> {[[#log_record{}]], #state{}}.
 process_all(LogRecords, State) -> process_all(LogRecords, [], State).
 
 -spec process_all([#log_record{}], [[#log_record{}]], #state{}) -> {[[#log_record{}]], #state{}}.

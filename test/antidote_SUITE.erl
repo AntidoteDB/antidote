@@ -80,16 +80,16 @@ all() ->
 
 dummy_test(Config) ->
     [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
-    ct:print("Test on ~p!",[Node1]),
+    ct:print("Test on ~p!", [Node1]),
     Key = antidote_key,
     Type = antidote_crdt_counter,
     Bucket = antidote_bucket,
     Object = {Key, Type, Bucket},
     Update = {Object, increment, 1},
 
-    {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
-    {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
-    {ok,_} = rpc:call(Node2, antidote, update_objects, [ignore, [], [Update]]),
+    {ok, _} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
+    {ok, _} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
+    {ok, _} = rpc:call(Node2, antidote, update_objects, [ignore, [], [Update]]),
     %% Propagation of updates
     F = fun() ->
                 {ok, [Val], _CommitTime} = rpc:call(Node2, antidote, read_objects, [ignore, [], [Object]]),
@@ -109,7 +109,7 @@ static_txn_single_object(Config) ->
     Object = {Key, Type, Bucket},
     Update = {Object, increment, 1},
 
-    {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
+    {ok, _} = rpc:call(Node1, antidote, update_objects, [ignore, [], [Update]]),
     {ok, [Val], _} = rpc:call(Node1, antidote, read_objects, [ignore, [], [Object]]),
     ?assertEqual(1, Val).
 
@@ -133,7 +133,7 @@ static_txn_multi_objects(Config) ->
     Type = antidote_crdt_counter,
     Bucket = antidote_bucket,
     Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
-    IncValues = [1,2,3,4],
+    IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
                                 {Key, Type, Bucket}
                         end, Keys
@@ -142,7 +142,7 @@ static_txn_multi_objects(Config) ->
                                 {Object, increment, IncVal}
                         end, lists:zip(Objects, IncValues)),
 
-    {ok,_} = rpc:call(Node1, antidote, update_objects, [ignore, [], Updates]),
+    {ok, _} = rpc:call(Node1, antidote, update_objects, [ignore, [], Updates]),
     {ok, Res, _} = rpc:call(Node1, antidote, read_objects, [ignore, [], Objects]),
     ?assertEqual([1, 2, 3, 4], Res).
 
@@ -151,7 +151,7 @@ static_txn_multi_objects_clock(Config) ->
     Type = antidote_crdt_counter,
     Bucket = antidote_bucket,
     Keys = [antidote_static_mc1, antidote_static_mc2, antidote_static_mc3, antidote_static_mc4],
-    IncValues = [1,2,3,4],
+    IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
                                 {Key, Type, Bucket}
                         end, Keys
@@ -173,7 +173,7 @@ interactive_txn(Config) ->
     Type = antidote_crdt_counter,
     Bucket = antidote_bucket,
     Keys = [antidote_int_m1, antidote_int_m2, antidote_int_m3, antidote_int_m4],
-    IncValues = [1,2,3,4],
+    IncValues = [1, 2, 3, 4],
     Objects = lists:map(fun(Key) ->
                                 {Key, Type, Bucket}
                         end, Keys
@@ -185,7 +185,7 @@ interactive_txn(Config) ->
     %% update objects one by one.
     txn_seq_update_check(Node, TxId, Updates),
     %% read objects one by one
-    txn_seq_read_check(Node, TxId, Objects, [1,2,3,4]),
+    txn_seq_read_check(Node, TxId, Objects, [1, 2, 3, 4]),
     {ok, Clock} = rpc:call(Node, antidote, commit_transaction, [TxId]),
 
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [Clock, []]),
@@ -224,8 +224,8 @@ random_test(Config) ->
     Obj = {log_test_key1, antidote_crdt_counter, antidote_bucket},
     F = fun(Elem) ->
                 Node = lists:nth(Elem, Nodes),
-                ct:print("Inc at node: ~p",[Node]),
-                {ok,_} = rpc:call(Node, antidote, update_objects,
+                ct:print("Inc at node: ~p", [Node]),
+                {ok, _} = rpc:call(Node, antidote, update_objects,
                                   [ignore, [], [{Obj, increment, 1}]])
         end,
     lists:foreach(F, ListIds),

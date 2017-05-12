@@ -22,10 +22,10 @@
 
 %% @doc
 %% A Multi-Value Register CRDT.
-%% There are two kinds of updates: assign and propagate.  Assign is use for a 
-%% single replica of MVReg where updates are linealizable. Propagate is used 
+%% There are two kinds of updates: assign and propagate.  Assign is use for a
+%% single replica of MVReg where updates are linealizable. Propagate is used
 %% to propagate update from a replica to other replicas. It is similar to the
-%% 'merge' operation of the state-based specifiction of MVReg. 
+%% 'merge' operation of the state-based specifiction of MVReg.
 %%
 %% This file is adapted from riak_dt_lwwreg, a state-based implementation of
 %% last-writer-wins register.
@@ -34,7 +34,7 @@
 %%    may contain multiple values.
 %% 2. There is a new kind of operation: propagate, which stands for merging the
 %%    contents of two MVRegs.
-%%  
+%%
 %% @reference Marc Shapiro, Nuno Preguiça, Carlos Baquero, Marek Zawirski (2011) A comprehensive study of
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
@@ -149,10 +149,10 @@ larger_than(TS, Actor, [H|T]) ->
     {_Value, VC} = H,
     OldTS = riak_dt_vclock:get_counter(Actor, VC),
     case  TS > OldTS of
-	true ->
-	    larger_than(TS, Actor, T);
-	false ->
-	    false
+        true ->
+            larger_than(TS, Actor, T);
+        false ->
+            false
     end.
 
 %% @doc If any timestamp in the first list descends the second vector clock.
@@ -175,12 +175,12 @@ merge(MVReg1, MVReg2) ->
     merge(MVReg1, MVReg2, []).
 
 %% @doc Helper function of `merge/2'. It removes value entries that are descendes of
-%% any other. Remainder are value entries whose vector clock is neither descendent of 
+%% any other. Remainder are value entries whose vector clock is neither descendent of
 %% any other entry nor being ascendent of any other.
 merge([], MVReg2, Remainder) ->
-    MVReg2++Remainder;
+    MVReg2 ++ Remainder;
 merge(MVReg1, [], Remainder) ->
-    MVReg1++Remainder;
+    MVReg1 ++ Remainder;
 merge(MVReg1, MVReg2, Remainder) ->
     {_, HVC} = hd(MVReg2),
     case if_descends(value(timestamp, MVReg1), HVC) of
@@ -188,7 +188,7 @@ merge(MVReg1, MVReg2, Remainder) ->
             merge(MVReg1, tl(MVReg2), Remainder);
         false ->
             NewMVReg1 = lists:filter(fun({_, ElemVC}) -> riak_dt_vclock:descends(HVC, ElemVC) == false end, MVReg1),
-            merge(NewMVReg1, tl(MVReg2), Remainder++[hd(MVReg2)])
+            merge(NewMVReg1, tl(MVReg2), Remainder ++ [hd(MVReg2)])
     end.
 
 %% @doc Are two `mvreg()'s structurally equal? This is not `value/1' equality.
@@ -209,7 +209,7 @@ eq([H1|T1], [H2|T2]) ->
     VEqual = V1 =:= V2,
     TSEqual = riak_dt_vclock:equal(TS1, TS2),
     case VEqual andalso TSEqual of
-	    true ->
+        true ->
             eq(T1, T2);
         false ->
             false
@@ -228,7 +228,7 @@ stat(value_size, MVReg) ->
     TS = value(timestamp, MVReg),
     Size =  erlang:external_size(Values) + erlang:external_size(TS),
     Size;
-stat(_, _) -> undefined. 
+stat(_, _) -> undefined.
 
 -include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(DT_MVREG_TAG, 85).
@@ -344,18 +344,18 @@ merge_test() ->
     ?assert(equal([{value2, [{actor1, 2}, {actor2, 3}]}, {value4, [{actor1, 3}, {actor2, 2}]}], MergedMVReg3)),
     MVReg7 = [{value3, [{actor1, 3}, {actor2, 3}]}],
     MergedMVReg4 = merge(MVReg5, MVReg7),
-    %% Merge two MVRegs that one dominates the other 
+    %% Merge two MVRegs that one dominates the other
     ?assert(equal(MVReg7, MergedMVReg4)).
 
 
 % @doc Check if `if_dominate/2' works.
 if_descends_test() ->
-    VC1 = [[{actor1, 2}, {actor2, 3}, {actor3,2}], [{actor1,3}, {actor2,1}, {actor4,2}]],
+    VC1 = [[{actor1, 2}, {actor2, 3}, {actor3, 2}], [{actor1, 3}, {actor2, 1}, {actor4, 2}]],
     VC2 = [{actor1, 1}],
     ?assert(if_descends(VC1, VC2)),
-    VC3 = [{actor1, 2}, {actor3,1}],
+    VC3 = [{actor1, 2}, {actor3, 1}],
     ?assert(if_descends(VC1, VC3)),
-    VC4 = [{actor3, 1}, {actor4,1}],
+    VC4 = [{actor3, 1}, {actor4, 1}],
     ?assertNot(if_descends(VC1, VC4)).
 
 % @doc Check if `update/3' by assign without providing timestamp works.
@@ -478,6 +478,6 @@ is_operation_test() ->
     ?assertEqual(true, is_operation({assign, something, 20})),
     ?assertEqual(false, is_operation({assign, something, some_value})),
     ?assertEqual(false, is_operation({add, atom})),
-    ?assertEqual(false, is_operation({anything, [1,2,3]})).
+    ?assertEqual(false, is_operation({anything, [1, 2, 3]})).
 
 -endif.

@@ -126,7 +126,7 @@ read_objects(Clock, _Properties, Objects, StayAlive) ->
             FormattedObjects = format_read_params(Objects),
             [{Key, Type}] = FormattedObjects,
             {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_read(Key,Type),
+                perform_singleitem_read(Key, Type),
             {ok, [Val], CommitTime};
         false ->
             case application:get_env(antidote, txn_prot) of
@@ -195,7 +195,7 @@ clocksi_istart_tx(Clock, KeepAlive, UpdateClock) ->
                                           | {error, reason()}.
 clocksi_full_icommit(TxId)->
     case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {prepare, empty}, ?OP_TIMEOUT) of
-        {ok,_PrepareTime} ->
+        {ok, _PrepareTime} ->
             gen_fsm:sync_send_event(TxId#tx_id.server_pid, commit, ?OP_TIMEOUT);
         Msg ->
             Msg
@@ -211,7 +211,7 @@ gr_snapshot_read(ClientClock, Objects) ->
     case Dt =< GST of
         true ->
             %% Set all entries in snapshot as GST
-            ST = dict:map(fun(_,_) -> GST end, VST),
+            ST = dict:map(fun(_, _) -> GST end, VST),
             %% ST doesnot contain entry for local dc, hence explicitly
             %% add it in snapshot time
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),

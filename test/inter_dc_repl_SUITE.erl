@@ -95,10 +95,10 @@ multiple_keys_test(Config) ->
     lists:foreach( fun(_) ->
                            multiple_writes(Node1, Key, Type, 1, 10, rpl)
                    end,
-                   lists:seq(1,10)),
+                   lists:seq(1, 10)),
     {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
 
-    multiple_reads(Node1, Key, Type, 1, 10, 10,CommitTime),
+    multiple_reads(Node1, Key, Type, 1, 10, 10, CommitTime),
     multiple_reads(Node2, Key, Type, 1, 10, 10, CommitTime),
     lager:info("Multiple key read-write test passed!"),
     pass.
@@ -155,7 +155,7 @@ atomicity_test(Config) ->
                         lists:foreach(
                           fun(_) ->
                                   atomic_write_txn(Node1, Key1, Key2, Key3, Type)
-                          end, lists:seq(1,10)),
+                          end, lists:seq(1, 10)),
                         Caller ! writedone,
                         lager:info("Atomic writes done")
                 end,
@@ -184,10 +184,10 @@ atomicity_test(Config) ->
     end.
 
 atomic_write_txn(Node, Key1, Key2, Key3, _Type) ->
-    update_counters(Node, [Key1, Key2, Key3], [1,1,1], ignore, static).
+    update_counters(Node, [Key1, Key2, Key3], [1, 1, 1], ignore, static).
 
 atomic_read_txn(Node, Key1, Key2, Key3, Type) ->
-    {ok,TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
+    {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [R1]} = rpc:call(Node, antidote, read_objects,
                         [[{Key1, Type, ?BUCKET}], TxId]),
     {ok, [R2]} = rpc:call(Node, antidote, read_objects,
@@ -195,8 +195,8 @@ atomic_read_txn(Node, Key1, Key2, Key3, Type) ->
     {ok, [R3]} = rpc:call(Node, antidote, read_objects,
                         [[{Key3, Type, ?BUCKET}], TxId]),
     rpc:call(Node, antidote, commit_transaction, [TxId]),
-    ?assertEqual(R1,R2),
-    ?assertEqual(R2,R3),
+    ?assertEqual(R1, R2),
+    ?assertEqual(R2, R3),
     R1.
 
 check_read_key(Node, Key, Type, Expected, Clock, TxId) ->

@@ -156,11 +156,11 @@ clocksi_test1(Config) ->
     check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, static),
 
     %% Read what you wrote
-    update_counters(FirstNode, [Key1, Key2], [1,1], ignore, static),
-    check_read_keys(FirstNode, [Key1, Key2], antidote_crdt_counter, [1,1], ignore, static),
+    update_counters(FirstNode, [Key1, Key2], [1, 1], ignore, static),
+    check_read_keys(FirstNode, [Key1, Key2], antidote_crdt_counter, [1, 1], ignore, static),
 
     %% Multiple updates to a key in a transaction works
-    update_counters(FirstNode, [Key1, Key1], [1,1], ignore, static),
+    update_counters(FirstNode, [Key1, Key1], [1, 1], ignore, static),
     check_read_key(FirstNode, Key1, antidote_crdt_counter, 3, ignore, static),
     pass.
 
@@ -202,10 +202,10 @@ clocksi_test_prepare(Config) ->
     lager:info("Test prepare started"),
 
     Key1=clocksi_test_prepare_key1,
-    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
+    Preflist = rpc:call(FirstNode, log_utilities, get_preflist_from_key, [aaa]),
     IndexNode = hd(Preflist),
 
-    Key2 = find_key_same_node(FirstNode,IndexNode,1),
+    Key2 = find_key_same_node(FirstNode, IndexNode, 1),
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
     check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, TxId),
@@ -244,14 +244,14 @@ clocksi_test_prepare(Config) ->
     lager:info("Test prepare passed"),
     pass.
 
-find_key_same_node(FirstNode,IndexNode,Num) ->
+find_key_same_node(FirstNode, IndexNode, Num) ->
     NewKey = list_to_atom(atom_to_list(aaa) ++ integer_to_list(Num)),
-    Preflist = rpc:call(FirstNode,log_utilities,get_preflist_from_key,[aaa]),
+    Preflist = rpc:call(FirstNode, log_utilities, get_preflist_from_key, [aaa]),
     case hd(Preflist) == IndexNode of
         true ->
             NewKey;
         false ->
-            find_key_same_node(FirstNode,IndexNode,Num+1)
+            find_key_same_node(FirstNode, IndexNode, Num+1)
     end.
 
 spawn_com(FirstNode, TxId) ->
@@ -296,7 +296,7 @@ clocksi_single_key_update_read_test(Config) ->
     lager:info("Test3 started"),
     FirstNode = hd(Nodes),
     Key = clocksi_single_key_update_read_test_key1,
-    {ok, CommitTime} = update_counters(FirstNode, [Key, Key], [1,1], ignore, static),
+    {ok, CommitTime} = update_counters(FirstNode, [Key, Key], [1, 1], ignore, static),
     check_read_key(FirstNode, Key, antidote_crdt_counter, 2, CommitTime, static),
 
     lager:info("clocksi_single_key_update_read_test passed"),
@@ -430,7 +430,7 @@ clocksi_test_certification_check_run(Nodes) ->
     lager:info("LastNode: ~p", [LastNode]),
 
     %% Start a new tx on first node, perform an update on some key.
-    {ok,TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
+    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
     lager:info("Tx1 Started, id : ~p", [TxId]),
     update_counters(FirstNode, [Key1], [1], ignore, TxId),
 
@@ -497,11 +497,11 @@ clocksi_multiple_read_update_test(Config) ->
     Type = antidote_crdt_counter,
     NTimes = 100,
     Obj = {Key, Type, ?BUCKET},
-    {ok,[Result1], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
+    {ok, [Result1], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
     lists:foreach(fun(_)->
                           read_update_test(Node, Key) end,
-                  lists:seq(1,NTimes)),
-    {ok,[Result2], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
+                  lists:seq(1, NTimes)),
+    {ok, [Result2], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
     ?assertEqual(Result1+NTimes, Result2),
     pass.
 
@@ -512,11 +512,11 @@ read_update_test(Node, Key) ->
     {ok, [Result1], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
     update_counters(Node, [Key], [1], ignore, static),
     {ok, [Result2], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
-    ?assertEqual(Result1+1,Result2),
+    ?assertEqual(Result1+1, Result2),
     pass.
 
 get_random_key() ->
-    rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
+    rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
     rand_compat:uniform(1000).  % TODO use deterministic keys in testcase
 
 %% @doc The following function tests how two concurrent transactions work
@@ -536,11 +536,11 @@ clocksi_concurrency_test(Config) ->
     spawn( fun() ->
                    update_counters(Node, [Key], [1], ignore, TxId2),
                    rpc:call(Node, cure, clocksi_iprepare, [TxId2]),
-                   {ok,_}= rpc:call(Node, cure, clocksi_icommit, [TxId2]),
+                   {ok, _}= rpc:call(Node, cure, clocksi_icommit, [TxId2]),
                    Pid ! ok
            end),
 
-    {ok,_}= rpc:call(Node, cure, clocksi_icommit, [TxId1]),
+    {ok, _}= rpc:call(Node, cure, clocksi_icommit, [TxId1]),
     receive
         ok ->
             check_read_key(Node, Key, Type, 2, ignore, static),
@@ -573,8 +573,8 @@ clocksi_parallel_ops_test(Config) ->
     %% read the objects in the same transaction to see that the updates
     %% are seen.
     Res = rpc:call(Node, antidote, read_objects, [[Bound_object1,
-                                                   Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId]),
-    ?assertMatch({ok, [1,2,3,4,5]}, Res),
+                                                   Bound_object2, Bound_object3, Bound_object4, Bound_object5], TxId]),
+    ?assertMatch({ok, [1, 2, 3, 4, 5]}, Res),
 
     %% update 5 times the first object.
     ok = rpc:call(Node, antidote, update_objects,
@@ -592,8 +592,8 @@ clocksi_parallel_ops_test(Config) ->
     %% start a new transaction that reads the updated objects.
     {ok, TxId2} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     Res2 = rpc:call(Node, antidote, read_objects, [[Bound_object1,
-                                                    Bound_object2,Bound_object3,Bound_object4,Bound_object5], TxId2]),
-    ?assertMatch({ok, [6,2,3,4,5]}, Res2),
+                                                    Bound_object2, Bound_object3, Bound_object4, Bound_object5], TxId2]),
+    ?assertMatch({ok, [6, 2, 3, 4, 5]}, Res2),
     {ok, _CT2} = rpc:call(Node, antidote, commit_transaction, [TxId2]).
 
 %% doc The following test tests sending multiple updates in a single
@@ -617,18 +617,18 @@ clocksi_static_parallel_writes_test(Config) ->
                           {Bound_object3, increment, 3},
                           {Bound_object4, increment, 4},
                           {Bound_object5, increment, 5}]
-                        ,true
+                        , true
                         ]),
 
     lager:info("updated 5 objects no problem"),
 
     {ok, Res, CT1} = rpc:call(Node, cure, read_objects,
                               [CT, [], [Bound_object1,
-                                        Bound_object2,Bound_object3,
-                                        Bound_object4,Bound_object5]
+                                        Bound_object2, Bound_object3,
+                                        Bound_object4, Bound_object5]
                               , true
                               ]),
-    ?assertMatch([1,2,3,4,5], Res),
+    ?assertMatch([1, 2, 3, 4, 5], Res),
 
     lager:info("read 5 objects no problem"),
 
