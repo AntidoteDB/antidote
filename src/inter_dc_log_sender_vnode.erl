@@ -57,10 +57,12 @@
 
 %% Vnode state
 -record(state, {
-  partition :: partition_id(),
-  buffer, %% log_tx_assembler:state
-  last_log_id :: #op_number{},
-  timer :: any()
+    partition :: partition_id(),
+    buffer, %% log_tx_assembler:state
+    last_log_id :: #op_number{},
+    timer :: any(),
+    compression_buffer :: [#interdc_txn{}],
+    compression_timer :: any()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -91,12 +93,19 @@ send_stable_time(Partition, Time) ->
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-  {ok, #state{
-    partition = Partition,
-    buffer = log_txn_assembler:new_state(),
-    last_log_id = #op_number{},
-    timer = none
-  }}.
+    State = #state{
+        partition = Partition,
+        buffer = log_txn_assembler:new_state(),
+        last_log_id = #op_number{},
+        timer = none,
+        compression_buffer = [],
+        compression_timer = none
+    },
+    State1 = case ?OPERATION_COMPRESSION of
+        true -> set_compression_timer(State);
+        false -> State
+    end,
+    {ok, State1}.
 
 %% Start the timer
 handle_command({start_timer}, _Sender, State) ->
@@ -109,18 +118,35 @@ handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = P
 %% Handle the new operation
 %% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
 handle_command({log_event, LogRecord}, _Sender, State) ->
-  %% Use the txn_assembler to check if the complete transaction was collected.
-  {Result, NewBufState} = log_txn_assembler:process(LogRecord, State#state.buffer),
-  State1 = State#state{buffer = NewBufState},
-  State2 = case Result of
-    %% If the transaction was collected
-    {ok, Ops} ->
-      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
-      broadcast(State1, Txn);
-    %% If the transaction is not yet complete
-    none -> State1
-  end,
-  {noreply, State2};
+    %% Use the txn_assembler to check if the complete transaction was collected.
+    {Result, NewBufState} = log_txn_assembler:process(LogRecord, State#state.buffer),
+    State1 = State#state{buffer = NewBufState},
+    State2 = case Result of
+        %% If the transaction was collected
+        {ok, Ops} ->
+            Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
+            case ?OPERATION_COMPRESSION of
+                true -> buffer(State1, Txn);
+                false -> broadcast(State1, Txn)
+            end;
+        %% If the transaction is not yet complete
+        none -> State1
+    end,
+    {noreply, State2};
+
+%% Triggers the compression (and later broadcast) of the buffer of transactions.
+handle_command(txn_send, _Sender, State = #state{compression_buffer = Buffer}) ->
+    FinalState = case Buffer of
+        [] -> State;
+        _ ->
+            Buf = lists:reverse(Buffer),
+            spawn(fun() ->
+                inter_dc_compression_buffer:compress_and_broadcast(Buf)
+            end),
+            OpId = inter_dc_txn:last_log_opid(hd(Buffer)),
+            set_timer(State#state{compression_buffer = [], last_log_id = OpId})
+    end,
+    {noreply, set_compression_timer(FinalState)};
 
 handle_command({stable_time, Time}, _Sender, State) ->
     PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Time),
@@ -141,7 +167,12 @@ handle_exit(_Pid, _Reason, State) ->
 handoff_starting(_TargetNode, State) ->
     {true, State}.
 handoff_cancelled(State) ->
-    {ok, set_timer(State)}.
+    State1 = set_timer(State),
+    State2 = case ?OPERATION_COMPRESSION of
+        true -> set_compression_timer(State1);
+        false -> State1
+    end,
+    {ok, State2}.
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 handle_handoff_command( _Message , _Sender, State) ->
@@ -156,7 +187,8 @@ delete(State) ->
     {ok, State}.
 terminate(_Reason, State) ->
     _ = del_timer(State),
-  ok.
+    _ = del_compression_timer(State),
+    ok.
 handle_overload_command(_, _, _) ->
     ok.
 handle_overload_info(_, _) ->
@@ -168,8 +200,8 @@ handle_overload_info(_, _) ->
 -spec del_timer(#state{}) -> #state{}.
 del_timer(State = #state{timer = none}) -> State;
 del_timer(State = #state{timer = Timer}) ->
-  _ = erlang:cancel_timer(Timer),
-  State#state{timer = none}.
+    _ = erlang:cancel_timer(Timer),
+    State#state{timer = none}.
 
 %% Cancels the previous ping timer and sets a new one.
 -spec set_timer(#state{}) -> #state{}.
@@ -195,13 +227,51 @@ set_timer(First, State = #state{partition = Partition}) ->
             State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)}
     end.
 
+%% Cancels the compression timer, if one is set.
+-spec del_compression_timer(#state{}) -> #state{}.
+del_compression_timer(State = #state{compression_timer = none}) -> State;
+del_compression_timer(State = #state{compression_timer = Timer}) ->
+    _ = erlang:cancel_timer(Timer),
+    State#state{compression_timer = none}.
+
+%% Cancels the previous compression buffer timer and sets a new one.
+-spec set_compression_timer(#state{}) -> #state{}.
+set_compression_timer(State) ->
+    case ?OPERATION_COMPRESSION of
+        true -> set_compression_timer(false, State);
+        false -> State
+    end.
+
+-spec set_compression_timer(boolean(), #state{}) -> #state{}.
+set_compression_timer(First, State = #state{partition = Partition}) ->
+    case First of
+        true ->
+            {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+            Node = riak_core_ring:index_owner(Ring, Partition),
+            MyNode = node(),
+            case Node of
+                MyNode ->
+                    State1 = del_compression_timer(State),
+                    State1#state{compression_timer = riak_core_vnode:send_command_after(?COMPRESSION_TIMER, txn_send)};
+                _Other ->
+                    State
+            end;
+        false ->
+            State1 = del_compression_timer(State),
+            State1#state{compression_timer = riak_core_vnode:send_command_after(?COMPRESSION_TIMER, txn_send)}
+    end.
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State, Txn) ->
-  inter_dc_pub:broadcast(Txn),
-  Id = inter_dc_txn:last_log_opid(Txn),
-  State#state{last_log_id = Id}.
+    inter_dc_pub:broadcast(Txn),
+    Id = inter_dc_txn:last_log_opid(Txn),
+    State#state{last_log_id = Id}.
+
+%% Adds a transaction to the compression buffer.
+-spec buffer(#state{}, #interdc_txn{}) -> #state{}.
+buffer(#state{compression_buffer = Buffer} = State, Txn) ->
+    State#state{compression_buffer = [Txn | Buffer]}.
 
 %% @doc Sends an async request to get the smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.

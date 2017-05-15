@@ -99,7 +99,11 @@ get_entries_internal(Partition, From, To) ->
   Txns = lists:map(fun(TxnOps) -> inter_dc_txn:from_ops(TxnOps, Partition, none) end, OpLists),
   %% This is done in order to ensure that we only send the transactions we committed.
   %% We can remove this once the read_log_range is reimplemented.
-  lists:filter(fun inter_dc_txn:is_local/1, Txns).
+  FilteredTxns = lists:filter(fun inter_dc_txn:is_local/1, Txns),
+  case ?OPERATION_COMPRESSION of
+    true -> [inter_dc_compression_buffer:compress(FilteredTxns)];
+    false -> FilteredTxns
+  end.
 
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
 %% TODO: also fix the method to provide complete snapshots if the log was trimmed
