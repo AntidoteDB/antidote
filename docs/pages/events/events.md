@@ -7,11 +7,15 @@ toc: true
 folder: events
 ---
 
-# Events
+You want to learn more about Antidote and our vision of database consistency?
+
+Join as at one of these events!
+
+## Upcoming!
 
 * Come and talk to us at the [Vivatech exhibit](https://vivatechnology.com/)! More details to come!
 
-# Past Events
+## Past Events
 
 * Valter Balegas' presentation at [Code Europe, Wroclaw, May 23rd](https://www.codeeurope.pl/en).
 
