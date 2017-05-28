@@ -26,7 +26,7 @@ Fetch AntidoteDB docker image by typing:
 
 
 ```sh
-docker pull mweber/antidote
+docker pull antidotedb/antidote
 ```
 
 
@@ -40,9 +40,9 @@ docker network create --driver bridge default_ntwk
 Start two AntidoteDB node instances which will be called 'antidote1' and 'antidote2':
 
 ```sh
-docker run -i -t -d --name antidote1 --network default_ntwk -e SHORT_NAME=true -e NODE_NAME=antidote@antidote1 mweber/antidote
+docker run -i -t -d --name antidote1 --network default_ntwk -e SHORT_NAME=true -e NODE_NAME=antidote@antidote1 antidotedb/antidote
 
-docker run -i -t -d --name antidote2 --network default_ntwk -e SHORT_NAME=true -e NODE_NAME=antidote@antidote2 mweber/antidote
+docker run -i -t -d --name antidote2 --network default_ntwk -e SHORT_NAME=true -e NODE_NAME=antidote@antidote2 antidotedb/antidote
 ```
 
 Connect to the console of one node:

@@ -79,4 +79,4 @@ mesos-docker-run-dev: mesos-docker-build-dev
 	docker run -t -i cmeiklejohn/antidote-mesos-dev
 
 docker-build:
-	docker build -f Dockerfiles/Dockerfile -t mweber/antidotedb Dockerfiles
+	docker build -f Dockerfiles/Dockerfile -t antidotedb/antidote Dockerfiles

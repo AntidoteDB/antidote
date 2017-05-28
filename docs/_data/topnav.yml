@@ -5,6 +5,8 @@ topnav:
   items:
     - title: News
       url: /news
+    - title: Events
+      url: /events
 
 #Topnav dropdowns
 topnav_dropdowns:
