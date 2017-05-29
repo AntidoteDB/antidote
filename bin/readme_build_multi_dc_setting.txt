@@ -19,5 +19,12 @@
 
     $join_dcs_script.erl 'antidote1@127.0.0.1' 'antidote3@127.0.0.1'
 
+    NOTE: IF YOU ARE RUNNING SINGLE NODE CLUSTERS (I.E., YOU HAVEN'T RUN STEP 3)
+    YOU HAVE TO START SOME ANTIDOTE PROCESSES:
+
+    start_bg_processes.erl 'antidote1@127.0.0.1' 'antidote3@127.0.0.1'
+
+
+
 DONE!
 NOTE: current maximum of N is 5.
