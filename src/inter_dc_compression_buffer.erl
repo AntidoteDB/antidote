@@ -100,7 +100,7 @@ place_txn_record(
                 }
             },
             {Key, Bucket, Type, _Op} = destructure_update_payload(LogPayload),
-            case Type:is_compressable() of
+            case antidote_crdt:is_compressable(Type) of
                 true ->
                     K = {Key, Bucket},
                     Compressable1 = case maps:is_key(K, Compressable) of
@@ -172,12 +172,12 @@ log_([LogRecord2 | Rest], LogRecord1) ->
     Op2 = get_op(LogRecord2),
     case Type:can_compress(Op2, Op1) of
         true ->
-            case Type:compress_ops(Op2, Op1) of
-                {{noop}, {noop}} -> {ok, Rest};
-                {{noop}, NewOp1} ->
+            case Type:compress(Op2, Op1) of
+                {noop, noop} -> {ok, Rest};
+                {noop, NewOp1} ->
                     NewRecordOp1 = replace_op(LogRecord1, NewOp1),
                     log_(Rest, NewRecordOp1);
-                {NewOp2, {noop}} ->
+                {NewOp2, noop} ->
                     NewRecordOp2 = replace_op(LogRecord2, NewOp2),
                     {ok, [NewRecordOp2 | Rest]};
                 {NewOp2, NewOp1} ->
@@ -195,3 +195,98 @@ log_([LogRecord2 | Rest], LogRecord1) ->
                 {append, List, AppendOp} -> {append, [LogRecord2 | List], AppendOp}
             end
     end.
+
+%%% Tests
+
+-ifdef(TEST).
+inter_dc_txn_from_ops(Ops, PrevLogOpId, N, TxId, CommitTime, SnapshotTime) ->
+    {Records, Number} = lists:foldl(fun({Key, Bucket, Type, Op}, {List, Number}) ->
+        Record = #log_record{
+            version = 0,
+            op_number = Number,
+            bucket_op_number = Number,
+            log_operation = #log_operation{
+                tx_id = TxId,
+                op_type = update,
+                log_payload = #update_log_payload{
+                    key = Key,
+                    bucket = Bucket,
+                    type = Type,
+                    op = Op
+                }
+            }
+        },
+        {[Record | List], Number + 1}
+    end, {[], N}, Ops),
+    {RecordsCCRDT, RecordsOther} = split_transaction_records(lists:reverse(Records), {#{}, []}, TxId),
+    Prepare = #log_record{version = 0, op_number = Number, bucket_op_number = Number, log_operation = #log_operation{tx_id = TxId, op_type = prepare, log_payload = #prepare_log_payload{prepare_time = CommitTime - 1}}},
+    Commit = #log_record{version = 0, op_number = Number + 1, bucket_op_number = Number + 1, log_operation = #log_operation{tx_id = TxId, op_type = commit, log_payload = #commit_log_payload{commit_time = CommitTime, snapshot_time = SnapshotTime}}},
+    LogRecords = lists:reverse(RecordsOther) ++ lists:flatten(lists:map(fun lists:reverse/1, maps:values(RecordsCCRDT))) ++ [Prepare, Commit],
+    #interdc_txn{
+    dcid = replica1,
+    partition = 1,
+    prev_log_opid = PrevLogOpId,
+    snapshot = SnapshotTime,
+    timestamp = CommitTime,
+    log_records = LogRecords
+    }.
+
+empty_txns_test() ->
+    ?assertEqual(compress([]), none).
+
+orset_test() ->
+    Buffer1 = [
+        inter_dc_txn_from_ops([{key, bucket, antidote_crdt_orset, [{5, [<<"a">>], []}]}],
+                              0,
+                              1,
+                              2,
+                              300,
+                              250)
+    ],
+    ?assertEqual(compress(Buffer1), hd(Buffer1)),
+    Buffer2 = [
+        inter_dc_txn_from_ops([{key, bucket, antidote_crdt_orset, [{5, [<<"a">>], []}]},
+                               {key, bucket, antidote_crdt_orset, [{5, [<<"b">>], [<<"a">>]}]},
+                               {key, bucket, antidote_crdt_orset, [{5, [<<"c">>], [<<"b">>]}]}],
+                              0,
+                              1,
+                              2,
+                              300,
+                              250)
+    ],
+    Expected2 = inter_dc_txn_from_ops(
+        [{key, bucket, antidote_crdt_orset, [{5, [<<"c">>], []}]}],
+        0,
+        3,
+        2,
+        300,
+        250
+    ),
+    ?assertEqual(compress(Buffer2), Expected2),
+    Buffer3 = [
+        inter_dc_txn_from_ops([{key, bucket, antidote_crdt_orset, [{5, [<<"a">>], []}]},
+                               {key, bucket, antidote_crdt_orset, [{5, [<<"b">>], [<<"a">>]}]},
+                               {key, bucket, antidote_crdt_orset, [{6, [<<"z">>], []}]}],
+                              0,
+                              1,
+                              2,
+                              300,
+                              250),
+        inter_dc_txn_from_ops([{key, bucket, antidote_crdt_orset, [{5, [<<"c">>], [<<"b">>]}]}],
+                              3,
+                              4,
+                              3,
+                              400,
+                              350)
+    ],
+    Expected3 = inter_dc_txn_from_ops(
+        [{key, bucket, antidote_crdt_orset, [{5, [<<"c">>], []}, {6, [<<"z">>], []}]}],
+        0,
+        4,
+        3,
+        400,
+        350
+    ),
+    ?debugFmt("~p~n", [compress(Buffer3)]),
+    ?assertEqual(compress(Buffer3), Expected3).
+-endif.
