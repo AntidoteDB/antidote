@@ -234,6 +234,21 @@ inter_dc_txn_from_ops(Ops, PrevLogOpId, N, TxId, CommitTime, SnapshotTime) ->
 empty_txns_test() ->
     ?assertEqual(compress([]), none).
 
+noop_test() ->
+    Buffer = [
+        inter_dc_txn_from_ops([{key, bucket, antidote_crdt_orset, [{5, [<<"a">>], []}]},
+                               {key, bucket, antidote_crdt_orset, [{5, [], [<<"a">>]}]}],
+                              0,
+                              1,
+                              2,
+                              300,
+                              250)
+    ],
+    Expected = inter_dc_txn_from_ops([], 0, 3, 2, 300, 250),
+    ?debugFmt("~p~n", [compress(Buffer)]),
+    ?debugFmt("~p~n", [Expected]),
+    ?assertEqual(compress(Buffer), Expected).
+
 orset_test() ->
     Buffer1 = [
         inter_dc_txn_from_ops([{key, bucket, antidote_crdt_orset, [{5, [<<"a">>], []}]}],
@@ -287,6 +302,5 @@ orset_test() ->
         400,
         350
     ),
-    ?debugFmt("~p~n", [compress(Buffer3)]),
     ?assertEqual(compress(Buffer3), Expected3).
 -endif.
