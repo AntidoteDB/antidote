@@ -1,10 +1,10 @@
 1. create N releases of antidote
 
-    ./bin/stop-nodes.sh N
+    ./bin/build-releases.sh N
 
 2. start N instances of antidote in a local machine
 
-    ./bin/build-releases.sh N
+    ./bin/launch-nodes.sh N
 
 3. Optional:  join those instances into cluster(s)
 
