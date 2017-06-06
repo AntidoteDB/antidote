@@ -15,7 +15,6 @@ Join as at one of these events!
 
 * Come and talk to us at the [Vivatech exhibit](https://vivatechnology.com/)! More details to come!
 
-
 ## Past Events
 
 * Valter Balegas' presentation at [Code Europe, Wroclaw, May 23rd](https://www.codeeurope.pl/en).
