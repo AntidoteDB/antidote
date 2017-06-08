@@ -48,7 +48,7 @@ docker run -i -t -d --name antidote2 --network default_ntwk -e SHORT_NAME=true -
 Connect to the console of one node:
 
 ```sh
-docker exec -it antidote1 /opt/antidote/bin/antidote attach
+docker exec -it antidote1 /opt/antidote/bin/env attach
 
 ```
 
@@ -71,13 +71,13 @@ We now have an AntidoteDB cluster with two replicas!
 In two separate terminals, connect to the console of each node:
 
 ```sh
-docker exec -it antidote1 /opt/antidote/bin/antidote attach
+docker exec -it antidote1 /opt/antidote/bin/env attach
 
-docker exec -it antidote2 /opt/antidote/bin/antidote attach
+docker exec -it antidote2 /opt/antidote/bin/env attach
 
 ```
 
-> If you used the Compose file before, you connect to the console of a replica by typing: docker exec -it dockerdcs_antidote1_1 /opt/antidote/bin/env attach
+> If you used the Compose file before, you connect to the console of a replica by typing: docker-compose exec antidote1 /opt/antidote/bin/env attach
 
 ## Interacting with AntidoteDB
 
