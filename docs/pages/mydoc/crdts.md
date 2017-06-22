@@ -12,7 +12,7 @@ Antidote offers a variety of other datatypes with smarter strategies to resolve 
 The available data types are described below.
 
 All data types have in common, that their value only depends on the operations which have been delivered to the currently used Antidote data center.
-For all datatypes there can be concurrent operations which are not yet visible.
+There can always be operations which are not yet visible, for example because they happened concurrently on a different datacenter.
 
 In the descriptions below the word "after" always means "causally after".
 An operation which happens later in time can be concurrent, if it happened independently.
@@ -55,7 +55,7 @@ reset()
 ### Counter
 
 The counter datatype only allows incrementing and decrementing the value.
-Reading the value returns the aggregated value from all operations.
+Reading the value returns the aggregated value from all received operations.
 
 #### Operations
 
@@ -64,9 +64,6 @@ increment(v)
 
 decrement(v)
 :	Decrements the counter by `v`.
-
-reset()
-:   Resets the register to the initial state (empty list).
 
 
 ### Fat Counter
@@ -85,7 +82,7 @@ decrement(v)
 :	Decrements the counter by `v`.
 
 reset()
-:   Resets the counter to the initial state (0).
+:   Resets the counter to the initial state (0), cancelling all observed increments and decrements.
 
 
 
@@ -173,7 +170,7 @@ reset()
 ### Grow-only Map (G-Map)
 
 The grow-only map does not support removing entries.
-It can be used for representing objects/structs in Antidote, where fields are dynamically added and removed.
+It can be used for representing objects/structs in Antidote, where fields are not dynamically added and removed.
 
 ### Add-wins Map (AW-Map)
 
@@ -186,7 +183,7 @@ The drawback of this implementation is, that markers for removed elements might 
 
 ### Remove-Resets Map (RR-Map)
 
-A `remove` on an remove-resets map resets the embedded datatype by calling its reset operation.
+Similar to the add-wins map, calling `remove` on a remove-resets map resets the embedded datatype by calling its reset operation.
 
 If the internal state of an embedded datatype becomes equal to its initial state, it is removed from the map.
 When calling `reset` this is the case for add-wins sets, multi-value registers, fat counters, flags and remove-reset maps which only contain the types in this sentence (read this as an inductive definition).
