@@ -95,7 +95,7 @@ read(Key, Type, SnapshotTime, TxId, MatState) ->
 
 -spec get_cache_name(non_neg_integer(),atom()) -> atom().
 get_cache_name(Partition,Base) ->
-	lager:info("READ ANTIDOTE DB ~n", []),
+%%	lager:info("READ ANTIDOTE DB ~n", []),
     list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 %%@doc write operation to cache for future read, updates are stored
@@ -118,14 +118,14 @@ store_ss(Key, Snapshot, CommitTime) ->
 
 init([Partition]) ->
 	%% Setup the mat_state depending on the backend configured
-	lager:info("init MAT VNODE ~p ~n", [Partition]),
+%%	lager:info("init MAT VNODE ~p ~n", [Partition]),
 	case application:get_env(antidote, antidote_db) of
 		{ok, false} ->
 			OpsCache = open_table(Partition, ops_cache),
 			SnapshotCache = open_table(Partition, snapshot_cache),
 			IsReady = case application:get_env(antidote, recover_from_log) of
 						  {ok, true} ->
-							  lager:info("Checking for logs to init materializer ~p", [Partition]),
+%%							  lager:info("Checking for logs to init materializer ~p", [Partition]),
 							  riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
 							  false;
 						  _ ->
@@ -133,9 +133,9 @@ init([Partition]) ->
 					  end,
 			{ok, #mat_state{is_ready = IsReady, partition = Partition, ops_cache = OpsCache, snapshot_cache = SnapshotCache, antidote_db = undefined}};
 		_ ->
-			lager:info("I'm NODE ~p ~n", [node()]),
+%%			lager:info("I'm NODE ~p ~n", [node()]),
 			AntidoteDB = clocksi_vnode:get_antidote_db(Partition),
-			lager:info("got DB ~p NODE ~p ~n", [AntidoteDB, node()]),
+%%			lager:info("got DB ~p NODE ~p ~n", [AntidoteDB, node()]),
 			{ok, #mat_state{is_ready = true, partition = Partition, ops_cache = undefined, snapshot_cache = undefined, antidote_db = AntidoteDB}}
 	end.
 
@@ -258,7 +258,7 @@ handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
 	{reply, read(Key, Type, SnapshotTime, TxId, State), State};
 
 handle_command({update, Key, DownstreamOp}, _Sender, State) ->
-	lager:info("materializer_vnode update METHOD ~p ~n", [State]),
+%%	lager:info("materializer_vnode update METHOD ~p ~n", [State]),
 %%	NewState = check_mat_state_for_antidote_db(State),
 	true = op_insert_gc(Key, DownstreamOp, State),
 	{reply, ok, State};
@@ -387,7 +387,7 @@ internal_store_ss(Key,Snapshot = #materialized_snapshot{last_op_id = NewOpId},Co
     end;
 
 internal_store_ss(Key, Snapshot , _CommitTime, _ShouldGc, _State = #mat_state{antidote_db = AntidoteDB}) ->
-%%	io:format("~p ~n", [Snapshot]),
+%%	io:format("STORING SNAPSHOT ~p VALUE ~p ~n", [dict:to_list(Snapshot#materialized_snapshot.snapshot_time), Snapshot#materialized_snapshot.value]),
 	antidote_db:put_snapshot(AntidoteDB, Key, Snapshot).
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
@@ -484,7 +484,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{sna
     end;
 
 internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{antidote_db = AntidoteDB}) ->
-	lager:info("internal_read ANTIDOTE DB ~p~n", [AntidoteDB]),
+%%	lager:info("internal_read ANTIDOTE DB ~p~n", [AntidoteDB]),
 	%% Get the the most recent snapshot or a new one if there isn't one in the range searched
 	MatSnapshot = case antidote_db:get_snapshot(AntidoteDB, Key, MinSnapshotTime) of
 				   {ok, Snap} ->
