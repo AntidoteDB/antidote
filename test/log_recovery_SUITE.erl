@@ -59,7 +59,7 @@ all() -> [read_pncounter_log_recovery_test].
 %% After 15 updates, we kill the nodes
 %% We then restart the nodes, and read the value
 %% being sure that all 15 updates were loaded from the log
-read_pncounter_log_recovery_test(Config) ->    
+read_pncounter_log_recovery_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     FirstNode = hd(Nodes),
 
@@ -85,7 +85,7 @@ read_pncounter_log_recovery_test(Config) ->
 
             lager:info("Killing and restarting the nodes"),
             %% Shut down the nodes
-            Nodes = test_utils:kill_and_restart_nodes(Nodes,Config),
+            Nodes = test_utils:kill_and_restart_nodes(Nodes, Config),
             lager:info("Vnodes are started up"),
             lager:info("Nodes: ~p", [Nodes]),
 

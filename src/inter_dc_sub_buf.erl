@@ -34,8 +34,9 @@
 
 %%%% API --------------------------------------------------------------------+
 
+%% TODO: Fetch last observed ID from durable storage (maybe log?). This way, in case of a node crash, the queue can be fetched again.
 -spec new_state(pdcid()) -> #inter_dc_sub_buf{}.
-new_state(PDCID) -> 
+new_state(PDCID) ->
   {ok, EnableLogging} = application:get_env(antidote, enable_logging),
   #inter_dc_sub_buf{
     state_name = normal,
@@ -51,12 +52,12 @@ process({txn, Txn}, State = #inter_dc_sub_buf{last_observed_opid = init, pdcid =
     %% to see if there was a previous op received (i.e. in the case of fail and restart) so that
     %% you can check for duplocates or lost messages
     Result = try
-		 logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
-					 DCID, Partition)
-	     catch
-		 _:Reason ->
-		     lager:debug("Error loading last opid from log: ~w, will retry", [Reason])
-	     end,
+                 logging_vnode:request_op_id(dc_utilities:partition_to_indexnode(Partition),
+                         DCID, Partition)
+             catch
+                 _:Reason ->
+                     lager:debug("Error loading last opid from log: ~w, will retry", [Reason])
+             end,
     case Result of
 	{ok, OpId} ->
 	    lager:debug("Loaded opid ~p from log for dc ~p, partition, ~p", [OpId, DCID, Partition]),
@@ -132,7 +133,7 @@ push(Txn, State) -> State#inter_dc_sub_buf{queue = queue:in(Txn, State#inter_dc_
 %% Instead of a simple request/response with blocking, the result is delivered
 %% asynchronously to inter_dc_sub_vnode.
 -spec query(pdcid(), log_opid(), log_opid()) -> ok | unknown_dc.
-query({DCID,Partition}, From, To) ->
+query({DCID, Partition}, From, To) ->
     BinaryRequest = term_to_binary({read_log, Partition, From, To}),
     inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2).
 

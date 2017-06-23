@@ -28,15 +28,15 @@ exclude:
   - .gitignore
 # these are the files and directories that jekyll will exclude from the build
 
-feedback_subject_line: Antidote
+#feedback_subject_line: Feedback on Antidote
 
-feedback_email: 
+feedback_email: info@antidotedb.com
 # used as a contact email for the Feedback link in the top navigation bar
 
 # feedback_disable: true
 # if you uncomment the previous line, the Feedback link gets removed
 
-# feedback_text: "Need help?"
+feedback_text: "Contact"
 # if you uncomment the previous line, it changes the Feedback text
 
 # feedback_link: "http://helpy.io/"
@@ -97,4 +97,4 @@ description: "Documentation for the Antidote data store."
 # the description is used in the feed.xml file
 
 # needed for sitemap.xml file only
-url: http://antidotedb.org
+url: http://antidotedb.com

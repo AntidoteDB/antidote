@@ -9,6 +9,8 @@ script:
   - make test
   - make reltest
   - make systests
+  - make dialyzer
+  - make lint
 notifications:
   email: christopher.meiklejohn@gmail.com
 sudo: required

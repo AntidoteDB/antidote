@@ -26,6 +26,7 @@
 
 %% API for applications
 -export([ start/0, stop/0,
+<<<<<<< HEAD
          start_transaction/2,
          start_transaction/3,
          read_objects/2,
@@ -74,15 +75,33 @@
          clocksi_full_icommit/1,
          clocksi_icommit/1]).
 %% ===========================================================
+=======
+          start_transaction/2,
+          read_objects/2,
+          read_objects/3,
+          update_objects/2,
+          update_objects/3,
+          abort_transaction/1,
+          commit_transaction/1,
+          create_bucket/2,
+          create_object/3,
+          delete_object/1,
+          register_pre_hook/3,
+          register_post_hook/3,
+          unregister_hook/2
+        ]).
+
+>>>>>>> master
 
 %% Public API
 
 -spec start() -> {ok, _} | {error, term()}.
 start() ->
-  application:ensure_all_started(antidote).
+    application:ensure_all_started(antidote).
 
 -spec stop() -> ok.
 stop() ->
+<<<<<<< HEAD
   application:stop(antidote).
 
 -spec start_transaction(Clock::snapshot_time() | ignore , Properties::txn_properties(), boolean())
@@ -274,6 +293,9 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
                     end
             end
     end.
+=======
+    application:stop(antidote).
+>>>>>>> master
 
 %% Takes as input a list of tuples of bound object, clock pairs and transaction properties
 %% Returns a list containing tuples of object state and commit time for each
@@ -336,10 +358,16 @@ delete_object({_Key, _Type, _Bucket}) ->
     %% TODO: Object deletion is not currently supported
     {error, operation_not_supported}.
 
+%% Register a post commit hook.
+%% Module:Function({Key, Type, Op}) will be executed after successfull commit of
+%% each transaction that updates Key.
 -spec register_post_hook(bucket(), module_name(), function_name()) -> ok | {error, function_not_exported}.
 register_post_hook(Bucket, Module, Function) ->
     antidote_hooks:register_post_hook(Bucket, Module, Function).
 
+%% Register a pre commit hook.
+%% Module:Function({Key, Type, Op}) will be executed before executing an update "op"
+%% on key. If pre commit hook fails, transaction will be aborted
 -spec register_pre_hook(bucket(), module_name(), function_name()) -> ok | {error, function_not_exported}.
 register_pre_hook(Bucket, Module, Function) ->
     antidote_hooks:register_pre_hook(Bucket, Module, Function).
@@ -348,6 +376,7 @@ register_pre_hook(Bucket, Module, Function) ->
 unregister_hook(Prefix, Bucket) ->
     antidote_hooks:unregister_hook(Prefix, Bucket).
 
+<<<<<<< HEAD
 %% =============================================================================
 %% OLD API, We might still need them
 
@@ -456,8 +485,17 @@ clocksi_read(ClientClock, Key, Type) ->
 -spec clocksi_read(key(), type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
 clocksi_read(Key, Type) ->
     clocksi_execute_tx([{read, {Key, Type}}]).
+=======
+%% Transaction API %%
+%% ==============  %%
+>>>>>>> master
 
+-spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
+                       -> {ok, txid()} | {error, reason()}.
+start_transaction(Clock, Properties) ->
+    cure:start_transaction(Clock, Properties, false).
 
+<<<<<<< HEAD
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:
 %%      ClientClock: last clock the client has seen from a successful transaction.
@@ -490,59 +528,53 @@ clocksi_istart_tx(Clock, false) ->
 
 clocksi_istart_tx(Clock) ->
     clocksi_istart_tx(Clock, false).
+=======
+-spec abort_transaction(TxId::txid()) -> {error, reason()}.
+abort_transaction(TxId) ->
+    cure:abort_transaction(TxId).
 
-clocksi_istart_tx() ->
-    clocksi_istart_tx(ignore, false).
+-spec commit_transaction(TxId::txid()) ->
+                                {ok, snapshot_time()} | {error, reason()}.
+commit_transaction(TxId) ->
+    cure:commit_transaction(TxId).
+%% TODO: Execute post_commit hooks here?
+>>>>>>> master
 
--spec clocksi_iread(txid(), key(), type()) -> {ok, term()} | {error, reason()}.
-clocksi_iread({_, _, CoordFsmPid}, Key, Type) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
+-spec read_objects(Objects::[bound_object()], TxId::txid())
+                  -> {ok, [term()]} | {error, reason()}.
+read_objects(Objects, TxId) ->
+    cure:read_objects(Objects, TxId).
+
+-spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
+                    -> ok | {error, reason()}.
+update_objects(Updates, TxId) ->
+    case type_check(Updates) of
         ok ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {read, {Key, Type}}, ?OP_TIMEOUT) of
-                {ok, Res} -> {ok, Res};
-                {error, Reason} -> {error, Reason}
-            end;
+            cure:update_objects(Updates, TxId);
         {error, Reason} ->
             {error, Reason}
     end.
 
--spec clocksi_iupdate(txid(), key(), type(), term()) -> ok | {error, reason()}.
-clocksi_iupdate({_, _, CoordFsmPid}, Key, Type, OpParams) ->
-    case materializer:check_operations([{update, {Key, Type, OpParams}}]) of
+%% For static transactions: bulk updates and bulk reads
+-spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}]) ->
+                            {ok, snapshot_time()} | {error, reason()}.
+update_objects(Clock, Properties, Updates) ->
+    case type_check(Updates) of
         ok ->
-            gen_fsm:sync_send_event(CoordFsmPid, {update, {Key, Type, OpParams}}, ?OP_TIMEOUT);
+            cure:update_objects(Clock, Properties, Updates);
         {error, Reason} ->
             {error, Reason}
     end.
 
-%% @doc This commits includes both prepare and commit phase. Thus
-%%      Client do not need to send to message to complete the 2PC
-%%      protocol. The Tx coordinator will pick the best strategie
-%%      automatically.
-%%      To keep with the current api this is still done in 2 steps,
-%%      but should be changed when the new transaction api is decided
--spec clocksi_full_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}} | {error, reason()}.
-clocksi_full_icommit({_, _, CoordFsmPid})->
-    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, empty}, ?OP_TIMEOUT) of
-        {ok,_PrepareTime} ->
-            gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT);
-        Msg ->
-            Msg
-    end.
+-spec read_objects(vectorclock(), any(), [bound_object()]) ->
+                          {ok, list(), vectorclock()} | {error, reason()}.
+read_objects(Clock, Properties, Objects) ->
+    cure:read_objects(Clock, Properties, Objects).
 
--spec clocksi_iprepare(txid()) -> {aborted, txid()} | {ok, non_neg_integer()}.
-clocksi_iprepare({_, _, CoordFsmPid})->
-    case gen_fsm:sync_send_event(CoordFsmPid, {prepare, two_phase}, ?OP_TIMEOUT) of
-        {error, {aborted, TxId}} ->
-            {aborted, TxId};
-        Reply ->
-            Reply
-    end.
+%%% Internal function %%
+%%% ================= %%
 
--spec clocksi_icommit(txid()) -> {aborted, txid()} | {ok, {txid(), snapshot_time()}}.
-clocksi_icommit({_, _, CoordFsmPid})->
-    gen_fsm:sync_send_event(CoordFsmPid, commit, ?OP_TIMEOUT).
-
+<<<<<<< HEAD
 %%% Snapshot read for Gentlerain protocol
 gr_snapshot_read(ClientClock, Args) ->
     %% GST = scalar stable time
@@ -562,14 +594,26 @@ gr_snapshot_read(ClientClock, Args) ->
             timer:sleep(10),
             gr_snapshot_read(ClientClock, Args)
     end.
+=======
+type_check_update({{_K, Type, _bucket}, Op, Param}) ->
+    antidote_crdt:is_type(Type) andalso
+        Type:is_operation({Op, Param}).
+>>>>>>> master
 
-execute_ops([], _TxId, ReadSet) ->
-    lists:reverse(ReadSet);
-execute_ops([{update, {Key, Type, OpParams}}|Rest], TxId, ReadSet) ->
-    case clocksi_iupdate(TxId, Key, Type, OpParams) of
-        ok -> execute_ops(Rest, TxId, ReadSet);
-        {error, Reason} ->
+-spec type_check([{bound_object(), op_name(), op_param()}]) -> ok | {error, reason()}.
+type_check(Updates) ->
+    try
+        lists:foreach(fun(Update) ->
+                              case type_check_update(Update) of
+                                  true -> ok;
+                                  false -> throw({badtype, Update})
+                              end
+                      end, Updates),
+        ok
+    catch
+        _:Reason ->
             {error, Reason}
+<<<<<<< HEAD
     end;
 execute_ops([{read, {Key, Type}}|Rest], TxId, ReadSet) ->
     {ok, Value} = clocksi_iread(TxId, Key, Type),
@@ -614,3 +658,6 @@ get_txn_property(certify, Properties) ->
     end.
 
 
+=======
+    end.
+>>>>>>> master

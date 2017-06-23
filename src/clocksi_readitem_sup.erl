@@ -30,12 +30,12 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-start_fsm(Partition,Id) ->
-    supervisor:start_child(?MODULE, [Partition,Id]).
+start_fsm(Partition, Id) ->
+    supervisor:start_child(?MODULE, [Partition, Id]).
 
 init([]) ->
     {ok, {{simple_one_for_one, 5, 10},
-	  [{clocksi_readitem_fsm,
-	    {clocksi_readitem_fsm, start_link, []},
-	    transient, 5000, worker, [clocksi_readitem_fsm]}]
-	 }}.
+      [{clocksi_readitem_server,
+        {clocksi_readitem_server, start_link, []},
+        transient, 5000, worker, [clocksi_readitem_server]}]
+     }}.

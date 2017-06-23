@@ -25,8 +25,8 @@
 %% Public API
 %% ===================================================================
 
--define(DC_CONNECT_RETRIES,5).
--define(DC_CONNECT_RETY_SLEEP,1000).
+-define(DC_CONNECT_RETRIES, 5).
+-define(DC_CONNECT_RETY_SLEEP, 1000).
 
 -export([
   get_descriptor/0,
@@ -59,44 +59,44 @@ get_descriptor() ->
 observe_dc(Desc = #descriptor{dcid = DCID, partition_num = PartitionsNumRemote, publishers = Publishers, logreaders = LogReaders}, Nodes) ->
     PartitionsNumLocal = dc_utilities:get_partitions_num(),
     case PartitionsNumRemote == PartitionsNumLocal of
-	false ->
-	    lager:error("Cannot observe remote DC: partition number mismatch"),
-	    {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
-	true ->
-	    case DCID == dc_utilities:get_my_dc_id() of
-		true -> ok;
-		false ->
-		    lager:info("Observing DC ~p", [DCID]),
-		    dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
-		    %% Announce the new publisher addresses to all subscribers in this DC.
-		    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
-		    %% But we want to balance the work, so all nodes take part in subscribing.
-		    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES)
-	    end
+        false ->
+            lager:error("Cannot observe remote DC: partition number mismatch"),
+            {error, {partition_num_mismatch, PartitionsNumRemote, PartitionsNumLocal}};
+        true ->
+            case DCID == dc_utilities:get_my_dc_id() of
+                true -> ok;
+                false ->
+                    lager:info("Observing DC ~p", [DCID]),
+                    dc_utilities:ensure_all_vnodes_running_master(inter_dc_log_sender_vnode_master),
+                    %% Announce the new publisher addresses to all subscribers in this DC.
+                    %% Equivalently, we could just pick one node in the DC and delegate all the subscription work to it.
+                    %% But we want to balance the work, so all nodes take part in subscribing.
+                    connect_nodes(Nodes, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES)
+            end
     end.
 
 -spec connect_nodes([node()], dcid(), [socket_address()], [socket_address()], #descriptor{}, non_neg_integer()) ->
-			   ok | {error, connection_error}.
+               ok | {error, connection_error}.
 connect_nodes([], _DCID, _LogReaders, _Publishers, _Desc, _Retries) ->
     ok;
 connect_nodes(_Nodes, _DCID, _LogReaders, _Publishers, Desc, 0) ->
     ok = forget_dcs([Desc]),
-    {error, connection_error};    
+    {error, connection_error};
 connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries) ->
     case rpc:call(Node, inter_dc_query, add_dc, [DCID, LogReaders], ?COMM_TIMEOUT) of
-	ok ->
-	    case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
-		ok ->
-		    connect_nodes(Rest, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES);
-		_ ->
-		    timer:sleep(?DC_CONNECT_RETY_SLEEP),
-		    lager:error("Unable to connect to publisher ~p", [DCID]),
-		    connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
-	    end;
-	_ ->
-	    timer:sleep(?DC_CONNECT_RETY_SLEEP),
-	    lager:error("Unable to connect to log reader ~p", [DCID]),
-	    connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
+        ok ->
+            case rpc:call(Node, inter_dc_sub, add_dc, [DCID, Publishers], ?COMM_TIMEOUT) of
+                ok ->
+                    connect_nodes(Rest, DCID, LogReaders, Publishers, Desc, ?DC_CONNECT_RETRIES);
+                _ ->
+                    timer:sleep(?DC_CONNECT_RETY_SLEEP),
+                    lager:error("Unable to connect to publisher ~p", [DCID]),
+                    connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
+            end;
+        _ ->
+            timer:sleep(?DC_CONNECT_RETY_SLEEP),
+            lager:error("Unable to connect to log reader ~p", [DCID]),
+            connect_nodes([Node|Rest], DCID, LogReaders, Publishers, Desc, Retries - 1)
     end.
 
 %% This should not be called untilt the local dc's ring is merged
@@ -110,28 +110,29 @@ start_bg_processes(MetaDataName) ->
     ok = dc_utilities:ensure_all_vnodes_running_master(logging_vnode_master),
     ok = dc_utilities:ensure_all_vnodes_running_master(materializer_vnode_master),
     lists:foreach(fun(Node) ->
-			  true = wait_init:wait_ready(Node),
-			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
-			  ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
-			  ok = rpc:call(Node, dc_utilities, check_registered_global, [stable_meta_data_server:generate_server_name(Node)]),
-			  ok = rpc:call(Node, meta_data_sender, start, [MetaDataName]) end, Nodes),
+                      true = wait_init:wait_ready(Node),
+                      ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
+                      ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
+                      ok = rpc:call(Node, dc_utilities, check_registered_global, [stable_meta_data_server:generate_server_name(Node)]),
+                      ok = rpc:call(Node, meta_data_sender, start, [MetaDataName])
+                  end, Nodes),
     %% Load the internal meta-data
     _MyDCId = dc_meta_data_utilities:reset_my_dc_id(),
     ok = dc_meta_data_utilities:load_partition_meta_data(),
     ok = dc_meta_data_utilities:store_meta_data_name(MetaDataName),
     %% Start the timers sending the heartbeats
     lager:info("Starting heartbeat sender timers"),
-    Responses = dc_utilities:bcast_vnode_sync(logging_vnode_master, {start_timer,undefined}),
+    Responses = dc_utilities:bcast_vnode_sync(logging_vnode_master, {start_timer, undefined}),
     %% Be sure they all started ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->
-			       ok
-		       end, Responses),
+                           ok
+                       end, Responses),
     lager:info("Starting read servers"),
     Responses2 = dc_utilities:bcast_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
     %% Be sure they all started ok, crash otherwise
     ok = lists:foreach(fun({_, true}) ->
-			       ok
-		       end, Responses2),
+                           ok
+                       end, Responses2),
     ok.
 
 %% This should be called once the DC is up and running successfully
@@ -146,48 +147,48 @@ dc_successfully_started() ->
 -spec check_node_restart() -> boolean().
 check_node_restart() ->
     case dc_meta_data_utilities:is_restart() of
-	true ->
-	    lager:info("This node was previously configured, will restart from previous config"),
-	    MyNode = node(),
-	    %% Load any env variables
-	    ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
-	    ok = dc_meta_data_utilities:load_env_meta_data(),
-	    %% Ensure vnodes are running and meta_data
-	    ok = dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
-	    ok = dc_utilities:ensure_local_vnodes_running_master(clocksi_vnode_master),
-	    ok = dc_utilities:ensure_local_vnodes_running_master(logging_vnode_master),
-	    ok = dc_utilities:ensure_local_vnodes_running_master(materializer_vnode_master),
-	    wait_init:wait_ready(MyNode),
-	    ok = dc_utilities:check_registered(meta_data_sender_sup),
-	    ok = dc_utilities:check_registered(meta_data_manager_sup),
-	    ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
-	    ok = dc_utilities:check_registered(inter_dc_sub),
-	    ok = dc_utilities:check_registered(inter_dc_pub),
-	    ok = dc_utilities:check_registered(inter_dc_query_response_sup),
-	    ok = dc_utilities:check_registered(inter_dc_query),
-	    {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
-	    ok = meta_data_sender:start(MetaDataName),
-	    %% Start the timers sending the heartbeats
-	    lager:info("Starting heartbeat sender timers"),
-	    Responses = dc_utilities:bcast_my_vnode_sync(logging_vnode_master, {start_timer,undefined}),
-	    %% Be sure they all started ok, crash otherwise
-	    ok = lists:foreach(fun({_, ok}) ->
-				       ok
-			       end, Responses),
-	    lager:info("Starting read servers"),
-	    Responses2 = dc_utilities:bcast_my_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
-	    %% Be sure they all started ok, crash otherwise
-	    ok = lists:foreach(fun({_, true}) ->
-				       ok
-			       end, Responses2),
-	    %% Reconnect this node to other DCs
-	    OtherDCs = dc_meta_data_utilities:get_dc_descriptors(),
-	    Responses3 = reconnect_dcs_after_restart(OtherDCs, MyNode),
-	    %% Ensure all connections were successful, crash otherwise
-	    Responses3 = [X = ok || X <- Responses3],
-	    true;
-	false ->
-	    false
+        true ->
+            lager:info("This node was previously configured, will restart from previous config"),
+            MyNode = node(),
+            %% Load any env variables
+            ok = dc_utilities:check_registered_global(stable_meta_data_server:generate_server_name(MyNode)),
+            ok = dc_meta_data_utilities:load_env_meta_data(),
+            %% Ensure vnodes are running and meta_data
+            ok = dc_utilities:ensure_local_vnodes_running_master(inter_dc_log_sender_vnode_master),
+            ok = dc_utilities:ensure_local_vnodes_running_master(clocksi_vnode_master),
+            ok = dc_utilities:ensure_local_vnodes_running_master(logging_vnode_master),
+            ok = dc_utilities:ensure_local_vnodes_running_master(materializer_vnode_master),
+            wait_init:wait_ready(MyNode),
+            ok = dc_utilities:check_registered(meta_data_sender_sup),
+            ok = dc_utilities:check_registered(meta_data_manager_sup),
+            ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
+            ok = dc_utilities:check_registered(inter_dc_sub),
+            ok = dc_utilities:check_registered(inter_dc_pub),
+            ok = dc_utilities:check_registered(inter_dc_query_response_sup),
+            ok = dc_utilities:check_registered(inter_dc_query),
+            {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),
+            ok = meta_data_sender:start(MetaDataName),
+            %% Start the timers sending the heartbeats
+            lager:info("Starting heartbeat sender timers"),
+            Responses = dc_utilities:bcast_my_vnode_sync(logging_vnode_master, {start_timer, undefined}),
+            %% Be sure they all started ok, crash otherwise
+            ok = lists:foreach(fun({_, ok}) ->
+                                   ok
+                               end, Responses),
+            lager:info("Starting read servers"),
+            Responses2 = dc_utilities:bcast_my_vnode_sync(clocksi_vnode_master, {check_servers_ready}),
+            %% Be sure they all started ok, crash otherwise
+            ok = lists:foreach(fun({_, true}) ->
+                                   ok
+                               end, Responses2),
+            %% Reconnect this node to other DCs
+            OtherDCs = dc_meta_data_utilities:get_dc_descriptors(),
+            Responses3 = reconnect_dcs_after_restart(OtherDCs, MyNode),
+            %% Ensure all connections were successful, crash otherwise
+            Responses3 = [X = ok || X <- Responses3],
+            true;
+        false ->
+            false
     end.
 
 -spec reconnect_dcs_after_restart([#descriptor{}], node()) -> [ok | inter_dc_conn_err()].
@@ -205,18 +206,18 @@ observe_dcs_sync(Descriptors) ->
 observe_dcs_sync(Descriptors, Nodes) ->
     {ok, SS} = dc_utilities:get_stable_snapshot(),
     DCs = lists:map(fun(DC) ->
-			    {observe_dc(DC, Nodes), DC}
-		    end, Descriptors),
+                        {observe_dc(DC, Nodes), DC}
+                    end, Descriptors),
     lists:foreach(fun({Res, Desc = #descriptor{dcid = DCID}}) ->
-			  case Res of
-			      ok ->
-				  Value = vectorclock:get_clock_of_dc(DCID, SS),
-				  wait_for_stable_snapshot(DCID, Value),
-				  ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
-			      _ ->
-				  ok
-			  end
-		  end, DCs),
+                      case Res of
+                          ok ->
+                            Value = vectorclock:get_clock_of_dc(DCID, SS),
+                            wait_for_stable_snapshot(DCID, Value),
+                            ok = dc_meta_data_utilities:store_dc_descriptors([Desc]);
+                          _ ->
+                             ok
+                      end
+                  end, DCs),
     [Result1 || {Result1, _DC1} <- DCs].
 
 -spec forget_dc(#descriptor{}, [node()]) -> ok.
@@ -232,12 +233,12 @@ forget_dc(#descriptor{dcid = DCID}, Nodes) ->
 -spec forget_dcs([#descriptor{}]) -> ok.
 forget_dcs(Descriptors) ->
     Nodes = dc_utilities:get_my_dc_nodes(),
-    forget_dcs(Descriptors,Nodes).
+    forget_dcs(Descriptors, Nodes).
 
--spec forget_dcs([#descriptor{}],[node()]) -> ok.
-forget_dcs(Descriptors,Nodes) -> lists:foreach(fun(Descriptor) ->
-						       forget_dc(Descriptor,Nodes)
-					       end , Descriptors).
+-spec forget_dcs([#descriptor{}], [node()]) -> ok.
+forget_dcs(Descriptors, Nodes) -> lists:foreach(fun(Descriptor) ->
+                                                    forget_dc(Descriptor, Nodes)
+                                                end , Descriptors).
 
 %% Tell nodes within the DC to drop heartbeat ping messages from other
 %% DCs, used for debugging
@@ -246,8 +247,8 @@ drop_ping(DropPing) ->
     Responses = dc_utilities:bcast_vnode_sync(inter_dc_dep_vnode_master, {drop_ping, DropPing}),
     %% Be sure they all returned ok, crash otherwise
     ok = lists:foreach(fun({_, ok}) ->
-			       ok
-		       end, Responses).
+                           ok
+                       end, Responses).
 
 %%%%%%%%%%%%%
 %% Utils

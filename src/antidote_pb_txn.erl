@@ -130,7 +130,7 @@ process(#apbreadobjects{boundobjects=BoundObjects, transaction_descriptor=Td},
                                              {error, Reason}), State};
         {ok, Results} ->
             {reply, antidote_pb_codec:encode(read_objects_response,
-                                             {ok, lists:zip(Objects,Results)}),
+                                             {ok, lists:zip(Objects, Results)}),
              State}
     end;
 
@@ -167,7 +167,7 @@ process(#apbstaticupdateobjects{
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
-    Response = antidote:update_objects(Clock, Properties, Updates, false),
+    Response = antidote:update_objects(Clock, Properties, Updates),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
@@ -191,19 +191,19 @@ process(#apbstaticreadobjects{
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),
-    Response = antidote:read_objects(Clock, Properties, Objects, false),
+    Response = antidote:read_objects(Clock, Properties, Objects),
     case Response of
         {error, Reason} ->
             {reply, antidote_pb_codec:encode(commit_response,
                                              {error, Reason}), State};
         {ok, Results, CommitTime} ->
             {reply, antidote_pb_codec:encode(static_read_objects_response,
-                                             {ok, lists:zip(Objects,Results), CommitTime}),
+                                             {ok, lists:zip(Objects, Results), CommitTime}),
              State}
     end.
 
 %% @doc process_stream/3 callback. This service does not create any
 %% streaming responses and so ignores all incoming messages.
-process_stream(_,_,State) ->
+process_stream(_, _, State) ->
     {ignore, State}.
 

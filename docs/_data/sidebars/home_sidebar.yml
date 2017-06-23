@@ -18,13 +18,19 @@ entries:
       output: pdf
       type: frontmatter
 
+  - title: Quick Start
+    url: /quick_start.html
+    output: web, pdf
+
+
   - title: Overview
     output: web, pdf
     folderitems:
-    - title: Get started
-      url: /getting_started.html
-      output: web, pdf
-      type: homepage
+
+    # - title: Get started
+    #   url: /getting_started.html
+    #   output: web, pdf
+    #   type: homepage
 
     - title: Architecture
       url: /architecture.html

@@ -36,10 +36,10 @@
          wait_until_registered/2,
          start_node/2,
          connect_cluster/1,
-	 kill_and_restart_nodes/2,
-	 kill_nodes/1,
-	 brutal_kill_nodes/1,
-	 restart_nodes/2,
+         kill_and_restart_nodes/2,
+         kill_nodes/1,
+         brutal_kill_nodes/1,
+         restart_nodes/2,
          partition_cluster/2,
          heal_cluster/2,
          join_cluster/1,
@@ -47,12 +47,12 @@
 
 at_init_testsuite() ->
 %% this might help, might not...
-    os:cmd(os:find_executable("epmd")++" -daemon"),
+    os:cmd(os:find_executable("epmd") ++ " -daemon"),
     {ok, Hostname} = inet:gethostname(),
     case net_kernel:start([list_to_atom("runner@"++Hostname), shortnames]) of
         {ok, _} -> ok;
         {error, {already_started, _}} -> ok;
-        {error, {{already_started, _},_}} -> ok
+        {error, {{already_started, _}, _}} -> ok
     end.
 
 
@@ -69,7 +69,7 @@ pmap(F, L) ->
                     end),
                 N+1
         end, 0, L),
-    L2 = [receive {pmap, N, R} -> {N,R} end || _ <- L],
+    L2 = [receive {pmap, N, R} -> {N, R} end || _ <- L],
     {_, L3} = lists:unzip(lists:keysort(1, L2)),
     L3.
 
@@ -132,39 +132,39 @@ kill_and_restart_nodes(NodeList, Config) ->
 -spec brutal_kill_nodes([node()]) -> [node()].
 brutal_kill_nodes(NodeList) ->
     lists:map(fun(Node) ->
-		      lager:info("Killing node ~p", [Node]),
-		      OSPidToKill = rpc:call(Node, os, getpid, []),
-		      %% try a normal kill first, but set a timer to
-		      %% kill -9 after 5 seconds just in case
-		      rpc:cast(Node, timer, apply_after,
-			       [5000, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
-		      rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
-		      Node
-	      end, NodeList).
+                  lager:info("Killing node ~p", [Node]),
+                  OSPidToKill = rpc:call(Node, os, getpid, []),
+                  %% try a normal kill first, but set a timer to
+                  %% kill -9 after 5 seconds just in case
+                  rpc:cast(Node, timer, apply_after,
+                       [5000, os, cmd, [io_lib:format("kill -9 ~s", [OSPidToKill])]]),
+                  rpc:cast(Node, os, cmd, [io_lib:format("kill -15 ~s", [OSPidToKill])]),
+                  Node
+              end, NodeList).
 
 -spec kill_nodes([node()]) -> [node()].
 kill_nodes(NodeList) ->
-	lists:map(fun(Node) ->
-			  %% Crash if stoping fails
-			  {ok, Name1} = ct_slave:stop(get_node_name(Node)),
-			  Name1
-		  end, NodeList).
+    lists:map(fun(Node) ->
+                  %% Crash if stoping fails
+                  {ok, Name1} = ct_slave:stop(get_node_name(Node)),
+                  Name1
+              end, NodeList).
 
 -spec restart_nodes([node()], [tuple()]) -> [node()].
 restart_nodes(NodeList, Config) ->
     pmap(fun(Node) ->
-		 start_node(get_node_name(Node), Config),
-		 ct:print("Waiting until vnodes are restarted at node ~w", [Node]),
-		 wait_until_ring_converged([Node]),
-		 wait_until(Node,fun wait_init:check_ready/1),
-		 Node
-	 end, NodeList).
+             start_node(get_node_name(Node), Config),
+             ct:print("Waiting until vnodes are restarted at node ~w", [Node]),
+             wait_until_ring_converged([Node]),
+             wait_until(Node, fun wait_init:check_ready/1),
+             Node
+         end, NodeList).
 
 -spec get_node_name(node()) -> atom().
 get_node_name(NodeAtom) ->
     Node = atom_to_list(NodeAtom),
-    {match, [{Pos,_Len}]} = re:run(Node,"@"),
-    list_to_atom(string:substr(Node,1,Pos)).
+    {match, [{Pos, _Len}]} = re:run(Node, "@"),
+    list_to_atom(string:substr(Node, 1, Pos)).
 
 start_node(Name, Config) ->
     CodePath = lists:filter(fun filelib:is_dir/1, code:get_path()),
@@ -180,7 +180,7 @@ start_node(Name, Config) ->
             PrivDir = proplists:get_value(priv_dir, Config),
             NodeDir = filename:join([PrivDir, Node]),
 
-            ct:print("Node dir: ~p",[NodeDir]),
+            ct:print("Node dir: ~p", [NodeDir]),
 
             ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir]),
             ok = rpc:call(Node, application, load, [lager]),
@@ -207,13 +207,13 @@ start_node(Name, Config) ->
             ok = rpc:call(Node, application, load, [antidote]),
             ok = rpc:call(Node, application, set_env, [antidote, pubsub_port, web_ports(Name) + 1]),
             ok = rpc:call(Node, application, set_env, [antidote, logreader_port, web_ports(Name)]),
-	    
+
             {ok, _} = rpc:call(Node, application, ensure_all_started, [antidote]),
-            ct:print("Node ~p started",[Node]),
+            ct:print("Node ~p started", [Node]),
 
             Node;
         {error, Reason, Node} ->
-	    ct:print("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
+            ct:print("Error starting node ~w, reason ~w, will retry", [Node, Reason]),
             ct_slave:stop(Name),
             wait_until_offline(Node),
             start_node(Name, Config)
@@ -271,7 +271,7 @@ connect_cluster(Nodes) ->
 
 % Waits until a certain registered name pops up on the remote node.
 wait_until_registered(Node, Name) ->
-    ct:print("Wait until ~p is up on ~p", [Name,Node]),
+    ct:print("Wait until ~p is up on ~p", [Name, Node]),
     F = fun() ->
                 Registered = rpc:call(Node, erlang, registered, []),
                 lists:member(Name, Registered)
@@ -322,7 +322,7 @@ join_cluster(Nodes) ->
     wait_until_nodes_agree_about_ownership(Nodes),
     ?assertEqual(ok, wait_until_no_pending_changes(Nodes)),
     wait_until_ring_converged(Nodes),
-    wait_until(hd(Nodes),fun wait_init:check_ready/1),
+    wait_until(hd(Nodes), fun wait_init:check_ready/1),
     ok.
 
 %% @doc Return a list of nodes that own partitions according to the ring
@@ -372,7 +372,7 @@ do_commit(Node) ->
             timer:sleep(100),
             maybe_wait_for_changes(Node),
             do_commit(Node);
-        {error,nothing_planned} ->
+        {error, nothing_planned} ->
             %% Assume plan actually committed somehow
             ok;
         ok ->

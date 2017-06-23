@@ -15,7 +15,7 @@
                         clocksi_downstream,clocksi_interactive_tx_coord_fsm,
                         clocksi_interactive_tx_coord_sup,
                         clocksi_interactive_tx_coord_worker_sup,
-                        clocksi_materializer,clocksi_readitem_fsm,
+                        clocksi_materializer,clocksi_readitem_server,
                         clocksi_readitem_sup,clocksi_static_tx_coord_fsm,
                         clocksi_static_tx_coord_sup,
                         clocksi_static_tx_coord_worker_sup,

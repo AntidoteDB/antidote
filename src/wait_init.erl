@@ -20,8 +20,8 @@
 -module(wait_init).
 
 -export([check_ready_nodes/1,
-	 wait_ready/1,
-	 check_ready/1
+         wait_ready/1,
+         check_ready/1
         ]).
 
 %% @doc This function takes a list of pysical nodes connected to the an
@@ -39,11 +39,11 @@ check_ready_nodes(Nodes) ->
 -spec wait_ready(node()) -> true.
 wait_ready(Node) ->
     case check_ready(Node) of
-	true ->
-	    true;
-	false ->
-	    timer:sleep(1000),
-	    check_ready(Node)
+        true ->
+            true;
+        false ->
+            timer:sleep(1000),
+            check_ready(Node)
     end.
 
 %% @doc This function provides the same functionality as wait_ready_nodes
@@ -51,29 +51,29 @@ wait_ready(Node) ->
 -spec check_ready(node()) -> boolean().
 check_ready(Node) ->
     lager:debug("Checking if node ~w is ready ~n", [Node]),
-    case rpc:call(Node,clocksi_vnode,check_tables_ready,[]) of
-	true ->
-	    case rpc:call(Node,clocksi_readitem_fsm,check_servers_ready,[]) of
-		true ->
-		    case rpc:call(Node,materializer_vnode,check_tables_ready,[]) of
-			true ->
-			    case rpc:call(Node,stable_meta_data_server,check_tables_ready,[]) of
-				true ->
-				    lager:debug("Node ~w is ready! ~n", [Node]),
-				    true;
-				false ->
-				    lager:debug("Node ~w is not ready ~n", [Node]),
-				    false
-			    end;
-			false ->
-			    lager:debug("Node ~w is not ready ~n", [Node]),
-			    false
-		    end;
-		false ->
-		    lager:debug("Checking if node ~w is ready ~n", [Node]),
-		    false
-	    end;
-	false ->
-	    lager:debug("Checking if node ~w is ready ~n", [Node]),
-	    false
-    end.                
+    case rpc:call(Node, clocksi_vnode, check_tables_ready, []) of
+        true ->
+            case rpc:call(Node, clocksi_readitem_server, check_servers_ready, []) of
+            true ->
+                case rpc:call(Node, materializer_vnode, check_tables_ready, []) of
+                true ->
+                    case rpc:call(Node, stable_meta_data_server, check_tables_ready, []) of
+                    true ->
+                        lager:debug("Node ~w is ready! ~n", [Node]),
+                        true;
+                    false ->
+                        lager:debug("Node ~w is not ready ~n", [Node]),
+                        false
+                    end;
+                false ->
+                    lager:debug("Node ~w is not ready ~n", [Node]),
+                    false
+                end;
+            false ->
+                lager:debug("Checking if node ~w is ready ~n", [Node]),
+                false
+            end;
+        false ->
+            lager:debug("Checking if node ~w is ready ~n", [Node]),
+            false
+    end.

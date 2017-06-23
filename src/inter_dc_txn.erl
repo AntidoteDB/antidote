@@ -64,12 +64,12 @@ ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
 -spec last_log_opid(#interdc_txn{}) -> #op_number{}.
 last_log_opid(Txn = #interdc_txn{log_records = Ops, prev_log_opid = LogOpId}) ->
     case is_ping(Txn) of
-	true -> LogOpId;
-	false ->
-	    LastOp = lists:last(Ops),
-	    CommitPld = LastOp#log_record.log_operation,
-	    commit = CommitPld#log_operation.op_type, %% sanity check
-	    LastOp#log_record.op_number
+        true -> LogOpId;
+        false ->
+            LastOp = lists:last(Ops),
+            CommitPld = LastOp#log_record.log_operation,
+            commit = CommitPld#log_operation.op_type, %% sanity check
+            LastOp#log_record.op_number
     end.
 
 -spec is_local(#interdc_txn{}) -> boolean().
@@ -108,12 +108,12 @@ pad(Width, Binary) ->
 -spec pad_or_trim(non_neg_integer(), binary()) -> binary().
 pad_or_trim(Width, Binary) ->
     case Width - byte_size(Binary) of
-	N when N == 0 -> Binary;
-	N when N < 0 ->
-	    Pos = trunc(abs(N)),
-	    <<_:Pos/binary, Rest:Width/binary>> = Binary,
-	    Rest;
-	N -> <<0:(N*8), Binary/binary>>
+        N when N == 0 -> Binary;
+        N when N < 0 ->
+            Pos = trunc(abs(N)),
+            <<_:Pos/binary, Rest:Width/binary>> = Binary,
+            Rest;
+        N -> <<0:(N*8), Binary/binary>>
   end.
 
 -spec partition_to_bin(partition_id()) -> binary().
@@ -125,4 +125,4 @@ partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigne
 -spec req_id_to_bin(non_neg_integer()) -> binary().
 req_id_to_bin(ReqId) ->
     pad_or_trim(?REQUEST_ID_BYTE_LENGTH, binary:encode_unsigned(ReqId)).
-			   
+

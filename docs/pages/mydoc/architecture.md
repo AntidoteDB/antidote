@@ -35,11 +35,12 @@ update more than one object in a consistent manner.
 {% include image.html file="architecture.png" %}
 
 Each partition in AntidoteDB mainly consists of the following four components:
+
 ### Log
 This module implements a log-based persistent
   layer. Updates are stored in a log, which is persisted to disk for
   durability. The module also internally maintains a cache layer in order to make
-  accesses to the log faster.
+  accesses to the log faster. Further details can be found [here](/antidote/log.html).
 
 ### Materializer
 This module is responsible for generating and caching

@@ -70,9 +70,9 @@ init(_Args) ->
                             [clockSI_interactive_tx_coord_sup]},
 
     ClockSIReadSup = {clocksi_readitem_sup,
-    		      {clocksi_readitem_sup, start_link, []},
-    		      permanent, 5000, supervisor,
-    		      [clocksi_readitem_sup]},
+                      {clocksi_readitem_sup, start_link, []},
+                      permanent, 5000, supervisor,
+                      [clocksi_readitem_sup]},
 
     MaterializerMaster = {materializer_vnode_master,
                           {riak_core_vnode_master,  start_link,
@@ -94,19 +94,19 @@ init(_Args) ->
 
 
     MetaDataManagerSup = {meta_data_manager_sup,
-			  {meta_data_manager_sup, start_link, [stable]},
-			  permanent, 5000, supervisor,
-			  [meta_data_manager_sup]},
+                          {meta_data_manager_sup, start_link, [stable]},
+                          permanent, 5000, supervisor,
+                          [meta_data_manager_sup]},
 
     MetaDataSenderSup = {meta_data_sender_sup,
-			  {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
-			  permanent, 5000, supervisor,
-			  [meta_data_sender_sup]},
+                         {meta_data_sender_sup, start_link, [stable_time_functions:export_funcs_and_vals()]},
+                         permanent, 5000, supervisor,
+                         [meta_data_sender_sup]},
 
     LogResponseReaderSup = {inter_dc_query_response_sup,
-			  {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]},
-			  permanent, 5000, supervisor,
-			  [inter_dc_query_response_sup]},
+                            {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]},
+                            permanent, 5000, supervisor,
+                            [inter_dc_query_response_sup]},
 
 
     {ok,

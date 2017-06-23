@@ -31,26 +31,30 @@
     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, InternalReadSet) ->
     %% TODO: Check if read can be omitted for some types as registers
-    Result=case orddict:find(Key, InternalReadSet) of
-        {ok, S}->
+    Result = case orddict:find(Key, InternalReadSet) of
+        {ok, S} ->
             S;
-        error->
+
+        error ->
             case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
                 {ok, S}->
                     S;
+
                 {error, Reason}->
                     {error, Reason}
             end
     end,
     case Result of
-        {error, R}->
+        {error, R} ->
             {error, R}; %% {error, Reason} is returned here.
-        Snapshot->
+
+        Snapshot ->
             case Type of
-                antidote_crdt_bcounter->
+                antidote_crdt_bcounter ->
                     %% bcounter data-type.
                     bcounter_mgr:generate_downstream(Key, Update, Snapshot);
-                _->
+
+                _ ->
                     Type:downstream(Update, Snapshot)
             end
     end.

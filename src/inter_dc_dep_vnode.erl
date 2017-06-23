@@ -133,8 +133,8 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% If so, store the transaction
     true ->
       %% Put the operations in the log
-      {ok, _} = logging_vnode:append_group({Partition,node()},
-					   [Partition], Ops, false),
+      {ok, _} = logging_vnode:append_group({Partition, node()},
+                                           [Partition], Ops, false),
 
       %% Update the materializer (send only the update operations)
       ClockSiOps = updates_to_clocksi_payloads(Txn),
@@ -145,7 +145,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
 
 handle_command({set_dependency_clock, Vector}, _Sender, State) ->
     {reply, ok, State#state{vectorclock = Vector}};
-    
+
 handle_command({txn, Txn}, _Sender, State) ->
     NewState = process_all_queues(push_txn(State, Txn)),
     {reply, ok, NewState};

@@ -61,8 +61,8 @@ deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
 
 %% This function is called with the response from the log request operations request
 %% when some messages were lost
--spec deliver_log_reader_resp(binary(),#request_cache_entry{}) -> ok.
-deliver_log_reader_resp(BinaryRep,_RequestCacheEntry) ->
+-spec deliver_log_reader_resp(binary(), #request_cache_entry{}) -> ok.
+deliver_log_reader_resp(BinaryRep, _RequestCacheEntry) ->
     <<Partition:?PARTITION_BYTE_LENGTH/big-unsigned-integer-unit:8, RestBinary/binary>> = BinaryRep,
     call(Partition, {log_reader_resp, RestBinary}).
 

@@ -46,6 +46,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 -define(TYPE, antidote_crdt_counter).
+-define(BUCKET, append_bucket).
 
 init_per_suite(Config) ->
     test_utils:at_init_testsuite(),
@@ -75,32 +76,15 @@ append_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     ct:print("Starting write operation 1"),
-
-    WriteResult = rpc:call(Node,
-                           antidote, append,
-                           [append_key1, ?TYPE, increment]),
-    ?assertMatch({ok, _}, WriteResult),
+    increment_counter(Node, append_key1),
 
     ct:print("Starting write operation 2"),
-
-    WriteResult2 = rpc:call(Node,
-                           antidote, append,
-                           [append_key2, ?TYPE, increment]),
-    ?assertMatch({ok, _}, WriteResult2),
+    increment_counter(Node, append_key2),
 
     ct:print("Starting read operation 1"),
-
-    ReadResult1 = rpc:call(Node,
-                           antidote, read,
-                           [append_key1, ?TYPE]),
-    ?assertEqual({ok, 1}, ReadResult1),
-
+    read_counter(Node, append_key1, 1),
     ct:print("Starting read operation 2"),
-
-    ReadResult2 = rpc:call(Node,
-                           antidote, read,
-                           [append_key2, ?TYPE]),
-    ?assertEqual({ok, 1}, ReadResult2).
+    read_counter(Node, append_key2, 1).
 
 append_failure_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
@@ -118,14 +102,8 @@ append_failure_test(Config) ->
     First = hd(A),
 
     %% Perform successful write and read.
-    WriteResult = rpc:call(First,
-                           antidote, append, [Key, ?TYPE, {increment, 1}]),
-    ct:print("WriteResult: ~p", [WriteResult]),
-    ?assertMatch({ok, _}, WriteResult),
-
-    ReadResult = rpc:call(First, antidote, read, [Key, ?TYPE]),
-    ct:print("ReadResult: ~p", [ReadResult]),
-    ?assertMatch({ok, 1}, ReadResult),
+    increment_counter(First, Key),
+    read_counter(First, Key, 1),
 
     %% Partition the network.
     lager:info("About to partition: ~p from: ~p", [A, Nodes -- A]),
@@ -135,5 +113,18 @@ append_failure_test(Config) ->
     test_utils:heal_cluster(A, Nodes -- A),
 
     %% Read after the partition has been healed.
-    ReadResult3 = rpc:call(First, antidote, read, [Key, ?TYPE]),
-    ?assertMatch({ok, 1}, ReadResult3).
+    read_counter(First, Key, 1).
+
+increment_counter(Node, Key) ->
+    Obj = {Key, ?TYPE, ?BUCKET},
+    WriteResult = rpc:call(Node,
+                           antidote, update_objects,
+                           [ignore, [], [{Obj, increment, 1}]]),
+    ?assertMatch({ok, _}, WriteResult).
+
+read_counter(Node, Key, ExpectedValue) ->
+    Obj = {Key, ?TYPE, ?BUCKET},
+    {ok, [Val], _} = rpc:call(Node,
+                           antidote, read_objects,
+                           [ignore, [], [Obj]]),
+    ?assertEqual(ExpectedValue, Val).
