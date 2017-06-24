@@ -145,7 +145,7 @@ init([From, ClientClock, Properties, StayAlive, Operations]) ->
     State = start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, true, true, Properties)),
     {ok, execute_op, State#tx_coord_state{operations = Operations, from = From}, 0}.
 
-init_state(StayAlive, FullCommit, IsStatic) ->
+init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     #tx_coord_state {
         transaction = undefined,
         updated_partitions = [],
@@ -159,7 +159,8 @@ init_state(StayAlive, FullCommit, IsStatic) ->
         is_static = IsStatic,
         return_accumulator = [],
         internal_read_set = orddict:new(),
-        stay_alive = StayAlive
+        stay_alive = StayAlive,
+        properties = Properties
     }.
 
 -spec generate_name(pid()) -> atom().
@@ -219,25 +220,25 @@ create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) -
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(snapshot_time() | ignore, key(), type(), clocksi_readitem_fsm:read_property_list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
+-spec perform_singleitem_read(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Clock, Key, Type, Properties) ->
     perform_singleitem_operation(Clock, Key,Type,object_value,Properties).
 
 %% @doc This is the same as perform_singleitem_read, except returns
 %%      the object state instead of its value
--spec perform_singleitem_get(snapshot_time() | ignore, key(), type(), clocksi_readitem_fsm:read_property_list()) ->
+-spec perform_singleitem_get(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
     {ok, term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_get(Clock, Key, Type, Properties) ->
-    perform_singleitem_operation(Clock, Key,Type,object_state,Properties).
+    perform_singleitem_operation(Clock, Key, Type, object_state, Properties).
 
--spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), object_state | object_value, clocksi_readitem_fsm:read_property_list()) ->
+-spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), object_state | object_value, clocksi_readitem_server:read_property_list()) ->
                     {ok, val() | term(), snapshot_time()} | {error, reason()}.
 perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
     %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction,[]) of
+    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction,[]) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
@@ -257,9 +258,7 @@ perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
 -spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
 perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
-    %OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
+    Partition = ?LOG_UTIL:get_key_partition(Key),
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
         {Key, Type, Params1} ->
@@ -375,7 +374,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
                 {ok, DownstreamOp} ->
                     ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
 
-                    %% Append to the writeset of the updated partition
+                    %% Append to the write set of the updated partition
                     GeneratedUpdate = {Key, Type, DownstreamOp},
                     NewUpdatedPartitions = append_updated_partitions(
                         UpdatedPartitions,
@@ -469,13 +468,13 @@ execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transacti
 %% @doc Perform update operations on a batch of Objects
 execute_command(update_objects, UpdateOps, Sender, State = #tx_coord_state{transaction=Transaction}) ->
     ExecuteUpdates = fun(Op, AccState=#tx_coord_state{
-        client_ops=ClientOps0,
-        internal_read_set=ReadSet,
-        updated_partitions=UpdatedPartitions0
+        client_ops = ClientOps0,
+        internal_read_set = ReadSet,
+        updated_partitions = UpdatedPartitions0
     }) ->
         case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0, ReadSet) of
-            {error, _}=Err ->
-                AccState#tx_coord_state{return_accumulator=Err};
+            {error, _} = Err ->
+                AccState#tx_coord_state{return_accumulator = Err};
 
             {UpdatedPartitions, ClientOps} ->
                 NumToRead = AccState#tx_coord_state.num_to_read,

@@ -33,17 +33,15 @@
 %% tests
 -export([clocksi_test1/1,
          clocksi_test2/1,
-                                                %clocksi_test3/1,
          clocksi_test5/1,
          clocksi_test_read_wait/1,
          clocksi_test4/1,
          clocksi_test_read_time/1,
          clocksi_test_prepare/1,
-                                                %clocksi_tx_noclock_test/1,
          clocksi_single_key_update_read_test/1,
          clocksi_multiple_key_update_read_test/1,
-	 clocksi_test_cert_property/1,
-	 clocksi_test_no_update_property/1,
+	       clocksi_test_cert_property/1,
+	       clocksi_test_no_update_property/1,
          clocksi_test_certification_check/1,
          clocksi_multiple_test_certification_check/1,
          clocksi_multiple_read_update_test/1,
@@ -87,13 +85,11 @@ end_per_testcase(_, _) ->
 
 all() -> [clocksi_test1,
          clocksi_test2,
-         clocksi_test3,
          clocksi_test5,
          clocksi_test_read_wait,
          clocksi_test4,
          clocksi_test_read_time,
          clocksi_test_prepare,
-         clocksi_tx_noclock_test,
          clocksi_single_key_update_read_test,
          clocksi_multiple_key_update_read_test,
 	       clocksi_test_cert_property,
@@ -104,6 +100,46 @@ all() -> [clocksi_test1,
          clocksi_concurrency_test,
          clocksi_parallel_ops_test,
          clocksi_static_parallel_writes_test].
+
+check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
+    check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId).
+
+check_read_keys(Node, Keys, Type, Expected, Clock, TxId) ->
+    Objects = lists:map(fun(Key) ->
+                                {Key, Type, ?BUCKET}
+                        end,
+                        Keys
+                       ),
+    check_read(Node, Objects, Expected, Clock, TxId).
+
+check_read(Node, Objects, Expected, Clock, TxId) ->
+    case TxId of
+        static ->
+            {ok, Res, CT} = rpc:call(Node, cure, read_objects, [Clock, [], Objects]),
+            ?assertEqual(Expected, Res),
+            {ok, Res, CT};
+        _ ->
+            {ok, Res} = rpc:call(Node, cure, read_objects, [Objects, TxId]),
+            ?assertEqual(Expected, Res),
+            {ok, Res}
+    end.
+
+update_counters(Node, Keys, IncValues, Clock, TxId) ->
+    Updates = lists:map(fun({Key, Inc}) ->
+                                {{Key, antidote_crdt_counter, ?BUCKET}, increment, Inc}
+                        end,
+                        lists:zip(Keys, IncValues)
+                       ),
+
+    case TxId of
+        static ->
+            {ok, CT} = rpc:call(Node, cure, update_objects, [Clock, [], Updates]),
+            {ok, CT};
+        _->
+            ok = rpc:call(Node, cure, update_objects, [Updates, TxId]),
+            ok
+    end.
+
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
@@ -413,7 +449,7 @@ clocksi_test_certification_check_run(Nodes, DisableCert) ->
 		     false -> []
 		 end,
 
-    {ok,TxId} = rpc:call(FirstNode, antidote, clocksi_istart_tx, [ignore, false, Properties]),
+    {ok,TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, Properties, false]),
     lager:info("Tx1 Started, id : ~p", [TxId]),
     update_counters(FirstNode, [Key1], [1], ignore, TxId),
 
@@ -425,7 +461,7 @@ clocksi_test_certification_check_run(Nodes, DisableCert) ->
     {ok, _CT}= rpc:call(LastNode, cure, commit_transaction, [TxId1]),
 
     %% Commit the first tx.
-    CommitTime = rpc:call(FirstNode, antidote, clocksi_iprepare, [TxId]),
+    CommitTime = rpc:call(FirstNode, cure, clocksi_iprepare, [TxId]),
     case DisableCert of
 	false ->
 	    ?assertMatch({aborted, TxId}, CommitTime),
@@ -434,7 +470,7 @@ clocksi_test_certification_check_run(Nodes, DisableCert) ->
 	true ->
 	    ?assertMatch({ok, _}, CommitTime),
 	    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-	    End2 = rpc:call(FirstNode, antidote, clocksi_icommit, [TxId]),
+	    End2 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId]),
 	    ?assertMatch({ok, _}, End2),
 	    lager:info("Tx1 committed. Test passed!")
     end,

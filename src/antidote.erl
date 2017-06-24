@@ -26,56 +26,6 @@
 
 %% API for applications
 -export([ start/0, stop/0,
-<<<<<<< HEAD
-         start_transaction/2,
-         start_transaction/3,
-         read_objects/2,
-         read_objects/3,
-         read_objects/4,
-         update_objects/2,
-         update_objects/3,
-         update_objects/4,
-         abort_transaction/1,
-         commit_transaction/1,
-	     get_objects/2,
-	     get_log_operations/1,
-         create_bucket/2,
-         create_object/3,
-         delete_object/1,
-         register_pre_hook/3,
-         register_post_hook/3,
-         unregister_hook/2,
-	     get_default_txn_properties/0,
-	     get_txn_property/2
-        ]).
-
-%% ==========================================================
-%% Old APIs, We would still need them for tests and benchmarks
--export([append/3,
-	     append/4,
-	     append/5,
-         read/2,
-         read/3,
-         clocksi_execute_tx/4,
-         clocksi_execute_tx/3,
-         clocksi_execute_tx/2,
-         clocksi_execute_tx/1,
-         clocksi_execute_int_tx/1,
-         clocksi_read/3,
-         clocksi_read/2,
-         clocksi_bulk_update/2,
-         clocksi_bulk_update/1,
-         clocksi_istart_tx/3,
-         clocksi_istart_tx/2,
-         clocksi_istart_tx/1,
-         clocksi_istart_tx/0,
-         clocksi_iread/3,
-         clocksi_iupdate/4,
-         clocksi_iprepare/1,
-         clocksi_full_icommit/1,
-         clocksi_icommit/1]).
-%% ===========================================================
-=======
           start_transaction/2,
           read_objects/2,
           read_objects/3,
@@ -88,10 +38,12 @@
           delete_object/1,
           register_pre_hook/3,
           register_post_hook/3,
-          unregister_hook/2
+          unregister_hook/2,
+          get_objects/2,
+          get_log_operations/1,
+          get_default_txn_properties/0,
+          get_txn_property/2
         ]).
-
->>>>>>> master
 
 %% Public API
 
@@ -101,201 +53,7 @@ start() ->
 
 -spec stop() -> ok.
 stop() ->
-<<<<<<< HEAD
-  application:stop(antidote).
-
--spec start_transaction(Clock::snapshot_time() | ignore , Properties::txn_properties(), boolean())
-                       -> {ok, txid()} | {error, reason()}.
-start_transaction(Clock, Properties, KeepAlive) ->
-    clocksi_istart_tx(Clock, KeepAlive, Properties).
-
--spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
-                       -> {ok, txid()} | {error, reason()}.
-start_transaction(Clock, Properties) ->
-    clocksi_istart_tx(Clock, false, Properties).
-
--spec abort_transaction(TxId::txid()) -> {error, reason()}.
-abort_transaction(_TxId) ->
-    %% TODO
-    {error, operation_not_implemented}.
-
--spec commit_transaction(TxId::txid()) ->
-                                {ok, snapshot_time()} | {error, reason()}.
-commit_transaction(TxId) ->
-    case clocksi_full_icommit(TxId) of
-        {ok, {_TxId, CommitTime}} ->
-            {ok, CommitTime};
-        {error, Reason} ->
-            {error, Reason};
-        Other ->
-            {error, Other}
-    end.
-
--spec read_objects(Objects::[bound_object()], TxId::txid())
-                  -> {ok, [term()]} | {error, reason()}.
-read_objects(BoundObjects, TxId) ->
-    {_, _, CoordFsmPid} = TxId,
-    NewObjects = lists:map(fun({Key, Type, Bucket}) ->
-                                case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
-                                    ok ->
-                                        {{Key, Bucket}, Type};
-                                    {error, Reason} ->
-                                        lager:debug("typing problem, check your ops! ~n~p", [Reason]),
-                                        {error, Reason}
-                                end
-                           end, BoundObjects),
-    case lists:member({error, type_check}, NewObjects) of
-        true -> {error, type_check};
-        false ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {read_objects, NewObjects}, ?OP_TIMEOUT) of
-                     {ok, Res} ->
-                         {ok, Res};
-                     {error, Reason} -> {error, Reason}
-                 end
-    end.
-
--spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
-                    -> ok | {error, reason()}.
-update_objects(Updates, TxId) ->
-    {_, _, CoordFsmPid} = TxId,
-    case check_and_format_ops(Updates) of
-        {error, Reason} ->
-            {error, Reason};
-        Operations ->
-            case gen_fsm:sync_send_event(CoordFsmPid, {update_objects, Operations}, ?OP_TIMEOUT) of
-                ok ->
-                    ok;
-                {aborted, TxId} ->
-                    {error, {aborted, TxId}};
-                {error, Reason} ->
-                    {error, Reason}
-            end
-    end.
-
-%% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}]) ->
-                            {ok, snapshot_time()} | {error, reason()}.
-update_objects(Clock, Properties, Updates) ->
-    update_objects(Clock, Properties, Updates, false).
-
--spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}], boolean()) ->
-    {ok, snapshot_time()} | {error, reason()}.
-update_objects(_Clock, _Properties, [], _StayAlive) ->
-    {ok, vectorclock:new()};
-update_objects(ClientCausalVC, Properties, Updates, StayAlive) ->
-    case check_and_format_ops(Updates) of
-        {error, Reason} ->
-            {error, Reason};
-        Operations ->
-            start_static_transaction(update_objects, Properties, Operations, StayAlive, ClientCausalVC)
-    end.
-
-%% @doc The following function is called by the static versions of read and update_objects
-%%      to execute a static transaction.
--spec start_static_transaction(update_objects | read_objects, txn_properties(), list(), boolean(), vectorclock()) -> {ok, snapshot_time()} | {error, reason()}.
-start_static_transaction(TransactionKind, Properties, ListOfOperations, StayAlive, ClientCausalVC) ->
-            TxPid = case StayAlive of
-                true ->
-                    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
-                false ->
-                    undefined
-            end,
-            case TxPid of
-                undefined ->
-                    {ok, _CoordFSM} = clocksi_interactive_tx_coord_sup:start_fsm([self(), ClientCausalVC, Properties, StayAlive, {TransactionKind, ListOfOperations}]);
-                TxPid ->
-                    ok = gen_fsm:send_event(TxPid, {start_tx, self(), ClientCausalVC, Properties, {TransactionKind, ListOfOperations}})
-            end,
-            receive
-                Reply ->
-                    Reply
-            end.
-
-
-%% @doc This function is used temporarily to unify the
-%% interfaces of old and new transactions. It should
-%% be removed once tests call only the new interface.
-%% It checks the format of the
-%% operation for compatibility with
-%% some systests that call updates with
-%% {Operation, Params} (as a single parameter),
-%% and Operation, Params (two separate parameters).
--spec check_and_format_ops([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(),op_param()}}]) ->
-                                [{{key(), bucket()}, type(), {op_name(), op_param()}}] | {error, reason()}.
-check_and_format_ops(Updates) ->
-    try
-        lists:map(fun(Update) ->
-            {Key, Type, Bucket, Op} = case Update of
-                {{K, T, B}, {O, P}} ->
-                    {K, T, B, {O, P}};
-                {{K, T, B}, O, P} ->
-                    {K, T, B, {O, P}}
-            end,
-            case materializer:check_operations([{update, {{Key, Bucket}, Type, Op}}]) of
-                ok ->
-                    {{Key, Bucket}, Type, Op};
-                {error, Reason} ->
-                    throw(Reason)
-            end
-        end, Updates)
-    catch
-        _:Reason ->
-            {error, Reason}
-    end.
-
-read_objects(Clock, Properties, Objects) ->
-    read_objects(Clock, Properties, Objects, false).
-
--spec read_objects(vectorclock(), txn_properties(), [bound_object()], boolean()) ->
-                        {ok, list(), vectorclock()} | {error, reason()}.
-read_objects(Clock, Properties, Objects, StayAlive) ->
-    Args = lists:map(
-             fun({Key, Type, Bucket}) ->
-                     {read, {{Key,Bucket}, Type}}
-             end,
-             Objects),
-    SingleKey = case Args of
-                    [_O] -> %% Single key update
-			true;
-                    [_H|_T] -> false
-                end,
-    case SingleKey of
-        true -> %% Execute the fast path
-            [{read, {Key, Type}}] = Args,
-            case materializer:check_operations([{read, {Key, Type}}]) of
-                ok ->
-                    {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
-                        perform_singleitem_read(Clock,Key,Type,Properties),
-                    {ok, [Val], CommitTime};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-        false ->
-            case application:get_env(antidote, txn_prot) of
-                {ok, clocksi} ->
-                    case clocksi_execute_tx(Clock, Args, Properties, StayAlive) of
-                        {ok, {_TxId, Result, CommitTime}} ->
-                            {ok, Result, CommitTime};
-                        {error, Reason} -> {error, Reason}
-                    end;
-                {ok, gr} ->
-                    case Args of
-                        [_Op] -> %% Single object read = read latest value
-                            start_static_transaction(read_objects, Properties, Objects, StayAlive, Clock);
-                        [_|_] -> %% Read Multiple objects  = read from a snapshot
-                            %% Snapshot includes all updates committed at time GST
-                            %% from local and remore replicas
-                            case gr_snapshot_read(Clock, Args) of
-                                {ok, {_TxId, Result, CommitTime}} ->
-                                    {ok, Result, CommitTime};
-                                {error, Reason} -> {error, Reason}
-                            end
-                    end
-            end
-    end.
-=======
     application:stop(antidote).
->>>>>>> master
 
 %% Takes as input a list of tuples of bound object, clock pairs and transaction properties
 %% Returns a list containing tuples of object state and commit time for each
@@ -359,7 +117,7 @@ delete_object({_Key, _Type, _Bucket}) ->
     {error, operation_not_supported}.
 
 %% Register a post commit hook.
-%% Module:Function({Key, Type, Op}) will be executed after successfull commit of
+%% Module:Function({Key, Type, Op}) will be executed after successful commit of
 %% each transaction that updates Key.
 -spec register_post_hook(bucket(), module_name(), function_name()) -> ok | {error, function_not_exported}.
 register_post_hook(Bucket, Module, Function) ->
@@ -376,159 +134,15 @@ register_pre_hook(Bucket, Module, Function) ->
 unregister_hook(Prefix, Bucket) ->
     antidote_hooks:unregister_hook(Prefix, Bucket).
 
-<<<<<<< HEAD
-%% =============================================================================
-%% OLD API, We might still need them
 
-
-append(Key, Type, OpParams) ->
-    append(ignore, Key, Type, OpParams, []).
-
-append(Clock, Key, Type, OpParams) ->
-    append(Clock, Key, Type, OpParams, []).
-
-%% @doc The append/2 function adds an operation to the log of the CRDT
-%%      object stored at some key.
--spec append(snapshot_time() | ignore, key(), type(), op() | {transfer,_}, list()) ->
-                    {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-append(Clock, Key, Type, OpParams, Properties) ->
-    case materializer:check_operations([{update,
-                                         {Key, Type, OpParams}}]) of
-        ok -> clocksi_interactive_tx_coord_fsm:
-		  perform_singleitem_update(Clock, Key, Type, OpParams, Properties);
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-read(Key, Type) ->
-    read(Key, Type, []).
-
-%% @doc The read/2 function returns the current value for the CRDT
-%%      object stored at some key.
--spec read(key(), type(), list()) -> {ok, val()} | {error, reason()} | {error, {type_check, term()}}.
-read(Key, Type, Properties) ->
-    case materializer:check_operations([{read, {Key, Type}}]) of
-        ok ->
-            {ok, Val, _CommitTime} = clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_read(ignore,Key,Type,Properties),
-            {ok, Val};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-
-%% Clock SI API
-%% TODO: Move these functions into clocksi files. Public interface should only
-%%       contain generic transaction interface
-
-%% @doc Starts a new ClockSI transaction.
-%%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
-%%      Operations: the list of the operations the transaction involves.
-%%      Returns:
-%%      an ok message along with the result of the read operations involved in the
-%%      the transaction, in case the tx ends successfully.
-%%      error message in case of a failure.
-%%
--spec clocksi_execute_tx(Clock :: snapshot_time(),
-                         [client_op()],txn_properties(),boolean()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_execute_tx(Clock, Operations, Properties, KeepAlive) ->
-    {ok, TxId} = start_transaction(Clock, Properties, KeepAlive),
-    ReadSet = execute_ops(Operations, TxId, []),
-    {ok, CommitTime} = commit_transaction(TxId),
-    case ReadSet of
-        {error, Reason} ->
-            {error, Reason};
-        _ ->
-            {ok, {TxId, ReadSet, CommitTime}}
-    end.
-
-clocksi_execute_tx(Clock, Operations, Properties) ->
-    clocksi_execute_tx(Clock, Operations, Properties, false).
-
-clocksi_execute_tx(Clock, Operations) ->
-    clocksi_execute_tx(Clock, Operations, []).
-
--spec clocksi_execute_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_execute_tx(Operations) ->
-    clocksi_execute_tx(ignore, Operations).
-
--spec clocksi_execute_int_tx([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_execute_int_tx(Operations) ->
-    {ok, TxId} = clocksi_istart_tx(),
-    case execute_ops(Operations, TxId, []) of
-        {error, Reason} ->
-            {error, Reason};
-        ReadSet ->
-            case clocksi_full_icommit(TxId) of
-                {ok, {TxId, CommitTime}} ->
-                    {ok, {TxId, ReadSet, CommitTime}};
-                Other ->
-                    Other
-            end
-    end.
-
--spec clocksi_bulk_update(ClientClock:: snapshot_time(),
-                          [client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_bulk_update(ClientClock, Operations) ->
-    clocksi_execute_tx(ClientClock, Operations).
-
--spec clocksi_bulk_update([client_op()]) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_bulk_update(Operations) ->
-    clocksi_execute_tx(Operations).
-
--spec clocksi_read(ClientClock :: snapshot_time(),
-                   Key :: key(), Type:: type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_read(ClientClock, Key, Type) ->
-    clocksi_execute_tx(ClientClock, [{read, {Key, Type}}]).
-
--spec clocksi_read(key(), type()) -> {ok, {txid(), [snapshot()], snapshot_time()}} | {error, term()}.
-clocksi_read(Key, Type) ->
-    clocksi_execute_tx([{read, {Key, Type}}]).
-=======
 %% Transaction API %%
 %% ==============  %%
->>>>>>> master
 
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
                        -> {ok, txid()} | {error, reason()}.
 start_transaction(Clock, Properties) ->
     cure:start_transaction(Clock, Properties, false).
 
-<<<<<<< HEAD
-%% @doc Starts a new ClockSI interactive transaction.
-%%      Input:
-%%      ClientClock: last clock the client has seen from a successful transaction.
-%%      Returns: an ok message along with the new TxId.
-%%
--spec clocksi_istart_tx(snapshot_time() | ignore, boolean(), txn_properties()) ->
-                               {ok, txid()} | {error, reason()}.
-clocksi_istart_tx(Clock, KeepAlive, Properties) ->
-    TxPid = case KeepAlive of
-		true ->
-		    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
-		false ->
-		    undefined
-	    end,
-    _ = case TxPid of
-	undefined ->
-	    {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock, Properties, KeepAlive]);
-	TxPid ->
-	    ok = gen_fsm:send_event(TxPid, {start_tx, self(), Clock, Properties})
-    end,
-    receive
-        {ok, TxId} ->
-            {ok, TxId};
-        Other ->
-            {error, Other}
-    end.
-
-clocksi_istart_tx(Clock, false) ->
-    clocksi_istart_tx(Clock, false, []).
-
-clocksi_istart_tx(Clock) ->
-    clocksi_istart_tx(Clock, false).
-=======
 -spec abort_transaction(TxId::txid()) -> {error, reason()}.
 abort_transaction(TxId) ->
     cure:abort_transaction(TxId).
@@ -538,12 +152,16 @@ abort_transaction(TxId) ->
 commit_transaction(TxId) ->
     cure:commit_transaction(TxId).
 %% TODO: Execute post_commit hooks here?
->>>>>>> master
 
 -spec read_objects(Objects::[bound_object()], TxId::txid())
                   -> {ok, [term()]} | {error, reason()}.
 read_objects(Objects, TxId) ->
     cure:read_objects(Objects, TxId).
+
+-spec read_objects(vectorclock(), txn_properties(), [bound_object()])
+                  -> {ok, list(), vectorclock()} | {error, reason()}.
+read_objects(Clock, Properties, Objects) ->
+    cure:read_objects(Clock, Properties, Objects).
 
 -spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
                     -> ok | {error, reason()}.
@@ -556,8 +174,8 @@ update_objects(Updates, TxId) ->
     end.
 
 %% For static transactions: bulk updates and bulk reads
--spec update_objects(snapshot_time() | ignore , list(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}]) ->
-                            {ok, snapshot_time()} | {error, reason()}.
+-spec update_objects(snapshot_time() | ignore , txn_properties(), [{bound_object(), op_name(), op_param()}| {bound_object(), {op_name(), op_param()}}])
+                     -> {ok, snapshot_time()} | {error, reason()}.
 update_objects(Clock, Properties, Updates) ->
     case type_check(Updates) of
         ok ->
@@ -566,39 +184,12 @@ update_objects(Clock, Properties, Updates) ->
             {error, Reason}
     end.
 
--spec read_objects(vectorclock(), any(), [bound_object()]) ->
-                          {ok, list(), vectorclock()} | {error, reason()}.
-read_objects(Clock, Properties, Objects) ->
-    cure:read_objects(Clock, Properties, Objects).
-
 %%% Internal function %%
 %%% ================= %%
 
-<<<<<<< HEAD
-%%% Snapshot read for Gentlerain protocol
-gr_snapshot_read(ClientClock, Args) ->
-    %% GST = scalar stable time
-    %% VST = vector stable time with entries for each dc
-    {ok, GST, VST} = dc_utilities:get_scalar_stable_time(),
-    DcId = dc_meta_data_utilities:get_my_dc_id(),
-    Dt = vectorclock:get_clock_of_dc(DcId, ClientClock),
-    case Dt =< GST of
-        true ->
-            %% Set all entries in snapshot as GST
-            ST = dict:map(fun(_,_) -> GST end, VST),
-            %% ST doesnot contain entry for local dc, hence explicitly
-            %% add it in snapshot time
-            SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
-            clocksi_execute_tx(SnapshotTime, Args, [{update_clock,false}]);
-        false ->
-            timer:sleep(10),
-            gr_snapshot_read(ClientClock, Args)
-    end.
-=======
 type_check_update({{_K, Type, _bucket}, Op, Param}) ->
     antidote_crdt:is_type(Type) andalso
         Type:is_operation({Op, Param}).
->>>>>>> master
 
 -spec type_check([{bound_object(), op_name(), op_param()}]) -> ok | {error, reason()}.
 type_check(Updates) ->
@@ -613,11 +204,7 @@ type_check(Updates) ->
     catch
         _:Reason ->
             {error, Reason}
-<<<<<<< HEAD
-    end;
-execute_ops([{read, {Key, Type}}|Rest], TxId, ReadSet) ->
-    {ok, Value} = clocksi_iread(TxId, Key, Type),
-    execute_ops(Rest, TxId, [Value|ReadSet]).
+    end.
 
 -spec get_default_txn_properties() -> txn_properties().
 get_default_txn_properties() ->
@@ -626,10 +213,10 @@ get_default_txn_properties() ->
 -spec get_txn_property(atom(), txn_properties()) -> atom().
 get_txn_property(update_clock, Properties) ->
     case lists:keyfind(update_clock, 1, Properties) of
-	false ->
+	 false ->
 	    update_clock;
 	{update_clock, ShouldUpdate} ->
-	    case ShouldUpdate of 
+	    case ShouldUpdate of
 		true ->
 		    update_clock;
 		false ->
@@ -641,7 +228,7 @@ get_txn_property(certify, Properties) ->
 	false ->
 	    application:get_env(antidote, txn_cert, true);
 	{certify, Certify} ->
-	    case Certify of 
+	    case Certify of
 		use_default ->
 		    application:get_env(antidote, txn_cert, true);
 		certify ->
@@ -656,8 +243,3 @@ get_txn_property(certify, Properties) ->
 		    false
 	    end
     end.
-
-
-=======
-    end.
->>>>>>> master

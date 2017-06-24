@@ -67,7 +67,7 @@ decode(Code, Bin) ->
 encode(Message) ->
     {ok, riak_pb_codec:encode(Message)}.
 
-process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
+process(#apbstarttransaction{timestamp = BClock, properties = BProperties},
         State) ->
     Clock = case BClock of
                     undefined -> ignore;
@@ -77,7 +77,7 @@ process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
 		     {} -> [];
 		     Prop -> Prop
 		 end,
-    Response = antidote:start_transaction(Clock, Properties, false),
+    Response = antidote:start_transaction(Clock, Properties),
     case Response of
         {ok, TxId} ->
             {reply, antidote_pb_codec:encode(start_transaction_response,
@@ -206,4 +206,3 @@ process(#apbstaticreadobjects{
 %% streaming responses and so ignores all incoming messages.
 process_stream(_, _, State) ->
     {ignore, State}.
-

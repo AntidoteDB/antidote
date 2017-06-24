@@ -81,7 +81,7 @@ start_vnode(I) ->
 read(Key, Type, SnapshotTime, TxId, MatState) ->
     read(Key, Type, SnapshotTime, TxId, [], MatState).
 
--spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem_fsm:read_property_list(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
+-spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem_server:read_property_list(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, PropertyList, MatState = #mat_state{ops_cache = OpsCache}) ->
     case ets:info(OpsCache) of
         undefined ->
@@ -354,17 +354,17 @@ internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, 
 
 %% @doc This function takes care of reading. It is implemented here for not blocking the
 %% vnode when the write function calls it. That is done for garbage collection.
-spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem_fsm:read_property_list(), boolean(), #mat_state{})
+-spec internal_read(key(), type(), snapshot_time(), txid() | ignore, clocksi_readitem_server:read_property_list(), boolean(), #mat_state{})
 		   -> {ok, snapshot()} | {error, no_snapshot}.
 
-internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache}) ->
+internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) ->
     %% First look for any existing snapshots in the cache that is compatible with
     SnapshotGetResp = get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State),
 
     %% Now apply the operations to the snapshot, and return a materialized value
     materialize_snapshot(TxId, Key, Type, MinSnapshotTime, ShouldGc, State, SnapshotGetResp).
 
-%% @doc Get the most recent snapshot from the cache (smaller thant the given commit time) for a given key.
+%% @doc Get the most recent snapshot from the cache (smaller than the given commit time) for a given key.
 %%
 %%      If there's no in-memory suitable snapshot, it will fetch it from the replication log.
 %%
@@ -765,13 +765,13 @@ gc_test() ->
     op_insert_gc(Key, generate_payload(16, 121, Res1, a12), MatState),
 
     %% Trigger the clean
-    {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1, 102}]), ignore, MatState),
+    {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1, 102}]), ignore, [], false, MatState),
     ?assertEqual(10, Type:value(Res10)),
 
     op_insert_gc(Key, generate_payload(102, 131, Res9, a13), MatState),
 
     %% Be sure you didn't loose any updates
-    {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, MatState),
+    {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, [], false, MatState),
     ?assertEqual(13, Type:value(Res13)).
 
 %% @doc This tests to make sure operation lists can be large and resized
@@ -784,14 +784,14 @@ large_list_test() ->
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
     %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
-    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2}]), ignore, MatState),
+    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2}]), ignore, [], false, MatState),
     ?assertEqual(0, Type:value(Res0)),
 
     lists:foreach(fun(Val) ->
                       op_insert_gc(Key, generate_payload(10, 11+Val, Res0, Val), MatState)
                   end, lists:seq(1, 1000)),
 
-    {ok, Res1000} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2000}]), ignore, MatState),
+    {ok, Res1000} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2000}]), ignore, [], false, MatState),
     ?assertEqual(1000, Type:value(Res1000)),
 
     %% Now check everything is ok as the list shrinks from generating new snapshots
@@ -845,11 +845,11 @@ seq_write_test() ->
                       txid=2},
 
     op_insert_gc(Key, DownstreamOp2, MatState),
-    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 21}]), ignore, MatState),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 21}]), ignore, [], false, MatState),
     ?assertEqual(2, Type:value(Res2)),
 
     %% Read old version
-    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1, 16}]), ignore, MatState),
+    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1, 16}]), ignore, [], false, MatState),
     ?assertEqual(1, Type:value(ReadOld)).
 
 multipledc_write_test() ->
@@ -883,7 +883,12 @@ multipledc_write_test() ->
                       snapshot_time=vectorclock:from_list([{DC2, 16}, {DC1, 16}]),
                       commit_time = {DC2, 20},
                       txid=2},
+    op_insert_gc(Key, DownstreamOp2, MatState),
+    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1,16}, {DC2,21}]), ignore, [], false, MatState),
+    ?assertEqual(2, Type:value(Res2)),
 
+    %% Read old version
+    {ok, ReadOld} = internal_read(Key, Type, vectorclock:from_list([{DC1,15},{DC2,15}]), ignore, [], false, MatState),
     ?assertEqual(1, Type:value(ReadOld)).
 
 concurrent_write_test() ->
