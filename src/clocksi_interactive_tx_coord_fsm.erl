@@ -194,7 +194,7 @@ create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) -
                              ignore ->
                                  get_snapshot_time();
                              _ ->
-                                 case antidote:get_txn_property(update_clock,Properties) of
+                                 case antidote:get_txn_property(update_clock, Properties) of
                                      update_clock ->
                                          get_snapshot_time(ClientClock);
                                      no_update_clock ->
@@ -222,7 +222,7 @@ create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) -
 %%      transaction fsm and directly in the calling thread.
 -spec perform_singleitem_read(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Clock, Key, Type, Properties) ->
-    perform_singleitem_operation(Clock, Key,Type,object_value,Properties).
+    perform_singleitem_operation(Clock, Key, Type, object_value, Properties).
 
 %% @doc This is the same as perform_singleitem_read, except returns
 %%      the object state instead of its value
@@ -238,7 +238,7 @@ perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
     %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
-    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction,[]) of
+    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->

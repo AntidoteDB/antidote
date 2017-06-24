@@ -66,42 +66,42 @@ object_log_state_test(Config) ->
     Bucket = test_bucket,
     BoundObject = {Key, Type, Bucket},
 
-    CommitTime = add_set(FirstNode, BoundObject, lists:seq(1,15), vectorclock:new()),
+    CommitTime = add_set(FirstNode, BoundObject, lists:seq(1, 15), vectorclock:new()),
 
     %% Check the read is 15
     {ok, [Val], _CT} = rpc:call(FirstNode, antidote, read_objects, [CommitTime, [], [BoundObject]]),
-    ?assertEqual(lists:seq(1,15), Val),
+    ?assertEqual(lists:seq(1, 15), Val),
 
     %% Get the object state
-    {ok, [{ReadResult1,_CT2}]} = rpc:call(FirstNode,
-					  antidote, get_objects, [[{BoundObject,CommitTime}], []]),
-    ?assertEqual(ok, check_orset_state(lists:seq(1,15),ReadResult1)),
+    {ok, [{ReadResult1, _CT2}]} = rpc:call(FirstNode,
+                      antidote, get_objects, [[{BoundObject, CommitTime}], []]),
+    ?assertEqual(ok, check_orset_state(lists:seq(1, 15), ReadResult1)),
 
-    CommitTime2 = add_set(FirstNode, BoundObject, lists:seq(16,30), CommitTime),
+    CommitTime2 = add_set(FirstNode, BoundObject, lists:seq(16, 30), CommitTime),
 
     %% Check the read is 30
     {ok, [Val2], _CT3} = rpc:call(FirstNode, antidote, read_objects, [CommitTime2, [], [BoundObject]]),
-    ?assertEqual(lists:seq(1,30), Val2),
+    ?assertEqual(lists:seq(1, 30), Val2),
 
     {ok, [LogOps]} = rpc:call(FirstNode,
-			      antidote, get_log_operations, [[{BoundObject,CommitTime}]]),
+                  antidote, get_log_operations, [[{BoundObject, CommitTime}]]),
 
-    ?assertEqual(ok, check_orset_ops(lists:seq(16,30),LogOps,{Key,Bucket})),
+    ?assertEqual(ok, check_orset_ops(lists:seq(16, 30), LogOps, {Key, Bucket})),
 
     lager:info("object_log_state_test_test finished").
 
-check_orset_ops([],[],_KeyBucket) ->
+check_orset_ops([], [], _KeyBucket) ->
     ok;
 check_orset_ops([Val|Rest1],
-		[{_Id,#clocksi_payload{key = KeyBucket, type = antidote_crdt_orset, op_param = [{Val, Binary,[]}]}}
-		 | Rest2],
-		KeyBucket) ->
+        [{_Id, #clocksi_payload{key = KeyBucket, type = antidote_crdt_orset, op_param = [{Val, Binary, []}]}}
+         | Rest2],
+        KeyBucket) ->
     check_orset_ops(Rest1, Rest2, KeyBucket).
 
-check_orset_state([],[]) ->
+check_orset_state([], []) ->
     ok;
-check_orset_state([Val|Rest1],[{Val,[Binary]}|Rest2]) when is_binary(Binary) ->
-    check_orset_state(Rest1,Rest2).
+check_orset_state([Val|Rest1], [{Val, [Binary]}|Rest2]) when is_binary(Binary) ->
+    check_orset_state(Rest1, Rest2).
 
 %% Auxiliary method to add a list of items to a set
 add_set(_FirstNode, _BoundObject, [], Commit) ->
@@ -109,7 +109,7 @@ add_set(_FirstNode, _BoundObject, [], Commit) ->
 add_set(FirstNode, Object, [First|Rest], PrevCommit) ->
     Update = {Object, add, First},
     ReadResult = rpc:call(FirstNode, antidote, read_objects, [ignore, [], [Object]]),
-    ?assertMatch({ok,_,_}, ReadResult),
+    ?assertMatch({ok, _, _}, ReadResult),
     {WriteResult, Commit} = rpc:call(FirstNode, antidote, update_objects, [ignore, [], [Update]]),
     ?assertMatch(ok, WriteResult),
-    add_set(FirstNode, Object, Rest, vectorclock:max([PrevCommit,Commit])).
+    add_set(FirstNode, Object, Rest, vectorclock:max([PrevCommit, Commit])).

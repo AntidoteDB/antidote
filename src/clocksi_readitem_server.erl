@@ -44,10 +44,10 @@
 
 %% States
 -export([read_data_item/5,
-	 async_read_data_item/6,
-	 check_partition_ready/3,
-	 start_read_servers/2,
-	 stop_read_servers/2]).
+     async_read_data_item/6,
+     check_partition_ready/3,
+     start_read_servers/2,
+     stop_read_servers/2]).
 
 %% Spawn
 -record(state, {partition :: partition_id(),
@@ -85,21 +85,21 @@ stop_read_servers(Partition, Count) ->
     stop_read_servers_internal(Addr, Partition, Count).
 
 -spec read_data_item(index_node(), key(), type(), tx(), read_property_list()) -> {error, term()} | {ok, snapshot()}.
-read_data_item({Partition,Node},Key,Type,Transaction,PropertyList) ->
+read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList) ->
     try
-	gen_server:call({global,generate_random_server_name(Node,Partition)},
-			{perform_read,Key,Type,Transaction,PropertyList},infinity)
+    gen_server:call({global, generate_random_server_name(Node, Partition)},
+            {perform_read, Key, Type, Transaction, PropertyList}, infinity)
     catch
-	_:Reason ->
-	    lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
-	    check_server_ready([{Partition,Node}]),
-	    read_data_item({Partition,Node},Key,Type,Transaction,PropertyList)
+    _:Reason ->
+        lager:debug("Exception caught: ~p, starting read server to fix", [Reason]),
+        check_server_ready([{Partition, Node}]),
+        read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList)
     end.
 
 -spec async_read_data_item(index_node(), key(), type(), tx(), read_property_list(), term()) -> ok.
-async_read_data_item({Partition,Node},Key,Type,Transaction,PropertyList,Coordinator) ->
-    gen_server:cast({global,generate_random_server_name(Node,Partition)},
-		    {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}).
+async_read_data_item({Partition, Node}, Key, Type, Transaction, PropertyList, Coordinator) ->
+    gen_server:cast({global, generate_random_server_name(Node, Partition)},
+            {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}).
 
 %% @doc This checks all partitions in the system to see if all read
 %%      servers have been started up.
@@ -197,30 +197,30 @@ init([Partition, Id]) ->
                 mat_state = MatState,
                 prepared_cache=PreparedCache, self=Self}}.
 
-handle_call({perform_read, Key, Type, Transaction, PropertyList},Coordinator,SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
-    {noreply,SD0};
+handle_call({perform_read, Key, Type, Transaction, PropertyList}, Coordinator, SD0) ->
+    ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
+    {noreply, SD0};
 
 handle_call({go_down}, _Sender, SD0) ->
     {stop, shutdown, ok, SD0}.
 
 handle_cast({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
-    {noreply,SD0}.
+    ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
+    {noreply, SD0}.
 
 -spec perform_read_internal(pid(), key(), type(), #transaction{}, read_property_list(), #state{}) ->
-				   ok.
-perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
-		      SD0 = #state{prepared_cache=PreparedCache,partition=Partition}) ->
+                   ok.
+perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList,
+              SD0 = #state{prepared_cache = PreparedCache, partition = Partition}) ->
     TxId = Transaction#transaction.txn_id,
     TxLocalStartTime = TxId#tx_id.local_start_time,
-    case check_clock(Key,TxLocalStartTime,PreparedCache,Partition) of
-	{not_ready,Time} ->
-	    %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
-	    _Tref = erlang:send_after(Time, self(), {perform_read_cast,Coordinator,Key,Type,Transaction,PropertyList}),
-	    ok;
-	ready ->
-	    return(Coordinator,Key,Type,Transaction,PropertyList,SD0)
+    case check_clock(Key, TxLocalStartTime, PreparedCache, Partition) of
+    {not_ready, Time} ->
+        %% spin_wait(Coordinator,Key,Type,Transaction,OpsCache,SnapshotCache,PreparedCache,Self);
+        _Tref = erlang:send_after(Time, self(), {perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}),
+        ok;
+    ready ->
+        return(Coordinator, Key, Type, Transaction, PropertyList, SD0)
     end.
 
 %% @doc check_clock: Compares its local clock with the tx timestamp.
@@ -261,9 +261,9 @@ check_prepared_list(Key, TxLocalStartTime, [{_TxId, Time}|Rest]) ->
 
 %% @doc return:
 %%  - Reads and returns the log of specified Key using replication layer.
--spec return({fsm,pid()} | {pid(),term()},key(),type(),#transaction{},read_property_list(),#state{}) -> ok.
-return(Coordinator,Key,Type,Transaction,PropertyList,
-       #state{mat_state=MatState}) ->
+-spec return({fsm, pid()} | {pid(), term()}, key(), type(), #transaction{}, read_property_list(), #state{}) -> ok.
+return(Coordinator, Key, Type, Transaction, PropertyList,
+       #state{mat_state = MatState}) ->
     VecSnapshotTime = Transaction#transaction.vec_snapshot_time,
     TxId = Transaction#transaction.txn_id,
     case materializer_vnode:read(Key, Type, VecSnapshotTime, TxId, PropertyList, MatState) of
@@ -284,9 +284,9 @@ return(Coordinator,Key,Type,Transaction,PropertyList,
     end,
     ok.
 
-handle_info({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList},SD0) ->
-    ok = perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,SD0),
-    {noreply,SD0};
+handle_info({perform_read_cast, Coordinator, Key, Type, Transaction, PropertyList}, SD0) ->
+    ok = perform_read_internal(Coordinator, Key, Type, Transaction, PropertyList, SD0),
+    {noreply, SD0};
 
 handle_info(_Info, StateData) ->
     {noreply, StateData}.

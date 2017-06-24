@@ -59,48 +59,48 @@ stop() ->
 %% Returns a list containing tuples of object state and commit time for each
 %% of those objects
 -spec get_objects([{bound_object(), snapshot_time() | ignore}], txn_properties()) ->
-			 {ok, [{term(),snapshot_time()}]} | {error, reason()}.
-get_objects(Objects,Properties) ->
-    get_objects_internal(Objects,Properties,[]).
+             {ok, [{term(), snapshot_time()}]} | {error, reason()}.
+get_objects(Objects, Properties) ->
+    get_objects_internal(Objects, Properties, []).
 
-get_objects_internal([],_Properties,Acc) ->
-    {ok,lists:reverse(Acc)};
-get_objects_internal([{{Key,Type,Bucket},Clock}|Rest],Properties, Acc) ->
-    case materializer:check_operations([{read, {{Key,Bucket}, Type}}]) of
-	ok ->
-	    case clocksi_interactive_tx_coord_fsm:perform_singleitem_get(Clock,{Key,Bucket},Type,Properties) of
-		{ok, Val, CommitTime} ->
-		    get_objects_internal(Rest,Properties,[{Val,CommitTime}|Acc]);
-		{error, Reason} ->
-		    {error, Reason}
-	    end;
-	{error, Reason} ->
-	    {error, Reason}
+get_objects_internal([], _Properties, Acc) ->
+    {ok, lists:reverse(Acc)};
+get_objects_internal([{{Key, Type, Bucket}, Clock}|Rest], Properties, Acc) ->
+    case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
+    ok ->
+        case clocksi_interactive_tx_coord_fsm:perform_singleitem_get(Clock, {Key, Bucket}, Type, Properties) of
+        {ok, Val, CommitTime} ->
+            get_objects_internal(Rest, Properties, [{Val, CommitTime}|Acc]);
+        {error, Reason} ->
+            {error, Reason}
+        end;
+    {error, Reason} ->
+        {error, Reason}
     end.
 
 %% Takes as input a list of tuples of bound objects and snapshot times
 %% Returns a list for each object that contains all logged update operations more recent than the give snapshot time
--spec get_log_operations([{bound_object(),snapshot_time()}]) -> {ok, [[{non_neg_integer(),#clocksi_payload{}}]]} | {error, reason()}.
+-spec get_log_operations([{bound_object(), snapshot_time()}]) -> {ok, [[{non_neg_integer(), #clocksi_payload{}}]]} | {error, reason()}.
 get_log_operations(ObjectClockPairs) ->
     %% result is a list of lists of lists
     %% internal list is {number, clocksi_payload}
-    get_log_operations_internal(ObjectClockPairs,[]).
+    get_log_operations_internal(ObjectClockPairs, []).
 
-get_log_operations_internal([],Acc) ->
-    {ok,lists:reverse(Acc)};
-get_log_operations_internal([{{Key,Type,Bucket},Clock}|Rest],Acc) ->
-    case materializer:check_operations([{read, {{Key,Bucket}, Type}}]) of
-	ok ->
-	    LogId = log_utilities:get_logid_from_key({Key,Bucket}),
-	    [Node] = log_utilities:get_preflist_from_key({Key,Bucket}),
-	    case logging_vnode:get_from_time(Node,LogId,Clock,Type,{Key,Bucket}) of
-		#snapshot_get_response{ops_list = Ops} ->
-		    get_log_operations_internal(Rest,[lists:reverse(Ops)|Acc]);
-		{error, Reason} ->
-		    {error, Reason}
-	    end;
-	{error, Reason} ->
-	    {error, Reason}
+get_log_operations_internal([], Acc) ->
+    {ok, lists:reverse(Acc)};
+get_log_operations_internal([{{Key, Type, Bucket}, Clock}|Rest], Acc) ->
+    case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
+    ok ->
+        LogId = log_utilities:get_logid_from_key({Key, Bucket}),
+        [Node] = log_utilities:get_preflist_from_key({Key, Bucket}),
+        case logging_vnode:get_from_time(Node, LogId, Clock, Type, {Key, Bucket}) of
+        #snapshot_get_response{ops_list = Ops} ->
+            get_log_operations_internal(Rest, [lists:reverse(Ops)|Acc]);
+        {error, Reason} ->
+            {error, Reason}
+        end;
+    {error, Reason} ->
+        {error, Reason}
     end.
 
 %% Object creation and types
@@ -213,33 +213,33 @@ get_default_txn_properties() ->
 -spec get_txn_property(atom(), txn_properties()) -> atom().
 get_txn_property(update_clock, Properties) ->
     case lists:keyfind(update_clock, 1, Properties) of
-	 false ->
-	    update_clock;
-	{update_clock, ShouldUpdate} ->
-	    case ShouldUpdate of
-		true ->
-		    update_clock;
-		false ->
-		    no_update_clock
-	    end
+     false ->
+        update_clock;
+    {update_clock, ShouldUpdate} ->
+        case ShouldUpdate of
+        true ->
+            update_clock;
+        false ->
+            no_update_clock
+        end
     end;
 get_txn_property(certify, Properties) ->
     case lists:keyfind(certify, 1, Properties) of
-	false ->
-	    application:get_env(antidote, txn_cert, true);
-	{certify, Certify} ->
-	    case Certify of
-		use_default ->
-		    application:get_env(antidote, txn_cert, true);
-		certify ->
-		    %% Note that certify will only work correctly when
-		    %% application:get_env(antidote, txn_cert, true); returns true
-		    %% the reason is is that in clocksi_vnode:commit, the timestamps
-		    %% for committed transactions will only be saved if application:get_env(antidote, txn_cert, true)
-		    %% is true
-		    %% we might want to change this in the future
-		    true;
-		dont_certify ->
-		    false
-	    end
+    false ->
+        application:get_env(antidote, txn_cert, true);
+    {certify, Certify} ->
+        case Certify of
+        use_default ->
+            application:get_env(antidote, txn_cert, true);
+        certify ->
+            %% Note that certify will only work correctly when
+            %% application:get_env(antidote, txn_cert, true); returns true
+            %% the reason is is that in clocksi_vnode:commit, the timestamps
+            %% for committed transactions will only be saved if application:get_env(antidote, txn_cert, true)
+            %% is true
+            %% we might want to change this in the future
+            true;
+        dont_certify ->
+            false
+        end
     end.

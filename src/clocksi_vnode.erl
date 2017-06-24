@@ -435,7 +435,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
         true ->
             case TxWriteSet of
                 [{Key, _Type, _Update} | _] ->
-		    TxId = Transaction#transaction.txn_id,
+            TxId = Transaction#transaction.txn_id,
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = dc_utilities:now_microsec(),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
@@ -570,10 +570,10 @@ now_microsec({MegaSecs, Secs, MicroSecs}) ->
 
 certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
     TxId = Transaction#transaction.txn_id,
-    Certify = antidote:get_txn_property(certify,Transaction#transaction.properties),
+    Certify = antidote:get_txn_property(certify, Transaction#transaction.properties),
     case Certify of
         true ->
-	    certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
+        certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
         false -> true
     end.
 

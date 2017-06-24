@@ -40,8 +40,8 @@
          clocksi_test_prepare/1,
          clocksi_single_key_update_read_test/1,
          clocksi_multiple_key_update_read_test/1,
-	       clocksi_test_cert_property/1,
-	       clocksi_test_no_update_property/1,
+           clocksi_test_cert_property/1,
+           clocksi_test_no_update_property/1,
          clocksi_test_certification_check/1,
          clocksi_multiple_test_certification_check/1,
          clocksi_multiple_read_update_test/1,
@@ -92,8 +92,8 @@ all() -> [clocksi_test1,
          clocksi_test_prepare,
          clocksi_single_key_update_read_test,
          clocksi_multiple_key_update_read_test,
-	       clocksi_test_cert_property,
-	       clocksi_test_no_update_property,
+           clocksi_test_cert_property,
+           clocksi_test_no_update_property,
          clocksi_test_certification_check,
          clocksi_multiple_test_certification_check,
          clocksi_multiple_read_update_test,
@@ -445,11 +445,11 @@ clocksi_test_certification_check_run(Nodes, DisableCert) ->
 
     %% Start a new tx on first node, perform an update on some key.
     Properties = case DisableCert of
-		     true -> [{certify,dont_certify}];
-		     false -> []
-		 end,
+             true -> [{certify, dont_certify}];
+             false -> []
+         end,
 
-    {ok,TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, Properties, false]),
+    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, Properties, false]),
     lager:info("Tx1 Started, id : ~p", [TxId]),
     update_counters(FirstNode, [Key1], [1], ignore, TxId),
 
@@ -463,16 +463,16 @@ clocksi_test_certification_check_run(Nodes, DisableCert) ->
     %% Commit the first tx.
     CommitTime = rpc:call(FirstNode, cure, clocksi_iprepare, [TxId]),
     case DisableCert of
-	false ->
-	    ?assertMatch({aborted, TxId}, CommitTime),
-	    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-	    lager:info("Tx1 aborted. Test passed!");
-	true ->
-	    ?assertMatch({ok, _}, CommitTime),
-	    lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
-	    End2 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId]),
-	    ?assertMatch({ok, _}, End2),
-	    lager:info("Tx1 committed. Test passed!")
+    false ->
+        ?assertMatch({aborted, TxId}, CommitTime),
+        lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
+        lager:info("Tx1 aborted. Test passed!");
+    true ->
+        ?assertMatch({ok, _}, CommitTime),
+        lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
+        End2 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId]),
+        ?assertMatch({ok, _}, End2),
+        lager:info("Tx1 committed. Test passed!")
     end,
     pass.
 
@@ -481,10 +481,10 @@ clocksi_test_no_update_property(Config) ->
     FirstNode = hd(Nodes),
     _LastNode = lists:last(Nodes),
     Key =
-	clockSI_test_no_update_property_key1,
+    clockSI_test_no_update_property_key1,
     Bucket = bucket,
     Type = antidote_crdt_counter,
-    {ok,_} = rpc:call(FirstNode, antidote, update_objects,
+    {ok, _} = rpc:call(FirstNode, antidote, update_objects,
                       [ignore, [], [{{Key, Type, Bucket}, increment, 1}]]),
 
     pass.

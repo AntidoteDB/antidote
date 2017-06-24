@@ -99,7 +99,7 @@ delete(State) -> {ok, State}.
 -spec call(partition_id(), {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
 call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
--spec get_buf(dcid(),#state{}) -> #inter_dc_sub_buf{}.
+-spec get_buf(dcid(), #state{}) -> #inter_dc_sub_buf{}.
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of
     {ok, Buf} -> Buf;

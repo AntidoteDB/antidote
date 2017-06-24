@@ -212,7 +212,7 @@ gr_snapshot_read(ClientClock, Objects) ->
             %% ST doesnot contain entry for local dc, hence explicitly
             %% add it in snapshot time
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
-            {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock,false}], false),
+            {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock, false}], false),
             case read_objects(Objects, TxId) of
                 {ok, Res} ->
                     {ok, CommitTime} = commit_transaction(TxId),
