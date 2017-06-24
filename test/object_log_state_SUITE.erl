@@ -93,7 +93,7 @@ object_log_state_test(Config) ->
 check_orset_ops([], [], _KeyBucket) ->
     ok;
 check_orset_ops([Val|Rest1],
-        [{_Id, #clocksi_payload{key = KeyBucket, type = antidote_crdt_orset, op_param = [{Val, Binary, []}]}}
+        [{_Id, #clocksi_payload{key = KeyBucket, type = antidote_crdt_orset, op_param = [{Val, _Binary, []}]}}
          | Rest2],
         KeyBucket) ->
     check_orset_ops(Rest1, Rest2, KeyBucket).
@@ -110,6 +110,5 @@ add_set(FirstNode, Object, [First|Rest], PrevCommit) ->
     Update = {Object, add, First},
     ReadResult = rpc:call(FirstNode, antidote, read_objects, [ignore, [], [Object]]),
     ?assertMatch({ok, _, _}, ReadResult),
-    {WriteResult, Commit} = rpc:call(FirstNode, antidote, update_objects, [ignore, [], [Update]]),
-    ?assertMatch(ok, WriteResult),
+    {ok, Commit} = rpc:call(FirstNode, antidote, update_objects, [ignore, [], [Update]]),
     add_set(FirstNode, Object, Rest, vectorclock:max([PrevCommit, Commit])).
