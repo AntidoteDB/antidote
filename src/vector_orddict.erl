@@ -153,8 +153,7 @@ last({List, _Size}) ->
 -spec filter(fun((term()) -> boolean()), vector_orddict()) -> vector_orddict().
 filter(Fun, {List, _Size}) ->
   Result = lists:filter(Fun, List),
-  {Result, length(List)}.
-
+  {Result, length(Result)}.
 
 -ifdef(TEST).
 
@@ -209,5 +208,23 @@ vector_orddict_insert_bigger_test() ->
   Vdict3 = vector_orddict:insert_bigger(CT3, 3, Vdict2),
   ?assertEqual(2, vector_orddict:size(Vdict3)).
 
+vector_orddict_filter_test() ->
+  VDict = vector_orddict:from_list([
+    {vectorclock:from_list([{dc1, 4}, {dc2, 4}]), snapshot_1},
+    {vectorclock:from_list([{dc1, 0}, {dc2, 3}]), snapshot_2},
+    {vectorclock:new(), snapshot_3}
+  ]),
+  ?assertEqual(3, vector_orddict:size(VDict)),
+
+  Result = vector_orddict:filter(fun({Vector, _}) ->
+    vectorclock:gt(Vector, vectorclock:new())
+  end, VDict),
+  ?assertEqual(2, vector_orddict:size(Result)),
+
+  Filtered = [
+    {vectorclock:from_list([{dc1, 4}, {dc2, 4}]), snapshot_1},
+    {vectorclock:from_list([{dc1, 0}, {dc2, 3}]), snapshot_2}
+  ],
+  ?assertEqual(Filtered, vector_orddict:to_list(Result)).
 
 -endif.
