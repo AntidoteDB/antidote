@@ -72,7 +72,7 @@ start_link(Name) ->
 -spec update_dc_vector(dcid(), vectorclock()) -> ok. % ets:insert
 update_dc_vector(Dcid, Vc) ->
     gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, Dcid, Vc}),
-    KV = get_k_vector(),
+    KV = get_kvector(),
     {noreply, #state{kvector = KV}}.
 
 %% Goes through the ETS table, collects VCs from each DC,
@@ -97,9 +97,9 @@ init([]) ->
 handle_cast({update_dc_vc, Tx = #interdc_txn{}}, State) ->
     {noreply, {Tx, State}}.
 
-%% TODO Implement update_kvector
-handle_cast(update_kvector, State) ->
-    {noreply, State}.
+%%%% TODO Implement update_kvector
+%%handle_cast({update_kvector}, State) ->
+%%    {noreply, State}.
 %% calls are synchronous
 %% casts are asynchronous
 
@@ -125,10 +125,10 @@ handle_call(_Info, _From, State) ->
 -ifdef(TEST).
 
 kstable_test() ->
-    DC1 = {'antidote1@127.0.0.1',{1490,186897,598677}},
-    DC2 = {'antidote2@127.0.0.1',{1490,186897,598677}},
-    DC3 = {'antidote3@127.0.0.1',{1490,186897,598677}},
-    DC4 = {'antidote4@127.0.0.1',{1490,186897,598677}},
+    DC1 = {'antidote1@127.0.0.1', {1490, 186897, 598677}},
+    DC2 = {'antidote2@127.0.0.1', {1490, 186897, 598677}},
+    DC3 = {'antidote3@127.0.0.1', {1490, 186897, 598677}},
+    DC4 = {'antidote4@127.0.0.1', {1490, 186897, 598677}},
     V1 = vectorclock:from_list([{1, 4, 0, 3}]),
     V2 = vectorclock:from_list([{1, 5, 2, 4}]),
     V3 = vectorclock:from_list([{0, 5, 4, 12}]),
