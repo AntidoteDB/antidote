@@ -35,7 +35,7 @@ start_link(Init) ->
 start_fsm(Args) ->
     supervisor:start_child(?MODULE, Args).
 
-init(Init) ->
+init(_Args) ->
     Worker = {k_stable,
         {k_stable, start_link, []},
         permanent, 5000, worker, [meta_data_manager]},
