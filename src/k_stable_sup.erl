@@ -37,15 +37,6 @@ start_fsm(Args) ->
 
 init(Init) ->
     Worker = {k_stable,
-        {k_stable, start_link, [Init]},
-        transient, 5000, worker, [meta_data_manager]},
+        {k_stable, start_link, []},
+        permanent, 5000, worker, [meta_data_manager]},
     {ok, {{one_for_one, 5, 10}, [Worker]}}.
-
-%%inita(_Args) ->
-%%    SupFlags = #{strategy => simple_one_for_one,
-%%        intensity => 0,
-%%        period => 1},
-%%    ChildSpecs = [#{id => call,
-%%        start => {call, start_link, []},
-%%        shutdown => brutal_kill}],
-%%    {ok, {SupFlags, ChildSpecs}}.
