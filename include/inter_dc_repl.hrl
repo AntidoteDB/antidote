@@ -21,7 +21,7 @@
     timestamp :: clock_time(),
     last_update_opid :: undefined | #op_number{}, %% last opid of the txn that was an update operations (i.e. not a commit/abort)
     bucket :: bucket(),
-    log_records :: [#log_record{}], %% if the OP list is empty, the message is a HEARTBEA
+    log_records :: [#log_record{}], %% if the OP list is empty, the message is a HEARTBEAT
     gss :: vectorclock() %% stable snapshot at dcid
 }).
 

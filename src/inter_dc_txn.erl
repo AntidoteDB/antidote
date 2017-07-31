@@ -23,42 +23,43 @@
 
 %% API
 -export([
-  from_ops/3,
-  ping/3,
-  is_local/1,
-  req_id_to_bin/1,
-  ops_by_type/2,
-  to_bin/1,
-  from_bin/1,
-  partition_to_bin/1,
-  last_log_opid/1,
-  is_ping/1]).
+    from_ops/3,
+    ping/3,
+    is_local/1,
+    req_id_to_bin/1,
+    ops_by_type/2,
+    to_bin/1,
+    from_bin/1,
+    partition_to_bin/1,
+    last_log_opid/1,
+    is_ping/1]).
 
 %% Functions
 
 -spec from_ops([#log_record{}], partition_id(), #op_number{} | none) -> #interdc_txn{}.
 from_ops(Ops, Partition, PrevLogOpId) ->
-  LastOp = lists:last(Ops),
-  CommitPld = LastOp#log_record.log_operation,
-  commit = CommitPld#log_operation.op_type, %% sanity check
-  #commit_log_payload{commit_time = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_operation.log_payload,
-  #interdc_txn{
-    dcid = DCID,
-    partition = Partition,
-    prev_log_opid = PrevLogOpId,
-    log_records = Ops,
-    snapshot = SnapshotTime,
-    timestamp = CommitTime
-  }.
+    LastOp = lists:last(Ops),
+    CommitPld = LastOp#log_record.log_operation,
+    commit = CommitPld#log_operation.op_type, %% sanity check
+    #commit_log_payload{commit_time = {DCID, CommitTime}, snapshot_time = SnapshotTime} = CommitPld#log_operation.log_payload,
+    #interdc_txn{
+        dcid = DCID,
+        partition = Partition,
+        prev_log_opid = PrevLogOpId,
+        log_records = Ops,
+        snapshot = SnapshotTime,
+        timestamp = CommitTime,
+        gss = dc_utilities:get_stable_snapshot()
+    }.
 
 -spec ping(partition_id(), #op_number{} | none, non_neg_integer()) -> #interdc_txn{}.
 ping(Partition, PrevLogOpId, Timestamp) -> #interdc_txn{
-  dcid = dc_meta_data_utilities:get_my_dc_id(),
-  partition = Partition,
-  prev_log_opid = PrevLogOpId,
-  log_records = [],
-  snapshot = dict:new(),
-  timestamp = Timestamp
+    dcid = dc_meta_data_utilities:get_my_dc_id(),
+    partition = Partition,
+    prev_log_opid = PrevLogOpId,
+    log_records = [],
+    snapshot = dict:new(),
+    timestamp = Timestamp
 }.
 
 -spec last_log_opid(#interdc_txn{}) -> #op_number{}.
@@ -80,27 +81,27 @@ is_ping(#interdc_txn{log_records = Ops}) -> Ops == [].
 
 -spec ops_by_type(#interdc_txn{}, any()) -> [#log_record{}].
 ops_by_type(#interdc_txn{log_records = Ops}, Type) ->
-  F = fun(Op) -> Type == Op#log_record.log_operation#log_operation.op_type end,
-  lists:filter(F, Ops).
+    F = fun(Op) -> Type == Op#log_record.log_operation#log_operation.op_type end,
+    lists:filter(F, Ops).
 
 -spec to_bin(#interdc_txn{}) -> binary().
 to_bin(Txn = #interdc_txn{partition = P}) ->
-  Prefix = partition_to_bin(P),
-  Msg = term_to_binary(Txn),
-  <<Prefix/binary, Msg/binary>>.
+    Prefix = partition_to_bin(P),
+    Msg = term_to_binary(Txn),
+    <<Prefix/binary, Msg/binary>>.
 
 -spec from_bin(binary()) -> #interdc_txn{}.
 from_bin(Bin) ->
-  L = byte_size(Bin),
-  Msg = binary_part(Bin, {?PARTITION_BYTE_LENGTH, L - ?PARTITION_BYTE_LENGTH}),
-  binary_to_term(Msg).
+    L = byte_size(Bin),
+    Msg = binary_part(Bin, {?PARTITION_BYTE_LENGTH, L - ?PARTITION_BYTE_LENGTH}),
+    binary_to_term(Msg).
 
 -spec pad(non_neg_integer(), binary()) -> binary().
 pad(Width, Binary) ->
-  case Width - byte_size(Binary) of
-    N when N =< 0 -> Binary;
-    N -> <<0:(N*8), Binary/binary>>
-  end.
+    case Width - byte_size(Binary) of
+        N when N =< 0 -> Binary;
+        N -> <<0:(N*8), Binary/binary>>
+    end.
 
 %% Takes a binary and makes it size width
 %% if it is too small than it adds 0s
@@ -114,7 +115,7 @@ pad_or_trim(Width, Binary) ->
             <<_:Pos/binary, Rest:Width/binary>> = Binary,
             Rest;
         N -> <<0:(N*8), Binary/binary>>
-  end.
+    end.
 
 -spec partition_to_bin(partition_id()) -> binary().
 partition_to_bin(Partition) -> pad(?PARTITION_BYTE_LENGTH, binary:encode_unsigned(Partition)).
