@@ -39,7 +39,7 @@
     generate_server_name/1,
     update_dc_vector/2,
     get_kvector/0
-    ]).
+]).
 
 %% server functions
 -export([
@@ -60,6 +60,8 @@
 -define(TABLE_NAME, k_stability_table).
 -define(KSTABILITY_TABLE_CONCURRENCY, {read_concurrency, false}, {write_concurrency, false}).
 -define(KSTABILITY_TABLE_NAME, kstability_table).
+
+
 
 %% ===================================================================
 %% Public API (client API)
@@ -82,6 +84,8 @@ update_dc_vector(Dcid, Vc) ->
 get_kvector() ->
     ok.
 
+
+
 %% ===================================================================
 %% gen_server callbacks (server functions)
 %% ===================================================================
@@ -93,23 +97,42 @@ init([]) ->
         _ -> {ok}
     end.
 
-%% TODO Implement update_dc_vc
-handle_cast({update_dc_vc, Tx = #interdc_txn{}}, State) ->
-    {noreply, {Tx, State}}.
+%% Updates (or inserts if doesn't yet exist) the
+handle_cast({update_dc_vc, _Tx = #interdc_txn{}}, State) ->
+    %DC = Tx#interdc_txn.dcid,
+    %VC = Tx#interdc_txn.gss,
+    NewState = state_factory(State#state.table, State#state.kvector),
+    {noreply, NewState};
 
-%%%% TODO Implement update_kvector
-%%handle_cast({update_kvector}, State) ->
-%%    {noreply, State}.
-%% calls are synchronous
-%% casts are asynchronous
+%% Returns the k-vector
+handle_cast({get_kvector}, State) ->
+    NewS = state_factory(State#state.table, #state.kvector=update_k(State)),
+    {noreply, NewS};
 
+
+handle_cast(_Info, State) ->
+    {noreply, State}.
+
+%% ===================================================================
+%% internal functions
+%% ===================================================================
 generate_server_name(Node) ->
     list_to_atom("kstability_manager" ++ atom_to_list(Node)).
+
+-spec state_factory(ets:tid(), vectorclock()) -> #state{}.
+state_factory(Tab, Kvect) ->
+    #state{table=Tab, kvector = Kvect}.
+
+-spec update_k(#state{}) -> vectorclock().
+update_k(_State) ->
+    _List = ets:tab2list(),
+    vectorclock:new().
 
 terminate(_Reason, _State) ->
     ets:delete(?TABLE_NAME),
     ok.
 
+%% Unused
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
