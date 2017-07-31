@@ -23,6 +23,7 @@
 %%
 %% -------------------------------------------------------------------
 %% TODO [] Get 'replication_factor' from metadata automatically when it changes
+%% TODO [] When delivering an interdc TX, update k-stable module
 
 -module(k_stable).
 -behaviour(gen_server).
@@ -36,9 +37,9 @@
 %% Public API/Client functions
 -export([
     start_link/1,
-    generate_server_name/1,
     update_dc_vector/2,
-    get_kvector/0
+    get_kvector/0,
+    generate_server_name/1
 ]).
 
 %% server functions
@@ -48,7 +49,9 @@
     handle_call/3,
     handle_info/2,
     terminate/2,
-    code_change/3]).
+    code_change/3,
+    update_k/1
+]).
 
 %% Definitions
 -record(state, {
@@ -75,14 +78,13 @@ start_link(Name) ->
 update_dc_vector(Dcid, Vc) ->
     gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, Dcid, Vc}),
     KV = get_kvector(),
-    {noreply, #state{kvector = KV}}.
+    KV.
 
 %% Goes through the ETS table, collects VCs from each DC,
 %% and computes the k_stable (read) vector.
-%% TODO [] Implement get_kvector
 -spec get_kvector() -> vectorclock().
 get_kvector() ->
-    ok.
+    gen_server:call({global, generate_server_name(node())}, update_dc_vc).
 
 
 
@@ -104,14 +106,17 @@ handle_cast({update_dc_vc, _Tx = #interdc_txn{}}, State) ->
     NewState = state_factory(State#state.table, State#state.kvector),
     {noreply, NewState};
 
-%% Returns the k-vector
-handle_cast({get_kvector}, State) ->
-    NewS = state_factory(State#state.table, #state.kvector=update_k(State)),
-    {noreply, NewS};
-
-
 handle_cast(_Info, State) ->
     {noreply, State}.
+
+%% Returns the k-vector
+%% TODO [] Implement
+handle_call(get_kvect, _From, State) ->
+    KVec = 1, %% The k-vector should be stored here
+    NewState = state_factory(State#state.table, KVec),
+    {reply, KVec, NewState}.
+
+
 
 %% ===================================================================
 %% internal functions
@@ -139,9 +144,6 @@ code_change(_OldVsn, State, _Extra) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-handle_call(_Info, _From, State) ->
-    {reply, error, State}.
-
 %% ===================================================================
 %% Tests
 %% ===================================================================
@@ -164,6 +166,5 @@ kstable_test() ->
     OutputVC = get_k_vector(),
     Output = vectorclock:eq(ExpectedVC, OutputVC),
     ?assertEqual(Output , true).
-.
 
 - endif.
