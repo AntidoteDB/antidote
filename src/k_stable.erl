@@ -37,7 +37,7 @@
 %% Public API/Client functions
 -export([
     start_link/0,
-    deliver_update/2,
+    %deliver_update/2,
     deliver_update/1,
     get_kvector/0,
     generate_server_name/1
@@ -74,9 +74,9 @@ start_link() ->
     gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [], []).
 
 %% Called with new inter-dc TXs (or heartbeat). Updates the state.
--spec deliver_update(dcid(), vectorclock()) -> ok. % ets:insert
-deliver_update(Dcid, Vc) ->
-    gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, #interdc_txn{dcid = Dcid, gss = Vc}}).
+%%-spec deliver_update(dcid(), vectorclock()) -> ok. % ets:insert
+%%deliver_update(Dcid, Vc) ->
+%%    gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, #interdc_txn{dcid = Dcid, gss = Vc}}).
 
 -spec deliver_update(#interdc_txn{}) -> ok.
 deliver_update(Tx) ->
@@ -101,12 +101,16 @@ init(_A) ->
         _ -> {ok}
     end.
 
+%%apps/antidote/src/k_stable.erl
+%%109: The attempt to match a term of type dict:dict(_,_) against the pattern 3 breaks the opaqueness of the term
+
 handle_cast({update_dc_vc, Tx = #interdc_txn{}}, State) ->
     DC = Tx#interdc_txn.dcid,
     VC = Tx#interdc_txn.gss,
-    KVect = build_kstable_vector(),
+    %KVect = build_kstable_vector(),
+    KVect = vectorclock:new(),
     ets:insert(?KSTABILITY_TABLE_NAME, {DC, VC}),
-    NewState = state_factory(State#state.table, #state.kvector=KVect),
+    NewState = state_factory(State#state.table, KVect),
     {noreply, NewState};
 
 handle_cast(_Info, State) ->
