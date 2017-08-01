@@ -63,7 +63,7 @@
 %%% ETS table metadata
 -define(KSTABILITY_TABLE_NAME, k_stability_table).
 -define(KSTABILITY_TABLE_CONCURRENCY, {read_concurrency, false}, {write_concurrency, false}).
--define(KSTABILITY_REPL_FACTOR, 2).
+-define(KSTABILITY_REPL_FACTOR, 2). % 2 DCs total will store updates,
 
 
 %% ===================================================================
@@ -86,7 +86,7 @@ deliver_update(Tx) ->
 %% and computes the k_stable (read) vector.
 -spec get_kvector() -> vectorclock().
 get_kvector() ->
-    gen_server:call({global, generate_server_name(node())}, update_dc_vc).
+    gen_server:call({global, generate_server_name(node())}, get_kvect).
 
 
 
@@ -162,34 +162,30 @@ handle_info(_Info, State) ->
 -ifdef(TEST).
 
 %%kstable_test() ->
-%%    DC1 = {'antidote1@127.0.0.1', {1490, 186897, 598677}},
-%%    DC2 = {'antidote2@127.0.0.1', {1490, 186897, 598677}},
-%%    DC3 = {'antidote3@127.0.0.1', {1490, 186897, 598677}},
-%%    DC4 = {'antidote4@127.0.0.1', {1490, 186897, 598677}},
-%%    V1 = vectorclock:from_list([{1, 4, 0, 3}]),
-%%    deliver_update(DC1, V1),
-%%    deliver_update(DC2, V2),
-%%    deliver_update(DC3, V3),
-%%    deliver_update(DC4, V4),
-%%    ExpectedVC = vectorclock:from_list([{1, 4, 0, 4}]),
-%%    OutputVC = get_k_vector(),
-%%    Output = vectorclock:eq(ExpectedVC, OutputVC),
-%%    ?assertEqual(Output , true).
+%% DC1_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
+%% DC1_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
+%% DC1_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
+%% DC1_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
+%% A = rpc:call(?node, vectorclock, new, []),
+%% AA = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_1, 1, A]),
+%% AAA = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_2, 4, AA]),
+%% AAAA = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_3, 0, AAA]),
+%% VC = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_4, 3, AAAA]),
+%% ets:new(?tab, [set, named_table]),
+%% ets:insert(?tab, {DC1_1, VC}),
+%% io:format("Lookup DC1_1~n~p~n", [ets:lookup(?tab, DC1_1)]),
+%% ?assertEqual(Output , true).
+%% Example output
+%%    [{{'antidote1@127.0.0.1',{1501,537303,598423}},
+%%        {dict,4,16,16,8,80,48,
+%%            {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+%%            {{[],[],[],
+%%                [[{'antidote4@127.0.0.1',{1590,184597,573977}}|3]],
+%%                [[{'antidote2@127.0.0.1',{1390,186897,698677}}|4]],
+%%                [[{'antidote3@127.0.0.1',{1490,186159,768617}}|0]],
+%%                [],[],
+%%                [[{'antidote1@127.0.0.1',{1501,537303,598423}}|1]],
+%%                [],[],[],[],[],[],[]}}}}]
+%%
 
 - endif.
-
-%% DC1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}}.
-%% DC2 = {'antidote2@127.0.0.1', {1490, 186897, 598677}}.
-%% {ok, STS} = dc_utilities:get_stable_snapshot().
-%% {ok,{dict,0,16,16,8,80,48,
-%%  {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
-%%  {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}}
-%% TE = vectorclock:set_clock_of_dc(DCID, 5, STS).
-%% TE2 = vectorclock:set_clock_of_dc(DC2, 15, TE).
-%% {dict,2,16,16,8,80,48,
-%%  {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
-%%  {{[[{'antidote2@127.0.0.1',{1490,186897,598677}}|15]],
-%%      [],[],[],[],[],[],[],[],[],[],[],
-%%      [[{'antidote1@127.0.0.1',{1501,537303,598423}}|5]],
-%%      [],[],[]}}}
-%% ets:insert(?KSTABLE_TABLE_NAME, {DC1, TE2}).
