@@ -14,50 +14,40 @@ main(_A) ->
     antidote_connect(?node),
     ets:new(?tab, [set, named_table]),
 
-    %% Test 1, expected results
-    DC1_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-    DC1_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
-    DC1_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
-    DC1_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
-    DC1 = [{DC1_1, 1}, {DC1_2, 4}, {DC1_3, 0}, {DC1_4, 3}],
-    DC1_VC = rpc:call(?node, vectorclock, from_list, [DC1]),
-
-
-    DC2_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-    DC2_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
-    DC2_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
-    DC2_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
-    DC2 = [{DC2_1, 1}, {DC2_2, 5}, {DC2_3, 2}, {DC2_4, 4}],
-    DC2_VC = rpc:call(?node, vectorclock, from_list, [DC2]),
-
-
-    DC3_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-    DC3_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
-    DC3_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
-    DC3_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
-    DC3 = [{DC3_1, 0}, {DC3_2, 5}, {DC3_3, 4}, {DC3_4, 12}],
-    DC3_VC = rpc:call(?node, vectorclock, from_list, [DC3]),
-
-    DC4_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-    DC4_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
-    DC4_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
-    DC4_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
-    DC4 = [{DC4_1, 1}, {DC4_2, 0}, {DC4_3, 0}, {DC4_4, 12}],
-    DC4_VC = rpc:call(?node, vectorclock, from_list, [DC4]),
+    DC1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
+    DC2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
+    DC3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
+    DC4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
+    ListVC_DC1 = [{DC1, 1}, {DC2, 4}, {DC3, 0}, {DC4, 3}],
+    ListVC_DC2 = [{DC1, 1}, {DC2, 5}, {DC3, 2}, {DC4, 4}],
+    ListVC_DC3 = [{DC1, 0}, {DC2, 5}, {DC3, 4}, {DC4, 12}],
+    ListVC_DC4 = [{DC1, 1}, {DC2, 0}, {DC3, 0}, {DC4, 12}],
+    DC1_VC = rpc:call(?node, vectorclock, from_list, [ListVC_DC1]),
+    DC2_VC = rpc:call(?node, vectorclock, from_list, [ListVC_DC2]),
+    DC3_VC = rpc:call(?node, vectorclock, from_list, [ListVC_DC3]),
+    DC4_VC = rpc:call(?node, vectorclock, from_list, [ListVC_DC4]),
 
     % DC IDs are unique
-    ets:insert(?tab, {DC1_1, DC1_VC}),
-    ets:insert(?tab, {DC1_2, DC2_VC}),
-    ets:insert(?tab, {DC1_3, DC3_VC}),
-    ets:insert(?tab, {DC1_4, DC4_VC}),
+    ets:insert(?tab, {DC1, DC1_VC}),
+    ets:insert(?tab, {DC2, DC2_VC}),
+    ets:insert(?tab, {DC3, DC3_VC}),
+    ets:insert(?tab, {DC4, DC4_VC}),
 
-    Keys = [DC1_1, DC1_2, DC1_3, DC1_4],
+    Keys = [DC1, DC2, DC3, DC4],
     VersionMatrix = get_version_matrix(Keys),
+    %% Expected result: 
+    %% {{'antidote4@127.0.0.1',{1590,184597,573977}},[12,12,4,3]},
+    %% {{'antidote3@127.0.0.1',{1490,186159,768617}},[0,4,2,0]},
+    %% {{'antidote2@127.0.0.1',{1390,186897,698677}},[0,5,5,4]},
+    %% {{'antidote1@127.0.0.1',{1501,537303,598423}},[1,0,1,1]}]
+
     io:format("Version Matrix:~p~n", [VersionMatrix]),
     ok.
 
+%% Functions
 
 
+%% Collects values for "Dc"
 get_dc_vals(_, [], Acc) ->
     Acc;
 get_dc_vals(Dc, [{_, Dico} | T], Acc) ->
@@ -69,6 +59,8 @@ get_dc_vals(Dc, [{_, Dico} | T], Acc) ->
           end,
     get_dc_vals(Dc, T, [Val | Acc]).
 
+
+%% Builds version matrix for dcs specified in "DC_IDs"
 get_version_matrix([]) ->
     ok;
 get_version_matrix(DC_IDs) ->
