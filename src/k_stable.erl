@@ -73,8 +73,7 @@
 start_link() ->
     gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [], []).
 
-%% Called with new inter-dc TXs (or heartbeat). Updates the state.
-%%-spec deliver_update(dcid(), vectorclock()) -> ok. % ets:insert
+%% Called with new inter-dc TXs (or heartbeat). Updates the state.%%-spec deliver_update(dcid(), vectorclock()) -> ok. % ets:insert
 %%deliver_update(Dcid, Vc) ->
 %%    gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, #interdc_txn{dcid = Dcid, gss = Vc}}).
 
