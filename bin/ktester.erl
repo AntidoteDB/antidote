@@ -14,12 +14,14 @@ main(_A) ->
     antidote_connect(?node),
     ets:new(?tab, [set, named_table]),
 
+    %% Test 1, expected results
     DC1_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
     DC1_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
     DC1_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
     DC1_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
     DC1 = [{DC1_1, 1}, {DC1_2, 4}, {DC1_3, 0}, {DC1_4, 3}],
     DC1_VC = rpc:call(?node, vectorclock, from_list, [DC1]),
+
 
     DC2_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
     DC2_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
@@ -28,52 +30,50 @@ main(_A) ->
     DC2 = [{DC2_1, 1}, {DC2_2, 5}, {DC2_3, 2}, {DC2_4, 4}],
     DC2_VC = rpc:call(?node, vectorclock, from_list, [DC2]),
 
+
     DC3_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-    DC3_2 = {'antidote2@127.0.0.1', {1390, 374891, 123674}},
+    DC3_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
     DC3_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
     DC3_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
-    DC3 = [{DC3_1, 1}, {DC3_2, 5}, {DC3_3, 2}, {DC3_4, 4}],
+    DC3 = [{DC3_1, 0}, {DC3_2, 5}, {DC3_3, 4}, {DC3_4, 12}],
     DC3_VC = rpc:call(?node, vectorclock, from_list, [DC3]),
 
     DC4_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-    DC4_2 = {'antidote2@127.0.0.1', {1390, 374891, 123674}},
+    DC4_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
     DC4_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
     DC4_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
-    DC4 = [{DC4_1, 1}, {DC4_2, 5}, {DC4_3, 2}, {DC4_4, 4}],
+    DC4 = [{DC4_1, 1}, {DC4_2, 0}, {DC4_3, 0}, {DC4_4, 12}],
     DC4_VC = rpc:call(?node, vectorclock, from_list, [DC4]),
 
+    % DC IDs are unique
     ets:insert(?tab, {DC1_1, DC1_VC}),
-    ets:insert(?tab, {DC2_2, DC2_VC}),
-    ets:insert(?tab, {DC3_3, DC3_VC}),
-    ets:insert(?tab, {DC4_4, DC4_VC}),
+    ets:insert(?tab, {DC1_2, DC2_VC}),
+    ets:insert(?tab, {DC1_3, DC3_VC}),
+    ets:insert(?tab, {DC1_4, DC4_VC}),
 
-
-    DC1_1_v = get_dc_vals(DC1_2, ets:tab2list(?tab)),
-    io:format("Test: ~p~n", [DC1_1_v]),
+    Keys = [DC1_1, DC1_2, DC1_3, DC1_4],
+    VersionMatrix = get_version_matrix(Keys),
+    io:format("Version Matrix:~p~n", [VersionMatrix]),
     ok.
 
-get_dc_vals(DC, [])
-
-get_dc_vals(DC, All) ->
-    AllTab = ets:tab2list(?tab),
-    [First | Rest] = AllTab,
-    {Dcid, Dico} = First,
-    KeysInDico = dict:fetch_keys(Dico),
-    dict:fetch(DC, Dico).
 
 
+get_dc_vals(_, [], Acc) ->
+    Acc;
+get_dc_vals(Dc, [{_, Dico} | T], Acc) ->
+    Val = case dict:find(Dc, Dico) of
+              {ok, Value} ->
+                  Value;
+              error -> % DC not found, shouldn't happen
+                  0
+          end,
+    get_dc_vals(Dc, T, [Val | Acc]).
 
--spec k_vector() -> ok.
-k_vector() ->
-    List = ets:tab2list(?tab),
-    io:format("List:~p~n", [List]), % Whole ets table as list
-    [Head | T] = List,
-    io:format("~nHead:~p~n", [Head]), % Whole ets table as list
-    Keys = dict:fetch_keys(dict:from_list(Head)),
-    io:format("~nKeys:~p~n", [Keys]), % Whole ets table as list
-    HeadDict = dict:fetch(Keys, Head),
-    ok.
-
+get_version_matrix([]) ->
+    ok;
+get_version_matrix(DC_IDs) ->
+    TabList = ets:tab2list(?tab),
+    lists:foldl(fun(X, Acc) -> VC = get_dc_vals(X, TabList, []), [{X, VC} | Acc] end, [], DC_IDs).
 
 %% Goes through the ets table, picks the value for Dcid at every vector
 %% compiles it into a vector clock and returns it.
@@ -84,7 +84,6 @@ k_vector() ->
 dc_k_vector(Dcid, []) ->
     ok;
 dc_k_vector(Dcid, [H | T]) ->
-    %% H is {dcid, vector}
     {DC, Vec} = H,
     Val = dict:fetch(Dcid, H),
     io:format("Fetched ~p for ~p~n", [Val, DC]),
