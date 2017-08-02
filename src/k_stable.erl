@@ -40,7 +40,9 @@
     %deliver_update/2,
     deliver_update/1,
     get_kvector/0,
-    generate_server_name/1
+    generate_server_name/1,
+    get_dc_vals/3,
+    get_version_matrix/1
 ]).
 
 %% server functions
@@ -148,47 +150,41 @@ build_kstable_vector() ->
     _List = ets:tab2list(?KSTABILITY_TABLE_NAME),
     vectorclock:new().
 
+%% Goes through the ets table and builds the
+%% remote state vector. Intended to be used
+%% to build version matrix.
+-spec get_dc_vals(dcid(), [tuple()], [integer()]) -> [].
+get_dc_vals(_, [], Acc) ->
+    Acc;
+get_dc_vals(DC, [{_, Dico} | T], Acc) ->
+    Val = case dict:find(DC, Dico) of
+              {ok, Value} ->
+                  Value;
+              error -> % DC not found, shouldn't happen
+                  0
+          end,
+    get_dc_vals(DC, T, [Val | Acc]).
+
+
+%% Builds the version matrix
+%% The parameter is list of dcid() we want to search for.
+%% Used for k-stable vector calculation
+-spec get_version_matrix([]) -> [] | {error, empty_list}.
+get_version_matrix([]) ->
+    {error, empty_list};
+get_version_matrix(DC_IDs) ->
+    TabList = ets:tab2list(?KSTABILITY_TABLE_NAME),
+    lists:foldl(fun(X, Acc) -> VC = get_dc_vals(X, TabList, []), [{X, VC} | Acc] end, [], DC_IDs).
+
+
 terminate(_Reason, _State) ->
     ets:delete(?KSTABILITY_TABLE_NAME),
     ok.
 
-%% Unused
+% Unused
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%% ===================================================================
-%% Tests
-%% ===================================================================
--ifdef(TEST).
-
-%%kstable_test() ->
-%% DC1_1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-%% DC1_2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
-%% DC1_3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
-%% DC1_4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
-%% A = rpc:call(?node, vectorclock, new, []),
-%% AA = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_1, 1, A]),
-%% AAA = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_2, 4, AA]),
-%% AAAA = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_3, 0, AAA]),
-%% VC = rpc:call(?node, vectorclock, set_clock_of_dc, [DC1_4, 3, AAAA]),
-%% ets:new(?tab, [set, named_table]),
-%% ets:insert(?tab, {DC1_1, VC}),
-%% io:format("Lookup DC1_1~n~p~n", [ets:lookup(?tab, DC1_1)]),
-%% ?assertEqual(Output , true).
-%% Example output
-%%    [{{'antidote1@127.0.0.1',{1501,537303,598423}},
-%%        {dict,4,16,16,8,80,48,
-%%            {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
-%%            {{[],[],[],
-%%                [[{'antidote4@127.0.0.1',{1590,184597,573977}}|3]],
-%%                [[{'antidote2@127.0.0.1',{1390,186897,698677}}|4]],
-%%                [[{'antidote3@127.0.0.1',{1490,186159,768617}}|0]],
-%%                [],[],
-%%                [[{'antidote1@127.0.0.1',{1501,537303,598423}}|1]],
-%%                [],[],[],[],[],[],[]}}}}]
-%%
-
-- endif.
