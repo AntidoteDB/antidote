@@ -53,12 +53,13 @@
     handle_info/2,
     terminate/2,
     code_change/3,
-    build_kstable_vector/0
+    build_kstable_vector/1
 ]).
 
 %% Definitions
 -record(state, {
     table :: ets:tid(),
+    versiomMatrix :: [tuple()],
     kvector :: vectorclock()
 }).
 
@@ -75,10 +76,7 @@
 start_link() ->
     gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [], []).
 
-%% Called with new inter-dc TXs (or heartbeat). Updates the state.%%-spec deliver_update(dcid(), vectorclock()) -> ok. % ets:insert
-%%deliver_update(Dcid, Vc) ->
-%%    gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, #interdc_txn{dcid = Dcid, gss = Vc}}).
-
+%% Called with new inter-dc TXs (or heartbeat). Updates the state.
 -spec deliver_update(#interdc_txn{}) -> ok.
 deliver_update(Tx) ->
     gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, Tx}).
@@ -102,9 +100,6 @@ init(_A) ->
         _ -> {ok}
     end.
 
-%%apps/antidote/src/k_stable.erl
-%%109: The attempt to match a term of type dict:dict(_,_) against the pattern 3 breaks the opaqueness of the term
-
 handle_cast({update_dc_vc, Tx = #interdc_txn{}}, State) ->
     DC = Tx#interdc_txn.dcid,
     VC = Tx#interdc_txn.gss,
@@ -119,7 +114,7 @@ handle_cast(_Info, State) ->
 
 %% Returns the k-vector
 handle_call(get_kvect, _From, State) ->
-    KVec = build_kstable_vector(),
+    KVec = build_kstable_vector(State#state.versiomMatrix),
     NewState = state_factory(State#state.table, KVec),
     {reply, KVec, NewState}.
 
@@ -144,11 +139,6 @@ state_factory(Tab, Kvect) ->
 %%[],[],[],[],[],[],[],[],[],[],[],
 %%[[{'antidote@127.0.0.1',{1501,537303,...}}|5]],
 %%[],[],[]}}} <- vectorclock()
-
--spec build_kstable_vector() -> vectorclock().
-build_kstable_vector() ->
-    _List = ets:tab2list(?KSTABILITY_TABLE_NAME),
-    vectorclock:new().
 
 %% Goes through the ets table and builds the
 %% remote state vector. Intended to be used
@@ -176,6 +166,18 @@ get_version_matrix(DC_IDs) ->
     TabList = ets:tab2list(?KSTABILITY_TABLE_NAME),
     lists:foldl(fun(X, Acc) -> VC = get_dc_vals(X, TabList, []), [{X, VC} | Acc] end, [], DC_IDs).
 
+%% Builds k-stable vector for reads from version matrix
+%% k is hardcoded for now
+-spec build_kstable_vector([tuple()]) -> [tuple()] | {error, matrix_size}.
+build_kstable_vector([]) ->
+    {error, matrix_size};
+build_kstable_vector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
+    lists:foldl(fun(Row, Acc) ->
+        {DC, VC} = Row,
+        Sorted = lists:reverse(lists:sort(VC)),
+        io:format("Sorted VC ~p~n", [Sorted]),
+        [{DC, lists:nth(?KSTABILITY_REPL_FACTOR, Sorted)} | Acc]
+                end, [], VerM).
 
 terminate(_Reason, _State) ->
     ets:delete(?KSTABILITY_TABLE_NAME),
