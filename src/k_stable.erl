@@ -30,10 +30,6 @@
 -include("antidote.hrl").
 -include("inter_dc_repl.hrl").
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 %% Public API/Client functions
 -export([
     start_link/0,
@@ -96,8 +92,8 @@ init(_A) ->
     case ets:info(?KSTABILITY_TABLE_NAME) of
         undefined ->
             Table = ets:new(?KSTABILITY_TABLE_NAME, [set, named_table, public, ?KSTABILITY_TABLE_CONCURRENCY]),
-	    {ok, state_factory(Table, [], [])};
-	_ -> {ok, []}
+            {ok, state_factory(Table, [], [])};
+        _ -> {ok, []}
     end.
 
 handle_cast({update_dc_vc, Tx = #interdc_txn{}}, State) ->
@@ -132,8 +128,8 @@ state_factory(Tab, Kvect, VM) ->
 %% Goes through the ets table and builds the
 %% remote state vector. Intended to be used
 %% to build version matrix.
-%% First parameter is the dcid we're looking for 
-%% Second parameter is the result of ets:tab2file on our ets table 
+%% First parameter is the dcid we're looking for
+%% Second parameter is the result of ets:tab2file on our ets table
 %% Third is an accumulator for tail-end recursion
 -spec get_dc_vals(dcid(), [tuple()], [integer()]) -> [].
 get_dc_vals(_, [], Acc) ->
