@@ -14,10 +14,10 @@ main(_A) ->
     antidote_connect(?node),
     ets:new(?tab, [set, named_table]),
 
-    DC1 = {'antidote1@127.0.0.1', {1501, 537303, 598423}},
-    DC2 = {'antidote2@127.0.0.1', {1390, 186897, 698677}},
-    DC3 = {'antidote3@127.0.0.1', {1490, 186159, 768617}},
-    DC4 = {'antidote4@127.0.0.1', {1590, 184597, 573977}},
+    DC1 = {'antidote_1', {1501, 537303, 598423}},
+    DC2 = {'antidote_2', {1390, 186897, 698677}},
+    DC3 = {'antidote_3', {1490, 186159, 768617}},
+    DC4 = {'antidote_4', {1590, 184597, 573977}},
     ListVC_DC1 = [{DC1, 1}, {DC2, 4}, {DC3, 0}, {DC4, 3}],
     ListVC_DC2 = [{DC1, 1}, {DC2, 5}, {DC3, 2}, {DC4, 4}],
     ListVC_DC3 = [{DC1, 0}, {DC2, 5}, {DC3, 4}, {DC4, 12}],
@@ -35,13 +35,17 @@ main(_A) ->
 
     Keys = [DC1, DC2, DC3, DC4],
     VersionMatrix = get_version_matrix(Keys),
-    %% Expected result: 
+    KVector = get_k_vector(VersionMatrix),
+    %% Expected results:
+    %% Version Matrix:
     %% {{'antidote4@127.0.0.1',{1590,184597,573977}},[12,12,4,3]},
     %% {{'antidote3@127.0.0.1',{1490,186159,768617}},[0,4,2,0]},
     %% {{'antidote2@127.0.0.1',{1390,186897,698677}},[0,5,5,4]},
     %% {{'antidote1@127.0.0.1',{1501,537303,598423}},[1,0,1,1]}]
-
-    io:format("Version Matrix:~p~n", [VersionMatrix]),
+    %% K-Vector (K=3): [1,4,0,4]
+    %% K-Vector (K=2): [1,5,2,12]
+    io:format("Version Matrix ~p~n~p stable vector ~p~n",
+        [VersionMatrix, ?kstab, KVector]),
     ok.
 
 %% Functions
@@ -61,32 +65,30 @@ get_dc_vals(Dc, [{_, Dico} | T], Acc) ->
 
 
 %% Builds version matrix for dcs specified in "DC_IDs"
+-spec get_version_matrix([]) -> [] | {error, empty_list}.
 get_version_matrix([]) ->
-    ok;
+    {error, empty_list};
 get_version_matrix(DC_IDs) ->
     TabList = ets:tab2list(?tab),
-    lists:foldl(fun(X, Acc) -> VC = get_dc_vals(X, TabList, []), [{X, VC} | Acc] end, [], DC_IDs).
+    lists:foldl(fun(X, Acc) ->
+        VC = get_dc_vals(X, TabList, []),
+        [{X, VC} | Acc] end,
+        [], DC_IDs).
 
-%% Goes through the ets table, picks the value for Dcid at every vector
-%% compiles it into a vector clock and returns it.
-%% It should be called on every key in ets table to get the system-wide
-%% k-stable vector for reads
-%% @param list is result of ets:tab2list()
--spec dc_k_vector(any(), list()) -> ok.
-dc_k_vector(Dcid, []) ->
-    ok;
-dc_k_vector(Dcid, [H | T]) ->
-    {DC, Vec} = H,
-    Val = dict:fetch(Dcid, H),
-    io:format("Fetched ~p for ~p~n", [Val, DC]),
-    [Val | dc_k_vector(Dcid, T)].
 
-%% Lists foreach
-foreach(F, [H | T]) ->
-    F(H),
-    foreach(F, T);
-foreach(F, []) ->
-    ok.
+%% Builds k-stable vector for reads from version matrix
+%% k is hardcoded for now
+%-spec get_k_vector(
+get_k_vector([]) ->
+    {error, matrix_size};
+get_k_vector(VerM) when length(VerM) >= ?kstab ->
+    lists:foldl(fun(Row, Acc) ->
+        {DC, VC} = Row,
+        Sorted = lists:reverse(lists:sort(VC)),
+        io:format("Sorted VC ~p~n", [Sorted]),
+        [{DC, lists:nth(?kstab, Sorted)} | Acc]
+                end, [], VerM).
+
 
 
 %% Connects
