@@ -37,24 +37,24 @@
 %% Public API/Client functions
 -export([
     start_link/0,
-    %deliver_update/2,
     deliver_tx/1,
-    get_kvector/0,
-    generate_server_name/1,
+    get_dc_ids/0,
     get_dc_vals/3,
-    get_version_matrix/1
+    get_version_matrix/1,
+    get_kvector/0,
+    get_kvector/1
 ]).
 
-%% server functions
+%% server and internal functions
 -export([
     init/1,
     handle_cast/2,
     handle_call/3,
     handle_info/2,
-    terminate/2,
+    generate_name/1,
     code_change/3,
-    build_kstable_vector/1,
-    get_dc_ids/0]).
+    terminate/2
+]).
 
 %% Definitions
 -record(state, {
@@ -64,7 +64,8 @@
 
 %%% ETS table metadata
 -define(KSTABILITY_TABLE_NAME, k_stability_table).
--define(KSTABILITY_TABLE_CONCURRENCY, {read_concurrency, false}, {write_concurrency, false}).
+-define(KSTABILITY_TABLE_CONCURRENCY,
+    {read_concurrency, false}, {write_concurrency, false}).
 -define(KSTABILITY_REPL_FACTOR, 2). % 2 DCs total will store updates,
 
 
@@ -73,18 +74,18 @@
 %% ===================================================================
 -spec start_link() -> {ok, pid()} | ignore | {error, term()}.
 start_link() ->
-    gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [], []).
+    gen_server:start_link({global, generate_name(node())}, ?MODULE, [], []).
 
 %% Called with new inter-dc TXs (or heartbeat). Updates the state.
 -spec deliver_tx(#interdc_txn{}) -> ok.
 deliver_tx(Tx) ->
-    gen_server:cast({global, generate_server_name(node())}, {update_dc_vc, Tx}).
+    gen_server:cast({global, generate_name(node())}, {update_dc_vc, Tx}).
 
 %% Goes through the ETS table, collects VCs from each DC,
 %% and computes the k_stable (read) vector.
 -spec get_kvector() -> vectorclock().
 get_kvector() ->
-    gen_server:call({global, generate_server_name(node())}, get_kvect).
+    gen_server:call({global, generate_name(node())}, get_kvect).
 
 
 
@@ -94,7 +95,8 @@ get_kvector() ->
 init(_A) ->
     case ets:info(?KSTABILITY_TABLE_NAME) of
         undefined ->
-            ets:new(?KSTABILITY_TABLE_NAME, [set, named_table, public, ?KSTABILITY_TABLE_CONCURRENCY]),
+            ets:new(?KSTABILITY_TABLE_NAME,
+                [set, named_table, public, ?KSTABILITY_TABLE_CONCURRENCY]),
             {ok, []};
         _ -> {ok, []}
     end.
@@ -105,7 +107,7 @@ handle_cast({update_dc_vc, Tx = #interdc_txn{}}, _State) ->
     ets:insert(?KSTABILITY_TABLE_NAME, {DC, VC}),
     DCs = get_dc_ids(),
     VM = get_version_matrix(DCs),
-    KVect = build_kstable_vector(VM),
+    KVect = get_kvector(VM),
     NewState = state_factory(VM, KVect),
     {noreply, NewState};
 
@@ -113,8 +115,10 @@ handle_cast(_Info, State) ->
     {noreply, State}.
 
 %% Returns the k-vector
+%% Replies with either a valid vector or {error, matrix_size}
+%% if the matrix is too small for current k.
 handle_call(get_kvect, _From, State) ->
-    KVec = build_kstable_vector(State#state.versiomMatrix),
+    KVec = get_kvector(State#state.versiomMatrix),
     NewState = state_factory(State#state.versiomMatrix, KVec),
     {reply, KVec, NewState}.
 
@@ -123,10 +127,10 @@ handle_call(get_kvect, _From, State) ->
 %% ===================================================================
 %% internal functions
 %% ===================================================================
-generate_server_name(Node) ->
+generate_name(Node) ->
     list_to_atom("kstability_manager" ++ atom_to_list(Node)).
 
--spec state_factory([tuple()], vectorclock()) -> #state{}.
+-spec state_factory([dcid()], vectorclock()) -> #state{}.
 state_factory(VersionMatrix, Kvect) ->
     #state{versiomMatrix = VersionMatrix, kvector = Kvect}.
 
@@ -150,7 +154,7 @@ get_dc_vals(DC, [{_, Dico} | T], Acc) ->
     Val = case dict:find(DC, Dico) of
               {ok, Value} ->
                   Value;
-              error -> % DC not found, shouldn't happen
+              error -> % DC not found
                   0
           end,
     get_dc_vals(DC, T, [Val | Acc]).
@@ -164,21 +168,23 @@ get_version_matrix([]) ->
     {error, empty_list};
 get_version_matrix(DC_IDs) ->
     TabList = ets:tab2list(?KSTABILITY_TABLE_NAME),
-    lists:foldl(fun(X, Acc) -> VC = get_dc_vals(X, TabList, []), [{X, VC} | Acc] end, [], DC_IDs).
+    lists:foldl(fun(X, Acc) ->
+        VC = get_dc_vals(X, TabList, []),
+        [{X, VC} | Acc] end,
+        [], DC_IDs).
 
 %% Builds k-stable vector for reads from version matrix
 %% k is hardcoded for now
 %% takes versionmatrix as argument
--spec build_kstable_vector([tuple()]) -> [tuple()] | {error, matrix_size}.
-build_kstable_vector([]) ->
+-spec get_kvector([tuple()]) -> [tuple()] | {error, matrix_size}.
+get_kvector([]) ->
     {error, matrix_size};
-build_kstable_vector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
+get_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
     lists:foldl(fun(Row, Acc) ->
         {DC, VC} = Row,
         Sorted = lists:reverse(lists:sort(VC)),
-        io:format("Sorted VC ~p~n", [Sorted]),
-        [{DC, lists:nth(?KSTABILITY_REPL_FACTOR, Sorted)} | Acc]
-                end, [], VerM).
+        [{DC, lists:nth(?KSTABILITY_REPL_FACTOR, Sorted)} | Acc] end,
+        [], VerM).
 
 
 -spec get_dc_ids() -> [dcid()].
