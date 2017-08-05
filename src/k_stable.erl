@@ -38,12 +38,7 @@
 -export([
     start_link/0,
     deliver_tx/1,
-    get_dc_ids/0,
-    get_dc_vals/3,
-    get_version_matrix/1,
-    get_kvector/0,
-    get_kvector/1
-]).
+    fetch_kvector/0]).
 
 %% server and internal functions
 -export([
@@ -51,6 +46,11 @@
     handle_cast/2,
     handle_call/3,
     handle_info/2,
+    get_dc_ids/0,
+    get_dc_vals/3,
+    get_version_matrix/1,
+    build_kvector/1,
+    get_k_vector/0,
     generate_name/1,
     code_change/3,
     terminate/2
@@ -58,7 +58,6 @@
 
 %% Definitions
 -record(state, {
-    versiomMatrix :: [tuple()],
     kvector :: vectorclock()
 }).
 
@@ -83,8 +82,8 @@ deliver_tx(Tx) ->
 
 %% Goes through the ETS table, collects VCs from each DC,
 %% and computes the k_stable (read) vector.
--spec get_kvector() -> vectorclock().
-get_kvector() ->
+-spec fetch_kvector() -> vectorclock().
+fetch_kvector() ->
     gen_server:call({global, generate_name(node())}, get_kvect).
 
 
@@ -105,21 +104,18 @@ handle_cast({update_dc_vc, Tx = #interdc_txn{}}, _State) ->
     DC = Tx#interdc_txn.dcid,
     VC = Tx#interdc_txn.gss,
     ets:insert(?KSTABILITY_TABLE_NAME, {DC, VC}),
-    DCs = get_dc_ids(),
-    VM = get_version_matrix(DCs),
-    KVect = get_kvector(VM),
-    NewState = state_factory(VM, KVect),
+    KVect = get_k_vector(),
+    ets:insert(?KSTABILITY_TABLE_NAME, {kvector, KVect}),
+    NewState = state_factory(KVect),
     {noreply, NewState};
 
 handle_cast(_Info, State) ->
     {noreply, State}.
 
 %% Returns the k-vector
-%% Replies with either a valid vector or {error, matrix_size}
-%% if the matrix is too small for current k.
-handle_call(get_kvect, _From, State) ->
-    KVec = get_kvector(State#state.versiomMatrix),
-    NewState = state_factory(State#state.versiomMatrix, KVec),
+handle_call(get_kvect, _From, _State) ->
+    KVec = get_k_vector(),
+    NewState = state_factory(KVec),
     {reply, KVec, NewState}.
 
 
@@ -130,19 +126,9 @@ handle_call(get_kvect, _From, State) ->
 generate_name(Node) ->
     list_to_atom("kstability_manager" ++ atom_to_list(Node)).
 
--spec state_factory([dcid()], vectorclock()) -> #state{}.
-state_factory(VersionMatrix, Kvect) ->
-    #state{versiomMatrix = VersionMatrix, kvector = Kvect}.
-
-%% This is what a vectorclock looks like
-%% My ets:tab2list will look like this
-%%{{'antidote2@127.0.0.1',{1490,186897,598677}}, <- dcid()
-%%{dict,2,16,16,8,80,48,
-%%{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
-%%{{[[{'antidote2@127.0.0.1',{1490,186897,598677}}|15]],
-%%[],[],[],[],[],[],[],[],[],[],[],
-%%[[{'antidote@127.0.0.1',{1501,537303,...}}|5]],
-%%[],[],[]}}} <- vectorclock()
+-spec state_factory(vectorclock()) -> #state{}.
+state_factory(Kvect) ->
+    #state{kvector = Kvect}.
 
 %% Goes through the ets table and builds the
 %% remote state vector. Intended to be used
@@ -176,16 +162,23 @@ get_version_matrix(DC_IDs) ->
 %% Builds k-stable vector for reads from version matrix
 %% k is hardcoded for now
 %% takes versionmatrix as argument
--spec get_kvector([tuple()]) -> [tuple()] | {error, matrix_size}.
-get_kvector([]) ->
+-spec build_kvector([tuple()]) -> [tuple()] | {error, matrix_size}.
+build_kvector([]) ->
     {error, matrix_size};
-get_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
+build_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
     lists:foldl(fun(Row, Acc) ->
         {DC, VC} = Row,
         Sorted = lists:reverse(lists:sort(VC)),
         [{DC, lists:nth(?KSTABILITY_REPL_FACTOR, Sorted)} | Acc] end,
         [], VerM).
 
+
+-spec get_k_vector() -> [tuple()] | {error, matrix_size}.
+get_k_vector() ->
+    DCs = get_dc_ids(),
+    VerM = get_version_matrix(DCs),
+    KVect = build_kvector(VerM),
+    KVect.
 
 -spec get_dc_ids() -> [dcid()].
 get_dc_ids() ->
