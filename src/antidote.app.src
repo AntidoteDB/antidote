@@ -56,9 +56,9 @@
   %%        true -> run Antidote using AntidoteDB as the backend for storing operations and snapshots
   %%        false -> run Antidote using ETS tables and disklog for storing operations and snapshots
 
-  {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, false},
-         {recover_meta_data_on_start, true}, {sync_log, false},
-         {collect_metric_staleness, false}, {enable_logging, false},
+  {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
+         {recover_meta_data_on_start, true}, {sync_log, true},
+         {collect_metric_staleness, false}, {enable_logging, true},
          {auto_start_read_servers, true},  {antidote_db, false}
          ]}
  ]}.
