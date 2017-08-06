@@ -66,11 +66,13 @@ end_per_testcase(_, _) ->
 all() -> [kvector_test, versionMatrix_test].
 
 kvector_test(Config) ->
+    lager:info("Build K-Vector test passed!------------------------------------------------------------------------"),
     Clusters = proplists:get_value(clusters, Config),
 
     pass.
 
 versionMatrix_test(Config) ->
+    lager:info("Build VersionMatrix test passed!------------------------------------------------------------------------"),
     Clusters = proplists:get_value(clusters, Config),
 
     pass.

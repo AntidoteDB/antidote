@@ -3,12 +3,18 @@
 %%! -smp enable -name kstable-tester@127.0.0.1 -cookie antidote
 
 -module(ktester).
--mode(compile).
+-compile({parse_transform, lager_transform}).
+
 
 -define(dbug, io:format("dbug ~p ~p...~n", [?FUNCTION_NAME, ?LINE])).
 -define(tab, tabtab).
 -define(node, 'antidote@127.0.0.1').
--define(kstab, 2).
+-define(kstab, 3).
+
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("kernel/include/inet.hrl").
 
 main(_A) ->
     antidote_connect(?node),
@@ -38,15 +44,30 @@ main(_A) ->
     KVector = get_k_vector(VersionMatrix),
     %% Expected results:
     %% Version Matrix:
-    %% {{'antidote4@127.0.0.1',{1590,184597,573977}},[12,12,4,3]},
-    %% {{'antidote3@127.0.0.1',{1490,186159,768617}},[0,4,2,0]},
-    %% {{'antidote2@127.0.0.1',{1390,186897,698677}},[0,5,5,4]},
-    %% {{'antidote1@127.0.0.1',{1501,537303,598423}},[1,0,1,1]}]
-    %% K-Vector (K=3): [1,4,0,4]
-    %% K-Vector (K=2): [1,5,2,12]
-    io:format("Version Matrix ~p~n~p stable vector ~p~n",
-        [VersionMatrix, ?kstab, KVector]),
-    ok.
+
+
+    ExpectedVM = [{{antidote_4, {1590, 184597, 573977}}, [12, 12, 3, 4]},
+        {{antidote_3, {1490, 186159, 768617}}, [4, 0, 0, 2]},
+        {{antidote_2, {1390, 186897, 698677}}, [5, 0, 4, 5]},
+        {{antidote_1, {1501, 537303, 598423}}, [0, 1, 1, 1]}],
+
+
+    ExpectedKVect = [{{antidote_1, {1501, 537303, 598423}}, 1},
+        {{antidote_2, {1390, 186897, 698677}}, 4},
+        {{antidote_3, {1490, 186159, 768617}}, 0},
+        {{antidote_4, {1590, 184597, 573977}}, 4}],
+
+
+    ?assertEqual(ExpectedVM, VersionMatrix),
+    %lager:info("Version matrix test passed!"),
+    ?assertEqual(ExpectedKVect, KVector),
+    %lager:info("k-vector test passed!"),
+
+%% K-Vector (K=3): [1,4,0,4]
+%% K-Vector (K=2): [1,5,2,12]
+    %io:format("Version Matrix ~p~n~p stable vector ~p~n",
+    %    [VersionMatrix, ?kstab, KVector]),
+    pass.
 
 %% Functions
 
@@ -85,7 +106,7 @@ get_k_vector(VerM) when length(VerM) >= ?kstab ->
     lists:foldl(fun(Row, Acc) ->
         {DC, VC} = Row,
         Sorted = lists:reverse(lists:sort(VC)),
-        io:format("Sorted VC ~p~n", [Sorted]),
+        %io:format("Sorted VC ~p~n", [Sorted]),
         [{DC, lists:nth(?kstab, Sorted)} | Acc]
                 end, [], VerM).
 
