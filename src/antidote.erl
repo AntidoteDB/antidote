@@ -39,7 +39,7 @@
           register_pre_hook/3,
           register_post_hook/3,
           unregister_hook/2,
-          get_objects/2,
+          get_objects/3,
           get_log_operations/1,
           get_default_txn_properties/0,
           get_txn_property/2
@@ -55,28 +55,6 @@ start() ->
 stop() ->
     application:stop(antidote).
 
-%% Takes as input a list of tuples of bound object, clock pairs and transaction properties
-%% Returns a list containing tuples of object state and commit time for each
-%% of those objects
--spec get_objects([{bound_object(), snapshot_time() | ignore}], txn_properties()) ->
-             {ok, [{term(), snapshot_time()}]} | {error, reason()}.
-get_objects(Objects, Properties) ->
-    get_objects_internal(Objects, Properties, []).
-
-get_objects_internal([], _Properties, Acc) ->
-    {ok, lists:reverse(Acc)};
-get_objects_internal([{{Key, Type, Bucket}, Clock}|Rest], Properties, Acc) ->
-    case materializer:check_operations([{read, {{Key, Bucket}, Type}}]) of
-    ok ->
-        case clocksi_interactive_tx_coord_fsm:perform_singleitem_get(Clock, {Key, Bucket}, Type, Properties) of
-        {ok, Val, CommitTime} ->
-            get_objects_internal(Rest, Properties, [{Val, CommitTime}|Acc]);
-        {error, Reason} ->
-            {error, Reason}
-        end;
-    {error, Reason} ->
-        {error, Reason}
-    end.
 
 %% Takes as input a list of tuples of bound objects and snapshot times
 %% Returns a list for each object that contains all logged update operations more recent than the give snapshot time
@@ -162,6 +140,13 @@ read_objects(Objects, TxId) ->
                   -> {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, Properties, Objects) ->
     cure:read_objects(Clock, Properties, Objects).
+
+%% Returns a list containing tuples of object state and commit time for each
+%% of those objects
+-spec get_objects(vectorclock(), txn_properties(), [bound_object()])
+                  -> {ok, list(), vectorclock()} | {error, reason()}.
+get_objects(Clock, Objects, Properties) ->
+    cure:get_objects(Clock, Objects, Properties).
 
 -spec update_objects([{bound_object(), op_name(), op_param()} | {bound_object(), {op_name(), op_param()}}], txid())
                     -> ok | {error, reason()}.

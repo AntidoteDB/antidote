@@ -29,8 +29,9 @@
          commit_transaction/1,
          abort_transaction/1,
          read_objects/2,
+         get_objects/2,
          read_objects/3,
-         read_objects/4,
+         get_objects/3,
          update_objects/2,
          update_objects/3,
          update_objects/4,
@@ -67,13 +68,20 @@ commit_transaction(TxId) ->
             {error, Other}
     end.
 
--spec read_objects(Objects::[bound_object()], TxId::txid())
-                  -> {ok, [term()]} | {error, reason()}.
+-spec read_objects([bound_object()], txid()) -> {ok, [term()]} | {error, reason()}.
 read_objects(Objects, TxId) ->
+    obtain_objects(Objects, TxId, object_value).
+-spec get_objects([bound_object()], txid()) -> {ok, [term()]} | {error, reason()}.
+get_objects(Objects, TxId) ->
+    obtain_objects(Objects, TxId, object_state).
+
+
+-spec obtain_objects([bound_object()], txid(), object_value|object_state) -> {ok, [term()]} | {error, reason()}.
+obtain_objects(Objects, TxId, StateOrValue) ->
     FormattedObjects = format_read_params(Objects),
     case gen_fsm:sync_send_event(TxId#tx_id.server_pid, {read_objects, FormattedObjects}, ?OP_TIMEOUT) of
         {ok, Res} ->
-            {ok, Res};
+            {ok, transform_reads(Res, StateOrValue, Objects)};
         {error, Reason} -> {error, Reason}
     end.
 
@@ -108,11 +116,14 @@ update_objects(ClientCausalVC, Properties, Updates, StayAlive) ->
     end.
 
 read_objects(Clock, Properties, Objects) ->
-    read_objects(Clock, Properties, Objects, false).
+    obtain_objects(Clock, Properties, Objects, false, object_value).
+get_objects(Clock, Properties, Objects) ->
+    obtain_objects(Clock, Properties, Objects, false, object_state).
 
--spec read_objects(vectorclock(), txn_properties(), [bound_object()], boolean()) ->
+
+-spec obtain_objects(vectorclock(), txn_properties(), [bound_object()], boolean(), object_value|object_state) ->
                           {ok, list(), vectorclock()} | {error, reason()}.
-read_objects(Clock, Properties, Objects, StayAlive) ->
+obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
     SingleKey = case Objects of
                     [_O] -> %% Single key update
                         case Clock of
@@ -126,13 +137,13 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
             FormattedObjects = format_read_params(Objects),
             [{Key, Type}] = FormattedObjects,
             {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
-                perform_singleitem_read(Clock, Key, Type, Properties),
+                perform_singleitem_operation(Clock, Key, Type, Properties),
             {ok, [Val], CommitTime};
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
                     {ok, TxId} = clocksi_istart_tx(Clock, Properties, StayAlive),
-                    case read_objects(Objects, TxId) of
+                    case obtain_objects(Objects, TxId, StateOrValue) of
                         {ok, Res} ->
                             {ok, CommitTime} = commit_transaction(TxId),
                             {ok, Res, CommitTime};
@@ -142,7 +153,7 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
                     case Objects of
                         [_Op] -> %% Single object read = read latest value
                             {ok, TxId} = clocksi_istart_tx(Clock, Properties, StayAlive),
-                            case read_objects(Objects, TxId) of
+                            case obtain_objects(Objects, TxId, StateOrValue) of
                                 {ok, Res} ->
                                     {ok, CommitTime} = commit_transaction(TxId),
                                     {ok, Res, CommitTime};
@@ -151,14 +162,22 @@ read_objects(Clock, Properties, Objects, StayAlive) ->
                         [_|_] -> %% Read Multiple objects  = read from a snapshot
                             %% Snapshot includes all updates committed at time GST
                             %% from local and remore replicas
-                            case gr_snapshot_read(Clock, Objects) of
+                            case gr_snapshot_obtain(Clock, Objects, StateOrValue) of
                                 {ok, Result, CommitTime} ->
                                     {ok, Result, CommitTime};
                                 {error, Reason} -> {error, Reason}
                             end
                     end
             end
+        end.
+
+
+transform_reads(States, StateOrValue, Objects) ->
+    case StateOrValue of
+            object_state -> States;
+            object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) -> Type:value(State) end, lists:zip(States,Objects))
     end.
+
 
 %% @doc Starts a new ClockSI interactive transaction.
 %%      Input:
@@ -199,7 +218,7 @@ clocksi_full_icommit(TxId)->
     end.
 
 %%% Snapshot read for Gentlerain protocol
-gr_snapshot_read(ClientClock, Objects) ->
+gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
     %% GST = scalar stable time
     %% VST = vector stable time with entries for each dc
     {ok, GST, VST} = dc_utilities:get_scalar_stable_time(),
@@ -213,7 +232,7 @@ gr_snapshot_read(ClientClock, Objects) ->
             %% add it in snapshot time
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, GST, ST),
             {ok, TxId} = clocksi_istart_tx(SnapshotTime, [{update_clock, false}], false),
-            case read_objects(Objects, TxId) of
+            case obtain_objects(Objects, TxId, StateOrValue) of
                 {ok, Res} ->
                     {ok, CommitTime} = commit_transaction(TxId),
                     {ok, Res, CommitTime};
@@ -221,7 +240,7 @@ gr_snapshot_read(ClientClock, Objects) ->
             end;
         false ->
             timer:sleep(10),
-            gr_snapshot_read(ClientClock, Objects)
+            gr_snapshot_obtain(ClientClock, Objects, StateOrValue)
     end.
 
 format_read_params(ReadObjects) ->

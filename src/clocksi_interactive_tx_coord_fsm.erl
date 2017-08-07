@@ -89,9 +89,8 @@
     receive_aborted/2,
     abort/1,
     abort/2,
-    perform_singleitem_read/4,
     perform_singleitem_update/5,
-    perform_singleitem_get/4,
+    perform_singleitem_operation/4,
     reply_to_client/1,
     generate_name/1]).
 
@@ -220,20 +219,11 @@ create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) -
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) -> {ok, val(), snapshot_time()} | {error, reason()}.
-perform_singleitem_read(Clock, Key, Type, Properties) ->
-    perform_singleitem_operation(Clock, Key, Type, object_value, Properties).
+%%      It either returns the object value or the object state.
 
-%% @doc This is the same as perform_singleitem_read, except returns
-%%      the object state instead of its value
--spec perform_singleitem_get(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
-    {ok, term(), snapshot_time()} | {error, reason()}.
-perform_singleitem_get(Clock, Key, Type, Properties) ->
-    perform_singleitem_operation(Clock, Key, Type, object_state, Properties).
-
--spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), object_state | object_value, clocksi_readitem_server:read_property_list()) ->
+-spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
                     {ok, val() | term(), snapshot_time()} | {error, reason()}.
-perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
+perform_singleitem_operation(Clock, Key, Type, Properties) ->
     {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
     %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
     Preflist = log_utilities:get_preflist_from_key(Key),
@@ -242,14 +232,9 @@ perform_singleitem_operation(Clock, Key, Type, ReturnType, Properties) ->
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
-            ReadResult =
-              case ReturnType of
-                object_state -> Snapshot;
-                object_value -> Type:value(Snapshot)
-              end,
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
-            {ok, ReadResult, CommitTime}
+            {ok, Snapshot, CommitTime}
     end.
 
 %% @doc This is a standalone function for directly contacting the update
@@ -445,7 +430,7 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
             abort(State);
         ReadResult ->
             NewInternalReadSet = orddict:store(Key, ReadResult, InternalReadSet),
-            {reply, {ok, Type:value(ReadResult)}, execute_op, State#tx_coord_state{internal_read_set=NewInternalReadSet}}
+            {reply, {ok, ReadResult}, execute_op, State#tx_coord_state{internal_read_set=NewInternalReadSet}}
     end;
 
 %% @doc Read a batch of objects, asynchronous
@@ -459,7 +444,7 @@ execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transacti
 
     NewCoordState = lists:foldl(
         ExecuteReads,
-        State#tx_coord_state{num_to_read=length(Objects), return_accumulator=[]},
+        State#tx_coord_state{num_to_read = length(Objects), return_accumulator=[]},
         Objects
     ),
 
@@ -551,10 +536,9 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
 
     %% TODO: type is hard-coded..
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
-    Value = Type:value(UpdatedSnapshot),
-
+  
     %% Swap keys with their appropiate read values
-    ReadValues = replace_first(ReadKeys, Key, Value),
+    ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
     %% TODO: Why use the old snapshot, instead of UpdatedSnapshot?
     NewReadSet = orddict:store(Key, Snapshot, ReadSet),
 
@@ -1037,8 +1021,9 @@ read_single_fail_test(Pid) ->
 
 read_success_test(Pid) ->
     fun() ->
+        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity),
         ?assertEqual({ok, 2},
-            gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity)),
+            {ok, riak_dt_gcounter:value(State)}),
         ?assertEqual({ok, [a]},
             gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
         ?assertEqual({ok, mock_value},
