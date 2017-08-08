@@ -139,7 +139,7 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
             [{Key, Type}] = FormattedObjects,
             {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
                 perform_singleitem_operation(Clock, Key, Type, Properties),
-            {ok, [Val], CommitTime};
+            {ok, transform_reads([Val], StateOrValue, Objects), CommitTime};
         false ->
             case application:get_env(antidote, txn_prot) of
                 {ok, clocksi} ->
