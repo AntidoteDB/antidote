@@ -35,6 +35,7 @@
          update_objects/2,
          update_objects/3,
          update_objects/4,
+         obtain_objects/5,
          %% Following functions should be only used for testing
          clocksi_iprepare/1,
          clocksi_icommit/1

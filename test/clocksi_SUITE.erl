@@ -667,8 +667,8 @@ clocksi_static_parallel_writes_test(Config) ->
     {ok, Res, CT1} = rpc:call(Node, cure, obtain_objects,
                               [CT, [], [Bound_object1,
                                         Bound_object2, Bound_object3,
-                                        Bound_object4, Bound_object5]
-                              object_value, true
+                                        Bound_object4, Bound_object5],
+                              true, object_value
                               ]),
     ?assertMatch([1, 2, 3, 4, 5], Res),
 
@@ -688,7 +688,7 @@ clocksi_static_parallel_writes_test(Config) ->
     lager:info("updated 5 times the sabe object, no problem"),
 
     {ok, Res1, _CT4} = rpc:call(Node, cure, obtain_objects,
-                                [CT2, [], [Bound_object1], object_value, true]),
+                                [CT2, [], [Bound_object1], true, object_value]),
     ?assertMatch([6], Res1),
     lager:info("result is correct after reading those updates. Test passed."),
     pass.
