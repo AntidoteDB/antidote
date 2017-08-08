@@ -73,8 +73,8 @@ object_log_state_test(Config) ->
     ?assertEqual(lists:seq(1, 15), Val),
 
     %% Get the object state
-    {ok, [{ReadResult1, _CT2}]} = rpc:call(FirstNode,
-                      antidote, get_objects, [[{BoundObject, CommitTime}], []]),
+    {ok, [ReadResult1], _CT2} = rpc:call(FirstNode,
+                      antidote, get_objects, [CommitTime, [], [BoundObject]]),
     ?assertEqual(ok, check_orset_state(lists:seq(1, 15), ReadResult1)),
 
     CommitTime2 = add_set(FirstNode, BoundObject, lists:seq(16, 30), CommitTime),
