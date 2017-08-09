@@ -41,7 +41,7 @@ generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, Inte
                     S;
 
                 {error, Reason}->
-                    {error, Reason}
+                    {error, {gen_downstream_read_failed, Reason}}
             end
     end,
     case Result of
