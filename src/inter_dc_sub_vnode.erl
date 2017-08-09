@@ -51,7 +51,7 @@
 %% State
 -record(state, {
   partition :: non_neg_integer(),
-  buffer_fsms :: dict:dict() %% dcid -> buffer
+  buffer_fsms :: dict:dict(dcid(), #inter_dc_sub_buf{}) %% dcid -> buffer
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -96,13 +96,15 @@ terminate(_Reason, _ModState) -> ok.
 delete(State) -> {ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+-spec call(partition_id(), {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
 call(Partition, Request) -> dc_utilities:call_local_vnode(Partition, inter_dc_sub_vnode_master, Request).
 
+-spec get_buf(dcid(), #state{}) -> #inter_dc_sub_buf{}.
 get_buf(DCID, State) ->
   case dict:find(DCID, State#state.buffer_fsms) of
     {ok, Buf} -> Buf;
     error -> inter_dc_sub_buf:new_state({DCID, State#state.partition})
   end.
 
+-spec set_buf(dcid(), #inter_dc_sub_buf{}, #state{}) -> #state{}.
 set_buf(DCID, Buf, State) -> State#state{buffer_fsms = dict:store(DCID, Buf, State#state.buffer_fsms)}.

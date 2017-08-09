@@ -141,5 +141,3 @@ finish_send_response(BinaryResponse, Id, ReqId, Socket) ->
     ok = erlzmq:send(Socket, Id, [sndmore]),
     ok = erlzmq:send(Socket, <<>>, [sndmore]),
     ok = erlzmq:send(Socket, Msg).
-
-

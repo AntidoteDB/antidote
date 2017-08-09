@@ -45,10 +45,12 @@
          asyn_append_group/4,
          asyn_read_from/3,
          read_from/3,
-         get/5,
-         get_all/4,
-         request_bucket_op_id/4,
-         request_op_id/3]).
+         get_up_to_time/5,
+         get_from_time/5,
+           get_range/6,
+           get_all/4,
+           request_bucket_op_id/4,
+           request_op_id/3]).
 
 -export([init/1,
          terminate/2,
@@ -68,15 +70,15 @@
 -ignore_xref([start_vnode/1]).
 
 -record(state, {partition :: partition_id(),
-                enable_log_to_disk :: boolean(), %% this enables or disables logging to disk.
-                logs_map :: dict:dict(),
-                op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
-                recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
-                                                    %% of the last operation appended to this log, this value
-                                                    %% is sent to the interdc dependcy module, so it knows up to
-                                                    %% what time updates from other DCs have been receieved (after crash and restart)
-                senders_awaiting_ack :: dict:dict(),
-                last_read :: term()}).
+        logs_map :: dict:dict(log_id(), disk_log:log()),
+        enable_log_to_disk :: boolean(), %% this enables or disables logging to disk.
+        op_id_table :: cache_id(),  %% Stores the count of ops appended to each log
+        recovered_vector :: vectorclock(),  %% This is loaded on start, storing the version vector
+                                          %% of the last operation appended to this log, this value
+                                            %% is sent to the interdc dependency module, so it knows up to
+                                        %% what time updates from other DCs have been received (after crash and restart)
+        senders_awaiting_ack :: dict:dict(log_id(), sender()),
+        last_read :: term()}).
 
 %% API
 -spec start_vnode(integer()) -> any().
@@ -165,16 +167,38 @@ asyn_append_group(IndexNode, LogId, LogRecordList, IsLocal) ->
                                    ?LOGGING_MASTER,
                                    infinity).
 
-%% @doc given the MinSnapshotTime and the type, this method fetchs from the log the
+%% @doc given the MaxSnapshotTime and the type, this method fetches from the log the
+%% desired operations smaller than the time so a new snapshot can be created.
+-spec get_up_to_time(index_node(), key(), vectorclock(), type(), key()) ->
+         #snapshot_get_response{} | {error, reason()}.
+get_up_to_time(IndexNode, LogId, MaxSnapshotTime, Type, Key) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                    {get, LogId, undefined, MaxSnapshotTime, Type, Key},
+                    ?LOGGING_MASTER,
+                    infinity).
+
+%% @doc given the MinSnapshotTime and the type, this method fetchss from the log the
+%% desired operations so a new snapshot can be created.
+%% It returns a #snapshot_get_response{} record which is defined in antidote.hrl
+-spec get_from_time(index_node(), key(), vectorclock(), type(), key()) ->
+         #snapshot_get_response{} | {error, reason()}.
+get_from_time(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
+    riak_core_vnode_master:sync_command(IndexNode,
+                    {get, LogId, MinSnapshotTime, undefined, Type, Key},
+                    ?LOGGING_MASTER,
+                    infinity).
+
+%% @doc given the MinSnapshotTime, MaxSnapshotTime and the type, this method fetches from the log the
 %% desired operations so a new snapshot can be created.
 %% It returns a #log_get_response{} record which is defined in antidote.hrl
--spec get(index_node(), key(), vectorclock(), term(), key()) ->
-         #snapshot_get_response{} | {error, term()}.
-get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
+-spec get_range(index_node(), key(), vectorclock(), vectorclock(), type(), key()) ->
+         #snapshot_get_response{} | {error, reason()}.
+get_range(IndexNode, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key) ->
     riak_core_vnode_master:sync_command(IndexNode,
-                                        {get, LogId, MinSnapshotTime, Type, Key},
-                                        ?LOGGING_MASTER,
-                                        infinity).
+                    {get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key},
+                    ?LOGGING_MASTER,
+                    infinity).
+
 
 %% @doc Given the logid and position in the log (given by continuation) and a dict
 %% of non_commited operations up to this position returns
@@ -184,8 +208,9 @@ get(IndexNode, LogId, MinSnapshotTime, Type, Key) ->
 %% the third is the location of the next chunk
 %% Otherwise if the end of the file is reached it returns a tuple
 %% where the first elelment is 'eof' and the second is a dict of commited operations
--spec get_all(index_node(), log_id(), start | disk_log:continuation(), dict:dict()) ->
-             {disk_log:continuation(), dict:dict(), dict:dict()} | {eof, dict:dict()} | {error, term()}.
+-spec get_all(index_node(), log_id(), start | disk_log:continuation(), dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])) ->
+             {disk_log:continuation(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])}
+             | {error, reason()} | {eof, dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])}.
 get_all(IndexNode, LogId, Continuation, PrevOps) ->
     riak_core_vnode_master:sync_command(IndexNode, {get_all, LogId, Continuation, PrevOps},
                                         ?LOGGING_MASTER,
@@ -483,12 +508,12 @@ handle_command({append_group, LogId, LogRecordList, _IsLocal = false, Sync}, _Se
             {reply, Error, State}
     end;
 
-handle_command({get, LogId, MinSnapshotTime, Type, Key}, _Sender,
+handle_command({get, LogId, MinSnapshotTime, MaxSnapshotTime, Type, Key}, _Sender,
     #state{logs_map = Map, partition = Partition} = State) ->
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
-            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, dict:new(), dict:new(), load_all) of
+            case get_ops_from_log(Log, {key, Key}, start, MinSnapshotTime, MaxSnapshotTime, dict:new(), dict:new(), load_all) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 {eof, CommittedOpsForKeyDict} ->
@@ -519,7 +544,7 @@ handle_command({get_all, LogId, Continuation, Ops}, _Sender,
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
             ok = disk_log:sync(Log),
-            case get_ops_from_log(Log, undefined, Continuation, undefined, Ops, dict:new(), load_per_chunk) of
+        case get_ops_from_log(Log, undefined, Continuation, undefined, undefined, Ops, dict:new(), load_per_chunk) of
                 {error, Reason} ->
                     {reply, {error, Reason}, State};
                 CommittedOpsForKeyDict ->
@@ -624,45 +649,48 @@ update_ets_op_id(Key, NewOp, ClockTable) ->
 
 %% @doc This method successively calls disk_log:chunk so all the log is read.
 %% With each valid chunk, filter_terms_for_key is called.
-%% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(),
-%%                dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), #clocksi_payload()}]), load_all | load_per_chunk) ->
-%%                    {disk_log:continuation(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [{non_neg_integer(), #clocksi_payload()}])}
-%%                    | {error, reason()} | {eof, dict:dict(key(), [{non_neg_integer(), #clocksi_payload()}])}.
--spec get_ops_from_log(log_id(), key(), disk_log:continuation() | start, snapshot_time(), dict:dict(), dict:dict(), load_all | load_per_chunk) ->
-                  {disk_log:continuation(), dict:dict(), dict:dict()}
-                  | {error, reason()} | {eof, dict:dict()}.
-get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
+-spec get_ops_from_log(log_id(),
+               key(),
+               disk_log:continuation() | start,
+               snapshot_time(),
+               snapshot_time(),
+                Ops :: dict:dict(txid(), [any_log_payload()]),
+               CommittedOpsDict :: dict:dict(key(), [#clocksi_payload{}]),
+               load_all | load_per_chunk) ->
+                    {disk_log:continuation(),
+                   dict:dict(txid(), [any_log_payload()]),
+                   dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])} |
+                  {error, reason()} |
+                  {eof, dict:dict(key(), [{non_neg_integer(), #clocksi_payload{}}])}.
+get_ops_from_log(Log, Key, Continuation, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict, LoadAll) ->
     case disk_log:chunk(Log, Continuation) of
         eof ->
             {eof, finish_op_load(CommittedOpsDict)};
         {error, Reason} ->
             {error, Reason};
         {NewContinuation, NewTerms} ->
-            {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
-            case LoadAll of
-                load_all ->
-                    get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
-                load_per_chunk ->
-                    {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
-            end;
+            {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict),
+        case LoadAll of
+        load_all ->
+            get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, MaxSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+        load_per_chunk ->
+            {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
+        end;
         {NewContinuation, NewTerms, BadBytes} ->
             case BadBytes > 0 of
                 true -> {error, bad_bytes};
                 false ->
-                    {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, Ops, CommittedOpsDict),
-                    case LoadAll of
-                        load_all ->
-                            get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, NewOps, NewCommittedOps, LoadAll);
-                        load_per_chunk ->
-                            {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
-                    end
+            {NewOps, NewCommittedOps} = filter_terms_for_key(NewTerms, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict),
+            case LoadAll of
+            load_all ->
+                get_ops_from_log(Log, Key, NewContinuation, MinSnapshotTime, MaxSnapshotTime, NewOps, NewCommittedOps, LoadAll);
+            load_per_chunk ->
+                {NewContinuation, NewOps, finish_op_load(NewCommittedOps)}
+            end
             end
     end.
 
-%% TODO: upgrade to newer erlang version so can use dict type spec
-%%-spec finish_op_load(dict:dict(key(), clocksi_payload())) -> dict:dict(key(), [{non_neg_integer(), clocksi_payload()}]).
--spec finish_op_load(dict:dict()) -> dict:dict().
+-spec finish_op_load(dict:dict(key(), [clocksi_payload()])) -> dict:dict(key(), [{non_neg_integer(), clocksi_payload()}]).
 finish_op_load(CommittedOpsDict) ->
     dict:fold(fun(Key1, CommittedOps, Acc) ->
                   dict:store(Key1, reverse_and_add_op_id(CommittedOps, 0, []), Acc)
@@ -672,73 +700,72 @@ finish_op_load(CommittedOpsDict) ->
 %% If key is undefined then is returns all records for all keys
 %% It returns a dict corresponding to all the ops matching Key and
 %% a list of the commited operations for that key which have a smaller commit time than MinSnapshotTime.
-%% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec filter_terms_for_key([{non_neg_integer(), #log_record{}}], key(), snapshot_time(),
-%%                dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload()])) ->
-%%                   {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload()])}.
--spec filter_terms_for_key([{non_neg_integer(), #log_record{}}], key(), snapshot_time(),
-               dict:dict(), dict:dict()) -> {dict:dict(), dict:dict()}.
-filter_terms_for_key([], _Key, _MinSnapshotTime, Ops, CommittedOpsDict) ->
+-spec filter_terms_for_key([{non_neg_integer(), #log_record{}}], key(), snapshot_time(), snapshot_time(),
+                dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
+                   {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+filter_terms_for_key([], _Key, _MinSnapshotTime, _MaxSnapshotTime, Ops, CommittedOpsDict) ->
     {Ops, CommittedOpsDict};
-filter_terms_for_key([{_, LogRecord}|T], Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+filter_terms_for_key([{_, LogRecord}|T], Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #log_record{log_operation = LogOperation} = log_utilities:check_log_record_version(LogRecord),
     #log_operation{tx_id = TxId, op_type = OpType, log_payload = OpPayload} = LogOperation,
     case OpType of
         update ->
-            handle_update(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict);
+            handle_update(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict);
         commit ->
-            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict);
+            handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict);
         _ ->
-            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+            filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
-%% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(), #operation{}}], key(), snapshot_time() | undefined,
-%%             dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
-%%                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
--spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined, dict:dict(), dict:dict()) -> {dict:dict(), dict:dict()}.
-handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+-spec handle_update(txid(), #update_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined,
+             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
+                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+handle_update(TxId, OpPayload,  T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #update_log_payload{key = Key1} = OpPayload,
     case (Key == {key, Key1}) or (Key == undefined) of
         true ->
-            filter_terms_for_key(T, Key, MinSnapshotTime,
+            filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime,
                 dict:append(TxId, OpPayload, Ops), CommittedOpsDict);
         false ->
-            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+            filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
 
-%% TODO: upgrade to newer erlang version so can use dict type spec
-%% -spec handle_update(txid(), #commit_log_payload{}, [{non_neg_integer(), #operation{}}], key(), snapshot_time() | undefined,
-%%             dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
-%%                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
--spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined, dict:dict(), dict:dict()) -> {dict:dict(), dict:dict()}.
-handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, Ops, CommittedOpsDict) ->
+-spec handle_commit(txid(), #commit_log_payload{}, [{non_neg_integer(), #log_record{}}], key(), snapshot_time() | undefined,
+             snapshot_time(), dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])) ->
+                {dict:dict(txid(), [any_log_payload()]), dict:dict(key(), [#clocksi_payload{}])}.
+handle_commit(TxId, OpPayload, T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict) ->
     #commit_log_payload{commit_time = {DcId, TxCommitTime}, snapshot_time = SnapshotTime} = OpPayload,
     case dict:find(TxId, Ops) of
         {ok, OpsList} ->
-            NewCommittedOpsDict =
-                lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
-                                case ((MinSnapshotTime == undefined) orelse
-                                                   (not vectorclock:all_dots_greater(SnapshotTime, MinSnapshotTime))) of
-                                true ->
-                                    CommittedDownstreamOp =
-                                    #clocksi_payload{
-                                       key = KeyInternal,
-                                       type = Type,
-                                       op_param = Op,
-                                       snapshot_time = SnapshotTime,
-                                       commit_time = {DcId, TxCommitTime},
-                                       txid = TxId},
-                                    dict:append(KeyInternal, CommittedDownstreamOp, Acc);
-                                false ->
-                                    Acc
-                                end
-                            end, CommittedOpsDict, OpsList),
-            filter_terms_for_key(T, Key, MinSnapshotTime, dict:erase(TxId, Ops),
-                     NewCommittedOpsDict);
-        error ->
-            filter_terms_for_key(T, Key, MinSnapshotTime, Ops, CommittedOpsDict)
+        NewCommittedOpsDict =
+        lists:foldl(fun(#update_log_payload{key = KeyInternal, type = Type, op = Op}, Acc) ->
+                    case (check_min_time(SnapshotTime, MinSnapshotTime) andalso
+                      check_max_time(SnapshotTime, MaxSnapshotTime)) of
+                    true ->
+                        CommittedDownstreamOp =
+                        #clocksi_payload{
+                           key = KeyInternal,
+                           type = Type,
+                           op_param = Op,
+                           snapshot_time = SnapshotTime,
+                           commit_time = {DcId, TxCommitTime},
+                           txid = TxId},
+                        dict:append(KeyInternal, CommittedDownstreamOp, Acc);
+                    false ->
+                        Acc
+                    end
+                end, CommittedOpsDict, OpsList),
+        filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, dict:erase(TxId, Ops),
+                 NewCommittedOpsDict);
+    error ->
+        filter_terms_for_key(T, Key, MinSnapshotTime, MaxSnapshotTime, Ops, CommittedOpsDict)
     end.
+
+check_min_time(SnapshotTime, MinSnapshotTime) ->
+    ((MinSnapshotTime == undefined) orelse (vectorclock:ge(SnapshotTime, MinSnapshotTime))).
+
+check_max_time(SnapshotTime, MaxSnapshotTime) ->
+    ((MaxSnapshotTime == undefined) orelse (vectorclock:le(SnapshotTime, MaxSnapshotTime))).
 
 handle_handoff_command(?FOLD_REQ{foldfun=FoldFun, acc0=Acc0}, _Sender,
                        #state{logs_map=Map}=State) ->
@@ -758,7 +785,7 @@ handoff_cancelled(State) ->
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
-handle_handoff_data(Data, #state{partition=Partition, logs_map=Map, enable_log_to_disk=EnableLog}=State) ->
+handle_handoff_data(Data, #state{partition = Partition, logs_map = Map, enable_log_to_disk = EnableLog} = State) ->
     {LogId, LogRecord} = binary_to_term(Data),
     case get_log_from_map(Map, Partition, LogId) of
         {ok, Log} ->
@@ -773,7 +800,7 @@ handle_handoff_data(Data, #state{partition=Partition, logs_map=Map, enable_log_t
 encode_handoff_item(Key, Operation) ->
     term_to_binary({Key, Operation}).
 
-is_empty(State=#state{logs_map=Map}) ->
+is_empty(State = #state{logs_map=Map}) ->
     LogIds = dict:fetch_keys(Map),
     case no_elements(LogIds, Map) of
         true ->
@@ -822,7 +849,7 @@ terminate(_Reason, _State) ->
 %%      Return: true if all logs are empty. false if at least one log
 %%              contains data.
 %%
--spec no_elements([log_id()], dict:dict()) -> boolean().
+-spec no_elements([log_id()], dict:dict(log_id(), disk_log:log())) -> boolean().
 no_elements([], _Map) ->
     true;
 no_elements([LogId|Rest], Map) ->
@@ -850,7 +877,7 @@ no_elements([LogId|Rest], Map) ->
 %%                               the log in the system. dict:dict() type.
 %%                      MaxVector: The version vector time of the last
 %%                               operation appended to the logs
--spec open_logs(string(), [preflist()], dict:dict(), cache_id(), vectorclock()) -> {dict:dict(), vectorclock()} | {error, reason()}.
+-spec open_logs(string(), [preflist()], dict:dict(log_id(), disk_log:log()), cache_id(), vectorclock()) -> {dict:dict(log_id(), disk_log:log()), vectorclock()} | {error, reason()}.
 open_logs(_LogFile, [], Map, _ClockTable, MaxVector) ->
     {Map, MaxVector};
 open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
@@ -881,7 +908,7 @@ open_logs(LogFile, [Next|Rest], Map, ClockTable, MaxVector)->
 %%              LogId:  identifies the log.
 %%      Return: The actual name of the log
 %%
--spec get_log_from_map(dict:dict(), partition(), log_id()) ->
+-spec get_log_from_map(dict:dict(log_id(), disk_log:log()), partition(), log_id()) ->
                               {ok, log()} | {error, no_log_for_preflist}.
 get_log_from_map(Map, _Partition, LogId) ->
     case dict:find(LogId, Map) of
@@ -993,4 +1020,3 @@ preflist_member_false_test() ->
     ?assertEqual(false, preflist_member(partition5, Preflist)).
 
 -endif.
-

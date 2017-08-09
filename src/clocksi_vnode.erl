@@ -85,7 +85,7 @@ start_vnode(I) ->
 %%      this does not actually touch the vnode, instead reads directly
 %%      from the ets table to allow for concurrency
 read_data_item(Node, TxId, Key, Type, Updates) ->
-    case clocksi_readitem_server:read_data_item(Node, Key, Type, TxId) of
+    case clocksi_readitem_server:read_data_item(Node, Key, Type, TxId, []) of
         {ok, Snapshot} ->
             Updates2 = reverse_and_filter_updates_per_key(Updates, Key),
             Snapshot2 = clocksi_materializer:materialize_eager(Type, Snapshot, Updates2),
@@ -95,7 +95,7 @@ read_data_item(Node, TxId, Key, Type, Updates) ->
     end.
 
 async_read_data_item(Node, TxId, Key, Type) ->
-    clocksi_readitem_server:async_read_data_item(Node, Key, Type, TxId, {fsm, self()}).
+    clocksi_readitem_server:async_read_data_item(Node, Key, Type, TxId, [], {fsm, self()}).
 
 %% @doc Return active transactions in prepare state with their preparetime for a given key
 %% should be run from same physical node
@@ -431,11 +431,11 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
 %%%===================================================================
 
 prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict) ->
-    TxId = Transaction#transaction.txn_id,
-    case certification_check(TxId, TxWriteSet, CommittedTx, PreparedTx) of
+    case certification_check(Transaction, TxWriteSet, CommittedTx, PreparedTx) of
         true ->
             case TxWriteSet of
                 [{Key, _Type, _Update} | _] ->
+            TxId = Transaction#transaction.txn_id,
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, dict:new()),
                     NewPrepare = dc_utilities:now_microsec(),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
@@ -568,12 +568,13 @@ clean_prepared(PreparedTx, [{Key, _Type, _Update} | Rest], TxId) ->
 now_microsec({MegaSecs, Secs, MicroSecs}) ->
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
 
-certification_check(TxId, Updates, CommittedTx, PreparedTx) ->
-    case application:get_env(antidote, txn_cert) of
-        {ok, true} ->
-        %io:format("AAAAH"),
+certification_check(Transaction, Updates, CommittedTx, PreparedTx) ->
+    TxId = Transaction#transaction.txn_id,
+    Certify = antidote:get_txn_property(certify, Transaction#transaction.properties),
+    case Certify of
+        true ->
         certification_with_check(TxId, Updates, CommittedTx, PreparedTx);
-        _  -> true
+        false -> true
     end.
 
 %% @doc Performs a certification check when a transaction wants to move

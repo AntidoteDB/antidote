@@ -25,8 +25,8 @@
 -include("inter_dc_repl.hrl").
 
 -export([start_link/1,
-        get_entries/2,
-     request_permissions/2,
+         get_entries/2,
+         request_permissions/2,
          generate_server_name/1]).
 -export([init/1,
          handle_cast/2,

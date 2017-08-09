@@ -33,15 +33,15 @@
 %% tests
 -export([clocksi_test1/1,
          clocksi_test2/1,
-                                                %clocksi_test3/1,
          clocksi_test5/1,
          clocksi_test_read_wait/1,
          clocksi_test4/1,
          clocksi_test_read_time/1,
          clocksi_test_prepare/1,
-                                                %clocksi_tx_noclock_test/1,
          clocksi_single_key_update_read_test/1,
          clocksi_multiple_key_update_read_test/1,
+           clocksi_test_cert_property/1,
+           clocksi_test_no_update_property/1,
          clocksi_test_certification_check/1,
          clocksi_multiple_test_certification_check/1,
          clocksi_multiple_read_update_test/1,
@@ -84,21 +84,22 @@ end_per_testcase(_, _) ->
     ok.
 
 all() -> [clocksi_test1,
-          clocksi_test2,
-          clocksi_test5,
-          clocksi_test_read_wait,
-          clocksi_test4,
-          clocksi_test_read_time,
-          clocksi_test_prepare,
-          clocksi_single_key_update_read_test,
-          clocksi_multiple_key_update_read_test,
-          clocksi_test_certification_check,
-          clocksi_multiple_test_certification_check,
-          clocksi_multiple_read_update_test,
-          clocksi_concurrency_test,
-          clocksi_parallel_ops_test,
-          clocksi_static_parallel_writes_test].
-
+         clocksi_test2,
+         clocksi_test5,
+         clocksi_test_read_wait,
+         clocksi_test4,
+         clocksi_test_read_time,
+         clocksi_test_prepare,
+         clocksi_single_key_update_read_test,
+         clocksi_multiple_key_update_read_test,
+           clocksi_test_cert_property,
+           clocksi_test_no_update_property,
+         clocksi_test_certification_check,
+         clocksi_multiple_test_certification_check,
+         clocksi_multiple_read_update_test,
+         clocksi_concurrency_test,
+         clocksi_parallel_ops_test,
+         clocksi_static_parallel_writes_test].
 
 check_read_key(Node, Key, Type, Expected, Clock, TxId) ->
     check_read(Node, [{Key, Type, ?BUCKET}], [Expected], Clock, TxId).
@@ -138,6 +139,7 @@ update_counters(Node, Keys, IncValues, Clock, TxId) ->
             ok = rpc:call(Node, cure, update_objects, [Updates, TxId]),
             ok
     end.
+
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
@@ -415,12 +417,24 @@ clocksi_test_certification_check(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
         {ok, true} ->
-            clocksi_test_certification_check_run(Nodes);
+            clocksi_test_certification_check_run(Nodes, false);
         _ ->
             pass
     end.
 
-clocksi_test_certification_check_run(Nodes) ->
+%% @doc The following function tests the certification check algorithm,
+%%      with the property set to disable the certification
+%%      when two concurrent txs modify a single object, they both must commit.
+clocksi_test_cert_property(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    case rpc:call(hd(Nodes), application, get_env, [antidote, txn_cert]) of
+        {ok, true} ->
+            clocksi_test_certification_check_run(Nodes, true);
+        _ ->
+            pass
+    end.
+
+clocksi_test_certification_check_run(Nodes, DisableCert) ->
     lager:info("clockSI_test_certification_check started"),
     Key1 = clockSI_test_certification_check_key1,
 
@@ -430,7 +444,12 @@ clocksi_test_certification_check_run(Nodes) ->
     lager:info("LastNode: ~p", [LastNode]),
 
     %% Start a new tx on first node, perform an update on some key.
-    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
+    Properties = case DisableCert of
+             true -> [{certify, dont_certify}];
+             false -> []
+         end,
+
+    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, Properties, false]),
     lager:info("Tx1 Started, id : ~p", [TxId]),
     update_counters(FirstNode, [Key1], [1], ignore, TxId),
 
@@ -442,9 +461,32 @@ clocksi_test_certification_check_run(Nodes) ->
     {ok, _CT}= rpc:call(LastNode, cure, commit_transaction, [TxId1]),
 
     %% Commit the first tx.
-    CommitRes = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
-    ?assertMatch({error, {aborted, _}}, CommitRes),
-    lager:info("Tx1 aborted. Test passed!"),
+    CommitTime = rpc:call(FirstNode, cure, clocksi_iprepare, [TxId]),
+    case DisableCert of
+    false ->
+        ?assertMatch({aborted, TxId}, CommitTime),
+        lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
+        lager:info("Tx1 aborted. Test passed!");
+    true ->
+        ?assertMatch({ok, _}, CommitTime),
+        lager:info("Tx1 sent prepare, got message: ~p", [CommitTime]),
+        End2 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId]),
+        ?assertMatch({ok, _}, End2),
+        lager:info("Tx1 committed. Test passed!")
+    end,
+    pass.
+
+clocksi_test_no_update_property(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    FirstNode = hd(Nodes),
+    _LastNode = lists:last(Nodes),
+    Key =
+    clockSI_test_no_update_property_key1,
+    Bucket = bucket,
+    Type = antidote_crdt_counter,
+    {ok, _} = rpc:call(FirstNode, antidote, update_objects,
+                      [ignore, [], [{{Key, Type, Bucket}, increment, 1}]]),
+
     pass.
 
 %% @doc The following function tests the certification check algorithm.
@@ -622,11 +664,11 @@ clocksi_static_parallel_writes_test(Config) ->
 
     lager:info("updated 5 objects no problem"),
 
-    {ok, Res, CT1} = rpc:call(Node, cure, read_objects,
+    {ok, Res, CT1} = rpc:call(Node, cure, obtain_objects,
                               [CT, [], [Bound_object1,
                                         Bound_object2, Bound_object3,
-                                        Bound_object4, Bound_object5]
-                              , true
+                                        Bound_object4, Bound_object5],
+                              true, object_value
                               ]),
     ?assertMatch([1, 2, 3, 4, 5], Res),
 
@@ -645,8 +687,8 @@ clocksi_static_parallel_writes_test(Config) ->
 
     lager:info("updated 5 times the sabe object, no problem"),
 
-    {ok, Res1, _CT4} = rpc:call(Node, cure, read_objects,
-                                [CT2, [], [Bound_object1], true]),
+    {ok, Res1, _CT4} = rpc:call(Node, cure, obtain_objects,
+                                [CT2, [], [Bound_object1], true, object_value]),
     ?assertMatch([6], Res1),
     lager:info("result is correct after reading those updates. Test passed."),
     pass.
