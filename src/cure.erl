@@ -176,7 +176,9 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
 transform_reads(States, StateOrValue, Objects) ->
     case StateOrValue of
             object_state -> States;
-            object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) -> Type:value(State) end, lists:zip(States,Objects))
+            object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) ->
+                                          Type:value(State) end,
+                                      lists:zip(States, Objects))
     end.
 
 

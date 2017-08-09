@@ -536,7 +536,7 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
 
     %% TODO: type is hard-coded..
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
-  
+
     %% Swap keys with their appropiate read values
     ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
     %% TODO: Why use the old snapshot, instead of UpdatedSnapshot?
