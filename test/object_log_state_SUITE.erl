@@ -63,7 +63,7 @@ object_log_state_test(Config) ->
     FirstNode = hd(Nodes),
     Type = antidote_crdt_orset,
     Key = object_log_state_test,
-    Bucket = test_bucket,
+    Bucket = object_log_state_bucket,
     BoundObject = {Key, Type, Bucket},
 
     CommitTime = add_set(FirstNode, BoundObject, lists:seq(1, 15), vectorclock:new()),
