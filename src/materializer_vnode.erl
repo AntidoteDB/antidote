@@ -941,7 +941,7 @@ read_nonexisting_key_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1, 1}, {dc2, 0}]), ignore, [], false, MatState),
     ?assertEqual(0, Type:value(ReadResult)).
 
