@@ -48,10 +48,9 @@
          check_tables_ready/0,
          read/5,
          read/6,
-           get_cache_name/2,
-           store_ss/3,
+         get_cache_name/2,
+         store_ss/3,
          update/2,
-         tuple_to_key/2,
          belongs_to_snapshot_op/3]).
 
 %% Callbacks
@@ -464,7 +463,7 @@ fetch_updates_from_cache(OpsCache, Key) ->
             {[], 0};
 
         [Tuple] ->
-            {Key, Length, _OpId, _ListLen, CachedOps} = tuple_to_key(Tuple, false),
+            {Key, Length, _OpId, _ListLen, CachedOps} = tuple_to_key(Tuple),
             {CachedOps, Length}
     end.
 
@@ -553,7 +552,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
                     [] ->
                         {Key, 0, 0, 0, {}};
                     [Tuple] ->
-                        tuple_to_key(Tuple, false)
+                        tuple_to_key(Tuple)
                 end,
             {NewLength, PrunedOps}=prune_ops({Length, OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
@@ -630,26 +629,13 @@ check_filter(Fun, Id, Last, NewId, Tuple, NewSize, NewOps) ->
 %% to a tuple and list usable by the materializer
 %% Note that the ops are stored in the ets with the most recent op at the end of
 %% the tuple.
-%% The second argument if true will convert the ops tuple to a list of ops
-%% Otherwise it will be kept as a tuple
--spec tuple_to_key(tuple(), boolean()) -> {any(), integer(), non_neg_integer(), non_neg_integer(),
+-spec tuple_to_key(tuple()) -> {any(), integer(), non_neg_integer(), non_neg_integer(),
                       [op_and_id()]|tuple()}.
-tuple_to_key(Tuple, ToList) ->
+tuple_to_key(Tuple) ->
     Key = element(1, Tuple),
     {Length, ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
-    Ops =
-        case ToList of
-            true ->
-                tuple_to_key_int(?FIRST_OP, Length+?FIRST_OP, Tuple, []);
-            false ->
-                Tuple
-        end,
-    {Key, Length, OpId, ListLen, Ops}.
-tuple_to_key_int(Next, Next, _Tuple, Acc) ->
-    Acc;
-tuple_to_key_int(Next, Last, Tuple, Acc) ->
-    tuple_to_key_int(Next+1, Last, Tuple, [element(Next, Tuple)|Acc]).
+    {Key, Length, OpId, ListLen, Tuple}.
 
 %% @doc Insert an operation and start garbage collection triggered by writes.
 %% the mechanism is very simple; when there are more than OPS_THRESHOLD
