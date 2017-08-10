@@ -46,7 +46,6 @@
 %% API
 -export([start_vnode/1,
          check_tables_ready/0,
-         read/5,
          read/6,
          get_cache_name/2,
          store_ss/3,
@@ -76,10 +75,6 @@ start_vnode(I) ->
 %% @doc Read state of key at given snapshot time, this does not touch the vnode process
 %%      directly, instead it just reads from the operations and snapshot tables that
 %%      are in shared memory, allowing concurrent reads.
--spec read(key(), type(), snapshot_time(), txid(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
-read(Key, Type, SnapshotTime, TxId, MatState) ->
-    read(Key, Type, SnapshotTime, TxId, [], MatState).
-
 -spec read(key(), type(), snapshot_time(), txid(), clocksi_readitem_server:read_property_list(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, PropertyList, MatState = #mat_state{ops_cache = OpsCache}) ->
     case ets:info(OpsCache) of
@@ -180,10 +175,9 @@ open_table(Partition, Name) ->
             open_table(Partition, Name)
     end.
 
-%% @doc The tables holding the updates and snapshots are shared with concurrent
-%%      readers, allowing them to be non-blocking and concurrent.
-%%      This function checks whether or not all tables have been intialized or not yet.
-%%      Returns true if the have, false otherwise.
+%% @doc The tables holding the updates and snapshots are shared with concurrent non-blocking
+%%      readers.
+%%      Returns true if all tables have been initialized, false otherwise.
 -spec check_tables_ready() -> boolean().
 check_tables_ready() ->
     PartitionList = dc_utilities:get_all_partitions_nodes(),
@@ -229,7 +223,7 @@ handle_command({check_ready}, _Sender, State = #mat_state{partition=Partition, i
     {reply, Result2, State};
 
 handle_command({read, Key, Type, SnapshotTime, TxId}, _Sender, State) ->
-    {reply, read(Key, Type, SnapshotTime, TxId, State), State};
+    {reply, read(Key, Type, SnapshotTime, TxId, [], State), State};
 
 handle_command({update, Key, DownstreamOp}, _Sender, State) ->
     true = op_insert_gc(Key, DownstreamOp, State),
