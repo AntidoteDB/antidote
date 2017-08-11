@@ -38,17 +38,17 @@ create_snapshot(Type) ->
 
 %% @doc Applies an operation to a snapshot of a crdt.
 %%      This function yields an error if the crdt does not have a corresponding update operation.
--spec update_snapshot(type(), snapshot(), op()) -> {ok, snapshot()} | {error, reason()}.
+-spec update_snapshot(type(), snapshot(), op()) -> {ok, snapshot()} | {error, {unexpected_operation, op(), type()}}.
 update_snapshot(Type, Snapshot, Op) ->
     try
         Type:update(Op, Snapshot)
     catch
         _:_ ->
-            {error, unexpected_format}
+            {error, {unexpected_operation, Op, Type}}
     end.
 
 %% @doc Applies updates in given order without any checks, errors are simply propagated.
--spec materialize_eager(type(), snapshot(), [op()]) -> snapshot() | {error, reason()}.
+-spec materialize_eager(type(), snapshot(), [op()]) -> snapshot() | {error, {unexpected_operation, op(), type()}}.
 materialize_eager(_Type, Snapshot, []) ->
     Snapshot;
 materialize_eager(Type, Snapshot, [Op | Rest]) ->
@@ -61,7 +61,7 @@ materialize_eager(Type, Snapshot, [Op | Rest]) ->
 
 
 %% @doc Check that in a list of operations, all of them are correctly typed.
--spec check_operations(list()) -> ok | {error, {type_check, term()}}.
+-spec check_operations([op()]) -> ok | {error, {type_check_failed, op()}}.
 check_operations([]) ->
     ok;
 check_operations([Op | Rest]) ->
@@ -73,14 +73,14 @@ check_operations([Op | Rest]) ->
     end.
 
 %% @doc Check that an operation is correctly typed.
--spec check_operation(term()) -> boolean().
+-spec check_operation(op()) -> boolean().
 check_operation(Op) ->
     case Op of
         {update, {_, Type, Update}} ->
-            (antidote_crdt:is_type(Type)) andalso
+            antidote_crdt:is_type(Type) andalso
                 Type:is_operation(Update);
         {read, {_, Type}} ->
-            (antidote_crdt:is_type(Type));
+            antidote_crdt:is_type(Type);
         _ ->
             false
     end.
@@ -128,7 +128,10 @@ materializer_error_invalidupdate_test() ->
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
-    ?assertEqual({error, unexpected_format}, materialize_eager(Type, Counter, Ops)).
+    ?assertEqual({error, {unexpected_operation,
+                    {non_existing_op_type, {non_existing_op, actor1}},
+                    antidote_crdt_counter}},
+                 materialize_eager(Type, Counter, Ops)).
 
 %% @doc Testing that the function check_operations works properly
 check_operations_test() ->
