@@ -1021,11 +1021,11 @@ read_single_fail_test(Pid) ->
 
 read_success_test(Pid) ->
     fun() ->
-        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity),
+        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, antidote_crdt_counter}}, infinity),
         ?assertEqual({ok, 2},
-            {ok, riak_dt_gcounter:value(State)}),
+            {ok, antidote_crdt_counter:value(State)}),
         ?assertEqual({ok, [a]},
-            gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
+            gen_fsm:sync_send_event(Pid, {read, {set, antidote_crdt_gset}}, infinity)),
         ?assertEqual({ok, mock_value},
             gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
         ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
