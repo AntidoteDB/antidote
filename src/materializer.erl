@@ -129,8 +129,8 @@ materializer_error_invalidupdate_test() ->
     ?assertEqual(0, Type:value(Counter)),
     Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
     ?assertEqual({error, {unexpected_operation,
-                    {non_existing_op_type,{non_existing_op,actor1}},
-                    antidote_crdt_counter}}, 
+                    {non_existing_op_type, {non_existing_op, actor1}},
+                    antidote_crdt_counter}},
                  materialize_eager(Type, Counter, Ops)).
 
 %% @doc Testing that the function check_operations works properly
