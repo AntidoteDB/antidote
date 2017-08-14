@@ -457,7 +457,7 @@ fetch_updates_from_cache(OpsCache, Key) ->
             {[], 0};
 
         [Tuple] ->
-            {Key, Length, _OpId, _ListLen, CachedOps} = tuple_to_key(Tuple),
+            {Key, Length, _OpId, _ListLen, CachedOps} = deconstruct_opscache_entry(Tuple),
             {CachedOps, Length}
     end.
 
@@ -546,7 +546,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
                     [] ->
                         {Key, 0, 0, 0, {}};
                     [Tuple] ->
-                        tuple_to_key(Tuple)
+                        deconstruct_opscache_entry(Tuple)
                 end,
             {NewLength, PrunedOps}=prune_ops({Length, OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
@@ -623,9 +623,9 @@ check_filter(Fun, Id, Last, NewId, Tuple, NewSize, NewOps) ->
 %% to a tuple and list usable by the materializer
 %% Note that the ops are stored in the ets with the most recent op at the end of
 %% the tuple.
--spec tuple_to_key(tuple()) -> {any(), integer(), non_neg_integer(), non_neg_integer(),
-                      [op_and_id()]|tuple()}.
-tuple_to_key(Tuple) ->
+-spec deconstruct_opscache_entry(tuple()) -> 
+    {key(), non_neg_integer(), non_neg_integer(), non_neg_integer(), [op_and_id()] | tuple()}.
+deconstruct_opscache_entry({Key, {Length, ListLen}, OpId, CachedOps}) ->
     Key = element(1, Tuple),
     {Length, ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
