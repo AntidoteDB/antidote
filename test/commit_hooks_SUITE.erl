@@ -90,7 +90,7 @@ register_hook_test(Config) ->
 execute_hook_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bucket = test_bucket,
+    Bucket = hook_bucket1,
     ok = rpc:call(Node, antidote, register_pre_hook,
                   [Bucket, antidote_hooks, test_increment_hook]),
 
@@ -109,7 +109,7 @@ execute_hook_test(Config) ->
 execute_post_hook_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bucket = test_bucket2,
+    Bucket = hook_bucket2,
     ok = rpc:call(Node, antidote, register_post_hook,
                    [Bucket, antidote_hooks, test_post_hook]),
 
@@ -127,7 +127,7 @@ execute_post_hook_test(Config) ->
 execute_prehooks_static_txn_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bucket = test_bucket3,
+    Bucket = hook_bucket3,
     ok = rpc:call(Node, antidote, register_pre_hook,
                   [Bucket, antidote_hooks, test_increment_hook]),
 
@@ -142,7 +142,7 @@ execute_prehooks_static_txn_test(Config) ->
 execute_posthooks_static_txn_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bucket = test_bucket4,
+    Bucket = hook_bucket4,
     ok = rpc:call(Node, antidote, register_post_hook,
                   [Bucket, antidote_hooks, test_post_hook]),
 

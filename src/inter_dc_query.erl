@@ -51,7 +51,7 @@
 
 %% State
 -record(state, {
-  sockets :: dict:dict(), % DCID -> socket
+  sockets :: dict:dict(dcid(), erlzmq:erlzmq_socket()), % DCID -> socket
   req_id :: non_neg_integer(),
   unanswered_queries :: ets:tid() % PDCID -> query
 }).

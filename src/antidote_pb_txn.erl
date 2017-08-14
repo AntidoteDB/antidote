@@ -67,13 +67,16 @@ decode(Code, Bin) ->
 encode(Message) ->
     {ok, riak_pb_codec:encode(Message)}.
 
-process(#apbstarttransaction{timestamp=BClock, properties = BProperties},
+process(#apbstarttransaction{timestamp = BClock, properties = BProperties},
         State) ->
     Clock = case BClock of
                     undefined -> ignore;
                     _ -> binary_to_term(BClock)
             end,
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
+             {} -> [];
+             Prop -> Prop
+         end,
     Response = antidote:start_transaction(Clock, Properties),
     case Response of
         {ok, TxId} ->
@@ -157,7 +160,10 @@ process(#apbstaticupdateobjects{
                     undefined -> ignore;
                     _ -> binary_to_term(BClock)
             end,
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
+             {} -> [];
+             Prop -> Prop
+         end,
     Updates = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(update_object, O) end,
                         BUpdates),
@@ -178,7 +184,10 @@ process(#apbstaticreadobjects{
                     undefined -> ignore;
                     _ -> binary_to_term(BClock)
             end,
-    Properties = antidote_pb_codec:decode(txn_properties, BProperties),
+    Properties = case antidote_pb_codec:decode(txn_properties, BProperties) of
+             {} -> [];
+             Prop -> Prop
+         end,
     Objects = lists:map(fun(O) ->
                                 antidote_pb_codec:decode(bound_object, O) end,
                         BoundObjects),

@@ -26,16 +26,9 @@
 %% @doc Returns downstream operation for upstream operation
 %%      input: Update - upstream operation
 %%      output: Downstream operation or {error, Reason}
--spec generate_downstream_op(
-    Transaction :: tx(),
-    Node :: term(),
-    Key :: key(),
-    Type :: type(),
-    Update :: {op(), actor()},
-    list(),
-    orddict:orddict()
-) -> {ok, op()} | {error, atom()}.
-
+-spec generate_downstream_op(Transaction :: tx(), Node :: index_node(), Key :: key(),
+  Type :: type(), Update :: op_param(), list(), orddict:orddict()) ->
+    {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, InternalReadSet) ->
     %% TODO: Check if read can be omitted for some types as registers
     Result = case orddict:find(Key, InternalReadSet) of
@@ -48,7 +41,7 @@ generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, Inte
                     S;
 
                 {error, Reason}->
-                    {error, Reason}
+                    {error, {gen_downstream_read_failed, Reason}}
             end
     end,
     case Result of

@@ -68,7 +68,8 @@
 %% States
 -export([create_transaction_record/5,
     start_tx/2,
-    init_state/3,
+    init_state/4,
+    get_snapshot_time/0,
     perform_update/6,
     perform_read/4,
     execute_op/2,
@@ -88,8 +89,8 @@
     receive_aborted/2,
     abort/1,
     abort/2,
-    perform_singleitem_read/2,
-    perform_singleitem_update/3,
+    perform_singleitem_update/5,
+    perform_singleitem_operation/4,
     reply_to_client/1,
     generate_name/1]).
 
@@ -97,34 +98,34 @@
 %%% API
 %%%===================================================================
 
--spec start_link(pid(), clock_time() | ignore, atom(), boolean(), [op_param()]) -> {ok, pid()}.
-start_link(From, Clientclock, UpdateClock, StayAlive, Operations) ->
+-spec start_link(pid(), clock_time() | ignore, txn_properties(), boolean(), [op_param()]) -> {ok, pid()}.
+start_link(From, Clientclock, Properties, StayAlive, Operations) ->
     case StayAlive of
         true ->
-            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive, Operations], []);
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Properties, StayAlive, Operations], []);
         false ->
-            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive, Operations], [])
+            gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive, Operations], [])
     end.
--spec start_link(pid(), clock_time() | ignore, atom(), boolean()) -> {ok, pid()}.
-start_link(From, Clientclock, UpdateClock, StayAlive) ->
+-spec start_link(pid(), clock_time() | ignore, txn_properties(), boolean()) -> {ok, pid()}.
+start_link(From, Clientclock, Properties, StayAlive) ->
     case StayAlive of
         true ->
-            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, UpdateClock, StayAlive], []);
+            gen_fsm:start_link({local, generate_name(From)}, ?MODULE, [From, Clientclock, Properties, StayAlive], []);
         false ->
-            gen_fsm:start_link(?MODULE, [From, Clientclock, UpdateClock, StayAlive], [])
+            gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive], [])
     end.
-
--spec start_link(pid(), clock_time() | ignore, atom()) -> {ok, pid()}.
-start_link(From, Clientclock) ->
-    start_link(From, Clientclock, update_clock).
 
 -spec start_link(pid(), clock_time() | ignore) -> {ok, pid()}.
-start_link(From, Clientclock, UpdateClock) ->
-    start_link(From, Clientclock, UpdateClock, false).
+start_link(From, Clientclock) ->
+    start_link(From, Clientclock, antidote:get_default_txn_properties()).
+
+-spec start_link(pid(), clock_time() | ignore, txn_properties()) -> {ok, pid()}.
+start_link(From, Clientclock, Properties) ->
+    start_link(From, Clientclock, Properties, false).
 
 -spec start_link(pid()) -> {ok, pid()}.
 start_link(From) ->
-    start_link(From, ignore, update_clock).
+    start_link(From, ignore, antidote:get_default_txn_properties()).
 
 finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
@@ -136,14 +137,14 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 %%%===================================================================
 
 %% @doc Initialize the state.
-init([From, ClientClock, UpdateClock, StayAlive]) ->
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false))};
+init([From, ClientClock, Properties, StayAlive]) ->
+    {ok, execute_op, start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, false, false, Properties))};
 %% @doc Init static transaction with Operations.
-init([From, ClientClock, UpdateClock, StayAlive, Operations]) ->
-    State = start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, true, true)),
+init([From, ClientClock, Properties, StayAlive, Operations]) ->
+    State = start_tx_internal(From, ClientClock, Properties, init_state(StayAlive, true, true, Properties)),
     {ok, execute_op, State#tx_coord_state{operations = Operations, from = From}, 0}.
 
-init_state(StayAlive, FullCommit, IsStatic) ->
+init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     #tx_coord_state {
         transaction = undefined,
         updated_partitions = [],
@@ -157,41 +158,42 @@ init_state(StayAlive, FullCommit, IsStatic) ->
         is_static = IsStatic,
         return_accumulator = [],
         internal_read_set = orddict:new(),
-        stay_alive = StayAlive
+        stay_alive = StayAlive,
+        properties = Properties
     }.
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
     list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
-start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)};
+start_tx({start_tx, From, ClientClock, Properties}, SD) ->
+    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, SD)};
 
 %% Used by static update and read transactions
-start_tx({start_tx, From, ClientClock, UpdateClock, Operation}, SD0) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock,
-                                                SD0#tx_coord_state{is_static = true, operations = Operation, from = From}), 0}.
+start_tx({start_tx, From, ClientClock, Properties, Operation}, SD) ->
+    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
+                                                SD#tx_coord_state{is_static = true, operations = Operation, from = From}), 0}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
-    {Transaction, TransactionId} = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false),
+start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
+    {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
     case IsStatic of
         true ->
             ok;
         false ->
             From ! {ok, TransactionId}
     end,
-    SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
+    SD#tx_coord_state{transaction = Transaction, num_to_read = 0, properties = Properties}.
 
--spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-                                boolean(), pid() | undefined, boolean()) -> {tx(), txid()}.
-create_transaction_record(ClientClock, UpdateClock, StayAlive, From, _IsStatic) ->
+-spec create_transaction_record(snapshot_time() | ignore,
+                                boolean(), pid() | undefined, boolean(), txn_properties()) -> {tx(), txid()}.
+create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
     {ok, SnapshotTime} = case ClientClock of
                              ignore ->
                                  get_snapshot_time();
                              _ ->
-                                 case UpdateClock of
+                                 case antidote:get_txn_property(update_clock, Properties) of
                                      update_clock ->
                                          get_snapshot_time(ClientClock);
                                      no_update_clock ->
@@ -209,33 +211,38 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, _IsStatic) 
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
     Transaction = #transaction{snapshot_time = LocalClock,
         vec_snapshot_time = SnapshotTime,
-        txn_id = TransactionId},
+        txn_id = TransactionId,
+        properties = Properties},
     {Transaction, TransactionId}.
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
 %%      is supposed to be light weight because it is done outside of a
 %%      transaction fsm and directly in the calling thread.
--spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
-perform_singleitem_read(Key, Type) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
-    Partition = ?LOG_UTIL:get_key_partition(Key),
-    case clocksi_readitem_server:read_data_item(Partition, Key, Type, Transaction) of
+%%      It either returns the object value or the object state.
+
+-spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
+                    {ok, val() | term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_operation(Clock, Key, Type, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
+    %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction, []) of
         {error, Reason} ->
             {error, Reason};
         {ok, Snapshot} ->
-            ReadResult = Type:value(Snapshot),
             %% Read only transaction has no commit, hence return the snapshot time
             CommitTime = Transaction#transaction.vec_snapshot_time,
-            {ok, ReadResult, CommitTime}
+            {ok, Snapshot, CommitTime}
     end.
 
 %% @doc This is a standalone function for directly contacting the update
 %%      server vnode.  This is lighter than creating a transaction
 %%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(key(), type(), {op(), term()}) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Key, Type, Params) ->
-    {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+-spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
     Partition = ?LOG_UTIL:get_key_partition(Key),
     %% Execute pre_commit_hook if any
     case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
@@ -352,7 +359,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
                 {ok, DownstreamOp} ->
                     ok = async_log_propagation(Partition, Transaction#transaction.txn_id, Key, Type, DownstreamOp),
 
-                    %% Append to the writeset of the updated partition
+                    %% Append to the write set of the updated partition
                     GeneratedUpdate = {Key, Type, DownstreamOp},
                     NewUpdatedPartitions = append_updated_partitions(
                         UpdatedPartitions,
@@ -423,7 +430,7 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
             abort(State);
         ReadResult ->
             NewInternalReadSet = orddict:store(Key, ReadResult, InternalReadSet),
-            {reply, {ok, Type:value(ReadResult)}, execute_op, State#tx_coord_state{internal_read_set=NewInternalReadSet}}
+            {reply, {ok, ReadResult}, execute_op, State#tx_coord_state{internal_read_set=NewInternalReadSet}}
     end;
 
 %% @doc Read a batch of objects, asynchronous
@@ -437,7 +444,7 @@ execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transacti
 
     NewCoordState = lists:foldl(
         ExecuteReads,
-        State#tx_coord_state{num_to_read=length(Objects), return_accumulator=[]},
+        State#tx_coord_state{num_to_read = length(Objects), return_accumulator=[]},
         Objects
     ),
 
@@ -446,13 +453,13 @@ execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transacti
 %% @doc Perform update operations on a batch of Objects
 execute_command(update_objects, UpdateOps, Sender, State = #tx_coord_state{transaction=Transaction}) ->
     ExecuteUpdates = fun(Op, AccState=#tx_coord_state{
-        client_ops=ClientOps0,
-        internal_read_set=ReadSet,
-        updated_partitions=UpdatedPartitions0
+        client_ops = ClientOps0,
+        internal_read_set = ReadSet,
+        updated_partitions = UpdatedPartitions0
     }) ->
         case perform_update(Op, UpdatedPartitions0, Transaction, Sender, ClientOps0, ReadSet) of
-            {error, _}=Err ->
-                AccState#tx_coord_state{return_accumulator=Err};
+            {error, _} = Err ->
+                AccState#tx_coord_state{return_accumulator = Err};
 
             {UpdatedPartitions, ClientOps} ->
                 NumToRead = AccState#tx_coord_state.num_to_read,
@@ -529,10 +536,9 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
 
     %% TODO: type is hard-coded..
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
-    Value = Type:value(UpdatedSnapshot),
 
     %% Swap keys with their appropiate read values
-    ReadValues = replace_first(ReadKeys, Key, Value),
+    ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
     %% TODO: Why use the old snapshot, instead of UpdatedSnapshot?
     NewReadSet = orddict:store(Key, Snapshot, ReadSet),
 
@@ -853,7 +859,7 @@ reply_to_client(SD = #tx_coord_state{
 
     case StayAlive of
         true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic)};
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, [])};
         false ->
             {stop, normal, SD}
     end.
@@ -1015,10 +1021,11 @@ read_single_fail_test(Pid) ->
 
 read_success_test(Pid) ->
     fun() ->
+        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, antidote_crdt_counter}}, infinity),
         ?assertEqual({ok, 2},
-            gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity)),
+            {ok, antidote_crdt_counter:value(State)}),
         ?assertEqual({ok, [a]},
-            gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
+            gen_fsm:sync_send_event(Pid, {read, {set, antidote_crdt_gset}}, infinity)),
         ?assertEqual({ok, mock_value},
             gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
         ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))

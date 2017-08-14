@@ -231,5 +231,3 @@ key_as_integer(Key) when is_binary(Key) ->
     binary_to_integer(Key);
 key_as_integer(Key) ->
     key_as_integer(term_to_binary(Key)).
-
-
