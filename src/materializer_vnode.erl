@@ -47,7 +47,6 @@
 -export([start_vnode/1,
          check_tables_ready/0,
          read/6,
-         get_cache_name/2,
          store_ss/3,
          update/2,
          belongs_to_snapshot_op/3]).
@@ -101,10 +100,6 @@ read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
             State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
             internal_read(Key, Type, SnapshotTime, TxId, PropertyList, false, State)
     end.
-
--spec get_cache_name(non_neg_integer(), atom()) -> atom().
-get_cache_name(Partition, Base) ->
-    list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 %%@doc write operation to cache for future read, updates are stored
 %%     one at a time into the ets tables
@@ -280,6 +275,10 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache, snapshot_cache=SnapshotCach
 
 
 %%---------------- Internal Functions -------------------%%
+
+-spec get_cache_name(non_neg_integer(), atom()) -> atom().
+get_cache_name(Partition, Base) ->
+    list_to_atom(atom_to_list(Base) ++ "-" ++ integer_to_list(Partition)).
 
 -spec load_from_log_to_tables(partition_id(), #state{}) -> ok | {error, reason()}.
 load_from_log_to_tables(Partition, State) ->
