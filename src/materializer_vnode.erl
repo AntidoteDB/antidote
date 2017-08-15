@@ -25,11 +25,11 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 %% Number of snapshots to trigger GC
--define(SNAPSHOT_THRESHOLD, 10).
+-define(SNAPSHOT_THRESHOLD, 4).
 %% Number of snapshots to keep after GC
--define(SNAPSHOT_MIN, 3).
+-define(SNAPSHOT_MIN, 2).
 %% Number of ops to keep before GC
--define(OPS_THRESHOLD, 50).
+-define(OPS_THRESHOLD, 20).
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
 -define(RESIZE_THRESHOLD, 5).
@@ -68,6 +68,9 @@
          handle_exit/3]).
 
 -type op_and_id() :: {non_neg_integer(), #clocksi_payload{}}.
+
+
+%%---------------- API Functions -------------------%%
 
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
@@ -123,57 +126,6 @@ init([Partition]) ->
     end,
     {ok, #mat_state{is_ready = IsReady, partition=Partition, ops_cache=OpsCache, snapshot_cache=SnapshotCache}}.
 
--spec load_from_log_to_tables(partition_id(), #mat_state{}) -> ok | {error, reason()}.
-load_from_log_to_tables(Partition, State) ->
-    LogId = [Partition],
-    Node = {Partition, log_utilities:get_my_node(Partition)},
-    loop_until_loaded(Node, LogId, start, dict:new(), State).
-
--spec loop_until_loaded({partition_id(), node()},
-            log_id(),
-            start | disk_log:continuation(),
-            dict:dict(txid(), [any_log_payload()]),
-            #mat_state{}) ->
-                   ok | {error, reason()}.
-loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
-    case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
-        {error, Reason} ->
-            {error, Reason};
-        {NewContinuation, NewOps, OpsDict} ->
-            load_ops(OpsDict, State),
-            loop_until_loaded(Node, LogId, NewContinuation, NewOps, State);
-        {eof, OpsDict} ->
-            load_ops(OpsDict, State),
-            ok
-    end.
-
--spec load_ops(dict:dict(key(), [{non_neg_integer(), clocksi_payload()}]), #mat_state{}) -> true.
-load_ops(OpsDict, State) ->
-    dict:fold(fun(Key, CommittedOps, _Acc) ->
-                  lists:foreach(fun({_OpId, Op}) ->
-                                    #clocksi_payload{key = Key} = Op,
-                                    op_insert_gc(Key, Op, State)
-                                end, CommittedOps)
-              end, true, OpsDict).
-
--spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
-open_table(Partition, Name) ->
-    case ets:info(get_cache_name(Partition, Name)) of
-        undefined ->
-            ets:new(get_cache_name(Partition, Name),
-                [set, protected, named_table, ?TABLE_CONCURRENCY]);
-        _ ->
-            %% Other vnode hasn't finished closing tables
-            lager:debug("Unable to open ets table in materializer vnode, retrying"),
-            timer:sleep(100),
-            try
-                ets:delete(get_cache_name(Partition, Name))
-            catch
-                _:_Reason->
-                    ok
-            end,
-            open_table(Partition, Name)
-    end.
 
 %% @doc The tables holding the updates and snapshots are shared with concurrent non-blocking
 %%      readers.
@@ -319,6 +271,59 @@ terminate(_Reason, _State=#mat_state{ops_cache=OpsCache, snapshot_cache=Snapshot
 
 
 %%---------------- Internal Functions -------------------%%
+
+-spec load_from_log_to_tables(partition_id(), #mat_state{}) -> ok | {error, reason()}.
+load_from_log_to_tables(Partition, State) ->
+    LogId = [Partition],
+    Node = {Partition, log_utilities:get_my_node(Partition)},
+    loop_until_loaded(Node, LogId, start, dict:new(), State).
+
+-spec loop_until_loaded({partition_id(), node()},
+            log_id(),
+            start | disk_log:continuation(),
+            dict:dict(txid(), [any_log_payload()]),
+            #mat_state{}) ->
+                   ok | {error, reason()}.
+loop_until_loaded(Node, LogId, Continuation, Ops, State) ->
+    case logging_vnode:get_all(Node, LogId, Continuation, Ops) of
+        {error, Reason} ->
+            {error, Reason};
+        {NewContinuation, NewOps, OpsDict} ->
+            load_ops(OpsDict, State),
+            loop_until_loaded(Node, LogId, NewContinuation, NewOps, State);
+        {eof, OpsDict} ->
+            load_ops(OpsDict, State),
+            ok
+    end.
+
+-spec load_ops(dict:dict(key(), [{non_neg_integer(), clocksi_payload()}]), #mat_state{}) -> true.
+load_ops(OpsDict, State) ->
+    dict:fold(fun(Key, CommittedOps, _Acc) ->
+                  lists:foreach(fun({_OpId, Op}) ->
+                                    #clocksi_payload{key = Key} = Op,
+                                    op_insert_gc(Key, Op, State)
+                                end, CommittedOps)
+              end, true, OpsDict).
+
+-spec open_table(partition_id(), 'ops_cache' | 'snapshot_cache') -> atom() | ets:tid().
+open_table(Partition, Name) ->
+    case ets:info(get_cache_name(Partition, Name)) of
+        undefined ->
+            ets:new(get_cache_name(Partition, Name),
+                [set, protected, named_table, ?TABLE_CONCURRENCY]);
+        _ ->
+            %% Other vnode hasn't finished closing tables
+            lager:debug("Unable to open ets table in materializer vnode, retrying"),
+            timer:sleep(100),
+            try
+                ets:delete(get_cache_name(Partition, Name))
+            catch
+                _:_Reason->
+                    ok
+            end,
+            open_table(Partition, Name)
+    end.
+
 
 -spec internal_store_ss(key(), #materialized_snapshot{}, snapshot_time(), boolean(), #mat_state{}) -> boolean().
 internal_store_ss(Key, Snapshot = #materialized_snapshot{last_op_id = NewOpId}, CommitTime, ShouldGc, State = #mat_state{snapshot_cache=SnapshotCache}) ->
@@ -625,7 +630,7 @@ check_filter(Fun, Id, Last, NewId, Tuple, NewSize, NewOps) ->
 %% the tuple.
 -spec deconstruct_opscache_entry(tuple()) -> 
     {key(), non_neg_integer(), non_neg_integer(), non_neg_integer(), [op_and_id()] | tuple()}.
-deconstruct_opscache_entry({Key, {Length, ListLen}, OpId, CachedOps}) ->
+deconstruct_opscache_entry(Tuple) ->
     Key = element(1, Tuple),
     {Length, ListLen} = element(2, Tuple),
     OpId = element(3, Tuple),
