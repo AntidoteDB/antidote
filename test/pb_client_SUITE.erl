@@ -505,6 +505,24 @@ crdt_map_rr_test(_Config) ->
   _Disconnected = antidotec_pb_socket:stop(Pid1).
 
 
+crdt_flag_tests(Config) ->
+    [crdt_flag_test(Config, FlagCrdt) || FlagCrdt <- [antidote_crdt_flag_ew, antidote_crdt_flag_dw]].
+
+crdt_flag_test(_Config, FlagCrdt) ->
+  FlagCrdtBin = erlang:atom_to_binary(FlagCrdt),
+  Key = <<"pb_client_SUITE_", FlagCrdtBin/binary>>,
+  {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+  Bound_object = {Key, FlagCrdt, <<"bucket">>},
+  {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, enable, {}}], Tx1),
+  {ok, [Val1]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, disable, {}}], Tx1),
+  {ok, [Val2]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx1),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, reset, {}}], Tx1),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+  ?assertEqual(true, Val1),
+  ?assertEqual(false, Val2),
+  _Disconnected = antidotec_pb_socket:stop(Pid1).
 
 static_transaction_test(_Config) ->
     Key = <<"pb_client_SUITE_static_transaction_test">>,
