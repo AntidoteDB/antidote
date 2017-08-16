@@ -87,19 +87,8 @@ read(Key, Type, SnapshotTime, TxId, PropertyList, Partition) ->
     OpsCache = get_cache_name(Partition, ops_cache),
     SnapshotCache = get_cache_name(Partition, snapshot_cache),
 
-    case ets:info(OpsCache) of
-        undefined ->
-            riak_core_vnode_master:sync_command(
-                {Partition, node()},
-                {read, Key, Type, SnapshotTime, TxId, PropertyList},
-                materializer_vnode_master,
-                infinity
-            );
-
-        _ ->
-            State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
-            internal_read(Key, Type, SnapshotTime, TxId, PropertyList, false, State)
-    end.
+    State = #state{ops_cache=OpsCache, snapshot_cache=SnapshotCache, partition=Partition, is_ready=false},
+    internal_read(Key, Type, SnapshotTime, TxId, PropertyList, false, State).
 
 %%@doc write operation to cache for future read, updates are stored
 %%     one at a time into the ets tables
