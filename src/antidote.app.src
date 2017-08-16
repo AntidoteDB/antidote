@@ -15,7 +15,9 @@
                   riak_dt,
                   antidote_pb,
                   erlzmq,
-                  rand_compat
+                  rand_compat,
+                  runtime_tools,
+                  tools
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables
