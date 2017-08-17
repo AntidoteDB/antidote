@@ -422,13 +422,14 @@ get_from_snapshot_log(Key, Type, SnapshotTime) ->
 ) -> ok.
 
 store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, State) ->
-    case TxId of
-        ignore ->
-            internal_store_ss(Key, Snapshot, Time, ShouldGC, State),
-            ok;
-        _ ->
-            materializer_vnode:store_ss(Key, Snapshot, Time)
-    end.
+    %% AB: Why don't we need to synchronize through the gen_server if the TxId is ignore??
+     case TxId of
+         ignore ->
+             internal_store_ss(Key, Snapshot, Time, ShouldGC, State),
+             ok;
+         _ ->
+             materializer_vnode:store_ss(Key, Snapshot, Time)
+     end.
 
 %% @doc Given a snapshot from the cache, update it from the ops cache.
 -spec update_snapshot_from_cache(
@@ -538,7 +539,7 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #state{snapshot_cache = Snapshot
         true ->
             %% snapshots are no longer totally ordered
             PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
-            FirstOp=vector_orddict:last(PrunedSnapshots),
+            FirstOp = vector_orddict:last(PrunedSnapshots),
             {CT, _S} = FirstOp,
             CommitTime = lists:foldl(fun({CT1, _ST}, Acc) ->
                                          vectorclock:min([CT1, Acc])
@@ -550,12 +551,12 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #state{snapshot_cache = Snapshot
                     [Tuple] ->
                         deconstruct_opscache_entry(Tuple)
                 end,
-            {NewLength, PrunedOps}=prune_ops({Length, OpsDict}, CommitTime),
+            {NewLength, PrunedOps} = prune_ops({Length, OpsDict}, CommitTime),
             true = ets:insert(SnapshotCache, {Key, PrunedSnapshots}),
-        %% Check if the pruned ops are larger or smaller than the previous list size
-        %% if so create a larger or smaller list (by dividing or multiplying by 2)
-        %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
-        NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
+            %% Check if the pruned ops are larger or smaller than the previous list size
+            %% if so create a larger or smaller list (by dividing or multiplying by 2)
+            %% (Another option would be to shrink to a more "minimum" size, but need to test to see what is better)
+            NewListLen = case NewLength > ListLen - ?RESIZE_THRESHOLD of
                          true ->
                              ListLen * 2;
                          false ->
@@ -621,9 +622,11 @@ check_filter(Fun, Id, Last, NewId, Tuple, NewSize, NewOps) ->
             check_filter(Fun, Id+1, Last, NewId, Tuple, NewSize, NewOps)
     end.
 
-%% This is an internal function used to convert the tuple stored in ets
-%% to a tuple and list usable by the materializer
-%% Note that the ops are stored in the ets with the most recent op at the end of
+%% @doc Extract from the tuple stored in the operation cache 
+%% 1) the key, 2) length of the op list (stored in form of a tuple), 
+%% 3) sequence number of operation (used to trigger GC regularly), 
+%% 4) size of the tuple that contains the op list, 5) the tuple containing the op list
+%% Note that the ops in the tuple are stored in the ets with the most recent op at the end of
 %% the tuple.
 -spec deconstruct_opscache_entry(tuple()) ->
     {key(), non_neg_integer(), non_neg_integer(), non_neg_integer(), [op_and_id()] | tuple()}.
@@ -633,12 +636,10 @@ deconstruct_opscache_entry(Tuple) ->
     OpId = element(3, Tuple),
     {Key, Length, OpId, ListLen, Tuple}.
 
-%% @doc Insert an operation and start garbage collection triggered by writes.
-%% the mechanism is very simple; when there are more than OPS_THRESHOLD
-%% operations for a given key, just perform a read, that will trigger
-%% the GC mechanism.
+%% @doc Insert an operation and optionally start garbage collection triggered by writes.
 -spec op_insert_gc(key(), clocksi_payload(), #state{}) -> true.
-op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache})->
+op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache}) ->
+    %% Check whether there is an ops cache entry for the key
     case ets:member(OpsCache, Key) of
         false ->
             ets:insert(OpsCache, erlang:make_tuple(?FIRST_OP+?OPS_THRESHOLD, 0, [{1, Key}, {2, {0, ?OPS_THRESHOLD}}]));
@@ -648,16 +649,19 @@ op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache})->
     NewId = ets:update_counter(OpsCache, Key,
                                {3, 1}),
     {Length, ListLen} = ets:lookup_element(OpsCache, Key, 2),
-    %% Perform the GC incase the list is full, or every ?OPS_THRESHOLD operations (which ever comes first)
-    case ((Length)>=ListLen) or ((NewId rem ?OPS_THRESHOLD) == 0) of
+ 
+    %% Perform GC by triggering a read when there are more than OPS_THRESHOLD
+    %% operations for a given key or when the list is full 
+    case (Length >= ListLen) orelse ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
-            Type=DownstreamOp#clocksi_payload.type,
-            SnapshotTime=DownstreamOp#clocksi_payload.snapshot_time,
+            Type = DownstreamOp#clocksi_payload.type,
+            SnapshotTime = DownstreamOp#clocksi_payload.snapshot_time,
             %% Here is where the GC is done (with the 5th argument being "true", GC is performed by the internal read
             {_, _} = internal_read(Key, Type, SnapshotTime, ignore, [], true, State),
-            %% Have to get the new ops dict because the internal_read can change it
-            {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
-            true = ets:update_element(OpsCache, Key, [{Length1+?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1+1, ListLen1}}]);
+            %% Have to obtain again the list/tuple information because the internal_read can change it
+            {NewLength, NewListLen} = ets:lookup_element(OpsCache, Key, 2),
+            %% Insert the new op
+            true = ets:update_element(OpsCache, Key, [{NewLength+?FIRST_OP, {NewId, DownstreamOp}}, {2, {NewLength+1, NewListLen}}]);
         false ->
             true = ets:update_element(OpsCache, Key, [{Length+?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length+1, ListLen}}])
     end.
