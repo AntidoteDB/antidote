@@ -34,14 +34,15 @@
 -export([clocksi_test1/1,
          clocksi_test2/1,
          clocksi_test5/1,
+         clocksi_multiple_updates_per_txn_test/1,
          clocksi_test_read_wait/1,
          clocksi_test4/1,
          clocksi_test_read_time/1,
          clocksi_test_prepare/1,
          clocksi_single_key_update_read_test/1,
          clocksi_multiple_key_update_read_test/1,
-           clocksi_test_cert_property/1,
-           clocksi_test_no_update_property/1,
+         clocksi_test_cert_property/1,
+         clocksi_test_no_update_property/1,
          clocksi_test_certification_check/1,
          clocksi_multiple_test_certification_check/1,
          clocksi_multiple_read_update_test/1,
@@ -86,14 +87,15 @@ end_per_testcase(_, _) ->
 all() -> [clocksi_test1,
          clocksi_test2,
          clocksi_test5,
+         clocksi_multiple_updates_per_txn_test,
          clocksi_test_read_wait,
          clocksi_test4,
          clocksi_test_read_time,
          clocksi_test_prepare,
          clocksi_single_key_update_read_test,
          clocksi_multiple_key_update_read_test,
-           clocksi_test_cert_property,
-           clocksi_test_no_update_property,
+         clocksi_test_cert_property,
+         clocksi_test_no_update_property,
          clocksi_test_certification_check,
          clocksi_multiple_test_certification_check,
          clocksi_multiple_read_update_test,
@@ -140,6 +142,14 @@ update_counters(Node, Keys, IncValues, Clock, TxId) ->
             ok
     end.
 
+update_sets(Node, Keys, Ops, TxId) ->
+    Updates = lists:map(fun({Key, {Op, Param}}) ->
+                                {{Key, antidote_crdt_orset, ?BUCKET}, Op, Param}
+                        end,
+                        lists:zip(Keys, Ops)
+                       ),
+    ok = rpc:call(Node, antidote, update_objects, [Updates, TxId]),
+    ok.
 
 %% @doc The following function tests that ClockSI can run a non-interactive tx
 %%      that updates multiple partitions.
@@ -263,7 +273,7 @@ spawn_com(FirstNode, TxId) ->
 
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
-%%      that updates only one partition. This type of txs use a only-one phase
+%%      that updates only one partition. This type of txs use an only-one phase
 %%      commit.
 clocksi_test5(Config) ->
     Nodes = proplists:get_value(nodes, Config),
@@ -272,23 +282,52 @@ clocksi_test5(Config) ->
     Key1=clocksi_test5_key1,
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_orset, [], ignore, TxId),
 
-    update_counters(FirstNode, [Key1], [1], ignore, TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 1, ignore, TxId),
+    update_sets(FirstNode, [Key1], [{add, a}], TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_orset,[a], ignore, TxId),
 
-    update_counters(FirstNode, [Key1], [1], ignore, TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 2, ignore, TxId),
+    update_sets(FirstNode, [Key1], [{add,b}], TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_orset, [a,b], ignore, TxId),
 
-    update_counters(FirstNode, [Key1], [1], ignore, TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 3, ignore, TxId),
+    update_sets(FirstNode, [Key1], [{remove,a}], TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_orset, [b], ignore, TxId),
 
     End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
     ?assertMatch({ok, _CausalSnapshot}, End),
     {ok, CausalSnapshot} = End,
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 3, CausalSnapshot, static),
-
+    check_read_key(FirstNode, Key1, antidote_crdt_orset, [b], CausalSnapshot, static),
     lager:info("Test5 passed"),
+    pass.
+
+%% @doc The following function tests an interactive tx.
+%%      that executes multiple updates on same key and check the reads include
+%%      updates in correct order.
+clocksi_multiple_updates_per_txn_test(Config) ->
+    Nodes = proplists:get_value(nodes, Config),
+    FirstNode = hd(Nodes),
+    lager:info("Test6 started"),
+    Key1=clocksi_multiple_updates_per_txn_key1,
+    BoundObj = {Key1, antidote_crdt_mvreg, ?BUCKET},
+
+    {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
+    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [], ignore, TxId),
+
+    ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"a">>}], TxId]),
+    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"a">>], ignore, TxId),
+
+    ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"b">>}], TxId]),
+    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"b">>], ignore, TxId),
+
+    ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"c">>}], TxId]),
+    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"c">>], ignore, TxId),
+
+    End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
+    ?assertMatch({ok, _CausalSnapshot}, End),
+    {ok, CausalSnapshot} = End,
+    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"c">>], CausalSnapshot, static),
+
+    lager:info("Test6 passed"),
     pass.
 
 %% @doc The following function tests that ClockSI can run both a single
