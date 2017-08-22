@@ -285,12 +285,12 @@ clocksi_test5(Config) ->
     check_read_key(FirstNode, Key1, antidote_crdt_orset, [], ignore, TxId),
 
     update_sets(FirstNode, [Key1], [{add, a}], TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_orset,[a], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_orset, [a], ignore, TxId),
 
-    update_sets(FirstNode, [Key1], [{add,b}], TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_orset, [a,b], ignore, TxId),
+    update_sets(FirstNode, [Key1], [{add, b}], TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_orset, [a, b], ignore, TxId),
 
-    update_sets(FirstNode, [Key1], [{remove,a}], TxId),
+    update_sets(FirstNode, [Key1], [{remove, a}], TxId),
     check_read_key(FirstNode, Key1, antidote_crdt_orset, [b], ignore, TxId),
 
     End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
