@@ -38,7 +38,8 @@
          gt/2,
          lt/2,
          max/1,
-         min/1]).
+         min/1,
+         conc/2]).
 
 -export_type([vectorclock/0]).
 
@@ -113,6 +114,9 @@ gt(V1, V2) -> ge(V1, V2) and (not eq(V1, V2)).
 -spec lt(vectorclock(), vectorclock()) -> boolean().
 lt(V1, V2) -> le(V1, V2) and (not eq(V1, V2)).
 
+-spec conc(vectorclock(), vectorclock()) -> boolean().
+conc(V1, V2) -> (not ge(V1, V2)) andalso (not le(V1, V2)).
+
 -ifdef(TEST).
 
 vectorclock_test() ->
@@ -166,4 +170,15 @@ vectorclock_min_test() ->
   ?assertEqual(eq(min([V1, V2, V3]), Expected123), true),
   ?assertEqual(eq(min([V1, V2, V3]), Unexpected123), false).
 
+vectorclock_conc_test() ->
+  V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
+  V2 = vectorclock:from_list([{1, 6}, {2, 3}]),
+  V3 = vectorclock:from_list([{1, 3}, {3, 2}]),
+  V4 = vectorclock:from_list([{1, 6}, {3, 3}]),
+  V5 = vectorclock:from_list([{1, 6}]),
+ 
+  ?assertEqual(conc(V1, V2), true),
+  ?assertEqual(conc(V2, V3), true),
+  ?assertEqual(conc(V3, V4), false),
+  ?assertEqual(conc(V5, V4), false).
 -endif.

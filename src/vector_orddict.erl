@@ -46,7 +46,8 @@
   from_list/1,
   first/1,
   last/1,
-  filter/2]).
+  filter/2,
+  is_concurrent_with_any/2]).
 
 
 -spec new() -> {[], 0}.
@@ -134,6 +135,11 @@ insert_bigger_internal(Vector, Val, [{FirstClock, FirstVal}|Rest], Size) ->
 sublist({List, _Size}, Start, Len) ->
   Res = lists:sublist(List, Start, Len),
   {Res, length(Res)}.
+
+%% @doc Returns true if the vectorclock is concurrent with at least one of the entries in the vector orddict.
+-spec is_concurrent_with_any(vector_orddict(), vectorclock()) -> boolean().
+is_concurrent_with_any({List,_Size}, OtherClock) ->
+  lists:any(fun({Clock, _Val}) -> vectorclock:conc(Clock, OtherClock) end, List).
 
 %% @doc Returns size of the vector orddict.
 -spec size(vector_orddict()) -> non_neg_integer().
@@ -239,4 +245,16 @@ vector_orddict_filter_test() ->
   ],
   ?assertEqual(Filtered, vector_orddict:to_list(Result)).
 
+vector_orddict_conc_test() ->
+  VDict = vector_orddict:from_list([
+    {vectorclock:from_list([{dc1, 4}, {dc2, 4}]), snapshot_1},
+    {vectorclock:from_list([{dc1, 0}, {dc2, 3}]), snapshot_2},
+    {vectorclock:new(), snapshot_3}
+  ]),
+  CT1 = vectorclock:from_list([{dc1, 3}, {dc2, 3}]),
+  CT2 = vectorclock:from_list([{dc1, 2}, {dc2, 1}]),
+  
+  ?assertEqual(is_concurrent_with_any(VDict, CT1), false),
+  ?assertEqual(is_concurrent_with_any(VDict, CT2), true).
+  
 -endif.
