@@ -12,7 +12,6 @@
                   riak_core,
                   antidote_crdt,
                   cuttlefish,
-                  riak_dt,
                   antidote_pb,
                   erlzmq,
                   rand_compat,

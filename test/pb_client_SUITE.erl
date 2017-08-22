@@ -44,7 +44,7 @@
   update_set_read_test/1,
   static_transaction_test/1,
   crdt_integer_test/1,
-  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1, crdt_map_rr_test/1]).
+  update_reg_test/1, crdt_mvreg_test/1, crdt_set_rw_test/1, crdt_map_aw_test/1, crdt_gmap_test/1, crdt_map_rr_test/1, crdt_flag_tests/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -88,7 +88,8 @@ all() -> [start_stop_test,
         crdt_gmap_test,
         crdt_map_aw_test,
         update_reg_test,
-        crdt_map_rr_test].
+        crdt_map_rr_test,
+        crdt_flag_tests].
 
 start_stop_test(_Config) ->
     lager:info("Verifying pb connection..."),
@@ -505,6 +506,27 @@ crdt_map_rr_test(_Config) ->
   _Disconnected = antidotec_pb_socket:stop(Pid1).
 
 
+crdt_flag_tests(Config) ->
+    [crdt_flag_test(Config, FlagCrdt) || FlagCrdt <- [antidote_crdt_flag_ew, antidote_crdt_flag_dw]].
+
+crdt_flag_test(_Config, FlagCrdt) ->
+  FlagCrdtBin = erlang:atom_to_binary(FlagCrdt, utf8),
+  Key = <<"pb_client_SUITE_", FlagCrdtBin/binary>>,
+  {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
+  Bound_object = {Key, FlagCrdt, <<"bucket">>},
+  {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  io:format("Bound_object = ~p~n", [Bound_object]),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, enable, {}}], Tx1),
+  {ok, [Val1]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx1),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
+  {ok, Tx2} = antidotec_pb:start_transaction(Pid1, ignore, {}),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, disable, {}}], Tx2),
+  {ok, [Val2]} = antidotec_pb:read_values(Pid1, [Bound_object], Tx2),
+  ok = antidotec_pb:update_objects(Pid1, [{Bound_object, reset, {}}], Tx2),
+  {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx2),
+  ?assertEqual({flag, true}, Val1),
+  ?assertEqual({flag, false}, Val2),
+  _Disconnected = antidotec_pb_socket:stop(Pid1).
 
 static_transaction_test(_Config) ->
     Key = <<"pb_client_SUITE_static_transaction_test">>,
