@@ -42,10 +42,9 @@ main(_A) ->
     Keys = [DC1, DC2, DC3, DC4],
     VersionMatrix = get_version_matrix(Keys),
     KVector = get_k_vector(VersionMatrix),
+
     %% Expected results:
     %% Version Matrix:
-
-
     ExpectedVM = [{{antidote_4, {1590, 184597, 573977}}, [12, 12, 3, 4]},
         {{antidote_3, {1490, 186159, 768617}}, [4, 0, 0, 2]},
         {{antidote_2, {1390, 186897, 698677}}, [5, 0, 4, 5]},
@@ -59,9 +58,9 @@ main(_A) ->
 
 
     ?assertEqual(ExpectedVM, VersionMatrix),
-    %lager:info("Version matrix test passed!"),
+    lager:info("Version matrix test passed!"),
     ?assertEqual(ExpectedKVect, KVector),
-    %lager:info("k-vector test passed!"),
+    lager:info("k-vector test passed!"),
 
 %% K-Vector (K=3): [1,4,0,4]
 %% K-Vector (K=2): [1,5,2,12]
@@ -73,6 +72,7 @@ main(_A) ->
 
 
 %% Collects values for "Dc"
+%%
 get_dc_vals(_, [], Acc) ->
     Acc;
 get_dc_vals(Dc, [{_, Dico} | T], Acc) ->
