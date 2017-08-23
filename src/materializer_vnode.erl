@@ -111,7 +111,7 @@ init([Partition]) ->
     SnapshotCache = open_table(Partition, snapshot_cache),
     IsReady = case application:get_env(antidote, recover_from_log) of
                 {ok, true} ->
-                    lager:debug("Checking for logs to init materializer ~p", [Partition]),
+                    lager:debug("Trying to recover the materializer from log ~p", [Partition]),
                     riak_core_vnode:send_command_after(?LOG_STARTUP_WAIT, load_from_log),
                     false;
                 _ ->
@@ -315,7 +315,7 @@ open_table(Partition, Name) ->
             try
                 ets:delete(get_cache_name(Partition, Name))
             catch
-                _:_Reason->
+                _:_Reason ->
                     ok
             end,
             open_table(Partition, Name)
@@ -363,18 +363,12 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) 
 %%
 %%      If there's no in-memory suitable snapshot, it will fetch it from the replication log.
 %%
--spec get_from_snapshot_cache(
-    TxId :: txid() | ignore,
-    Key :: key(),
-    Type :: type(),
-    MinSnaphsotTime :: snapshot_time(),
-    State :: #state{}
-) -> #snapshot_get_response{}.
+-spec get_from_snapshot_cache(txid() | ignore, key(), type(), snapshot_time(), #state{}) -> #snapshot_get_response{}.
 
 get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
-    ops_cache=OpsCache,
-    snapshot_cache=SnapshotCache
-}) ->
+            ops_cache=OpsCache,
+            snapshot_cache=SnapshotCache
+        }) ->
     case ets:lookup(SnapshotCache, Key) of
         [] ->
             EmptySnapshot = #materialized_snapshot{
@@ -412,15 +406,7 @@ get_from_snapshot_log(Key, Type, SnapshotTime) ->
 %%
 %%      If `ShouldGC` is true, it will try to prune the in-memory cache before inserting.
 %%
--spec store_snapshot(
-    TxId :: txid() | ignore,
-    Key :: key(),
-    Snapshot :: #materialized_snapshot{},
-    Time :: snapshot_time(),
-    ShouldGC :: boolean(),
-    State :: #state{}
-) -> ok.
-
+-spec store_snapshot(txid() | ignore, key(), #materialized_snapshot{}, snapshot_time(), boolean(), #state{}) -> ok.
 store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, State) ->
     %% AB: Why don't we need to synchronize through the gen_server if the TxId is ignore??
      case TxId of
@@ -432,11 +418,8 @@ store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, State) ->
      end.
 
 %% @doc Given a snapshot from the cache, update it from the ops cache.
--spec update_snapshot_from_cache(
-    {{snapshot_time() | ignore, #materialized_snapshot{}}, boolean()},
-    key(),
-    cache_id()
-) -> #snapshot_get_response{}.
+-spec update_snapshot_from_cache({{snapshot_time() | ignore, #materialized_snapshot{}}, boolean()}, key(), cache_id()) 
+    -> #snapshot_get_response{}.
 
 update_snapshot_from_cache(SnapshotResponse, Key, OpsCache) ->
     {{SnapshotCommitTime, LatestSnapshot}, IsFirst} = SnapshotResponse,
@@ -464,25 +447,18 @@ fetch_updates_from_cache(OpsCache, Key) ->
             {CachedOps, Length}
     end.
 
--spec materialize_snapshot(
-    txid() | ignore,
-    key(),
-    type(),
-    snapshot_time(),
-    boolean(),
-    #state{},
-    #snapshot_get_response{}
-) -> {ok, snapshot_time()} | {error, reason()}.
+-spec materialize_snapshot(txid() | ignore, key(), type(), snapshot_time(), boolean(), #state{}, #snapshot_get_response{}) 
+    -> {ok, snapshot_time()} | {error, reason()}.
 
 materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _State, #snapshot_get_response{
-    number_of_ops=0,
-    materialized_snapshot=Snapshot
-}) ->
+            number_of_ops=0,
+            materialized_snapshot=Snapshot
+        }) ->
     {ok, Snapshot#materialized_snapshot.value};
 
 materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotResponse = #snapshot_get_response{
-    is_newest_snapshot=IsNewest
-}) ->
+            is_newest_snapshot=IsNewest
+        }) ->
     case clocksi_materializer:materialize(Type, TxId, SnapshotTime, SnapshotResponse) of
         {error, Reason} ->
             {error, Reason};
@@ -494,7 +470,6 @@ materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotRes
             case CommitTime of
                 ignore ->
                     {ok, MaterializedSnapshot};
-
                 _ ->
                     %% Check if we need to refresh the cache
                     SufficientOps = OpsAdded >= ?MIN_OP_STORE_SS,
@@ -646,8 +621,7 @@ op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache}) ->
         true ->
             ok
     end,
-    NewId = ets:update_counter(OpsCache, Key,
-                               {3, 1}),
+    NewId = ets:update_counter(OpsCache, Key, {3, 1}),
     {Length, ListLen} = ets:lookup_element(OpsCache, Key, 2),
  
     %% Perform GC by triggering a read when there are more than OPS_THRESHOLD
@@ -751,13 +725,13 @@ gc_test() ->
     op_insert_gc(Key, generate_payload(16, 121, Res1, a12), State),
 
     %% Trigger the clean
-    {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1, 102}]), ignore, [], false, State),
+    {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1, 102}]), ignore, [], true, State),
     ?assertEqual(10, Type:value(Res10)),
 
     op_insert_gc(Key, generate_payload(102, 131, Res9, a13), State),
 
     %% Be sure you didn't loose any updates
-    {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, [], false, State),
+    {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, [], true, State),
     ?assertEqual(13, Type:value(Res13)).
 
 %% @doc This tests to make sure operation lists can be large and resized
