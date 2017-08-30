@@ -53,7 +53,8 @@
     get_k_vector/0,
     generate_name/1,
     code_change/3,
-    terminate/2
+    terminate/2,
+    matrices_eq/2
 ]).
 
 %% Definitions
@@ -65,7 +66,7 @@
 -define(KSTABILITY_TABLE_NAME, k_stability_table).
 -define(KSTABILITY_TABLE_CONCURRENCY,
     {read_concurrency, false}, {write_concurrency, false}).
--define(KSTABILITY_REPL_FACTOR, 2). % 2 DCs total will store updates,
+-define(KSTABILITY_REPL_FACTOR, 3). % 2 DCs total will store updates,
 
 
 %% ===================================================================
@@ -173,12 +174,12 @@ build_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
         [], VerM).
 
 
--spec get_k_vector() -> [tuple()] | {error, matrix_size}.
+-spec get_k_vector() -> [vectorclock()] | {error, matrix_size}.
 get_k_vector() ->
     DCs = get_dc_ids(),
     VerM = get_version_matrix(DCs),
     KVect = build_kvector(VerM),
-    KVect.
+    lists:sort(KVect).
 
 -spec get_dc_ids() -> [dcid()].
 get_dc_ids() ->
@@ -197,3 +198,87 @@ code_change(_OldVsn, State, _Extra) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
+% Helper function for tests
+% Two Version Matrices equal == every element from VM1 is present
+% in VM2, and every element from VM2 is present in VM1.
+matrices_eq([], []) ->
+    true;
+matrices_eq([_], []) ->
+    false;
+matrices_eq([], [_]) ->
+    false;
+matrices_eq([H1 | M1], [H2 | M2]) ->
+    {_, L1} = H1,
+    {_, L2} = H2,
+    case lists:sort(L1) =:= lists:sort(L2) of
+        true -> matrices_eq(M1, M2);
+        _ -> false
+    end.
+
+% Unit tests
+-ifdef(TEST).
+
+-define(TAB, kstab_tab).
+
+get_k_vector_test() ->
+    ets:new(?KSTABILITY_TABLE_NAME, [set, named_table]),
+    DC1 = {'antidote_1', {1501, 537303, 598423}},
+    DC2 = {'antidote_2', {1390, 186897, 698677}},
+    DC3 = {'antidote_3', {1490, 186159, 768617}},
+    DC4 = {'antidote_4', {1590, 184597, 573977}},
+    ListVC_DC1 = [{DC1, 1}, {DC2, 4}, {DC3, 0}, {DC4, 3}],
+    ListVC_DC2 = [{DC1, 1}, {DC2, 5}, {DC3, 2}, {DC4, 4}],
+    ListVC_DC3 = [{DC1, 0}, {DC2, 5}, {DC3, 4}, {DC4, 12}],
+    ListVC_DC4 = [{DC1, 1}, {DC2, 0}, {DC3, 0}, {DC4, 12}],
+    DC1_VC = vectorclock:from_list(ListVC_DC1),
+    DC2_VC = vectorclock:from_list(ListVC_DC2),
+    DC3_VC = vectorclock:from_list(ListVC_DC3),
+    DC4_VC = vectorclock:from_list(ListVC_DC4),
+
+    % DC IDs are unique
+    ets:insert(?KSTABILITY_TABLE_NAME, {DC1, DC1_VC}),
+    ets:insert(?KSTABILITY_TABLE_NAME, {DC2, DC2_VC}),
+    ets:insert(?KSTABILITY_TABLE_NAME, {DC3, DC3_VC}),
+    ets:insert(?KSTABILITY_TABLE_NAME, {DC4, DC4_VC}),
+
+    %Keys = [DC1, DC2, DC3, DC4],
+    %VersionMatrix = get_version_matrix(Keys),
+    KVector = get_k_vector(),
+    ExpectedKVect = [{{antidote_1, {1501, 537303, 598423}}, 1},
+        {{antidote_2, {1390, 186897, 698677}}, 4},
+        {{antidote_3, {1490, 186159, 768617}}, 0},
+        {{antidote_4, {1590, 184597, 573977}}, 4}],
+    ?assertEqual(ExpectedKVect, KVector).
+
+
+get_version_matrix_test() ->
+    ets:new(?TAB, [set, named_table]),
+    DC1 = {'antidote_1', {1501, 537303, 598423}},
+    DC2 = {'antidote_2', {1390, 186897, 698677}},
+    DC3 = {'antidote_3', {1490, 186159, 768617}},
+    DC4 = {'antidote_4', {1590, 184597, 573977}},
+    ListVC_DC1 = [{DC1, 1}, {DC2, 4}, {DC3, 0}, {DC4, 3}],
+    ListVC_DC2 = [{DC1, 1}, {DC2, 5}, {DC3, 2}, {DC4, 4}],
+    ListVC_DC3 = [{DC1, 0}, {DC2, 5}, {DC3, 4}, {DC4, 12}],
+    ListVC_DC4 = [{DC1, 1}, {DC2, 0}, {DC3, 0}, {DC4, 12}],
+    DC1_VC = vectorclock:from_list(ListVC_DC1),
+    DC2_VC = vectorclock:from_list(ListVC_DC2),
+    DC3_VC = vectorclock:from_list(ListVC_DC3),
+    DC4_VC = vectorclock:from_list(ListVC_DC4),
+
+    % DC IDs are unique
+    ets:insert(?TAB, {DC1, DC1_VC}),
+    ets:insert(?TAB, {DC2, DC2_VC}),
+    ets:insert(?TAB, {DC3, DC3_VC}),
+    ets:insert(?TAB, {DC4, DC4_VC}),
+
+    Keys = [DC1, DC2, DC3, DC4],
+    VersionMatrix = get_version_matrix(Keys),
+
+    ExpectedVM = [{{antidote_4, {1590, 184597, 573977}}, [3, 4, 12, 12]},
+        {{antidote_3, {1490, 186159, 768617}}, [0, 2, 4, 0]},
+        {{antidote_2, {1390, 186897, 698677}}, [4, 5, 5, 0]},
+        {{antidote_1, {1501, 537303, 598423}}, [1, 1, 0, 1]}],
+    ?assertEqual(matrices_eq(ExpectedVM, VersionMatrix), true).
+
+-endif.
