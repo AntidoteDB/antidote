@@ -37,8 +37,7 @@
 -export([
     get_k_vector_test/1,
     get_version_matrix_test/1,
-    get_dc_vals_test/1,
-    get_k_vector_test/1
+    get_dc_vals_test/1
 ]).
 
 
@@ -47,10 +46,10 @@
 -define(DC2, {'antidote_2', {1390, 186897, 698677}}).
 -define(DC3, {'antidote_3', {1490, 186159, 768617}}).
 -define(DC4, {'antidote_4', {1590, 184597, 573977}}).
--define(ListVC_DC1, [{DC1, 1}, {DC2, 4}, {DC3, 0}, {DC4, 3}]).
--define(ListVC_DC2, [{DC1, 1}, {DC2, 5}, {DC3, 2}, {DC4, 4}]).
--define(ListVC_DC3, [{DC1, 0}, {DC2, 5}, {DC3, 4}, {DC4, 12}]).
--define(ListVC_DC4, [{DC1, 1}, {DC2, 0}, {DC3, 0}, {DC4, 12}]).
+-define(LISTVC_DC1, [{?DC1, 1}, {?DC2, 4}, {?DC3, 0}, {?DC4, 3}]).
+-define(LISTVC_DC2, [{?DC1, 1}, {?DC2, 5}, {?DC3, 2}, {?DC4, 4}]).
+-define(LISTVC_DC3, [{?DC1, 0}, {?DC2, 5}, {?DC3, 4}, {?DC4, 12}]).
+-define(LISTVC_DC4, [{?DC1, 1}, {?DC2, 0}, {?DC3, 0}, {?DC4, 12}]).
 
 
 init_per_suite(Config) ->
@@ -66,22 +65,8 @@ init_per_suite(Config) ->
     %Check that indeed clocksi is running
     {ok, clocksi} = rpc:call(hd(hd(Clusters)), application, get_env, [antidote, txn_prot]),
     TheNode = hd(hd(Clusters)),
-        rpc:call(TheNode, ets, new, [(?TAB, [set, named_table]]),
 
-
-    DC1_VC = rpc:call(TheNode, vectorclock, from_list, [?ListVC_DC1]),
-    DC2_VC = rpc:call(TheNode, vectorclock, from_list, [?ListVC_DC2]),
-    DC3_VC = rpc:call(TheNode, vectorclock, from_list, [?ListVC_DC3]),
-    DC4_VC = rpc:call(TheNode, vectorclock, from_list, [?ListVC_DC4]),
-
-    % DC IDs are unique
-    ets:insert(?TAB, {?DC1, DC1_VC}),
-    ets:insert(?TAB, {?DC2, DC2_VC}),
-    ets:insert(?TAB, {?DC3, DC3_VC}),
-    ets:insert(?TAB, {?DC4, DC4_VC}),
-
-    Keys = [?DC1, ?DC2, ?DC3, ?DC4],
-
+    rpc:call(TheNode, ets, new, [?TAB, [set, named_table]]),
     [{clusters, Clusters} | Config].
 
 end_per_suite(Config) ->
@@ -101,20 +86,20 @@ all() -> [get_k_vector_test,
 
 get_dc_vals_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
-    [Node | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
+    [_Node | _Nodes] = [hd(Cluster) || Cluster <- Clusters],
 
     lager:info("get_dc_vals test passed!"),
     pass.
 
 get_version_matrix_test(Config) ->
     lager:info("Build VersionMatrix test passed!"),
-    Clusters = proplists:get_value(clusters, Config),
+    _Clusters = proplists:get_value(clusters, Config),
 
     pass.
 
 get_k_vector_test(Config) ->
     lager:info("Build K-Vector test passed!"),
-    Clusters = proplists:get_value(clusters, Config),
+    _Clusters = proplists:get_value(clusters, Config),
 
     pass.
 
