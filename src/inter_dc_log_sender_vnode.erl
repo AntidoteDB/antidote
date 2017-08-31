@@ -31,34 +31,34 @@
 
 %% API
 -export([
-     send/2,
-     update_last_log_id/2,
-     start_timer/1,
-     send_stable_time/2]).
+    send/2,
+    update_last_log_id/2,
+    start_timer/1,
+    send_stable_time/2]).
 
 %% VNode methods
 -export([
-  init/1,
-  start_vnode/1,
-  handle_command/3,
-  handle_coverage/4,
-  handle_exit/3,
-  handoff_starting/2,
-  handoff_cancelled/1,
-  handoff_finished/2,
-  handle_handoff_command/3,
-  handle_handoff_data/2,
-  encode_handoff_item/2,
-  is_empty/1,
-  terminate/2,
-  delete/1]).
+    init/1,
+    start_vnode/1,
+    handle_command/3,
+    handle_coverage/4,
+    handle_exit/3,
+    handoff_starting/2,
+    handoff_cancelled/1,
+    handoff_finished/2,
+    handle_handoff_command/3,
+    handle_handoff_data/2,
+    encode_handoff_item/2,
+    is_empty/1,
+    terminate/2,
+    delete/1]).
 
 %% Vnode state
 -record(state, {
-  partition :: partition_id(),
-  buffer, %% log_tx_assembler:state
-  last_log_id :: #op_number{},
-  timer :: any()
+    partition :: partition_id(),
+    buffer, %% log_tx_assembler:state
+    last_log_id :: #op_number{},
+    timer :: any()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -89,12 +89,12 @@ send_stable_time(Partition, Time) ->
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-  {ok, #state{
-    partition = Partition,
-    buffer = log_txn_assembler:new_state(),
-    last_log_id = #op_number{},
-    timer = none
-  }}.
+    {ok, #state{
+        partition = Partition,
+        buffer = log_txn_assembler:new_state(),
+        last_log_id = #op_number{},
+        timer = none
+    }}.
 
 %% Start the timer
 handle_command({start_timer}, _Sender, State) ->
@@ -107,25 +107,25 @@ handle_command({update_last_log_id, OpId}, _Sender, State = #state{partition = P
 %% Handle the new operation
 %% -spec handle_command({log_event, #log_record{}}, pid(), #state{}) -> {noreply, #state{}}.
 handle_command({log_event, LogRecord}, _Sender, State) ->
-  %% Use the txn_assembler to check if the complete transaction was collected.
-  {Result, NewBufState} = log_txn_assembler:process(LogRecord, State#state.buffer),
-  State1 = State#state{buffer = NewBufState},
-  State2 = case Result of
-    %% If the transaction was collected
-    {ok, Ops} ->
-      Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
-      broadcast(State1, Txn);
-    %% If the transaction is not yet complete
-    none -> State1
-  end,
-  {noreply, State2};
+    %% Use the txn_assembler to check if the complete transaction was collected.
+    {Result, NewBufState} = log_txn_assembler:process(LogRecord, State#state.buffer),
+    State1 = State#state{buffer = NewBufState},
+    State2 = case Result of
+                 %% If the transaction was collected
+                 {ok, Ops} ->
+                     Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
+                     broadcast(State1, Txn);
+                 %% If the transaction is not yet complete
+                 none -> State1
+             end,
+    {noreply, State2};
 
 handle_command({stable_time, Time}, _Sender, State) ->
     PingTxn = inter_dc_txn:ping(State#state.partition, State#state.last_log_id, Time),
     {noreply, set_timer(broadcast(State, PingTxn))};
 
 handle_command({hello}, _Sender, State) ->
-  {reply, ok, State};
+    {reply, ok, State};
 
 %% Handle the ping request, managed by the timer (1s by default)
 handle_command(ping, _Sender, State) ->
@@ -154,7 +154,7 @@ delete(State) ->
     {ok, State}.
 terminate(_Reason, State) ->
     _ = del_timer(State),
-  ok.
+    ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -162,8 +162,8 @@ terminate(_Reason, State) ->
 -spec del_timer(#state{}) -> #state{}.
 del_timer(State = #state{timer = none}) -> State;
 del_timer(State = #state{timer = Timer}) ->
-  _ = erlang:cancel_timer(Timer),
-  State#state{timer = none}.
+    _ = erlang:cancel_timer(Timer),
+    State#state{timer = none}.
 
 %% Cancels the previous ping timer and sets a new one.
 -spec set_timer(#state{}) -> #state{}.
@@ -193,9 +193,10 @@ set_timer(First, State = #state{partition = Partition}) ->
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.
 broadcast(State, Txn) ->
-  inter_dc_pub:broadcast(Txn),
-  Id = inter_dc_txn:last_log_opid(Txn),
-  State#state{last_log_id = Id}.
+    Tx = Txn#interdc_txn{gss = dc_utilities:get_my_dc_stable_clock()},
+    inter_dc_pub:broadcast(Tx),
+    Id = inter_dc_txn:last_log_opid(Tx),
+    State#state{last_log_id = Id}.
 
 %% @doc Sends an async request to get the smallest snapshot time of active transactions.
 %%      No new updates with smaller timestamp will occur in future.
