@@ -56,8 +56,12 @@
 
 %%%% API --------------------------------------------------------------------+
 
+%% Delivers the transaction to the k-stability module, and;
+%% delivers the transaction to corresponding partition
 -spec deliver_txn(#interdc_txn{}) -> ok.
-deliver_txn(Txn) -> call(Txn#interdc_txn.partition, {txn, Txn}).
+deliver_txn(Txn) ->
+    k_stable:deliver_tx(Txn),
+    call(Txn#interdc_txn.partition, {txn, Txn}).
 
 %% This function is called with the response from the log request operations request
 %% when some messages were lost
