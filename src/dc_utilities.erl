@@ -21,31 +21,32 @@
 -include("antidote.hrl").
 
 -export([
-  get_my_dc_id/0,
-  get_my_dc_nodes/0,
-  call_vnode_sync/3,
-  bcast_vnode_sync/2,
-  bcast_my_vnode_sync/2,
-  partition_to_indexnode/1,
-  call_vnode/3,
-  call_local_vnode/3,
-  call_local_vnode_sync/3,
-  get_all_partitions/0,
-  get_all_partitions_nodes/0,
-  bcast_vnode/2,
-  get_my_partitions/0,
-  ensure_all_vnodes_running/1,
-  ensure_local_vnodes_running_master/1,
-  ensure_all_vnodes_running_master/1,
-  get_partitions_num/0,
-  check_staleness/0,
-  check_registered/1,
-  get_scalar_stable_time/0,
-  get_partition_snapshot/1,
-  get_stable_snapshot/0,
-  check_registered_global/1,
-  now_microsec/0,
-  now_millisec/0]).
+    get_my_dc_id/0,
+    get_my_dc_nodes/0,
+    get_my_dc_stable_clock/0,
+    call_vnode_sync/3,
+    bcast_vnode_sync/2,
+    bcast_my_vnode_sync/2,
+    partition_to_indexnode/1,
+    call_vnode/3,
+    call_local_vnode/3,
+    call_local_vnode_sync/3,
+    get_all_partitions/0,
+    get_all_partitions_nodes/0,
+    bcast_vnode/2,
+    get_my_partitions/0,
+    ensure_all_vnodes_running/1,
+    ensure_local_vnodes_running_master/1,
+    ensure_all_vnodes_running_master/1,
+    get_partitions_num/0,
+    check_staleness/0,
+    check_registered/1,
+    get_scalar_stable_time/0,
+    get_partition_snapshot/1,
+    get_stable_snapshot/0,
+    check_registered_global/1,
+    now_microsec/0,
+    now_millisec/0]).
 
 %% Returns the ID of the current DC.
 %% This should not be called manually (it is only used the very
@@ -64,6 +65,14 @@ get_my_dc_id() ->
 get_my_dc_nodes() ->
     {ok, Ring} = riak_core_ring_manager:get_my_ring(),
     riak_core_ring:all_members(Ring).
+
+%% Returns the DCs global stable time (GSS as specified by Cure)
+-spec get_my_dc_stable_clock() -> vectorclock().
+get_my_dc_stable_clock() ->
+    DCID = dc_meta_data_utilities:get_my_dc_id(),
+    {ok, SS} = dc_utilities:get_stable_snapshot(),
+    Clock = vectorclock:get_clock_of_dc(DCID, SS),
+    {DCID, Clock}.
 
 %% Returns the IndexNode tuple used by riak_core_vnode_master:command functions.
 -spec partition_to_indexnode(partition_id()) -> {partition_id(), any()}.
@@ -108,8 +117,8 @@ get_all_partitions_nodes() ->
 %% Returns the partition indices hosted by the local (caller) node.
 -spec get_my_partitions() -> [partition_id()].
 get_my_partitions() ->
-  {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-  riak_core_ring:my_indices(Ring).
+    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
+    riak_core_ring:my_indices(Ring).
 
 %% Returns the number of partitions.
 -spec get_partitions_num() -> non_neg_integer().
@@ -215,8 +224,8 @@ check_staleness() ->
     Now = dc_utilities:now_microsec(),
     {ok, SS} = get_stable_snapshot(),
     dict:fold(fun(DcId, Time, _Acc) ->
-                  io:format("~w staleness: ~w ms ~n", [DcId, (Now-Time)/1000]),
-                  ok
+        io:format("~w staleness: ~w ms ~n", [DcId, (Now - Time) / 1000]),
+        ok
               end, ok, SS).
 
 %% Loops until a process with the given name is registered locally
@@ -256,15 +265,15 @@ get_stable_snapshot() ->
                             {ok, StableSnapshot};
                         _ ->
                             ListTime = dict:fold(
-                                         fun(_Key, Value, Acc) ->
-                                                 [Value | Acc ]
-                                         end, [], StableSnapshot),
+                                fun(_Key, Value, Acc) ->
+                                    [Value | Acc]
+                                end, [], StableSnapshot),
                             GST = lists:min(ListTime),
                             {ok, dict:map(
-                                   fun(_K, _V) ->
-                                           GST
-                                   end,
-                                   StableSnapshot)}
+                                fun(_K, _V) ->
+                                    GST
+                                end,
+                                StableSnapshot)}
                     end
             end
     end.
@@ -300,9 +309,9 @@ get_scalar_stable_time() ->
             %% all DCs. Inorder to check that we need to configure the
             %% number of DCs in advance, which is not possible now.
             ListTime = dict:fold(
-                         fun(_Key, Value, Acc) ->
-                                 [Value | Acc ]
-                         end, [], StableSnapshot),
+                fun(_Key, Value, Acc) ->
+                    [Value | Acc]
+                end, [], StableSnapshot),
             GST = lists:min(ListTime),
             {ok, GST, StableSnapshot}
     end.
@@ -322,8 +331,8 @@ check_registered_global(Name) ->
 
 -spec now_microsec() -> non_neg_integer().
 now_microsec() ->
-  erlang:system_time(micro_seconds). % TODO 19 this is not correct, since it is not monotonic (Question: must it be unique as well?)
+    erlang:system_time(micro_seconds). % TODO 19 this is not correct, since it is not monotonic (Question: must it be unique as well?)
 
 -spec now_millisec() -> non_neg_integer().
 now_millisec() ->
-  now_microsec() div 1000.
+    now_microsec() div 1000.
