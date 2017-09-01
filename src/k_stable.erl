@@ -174,12 +174,19 @@ build_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
         [], VerM).
 
 
+%% Returns the k-stable vector based on the version matrix,
+%% or {error, matrix_size} if the K value is higher than
+%% the number of DCs in the system
 -spec get_k_vector() -> [vectorclock()] | {error, matrix_size}.
 get_k_vector() ->
     DCs = get_dc_ids(),
     VerM = get_version_matrix(DCs),
-    KVect = build_kvector(VerM),
-    lists:sort(KVect).
+    case build_vector(VerM) of
+        {error, _} ->
+            {error, matrix_size};
+        KVect ->
+            lists:sort(KVect)
+    end.
 
 -spec get_dc_ids() -> [dcid()].
 get_dc_ids() ->
