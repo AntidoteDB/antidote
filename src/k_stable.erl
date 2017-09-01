@@ -164,7 +164,7 @@ get_version_matrix(DC_IDs) ->
 %% k is hardcoded for now
 %% takes versionmatrix as argument
 -spec build_kvector([tuple()]) -> [tuple()] | {error, matrix_size}.
-build_kvector([]) ->
+build_kvector(VerM) when length(VerM) < ?KSTABILITY_REPL_FACTOR ->
     {error, matrix_size};
 build_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
     lists:foldl(fun(Row, Acc) ->
