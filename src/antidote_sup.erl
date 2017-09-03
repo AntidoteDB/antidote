@@ -108,6 +108,17 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [inter_dc_query_response_sup]},
 
+    Config = [{mods, [{elli_prometheus, []}
+                     ]}
+             ],
+    % TODO replace static definition of port by config parameter
+    ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, 3001}],
+    Elli = {elli_server,
+            {elli, start_link, [ElliOpts]},
+            permanent,
+            5000,
+            worker,
+            [elli]},
 
     {ok,
      {{one_for_one, 5, 10},
@@ -128,4 +139,5 @@ init(_Args) ->
        MetaDataManagerSup,
        MetaDataSenderSup,
        BCounterManager,
-       LogResponseReaderSup]}}.
+       LogResponseReaderSup,
+       Elli]}}.
