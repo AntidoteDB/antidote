@@ -274,6 +274,7 @@
           "targets": [
             {
               "expr": "irate(erlang_vm_statistics_context_switches{instance=\"$node\"}[5m])",
+              "format": "time_series",
               "intervalFactor": 2,
               "legendFormat": "Context Switches",
               "refId": "B",
@@ -281,6 +282,7 @@
             },
             {
               "expr": "irate(erlang_vm_statistics_reductions_total{instance=\"$node\"}[5m])",
+              "format": "time_series",
               "intervalFactor": 2,
               "legendFormat": "Reductions",
               "refId": "C",
@@ -288,6 +290,7 @@
             },
             {
               "expr": "irate(erlang_vm_statistics_runtime_milliseconds{instance=\"$node\"}[5m])",
+              "format": "time_series",
               "intervalFactor": 2,
               "legendFormat": "Runtime",
               "refId": "D",
@@ -1301,7 +1304,7 @@
             "current": false,
             "max": false,
             "min": false,
-            "show": true,
+            "show": false,
             "total": false,
             "values": false
           },
@@ -1313,7 +1316,12 @@
           "pointradius": 5,
           "points": false,
           "renderer": "flot",
-          "seriesOverrides": [],
+          "seriesOverrides": [
+            {
+              "alias": "Aborted Transactions Total",
+              "yaxis": 2
+            }
+          ],
           "spaceLength": 10,
           "span": 4,
           "stack": false,
@@ -1325,8 +1333,17 @@
               "interval": "",
               "intervalFactor": 2,
               "legendFormat": "Aborted Transaction Rate",
-              "metric": "antidote_aborted_transactions_total",
+              "metric": "",
               "refId": "A",
+              "step": 2
+            },
+            {
+              "expr": "antidote_aborted_transactions_total{instance=\"$node\"}",
+              "format": "time_series",
+              "interval": "",
+              "intervalFactor": 2,
+              "legendFormat": "Aborted Transactions Total",
+              "refId": "B",
               "step": 2
             }
           ],
@@ -1335,7 +1352,7 @@
           "timeShift": null,
           "title": "Aborted Transactions",
           "tooltip": {
-            "shared": true,
+            "shared": false,
             "sort": 0,
             "value_type": "individual"
           },
@@ -1345,7 +1362,9 @@
             "mode": "time",
             "name": null,
             "show": true,
-            "values": []
+            "values": [
+              "total"
+            ]
           },
           "yaxes": [
             {
@@ -1514,5 +1533,5 @@
   },
   "timezone": "browser",
   "title": "Antidote",
-  "version": 3
+  "version": 4
 }
