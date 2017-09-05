@@ -102,7 +102,8 @@ init(_Args) ->
                      ]}
              ],
     % TODO replace static definition of port by config parameter
-    ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, 3001}],
+    MetricsPort = application:get_env(antidote, metrics_port, 3001),
+    ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, MetricsPort}],
     Elli = {elli_server,
             {elli, start_link, [ElliOpts]},
             permanent,
