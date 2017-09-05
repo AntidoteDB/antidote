@@ -119,19 +119,15 @@ unregister_hook(Prefix, Bucket) ->
 -spec start_transaction(Clock::snapshot_time(), Properties::txn_properties())
                        -> {ok, txid()} | {error, reason()}.
 start_transaction(Clock, Properties) ->
-    prometheus_gauge:inc(antidote_open_transactions),
     cure:start_transaction(Clock, Properties, false).
 
 -spec abort_transaction(TxId::txid()) -> {error, reason()}.
 abort_transaction(TxId) ->
-    prometheus_counter:inc(antidote_aborted_transactions_total),
-    prometheus_gauge:dec(antidote_open_transactions),
     cure:abort_transaction(TxId).
 
 -spec commit_transaction(TxId::txid()) ->
                                 {ok, snapshot_time()} | {error, reason()}.
 commit_transaction(TxId) ->
-    prometheus_gauge:dec(antidote_open_transactions),
     cure:commit_transaction(TxId).
 %% TODO: Execute post_commit hooks here?
 

@@ -41,6 +41,9 @@ start_link() ->
 
 init([]) ->
     init_metrics(),
+    % set the error logger counting the number of errors during operation
+    ok = error_logger:add_report_handler(antidote_error_monitor),
+    % start the timer for updating the calculated metrics
     Timer = erlang:send_after(?INIT_INTERVAL, self(), periodic_update),
     {ok, Timer}.
 
@@ -67,9 +70,11 @@ update_staleness() ->
     prometheus_histogram:observe(antidote_staleness, Val).
 
 init_metrics() ->
+    prometheus_counter:new([{name, antidote_error_count}, {help, "The number of error encountered during operation"}]),
     prometheus_histogram:new([{name, antidote_staleness}, {help, "The staleness of the stable snapshot"}, {buckets, [1, 10, 100, 1000, 10000]}]),
     prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
-    prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]).
+    prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]),
+    prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]).
 
 calculate_staleness() ->
     {ok, SS} = dc_utilities:get_stable_snapshot(),
