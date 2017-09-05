@@ -9,13 +9,10 @@ toc: true
 
 The tutorial serves as a guide for different client interfaces of Antidote. As a running example, we use a collaborative editing application where multiple users can concurrently update a shared todo list. We discuss how Antidote handles conflicting updates by multiple users based on its CRDT data model.
 
-
 ## Requirements
 
-* Build AntidoteDB using docker
-* Clone the application from github
-
-[Todolist application](https://github.com/shraddhabarke/antidote-todolist)
+* Build AntidoteDB using [Docker](https://docs.docker.com/engine/installation/)
+* Clone the  [Todolist application](https://github.com/shraddhabarke/antidote-todolist) from github and follow the setup instructions from [README](https://github.com/shraddhabarke/antidote-todolist/blob/master/README.md)
 
 In this tutorial, you will learn the following concepts:
 
