@@ -1328,7 +1328,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "irate(antidote_aborted_transactions_total{instance=\"$node\"}[5m])",
+              "expr": "rate(antidote_aborted_transactions_total{instance=\"$node\"}[1m])",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -1352,7 +1352,7 @@
           "timeShift": null,
           "title": "Aborted Transactions",
           "tooltip": {
-            "shared": false,
+            "shared": true,
             "sort": 0,
             "value_type": "individual"
           },
@@ -1369,7 +1369,7 @@
           "yaxes": [
             {
               "format": "short",
-              "label": null,
+              "label": "txn/sec",
               "logBase": 1,
               "max": null,
               "min": null,
@@ -1377,7 +1377,7 @@
             },
             {
               "format": "short",
-              "label": null,
+              "label": "txn",
               "logBase": 1,
               "max": null,
               "min": null,
@@ -1446,7 +1446,7 @@
           "yaxes": [
             {
               "format": "short",
-              "label": "error/sec",
+              "label": "errors/sec",
               "logBase": 1,
               "max": null,
               "min": null,
@@ -1533,5 +1533,5 @@
   },
   "timezone": "browser",
   "title": "Antidote",
-  "version": 4
+  "version": 5
 }
