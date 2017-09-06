@@ -29,38 +29,67 @@ As per the [application requirements](https://github.com/shraddhabarke/antidote-
 
 The **Board** object is an add wins map with a unique board id that returns relevant information about the board using the getboard method. Each **Board** object has a name and a list of column ids associated with it.
 
-```erlang
-Map[board_id -> Register[name]]
-Map[board_id -> Set[column_id]]
-```
+<pre style="background: white; line-height: 15px;">
+<span style="color:red;">Bucket</span>
+  ┗━━━ <span style="color:red; display: inline-block; margin-bottom: 5px;">BoardId</span>
+          ┣━━━ name: <span style="color:teal;">Register&lt;String&gt;</span>
+          ┗━━━ columns: <span style="color:teal;">Set&lt;ColumnId&gt;</span>
+</pre>    
 
 Similar to the **Board**, the **Column** object is an add wins map with column id as the key. The unique column id returns fields related to a particular column such as name, tasks inside the column and board_id associated with the column. To give preference to the latest update, the column name and board id are of type last writer wins register. The tasks field is an add wins Set.
 
-```erlang
-Map[column_id -> Register[name]]
-Map[column_id -> Set[tasks]]
-Map[column_id -> Register[board_id]]
-```
+<pre style="background: white; line-height: 15px;">
+<span style="color:red;">Bucket</span>
+  ┗━━━ <span style="color:red; display: inline-block; margin-bottom: 5px;">ColumnId</span>
+          ┣━━━ name: <span style="color:teal;">Register&lt;String&gt;</span>
+          ┣━━━ tasks: <span style="color:teal;">Set&lt;TaskId&gt;</span>
+          ┗━━━ board_id: <span style="color:teal;">Register&lt;BoardId&gt;</span>
+</pre>
 
 Each **Column** object has one or more **Task** objects. **Task** object is modelled as an add wins map with task id as the unique key. The fields of a **Task** object consists of title, due date and the column id associated with the task.
 
-```erlang
-Map[task_id -> Register[title]]
-Map[task_id -> Register[due_date]]
-Map[task_id -> Register[column_id]]
-```
+<pre style="background: white; line-height: 15px;">
+<span style="color:red;">Bucket</span>
+  ┗━━━ <span style="color:red; display: inline-block; margin-bottom: 5px;">TaskId</span>
+          ┣━━━ title: <span style="color:teal;">Register&lt;String&gt;</span>
+          ┣━━━ due_date: <span style="color:teal;">Register&lt;Date&gt;</span>
+          ┗━━━ column_id: <span style="color:teal;">Register&lt;ColumnId&gt;</span>
+</pre>
 
 ## Updating objects in Antidote:
 
 In Antidote each object is stored in a Bucket. To create a bucket use the static bucket method:
 
 ```erlang
-Bucket bucket = Bucket.bucket("mybucket");
+Bucket boardbucket = Bucket.bucket("board_bucket");
 ```
+
 Objects in the AntidoteDB are addressed using a Key. To execute the update operation on a bucket, ```Bucket.update``` method is called.
 For performing several updates simultaneously the ```Bucket.updates``` methods can be used which is explained in the next section.
 
-In the boardMap method, [MapKey](https://www.javadoc.io/doc/eu.antidotedb/antidote-java-client/0.1.0) (for the Map data type) stored under the key ```board_id.getId()``` is returned. MapKey is used to update the contents of the Map boardMap in the database as described in the next method.
+The code below illustrates a method to create a board in the application and rename it.
+
+```erlang
+public BoardId createBoard(AntidoteClient client, String name) {
+  BoardId board_id = BoardId.generateId();                                                      //(1)
+  MapKey boardKey = boardMap(board_id);                                                         //(2)       
+  boardbucket.update(client.noTransaction(),
+                     map_aw(board_id.getId().update(register("name").assign(name))));           //(3)
+  return board_id;
+}
+```
+
+In line 1, the generateId() method returns a unique **BoardId** object for each **Board** object.
+
+```erlang
+	public static BoardId generateId() {
+		String uniqueID = UUID.randomUUID().toString();
+		return new BoardId(uniqueID);
+	}
+```
+
+We have a getId() method that returns the uniqueID as a String. In order to reference the object in AntidoteDB, there is an an Antidote Key which consists of a CRDT type and the corresponding uniqueID key. It can be used as a top-level-key of an Antidote object in a bucket.
+In line 2, the **MapKey** boardKey is used to update the contents of the **Map CRDT** boardMap in the database. Since several objects are modelled as an add wins map, it makes sense to have a method that generates an AntidoteDB MapKey corresponding to the add wins map. Consequently, we have the following method that substitutes ```map_aw(board_id.getId())``` on line 3.
 
 ```erlang
 public MapKey boardMap(BoardId board_id) {
@@ -68,16 +97,24 @@ public MapKey boardMap(BoardId board_id) {
 }
 ```
 
-The code below illustrates a method to create a board in the application and rename it. The update method takes a transactional context as its first argument. The createboard method returns a unique id that is passed as an argument for the renameBoard method. Since the name is stored in a register data type, assign method is called to update the value.
+Also, replace the register("name") in line 3 with namefield so that it constraints the type to ```RegisterKey<String>```
+
+```erlang
+private static final RegisterKey<String> namefield = register("Name");
+```
+Here is the modified createBoard method:
 
 ```erlang
 public BoardId createBoard(AntidoteClient client, String name) {
-  BoardId board_id = BoardId.generateId();
-  MapKey board = boardMap(board_id);
-  cbucket.update(client.noTransaction(), board.update(namefield.assign(name)));
+  BoardId board_id = BoardId.generateId();                                                       //(1)
+  MapKey boardKey = boardMap(board_id);                                                          //(2)       
+  boardbucket.update(client.noTransaction(), boardKey.update(namefield.assign(name)));           //(3)
   return board_id;
 }
 ```
+The update method on the boardbucket takes a transactional context as its first argument. Transactions are explained further ahead in the tutorial. The update on boardKey creates an update operation to update CRDTs embedded inside the boardMap.
+
+The createboard method returns a unique id that is passed as an argument for the renameBoard method. Since the namefield is a register data type, assign method is called to update the value.
 
 ```erlang
 public void renameBoard(AntidoteClient client, BoardId board_id , String newName) {
@@ -184,4 +221,26 @@ List of Columns - []
 
 The renameboard operation on terminal 2 was performed after the renameboard operation on terminal 1. Since the boardname is stored in a last writer wins register, the latter operation gets preference while resolving the conflict.
 
-In the next section, we look at an interesting example of two users concurrently moving the same task to different columns.
+## Transactions
+
+The class ```InteractiveTransaction``` allows a client to execute multiple update and read before committing the transaction. It constitutes of a sequence of operations performed as a single logical unit.
+If the client has to perform a single update or read operation, the ```NoTransaction``` can be used to execute an individual operation without any transactional context.
+
+The ```moveTask``` method deletes a task from one column and adds it to another column. It takes ColumnId of the new column and TaskId as arguments. ```InteractiveTransaction``` is called to ensure that the reads and updates are performed as a single unit.
+
+```erlang
+public void moveTask(AntidoteClient client, TaskId task_id, ColumnId newcolumn_id) {
+    MapKey task = taskMap(task_id);
+    taskbucket.update(client.noTransaction(), task.update(columnidfield.assign(newcolumn_id)));
+    try (InteractiveTransaction tx = client.startTransaction()) {                              //(1)
+	 ColumnId oldcolumn_id = columnbucket.read(tx, columnidfield);                         //(2)
+	 MapKey oldcolumnKey = new Column().columnMap(oldcolumn_id);                           //(3)
+	 columnbucket.update(tx, oldcolumnKey.update(Column.taskidfield.remove(task_id)));     //(4)
+	 MapKey newcolumnKey = new Column().columnMap(newcolumn_id);                           //(5)
+	 columnbucket.update(tx, newcolumnKey.update(Column.taskidfield.add(task_id)));        //(6)
+	 tx.commitTransaction();                                                               //(7)
+    }
+}
+```
+
+Line 1 starts the transaction. The read method on the columnbucket in line 2 takes the transactional context ```tx``` created in line 1 as its first argument and reads the old ColumnId. In lines 3 and 5, **MapKey** oldcolumnKey and newcolumnKey are used to update the contents of the **Map CRDT** columnMap (similar to boardMap) in the database. Line 4 removes the Task Id from the oldcolumnKey and line 6 adds the TaskId to newcolumnKey. On line 7, the transaction is committed by calling ```commitTransaction```
