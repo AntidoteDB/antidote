@@ -31,3 +31,4 @@ rebar3.crashdump
 test/.rebar3/erlcinfo
 .idea/
 antidote.iml
+edoc/
