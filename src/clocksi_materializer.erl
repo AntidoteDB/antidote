@@ -431,7 +431,7 @@ materializer_clocksi_concurrent_test() ->
                                    vectorclock:from_list([{1, 1}, {2, 1}]), SS),
     ?assertEqual({2, vectorclock:from_list([{1, 1}, {2, 1}])}, {Type:value(PNcounter5), CommitTime5}).
 
-%% @doc Testing gcounter with empty update log
+%% Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
     Type = antidote_crdt_counter,
     PNCounter = new(Type),
