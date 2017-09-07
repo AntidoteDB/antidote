@@ -54,10 +54,10 @@
 new() ->
   {[], 0}.
 
-%% @doc Get the first appropriate element from the dict according to a =< ordering.
+%% @doc Get the first appropriate element from the dict according to a monotonically increasing ordering.
 %%
-%%      get_smaller(Clock, Dict) will return {{DClock, _}=Entry, IsFirst},
-%%      where Entry is the most recent entry such that DClock =< Clock.
+%%      `get_smaller(Clock, Dict)' will return `{{DClock, _}=Entry, IsFirst}'',
+%%      where Entry is the most recent entry such that `DClock <= Clock'.
 %%
 %%      In addition, return IsFirst, indicating if the selected entry was the newest entry
 %%      in the orddict.
