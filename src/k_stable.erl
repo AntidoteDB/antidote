@@ -66,7 +66,7 @@
 -define(KSTABILITY_TABLE_NAME, k_stability_table).
 -define(KSTABILITY_TABLE_CONCURRENCY,
     {read_concurrency, false}, {write_concurrency, false}).
--define(KSTABILITY_REPL_FACTOR, 3). % 2 DCs total will store updates,
+-define(KSTABILITY_REPL_FACTOR, 3). % 3 DCs total will store updates,
 
 
 %% ===================================================================
@@ -113,7 +113,9 @@ handle_cast({update_dc_vc, Tx = #interdc_txn{}}, _State) ->
 handle_cast(_Info, State) ->
     {noreply, State}.
 
-%% Returns the k-vector
+%% Returns the k-vector, or
+%% {error, k_too_high} if the requested K
+%% is greater than the number of DCs
 handle_call(get_kvect, _From, _State) ->
     KVec = get_k_vector(),
     NewState = state_factory(KVec),
@@ -181,7 +183,7 @@ build_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
 get_k_vector() ->
     DCs = get_dc_ids(),
     VerM = get_version_matrix(DCs),
-    case build_vector(VerM) of
+    case build_kvector(VerM) of
         {error, _} ->
             {error, matrix_size};
         KVect ->
