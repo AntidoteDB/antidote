@@ -994,8 +994,8 @@ get_op_id(ClockTable, {LogId, Bucket, DCID}) ->
 
 -ifdef(TEST).
 
-%% @doc Testing get_log_from_map works in both situations, when the key
-%%      is in the map and when the key is not in the map
+%% Testing get_log_from_map works in both situations, when the key
+%% is in the map and when the key is not in the map
 get_log_from_map_test() ->
     Dict = dict:new(),
     Dict2 = dict:store([antidote1, c], value1, Dict),
@@ -1007,14 +1007,14 @@ get_log_from_map_test() ->
     ?assertEqual({error, no_log_for_preflist}, get_log_from_map(Dict5,
             undefined, [antidote5, c])).
 
-%% @doc Testing that preflist_member returns true when there is a
-%%      match.
+%% Testing that preflist_member returns true when there is a
+%% match.
 preflist_member_true_test() ->
     Preflist = [{partition1, node}, {partition2, node}, {partition3, node}],
     ?assertEqual(true, preflist_member(partition1, Preflist)).
 
-%% @doc Testing that preflist_member returns false when there is no
-%%      match.
+%% Testing that preflist_member returns false when there is no
+%% match.
 preflist_member_false_test() ->
     Preflist = [{partition1, node}, {partition2, node}, {partition3, node}],
     ?assertEqual(false, preflist_member(partition5, Preflist)).
