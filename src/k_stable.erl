@@ -66,7 +66,7 @@
 -define(KSTABILITY_TABLE_NAME, k_stability_table).
 -define(KSTABILITY_TABLE_CONCURRENCY,
     {read_concurrency, false}, {write_concurrency, false}).
--define(KSTABILITY_REPL_FACTOR, 3). % 3 DCs total will store updates,
+-define(KSTABILITY_REPL_FACTOR, 2). % 3 DCs total will store updates,
 
 
 %% ===================================================================
@@ -166,6 +166,8 @@ get_version_matrix(DC_IDs) ->
 %% k is hardcoded for now
 %% takes versionmatrix as argument
 -spec build_kvector([tuple()]) -> [tuple()] | {error, matrix_size}.
+build_kvector({error, _}) ->
+    {error, matrix_size};
 build_kvector(VerM) when length(VerM) < ?KSTABILITY_REPL_FACTOR ->
     {error, matrix_size};
 build_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
