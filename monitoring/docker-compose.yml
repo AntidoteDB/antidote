@@ -5,6 +5,8 @@ services:
     environment:
       NODE_NAME: "antidote@antidote"
       SHORT_NAME: "true"
+    ports:
+      - "8087:8087"
   prometheus:
     image: prom/prometheus
     ports:
