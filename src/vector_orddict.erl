@@ -84,7 +84,7 @@ get_smaller_from_id(_Id, _Time, {_List, Size}) when Size == 0 ->
 get_smaller_from_id(Id, Time, {List, _Size}) ->
   get_smaller_from_id_internal(Id, Time, List).
 
--spec get_smaller_from_id_internal(term(), clock_time(), nonempty_vector_orddict()) -> undefined | {vectorclock(), term()}.
+-spec get_smaller_from_id_internal(term(), clock_time(), [{vectorclock, term()}, ...]) -> undefined | {vectorclock(), term()}.
 get_smaller_from_id_internal(_Id, _Time, []) ->
   undefined;
 get_smaller_from_id_internal(Id, Time, [{Clock, Val}|Rest]) ->
