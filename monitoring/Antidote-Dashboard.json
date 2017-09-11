@@ -1056,7 +1056,7 @@
           "seriesOverrides": [],
           "spaceLength": 10,
           "span": 6,
-          "stack": false,
+          "stack": true,
           "steppedLine": false,
           "targets": [
             {
@@ -1533,5 +1533,5 @@
   },
   "timezone": "browser",
   "title": "Antidote",
-  "version": 2
+  "version": 3
 }
