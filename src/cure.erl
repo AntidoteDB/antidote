@@ -72,6 +72,7 @@ commit_transaction(TxId) ->
 -spec read_objects([bound_object()], txid()) -> {ok, [term()]} | {error, reason()}.
 read_objects(Objects, TxId) ->
     obtain_objects(Objects, TxId, object_value).
+
 -spec get_objects([bound_object()], txid()) -> {ok, [term()]} | {error, reason()}.
 get_objects(Objects, TxId) ->
     obtain_objects(Objects, TxId, object_state).
@@ -116,10 +117,14 @@ update_objects(ClientCausalVC, Properties, Updates, StayAlive) ->
         {error, Reason} -> {error, Reason}
     end.
 
-read_objects(Clock, Properties, Objects) ->
-    obtain_objects(Clock, Properties, Objects, false, object_value).
-get_objects(Clock, Properties, Objects) ->
-    obtain_objects(Clock, Properties, Objects, false, object_state).
+read_objects(_Clock, Properties, Objects) ->
+    {ok, _Pid} = k_stable:start_link(),
+    Clo = k_stable:fetch_kvector(),
+    obtain_objects(Clo, Properties, Objects, false, object_value).
+get_objects(_Clock, Properties, Objects) ->
+    {ok, _Pid} = k_stable:start_link(),
+    Clo = k_stable:fetch_kvector(),
+    obtain_objects(Clo, Properties, Objects, false, object_state).
 
 
 -spec obtain_objects(vectorclock(), txn_properties(), [bound_object()], boolean(), object_value|object_state) ->
