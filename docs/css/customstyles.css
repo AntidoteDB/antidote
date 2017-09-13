@@ -1159,3 +1159,7 @@ h4.panel-title {
     padding-top: 0px;
     margin-top: 0px;
 }
+
+.post-content > p {
+    text-align: justify;
+}
