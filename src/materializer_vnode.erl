@@ -78,7 +78,7 @@ start_vnode(I) ->
 %%      are in shared memory, allowing concurrent reads.
 -spec read(key(), type(), snapshot_time(), txid(), #mat_state{}) -> {ok, snapshot()} | {error, reason()}.
 read(Key, Type, SnapshotTime, TxId, MatState = #mat_state{ops_cache = OpsCache, antidote_db = undefined}) ->
-	lager:info("READ ETS ~n", []),
+	%%lager:info("READ ETS ~n", []),
 	case ets:info(OpsCache) of
 		undefined ->
 			riak_core_vnode_master:sync_command({MatState#mat_state.partition, node()},
@@ -397,7 +397,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, State) ->
     internal_read(Key, Type, MinSnapshotTime, TxId, false, State).
 
 internal_read(Key, Type, MinSnapshotTime, TxId, ShouldGc, State = #mat_state{snapshot_cache = SnapshotCache, ops_cache = OpsCache, antidote_db = undefined}) ->
-	lager:info("internal_read ETS ~n", []),
+	%%lager:info("internal_read ETS ~n", []),
 	%% First look for any existing snapshots in the cache that is compatible with
     %% Result is a tuple where on success:
     %%     1st element is the snapshot of type #materialized_snapshot{}
