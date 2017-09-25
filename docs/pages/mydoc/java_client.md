@@ -19,13 +19,122 @@ In this tutorial, you will learn the following concepts:
  * Model data of Java application
  * Update and read CRDT objects in AntidoteDB
  * Run two AntidoteDB nodes concurrently
- * Test the behaviour of CRDT objects under concurrent access
+ * Test the behaviour of CRDT objects under concurrent access.
 
-## Data Model
+## Connecting to AntidoteDB
 
-The collaborative todo list application is frequently used by multiple users at once. It consists of a board that has a number of columns. Each column can have one or more than one task. A task has information such as title and its due date. The Java **UUID** class that generates universally unique identifiers is used to get unique IDs for the application.
+Before getting into the details of data modelling of the application in Antidote, we look at how to run the application commands on top of Antidote.
+We start two AntidoteDB node instances and run two separate application instances on top of each node. This enables us to see how Antidote tackles inconsistencies arising due to concurrent updates in different replicas.
 
-The **Board** object is a  map with a unique board id that returns relevant information about the board using the getboard method. Each **Board** object has a name and a list of column ids associated with it.
+Start two antidote node instances using the start_antidote script in setup folder.
+
+```sh
+./start_antidote.sh
+```
+
+In two separate terminals, start two application instances on the antidote nodes:
+
+```sh
+./app1.sh
+./app2.sh
+```
+
+Now connect to antidote on each of the terminal:
+
+```
+connect antidote1 8087
+connect antidote2 8087
+```
+
+We now have an AntidoteDB cluster with two replicas!
+
+{% include image.html file="replicas.jpeg" %}
+
+## Running the Application
+
+The application commands for interacting with Antidote can be found in the application README
+
+Antidote resolves conflicts by giving preference to update operations over delete operations. This is referred to as add wins semantics. In case of a register data type, the latest update gets priority, intuitively called the last writer wins semantics. Throughout the application model, we follow add wins and last writer wins semantics.
+
+We simulate real world network partition between two replicas of AntidoteDB. Here, we mimic two users running the application in terminal 1 and terminal 2. Initially the two replicas are connected and Antidote replicates data across them. In case of a network failure, Antidote will resolve conflict according to add wins and last writer wins semantics.
+
+Create a new board with name "boardname" in terminal 1. A unique boardid is returned which is later used to perform operations on the board.
+
+```java
+createboard boardname
+```
+
+Now, run the disconnect script that disrupts the communication between the two replicas. This simulates the disconnect which might happen due to network failuers. Now the scenario is equivalent to two users performing operations concurrently.
+
+```java
+./disconnect.sh
+```
+
+Rename the board previously created, replacing board_id in the command with the id returned.
+
+```java
+renameboard board_id newnamet1
+```
+
+Rename the same board to a different name using terminal 2.
+
+```java
+renameboard board_id newnamet2
+```
+
+Run getboard command on both terminals, the outputs are as follows
+<table class="twocolumn">
+<tr>
+<td>
+Terminal 1:
+
+<pre class="hightlight">
+Board Name - newnamet1
+List of Column Ids - []
+List of Columns - []
+</pre>
+</td>
+<td>
+Terminal 2:
+
+<pre class="hightlight">
+Board Name - newnamet2
+List of Column Ids - []
+List of Columns - []
+</pre>
+</td>
+</tr>
+</table>
+
+Run the connect script to re-connect and sync up both the replicas! Antidote gets conflicting updates and tries to resolve them using the CRDT datatypes.
+
+```java
+./connect.sh
+```
+
+The output of getboard command for both terminals is now:
+
+```java
+Board Name - newnamet2
+List of Column Ids - []
+List of Columns - []
+```
+
+The renameboard operation on terminal 2 was performed after the renameboard operation on terminal 1. Since the boardname is stored in a last writer wins register, the latter operation gets preference while resolving the conflict.
+
+## Application Requirements:
+
+The collaborative todo list application can be used by multiple users concurrently. It constitutes a board that serves as a workspace for adding tasks to be performed.
+
+{% include image.html file="app.png" %}
+
+ Each of the columns on the board can have one or more than one task. A task has information such as title and its due date.
+
+## Data Modelling in Antidote:
+
+For modelling a complex data type with different fields we use a map datatype. The different fields can be register datatype in case of a single entity and set datatype in case of a list.
+
+The **Board** object is a map with a unique board id that returns relevant information about the board using the getboard method. The Java **UUID** class that generates universally unique identifiers is used to get unique IDs for the application. Each **Board** object has a name and a list of column ids associated with it.
 
 <pre style="background: white; line-height: 15px;">
 <span style="color:red;">Boards</span>
@@ -58,7 +167,7 @@ Each **Column** object has one or more **Task** objects. **Task** object is mode
 
 In Antidote, each object is stored in a Bucket. To create a bucket use the static bucket method:
 
-```erlang
+```java
 Bucket boardbucket = Bucket.bucket("board_bucket");
 ```
 
@@ -67,7 +176,7 @@ For performing several updates simultaneously, the ```Bucket.updates``` methods 
 
 The code below illustrates a method to create a board in the application and rename it.
 
-```erlang
+```java
 public BoardId createBoard(AntidoteClient client, String name) {
   BoardId board_id = BoardId.generateId();                                                      //(1)
   boardbucket.update(client.noTransaction(),
@@ -81,7 +190,7 @@ In line 1, the generateId() method returns a unique **BoardId** object for each 
 The getId() method returns the uniqueID as a String.
 Since several objects are modelled as a map, it makes sense to have a method that generates an AntidoteDB MapKey corresponding to the map. Consequently, we have the following method that substitutes ```map_aw(board_id.getId())``` on line 2.
 
-```erlang
+```java
 public MapKey boardMap(BoardId board_id) {
   return map_aw(board_id.getId());
 }
@@ -89,18 +198,18 @@ public MapKey boardMap(BoardId board_id) {
 In order to reference the object in AntidoteDB, there is an an Antidote Key which consists of a CRDT type and the corresponding uniqueID key. It can be used as a top-level-key of an Antidote object in a bucket.
 The **MapKey** boardKey is used to update the contents of the **Map CRDT** boardMap in the database.
 
-```erlang
+```java
 MapKey boardKey = boardMap(board_id);
 ```
 
 Also, register("name") in line 3 is replaced with namefield so that it constraints the type to ```RegisterKey<String>```
 
-```erlang
+```java
 private static final RegisterKey<String> namefield = register("Name");
 ```
 The code fragments above make the modified createBoard method more readable.
 
-```erlang
+```java
 public BoardId createBoard(AntidoteClient client, String name) {
   BoardId board_id = BoardId.generateId();                                                       //(1)
   MapKey boardKey = boardMap(board_id);                                                          //(2)       
@@ -112,7 +221,7 @@ public BoardId createBoard(AntidoteClient client, String name) {
 The update on boardKey creates an update operation to update CRDTs embedded inside the boardMap.
 The createboard method returns a unique id which can later be passed as an argument for the renameBoard method. Since the namefield is a register data type, ```assign``` is called to update the value.
 
-```erlang
+```java
 public void renameBoard(AntidoteClient
   client, BoardId board_id , String newName) {
   MapKey boardKey = boardMap(board_id);  cbucket.update(client.noTransaction(), boardKey.update(namefield.assign(newName)));
@@ -123,103 +232,12 @@ public void renameBoard(AntidoteClient
 
 A Bucket has a read method that retrieves the current value of an object from database. MapReadResult presents the result of a read request on a Map CRDT. The entire object is read from database and individual fields can be obtained using get methods as illustrated by the following code:
 
-```erlang
+```java
 MapKey boardKey = boardMap(board_id);
 MapReadResult boardmap = boardbucket.read(client.noTransaction(), boardKey);
 String boardname = boardmap.get(namefield);
 List<ColumnId> columnid_list = boardmap.get(columnidfield);
 ```
-
-## Connecting to AntidoteDB
-
-We start two AntidoteDB node instances and run two separate application instances on top of each node. This enables us to see how Antidote tackles inconsistencies arising due to concurrent updates in different replicas.
-
-Start two antidote node instances using the start_antidote script in setup folder.
-
-```sh
-./start_antidote.sh
-```
-
-In two separate terminals, start two application instances on the antidote nodes:
-
-```sh
-./app1.sh
-./app2.sh
-```
-
-Now connect to antidote on each of the terminal:
-
-```
-connect antidote1 8087
-connect antidote2 8087
-```
-
-We now have an AntidoteDB cluster with two replicas!
-
-## Interacting with AntidoteDB
-
-The application commands for interacting with Antidote can be found in the application README
-
-Antidote resolves conflicts by giving preference to update operations over delete operations. This is referred to as add wins semantics. In case of a register, the latest update gets priority, intuitively called the last writer wins semantics. Throughout the application model, we follow add wins and last writer wins semantics.
-
-We simulate real world network partition between two replicas of AntidoteDB. Here, we mimic two users running the application in terminal 1 and terminal 2. Initially the two replicas are connected and Antidote replicates data across them. In case of a network failure, Antidote will resolve conflict according to add wins and last writer wins semantics.
-
-Create a new board with name "boardname" in terminal 1. A unique boardid is returned which is later used to perform operations on the board.
-
-```erlang
-createboard boardname
-```
-
-Now, run the disconnect script that disrupts the communication between the two replicas. This simulates the disconnect which might happen due to network failuers. Now the scenario is equivalent to two users performing operations concurrently.
-
-```erlang
-./disconnect.sh
-```
-Rename the board previously created, replacing board_id in the command with the id returned.
-
-```erlang
-renameboard board_id newnamet1
-```
-
-Rename the same board to a different name using terminal 2.
-
-```erlang
-renameboard board_id newnamet2
-```
-
-Run getboard command on both terminals, the outputs are as follows
-
-Terminal 1:
-
-```erlang
-Board Name - newnamet1
-List of Column Ids - []
-List of Columns - []
-```
-
-Terminal 2:
-
-```erlang
-Board Name - newnamet2
-List of Column Ids - []
-List of Columns - []
-```
-
-Run the connect script to re-connect and sync up both the replicas! Antidote gets conflicting updates and tries to resolve them using the CRDT datatypes.
-
-```erlang
-./connect.sh
-```
-
-The output of getboard command for both terminals is now:
-
-```erlang
-Board Name - newnamet2
-List of Column Ids - []
-List of Columns - []
-```
-
-The renameboard operation on terminal 2 wAccording toformed after the renameboard operation on terminal 1. Since the boardname is stored in a last writer wins register, the latter operation gets preference while resolving the conflict.
 
 ## Transactions
 
@@ -228,7 +246,7 @@ If the client has to perform a single update or read operation, the ```NoTransac
 
 The ```moveTask``` method deletes a task from one column and adds it to another column. It takes ColumnId of the new column and TaskId as arguments. ```InteractiveTransaction``` is called to ensure that the reads and updates are performed as a single unit. InteractiveTransaction guarantees that either the entire sequence of operation executes or none of them do. Hence we avoid the case in which the operation to delete a task from one column is performed but the operation to add a task to another is not.
 
-```erlang
+```java
 public void moveTask(AntidoteClient client, TaskId task_id, ColumnId newcolumn_id) {
     MapKey task = taskMap(task_id);
     try (InteractiveTransaction tx = client.startTransaction()) {                             //(1)
