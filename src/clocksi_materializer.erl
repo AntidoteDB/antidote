@@ -64,12 +64,12 @@ get_first_id(Tuple) when is_tuple(Tuple) ->
 %%      MinSnapshotTime: The threshold time given by the reading transaction
 %%      Ops: The list of operations to apply in causal order
 %%      TxId: The Id of the transaction requesting the snapshot
-%%      Output: A tuple. The first element is ok, the seond is the CRDT after appliying the operations,
+%%      Output: A tuple. The first element is ok, the second is the CRDT after applying the operations,
 %%      the third element 1 minus the number of the operation with the smallest id not included in the snapshot,
 %%      the fourth element is the smallest vectorclock that describes this snapshot,
-%%      the fifth element is a boolean, it it is true it means that the returned snapshot contains
+%%      the fifth element is a boolean, if it is true it means that the returned snapshot contains
 %%      more operations than the one given as input, false otherwise.
-%%      the sixth element is an integer the counts the number of operations applied to make the snapshot
+%%      The sixth element is an integer representing the number of operations applied to make the snapshot
 -spec materialize(type(),
                   txid() | ignore,
                   snapshot_time() | ignore,
@@ -183,19 +183,9 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
                      {ok, OpList, LastOpCt, false, NewSS, FirstHole} %% no update
              end,
     case Result of
-        {ok, NewOpList1, NewLastOpCt, false, NewSS1, NewHole} ->
+        {ok, NewOpList1, NewLastOpCt, _, NewSS1, NewHole} ->
             materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                               MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location);
-        {ok, NewOpList1, NewLastOpCt, true, NewSS1, NewHole} ->
-            case OpId - 1 =< LastOp of
-                true ->
-                    %% can skip the rest of the ops because they are already included in the SS
-                    materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                                       MinSnapshotTime, [], TxId, NewLastOpCt, NewSS1, Location);
-                false ->
-                    materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
-                                       MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
-            end
+                               MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
     end.
 
 %% @doc Check whether an udpate is included in a snapshot and also
