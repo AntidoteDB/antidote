@@ -418,7 +418,7 @@ store_snapshot(TxId, Key, Snapshot, Time, ShouldGC, State) ->
      end.
 
 %% @doc Given a snapshot from the cache, update it from the ops cache.
--spec update_snapshot_from_cache({{snapshot_time() | ignore, #materialized_snapshot{}}, boolean()}, key(), cache_id()) 
+-spec update_snapshot_from_cache({{snapshot_time() | ignore, #materialized_snapshot{}}, boolean()}, key(), cache_id())
     -> #snapshot_get_response{}.
 
 update_snapshot_from_cache(SnapshotResponse, Key, OpsCache) ->
@@ -447,7 +447,7 @@ fetch_updates_from_cache(OpsCache, Key) ->
             {CachedOps, Length}
     end.
 
--spec materialize_snapshot(txid() | ignore, key(), type(), snapshot_time(), boolean(), #state{}, #snapshot_get_response{}) 
+-spec materialize_snapshot(txid() | ignore, key(), type(), snapshot_time(), boolean(), #state{}, #snapshot_get_response{})
     -> {ok, snapshot_time()} | {error, reason()}.
 
 materialize_snapshot(_TxId, _Key, _Type, _SnapshotTime, _ShouldGC, _State, #snapshot_get_response{
@@ -597,9 +597,9 @@ check_filter(Fun, Id, Last, NewId, Tuple, NewSize, NewOps) ->
             check_filter(Fun, Id+1, Last, NewId, Tuple, NewSize, NewOps)
     end.
 
-%% @doc Extract from the tuple stored in the operation cache 
-%% 1) the key, 2) length of the op list (stored in form of a tuple), 
-%% 3) sequence number of operation (used to trigger GC regularly), 
+%% @doc Extract from the tuple stored in the operation cache
+%% 1) the key, 2) length of the op list (stored in form of a tuple),
+%% 3) sequence number of operation (used to trigger GC regularly),
 %% 4) size of the tuple that contains the op list, 5) the tuple containing the op list
 %% Note that the ops in the tuple are stored in the ets with the most recent op at the end of
 %% the tuple.
@@ -623,9 +623,9 @@ op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache}) ->
     end,
     NewId = ets:update_counter(OpsCache, Key, {3, 1}),
     {Length, ListLen} = ets:lookup_element(OpsCache, Key, 2),
- 
+
     %% Perform GC by triggering a read when there are more than OPS_THRESHOLD
-    %% operations for a given key or when the list is full 
+    %% operations for a given key or when the list is full
     case (Length >= ListLen) orelse ((NewId rem ?OPS_THRESHOLD) == 0) of
         true ->
             Type = DownstreamOp#clocksi_payload.type,

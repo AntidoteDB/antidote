@@ -26,9 +26,9 @@
 
 %% @doc The vector orddict is an ordered dictionary used to store materialized snapshots whose order
 %%      is described by vectorclocks.
-%%      Note that the elements are stored in a sorted list going from big to small (left to right); 
+%%      Note that the elements are stored in a sorted list going from big to small (left to right);
 %%      i.e. the most recent snapshot is stored at the head of the list.
-%%      The second element of the tuple stores the size of the list. 
+%%      The second element of the tuple stores the size of the list.
 
 -type vector_orddict() :: {[{vectorclock(), term()}], non_neg_integer()}.
 -type nonempty_vector_orddict() :: {[{vectorclock(), term()}, ...], non_neg_integer()}.
@@ -138,7 +138,7 @@ sublist({List, _Size}, Start, Len) ->
 
 %% @doc Returns true if the vectorclock is concurrent with at least one of the entries in the vector orddict.
 -spec is_concurrent_with_any(vector_orddict(), vectorclock()) -> boolean().
-is_concurrent_with_any({List,_Size}, OtherClock) ->
+is_concurrent_with_any({List, _Size}, OtherClock) ->
   lists:any(fun({Clock, _Val}) -> vectorclock:conc(Clock, OtherClock) end, List).
 
 %% @doc Returns size of the vector orddict.
@@ -253,8 +253,8 @@ vector_orddict_conc_test() ->
   ]),
   CT1 = vectorclock:from_list([{dc1, 3}, {dc2, 3}]),
   CT2 = vectorclock:from_list([{dc1, 2}, {dc2, 1}]),
-  
+
   ?assertEqual(is_concurrent_with_any(VDict, CT1), false),
   ?assertEqual(is_concurrent_with_any(VDict, CT2), true).
-  
+
 -endif.

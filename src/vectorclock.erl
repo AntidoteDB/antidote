@@ -176,7 +176,7 @@ vectorclock_conc_test() ->
   V3 = vectorclock:from_list([{1, 3}, {3, 2}]),
   V4 = vectorclock:from_list([{1, 6}, {3, 3}]),
   V5 = vectorclock:from_list([{1, 6}]),
- 
+
   ?assertEqual(conc(V1, V2), true),
   ?assertEqual(conc(V2, V3), true),
   ?assertEqual(conc(V3, V4), false),

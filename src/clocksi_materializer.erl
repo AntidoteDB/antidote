@@ -179,8 +179,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
                              {ok, OpList, LastOpCt, true, NewSS, FirstHole}
                      end;
                  false -> %% Op is not for this {Key, Type}
-                     %% @todo THIS CASE PROBABLY SHOULD NOT HAPPEN?!
-                     {ok, OpList, LastOpCt, false, NewSS, FirstHole} %% no update
+                     erlang:error(corrupted_ops_cache)
              end,
     case Result of
         {ok, NewOpList1, NewLastOpCt, _, NewSS1, NewHole} ->
