@@ -122,7 +122,7 @@ List of Columns - []
 
 The renameboard operation on terminal 2 was performed after the renameboard operation on terminal 1. Since the boardname is stored in a last writer wins register, the latter operation gets preference while resolving the conflict.
 
-## Application Requirements:
+## Application Requirements
 
 The collaborative todo list application can be used by multiple users concurrently. It constitutes a board that serves as a workspace for adding tasks to be performed.
 
@@ -130,7 +130,7 @@ The collaborative todo list application can be used by multiple users concurrent
 
  Each of the columns on the board can have one or more than one task. A task has information such as title and its due date.
 
-## Data Modelling in Antidote:
+## Data Modelling in Antidote
 
 For modelling a complex data type with different fields we use a map datatype. The different fields can be register datatype in case of a single entity and set datatype in case of a list.
 
@@ -163,7 +163,7 @@ Each **Column** object has one or more **Task** objects. **Task** object is mode
           ┗━━━ column_id: <span style="color:teal;">Register&lt;ColumnId&gt;</span>
 </pre>
 
-## Updating objects in Antidote:
+## Updating objects in Antidote
 
 In Antidote, each object is stored in a Bucket. To create a bucket use the static bucket method:
 
