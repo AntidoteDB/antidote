@@ -539,8 +539,7 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
 
     %% Swap keys with their appropiate read values
     ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
-    %% TODO: Why use the old snapshot, instead of UpdatedSnapshot?
-    NewReadSet = orddict:store(Key, Snapshot, ReadSet),
+    NewReadSet = orddict:store(Key, UpdatedSnapshot, ReadSet),
 
     %% Loop back to the same state until we process all the replies
     case NumToRead > 1 of

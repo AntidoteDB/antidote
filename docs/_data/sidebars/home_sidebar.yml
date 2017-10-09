@@ -64,6 +64,10 @@ entries:
       url: /rawapi.html
       output: web, pdf
 
+    - title: Datatypes
+      url: /crdts.html
+      output: web, pdf
+
     - title: Protocol Buffer API
       url: /api.html
       output: web, pdf
