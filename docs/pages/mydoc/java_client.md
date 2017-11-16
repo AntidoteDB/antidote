@@ -1,6 +1,6 @@
 ---
 title: Antidote Client
-last_updated: May 2, 2017
+last_updated: November 16, 2017
 tags: [quick_start]
 sidebar: mydoc_sidebar
 permalink: java_client.html
@@ -16,7 +16,7 @@ The tutorial serves as a guide for different client interfaces of Antidote. As a
 
 In this tutorial, you will learn the following concepts:
 
- * Model data of Java application
+ * Model data of Java application in AntidoteDB
  * Update and read CRDT objects in AntidoteDB
  * Run two AntidoteDB nodes concurrently
  * Test the behaviour of CRDT objects under concurrent access.
