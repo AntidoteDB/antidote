@@ -14,7 +14,11 @@
                   cuttlefish,
                   antidote_pb,
                   erlzmq,
-                  rand_compat
+                  rand_compat,
+                  prometheus,
+                  elli,
+                  elli_prometheus,
+                  prometheus_process_collector
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables
