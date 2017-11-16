@@ -22,6 +22,9 @@ entries:
     url: /quick_start.html
     output: web, pdf
 
+  - title: Java Client
+    url: /java_client.html
+    output: web, pdf
 
   - title: Overview
     output: web, pdf
