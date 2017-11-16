@@ -16,7 +16,7 @@
                   riak_dt,
                   antidote_pb,
                   erlzmq,
-                  rand_compat 
+                  rand_compat
                  ]},
   {mod, { antidote_app, []}},
   %% Options for environmental variables
@@ -48,7 +48,7 @@
          {stable_strict, false},
          {enable_logging, false},
          {recover_from_log, false},
-         {recover_meta_data_on_start, true},
+         {recover_meta_data_on_start, false},
          {sync_log, false},
          {log_staleness, true}]}
  ]}.

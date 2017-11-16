@@ -32,6 +32,7 @@
 %% API
 -export([
   handle_transaction/1,
+    update_clock/2,
   set_dependency_clock/2]).
 
 %% VNode methods
@@ -156,6 +157,10 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       {update_clock(State, DCID, Timestamp), true}.
 %%  end.
 
+
+handle_command({update_clock}, _Sender, State) ->
+    {reply, ok, update_clock(State, dc_meta_data_utilities:get_my_dc_id(), 0)};
+
 handle_command({set_dependency_clock, Vector}, _Sender, State) ->
     {reply, ok, State#state{vectorclock = Vector}};
     
@@ -198,6 +203,12 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
   Queue = dict:fetch(DCID, Queues),
   NewQueue = queue:drop(Queue),
   State#state{queues = dict:store(DCID, NewQueue, Queues)}.
+
+%% Exposes update clock to the outside.
+update_clock(Partition, local)->
+    IndexNode = dc_utilities:partition_to_indexnode(Partition),
+    riak_core_vnode_master:command(IndexNode,
+        {update_clock}, inter_dc_dep_vnode_master).
 
 %% Update the clock value associated with the given DCID from the perspective of this partition.
 -spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.

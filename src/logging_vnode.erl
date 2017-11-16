@@ -840,7 +840,7 @@ no_elements([], _Map) ->
     true;
 no_elements([LogId|Rest], Map) ->
     case dict:find(LogId, Map) of
-        {ok, Log} -> 
+        {ok, Log} ->
             case disk_log:chunk(Log, start) of
                 eof ->
                     no_elements(Rest, Map);
@@ -918,7 +918,7 @@ join_logs([{_Preflist, Log}|T], F, Acc) ->
     join_logs(T, F, JointAcc).
 
 fold_log(Log, Continuation, F, Acc) ->
-    case  disk_log:chunk(Log,Continuation) of 
+    case  disk_log:chunk(Log,Continuation) of
         eof ->
             Acc;
         {Next,Ops} ->

@@ -58,7 +58,8 @@
   partition :: partition_id(),
   buffer, %% log_tx_assembler:state
   last_log_id :: #op_number{},
-  timer :: any()
+  timer :: any(),
+  strict::boolean()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -89,11 +90,13 @@ send_stable_time(Partition, Time) ->
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-  {ok, #state{
+    {ok, Strict} = application:get_env(antidote, stable_strict),
+    {ok, #state{
     partition = Partition,
     buffer = log_txn_assembler:new_state(),
     last_log_id = #op_number{},
-    timer = none
+    timer = none,
+    strict = Strict
   }}.
 
 %% Start the timer
@@ -171,7 +174,7 @@ set_timer(State) ->
     set_timer(false,State).
 
 -spec set_timer(boolean(), #state{}) -> #state{}.
-set_timer(First, State = #state{partition = Partition}) ->
+set_timer(First, State = #state{partition = Partition, strict = Strict}) ->
     case First of
 	true ->
 	    {ok, Ring} = riak_core_ring_manager:get_my_ring(),
@@ -185,7 +188,13 @@ set_timer(First, State = #state{partition = Partition}) ->
 		    State
 	    end;
 	false ->
-	    State1 = del_timer(State),
+        case Strict of
+            true ->
+                inter_dc_dep_vnode:update_clock(Partition, local);
+            false->
+                continue
+        end,
+        State1 = del_timer(State),
 	    State1#state{timer = riak_core_vnode:send_command_after(?HEARTBEAT_PERIOD, ping)}
     end.
 		
