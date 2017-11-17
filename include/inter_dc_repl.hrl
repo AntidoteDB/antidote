@@ -45,11 +45,11 @@
 %% This keeps information about an inter-dc request
 %% on the site that is performing the query
 -record(inter_dc_query_state, {
-	  request_type :: inter_dc_message_type(),
-	  zmq_id :: term(),
-	  request_id_num_binary :: binary(),
-	  local_pid :: pid()
-	 }).
+    request_type :: inter_dc_message_type(),
+    zmq_id :: term(),
+    request_id_num_binary :: binary(),
+    local_pid :: pid()
+}).
 
 %% State for sub buff
 -record(inter_dc_sub_buf, {
