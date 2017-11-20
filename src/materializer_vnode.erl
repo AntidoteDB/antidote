@@ -193,8 +193,8 @@ log_number_of_non_applied_ops(StalenessLog, Partition, BlockingOp, TxId)->
 	log_number_of_non_applied_ops(#mat_state{staleness_log = StalenessLog, partition = Partition}, BlockingOp, TxId).
 
 -spec log_number_of_non_applied_snapshot_and_ops_internal(atom(), non_neg_integer(), txid())-> ok | {error, {no_such_log, atom()}}.
-log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps, TxId)->
-	case disk_log:alog(StalenessLog, {NumberOfNonAppliedOps, TxId}) of
+log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonAppliedOps, _TxId)->
+	case disk_log:alog(StalenessLog, NumberOfNonAppliedOps) of
 		ok->
 			ok;
 		{error, no_such_log}->
@@ -850,7 +850,7 @@ prune_ops({Len, OpsTuple}, Threshold) ->
 			end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
 			case NewSize of
 				0 ->
-					First = element(?FIRST_OP+Len, OpsTuple),
+					First = element(?FIRST_OP+Len-1, OpsTuple),
 					{1, [{?FIRST_OP, First}]};
 				_ ->
 					{NewSize, NewOps}
