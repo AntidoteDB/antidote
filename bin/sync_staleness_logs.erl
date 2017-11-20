@@ -26,7 +26,7 @@ main(NodesListString) ->
     end.
 
 usage() ->
-    io:format("This should be called like (e.g.): sync_all_staleness_logs.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'"),
+    io:format("This should be called like (e.g.): truncate_staleness_logs.erl 'antidote1@1.2.3.4' 'antidote2@5.6.7.8'"),
     halt(1).
 
 -include_lib("eunit/include/eunit.hrl").
