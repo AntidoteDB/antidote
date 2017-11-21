@@ -236,63 +236,71 @@ perform_read_internal(Coordinator,Key,Type,Transaction,PropertyList,
 %%      if local clock is behind, it sleeps the fms until the clock
 %%      catches up. CLOCK-SI: clock skew.
 %%
--spec check_clock(key(),transaction(),ets:tid(),partition_id(), mat_state()) ->
-	{not_ready, clock_time()} | ready.
+-spec check_clock(key(), transaction(), ets:tid(), partition_id(), mat_state()) ->
+    {not_ready, clock_time()} | ready.
 check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
     %%                @todo: reinsert the clockskew check, removed for benchmarking
-    %%	Time = dc_utilities:now_microsec(),
-%%    case Transaction#transaction.transactional_protocol of
-%%        physics ->
-%%            DepUpbound = Transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-%%            case
-%%                (DepUpbound == vectorclock:new()) of
-%%                true ->
-%%                    ready;
-%%                false ->
-%%                    MyDC = dc_utilities:get_my_dc_id(),
-%%                    DepUpboundScalar= vectorclock:get_clock_of_dc(MyDC, DepUpbound),
-%%                    case DepUpboundScalar > Time of
-%%                        true ->
-%%                            case MatState#mat_state.staleness_log of
-%%                                staleness_log_disabled -> dites_bonjour;
-%%                                StalenessLog ->
-%%                                    ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
-%%                            end,
-%%                            % lager:debug("Waiting... Reason: clock skew"),
-%%                            {not_ready, (DepUpboundScalar - Time) div 1000 + 1};
-%%                        false ->
-%%                            ready
-%%                    end
-%%            end;
-%%            Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
-%%                TxId = Transaction#transaction.txn_id,
-%%                T_TS = TxId#tx_id.local_start_time,
-%%                case T_TS > Time of
-%%                true ->
-%%                    case MatState#mat_state.staleness_log of
-%%                        no_staleness_log -> dites_bonjour;
-%%                        StalenessLog ->
-%%                            ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
-%%                    end,
-%%                    % lager:info("Waiting... Reason: clock skew"),
-%%                    {not_ready, (T_TS - Time) div 1000 + 1};
-%%                false ->
+    Time = dc_utilities:now_microsec(),
     case Transaction#transaction.transactional_protocol of
-        Protocol when ((Protocol==gr) or (Protocol==clocksi)) ->
-            case check_prepared(Key, Transaction, PreparedCache, Partition) of
-                ready ->
+        physics ->
+            DepUpbound = Transaction#transaction.snapshot_vc,
+            case
+                (DepUpbound == vectorclock:new()) of
+                true ->
                     ready;
-                NotReady ->
-                    case MatState#mat_state.staleness_log of
-                        no_staleness_log -> dites_bonjour;
-                        StalenessLog ->
-                            ok=materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared, Transaction#transaction.txn_id)
-                    end,
-                    NotReady
+                false ->
+                    MyDC = dc_utilities:get_my_dc_id(),
+                    DepUpboundScalar = vectorclock:get_clock_of_dc(MyDC, DepUpbound),
+                    case DepUpboundScalar > Time of
+                        true ->
+                            case MatState#mat_state.staleness_log of
+                                staleness_log_disabled ->
+                                    dites_bonjour;
+                                StalenessLog ->
+                                    ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+                            end,
+                            % lager:debug("Waiting... Reason: clock skew"),
+                            {not_ready, (DepUpboundScalar-Time) div 1000+1};
+                        false ->
+                            ready
+                    end
             end;
-        _->
+        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+            TxId = Transaction#transaction.txn_id,
+            T_TS = TxId#tx_id.local_start_time,
+            case T_TS > Time of
+                true ->
+                    case MatState#mat_state.staleness_log of
+                        no_staleness_log ->
+                            dites_bonjour;
+                        StalenessLog ->
+                            ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+                    end,
+                    % lager:info("Waiting... Reason: clock skew"),
+                    {not_ready, (T_TS-Time) div 1000+1};
+                false ->
+                    case Transaction#transaction.transactional_protocol of
+                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                            case check_prepared(Key, Transaction, PreparedCache, Partition) of
+                                ready ->
+                                    ready;
+                                NotReady ->
+                                    case MatState#mat_state.staleness_log of
+                                        no_staleness_log ->
+                                            dites_bonjour;
+                                        StalenessLog ->
+                                            ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, prepared, Transaction#transaction.txn_id)
+                                    end,
+                                    NotReady
+                            end;
+                        _ ->
+                            ready
+                    end
+            end;
+        ec ->
             ready
     end.
+
 
 %%            end
 %%    end.
