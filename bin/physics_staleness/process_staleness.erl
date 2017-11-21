@@ -134,7 +134,7 @@ processStalenessTableInternal(InitString, StalenessTable, TotalReads, Number, Ze
         0 ->
             integer_to_list(UpdatedZeroCount) ++ "," ++ InitString;
         _ ->
-            String = case NumberOfNumber of
+            String = case Number of
                 1 ->
                     integer_to_list(NumberOfNumber);
                 _ ->
