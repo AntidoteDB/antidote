@@ -102,7 +102,7 @@ processStalenessTable(StalenessTable, OutputFileName) ->
     LoadString=string:sub_string(OutputFileName, 7), % remove the Stale- part from the directory
     {ok, FileHandler} = file:open(OutputFileName++".csv", [raw, write]),
     %% create header
-    HeaderLine="Workload\tTotal\tSkew\tPrepared\t0\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\t12\t13\t14\t15\n",
+    HeaderLine="Workload,Total,Skew,Prepared,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15\n",
     file:write(FileHandler, HeaderLine),
     FullTableSize = ets:info(StalenessTable, size),
     ClockSkew = length(ets:lookup(staleness_table, clock_skew)),
@@ -115,8 +115,8 @@ processStalenessTable(StalenessTable, OutputFileName) ->
     io:format("Prepared ~p~n", [Prepared]),
     io:format("TotalReads ~p~n", [TotalReads]),
 
-    String = LoadString ++ "\t" ++ integer_to_list(TotalReads) ++ "\t"
-        ++ integer_to_list(ClockSkew) ++ "\t" ++ integer_to_list(Prepared)++ "\t",
+    String = LoadString ++ "," ++ integer_to_list(TotalReads) ++ ","
+        ++ integer_to_list(ClockSkew) ++ "," ++ integer_to_list(Prepared)++ ",",
     io:format("String ~p~n", [String]),
 
     file:write(FileHandler, String),
@@ -132,9 +132,14 @@ processStalenessTableInternal(InitString, StalenessTable, TotalReads, Number, Ze
     UpdatedZeroCount=ZeroCount - NumberOfNumber,
     case NumberOfNumber of
         0 ->
-            integer_to_list(UpdatedZeroCount) ++ "\t" ++ InitString;
+            integer_to_list(UpdatedZeroCount) ++ "," ++ InitString;
         _ ->
-            String = InitString ++ "\t" ++ integer_to_list(NumberOfNumber),
+            String = case NumberOfNumber of
+                1 ->
+                    integer_to_list(NumberOfNumber);
+                _ ->
+                    InitString ++ "," ++ integer_to_list(NumberOfNumber)
+            end,
             processStalenessTableInternal(String, StalenessTable, TotalReads, Number+1, UpdatedZeroCount)
     end.
 
