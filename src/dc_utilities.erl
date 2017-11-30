@@ -245,7 +245,7 @@ check_registered(Name) ->
 %% in all partitions
 -spec get_stable_snapshot() -> {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable) of
+    case meta_data_sender:get_merged_data(kvector) of
         undefined ->
             %% The snapshot isn't realy yet, need to wait for startup
             timer:sleep(10),

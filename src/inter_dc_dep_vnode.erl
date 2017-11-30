@@ -57,7 +57,8 @@
   queues :: dict:dict(dcid(), queue:queue()), %% DCID -> queue()
   vectorclock :: vectorclock(),
   last_updated :: non_neg_integer(),
-  drop_ping :: boolean()
+  drop_ping :: boolean(),
+    kstablevector :: vectorclock()
 }).
 
 %%%% API --------------------------------------------------------------------+
@@ -77,7 +78,7 @@ set_dependency_clock(Partition, Vector) -> dc_utilities:call_local_vnode_sync(Pa
 -spec init([partition_id()]) -> {ok, #state{}}.
 init([Partition]) ->
   StableSnapshot = vectorclock:new(),
-  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, last_updated = 0, drop_ping = false}}.
+  {ok, #state{partition = Partition, queues = dict:new(), vectorclock = StableSnapshot, kstablevector = StableSnapshot, last_updated = 0, drop_ping = false}}.
 
 start_vnode(I) -> riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
@@ -112,7 +113,7 @@ process_queue(DCID, {State, Acc}) ->
 try_store(State=#state{drop_ping = true}, #interdc_txn{log_records = []}) ->
     {State, true};
 try_store(State, #interdc_txn{dcid = DCID, timestamp = Timestamp, log_records = []}) ->
-    {update_clock(State, DCID, Timestamp), true};
+    {update_clock_and_k_vector(State, DCID, Timestamp), true};
 
 %% Store the normal transaction
 try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp = Timestamp, log_records = Ops}) ->
@@ -128,7 +129,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
     %% Still need to update the timestamp for that DC, up to 1 less than the
     %% value of the commit time, because updates from other DCs might depend
     %% on a time up to this
-    false -> {update_clock(State, DCID, Timestamp-1), false};
+    false -> {update_clock_and_k_vector(State, DCID, Timestamp-1), false};
 
     %% If so, store the transaction
     true ->
@@ -140,7 +141,7 @@ try_store(State, Txn=#interdc_txn{dcid = DCID, partition = Partition, timestamp 
       ClockSiOps = updates_to_clocksi_payloads(Txn),
 
       ok = lists:foreach(fun(Op) -> materializer_vnode:update(Op#clocksi_payload.key, Op) end, ClockSiOps),
-      {update_clock(State, DCID, Timestamp), true}
+      {update_clock_and_k_vector(State, DCID, Timestamp), true}
   end.
 
 handle_command({set_dependency_clock, Vector}, _Sender, State) ->
@@ -187,8 +188,11 @@ pop_txn(State = #state{queues = Queues}, DCID) ->
   State#state{queues = dict:store(DCID, NewQueue, Queues)}.
 
 %% Update the clock value associated with the given DCID from the perspective of this partition.
--spec update_clock(#state{}, dcid(), non_neg_integer()) -> #state{}.
-update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
+-spec update_clock_and_k_vector(#state{}, dcid(), non_neg_integer()) -> #state{}.
+update_clock_and_k_vector(State = #state{last_updated = LastUpdated}, DCID, Timestamp, SnapshotTime) ->
+
+
+
   %% Should we decrement the timestamp value by 1?
   NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
 
@@ -205,10 +209,10 @@ update_clock(State = #state{last_updated = LastUpdated}, DCID, Timestamp) ->
     %% not just the current DCID/Timestamp pair in the arguments.
     %% Failure to do so may lead to a deadlock during the connection phase.
     true ->
-
       %% Update the stable snapshot NEW way (as in Tyler's weak_meta_data branch)
-      ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
-
+        ok = meta_data_sender:put_meta_dict(stable, State#state.partition, NewClock),
+        %% Update the k stable vector with the sanpshot time of the received update.
+        ok = meta_data_sender:put_meta_dict(kvector, State#state.partition, SnapshotTime),
       Now;
     %% Stable snapshot was recently updated, no need to do so.
     false -> LastUpdated
