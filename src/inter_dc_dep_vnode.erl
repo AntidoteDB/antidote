@@ -194,7 +194,7 @@ update_clock_and_k_vector(State = #state{last_updated = LastUpdated}, DCID, Time
 
 
   %% Should we decrement the timestamp value by 1?
-  NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.vectorclock),
+    NewClock = vectorclock:set_clock_of_dc(DCID, Timestamp, State#state.kstablevector),
 
   %% Check if the stable snapshot should be refreshed.
   %% It's an optimization that reduces communication overhead during intensive updates at remote DCs.
