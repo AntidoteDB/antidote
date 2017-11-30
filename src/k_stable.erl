@@ -25,6 +25,14 @@
 %% TODO [] Get 'replication_factor' to metadata to make it dynamically adjustable
 %% TODO [] When delivering an interdc TX, update k-stable module
 
+%% Things to check:
+%% - is the inter-dc traffic passing through here
+%%  - does it update the tables
+%%  - is the k-vector calculation correct
+%% - make sure all the reads happen with the k-stable vector
+%%  - do what when fresh instance/not enough data to get the k-vector?
+%%      - Maybe just use regular cure?
+
 -module(k_stable).
 -behaviour(gen_server).
 -include("antidote.hrl").
@@ -86,7 +94,6 @@ deliver_tx(Tx) ->
 -spec fetch_kvector() -> vectorclock().
 fetch_kvector() ->
     gen_server:call({global, generate_name(node())}, get_kvect).
-
 
 
 %% ===================================================================
