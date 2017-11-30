@@ -302,7 +302,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
         prepared_tx = PreparedTx,
 	prepared_dict = PreparedDict
     }) ->
-    PrepareTime = dc_utilities:now_microsec(),
+    PrepareTime = get_prepare_time(Transaction),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of
         {ok, _} ->
@@ -328,7 +328,7 @@ handle_command({single_commit, Transaction, WriteSet, DependencyVC}, _Sender,
       prepared_tx = PreparedTx,
       prepared_dict = PreparedDict
   }) ->
-	PrepareTime = dc_utilities:now_microsec(),
+    PrepareTime = get_prepare_time(Transaction),
     {Result, NewPrepareTime, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
@@ -453,7 +453,7 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
                     Dict = set_prepared(PreparedTx, TxWriteSet, TxId, PrepareTime, orddict:new()),
                     NewPrepare = dc_utilities:now_microsec(),
                     ok = reset_prepared(PreparedTx, TxWriteSet, TxId, NewPrepare, Dict),
-		    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
+                    NewPreparedDict = orddict:store(NewPrepare, TxId, PreparedDict),
                     LogRecord = #log_operation{tx_id = TxId,
                         op_type = prepare,
                         log_payload = #prepare_log_payload{prepare_time = NewPrepare}},
@@ -466,6 +466,22 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
             end;
         false ->
             {{error, write_conflict}, 0, PreparedDict}
+    end.
+
+get_prepare_time(Transaction) ->
+    NowInMicrosec = dc_utilities:now_microsec(),
+    case Transaction#transaction.transactional_protocol of
+        Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
+            SnapshotClock = Transaction#transaction.snapshot_clock,
+            case NowInMicrosec < SnapshotClock of
+                true ->
+                    timer:sleep((SnapshotClock - NowInMicrosec) div 1000),
+                    SnapshotClock +1;
+                false ->
+                    NowInMicrosec
+            end;
+        _ ->
+            NowInMicrosec
     end.
 
 set_prepared(_PreparedTx, [], _TxId, _Time, Acc) ->
