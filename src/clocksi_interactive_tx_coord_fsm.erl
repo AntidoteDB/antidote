@@ -376,7 +376,14 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
     
 	case antidote_hooks:execute_pre_commit_hook(Key, Type, Param1) of
 		{Key, Type, Param} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState) of
+            Result = case Type of
+                antidote_crdt_lwwreg ->
+                    {NewMaterializedSnapshotRecord, SnapshotCommitParams} = materializer_vnode:create_empty_materialized_snapshot_record(CoordState#tx_coord_state.transaction, Type),
+                    {ok, NewMaterializedSnapshotRecord#materialized_snapshot.value, SnapshotCommitParams, false};
+                _->
+                    ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState)
+            end,
+            case Result of
                 {ok, DownstreamRecord, SnapshotParameters, KeyWasRead}->
 %%                                lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     ok = log_downstream_record_at_vnode(Key, Type, DownstreamRecord, CoordState),
