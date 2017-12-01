@@ -73,6 +73,7 @@
     prepared_tx :: cache_id(),
     committed_tx :: cache_id(),
     read_servers :: non_neg_integer(),
+    strict :: boolean(),
     prepared_dict :: list()}).
 
 %%%===================================================================
@@ -209,10 +210,12 @@ get_cache_name(Partition, Base) ->
 init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
+    {ok, Strict} = application:get_env(antidote, stable_strict),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
         read_servers = ?READ_CONCURRENCY,
+        strict = Strict,
         prepared_dict = orddict:new()}}.
 
 %% @doc The table holding the prepared transactions is shared with concurrent
@@ -300,9 +303,10 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
     State = #state{partition = _Partition,
         committed_tx = CommittedTx,
         prepared_tx = PreparedTx,
-	prepared_dict = PreparedDict
+	prepared_dict = PreparedDict,
+        strict = Strict
     }) ->
-    PrepareTime = get_prepare_time(Transaction),
+    PrepareTime = get_prepare_time(Transaction, Strict),
     {Result, NewPrepare, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     case Result of
         {ok, _} ->
@@ -326,9 +330,10 @@ handle_command({single_commit, Transaction, WriteSet, DependencyVC}, _Sender,
   State = #state{partition = _Partition,
       committed_tx = CommittedTx,
       prepared_tx = PreparedTx,
-      prepared_dict = PreparedDict
+      prepared_dict = PreparedDict,
+      strict = Strict
   }) ->
-    PrepareTime = get_prepare_time(Transaction),
+    PrepareTime = get_prepare_time(Transaction, Strict),
     {Result, NewPrepareTime, NewPreparedDict} = prepare(Transaction, WriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedDict),
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
@@ -468,14 +473,21 @@ prepare(Transaction, TxWriteSet, CommittedTx, PreparedTx, PrepareTime, PreparedD
             {{error, write_conflict}, 0, PreparedDict}
     end.
 
-get_prepare_time(Transaction) ->
+get_prepare_time(Transaction, Strict) ->
     NowInMicrosec = dc_utilities:now_microsec(),
     case Transaction#transaction.transactional_protocol of
         Protocol when ((Protocol == gr) or (Protocol== clocksi)) ->
             SnapshotClock = Transaction#transaction.snapshot_clock,
             case NowInMicrosec < SnapshotClock of
                 true ->
-                    timer:sleep((SnapshotClock - NowInMicrosec) div 1000),
+                    case Strict of
+                        true ->
+                            lager:info("not_waiting"),
+                            holi;
+                        false ->
+                            lager:info("waiting"),
+                            timer:sleep((SnapshotClock - NowInMicrosec) div 1000)
+                    end,
                     SnapshotClock +1;
                 false ->
                     NowInMicrosec
