@@ -91,7 +91,7 @@ process({log_reader_resp, Txns}, State = #state{queue = Queue, state_name = buff
   process_queue(NewState).
 
 %%%% Methods ----------------------------------------------------------------+
-process_queue(State = #state{queue = Queue, last_observed_opid = Last, txn_prot = Protocol}) ->
+process_queue(State = #state{queue = Queue, last_observed_opid = Last}) ->
   case queue:peek(Queue) of
     empty -> State#state{state_name = normal};
     {value, Txn} ->
@@ -144,6 +144,6 @@ query({DCID,Partition}, From, To) ->
     BinaryRequest = term_to_binary({read_log, Partition, From, To}),
     inter_dc_query:perform_request(?LOG_READ_MSG, {DCID, Partition}, BinaryRequest, fun inter_dc_sub_vnode:deliver_log_reader_resp/2).
 
-cmp(A, B) when A > B -> gt;
-cmp(A, B) when B > A -> lt;
-cmp(_, _) -> eq.
+%%cmp(A, B) when A > B -> gt;
+%%cmp(A, B) when B > A -> lt;
+%%cmp(_, _) -> eq.
