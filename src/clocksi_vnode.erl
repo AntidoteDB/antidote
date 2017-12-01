@@ -485,7 +485,7 @@ get_prepare_time(Transaction, Strict) ->
                             lager:info("not_waiting"),
                             holi;
                         false ->
-                            lager:info("waiting"),
+                            lager:info("waiting ~p", [(SnapshotClock - NowInMicrosec) div 1000]),
                             timer:sleep((SnapshotClock - NowInMicrosec) div 1000)
                     end,
                     SnapshotClock +1;
