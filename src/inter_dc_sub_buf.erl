@@ -96,10 +96,11 @@ process_queue(State = #state{queue = Queue, last_observed_opid = Last, txn_prot 
     empty -> State#state{state_name = normal};
     {value, Txn} ->
       TxnLast = Txn#interdc_txn.prev_log_opid#op_number.local,
-      Compare = case Protocol of
-          ec -> eq;
-          _-> cmp(TxnLast, Last)
-      end,
+      Compare = eq, %TODO: FIX, BYPASSED FOR BENCHMARKING AS CAUSES CRASHES
+%%          case Protocol of
+%%          ec -> eq;
+%%          _-> cmp(TxnLast, Last)
+%%      end,
       case Compare of
       %% If the received transaction is immediately after the last observed one
         eq ->
