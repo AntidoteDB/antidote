@@ -147,7 +147,7 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict) ->
         return_accumulator= [],
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
-        stable_strict=Strict,
+        stable_strict=Strict
         %% The following are needed by the physics protocol
     }.
 
@@ -490,7 +490,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
   CoordState= #tx_coord_state{num_to_read = NumToRead,
       return_accumulator= ReadSet,
       internal_read_set = InternalReadSet,
-      transactional_protocol = TransactionalProtocol,
+%%      transactional_protocol = TransactionalProtocol,
       transaction=Transaction}) ->
     %%TODO: type is hard-coded..
     
@@ -498,19 +498,19 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
     Value2 = Type:value(SnapshotAfterMyUpdates),
     ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
     NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
-    SD1 = case TransactionalProtocol of
-              physics ->
-                  update_physics_metadata(CoordState, SnapshotCommitParams);
-              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
-                  CoordState
-          end,
+%%    SD1 = case TransactionalProtocol of
+%%              physics ->
+%%                  update_physics_metadata(CoordState, SnapshotCommitParams);
+%%              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
+%%                  CoordState
+%%          end,
     case NumToRead of
         1 ->
-            gen_fsm:reply(SD1#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
-            {next_state, execute_op, SD1#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+            {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
         _ ->
             {next_state, receive_read_objects_result,
-                SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
+                CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
     end.
 
 -spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, transaction(), type(), snapshot()) -> snapshot().
@@ -529,7 +529,7 @@ apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot)->
 
 
 -spec update_coordinator_state(#tx_coord_state{}, downstream_record(), vectorclock()| {vectorclock(), vectorclock(), vectorclock()}, key(), type(), downstream_record(), boolean()) -> #tx_coord_state{}.
-update_coordinator_state(InitCoordState, DownstreamOp, SnapshotParameters, Key, Type, Param, KeyWasRead) ->
+update_coordinator_state(InitCoordState, DownstreamOp, _SnapshotParameters, Key, Type, Param, _KeyWasRead) ->
     
     UpdatedPartitions = InitCoordState#tx_coord_state.updated_partitions,
 %%    Transaction = InitCoordState#tx_coord_state.transaction,

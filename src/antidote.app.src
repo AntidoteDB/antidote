@@ -44,11 +44,11 @@
   %%        true -> the materializer vnode will log staleness in log files that can later be processed.
   %%        false -> this option will be disabled.
      {env, [{txn_cert, false},
-         {txn_prot, clocksi},
-         {stable_strict, false},
-         {enable_logging, true},
+         {txn_prot, physics},
+         {stable_strict, true},
+         {enable_logging, false},
          {recover_from_log, false},
-         {recover_meta_data_on_start, true},
+         {recover_meta_data_on_start, false},
          {sync_log, false},
-         {log_staleness, true}]}
+         {log_staleness, false}]}
  ]}.
