@@ -50,5 +50,5 @@
          {recover_from_log, false},
          {recover_meta_data_on_start, false},
          {sync_log, false},
-         {log_staleness, false}]}
+         {log_staleness, true}]}
  ]}.
