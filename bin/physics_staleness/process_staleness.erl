@@ -33,7 +33,7 @@ merge_staleness_files_into_table(DirectoryList) ->
     StalenessTable = case ets:info(staleness_table) of
         undefined ->
             %table does not exist, create it
-            ets:new(staleness_table, [duplicate_bag, named_table, public]);
+            ets:new(staleness_table, [set, named_table, public]);
         _ ->
             %empty the table
             io:format("DELETTING ALL ITEMS FROM STALENESS_TABLE"),
@@ -42,7 +42,7 @@ merge_staleness_files_into_table(DirectoryList) ->
     end,
     lists:foreach(fun(Directory) ->
         {ok, FileList} = file:list_dir(Directory),
-        io:format("Files in directory ~p:~n~p~n", [Directory, FileList]),
+%%        io:format("Files in directory ~p:~n~p~n", [Directory, FileList]),
 
         lists:foreach(fun(FileName) ->
             ok = file_to_table(Directory++"/"++FileName, start, StalenessTable, "StalenessLog")
@@ -67,9 +67,9 @@ file_to_table(FileName, Continuation, TableName, FileKind)->
             end,
             LogStatus=case Continuation of
                 start ->
-                    io:format("openning file~n"),
+%%                    io:format("openning file~n"),
                     State=disk_log:open([{name, DirAndFileName}]),
-                    io:format("openning log returned: ~p~n",[State]),
+%%                    io:format("openning log returned: ~p~n",[State]),
                     State;
                 _->
                     do_nothing
@@ -83,12 +83,19 @@ file_to_table(FileName, Continuation, TableName, FileKind)->
                     case disk_log:chunk(DirAndFileName, Continuation) of
                         eof ->
                             io:format("closing file~n"),
+                            io:format("Table after file is: ~p~n", [ets:tab2list(TableName)]),
+
                             disk_log:close(DirAndFileName),
                             ok;
                         {NextContinuation, List} ->
                             lists:foreach(fun(Info) ->
-%%                                								io:format("inserting into table: ~p", [{Info, 1}]),
-                                ets:insert(TableName, {Info,1})
+                                case ets:lookup(TableName, Info) of
+                                    [] ->
+                                        ets:insert(TableName, {Info, 1});
+                                    Value->
+%%                                        io:format("Value is ~p~n", [Value]),
+                                        ets:update_counter(TableName, Info, 1)
+                                end
                             end, List),
                             file_to_table(DirAndFileName, NextContinuation, TableName, FileKind)
                     end
@@ -104,44 +111,73 @@ processStalenessTable(StalenessTable, OutputFileName) ->
     %% create header
     HeaderLine="Workload,Total,Skew,Prepared,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15\n",
     file:write(FileHandler, HeaderLine),
-    FullTableSize = ets:info(StalenessTable, size),
-    ClockSkew = length(ets:lookup(staleness_table, clock_skew)),
-    Prepared = length(ets:lookup(staleness_table, prepared)),
-    TotalReads = FullTableSize - ClockSkew - Prepared,
+%%    FullTableSize = ets:info(StalenessTable, size),
+%%    ClockSkew = length(ets:lookup(staleness_table, clock_skew)),
+%%    Prepared = length(ets:lookup(staleness_table, prepared)),
+    ClockSkew = case ets:lookup(staleness_table, clock_skew) of
+        [] ->
+            0;
+        [{clock_skew, Value}] ->
+            ets:delete(staleness_table, clock_skew),
+            Value
+    end,
+    Prepared = case ets:lookup(staleness_table, prepared) of
+        [] -> 0;
+        [{prepared, PValue}] ->
+            ets:delete(staleness_table, prepared),
+            PValue
+    end,
+%%    TotalReads = FullTableSize - ClockSkew - Prepared,
 
     io:format("LoadString ~s~n", [LoadString]),
-    io:format("FullTableSize ~p~n", [FullTableSize]),
+%%    io:format("FullTableSize ~p~n", [FullTableSize]),
     io:format("ClockSkew ~p~n", [ClockSkew]),
     io:format("Prepared ~p~n", [Prepared]),
-    io:format("TotalReads ~p~n", [TotalReads]),
+%%    io:format("TotalReads ~p~n", [TotalReads]),
+
+    {TotalReads, FinalString}=processStalenessTableInternal(StalenessTable),
+
 
     String = LoadString ++ "," ++ integer_to_list(TotalReads) ++ ","
         ++ integer_to_list(ClockSkew) ++ "," ++ integer_to_list(Prepared)++ ",",
     io:format("String ~p~n", [String]),
 
     file:write(FileHandler, String),
-    FinalString=processStalenessTableInternal("", StalenessTable, TotalReads, 1, TotalReads),
     file:write(FileHandler, FinalString++"\n"),
     io:format("FinalString ~p~n", [FinalString]),
 
     file:close(FileHandler).
 
-processStalenessTableInternal(InitString, StalenessTable, TotalReads, Number, ZeroCount) ->
-    NumberOfNumber = length(ets:lookup(staleness_table, Number)),
-    io:format("Number of  ~p: ~p~n", [Number, NumberOfNumber]),
-    UpdatedZeroCount=ZeroCount - NumberOfNumber,
-    case NumberOfNumber of
-        0 ->
-            integer_to_list(UpdatedZeroCount) ++ "," ++ InitString;
-        _ ->
-            String = case Number of
-                1 ->
-                    integer_to_list(NumberOfNumber);
-                _ ->
-                    InitString ++ "," ++ integer_to_list(NumberOfNumber)
-            end,
-            processStalenessTableInternal(String, StalenessTable, TotalReads, Number+1, UpdatedZeroCount)
-    end.
+processStalenessTableInternal(StalenessTable) ->
+    SortedList = lists:sort(ets:tab2list(StalenessTable)),
+    io:format("Sorted list is: ~p~n", [SortedList]),
+    lists:foldl(fun({Number, NumberOfNumber}, {TotalCount, FinalString}) ->
+        io:format("Number of  ~p: ~p~n", [Number, NumberOfNumber]),
+        case Number of
+            0 ->
+                {NumberOfNumber, integer_to_list(NumberOfNumber)};
+            _ ->
+                {TotalCount+NumberOfNumber, FinalString++","++integer_to_list(NumberOfNumber)}
+        end
+    end, {0, ""}, SortedList).
+
+
+
+%%    NumberOfNumber = ets:lookup(staleness_table, Number),
+%%    io:format("Number of  ~p: ~p~n", [Number, NumberOfNumber]),
+%%    UpdatedTotalCount = TotalReads + NumberOfNumber,
+%%    case NumberOfNumber of
+%%        0 ->
+%%            integer_to_list(UpdatedTotalCount) ++ "," ++ InitString;
+%%        _ ->
+%%            String = case Number of
+%%                1 ->
+%%                    integer_to_list(NumberOfNumber);
+%%                _ ->
+%%                    InitString ++ "," ++ integer_to_list(NumberOfNumber)
+%%            end,
+%%            processStalenessTableInternal(String, StalenessTable, UpdatedTotalCount, Number+1)
+%%    end.
 
 
 
