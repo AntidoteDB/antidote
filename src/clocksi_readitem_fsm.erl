@@ -242,29 +242,29 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
     %%                @todo: reinsert the clockskew check, removed for benchmarking
     Time = dc_utilities:now_microsec(),
     case Transaction#transaction.transactional_protocol of
-        physics ->
-            DepUpbound = Transaction#transaction.snapshot_vc,
-            case
-                (DepUpbound == vectorclock:new()) of
-                true ->
-                    ready;
-                false ->
-                    MyDC = dc_utilities:get_my_dc_id(),
-                    DepUpboundScalar = vectorclock:get_clock_of_dc(MyDC, DepUpbound),
-                    case DepUpboundScalar > Time of
-                        true ->
-                            case MatState#mat_state.staleness_log of
-                                staleness_log_disabled ->
-                                    dites_bonjour;
-                                StalenessLog ->
-                                    ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
-                            end,
-                            % lager:debug("Waiting... Reason: clock skew"),
-                            {not_ready, (DepUpboundScalar-Time) div 1000+1};
-                        false ->
-                            ready
-                    end
-            end;
+        physics -> ready;
+%%            DepUpbound = Transaction#transaction.snapshot_vc,
+%%            case
+%%                (DepUpbound == vectorclock:new()) of
+%%                true ->
+%%                    ready;
+%%                false ->
+%%                    MyDC = dc_utilities:get_my_dc_id(),
+%%                    DepUpboundScalar = vectorclock:get_clock_of_dc(MyDC, DepUpbound),
+%%                    case DepUpboundScalar > Time of
+%%                        true ->
+%%                            case MatState#mat_state.staleness_log of
+%%                                staleness_log_disabled ->
+%%                                    dites_bonjour;
+%%                                StalenessLog ->
+%%                                    ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew)
+%%                            end,
+%%                            % lager:debug("Waiting... Reason: clock skew"),
+%%                            {not_ready, (DepUpboundScalar-Time) div 1000+1};
+%%                        false ->
+%%                            ready
+%%                    end
+%%            end;
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
             TxId = Transaction#transaction.txn_id,
             T_TS = TxId#tx_id.local_start_time,

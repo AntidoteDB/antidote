@@ -540,7 +540,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	OpsCache = MatState#mat_state.ops_cache,
 	SnapshotCache = MatState#mat_state.snapshot_cache,
     TxnId = Transaction#transaction.txn_id,
-    Protocol = Transaction#transaction.transactional_protocol,
+%%    Protocol = Transaction#transaction.transactional_protocol,
     case ets:lookup(OpsCache, Key) of
         [] ->
 %%	        lager:debug("Cache for Key ~p is empty",[Key]),
@@ -552,30 +552,32 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
         [Tuple] ->
 	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
 %%	        lager:debug("Key ~p~n, Len ~p~n, _OpId ~p~n, _ListLen ~p~n, OperationsForKey ~p~n", [Key, Len, _OpId, _ListLen, OperationsForKey]),
-	        UpdatedTxnRecord =
-		        case Protocol of
-			        physics ->
-				        case TxnId of no_txn_inserting_from_log -> Transaction;
-					        _ ->
-%%						        case define_snapshot_vc_for_transaction(Transaction, OperationsForKey) of
-%%							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
-%%								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
-%%							        no_operation_to_define_snapshot ->
-%%%%								        lager:debug("there no_operation_to_define_snapshot"),
-						        NewVC=vectorclock:new(),
-						        SnapVC=Transaction#transaction.snapshot_vc,
-						        NewSnapshotVC=case SnapVC==NewVC of
-							        true->
-								        lager:info("this should not happen, DepUpbound = ", [SnapVC] ),
-								        _NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec()-?PHYSICS_THRESHOLD, NewVC);
-							        false->
-										SnapVC
-						        end,
-						        Transaction#transaction{snapshot_vc=NewSnapshotVC}
-				        end;
-			        Protocol when ((Protocol == clocksi) or (Protocol == gr) or (Protocol == ec)) ->
-				        Transaction
-		        end,
+%%	        UpdatedTxnRecord =
+%%		        case Protocol of
+%%			        physics ->
+%%				        case TxnId of
+%%					        no_txn_inserting_from_log ->
+%%						        Transaction;
+%%					        _ ->
+%%%%						        case define_snapshot_vc_for_transaction(Transaction, OperationsForKey) of
+%%%%							        OpCommitParams = {OperationCommitVC, _OperationDependencyVC, _ReadVC} ->
+%%%%								        {Transaction#transaction{snapshot_vc = OperationCommitVC}, OpCommitParams};
+%%%%							        no_operation_to_define_snapshot ->
+%%%%%%								        lager:debug("there no_operation_to_define_snapshot"),
+%%						        NewVC=vectorclock:new(),
+%%						        SnapVC=Transaction#transaction.snapshot_vc,
+%%						        NewSnapshotVC=case SnapVC==NewVC of
+%%							        true->
+%%								        lager:info("this should not happen, DepUpbound = ", [SnapVC] ),
+%%								        _NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec()-?PHYSICS_THRESHOLD, NewVC);
+%%							        false->
+%%										SnapVC
+%%						        end,
+%%						        Transaction#transaction{snapshot_vc=NewSnapshotVC}
+%%				        end;
+%%			        Protocol when ((Protocol == clocksi) or (Protocol == gr) or (Protocol == ec)) ->
+%%				        Transaction
+%%		        end,
             Result = case Type of
 	            antidote_crdt_lwwreg -> %no need to get snapshot to materialize
 		            {BlankSSRecord, BlankSSCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
@@ -587,10 +589,10 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 				            {BlankSSRecord, BlankSSCommitParams, 1};
 			            [{_, SnapshotDict}] ->
 				            %%	                         lager:debug("SnapshotDict: ~p", [SnapshotDict]),
-				            case vector_orddict:get_smaller(UpdatedTxnRecord#transaction.snapshot_vc, SnapshotDict) of
+				            case vector_orddict:get_smaller(Transaction#transaction.snapshot_vc, SnapshotDict) of
 					            {undefined, NumberOfSnap} ->
 						            lager:info("~nno snapshot in the cache for key: ~p",[Key]),
-						            lager:info("Metadata: ~w", [UpdatedTxnRecord#transaction.snapshot_vc]),
+						            lager:info("Metadata: ~w", [Transaction#transaction.snapshot_vc]),
 						            lager:info("SnapshotDict: ~w", [SnapshotDict]),
 						            lager:info("OpsLen: ~w", [Len]),
 						            %%	                                 lager:info("~n SnapshotDict is : ~p",[SnapshotDict]),
@@ -612,7 +614,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	                {undefined, NumberOfSnapshot} ->
                         LogId = log_utilities:get_logid_from_key(Key),
                         [Node] = log_utilities:get_preflist_from_key(Key),
-	                    SnapshotGetResponseRecord = logging_vnode:get(Node, LogId, UpdatedTxnRecord, Type, Key),
+	                    SnapshotGetResponseRecord = logging_vnode:get(Node, LogId, Transaction, Type, Key),
 		                SnapshotGetResponseRecord#snapshot_get_response{is_newest_snapshot=NumberOfSnapshot};
                     {MatSnapshotRecord1, SnapshotCommitTime1, IsFirst1} ->
 %%	                    lager:info("~nLatestSnapshot1 ~n~p, SnapshotCommitTime1,~n~p ~nOpsForKey ~n~p",[MatSnapshotRecord1, SnapshotCommitTime1, OperationsForKey]),
@@ -629,7 +631,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
                 _ ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
-                    case clocksi_materializer:materialize(Type, UpdatedTxnRecord, SnapshotGetResponse, MatState) of
+                    case clocksi_materializer:materialize(Type, Transaction, SnapshotGetResponse, MatState) of
                         {ok, Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount} ->
 %%	                        lager:info("~n Snapshot ~p~n ~n NewLastOp ~p ~n CommitParameters ~p ~n NewSS ~p ~n OpAddedCount ~p", [Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount]),
 %%	                        lager:info("~nShouldGc ~p", [ShouldGc]),
