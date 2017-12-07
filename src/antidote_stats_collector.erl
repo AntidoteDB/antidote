@@ -41,23 +41,21 @@ start_link() ->
 
 init([]) ->
     init_metrics(),
+    % set the error logger counting the number of errors during operation
+    ok = error_logger:add_report_handler(antidote_error_monitor),
+    % start the timer for updating the calculated metrics
     Timer = erlang:send_after(?INIT_INTERVAL, self(), periodic_update),
     {ok, Timer}.
 
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.
 
-handle_cast({update, Metric}, State) ->
-    Val = antidote_stat:get_value(Metric),
-    exometer:update(Metric, Val),
-    {noreply, State};
-
 handle_cast(_Req, State) ->
     {noreply, State}.
 
 handle_info(periodic_update, OldTimer) ->
     erlang:cancel_timer(OldTimer),
-    update([staleness]),
+    update_staleness(),
     Timer = erlang:send_after(?INTERVAL, self(), periodic_update),
     {noreply, Timer}.
 
@@ -67,12 +65,24 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-update(Metric) ->
-    Val = antidote_stats:get_value(Metric),
-    exometer:update(Metric, Val).
+update_staleness() ->
+    Val = calculate_staleness(),
+    prometheus_histogram:observe(antidote_staleness, Val).
 
 init_metrics() ->
-    Metrics = antidote_stats:stats(),
-    lists:foreach(fun(Metric) ->
-                          exometer:new(Metric, histogram, [{time_span, timer:seconds(60)}])
-                  end, Metrics).
+    prometheus_counter:new([{name, antidote_error_count}, {help, "The number of error encountered during operation"}]),
+    prometheus_histogram:new([{name, antidote_staleness}, {help, "The staleness of the stable snapshot"}, {buckets, [1, 10, 100, 1000, 10000]}]),
+    prometheus_gauge:new([{name, antidote_open_transactions}, {help, "Number of open transactions"}]),
+    prometheus_counter:new([{name, antidote_aborted_transactions_total}, {help, "Number of aborted transactions"}]),
+    prometheus_counter:new([{name, antidote_operations_total}, {help, "Number of operations executed"}, {labels, [type]}]).
+
+calculate_staleness() ->
+    {ok, SS} = dc_utilities:get_stable_snapshot(),
+    CurrentClock = to_microsec(os:timestamp()),
+    Staleness = dict:fold(fun(_K, C, Max) ->
+                                   max(CurrentClock - C, Max)
+                           end, 0, SS),
+    round(Staleness/(1000)). %% To millisecs
+
+to_microsec({MegaSecs, Secs, MicroSecs}) ->
+    (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.

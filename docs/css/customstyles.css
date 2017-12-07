@@ -1159,3 +1159,23 @@ h4.panel-title {
     padding-top: 0px;
     margin-top: 0px;
 }
+
+.post-content > p {
+    text-align: justify;
+}
+
+.twocolumn {
+  background: transparent;
+  width: 100%;
+  border: none;
+}
+
+.twocolumn > tbody > tr {
+  background: transparent !important;
+}
+
+
+.twocolumn td {
+  width: 50%;
+  border: none;
+}

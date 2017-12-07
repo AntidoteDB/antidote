@@ -182,6 +182,8 @@ start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive
         false ->
             From ! {ok, TransactionId}
     end,
+    % a new transaction was started, increment metrics
+    prometheus_gauge:inc(antidote_open_transactions),
     SD#tx_coord_state{transaction = Transaction, num_to_read = 0, properties = Properties}.
 
 -spec create_transaction_record(snapshot_time() | ignore,
@@ -282,6 +284,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                     {ok, {TxId, [], CausalClock}};
 
                                 abort ->
+                                    % TODO increment aborted transaction metrics?
                                     {error, aborted};
 
                                 {error, Reason} ->
@@ -301,6 +304,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     end.
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
+    prometheus_counter:inc(antidote_operations_total, [read]),
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
@@ -323,6 +327,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     end.
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
+    prometheus_counter:inc(antidote_operations_total, [update]),
     {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
@@ -436,6 +441,7 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
+        prometheus_counter:inc(antidote_operations_total, [read_async]),
         Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#tx_coord_state.return_accumulator,
@@ -539,8 +545,7 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
 
     %% Swap keys with their appropiate read values
     ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
-    %% TODO: Why use the old snapshot, instead of UpdatedSnapshot?
-    NewReadSet = orddict:store(Key, Snapshot, ReadSet),
+    NewReadSet = orddict:store(Key, UpdatedSnapshot, ReadSet),
 
     %% Loop back to the same state until we process all the replies
     case NumToRead > 1 of
@@ -839,6 +844,7 @@ reply_to_client(SD = #tx_coord_state{
                     end;
 
                 aborted ->
+                    prometheus_counter:inc(antidote_aborted_transactions_total),
                     case ReturnAcc of
                         {error, Reason} ->
                             {error, Reason};
@@ -856,6 +862,9 @@ reply_to_client(SD = #tx_coord_state{
                     From ! Reply
             end
     end,
+
+    % transaction is finished, decrement count
+    prometheus_gauge:dec(antidote_open_transactions),
 
     case StayAlive of
         true ->

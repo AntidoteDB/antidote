@@ -24,8 +24,7 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/0,
-         start_metrics_collection/0
+-export([start_link/0
         ]).
 
 %% Supervisor callbacks
@@ -41,15 +40,6 @@
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-%% Stats collector is not started with the supervisor. It has to be explicitly started
-start_metrics_collection() ->
-     StatsCollector = {
-                        antidote_stats_collector,
-                        {antidote_stats_collector, start_link, []},
-                        permanent, 5000, worker, [antidote_stats_collector]
-                      },
-    supervisor:start_child(?MODULE, StatsCollector).
 
 %% ===================================================================
 %% Supervisor callbacks
@@ -108,10 +98,29 @@ init(_Args) ->
                             permanent, 5000, supervisor,
                             [inter_dc_query_response_sup]},
 
+    Config = [{mods, [{elli_prometheus, []}
+                     ]}
+             ],
+    % TODO replace static definition of port by config parameter
+    MetricsPort = application:get_env(antidote, metrics_port, 3001),
+    ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, MetricsPort}],
+    Elli = {elli_server,
+            {elli, start_link, [ElliOpts]},
+            permanent,
+            5000,
+            worker,
+            [elli]},
+
+    StatsCollector = {
+                       antidote_stats_collector,
+                       {antidote_stats_collector, start_link, []},
+                       permanent, 5000, worker, [antidote_stats_collector]
+                     },
 
     {ok,
      {{one_for_one, 5, 10},
-      [LoggingMaster,
+      [StatsCollector,
+       LoggingMaster,
        ClockSIMaster,
        ClockSIiTxCoordSup,
        ClockSIReadSup,
@@ -128,4 +137,5 @@ init(_Args) ->
        MetaDataManagerSup,
        MetaDataSenderSup,
        BCounterManager,
-       LogResponseReaderSup]}}.
+       LogResponseReaderSup,
+       Elli]}}.

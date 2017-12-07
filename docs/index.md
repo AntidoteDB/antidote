@@ -15,6 +15,7 @@ permalink: index.html
 *  You need to serve millions of customers around the world with low latency responses?
 *  You are tired of fixing inconsistencies in your key-value store?
 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/oWUNCsFy-r0" frameborder="0" allowfullscreen></iframe>
 
 ## Why Antidote? ##
 
