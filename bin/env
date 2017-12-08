@@ -36,6 +36,11 @@ if [ -z "$RING_STATE_DIR" ]; then
 fi
 
 # Platform data directory.
+if [ -z "$COLLECT_METRICS" ]; then
+  export COLLECT_METRICS="false"
+fi
+
+# Collect Prometheus metrics.
 if [ -z "$PLATFORM_DATA_DIR" ]; then
   export PLATFORM_DATA_DIR="data"
 fi
