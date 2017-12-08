@@ -103,7 +103,6 @@ init(_Args) ->
              ],
     MetricsPort = application:get_env(antidote, metrics_port, 3001),
     ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, MetricsPort}],
-
     Elli = {elli_server,
             {elli, start_link, [ElliOpts]},
             permanent,
@@ -117,7 +116,10 @@ init(_Args) ->
                        permanent, 5000, worker, [antidote_stats_collector]
                      },
 
-    ChildrenPre = [LoggingMaster,
+    {ok,
+     {{one_for_one, 5, 10},
+      [StatsCollector,
+       LoggingMaster,
        ClockSIMaster,
        ClockSIiTxCoordSup,
        ClockSIReadSup,
@@ -134,16 +136,5 @@ init(_Args) ->
        MetaDataManagerSup,
        MetaDataSenderSup,
        BCounterManager,
-       LogResponseReaderSup],
-
-    Children = case application:get_env(antidote, collect_metrics) of
-        {ok, true} ->
-            lists:append(ChildrenPre, [StatsCollector, Elli]);
-        _->
-            ChildrenPre
-    end,
-
-
-    {ok,
-     {{one_for_one, 5, 10},
-      Children}}.
+       LogResponseReaderSup,
+       Elli]}}.

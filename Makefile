@@ -80,7 +80,3 @@ mesos-docker-run-dev: mesos-docker-build-dev
 
 docker-build:
 	docker build -f Dockerfiles/Dockerfile -t antidotedb/antidote Dockerfiles
-
-docker-local:
-	docker run --rm -v $(shell pwd):/code --workdir /code erlang:19 make rel
-	docker build -f Dockerfiles/Dockerfile-local -t antidotedb/antidote:local .

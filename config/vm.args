@@ -34,7 +34,6 @@
 -antidote pubsub_port ${PUBSUB_PORT}
 -antidote logreader_port ${LOGREADER_PORT}
 -antidote metrics_port ${METRICS_PORT}
--antidote collect_metrics ${COLLECT_METRICS}
 
 ## Riak API configuration values coming from the command line.
 -riak_api pb_port ${PB_PORT}

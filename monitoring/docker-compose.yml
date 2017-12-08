@@ -4,10 +4,8 @@ services:
     image: antidotedb/antidote:local
     environment:
       NODE_NAME: "antidote@antidote"
-      COLLECT_METRICS: "true"
       SHORT_NAME: "true"
     ports:
-      - "3001:3001"
       - "8087:8087"
   prometheus:
     image: prom/prometheus

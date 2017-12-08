@@ -39,6 +39,8 @@
 -define(CLOCKSI_VNODE, mock_partition_fsm).
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
 -define(LOGGING_VNODE, mock_partition_fsm).
+-define(PROMETHEUS_GAUGE, mock_partition_fsm).
+-define(PROMETHEUS_COUNTER, mock_partition_fsm).
 
 -else.
 -define(DC_META_UTIL, dc_meta_data_utilities).
@@ -48,6 +50,8 @@
 -define(CLOCKSI_VNODE, clocksi_vnode).
 -define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
 -define(LOGGING_VNODE, logging_vnode).
+-define(PROMETHEUS_GAUGE, prometheus_gauge).
+-define(PROMETHEUS_COUNTER, prometheus_counter).
 -endif.
 
 
@@ -185,12 +189,7 @@ start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive
             From ! {ok, TransactionId}
     end,
     % a new transaction was started, increment metrics
-    case application:get_env(antidote, collect_metrics) of
-        {ok, true} ->
-            prometheus_gauge:inc(antidote_open_transactions);
-        _->
-            ok %do not collect metrics
-    end,
+    ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
     SD#tx_coord_state{transaction = Transaction, num_to_read = 0, properties = Properties}.
 
 -spec create_transaction_record(snapshot_time() | ignore,
@@ -311,12 +310,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     end.
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
-    case application:get_env(antidote, collect_metrics) of
-        {ok, true} ->
-            prometheus_counter:inc(antidote_operations_total, [read]);
-        _->
-            ok %do not collect metrics
-    end,
+    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
@@ -339,12 +333,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     end.
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
-    case application:get_env(antidote, collect_metrics) of
-        {ok, true} ->
-            prometheus_counter:inc(antidote_operations_total, [update]);
-        _->
-            ok %do not collect metrics
-    end,
+    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
     {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
@@ -458,12 +447,7 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
-        case application:get_env(antidote, collect_metrics) of
-            {ok, true} ->
-                prometheus_counter:inc(antidote_operations_total, [read_async]);
-            _->
-                ok %do not collect metrics
-        end,
+        ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#tx_coord_state.return_accumulator,
@@ -866,12 +850,7 @@ reply_to_client(SD = #tx_coord_state{
                     end;
 
                 aborted ->
-                    case application:get_env(antidote, collect_metrics) of
-                        {ok, true} ->
-                            prometheus_counter:inc(antidote_aborted_transactions_total);
-                        _->
-                            ok %do not collect metrics
-                    end,
+                    ?PROMETHEUS_COUNTER:inc(antidote_aborted_transactions_total),
                     case ReturnAcc of
                         {error, Reason} ->
                             {error, Reason};
@@ -891,12 +870,7 @@ reply_to_client(SD = #tx_coord_state{
     end,
 
     % transaction is finished, decrement count
-    case application:get_env(antidote, collect_metrics) of
-        {ok, true} ->
-            prometheus_gauge:dec(antidote_open_transactions);
-        _->
-            ok %do not collect metrics
-    end,
+    ?PROMETHEUS_GAUGE:dec(antidote_open_transactions),
 
     case StayAlive of
         true ->
