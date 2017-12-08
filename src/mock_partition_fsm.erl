@@ -203,6 +203,6 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 terminate(_Reason, _SN, _SD) ->
     ok.
 
-inc(_,_) -> ok.
+inc(_, _) -> ok.
 dec(_) -> ok.
 inc(_) -> ok.
