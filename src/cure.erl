@@ -117,6 +117,9 @@ update_objects(ClientCausalVC, Properties, Updates, StayAlive) ->
         {error, Reason} -> {error, Reason}
     end.
 
+
+%% Force both read and get to use k-stable time
+%% HACK : Needs to be generalised.
 read_objects(_Clock, Properties, Objects) ->
     {ok, _Pid} = k_stable:start_link(),
     Clo = k_stable:fetch_kvector(),
