@@ -35,37 +35,37 @@
 
 
 -export([start_link/5,
-         start/1,
-         put_meta_dict/3,
-         put_meta_dict/4,
-         put_meta_data/4,
-         put_meta_data/5,
-         get_meta_dict/2,
-         get_node_list/0,
-         get_node_and_partition_list/0,
-         get_merged_data/1,
-         remove_partition/2,
-         get_name/2,
-         send_meta_data/3,
-         send_meta_data/2]).
+    start/1,
+    put_meta_dict/3,
+    put_meta_dict/4,
+    put_meta_data/4,
+    put_meta_data/5,
+    get_meta_dict/2,
+    get_node_list/0,
+    get_node_and_partition_list/0,
+    get_merged_data/1,
+    remove_partition/2,
+    get_name/2,
+    send_meta_data/3,
+    send_meta_data/2]).
 
 %% Callbacks
 -export([init/1,
-         code_change/4,
-         handle_event/3,
-         handle_info/3,
-         handle_sync_event/4,
-         terminate/3]).
+    code_change/4,
+    handle_event/3,
+    handle_info/3,
+    handle_sync_event/4,
+    terminate/3]).
 
 
 -record(state, {
-      table :: ets:tid(),
-      table2 :: ets:tid(),
-      last_result :: dict:dict(),
-      name :: atom(),
-      update_function :: fun((term(), term())->boolean()),
-      merge_function :: fun((dict:dict())->dict:dict()),
-      should_check_nodes :: boolean()}).
+    table :: ets:tid(),
+    table2 :: ets:tid(),
+    last_result :: dict:dict(),
+    name :: atom(),
+    update_function :: fun((term(), term())->boolean()),
+    merge_function :: fun((dict:dict())->dict:dict()),
+    should_check_nodes :: boolean()}).
 
 %% ===================================================================
 %% Public API
@@ -107,12 +107,12 @@
 -spec start_link(atom(), fun((term(), term())->boolean()), fun((dict:dict())->dict:dict()), dict:dict(), dict:dict()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
     gen_fsm:start_link({local, list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE))},
-               ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
+        ?MODULE, [Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged], []).
 
 -spec start(atom()) -> ok.
 start(Name) ->
     gen_fsm:sync_send_event(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)),
-                start).
+        start).
 
 -spec put_meta_dict(atom(), partition_id(), dict:dict()) -> ok.
 put_meta_dict(Name, Partition, Dict) ->
@@ -123,10 +123,16 @@ put_meta_dict(Name, Partition, Dict, Func) ->
     case ets:info(get_name(Name, ?META_TABLE_NAME)) of
         undefined ->
             ok;
-        _ ->
+        _ -> %% Table exists
             Result = case Func of
                          undefined ->
                              Dict;
+                         k_stab ->
+                             ok
+                         %% Save the data to k-stability table here
+                         %% can either be call to my module, or do it
+                         %% manually here
+                         ;
                          _ ->
                              Func(Dict, get_meta_dict(Name, Partition))
                      end,
@@ -163,15 +169,15 @@ put_meta_data(Name, Partition, Key, Value, Func) ->
 -spec get_meta_dict(atom(), partition_id()) -> dict:dict() | undefined.
 get_meta_dict(Name, Partition) ->
     case ets:info(get_name(Name, ?META_TABLE_NAME)) of
-    undefined ->
-        dict:new();
-    _ ->
-        case ets:lookup(get_name(Name, ?META_TABLE_NAME), Partition) of
-            [] ->
-                dict:new();
-            [{Partition, Other}] ->
-                Other
-        end
+        undefined ->
+            dict:new();
+        _ ->
+            case ets:lookup(get_name(Name, ?META_TABLE_NAME), Partition) of
+                [] ->
+                    dict:new();
+                [{Partition, Other}] ->
+                    Other
+            end
     end.
 
 -spec remove_partition(atom(), partition_id()) -> ok | false.
@@ -210,27 +216,27 @@ init([Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged]) ->
     Table2 = ets:new(get_name(Name, ?META_TABLE_NAME), [set, named_table, public, ?META_TABLE_CONCURRENCY]),
     true = ets:insert(get_name(Name, ?META_TABLE_STABLE_NAME), {merged_data, InitialMerged}),
     {ok, send_meta_data, #state{table = Table,
-                                table2 = Table2,
-                                last_result = InitialLocal,
-                                update_function = UpdateFunction,
-                                merge_function = MergeFunction,
-                                name = Name,
-                                should_check_nodes=true}}.
+        table2 = Table2,
+        last_result = InitialLocal,
+        update_function = UpdateFunction,
+        merge_function = MergeFunction,
+        name = Name,
+        should_check_nodes=true}}.
 
 send_meta_data(start, _Sender, State) ->
     {reply, ok, send_meta_data, State#state{should_check_nodes=true}, ?META_DATA_SLEEP}.
 
 send_meta_data(timeout, State = #state{last_result = LastResult,
-                                       update_function = UpdateFunction,
-                                       merge_function = MergeFunction,
-                                       name = Name,
-                                       should_check_nodes = CheckNodes}) ->
+    update_function = UpdateFunction,
+    merge_function = MergeFunction,
+    name = Name,
+    should_check_nodes = CheckNodes}) ->
     {WillChange, Dict} = get_meta_data(Name, MergeFunction, CheckNodes),
     NodeList = ?GET_NODE_LIST(),
     LocalMerged = dict:fetch(local_merged, Dict),
     MyNode = node(),
     ok = lists:foreach(fun(Node) ->
-                           ok = meta_data_manager:send_meta_data(Name, Node, MyNode, LocalMerged)
+        ok = meta_data_manager:send_meta_data(Name, Node, MyNode, LocalMerged)
                        end, NodeList),
     MergedDict = MergeFunction(Dict),
     {NewBool, NewResult} = update_stable(LastResult, MergedDict, UpdateFunction),
@@ -270,9 +276,9 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
                       _ ->
                           case ets:info(get_name(Name, ?META_TABLE_NAME)) of
                               undefined ->
-                                false;
+                                  false;
                               _ ->
-                                true
+                                  true
                           end
                   end,
     case TablesReady of
@@ -288,49 +294,49 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
             %% This is only done if the ring is expected to change, but should be done
             %% differently (check comment in get_node_and_partition_list())
             {NewRemote, NewLocal} =
-            case CheckNodes of
-                true ->
-                    {NewDict, NodeErase} =
-                        lists:foldl(fun(NodeId, {Acc, Acc2}) ->
-                                        AccNew = case dict:find(NodeId, RemoteDict) of
-                                                     {ok, Val} ->
-                                                         dict:store(NodeId, Val, Acc);
-                                                     error ->
-                                                         %% Put a record in the ets table because there is none for this node
-                                                         meta_data_manager:add_new_meta_data(Name, NodeId),
-                                                         dict:store(NodeId, undefined, Acc)
-                                                 end,
-                                        Acc2New = dict:erase(NodeId, Acc2),
-                                        {AccNew, Acc2New}
-                                    end, {dict:new(), RemoteDict}, NodeList),
-                    %% Should remove nodes (and partitions) that no longer exist in this ring/phys node
-                    dict:fold(fun(NodeId, _Val, _Acc) ->
-                                  ok = meta_data_manager:remove_node(Name, NodeId)
-                              end, ok, NodeErase),
+                case CheckNodes of
+                    true ->
+                        {NewDict, NodeErase} =
+                            lists:foldl(fun(NodeId, {Acc, Acc2}) ->
+                                AccNew = case dict:find(NodeId, RemoteDict) of
+                                             {ok, Val} ->
+                                                 dict:store(NodeId, Val, Acc);
+                                             error ->
+                                                 %% Put a record in the ets table because there is none for this node
+                                                 meta_data_manager:add_new_meta_data(Name, NodeId),
+                                                 dict:store(NodeId, undefined, Acc)
+                                         end,
+                                Acc2New = dict:erase(NodeId, Acc2),
+                                {AccNew, Acc2New}
+                                        end, {dict:new(), RemoteDict}, NodeList),
+                        %% Should remove nodes (and partitions) that no longer exist in this ring/phys node
+                        dict:fold(fun(NodeId, _Val, _Acc) ->
+                            ok = meta_data_manager:remove_node(Name, NodeId)
+                                  end, ok, NodeErase),
 
-                    %% Be sure that you are only checking local partitions
-                    {NewLocalDict, PartitionErase} =
-                        lists:foldl(fun(PartitionId, {Acc, Acc2}) ->
-                                        AccNew = case dict:find(PartitionId, LocalDict) of
-                                                    {ok, Val} ->
-                                                        dict:store(PartitionId, Val, Acc);
-                                                    error ->
-                                                         %% Put a record in the ets table because there is none for this partition
-                                                         ets:insert_new(get_name(Name, ?META_TABLE_NAME), {PartitionId, dict:new()}),
-                                                         dict:store(PartitionId, undefined, Acc)
-                                                 end,
-                                        Acc2New = dict:erase(PartitionId, Acc2),
-                                        {AccNew, Acc2New}
-                                    end, {dict:new(), LocalDict}, PartitionList),
-                    %% Should remove nodes (and partitions) that no longer exist in this ring/phys node
-                    dict:fold(fun(PartitionId, _Val, _Acc) ->
-                                  ok = remove_partition(Name, PartitionId)
-                              end, ok, PartitionErase),
+                        %% Be sure that you are only checking local partitions
+                        {NewLocalDict, PartitionErase} =
+                            lists:foldl(fun(PartitionId, {Acc, Acc2}) ->
+                                AccNew = case dict:find(PartitionId, LocalDict) of
+                                             {ok, Val} ->
+                                                 dict:store(PartitionId, Val, Acc);
+                                             error ->
+                                                 %% Put a record in the ets table because there is none for this partition
+                                                 ets:insert_new(get_name(Name, ?META_TABLE_NAME), {PartitionId, dict:new()}),
+                                                 dict:store(PartitionId, undefined, Acc)
+                                         end,
+                                Acc2New = dict:erase(PartitionId, Acc2),
+                                {AccNew, Acc2New}
+                                        end, {dict:new(), LocalDict}, PartitionList),
+                        %% Should remove nodes (and partitions) that no longer exist in this ring/phys node
+                        dict:fold(fun(PartitionId, _Val, _Acc) ->
+                            ok = remove_partition(Name, PartitionId)
+                                  end, ok, PartitionErase),
 
-                    {NewDict, NewLocalDict};
-                false ->
-                    {RemoteDict, LocalDict}
-            end,
+                        {NewDict, NewLocalDict};
+                    false ->
+                        {RemoteDict, LocalDict}
+                end,
             LocalMerged = MergeFunc(NewLocal),
             {WillChange, dict:store(local_merged, LocalMerged, NewRemote)}
     end.
@@ -338,18 +344,18 @@ get_meta_data(Name, MergeFunc, CheckNodes) ->
 -spec update_stable(dict:dict(), dict:dict(), fun((term(), term()) -> boolean())) -> {boolean(), dict:dict()}.
 update_stable(LastResult, NewDict, UpdateFunc) ->
     dict:fold(fun(DcId, Time, {Bool, Acc}) ->
-                  Last = case dict:find(DcId, LastResult) of
-                             {ok, Val} ->
-                                 Val;
-                             error ->
-                                 undefined
-                         end,
-                  case UpdateFunc(Last, Time) of
-                      true ->
-                          {true, dict:store(DcId, Time, Acc)};
-                      false ->
-                          {Bool, Acc}
-                  end
+        Last = case dict:find(DcId, LastResult) of
+                   {ok, Val} ->
+                       Val;
+                   error ->
+                       undefined
+               end,
+        case UpdateFunc(Last, Time) of
+            true ->
+                {true, dict:store(DcId, Time, Acc)};
+            false ->
+                {Bool, Acc}
+        end
               end, {false, LastResult}, NewDict).
 
 -spec get_node_list() -> [node()].
