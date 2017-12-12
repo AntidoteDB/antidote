@@ -243,48 +243,48 @@ check_registered(Name) ->
 %% @doc get_stable_snapshot: Returns stable snapshot time
 %% in the current DC. stable snapshot time is the snapshot available at
 %% in all partitions
--spec get_stable_snapshot() -> {ok, snapshot_time()}.
+-spec get_stable_snapshot() ->
+    {ok, snapshot_time()}.
 get_stable_snapshot() ->
-    case meta_data_sender:get_merged_data(stable) of
-        undefined ->
-            %% The snapshot isn't ready yet, need to wait for startup
-            timer:sleep(10),
-            get_stable_snapshot();
-        SS ->
-            case application:get_env(antidote, k_stability) of
-                true ->
-                    %% Read from kstab
-                    ok;
-                false ->
-                    %% Just go regular Cure
-                    ok
-            end,
-
-            case application:get_env(antidote, txn_prot) of
-                    {ok, SS};
-                {ok, clocksi} ->
-                    %% This is fine if transactions coordinators exists on the ring (i.e. they have access
-                    %% to riak core meta-data) otherwise will have to change this
-                    {ok, SS};
-                {ok, gr} ->
-                    %% For gentlerain use the same format as clocksi
-                    %% But, replicate GST to all entries in the dict
-                    StableSnapshot = SS,
-                    case dict:size(StableSnapshot) of
-                        0 ->
-                            {ok, StableSnapshot};
-                        _ ->
-                            ListTime = dict:fold(
-                                fun(_Key, Value, Acc) ->
-                                    [Value | Acc]
-                                end, [], StableSnapshot),
-                            GST = lists:min(ListTime),
-                            {ok, dict:map(
-                                fun(_K, _V) ->
-                                    GST
-                                end,
-                                StableSnapshot)}
-                    end
+    SS = case application:get_env(antidote, k_stability) of
+        {ok, true} ->
+            {ok, KSS} = k_stable:get_k_vector(),
+            lager:info("got pretty k-stable vector: ~p", [KSS]),
+            KSS;
+        _ ->
+            %% Just go regular Cure
+            case meta_data_sender:get_merged_data(stable) of
+                undefined ->
+                    %% The snapshot isn't ready yet, need to wait for startup
+                    timer:sleep(10),
+                    get_stable_snapshot();
+                StableS ->
+                    StableS
+            end
+    end,
+    case application:get_env(antidote, txn_prot) of
+        {ok, clocksi} ->
+            %% This is fine if transactions coordinators exists on the ring (i.e. they have access
+            %% to riak core meta-data) otherwise will have to change this
+            {ok, SS};
+        {ok, gr} ->
+            %% For gentlerain use the same format as clocksi
+            %% But, replicate GST to all entries in the dict
+            StableSnapshot = SS,
+            case dict:size(StableSnapshot) of
+                0 ->
+                    {ok, StableSnapshot};
+                _ ->
+                    ListTime = dict:fold(
+                        fun(_Key, Value, Acc) ->
+                            [Value | Acc]
+                        end, [], StableSnapshot),
+                    GST = lists:min(ListTime),
+                    {ok, dict:map(
+                        fun(_K, _V) ->
+                            GST
+                        end,
+                        StableSnapshot)}
             end
     end.
 
