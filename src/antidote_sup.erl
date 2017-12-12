@@ -94,7 +94,7 @@ init(_Args) ->
                          [meta_data_sender_sup]},
 
     KStabSup = {k_stable_sup,
-        {k_stable_sup, start_link, []},
+        {k_stable_sup, start_link, [k_stable]},
         permanent, 5000, supervisor,
         [k_stable_sup]},
 

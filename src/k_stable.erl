@@ -44,7 +44,7 @@
 
 %% Public API/Client functions
 -export([
-    start_link/0,
+    start_link/1,
     deliver_tx/1,
     fetch_kvector/0]).
 
@@ -80,9 +80,12 @@
 %% ===================================================================
 %% Public API (client API)
 %% ===================================================================
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    gen_server:start_link({global, generate_name(node())}, ?MODULE, [], []).
+-spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Name) ->
+    gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [Name], []).
+
+
+
 
 %% Called with new inter-dc TXs (or heartbeat). Updates the state.
 -spec deliver_tx(#interdc_txn{}) -> ok.
@@ -236,6 +239,10 @@ matrices_eq([H1 | M1], [H2 | M2]) ->
         true -> matrices_eq(M1, M2);
         _ -> false
     end.
+
+generate_server_name(Node) ->
+    list_to_atom("k_stable" ++ atom_to_list(Node)).
+
 
 % Unit tests
 -ifdef(TEST).
