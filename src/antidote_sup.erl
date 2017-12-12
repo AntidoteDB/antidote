@@ -93,6 +93,11 @@ init(_Args) ->
                          permanent, 5000, supervisor,
                          [meta_data_sender_sup]},
 
+    KStabSup = {k_stable_sup,
+        {k_stable_sup, start_link, []},
+        permanent, 5000, supervisor,
+        [k_stable_sup]},
+
     LogResponseReaderSup = {inter_dc_query_response_sup,
                             {inter_dc_query_response_sup, start_link, [?INTER_DC_QUERY_CONCURRENCY]},
                             permanent, 5000, supervisor,
@@ -135,6 +140,7 @@ init(_Args) ->
        StableMetaData,
        MetaDataManagerSup,
        MetaDataSenderSup,
+       KStabSup,
        BCounterManager,
        LogResponseReaderSup,
        Elli]}}.

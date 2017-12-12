@@ -100,12 +100,15 @@ fetch_kvector() ->
 %% gen_server callbacks (server functions)
 %% ===================================================================
 init(_A) ->
+    lager:info("Starting K-Stability servers..."),
     case ets:info(?KSTABILITY_TABLE_NAME) of
         undefined ->
             ets:new(?KSTABILITY_TABLE_NAME,
                 [set, named_table, public, ?KSTABILITY_TABLE_CONCURRENCY]),
+            lager:info("Created K-Stability table..."),
             {ok, []};
-        _ -> {ok, []}
+        _ ->
+            {ok, []}
     end.
 
 handle_cast({update_dc_vc, Tx = #interdc_txn{}}, _State) ->
@@ -188,15 +191,16 @@ build_kvector(VerM) when length(VerM) >= ?KSTABILITY_REPL_FACTOR ->
 %% Returns the k-stable vector based on the version matrix,
 %% or {error, matrix_size} if the K value is higher than
 %% the number of DCs in the system
--spec get_k_vector() -> [vectorclock()] | {error, matrix_size}.
+-spec get_k_vector() -> {ok, vectorclock()} | {error, matrix_size}.
 get_k_vector() ->
     DCs = get_dc_ids(),
     VerM = get_version_matrix(DCs),
     case build_kvector(VerM) of
-        {error, _} ->
+        {error, Reason} ->
+            lager:error("get_k_vector: you're asking for stability beyond reality... ~p", [Reason]),
             {error, matrix_size};
         KVect ->
-            lists:sort(KVect)
+            {ok, vectorclock:from_list(lists:sort(KVect))}
     end.
 
 -spec get_dc_ids() -> [dcid()].

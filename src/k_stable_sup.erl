@@ -38,5 +38,5 @@ start_fsm(Args) ->
 init(_Args) ->
     Worker = {k_stable,
         {k_stable, start_link, []},
-        permanent, 5000, worker, [meta_data_manager]},
+        permanent, 5000, worker, [k_stable]},
     {ok, {{one_for_one, 5, 10}, [Worker]}}.
