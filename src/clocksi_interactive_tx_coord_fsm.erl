@@ -127,10 +127,11 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 init([From, ClientClock, UpdateClock, StayAlive]) ->
     {ok, Protocol} = ?APPLICATION:get_env(antidote, txn_prot),
     {ok, Strict} = ?APPLICATION:get_env(antidote, stable_strict),
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false, Protocol, Strict))}.
+    {ok, MaxFreshness} = ?APPLICATION:get_env(antidote, max_freshness),
+    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false, Protocol, Strict, MaxFreshness))}.
 
 
-init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict) ->
+init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, MaxFreshness) ->
     #tx_coord_state{
        transactional_protocol = Protocol,
         transaction = undefined,
@@ -147,7 +148,8 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict) ->
         return_accumulator= [],
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
-        stable_strict=Strict
+        stable_strict=Strict,
+        max_freshness = MaxFreshness
         %% The following are needed by the physics protocol
     }.
 
@@ -158,7 +160,7 @@ generate_name(From) ->
 start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol, stable_strict=Strict}) ->
+start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol, stable_strict=Strict, max_freshness = MaxFreshness}) ->
     Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol, Strict),
     From ! {ok, Transaction#transaction.txn_id},
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
@@ -435,7 +437,13 @@ execute_op({OpType, Args}, Sender,
                 PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
                 IndexNode = hd(PrefList),
 %%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
-                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
+                TransactionSend = case SD0#tx_coord_state.max_freshness of
+                    true ->
+                        Transaction#transaction{transactional_protocol = ec}; % get the latest value.
+                    false ->
+                        Transaction
+                end,
+                ok = clocksi_vnode:async_read_data_item(IndexNode, TransactionSend, Key, Type),
                 ReadSet = Acc#tx_coord_state.return_accumulator,
                 Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
                            end,
@@ -508,6 +516,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
         1 ->
             gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
             {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+
         _ ->
             {next_state, receive_read_objects_result,
                 CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}

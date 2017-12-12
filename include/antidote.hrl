@@ -258,7 +258,8 @@
     is_static :: boolean(),
     full_commit :: boolean(),
     stay_alive :: boolean(),
-    stable_strict :: boolean()
+    stable_strict :: boolean(),
+    max_freshness :: boolean()
     %% The following is needed by the physics protocol
 }).
 
