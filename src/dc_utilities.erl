@@ -251,9 +251,16 @@ get_stable_snapshot() ->
             timer:sleep(10),
             get_stable_snapshot();
         SS ->
+            case application:get_env(antidote, k_stability) of
+                true ->
+                    %% Read from kstab
+                    ok;
+                false ->
+                    %% Just go regular Cure
+                    ok
+            end,
+
             case application:get_env(antidote, txn_prot) of
-                {ok, kstab} ->
-                    %% Get the k-stable vector here
                     {ok, SS};
                 {ok, clocksi} ->
                     %% This is fine if transactions coordinators exists on the ring (i.e. they have access
