@@ -100,7 +100,7 @@ get_entries_internal(Partition, From, To) ->
   %% This is done in order to ensure that we only send the transactions we committed.
   %% We can remove this once the read_log_range is reimplemented.
   FilteredTxns = lists:filter(fun inter_dc_txn:is_local/1, Txns),
-  case ?OPERATION_COMPRESSION of
+  case application:get_env(antidote, operation_compression) of
     true -> [inter_dc_compression_buffer:compress(FilteredTxns)];
     false -> FilteredTxns
   end.

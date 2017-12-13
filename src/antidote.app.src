@@ -49,10 +49,14 @@
   %%        true -> writes to disk done by the logging_vnode are enabled
   %%        false -> writes to disk are disabled, this improves performance when benchmarking.
   %%        WARNING: disabling logging makes updates non-recoverable after shutting down antidote or under failures.
+  %% %% operation_compression:
+  %%        true -> enables operations to be compressed before being sent between DCs
+  %%        false -> propagates operations between DCs without compressing
 
   {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
          {recover_meta_data_on_start, true}, {sync_log, false},
          {enable_logging, true},
+         {operation_compression, false},
          {auto_start_read_servers, true}
         ]}
  ]}.

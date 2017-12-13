@@ -78,8 +78,6 @@
 %% Frequency at which manager requests remote resources.
 -define(TRANSFER_FREQ, 100). %in Milliseconds
 
-%% Enable/Disable operation compression
--define(OPERATION_COMPRESSION, false).
 %% How long the InterDC Replicator should hold transactions before compressing
 -define(COMPRESSION_TIMER, 200). % in Milliseconds
 

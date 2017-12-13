@@ -101,7 +101,7 @@ init([Partition]) ->
         compression_buffer = [],
         compression_timer = none
     },
-    State1 = case ?OPERATION_COMPRESSION of
+    State1 = case application:get_env(antidote, operation_compression) of
         true -> set_compression_timer(State);
         false -> State
     end,
@@ -125,7 +125,7 @@ handle_command({log_event, LogRecord}, _Sender, State) ->
         %% If the transaction was collected
         {ok, Ops} ->
             Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
-            case ?OPERATION_COMPRESSION of
+            case application:get_env(antidote, operation_compression) of
                 true -> buffer(State1, Txn);
                 false -> broadcast(State1, Txn)
             end;
@@ -168,7 +168,7 @@ handoff_starting(_TargetNode, State) ->
     {true, State}.
 handoff_cancelled(State) ->
     State1 = set_timer(State),
-    State2 = case ?OPERATION_COMPRESSION of
+    State2 = case application:get_env(antidote, operation_compression) of
         true -> set_compression_timer(State1);
         false -> State1
     end,
@@ -237,7 +237,7 @@ del_compression_timer(State = #state{compression_timer = Timer}) ->
 %% Cancels the previous compression buffer timer and sets a new one.
 -spec set_compression_timer(#state{}) -> #state{}.
 set_compression_timer(State) ->
-    case ?OPERATION_COMPRESSION of
+    case application:get_env(antidote, operation_compression) of
         true -> set_compression_timer(false, State);
         false -> State
     end.
