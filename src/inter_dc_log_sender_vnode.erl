@@ -101,11 +101,7 @@ init([Partition]) ->
         compression_buffer = [],
         compression_timer = none
     },
-    State1 = case application:get_env(antidote, operation_compression) of
-        true -> set_compression_timer(State);
-        false -> State
-    end,
-    {ok, State1}.
+    {ok, set_compression_timer(State)}.
 
 %% Start the timer
 handle_command({start_timer}, _Sender, State) ->
@@ -126,8 +122,8 @@ handle_command({log_event, LogRecord}, _Sender, State) ->
         {ok, Ops} ->
             Txn = inter_dc_txn:from_ops(Ops, State1#state.partition, State#state.last_log_id),
             case application:get_env(antidote, operation_compression) of
-                true -> buffer(State1, Txn);
-                false -> broadcast(State1, Txn)
+                {ok, true} -> buffer(State1, Txn);
+                {ok, false} -> broadcast(State1, Txn)
             end;
         %% If the transaction is not yet complete
         none -> State1
@@ -168,11 +164,7 @@ handoff_starting(_TargetNode, State) ->
     {true, State}.
 handoff_cancelled(State) ->
     State1 = set_timer(State),
-    State2 = case application:get_env(antidote, operation_compression) of
-        true -> set_compression_timer(State1);
-        false -> State1
-    end,
-    {ok, State2}.
+    {ok, set_compression_timer(State1)}.
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
 handle_handoff_command( _Message , _Sender, State) ->
@@ -238,28 +230,14 @@ del_compression_timer(State = #state{compression_timer = Timer}) ->
 -spec set_compression_timer(#state{}) -> #state{}.
 set_compression_timer(State) ->
     case application:get_env(antidote, operation_compression) of
-        true -> set_compression_timer(false, State);
-        false -> State
+        {ok, true} -> set_compression_timer_(State);
+        {ok, false} -> State
     end.
 
--spec set_compression_timer(boolean(), #state{}) -> #state{}.
-set_compression_timer(First, State = #state{partition = Partition}) ->
-    case First of
-        true ->
-            {ok, Ring} = riak_core_ring_manager:get_my_ring(),
-            Node = riak_core_ring:index_owner(Ring, Partition),
-            MyNode = node(),
-            case Node of
-                MyNode ->
-                    State1 = del_compression_timer(State),
-                    State1#state{compression_timer = riak_core_vnode:send_command_after(?COMPRESSION_TIMER, txn_send)};
-                _Other ->
-                    State
-            end;
-        false ->
-            State1 = del_compression_timer(State),
-            State1#state{compression_timer = riak_core_vnode:send_command_after(?COMPRESSION_TIMER, txn_send)}
-    end.
+-spec set_compression_timer_(#state{}) -> #state{}.
+set_compression_timer_(State) ->
+    State1 = del_compression_timer(State),
+    State1#state{compression_timer = riak_core_vnode:send_command_after(?COMPRESSION_TIMER, txn_send)}.
 
 %% Broadcasts the transaction via local publisher.
 -spec broadcast(#state{}, #interdc_txn{}) -> #state{}.

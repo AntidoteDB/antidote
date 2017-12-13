@@ -101,8 +101,8 @@ get_entries_internal(Partition, From, To) ->
   %% We can remove this once the read_log_range is reimplemented.
   FilteredTxns = lists:filter(fun inter_dc_txn:is_local/1, Txns),
   case application:get_env(antidote, operation_compression) of
-    true -> [inter_dc_compression_buffer:compress(FilteredTxns)];
-    false -> FilteredTxns
+    {ok, true} -> [inter_dc_compression_buffer:compress(FilteredTxns)];
+    {ok, false} -> FilteredTxns
   end.
 
 %% TODO: reimplement this method efficiently once the log provides efficient access by partition and DC (Santiago, here!)
