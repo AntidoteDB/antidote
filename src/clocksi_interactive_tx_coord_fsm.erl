@@ -69,7 +69,7 @@
 %% States
 -export([create_transaction_record/7,
     start_tx/2,
-    init_state/5,
+    init_state/6,
     perform_update/3,
     perform_read/4,
     execute_op/3,
@@ -161,7 +161,7 @@ start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
 
 start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol, stable_strict=Strict, max_freshness = MaxFreshness}) ->
-    Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol, Strict),
+    Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol, Strict, MaxFreshness),
     From ! {ok, Transaction#transaction.txn_id},
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
@@ -842,7 +842,7 @@ receive_aborted(_, S0) ->
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator= ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
-    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict}) ->
+    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict, max_freshness = MaxFreshness}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case Transaction#transaction.transactional_protocol of
@@ -929,7 +929,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
     end,
     case StayAlive of
         true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict)};
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, MaxFreshness)};
         false ->
             {stop, normal, SD}
     end.
