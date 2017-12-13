@@ -245,8 +245,8 @@ noop_test() ->
                               250)
     ],
     Expected = inter_dc_txn_from_ops([], 0, 3, 2, 300, 250),
-    ?debugFmt("~p~n", [compress(Buffer)]),
-    ?debugFmt("~p~n", [Expected]),
+    % ?debugFmt("~p~n", [compress(Buffer)]),
+    % ?debugFmt("~p~n", [Expected]),
     ?assertEqual(compress(Buffer), Expected).
 
 orset_test() ->
