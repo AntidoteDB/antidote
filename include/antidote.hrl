@@ -165,6 +165,7 @@
 
 -record(transaction, {
     snapshot_clock :: snapshot_time(),
+    freshness :: atom(),
     transactional_protocol :: transactional_protocol(),
     snapshot_vc :: vectorclock(),
     txn_id :: txid() | no_txn_inserting_from_log}).
@@ -259,7 +260,9 @@
     full_commit :: boolean(),
     stay_alive :: boolean(),
     stable_strict :: boolean(),
-    max_freshness :: boolean()
+    freshness :: boolean(),
+    consistency_check_tuple :: {vectorclock(), vectorclock()} | {vectorclock(), vectorclock(), vectorclock()},
+    to_read_list :: list()
     %% The following is needed by the physics protocol
 }).
 

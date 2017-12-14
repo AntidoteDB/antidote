@@ -256,7 +256,8 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 %%      be applied to the snapshot
 -spec should_apply_operation(operation_payload(), dc_and_commit_time(), snapshot_time(), transaction(),
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
-should_apply_operation(_Op, {OpDC, OpCT}, _OpDependencyVC, #transaction{transactional_protocol=ec}, _, _PrevIncludedOpParams)->
+%% the case where freshness = true means that , no matter what protocol or configuration, we should return the latest version available.
+should_apply_operation(_Op, {OpDC, OpCT}, _OpDependencyVC, #transaction{freshness = true}, _, _PrevIncludedOpParams)->
 	{true,false, vectorclock:set_clock_of_dc(OpDC, OpCT, vectorclock:new())};
 should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{transactional_protocol=physics}, {SnapshotCT, _SnapshotDep, _SnapshotRT}, PrevIncludedOpParams)->
 	TxId = Transaction#transaction.txn_id,

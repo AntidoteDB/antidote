@@ -74,7 +74,7 @@
     committed_tx :: cache_id(),
     read_servers :: non_neg_integer(),
     strict :: boolean(),
-    max_freshness :: boolean(),
+    freshness :: boolean(),
     prepared_dict :: list()}).
 
 %%%===================================================================
@@ -212,13 +212,13 @@ init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
     {ok, Strict} = application:get_env(antidote, stable_strict),
-    {ok, MaxFreshness} = application:get_env(antidote, max_freshness),
+    {ok, Freshness} = application:get_env(antidote, freshness),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
         read_servers = ?READ_CONCURRENCY,
         strict = Strict,
-        max_freshness = MaxFreshness,
+        freshness = Freshness,
         prepared_dict = orddict:new()}}.
 
 %% @doc The table holding the prepared transactions is shared with concurrent

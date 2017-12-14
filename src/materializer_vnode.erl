@@ -548,7 +548,18 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
 	        ok=materializer_vnode:log_number_of_non_applied_ops(MatState, 0, TxnId),
 %%	        lager:debug("internal read returning: ",[{ok, {NewSnapshot, SnapshotCommitParams}}]),
-            {ok, {NewSnapshot, SnapshotCommitParams}};
+	        NewSnapshotCommitParams = case Transaction#transaction.freshness of
+		        true ->
+			        case SnapshotCommitParams of
+				        {One,Two,_} ->
+					        {One, Two, vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(),dc_utilities:now_microsec(), vectorclock:new())};
+				        One ->
+					        {One, vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(),dc_utilities:now_microsec(), vectorclock:new())}
+			        end;
+		        _->
+					SnapshotCommitParams
+	        end,
+            {ok, {NewSnapshot, NewSnapshotCommitParams}};
         [Tuple] ->
 	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
 %%	        lager:debug("Key ~p~n, Len ~p~n, _OpId ~p~n, _ListLen ~p~n, OperationsForKey ~p~n", [Key, Len, _OpId, _ListLen, OperationsForKey]),
@@ -631,6 +642,13 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
                 _ ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
+	                ValidTime = case Transaction#transaction.freshness of
+		                true ->
+			                dc_utilities:now_microsec();
+		                _->
+			                ignore
+	                end,
+%%	                lager:info("valid time is ~p.",[ValidTime]),
                     case clocksi_materializer:materialize(Type, Transaction, SnapshotGetResponse, MatState) of
                         {ok, Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount} ->
 %%	                        lager:info("~n Snapshot ~p~n ~n NewLastOp ~p ~n CommitParameters ~p ~n NewSS ~p ~n OpAddedCount ~p", [Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount]),
@@ -661,7 +679,18 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
                                         false ->
                                             ok
                                     end,
-                                    {ok, {Snapshot, CommitParameters}}
+	                                NewCommitParams = case ValidTime of
+		                                ignore ->
+			                                CommitParameters;
+		                                _ ->
+			                                case CommitParameters of
+				                                {CommitVC, DepVC, _} -> % Physics' case.
+					                                {CommitVC, DepVC, vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(),ValidTime, CommitVC)};
+				                                CommitVC -> % all other protocols.
+					                                {CommitVC, vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(),ValidTime, CommitVC)}
+			                                end
+	                                end,
+                                    {ok, {Snapshot, NewCommitParams}}
                             end;
                         {error, Reason} ->
                             {error, Reason}

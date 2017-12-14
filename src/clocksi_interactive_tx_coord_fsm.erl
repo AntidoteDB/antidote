@@ -67,7 +67,7 @@
     stop/1]).
 
 %% States
--export([create_transaction_record/7,
+-export([create_transaction_record/8,
     start_tx/2,
     init_state/6,
     perform_update/3,
@@ -127,11 +127,17 @@ stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 init([From, ClientClock, UpdateClock, StayAlive]) ->
     {ok, Protocol} = ?APPLICATION:get_env(antidote, txn_prot),
     {ok, Strict} = ?APPLICATION:get_env(antidote, stable_strict),
-    {ok, MaxFreshness} = ?APPLICATION:get_env(antidote, max_freshness),
-    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false, Protocol, Strict, MaxFreshness))}.
+    {ok, Freshness} = ?APPLICATION:get_env(antidote, freshness),
+    {ok, execute_op, start_tx_internal(From, ClientClock, UpdateClock, init_state(StayAlive, false, false, Protocol, Strict, Freshness))}.
 
 
-init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, MaxFreshness) ->
+init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, Freshness) ->
+    {ToReadList, ConsistencyCheckTuple} = case Freshness of
+        true ->
+            {[], start};
+        _ ->
+            {ignore, ignore}
+    end,
     #tx_coord_state{
        transactional_protocol = Protocol,
         transaction = undefined,
@@ -149,7 +155,9 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, MaxFreshness) ->
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
         stable_strict=Strict,
-        max_freshness = MaxFreshness
+        freshness = Freshness,
+        consistency_check_tuple = ConsistencyCheckTuple,
+        to_read_list = ToReadList
         %% The following are needed by the physics protocol
     }.
 
@@ -160,14 +168,14 @@ generate_name(From) ->
 start_tx({start_tx, From, ClientClock, UpdateClock}, SD0) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, UpdateClock, SD0)}.
 
-start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol, stable_strict=Strict, max_freshness = MaxFreshness}) ->
-    Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol, Strict, MaxFreshness),
+start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_alive = StayAlive, transactional_protocol = Protocol, stable_strict=Strict, freshness = Freshness}) ->
+    Transaction = create_transaction_record(ClientClock, UpdateClock, StayAlive, From, false, Protocol, Strict, Freshness),
     From ! {ok, Transaction#transaction.txn_id},
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-  boolean(), pid() | undefined, boolean(), atom(), boolean()) -> transaction().
-create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol, Strict) ->
+  boolean(), pid() | undefined, boolean(), atom(), boolean(), boolean()) -> transaction().
+create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol, Strict, Freshness) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
     Name = case StayAlive of
@@ -185,9 +193,9 @@ create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, P
         ec->
             create_ec_record(Name);
         physics ->
-            create_physics_tx_record(Name, ClientClock, UpdateClock, Strict);
+            create_physics_tx_record(Name, ClientClock, UpdateClock, Strict, Freshness);
         Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-            create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol, Strict)
+            create_cure_gr_tx_record(Name, ClientClock, UpdateClock, Protocol, Strict, Freshness)
     end.
 
 
@@ -201,8 +209,8 @@ create_ec_record(Name)->
 
 % todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the physics protocol
--spec create_physics_tx_record(pid(), clock_time(), clock_time(), boolean())-> transaction().
-create_physics_tx_record(Name, _ClientClock, _UpdateClock, Strict)->
+-spec create_physics_tx_record(pid(), clock_time(), clock_time(), boolean(), boolean())-> transaction().
+create_physics_tx_record(Name, _ClientClock, _UpdateClock, Strict, Freshness)->
     {ok, StableVector} =
 %%        case ClientClock of
 %%        ignore ->
@@ -222,13 +230,14 @@ create_physics_tx_record(Name, _ClientClock, _UpdateClock, Strict)->
     #transaction{
         snapshot_vc = StableVector,
         transactional_protocol = physics,
-        txn_id = TransactionId}.
+        txn_id = TransactionId,
+        freshness = Freshness}.
 
 
 % todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the clocksi and gr protocol
--spec create_cure_gr_tx_record(pid(), clock_time(), clock_time(), clocksi|gr, boolean())->transaction().
-create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol, Strict)->
+-spec create_cure_gr_tx_record(pid(), clock_time(), clock_time(), clocksi|gr, boolean(), boolean())->transaction().
+create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol, Strict, Freshness)->
     {ok, SnapshotTime} =
 %%        case ClientClock of
 %%        ignore ->
@@ -248,7 +257,8 @@ create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol, Strict)->
     #transaction{snapshot_clock = LocalClock,
         transactional_protocol = Protocol,
         snapshot_vc = SnapshotTime,
-        txn_id = TransactionId}.
+        txn_id = TransactionId,
+        freshness = Freshness}.
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
@@ -259,7 +269,8 @@ perform_singleitem_read(Key, Type) ->
 %%    todo: there should be a better way to get the Protocol.
     {ok, Protocol} = application:get_env(antidote, txn_prot),
     {ok, Strict} = application:get_env(antidote, stable_strict),
-    Transaction= create_transaction_record(ignore, update_clock, false, undefined, true, Protocol, Strict),
+    {ok, Freshness} = application:get_env(antidote, freshness),
+    Transaction= create_transaction_record(ignore, update_clock, false, undefined, true, Protocol, Strict, Freshness),
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     case clocksi_readitem_fsm:read_data_item(IndexNode, Key, Type, Transaction) of
@@ -432,23 +443,34 @@ execute_op({OpType, Args}, Sender,
                     InternalReadSet=orddict:store(key, ReadResult, SD0#tx_coord_state.internal_read_set),
                     {reply, {ok, Type:value(Snapshot)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
-	    read_objects ->
-            ExecuteReads = fun({Key, Type}, Acc) ->
-                PrefList= ?LOG_UTIL:get_preflist_from_key(Key),
-                IndexNode = hd(PrefList),
-%%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
-                TransactionSend = case SD0#tx_coord_state.max_freshness of
-                    true ->
-                        Transaction#transaction{transactional_protocol = ec}; % get the latest value.
+        read_objects ->
+%%            lager:info("reading: ~p", [Args]),
+            {NewToReadList, NewConsistencyCheckTuple} =
+                case SD0#tx_coord_state.freshness of
                     false ->
-                        Transaction
+                        {ignore, ignore};
+                    true ->
+                        case SD0#tx_coord_state.consistency_check_tuple of
+                            {inconsistent, RetryNumber} -> % If we are retrying reads, do not add this reads to the list of all reads (as they've been already added)
+                                lager:info("retrying reads: ~p ", [RetryNumber]),
+                                {SD0#tx_coord_state.to_read_list, {start, RetryNumber}};
+                            _ ->% If we are not retrying reads, add this reads to the list of all reads (in case we need to retry them due to inconsistencies)
+                                {SD0#tx_coord_state.to_read_list ++ Args, {start, 0}}
+                        end
                 end,
-                ok = clocksi_vnode:async_read_data_item(IndexNode, TransactionSend, Key, Type),
+
+
+            ExecuteReads = fun({Key, Type}, Acc) ->
+                PrefList = ?LOG_UTIL:get_preflist_from_key(Key),
+                IndexNode = hd(PrefList),
+                %%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
+                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
                 ReadSet = Acc#tx_coord_state.return_accumulator,
-                Acc#tx_coord_state{return_accumulator= [Key | ReadSet]}
-                           end,
-            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator= []}, Args),
-            {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender}};
+                Acc#tx_coord_state{return_accumulator = [Key | ReadSet]}
+            end,
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator = []}, Args),
+%%            lager:info("i am waiting to receive this number of objects: ~p", [SD0#tx_coord_state.num_to_read]),
+            {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender, consistency_check_tuple = NewConsistencyCheckTuple, to_read_list = NewToReadList}};
         update_objects ->
             ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc) ->
                 case perform_update({Key, Type, UpdateParams}, Sender, Acc) of
@@ -495,31 +517,55 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
 
 
 receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
-  CoordState= #tx_coord_state{num_to_read = NumToRead,
-      return_accumulator= ReadSet,
+  CoordState = #tx_coord_state{num_to_read = NumToRead,
+      return_accumulator = ReadSet,
       internal_read_set = InternalReadSet,
-%%      transactional_protocol = TransactionalProtocol,
-      transaction=Transaction}) ->
+      freshness = Freshness,
+      %%      transactional_protocol = TransactionalProtocol,
+      transaction = Transaction}) ->
     %%TODO: type is hard-coded..
-    
-    SnapshotAfterMyUpdates=apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot),
+%%    lager:info("receiving:::: ~p", [CoordState#tx_coord_state.num_to_read]),
+
+    SnapshotAfterMyUpdates = apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot),
     Value2 = Type:value(SnapshotAfterMyUpdates),
     ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
-    NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
-%%    SD1 = case TransactionalProtocol of
-%%              physics ->
-%%                  update_physics_metadata(CoordState, SnapshotCommitParams);
-%%              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
-%%                  CoordState
-%%          end,
+    NewCoordState = case Freshness of
+        true ->
+            NewSnapshotCommitParams = case SnapshotCommitParams of
+                {CT, _ValidTime} ->
+                    CT;
+                _ ->
+                    SnapshotCommitParams
+            end,
+            NewInternalReadSet = orddict:store(Key, {Snapshot, NewSnapshotCommitParams}, InternalReadSet),
+            %%            lager:info("gonna check consistency"),
+            is_snapshot_consistent(CoordState#tx_coord_state{internal_read_set = NewInternalReadSet}, SnapshotCommitParams);
+        _ ->
+            NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
+            CoordState#tx_coord_state{internal_read_set = NewInternalReadSet}
+    end,
+    %%    SD1 = case TransactionalProtocol of
+    %%              physics ->
+    %%                  update_physics_metadata(CoordState, SnapshotCommitParams);
+    %%              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
+    %%                  CoordState
+    %%          end,
+%%    lager:info("previous was  ~p", [CoordState#tx_coord_state.consistency_check_tuple]),
+%%    lager:info("new coord state is ~p", [NewCoordState#tx_coord_state.consistency_check_tuple]),
     case NumToRead of
         1 ->
-            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
-            {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
-
+            case NewCoordState#tx_coord_state.consistency_check_tuple of
+                {inconsistent, _} ->
+                    % we must retry this read.lager:
+                    execute_op({read_objects, NewCoordState#tx_coord_state.to_read_list}, NewCoordState#tx_coord_state.from, NewCoordState);
+                _ ->
+                    gen_fsm:reply(NewCoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+                    {next_state, execute_op, NewCoordState#tx_coord_state{num_to_read = 0}}
+            end;
         _ ->
+%%            lager:info("gonnma refceive other objects"),
             {next_state, receive_read_objects_result,
-                CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
+                NewCoordState#tx_coord_state{return_accumulator = ReadSet1, num_to_read = NumToRead-1}}
     end.
 
 -spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, transaction(), type(), snapshot()) -> snapshot().
@@ -533,7 +579,28 @@ apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot)->
             FileteredAndReversedUpdates=clocksi_vnode:reverse_and_filter_updates_per_key(WS, Key, Transaction),
             _SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
     end.
-    
+
+is_snapshot_consistent(CoordState = #tx_coord_state{consistency_check_tuple = ConsCheckTuple}, SnapshotCommitParams) ->
+    NewConsistencyTuple = case ConsCheckTuple of
+        {inconsistent, RetryNumber} ->
+%%            lager:info("inconsistent, ~p", [SnapshotCommitParams]),
+            {inconsistent, RetryNumber};
+        {start, RetryNumber} ->
+            {SnapshotCommitParams, RetryNumber};
+        {{MaxCT, MinVT}, RetryNumber} ->
+            {CT, ValidTime} = SnapshotCommitParams,
+            case ((vectorclock:strict_ge(CT, MinVT)) or vectorclock:strict_ge(MaxCT, ValidTime)) of
+                true ->
+%%                    lager:info("Inconsistency detected: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [CT, ValidTime, MaxCT, MinVT]),
+                    {inconsistent, RetryNumber+1};
+                false ->
+%%                    lager:info("Read is consistent: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [CT, ValidTime, MaxCT, MinVT]),
+%%                    lager:info("New params: new MaxCT = ~p, MinVT = ~p", [vectorclock:max([MaxCT, CT]), vectorclock:min([ValidTime, MinVT])]),
+                    {{vectorclock:max([MaxCT, CT]), vectorclock:min([ValidTime, MinVT])}, RetryNumber}
+            end
+    end,
+    CoordState#tx_coord_state{consistency_check_tuple = NewConsistencyTuple}.
+
 
 
 
@@ -842,7 +909,7 @@ receive_aborted(_, S0) ->
 %%       a reply is sent to the client that started the transaction.
 reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator= ReturnReadSet,
     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
-    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict, max_freshness = MaxFreshness}) ->
+    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict, freshness = Freshness}) ->
     if undefined =/= From ->
         TxId = Transaction#transaction.txn_id,
         Reply = case Transaction#transaction.transactional_protocol of
@@ -929,7 +996,7 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
     end,
     case StayAlive of
         true ->
-            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, MaxFreshness)};
+            {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, Freshness)};
         false ->
             {stop, normal, SD}
     end.
