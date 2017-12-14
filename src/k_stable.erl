@@ -44,7 +44,7 @@
 
 %% Public API/Client functions
 -export([
-    start_link/1,
+    start_link/0,
     deliver_tx/1,
     fetch_kvector/0]).
 
@@ -67,6 +67,7 @@
 
 %% Definitions
 -record(state, {
+    table   :: ets:tid(),
     kvector :: vectorclock()
 }).
 
@@ -80,12 +81,12 @@
 %% ===================================================================
 %% Public API (client API)
 %% ===================================================================
--spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(Name) ->
-    gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [Name], []).
+%%-spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
 
-
-
+%% Calls init
+-spec start_link() -> {ok, pid()}.
+start_link() ->
+    gen_server:start_link({local, generate_server_name(node())}, ?MODULE, []).
 
 %% Called with new inter-dc TXs (or heartbeat). Updates the state.
 -spec deliver_tx(#interdc_txn{}) -> ok.
@@ -109,18 +110,18 @@ init(_A) ->
             ets:new(?KSTABILITY_TABLE_NAME,
                 [set, named_table, public, ?KSTABILITY_TABLE_CONCURRENCY]),
             lager:info("Created K-Stability table..."),
-            {ok, []};
+            {ok, #state{}};
         _ ->
-            {ok, []}
+            {ok, #state{}}
     end.
 
-handle_cast({update_dc_vc, Tx = #interdc_txn{}}, _State) ->
+handle_cast({update_dc_vc, Tx = #interdc_txn{}}, State) ->
     DC = Tx#interdc_txn.dcid,
     VC = Tx#interdc_txn.gss,
     ets:insert(?KSTABILITY_TABLE_NAME, {DC, VC}),
     KVect = get_k_vector(),
     ets:insert(?KSTABILITY_TABLE_NAME, {kvector, KVect}),
-    NewState = state_factory(KVect),
+    NewState = state_factory(State, KVect),
     {noreply, NewState};
 
 handle_cast(_Info, State) ->
@@ -129,11 +130,10 @@ handle_cast(_Info, State) ->
 %% Returns the k-vector, or
 %% {error, k_too_high} if the requested K
 %% is greater than the number of DCs
-handle_call(get_kvect, _From, _State) ->
+handle_call(get_kvect, _From, State) ->
     KVec = get_k_vector(),
-    NewState = state_factory(KVec),
+    NewState = state_factory(State, KVec),
     {reply, KVec, NewState}.
-
 
 
 %% ===================================================================
@@ -142,9 +142,9 @@ handle_call(get_kvect, _From, _State) ->
 generate_name(Node) ->
     list_to_atom("kstability_manager" ++ atom_to_list(Node)).
 
--spec state_factory(vectorclock()) -> #state{}.
-state_factory(Kvect) ->
-    #state{kvector = Kvect}.
+-spec state_factory(#state{}, vectorclock()) -> #state{}.
+state_factory(St, Kvect) ->
+    #state{kvector = Kvect, table = St#state.table}.
 
 %% Goes through the ets table and builds the
 %% remote state vector. Intended to be used

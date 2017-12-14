@@ -19,24 +19,29 @@
 %% -------------------------------------------------------------------
 %%
 %% Supervisor for k-stable functions
+%% Call path:
+%% antidote_sup.erl starts this supervisor
+%% this supervisor starts the gen_server
 %%
 %% -------------------------------------------------------------------
 -module(k_stable_sup).
 
 -behavior(supervisor).
 
--export([start_fsm/1,
-    start_link/1]).
+-export([start_link/1]).
 -export([init/1]).
 
 start_link(Init) ->
+    lager:info("start_link"),
     supervisor:start_link({local, ?MODULE}, ?MODULE, Init).
 
-start_fsm(Args) ->
-    supervisor:start_child(?MODULE, Args).
+%% TODO: Something is wrong here
+%% {"Kernel pid terminated",application_controller,"{application_start_failure,antidote,{{shutdown,{failed_to_start_child,k_stable_sup,{function_clause,[{supervisor,check_startspec,[{k_stable,{k_stable,start_link,[]},permanent,5000,worker,[k_stable]},[]],[{file,\"supervisor.erl\"},{line,1295}]},{supervisor,init_children,2,[{file,\"supervisor.erl\"},{line,312}]},{gen_server,init_it,6,[{file,\"gen_server.erl\"},{line,328}]},{proc_lib,init_p_do_apply,3,[{file,\"proc_lib.erl\"},{line,247}]}]}}},{antidote_app,start,[normal,[]]}}}"}
+
 
 init(_Args) ->
+    lager:info("init"),
     Worker = {k_stable,
         {k_stable, start_link, []},
         permanent, 5000, worker, [k_stable]},
-    {ok, {{one_for_one, 5, 10}, [Worker]}}.
+    {ok, {{one_for_one, 5, 10}, Worker}}.
