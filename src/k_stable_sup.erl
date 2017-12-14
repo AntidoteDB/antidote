@@ -32,7 +32,7 @@
 -export([init/1]).
 
 start_link(Init) ->
-    lager:info("start_link"),
+    lager:info("start_link ~p", [Init]),
     supervisor:start_link({local, ?MODULE}, ?MODULE, Init).
 
 %% TODO: Something is wrong here
@@ -45,7 +45,7 @@ start_link(Init) ->
 %%                  [k_stable, {global,'k_stable_antidote@127.0.0.1'}],[]}
 
 init(Init) ->
-    lager:info("init"),
+    lager:info("init ~p", [Init]),
     ChildSpec = {k_stable_server,
         {k_stable, start_link, [Init]},
         permanent, 5000, worker, [k_stable]},

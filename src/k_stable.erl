@@ -44,9 +44,11 @@
 
 %% Public API/Client functions
 -export([
-    start_link/0,
+    start_link/1,
     deliver_tx/1,
-    fetch_kvector/0]).
+    fetch_kvector/0,
+    check_tables_ready/0
+    ]).
 
 %% server and internal functions
 -export([
@@ -84,9 +86,14 @@
 %%-spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
 
 %% Calls init
--spec start_link() -> {ok, pid()}.
-start_link() ->
-    gen_server:start_link({local, generate_server_name(node())}, ?MODULE, []).
+-spec start_link(atom()) -> {ok, pid()}.
+%%start_link() ->
+%%    gen_server:start_link({local, generate_server_name(node())}, ?MODULE, []).
+start_link(Name) ->
+    N = generate_server_name(node()),
+    lager:info("k_stable starting link ~p with ~p", [Name, N]),
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Name]).
+
 
 %% Called with new inter-dc TXs (or heartbeat). Updates the state.
 -spec deliver_tx(#interdc_txn{}) -> ok.
@@ -105,14 +112,24 @@ fetch_kvector() ->
 %% ===================================================================
 init(_A) ->
     lager:info("Starting K-Stability servers..."),
+%%    case ets:info(?KSTABILITY_TABLE_NAME) of
+%%        %% Table doesn't exist, create
+%%        undefined ->
+    Tid = ets:new(?KSTABILITY_TABLE_NAME,
+                [set, named_table, public, ?KSTABILITY_TABLE_CONCURRENCY]),
+    lager:info("Created K-Stability table..."),
+    {ok, #state{table = Tid}}.
+%%        _ ->
+%%            {ok, #state{}}
+%%    end.
+
+-spec check_tables_ready() -> boolean().
+check_tables_ready() ->
     case ets:info(?KSTABILITY_TABLE_NAME) of
         undefined ->
-            ets:new(?KSTABILITY_TABLE_NAME,
-                [set, named_table, public, ?KSTABILITY_TABLE_CONCURRENCY]),
-            lager:info("Created K-Stability table..."),
-            {ok, #state{}};
+            false;
         _ ->
-            {ok, #state{}}
+            true
     end.
 
 handle_cast({update_dc_vc, Tx = #interdc_txn{}}, State) ->
@@ -241,7 +258,7 @@ matrices_eq([H1 | M1], [H2 | M2]) ->
     end.
 
 generate_server_name(Node) ->
-    list_to_atom("k_stable" ++ atom_to_list(Node)).
+    list_to_atom("k_stable_" ++ atom_to_list(Node)).
 
 
 % Unit tests
