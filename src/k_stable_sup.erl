@@ -36,12 +36,18 @@ start_link(Init) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, Init).
 
 %% TODO: Something is wrong here
-%% {"Kernel pid terminated",application_controller,"{application_start_failure,antidote,{{shutdown,{failed_to_start_child,k_stable_sup,{function_clause,[{supervisor,check_startspec,[{k_stable,{k_stable,start_link,[]},permanent,5000,worker,[k_stable]},[]],[{file,\"supervisor.erl\"},{line,1295}]},{supervisor,init_children,2,[{file,\"supervisor.erl\"},{line,312}]},{gen_server,init_it,6,[{file,\"gen_server.erl\"},{line,328}]},{proc_lib,init_p_do_apply,3,[{file,\"proc_lib.erl\"},{line,247}]}]}}},{antidote_app,start,[normal,[]]}}}"}
 
+%% "{application_start_failure,antidote,{
+%%      {shutdown,{failed_to_start_child,k_stable_sup,
+%%          {shutdown,{failed_to_start_child,k_stable_server,
+%%              {undef,[
+%%              {global,init,
+%%                  [k_stable, {global,'k_stable_antidote@127.0.0.1'}],[]}
 
-init(_Args) ->
+init(Init) ->
     lager:info("init"),
-    Worker = {k_stable,
-        {k_stable, start_link, []},
+    ChildSpec = {k_stable_server,
+        {k_stable, start_link, [Init]},
         permanent, 5000, worker, [k_stable]},
-    {ok, {{one_for_one, 5, 10}, Worker}}.
+    SupFlags = {one_for_one, 5, 10},
+    {ok, {SupFlags, [ChildSpec]}}.
