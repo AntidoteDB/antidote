@@ -113,6 +113,7 @@ start_bg_processes(MetaDataName) ->
                       true = wait_init:wait_ready(Node),
                       ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_sender_sup]),
                       ok = rpc:call(Node, dc_utilities, check_registered, [meta_data_manager_sup]),
+                      ok = rpc:call(Node, dc_utilities, check_registered, [k_stable_sup]),
                       ok = rpc:call(Node, dc_utilities, check_registered_global, [stable_meta_data_server:generate_server_name(Node)]),
                       ok = rpc:call(Node, meta_data_sender, start, [MetaDataName])
                   end, Nodes),
@@ -164,6 +165,7 @@ check_node_restart() ->
             ok = dc_utilities:check_registered(inter_dc_query_receive_socket),
             ok = dc_utilities:check_registered(inter_dc_sub),
             ok = dc_utilities:check_registered(inter_dc_pub),
+            ok = dc_utilities:check_registered(k_stable_sup),
             ok = dc_utilities:check_registered(inter_dc_query_response_sup),
             ok = dc_utilities:check_registered(inter_dc_query),
             {ok, MetaDataName} = dc_meta_data_utilities:get_meta_data_name(),

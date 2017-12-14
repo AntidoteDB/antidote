@@ -20,9 +20,9 @@
 -module(wait_init).
 
 -export([check_ready_nodes/1,
-         wait_ready/1,
-         check_ready/1
-        ]).
+    wait_ready/1,
+    check_ready/1
+]).
 
 %% @doc This function takes a list of pysical nodes connected to the an
 %% instance of the antidote distributed system.  For each of the phyisical nodes
@@ -54,24 +54,30 @@ check_ready(Node) ->
     case rpc:call(Node, clocksi_vnode, check_tables_ready, []) of
         true ->
             case rpc:call(Node, clocksi_readitem_server, check_servers_ready, []) of
-            true ->
-                case rpc:call(Node, materializer_vnode, check_tables_ready, []) of
                 true ->
-                    case rpc:call(Node, stable_meta_data_server, check_tables_ready, []) of
-                    true ->
-                        lager:debug("Node ~w is ready! ~n", [Node]),
-                        true;
-                    false ->
-                        lager:debug("Node ~w is not ready ~n", [Node]),
-                        false
+                    case rpc:call(Node, materializer_vnode, check_tables_ready, []) of
+                        true ->
+                            case rpc:call(Node, stable_meta_data_server, check_tables_ready, []) of
+                                true ->
+                                    case rpc:call(Node, k_stable, check_tables_ready, []) of
+                                        true ->
+                                            lager:debug("Node ~w is ready! ~n", [Node]),
+                                            true;
+                                        false ->
+                                            lager:debug("Node ~w is not ready ~n", [Node]),
+                                            false
+                                    end;
+                                false ->
+                                    lager:debug("Node ~w is not ready ~n", [Node]),
+                                    false
+                            end;
+                        false ->
+                            lager:debug("Node ~w is not ready ~n", [Node]),
+                            false
                     end;
                 false ->
-                    lager:debug("Node ~w is not ready ~n", [Node]),
+                    lager:debug("Checking if node ~w is ready ~n", [Node]),
                     false
-                end;
-            false ->
-                lager:debug("Checking if node ~w is ready ~n", [Node]),
-                false
             end;
         false ->
             lager:debug("Checking if node ~w is ready ~n", [Node]),
