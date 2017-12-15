@@ -74,7 +74,6 @@
     committed_tx :: cache_id(),
     read_servers :: non_neg_integer(),
     strict :: boolean(),
-    freshness :: boolean(),
     prepared_dict :: list()}).
 
 %%%===================================================================
@@ -212,13 +211,11 @@ init([Partition]) ->
     PreparedTx = open_table(Partition),
     CommittedTx = ets:new(committed_tx, [set]),
     {ok, Strict} = application:get_env(antidote, stable_strict),
-    {ok, Freshness} = application:get_env(antidote, freshness),
     {ok, #state{partition = Partition,
         prepared_tx = PreparedTx,
         committed_tx = CommittedTx,
         read_servers = ?READ_CONCURRENCY,
         strict = Strict,
-        freshness = Freshness,
         prepared_dict = orddict:new()}}.
 
 %% @doc The table holding the prepared transactions is shared with concurrent
@@ -792,7 +789,7 @@ filter_updates_per_key_physics_test() ->
     ClockSIOp2 = {b, crdt_pncounter, Op2},
     ClockSIOp3 = {c, crdt_pncounter, Op3},
     ClockSIOp4 = {a, crdt_pncounter, Op4},
-    
+
     Transaction = #transaction{transactional_protocol = clocksi, txn_id=no_txn_inserting_from_log},
 
     ?assertEqual([Op4, Op1],

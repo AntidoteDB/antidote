@@ -549,16 +549,17 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 	        ok=materializer_vnode:log_number_of_non_applied_ops(MatState, 0, TxnId),
 %%	        lager:debug("internal read returning: ",[{ok, {NewSnapshot, SnapshotCommitParams}}]),
 	        NewSnapshotCommitParams = case Transaction#transaction.freshness of
-		        true ->
+		        false ->
+			        SnapshotCommitParams;
+		        _ ->
 			        case SnapshotCommitParams of
 				        {One,Two,_} ->
 					        {One, Two, vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(),dc_utilities:now_microsec(), vectorclock:new())};
 				        One ->
 					        {One, vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(),dc_utilities:now_microsec(), vectorclock:new())}
-			        end;
-		        _->
-					SnapshotCommitParams
+			        end
 	        end,
+%%	        lager:info("NewSnapshotCommitParams : ~n~p", [NewSnapshotCommitParams]),
             {ok, {NewSnapshot, NewSnapshotCommitParams}};
         [Tuple] ->
 	        {Key, Len, _OpId, _ListLen, OperationsForKey} = tuple_to_key(Tuple, false),
@@ -638,19 +639,31 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
             case SnapshotGetResponse#snapshot_get_response.number_of_ops of
                 0 ->
 	                lager:info("this should not happen"),
-                            {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot#materialized_snapshot.value,
-	                              SnapshotGetResponse#snapshot_get_response.commit_parameters}};
+	                case Transaction#transaction.freshness of
+		                false ->
+			                {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot#materialized_snapshot.value,
+				                SnapshotGetResponse#snapshot_get_response.commit_parameters}};
+		                _ ->
+			                {ok, {SnapshotGetResponse#snapshot_get_response.materialized_snapshot#materialized_snapshot.value,
+				                {SnapshotGetResponse#snapshot_get_response.commit_parameters, dc_utilities:now_microsec()}}}
+	                end;
                 _ ->
 %%	                lager:info("~nSnapshotGetResponse ~n~p", [SnapshotGetResponse]),
 	                ValidTime = case Transaction#transaction.freshness of
-		                true ->
-			                dc_utilities:now_microsec();
-		                _->
-			                ignore
+		                false ->
+			                ignore;
+		                _ ->
+			                dc_utilities:now_microsec()
 	                end,
 %%	                lager:info("valid time is ~p.",[ValidTime]),
                     case clocksi_materializer:materialize(Type, Transaction, SnapshotGetResponse, MatState) of
                         {ok, Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount} ->
+%%	                        case CommitParameters of
+%%		                        {_,_, _} ->
+%%			                        moveon;
+%%		                        _->
+%%			                        lager:info("commit params: ~n~p ", [CommitParameters])
+%%	                        end,
 %%	                        lager:info("~n Snapshot ~p~n ~n NewLastOp ~p ~n CommitParameters ~p ~n NewSS ~p ~n OpAddedCount ~p", [Snapshot, NewLastOp, CommitParameters, NewSS, OpAddedCount]),
 %%	                        lager:info("~nShouldGc ~p", [ShouldGc]),
 %%	                        lager:info("~SnapshotGetResponse#snapshot_get_response.is_newest_snapshot ~p", [SnapshotGetResponse#snapshot_get_response.is_newest_snapshot]),

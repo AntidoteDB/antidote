@@ -59,39 +59,39 @@
 
 %% Callbacks
 -export([init/1,
-    code_change/4,
-    handle_event/3,
-    handle_info/3,
-    handle_sync_event/4,
-    terminate/3,
-    stop/1]).
+         code_change/4,
+         handle_event/3,
+         handle_info/3,
+         handle_sync_event/4,
+         terminate/3,
+         stop/1]).
 
 %% States
 -export([create_transaction_record/8,
-    start_tx/2,
-    init_state/6,
-    perform_update/3,
-    perform_read/4,
-    execute_op/3,
-receive_read_objects_result/2,
-    receive_logging_responses/2,
-    finish_op/3,
-    prepare/1,
-    prepare_2pc/1,
-    process_prepared/2,
-    receive_prepared/2,
-    single_committing/2,
-    committing_2pc/3,
-    committing_single/3,
-    committing/3,
-    receive_committed/2,
-    receive_aborted/2,
-    abort/1,
-    abort/2,
-    perform_singleitem_read/2,
-%%    perform_singleitem_update/3,
-    reply_to_client/1,
-    generate_name/1]).
+         start_tx/2,
+         init_state/6,
+         perform_update/3,
+         perform_read/4,
+         execute_op/3,
+         receive_read_objects_result/2,
+         receive_logging_responses/2,
+         finish_op/3,
+         prepare/1,
+         prepare_2pc/1,
+         process_prepared/2,
+         receive_prepared/2,
+         single_committing/2,
+         committing_2pc/3,
+         committing_single/3,
+         committing/3,
+         receive_committed/2,
+         receive_aborted/2,
+         abort/1,
+         abort/2,
+         perform_singleitem_read/2,
+         %%    perform_singleitem_update/3,
+         reply_to_client/1,
+         generate_name/1]).
 
 %%%===================================================================
 %%% API
@@ -133,33 +133,33 @@ init([From, ClientClock, UpdateClock, StayAlive]) ->
 
 init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, Freshness) ->
     {ToReadList, ConsistencyCheckTuple} = case Freshness of
-        true ->
-            {[], start};
-        _ ->
-            {ignore, ignore}
-    end,
+                                              false ->
+                                                  {ignore, ignore};
+                                              _ ->
+                                                  {[], {start, 0}}
+                                          end,
     #tx_coord_state{
        transactional_protocol = Protocol,
-        transaction = undefined,
-	    client_ops=[],
-	    updated_partitions = [],
-        prepare_time = 0,
-        commit_time = 0,
-        num_to_read = 0,
-        num_to_ack = 0,
-        operations = [],
-        from = undefined,
-        full_commit = FullCommit,
-        is_static = IsStatic,
-        return_accumulator= [],
-        internal_read_set = orddict:new(),
-        stay_alive = StayAlive,
-        stable_strict=Strict,
-        freshness = Freshness,
-        consistency_check_tuple = ConsistencyCheckTuple,
-        to_read_list = ToReadList
-        %% The following are needed by the physics protocol
-    }.
+       transaction = undefined,
+       client_ops=[],
+       updated_partitions = [],
+       prepare_time = 0,
+       commit_time = 0,
+       num_to_read = 0,
+       num_to_ack = 0,
+       operations = [],
+       from = undefined,
+       full_commit = FullCommit,
+       is_static = IsStatic,
+       return_accumulator= [],
+       internal_read_set = orddict:new(),
+       stay_alive = StayAlive,
+       stable_strict=Strict,
+       freshness = Freshness,
+       consistency_check_tuple = ConsistencyCheckTuple,
+       to_read_list = ToReadList
+       %% The following are needed by the physics protocol
+      }.
 
 -spec generate_name(pid()) -> atom().
 generate_name(From) ->
@@ -174,7 +174,7 @@ start_tx_internal(From, ClientClock, UpdateClock, SD = #tx_coord_state{stay_aliv
     SD#tx_coord_state{transaction=Transaction, num_to_read=0}.
 
 -spec create_transaction_record(snapshot_time() | ignore, update_clock | no_update_clock,
-  boolean(), pid() | undefined, boolean(), atom(), boolean(), boolean()) -> transaction().
+                                boolean(), pid() | undefined, boolean(), atom(), boolean(), boolean()) -> transaction().
 create_transaction_record(ClientClock, UpdateClock, StayAlive, From, IsStatic, Protocol, Strict, Freshness) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]),erlang:monotonic_time(),erlang:unique_integer()),
@@ -203,62 +203,62 @@ create_ec_record(Name)->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     TransactionId = #tx_id{local_start_time = Now, server_pid = Name},
     #transaction{
-        transactional_protocol = ec,
-        txn_id = TransactionId}.
+       transactional_protocol = ec,
+       txn_id = TransactionId}.
 
 
-% todo remove this changes done for basho_bench
+                                                % todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the physics protocol
 -spec create_physics_tx_record(pid(), clock_time(), clock_time(), boolean(), boolean())-> transaction().
 create_physics_tx_record(Name, _ClientClock, _UpdateClock, Strict, Freshness)->
     {ok, StableVector} =
-%%        case ClientClock of
-%%        ignore ->
-            get_snapshot_time(Strict),
-%%        _ ->
-%%            case UpdateClock of
-%%                update_clock ->
-%%                    get_snapshot_time(ClientClock);
-%%                no_update_clock ->
-%%                    {ok, ClientClock}
-%%            end
-%%    end
-%%    Now = dc_utilities:now_microsec(),
+        %%        case ClientClock of
+        %%        ignore ->
+        get_snapshot_time(Strict),
+    %%        _ ->
+    %%            case UpdateClock of
+    %%                update_clock ->
+    %%                    get_snapshot_time(ClientClock);
+    %%                no_update_clock ->
+    %%                    {ok, ClientClock}
+    %%            end
+    %%    end
+    %%    Now = dc_utilities:now_microsec(),
     DcId = ?DC_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, StableVector),
     TransactionId = #tx_id{local_start_time= LocalClock, server_pid = Name},
     #transaction{
-        snapshot_vc = StableVector,
-        transactional_protocol = physics,
-        txn_id = TransactionId,
-        freshness = Freshness}.
+       snapshot_vc = StableVector,
+       transactional_protocol = physics,
+       txn_id = TransactionId,
+       freshness = Freshness}.
 
 
-% todo remove this changes done for basho_bench
+                                                % todo remove this changes done for basho_bench
 %% @@doc: creates a transaction record for the clocksi and gr protocol
 -spec create_cure_gr_tx_record(pid(), clock_time(), clock_time(), clocksi|gr, boolean(), boolean())->transaction().
 create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol, Strict, Freshness)->
     {ok, SnapshotTime} =
-%%        case ClientClock of
-%%        ignore ->
-            get_snapshot_time(Strict),
-%%        _ ->
-%%            case UpdateClock of
-%%                update_clock ->
-%%                    get_snapshot_time(ClientClock);
-%%                no_update_clock ->
-%%                    {ok, ClientClock}
-%%            end
-%%    end,
+        %%        case ClientClock of
+        %%        ignore ->
+        get_snapshot_time(Strict),
+    %%        _ ->
+    %%            case UpdateClock of
+    %%                update_clock ->
+    %%                    get_snapshot_time(ClientClock);
+    %%                no_update_clock ->
+    %%                    {ok, ClientClock}
+    %%            end
+    %%    end,
     DcId = ?DC_UTIL:get_my_dc_id(),
     LocalClock = ?VECTORCLOCK:get_clock_of_dc(DcId, SnapshotTime),
     TransactionId = #tx_id{local_start_time = LocalClock, server_pid = Name},
-    
+
     #transaction{snapshot_clock = LocalClock,
-        transactional_protocol = Protocol,
-        snapshot_vc = SnapshotTime,
-        txn_id = TransactionId,
-        freshness = Freshness}.
+                 transactional_protocol = Protocol,
+                 snapshot_vc = SnapshotTime,
+                 txn_id = TransactionId,
+                 freshness = Freshness}.
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
@@ -266,7 +266,7 @@ create_cure_gr_tx_record(Name, _ClientClock, _UpdateClock, Protocol, Strict, Fre
 %%      transaction fsm and directly in the calling thread.
 -spec perform_singleitem_read(key(), type()) -> {ok, val(), snapshot_time()} | {error, reason()}.
 perform_singleitem_read(Key, Type) ->
-%%    todo: there should be a better way to get the Protocol.
+    %%    todo: there should be a better way to get the Protocol.
     {ok, Protocol} = application:get_env(antidote, txn_prot),
     {ok, Strict} = application:get_env(antidote, stable_strict),
     {ok, Freshness} = application:get_env(antidote, freshness),
@@ -372,32 +372,32 @@ perform_read({Key, Type}, Updated_partitions, Transaction, Sender) ->
 
 %% @doc this function sends a log operation to the vnode resposible for Key.
 log_downstream_record_at_vnode(Key, Type, DownstreamRecord, CoordState) ->
-    
+
     TxId=CoordState#tx_coord_state.transaction#transaction.txn_id,
     LogRecord=#log_operation{tx_id=TxId, op_type=update,
-        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
+                             log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}},
     LogId=?LOG_UTIL:get_logid_from_key(Key),
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     [Node]=Preflist,
     ok=?LOGGING_VNODE:asyn_append(Node, LogId, LogRecord, self()).
-    
+
 
 perform_update(UpdateArgs, _Sender, CoordState) ->
     {Key, Type, Param1} = UpdateArgs,
-%%    lager:info("updating with the following paramaters: ~p~n",[Param]),
-    
-	case antidote_hooks:execute_pre_commit_hook(Key, Type, Param1) of
-		{Key, Type, Param} ->
+    %%    lager:info("updating with the following paramaters: ~p~n",[Param]),
+
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Param1) of
+        {Key, Type, Param} ->
             Result = case Type of
-                antidote_crdt_lwwreg ->
-                    {NewMaterializedSnapshotRecord, SnapshotCommitParams} = materializer_vnode:create_empty_materialized_snapshot_record(CoordState#tx_coord_state.transaction, Type),
-                    {ok, NewMaterializedSnapshotRecord#materialized_snapshot.value, SnapshotCommitParams, false};
-                _->
-                    ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState)
-            end,
+                         antidote_crdt_lwwreg ->
+                             {NewMaterializedSnapshotRecord, SnapshotCommitParams} = materializer_vnode:create_empty_materialized_snapshot_record(CoordState#tx_coord_state.transaction, Type),
+                             {ok, NewMaterializedSnapshotRecord#materialized_snapshot.value, SnapshotCommitParams, false};
+                         _->
+                             ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Key, Type, Param, CoordState)
+                     end,
             case Result of
                 {ok, DownstreamRecord, SnapshotParameters, KeyWasRead}->
-%%                                lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
+                    %%                                lager:info("DownstreamRecord ~p~n _SnapshotParameters ~p~n", [DownstreamRecord, SnapshotParameters]),
                     ok = log_downstream_record_at_vnode(Key, Type, DownstreamRecord, CoordState),
                     _NewCoordState = update_coordinator_state(CoordState, DownstreamRecord, SnapshotParameters, Key, Type, Param, KeyWasRead);
                 {error, Reason}->
@@ -411,14 +411,14 @@ perform_update(UpdateArgs, _Sender, CoordState) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-    %% update kept for backwards compatibility with tests.
-    execute_op({update, Args}, Sender, SD0) ->
-%%    lager:debug("got execute update"),
+%% update kept for backwards compatibility with tests.
+execute_op({update, Args}, Sender, SD0) ->
+    %%    lager:debug("got execute update"),
     execute_op({update_objects, [Args]}, Sender, SD0);
-    
+
 execute_op({OpType, Args}, Sender,
-  SD0 = #tx_coord_state{transaction = Transaction,
-      updated_partitions=Updated_partitions}) ->
+           SD0 = #tx_coord_state{transaction = Transaction,
+                                 updated_partitions=Updated_partitions}) ->
     case OpType of
         prepare ->
             case Args of
@@ -434,68 +434,80 @@ execute_op({OpType, Args}, Sender,
                     abort(SD0);
                 ReadResult->
                     {Snapshot, _CommitParams}=ReadResult,
-%%                    SD1=case Transaction#transaction.transactional_protocol of
-%%                        physics->
-%%                            update_physics_metadata(SD0, CommitParams);
-%%                        Protocol when ((Protocol==gr)or(Protocol==clocksi)or(Protocol==ec))->
-%%                            SD0
-%%                    end,
+                    %%                    SD1=case Transaction#transaction.transactional_protocol of
+                    %%                        physics->
+                    %%                            update_physics_metadata(SD0, CommitParams);
+                    %%                        Protocol when ((Protocol==gr)or(Protocol==clocksi)or(Protocol==ec))->
+                    %%                            SD0
+                    %%                    end,
                     InternalReadSet=orddict:store(key, ReadResult, SD0#tx_coord_state.internal_read_set),
                     {reply, {ok, Type:value(Snapshot)}, execute_op, SD0#tx_coord_state{internal_read_set=InternalReadSet}}
             end;
         read_objects ->
-%%            lager:info("reading: ~p", [Args]),
-            {NewToReadList, NewConsistencyCheckTuple} =
+            %%            lager:info("reading: ~p", [Args]),
+            ReturnAcc = SD0#tx_coord_state.return_accumulator,
+            {NewToReadList, NewConsistencyCheckTuple, NewTransaction, Retrying, NewReturnAcc} =
                 case SD0#tx_coord_state.freshness of
                     false ->
-                        {ignore, ignore};
+                        {ignore, ignore, Transaction, false, []};
+                    forward -> %only retry once
+                        case SD0#tx_coord_state.consistency_check_tuple of
+                            {start, 0} ->% this is the first round, gonna try to get the latest version.
+                                {[], {start, 0}, Transaction#transaction{freshness = true}, false, []};
+                            {start, 1} -> % we are retrying (only once), now we need to get a consistent version
+%%                                lager:info("we are retrying (only once), now we need to get a consistent version of these objects: ~n~p", [Args]),
+                                {[], {start, 1}, Transaction#transaction{freshness = forward}, true, ReturnAcc}
+                        end;
                     true ->
                         case SD0#tx_coord_state.consistency_check_tuple of
                             {inconsistent, RetryNumber} -> % If we are retrying reads, do not add this reads to the list of all reads (as they've been already added)
-                                lager:info("retrying reads: ~p ", [RetryNumber]),
-                                {SD0#tx_coord_state.to_read_list, {start, RetryNumber}};
-                            _ ->% If we are not retrying reads, add this reads to the list of all reads (in case we need to retry them due to inconsistencies)
-                                {SD0#tx_coord_state.to_read_list ++ Args, {start, 0}}
+                                {SD0#tx_coord_state.to_read_list, {start, RetryNumber}, Transaction, true, ReturnAcc};
+                            {start, 0} ->% If we are not retrying reads, add this reads to the list of all reads (in case we need to retry them due to inconsistencies)
+                                {SD0#tx_coord_state.to_read_list ++ Args, {start, 0}, Transaction, false, []}
                         end
                 end,
 
-
             ExecuteReads = fun({Key, Type}, Acc) ->
-                PrefList = ?LOG_UTIL:get_preflist_from_key(Key),
-                IndexNode = hd(PrefList),
-                %%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
-                ok = clocksi_vnode:async_read_data_item(IndexNode, Transaction, Key, Type),
-                ReadSet = Acc#tx_coord_state.return_accumulator,
-                Acc#tx_coord_state{return_accumulator = [Key | ReadSet]}
-            end,
-            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator = []}, Args),
-%%            lager:info("i am waiting to receive this number of objects: ~p", [SD0#tx_coord_state.num_to_read]),
+                                   PrefList = ?LOG_UTIL:get_preflist_from_key(Key),
+                                   IndexNode = hd(PrefList),
+                                   %%                lager:debug("async reading: ~n ~p ", [{IndexNode, NewTransaction, Key, Type}]),
+                                   ok = clocksi_vnode:async_read_data_item(IndexNode, NewTransaction, Key, Type),
+                                   case Retrying of
+                                       false ->
+                                           ReadSet = Acc#tx_coord_state.return_accumulator,
+                                           Acc#tx_coord_state{return_accumulator = [Key | ReadSet]};
+                                       true ->
+                                           Acc
+                                   end
+                           end,
+            NewCoordState = lists:foldl(ExecuteReads, SD0#tx_coord_state{num_to_read = length(Args), return_accumulator = NewReturnAcc}, Args),
+%%            lager:info("toread list is : ~p", [Args]),
             {next_state, receive_read_objects_result, NewCoordState#tx_coord_state{from = Sender, consistency_check_tuple = NewConsistencyCheckTuple, to_read_list = NewToReadList}};
         update_objects ->
             ExecuteUpdates = fun({Key, Type, UpdateParams}, Acc) ->
-                case perform_update({Key, Type, UpdateParams}, Sender, Acc) of
-                    {error, Reason} ->
-                        Acc#tx_coord_state{return_accumulator= {error, Reason}};
-                    NewCoordinatorState ->
-                        NewNumToRead = NewCoordinatorState#tx_coord_state.num_to_read,
-%%                        lager:debug("Updated Number of responses expected: ~p",[NewNumToRead+1]),
-                        NewCoordinatorState#tx_coord_state{num_to_read =  NewNumToRead+1}
-                end
+                                     case perform_update({Key, Type, UpdateParams}, Sender, Acc) of
+                                         {error, Reason} ->
+                                             Acc#tx_coord_state{return_accumulator= {error, Reason}};
+                                         NewCoordinatorState ->
+                                             NewNumToRead = NewCoordinatorState#tx_coord_state.num_to_read,
+                                             %%                        lager:debug("Updated Number of responses expected: ~p",[NewNumToRead+1]),
+                                             NewCoordinatorState#tx_coord_state{num_to_read =  NewNumToRead+1}
+                                     end
                              end,
             NewCoordState = lists:foldl(ExecuteUpdates, SD0#tx_coord_state{num_to_read = 0, return_accumulator= ok}, Args),
             case NewCoordState#tx_coord_state.num_to_read > 0 of
                 true ->
-%%                    lager:debug("num_to_read > 0"),
+                    %%                    lager:debug("num_to_read > 0"),
                     {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}};
                 false ->
-%%                    lager:debug("num_to_read <= 0"),
+                    %%                    lager:debug("num_to_read <= 0"),
                     {next_state, receive_logging_responses, NewCoordState#tx_coord_state{from = Sender}, 0}
             end
     end.
 
 receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToReply,
-    return_accumulator= ReturnAcc}) ->
-%%    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
+                                                         return_accumulator= ReturnAcc}) ->
+    %%    lager:debug("Waiting for log responses, missing: ~p",[NumToReply]),
     NewAcc = case Response of
                  {error, Reason} -> {error, Reason};
                  {ok, _OpId} -> ReturnAcc;
@@ -512,7 +524,7 @@ receive_logging_responses(Response, S0 = #tx_coord_state{num_to_read = NumToRepl
             end;
         true ->
             {next_state, receive_logging_responses,
-                S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
+             S0#tx_coord_state{num_to_read = NumToReply - 1, return_accumulator= NewAcc}}
     end.
 
 
@@ -521,16 +533,28 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
       return_accumulator = ReadSet,
       internal_read_set = InternalReadSet,
       freshness = Freshness,
-      %%      transactional_protocol = TransactionalProtocol,
+%%            transactional_protocol = TransactionalProtocol,
       transaction = Transaction}) ->
     %%TODO: type is hard-coded..
-%%    lager:info("receiving:::: ~p", [CoordState#tx_coord_state.num_to_read]),
+
+%%    lager:info("protocol:::: ~p", [TransactionalProtocol]),
+%%    case SnapshotCommitParams of
+%%        {_,_} ->
+%%            lager:info("This is what i've received: ~n~p", [SnapshotCommitParams]);
+%%        _->
+%%            moveon
+%%    end,
 
     SnapshotAfterMyUpdates = apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot),
     Value2 = Type:value(SnapshotAfterMyUpdates),
-    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
+
     NewCoordState = case Freshness of
-        true ->
+        false ->
+
+            ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
+            NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
+            CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator = ReadSet1};
+        _ ->
             NewSnapshotCommitParams = case SnapshotCommitParams of
                 {CT, _ValidTime} ->
                     CT;
@@ -539,10 +563,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
             end,
             NewInternalReadSet = orddict:store(Key, {Snapshot, NewSnapshotCommitParams}, InternalReadSet),
             %%            lager:info("gonna check consistency"),
-            is_snapshot_consistent(CoordState#tx_coord_state{internal_read_set = NewInternalReadSet}, SnapshotCommitParams);
-        _ ->
-            NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
-            CoordState#tx_coord_state{internal_read_set = NewInternalReadSet}
+            is_snapshot_consistent(CoordState#tx_coord_state{internal_read_set = NewInternalReadSet}, SnapshotCommitParams, {Key, Type}, Value2)
     end,
     %%    SD1 = case TransactionalProtocol of
     %%              physics ->
@@ -550,22 +571,43 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
     %%              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
     %%                  CoordState
     %%          end,
-%%    lager:info("previous was  ~p", [CoordState#tx_coord_state.consistency_check_tuple]),
-%%    lager:info("new coord state is ~p", [NewCoordState#tx_coord_state.consistency_check_tuple]),
+    %%    lager:info("previous was  ~p", [CoordState#tx_coord_state.consistency_check_tuple]),
+    %%    lager:info("new coord state is ~p", [NewCoordState#tx_coord_state.consistency_check_tuple]),
     case NumToRead of
         1 ->
-            case NewCoordState#tx_coord_state.consistency_check_tuple of
-                {inconsistent, _} ->
-                    % we must retry this read.lager:
-                    execute_op({read_objects, NewCoordState#tx_coord_state.to_read_list}, NewCoordState#tx_coord_state.from, NewCoordState);
-                _ ->
-                    gen_fsm:reply(NewCoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
-                    {next_state, execute_op, NewCoordState#tx_coord_state{num_to_read = 0}}
+            case Freshness of
+                true ->
+                    case NewCoordState#tx_coord_state.consistency_check_tuple of
+                        {inconsistent, _} ->
+                            % we must retry this read.lager:
+                            execute_op({read_objects, NewCoordState#tx_coord_state.to_read_list}, NewCoordState#tx_coord_state.from, NewCoordState);
+                        _ ->
+                            lager:info("replying ~n~p", [NewCoordState#tx_coord_state.return_accumulator]),
+                            gen_fsm:reply(NewCoordState#tx_coord_state.from, {ok, lists:reverse(NewCoordState#tx_coord_state.return_accumulator)}),
+                            {next_state, execute_op, NewCoordState#tx_coord_state{num_to_read = 0}}
+                    end;
+                false ->
+                    lager:info("replying ~n~p", [NewCoordState#tx_coord_state.return_accumulator]),
+                    gen_fsm:reply(NewCoordState#tx_coord_state.from, {ok, lists:reverse(NewCoordState#tx_coord_state.return_accumulator)}),
+                    {next_state, execute_op, NewCoordState#tx_coord_state{num_to_read = 0}};
+                forward ->
+                    case NewCoordState#tx_coord_state.to_read_list of
+                        [] ->
+                            % no reads need to be retried.
+                            lager:info("replying ~n~p", [NewCoordState#tx_coord_state.return_accumulator]),
+                            gen_fsm:reply(NewCoordState#tx_coord_state.from, {ok, lists:reverse(NewCoordState#tx_coord_state.return_accumulator)}),
+                            {next_state, execute_op, NewCoordState#tx_coord_state{num_to_read = 0, consistency_check_tuple = {start, 0}}};
+                        _ ->
+                            % we must go to the second round.
+                            {{_, MinVT}, _} = NewCoordState#tx_coord_state.consistency_check_tuple,
+                            NewTransaction = Transaction#transaction{snapshot_vc = MinVT},
+                            execute_op({read_objects, NewCoordState#tx_coord_state.to_read_list}, NewCoordState#tx_coord_state.from, NewCoordState#tx_coord_state{consistency_check_tuple = {start, 1}, transaction = NewTransaction})
+                    end
             end;
         _ ->
-%%            lager:info("gonnma refceive other objects"),
+            %%            lager:info("gonnma refceive other objects"),
             {next_state, receive_read_objects_result,
-                NewCoordState#tx_coord_state{return_accumulator = ReadSet1, num_to_read = NumToRead-1}}
+                NewCoordState#tx_coord_state{num_to_read = NumToRead-1}}
     end.
 
 -spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, transaction(), type(), snapshot()) -> snapshot().
@@ -580,62 +622,101 @@ apply_tx_updates_to_snapshot(Key, CoordState, Transaction, Type, Snapshot)->
             _SnapshotAfterMyUpdates=clocksi_materializer:materialize_eager(Type, Snapshot, FileteredAndReversedUpdates)
     end.
 
-is_snapshot_consistent(CoordState = #tx_coord_state{consistency_check_tuple = ConsCheckTuple}, SnapshotCommitParams) ->
-    NewConsistencyTuple = case ConsCheckTuple of
-        {inconsistent, RetryNumber} ->
-%%            lager:info("inconsistent, ~p", [SnapshotCommitParams]),
-            {inconsistent, RetryNumber};
+%% In forward freshness, we con't need to check for the second round, as it is already consistent.
+is_snapshot_consistent(CoordState = #tx_coord_state{consistency_check_tuple = {_, 1}, freshness = forward}, _SnapshotCommitParams, {Key, _Type}, Value) ->
+    ReadSet = CoordState#tx_coord_state.return_accumulator,
+    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value),
+    CoordState#tx_coord_state{return_accumulator = ReadSet1};
+
+is_snapshot_consistent(CoordState = #tx_coord_state{consistency_check_tuple = ConsCheckTuple, to_read_list = ToReadList, freshness = Freshness}, SnapshotCommitParams, KeyAndTypeTuple={Key, _Type}, Value) ->
+    ReadSet = CoordState#tx_coord_state.return_accumulator,
+    ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value),
+    case ConsCheckTuple of
+        {inconsistent, _} -> CoordState;
+            %% we are in an inconsistent round of reads already
+            %%            lager:info("inconsistent, ~p", [SnapshotCommitParams]),
         {start, RetryNumber} ->
-            {SnapshotCommitParams, RetryNumber};
+            %% we are starting a round (or retrying one)
+            case SnapshotCommitParams of
+                {CT, ValidTime} ->
+                    CoordState#tx_coord_state{return_accumulator = ReadSet1, consistency_check_tuple = {{CT, ValidTime}, RetryNumber}};
+                {_CT, DepTime, ValidTime} ->
+                    CoordState#tx_coord_state{return_accumulator = ReadSet1, consistency_check_tuple = {{DepTime, ValidTime}, RetryNumber}}
+            end;
         {{MaxCT, MinVT}, RetryNumber} ->
-            {CT, ValidTime} = SnapshotCommitParams,
-            case ((vectorclock:strict_ge(CT, MinVT)) or vectorclock:strict_ge(MaxCT, ValidTime)) of
-                true ->
-%%                    lager:info("Inconsistency detected: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [CT, ValidTime, MaxCT, MinVT]),
-                    {inconsistent, RetryNumber+1};
-                false ->
-%%                    lager:info("Read is consistent: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [CT, ValidTime, MaxCT, MinVT]),
-%%                    lager:info("New params: new MaxCT = ~p, MinVT = ~p", [vectorclock:max([MaxCT, CT]), vectorclock:min([ValidTime, MinVT])]),
-                    {{vectorclock:max([MaxCT, CT]), vectorclock:min([ValidTime, MinVT])}, RetryNumber}
+            case SnapshotCommitParams of
+                {CT, ValidTime} ->
+                    %% clocksi/gr we are in a so-far-consistent round
+                    case ((vectorclock:strict_ge(CT, MinVT)) or vectorclock:strict_ge(MaxCT, ValidTime)) of
+                        true ->
+%%                                                lager:info("CLOCKSI Inconsistency detected: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [CT, ValidTime, MaxCT, MinVT]),
+                            case Freshness of
+                                forward ->
+                                    CoordState#tx_coord_state{to_read_list = ToReadList++[KeyAndTypeTuple]};
+                                true ->
+                                    CoordState#tx_coord_state{consistency_check_tuple = {inconsistent, RetryNumber+1}, to_read_list = ToReadList}
+                            end;
+                        false ->
+                            %%                    lager:info("Read is consistent: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [CT, ValidTime, MaxCT, MinVT]),
+                            %%                    lager:info("New params: new MaxCT = ~p, MinVT = ~p", [vectorclock:max([MaxCT, CT]), vectorclock:min([ValidTime, MinVT])]),
+                            CoordState#tx_coord_state{return_accumulator = ReadSet1, consistency_check_tuple = {{vectorclock:max([MaxCT, CT]), vectorclock:min([ValidTime, MinVT])}, RetryNumber}, to_read_list = ToReadList}
+                    end;
+                {_CT, DepTime, ValidTime} ->
+                    %% physics we are in a so-far-consistent round
+%%                    lager:info("here"),
+                    case ((vectorclock:strict_ge(DepTime, MinVT)) or vectorclock:strict_ge(MaxCT, ValidTime)) of
+                        true ->
+%%                            lager:info("Inconsistency detected: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [DepTime, ValidTime, MaxCT, MinVT]),
+                            case Freshness of
+                                forward ->
+%%                                    lager:info("gonna add this: ~p~n to readlist:~p", [KeyAndTypeTuple, ToReadList]),
+                                    CoordState#tx_coord_state{to_read_list = ToReadList++[KeyAndTypeTuple]}; % as this read is inconsistent, add it to the reads to retry.
+                                true ->
+                                    CoordState#tx_coord_state{consistency_check_tuple = {inconsistent, RetryNumber+1}}
+                            end;
+                        false ->
+%%                                                lager:info("Read is consistent: ~n This Value CT = ~p, This Value ValidTime = ~p~n MaxCT = ~p, MinVT = ~p", [DepTime, ValidTime, MaxCT, MinVT]),
+%%                                                lager:info("New params: new MaxCT = ~p, MinVT = ~p", [vectorclock:max([MaxCT, DepTime]), vectorclock:min([ValidTime, MinVT])]),
+                            CoordState#tx_coord_state{return_accumulator = ReadSet1, consistency_check_tuple = {{vectorclock:max([MaxCT, DepTime]), vectorclock:min([ValidTime, MinVT])}, RetryNumber}, to_read_list = ToReadList}
+                    end
             end
-    end,
-    CoordState#tx_coord_state{consistency_check_tuple = NewConsistencyTuple}.
+    end.
 
 
 
 
 -spec update_coordinator_state(#tx_coord_state{}, downstream_record(), vectorclock()| {vectorclock(), vectorclock(), vectorclock()}, key(), type(), downstream_record(), boolean()) -> #tx_coord_state{}.
 update_coordinator_state(InitCoordState, DownstreamOp, _SnapshotParameters, Key, Type, Param, _KeyWasRead) ->
-    
+
     UpdatedPartitions = InitCoordState#tx_coord_state.updated_partitions,
-%%    Transaction = InitCoordState#tx_coord_state.transaction,
-%%    TransactionalProtocol = Transaction#transaction.transactional_protocol,
+    %%    Transaction = InitCoordState#tx_coord_state.transaction,
+    %%    TransactionalProtocol = Transaction#transaction.transactional_protocol,
     Preflist = ?LOG_UTIL:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     ClientOps = InitCoordState#tx_coord_state.client_ops,
     NewClientOps = [{Key, Type, Param} | ClientOps],
     {TempCoordState, AddToWriteSet} =
-%%        =case TransactionalProtocol of
-%%        physics->
-%%            PhysicsTempCoordState = case KeyWasRead of
-%%	            true -> update_physics_metadata(InitCoordState, SnapshotParameters);
-%%	            false -> InitCoordState
-%%            end,
-%%            DownstreamOpCommitVC = case SnapshotParameters of
-%%                {OpCommitVC, _DepVC, _ReadTimeVC} -> OpCommitVC;
-%%                ignore -> vectorclock:new()
-%%            end,
-%%            {PhysicsTempCoordState, {DownstreamOp, DownstreamOpCommitVC}};
-%%        Prot when ((Prot==gr)or(Prot==clocksi)or(Prot==ec))->
-            {InitCoordState, DownstreamOp},
-%%    end,
+        %%        =case TransactionalProtocol of
+        %%        physics->
+        %%            PhysicsTempCoordState = case KeyWasRead of
+        %%                  true -> update_physics_metadata(InitCoordState, SnapshotParameters);
+        %%                  false -> InitCoordState
+        %%            end,
+        %%            DownstreamOpCommitVC = case SnapshotParameters of
+        %%                {OpCommitVC, _DepVC, _ReadTimeVC} -> OpCommitVC;
+        %%                ignore -> vectorclock:new()
+        %%            end,
+        %%            {PhysicsTempCoordState, {DownstreamOp, DownstreamOpCommitVC}};
+        %%        Prot when ((Prot==gr)or(Prot==clocksi)or(Prot==ec))->
+        {InitCoordState, DownstreamOp},
+    %%    end,
     NewUpdatedPartitions = case lists:keyfind(IndexNode, 1, UpdatedPartitions) of
-        false->
-            [{IndexNode, [{Key, Type, AddToWriteSet}]}|UpdatedPartitions];
-        {IndexNode, WriteSet}->
-            lists:keyreplace(IndexNode, 1, UpdatedPartitions,
-                {IndexNode, [{Key, Type, AddToWriteSet}|WriteSet]})
-    end,
+                               false->
+                                   [{IndexNode, [{Key, Type, AddToWriteSet}]}|UpdatedPartitions];
+                               {IndexNode, WriteSet}->
+                                   lists:keyreplace(IndexNode, 1, UpdatedPartitions,
+                                                    {IndexNode, [{Key, Type, AddToWriteSet}|WriteSet]})
+                           end,
     TempCoordState#tx_coord_state{updated_partitions=NewUpdatedPartitions, client_ops=NewClientOps}.
 
 %% @doc Updates the metadata for the physics protocol
@@ -684,8 +765,8 @@ update_coordinator_state(InitCoordState, DownstreamOp, _SnapshotParameters, Key,
 %% @doc this state sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
 prepare(SD0 = #tx_coord_state{
-    transaction = Transaction, num_to_read = NumToRead,
-    updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
+                 transaction = Transaction, num_to_read = NumToRead,
+                 updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
     case UpdatedPartitions of
         [] ->
             Snapshot_time = Transaction#transaction.snapshot_clock,
@@ -700,24 +781,24 @@ prepare(SD0 = #tx_coord_state{
                     end;
                 _ ->
                     {next_state, receive_prepared,
-                        SD0#tx_coord_state{state = prepared}}
+                     SD0#tx_coord_state{state = prepared}}
             end;
         [_] ->
             ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction, Transaction#transaction.snapshot_vc),
             {next_state, single_committing,
-                SD0#tx_coord_state{state = committing, num_to_ack = 1}};
+             SD0#tx_coord_state{state = committing, num_to_ack = 1}};
         [_ | _] ->
             ok = ?CLOCKSI_VNODE:prepare(UpdatedPartitions, Transaction),
             Num_to_ack = length(UpdatedPartitions),
             {next_state, receive_prepared,
-                SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
+             SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
 
 %% @doc state called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
 prepare_2pc(SD0 = #tx_coord_state{
-    transaction = Transaction,
-    updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
+                     transaction = Transaction,
+                     updated_partitions = Updated_partitions, full_commit = FullCommit, from = From}) ->
     case Updated_partitions of
         [] ->
             Snapshot_time = Transaction#transaction.snapshot_clock,
@@ -725,7 +806,7 @@ prepare_2pc(SD0 = #tx_coord_state{
                 false ->
                     gen_fsm:reply(From, {ok, Snapshot_time}),
                     {next_state, committing_2pc,
-                        SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}};
+                     SD0#tx_coord_state{state = committing, commit_time = Snapshot_time}};
                 true ->
                     reply_to_client(SD0#tx_coord_state{state = committed_read_only})
             end;
@@ -733,14 +814,14 @@ prepare_2pc(SD0 = #tx_coord_state{
             ok = ?CLOCKSI_VNODE:prepare(Updated_partitions, Transaction),
             Num_to_ack = length(Updated_partitions),
             {next_state, receive_prepared,
-                SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
+             SD0#tx_coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
 
 process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck,
-    commit_protocol = CommitProtocol, full_commit = FullCommit,
-    from = From, prepare_time = PrepareTime,
-    transaction = Transaction,
-    updated_partitions = Updated_partitions}) ->
+                                                           commit_protocol = CommitProtocol, full_commit = FullCommit,
+                                                           from = From, prepare_time = PrepareTime,
+                                                           transaction = Transaction,
+                                                           updated_partitions = Updated_partitions}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
     PrepareParams = case Transaction#transaction.transactional_protocol of
                         physics ->
@@ -749,34 +830,34 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                             {MaxPrepareTime, no_dep_vc}
                     end,
     case NumToAck of 1 ->
-        case CommitProtocol of
-            two_phase ->
-                case FullCommit of
-                    true ->
+            case CommitProtocol of
+                two_phase ->
+                    case FullCommit of
+                        true ->
 
-                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
-                        {next_state, receive_committed,
-                            S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
-                    false ->
-                        gen_fsm:reply(From, {ok, PrepareParams}),
-                        {next_state, committing_2pc,
-                            S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
-                end;
-            _ ->
-                case FullCommit of
-                    true ->
-                        ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
-                        {next_state, receive_committed,
-                            S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
-                    false ->
-                        gen_fsm:reply(From, {ok, PrepareParams}),
-                        {next_state, committing,
-                            S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
-                end
-        end;
+                            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
+                            {next_state, receive_committed,
+                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
+                        false ->
+                            gen_fsm:reply(From, {ok, PrepareParams}),
+                            {next_state, committing_2pc,
+                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
+                    end;
+                _ ->
+                    case FullCommit of
+                        true ->
+                            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
+                            {next_state, receive_committed,
+                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
+                        false ->
+                            gen_fsm:reply(From, {ok, PrepareParams}),
+                            {next_state, committing,
+                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
+                    end
+            end;
         _ ->
             {next_state, receive_prepared,
-                S0#tx_coord_state{num_to_ack = NumToAck - 1, prepare_time = MaxPrepareTime}}
+             S0#tx_coord_state{num_to_ack = NumToAck - 1, prepare_time = MaxPrepareTime}}
     end.
 
 
@@ -797,7 +878,7 @@ single_committing({committed, CommitTime}, S0 = #tx_coord_state{from = From, ful
         false ->
             gen_fsm:reply(From, {ok, CommitTime}),
             {next_state, committing_single,
-                S0#tx_coord_state{commit_time = CommitTime, state = committing}};
+             S0#tx_coord_state{commit_time = CommitTime, state = committing}};
         true ->
             reply_to_client(S0#tx_coord_state{prepare_time = CommitTime, commit_time = CommitTime, state = committed})
     end;
@@ -813,7 +894,7 @@ single_committing(timeout, S0 = #tx_coord_state{from = _From}) ->
 %%      so the transaction has already been committed
 %%      so just wait for the commit message from the client
 committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transaction,
-    commit_time = Commit_time}) ->
+                                                        commit_time = Commit_time}) ->
     reply_to_client(SD0#tx_coord_state{prepare_time = Commit_time, from = Sender, commit_time = Commit_time, state = committed}).
 
 %% @doc after receiving all prepare_times, send the commit message to all
@@ -821,8 +902,8 @@ committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transacti
 %%      This state expects other process to sen the commit message to
 %%      start the commit phase.
 committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = Updated_partitions,
-    commit_time = Commit_time}) ->
+                                                     updated_partitions = Updated_partitions,
+                                                     commit_time = Commit_time}) ->
     NumToAck = length(Updated_partitions),
     case NumToAck of
         0 ->
@@ -830,7 +911,7 @@ committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
         _ ->
             ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, Transaction#transaction.snapshot_vc}),
             {next_state, receive_committed,
-                SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
+             SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
 
 %% @doc after receiving all prepare_times, send the commit message to all
@@ -838,8 +919,8 @@ committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
 %%      This state is used when no commit message from the client is
 %%      expected
 committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
-    updated_partitions = Updated_partitions,
-    commit_time = Commit_time}) ->
+                                                 updated_partitions = Updated_partitions,
+                                                 commit_time = Commit_time}) ->
     NumToAck = length(Updated_partitions),
     case NumToAck of
         0 ->
@@ -847,11 +928,11 @@ committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
         _ ->
             ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, Transaction#transaction.snapshot_vc}),
             {next_state, receive_committed,
-                SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
+             SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
-%%	committed the tx and finishes operation.
+%%      committed the tx and finishes operation.
 %%      Should we retry sending the committed message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?
@@ -874,7 +955,7 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
         _ ->
             ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
             {next_state, receive_aborted,
-                SD0#tx_coord_state{num_to_ack = NumToAck, state = aborted}}
+             SD0#tx_coord_state{num_to_ack = NumToAck, state = aborted}}
     end.
 
 abort(abort, SD0 = #tx_coord_state{transaction = _Transaction,
@@ -890,7 +971,7 @@ abort(_, SD0 = #tx_coord_state{transaction = _Transaction,
     abort(SD0).
 
 %% @doc the fsm waits for acks indicating that each partition has successfully
-%%	aborted the tx and finishes operation.
+%%      aborted the tx and finishes operation.
 %%      Should we retry sending the aborted message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?
@@ -907,90 +988,92 @@ receive_aborted(_, S0) ->
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator= ReturnReadSet,
-    state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
-    is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict, freshness = Freshness}) ->
+reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, return_accumulator= AReadSet,
+                                     state = TxState, commit_time = CommitTime, full_commit = FullCommit, transactional_protocol = Protocol,
+                                     is_static = IsStatic, stay_alive = StayAlive, client_ops = ClientOps, stable_strict=Strict, freshness = Freshness}) ->
+    ReturnReadSet = orddict:to_list(AReadSet),
+%%    lager:info("returning ~n~p",[ReturnReadSet]),
     if undefined =/= From ->
-        TxId = Transaction#transaction.txn_id,
-        Reply = case Transaction#transaction.transactional_protocol of
-                    ec ->
-                        case TxState of
-                            committed_read_only ->
-                                case IsStatic of
-                                    false ->
-                                        {ok, {TxId, vectorclock:new()}};
-                                    true ->
-                                        {ok, {TxId, lists:reverse(ReturnReadSet), vectorclock:new()}}
-                                end;
-                            committed ->
-                                %% Execute post_commit_hooks
-                                _Result = execute_post_commit_hooks(ClientOps),
-                                %% TODO: What happens if commit hook fails?
-                                case IsStatic of
-                                    false ->
-                                        {ok, {TxId, vectorclock:new()}};
-                                    true ->
-                                        {ok, {TxId, lists:reverse(ReturnReadSet), vectorclock:new()}}
-                                end;
-                            aborted ->
-                                {aborted, TxId};
-                            Reason ->
-                                {TxId, Reason}
-                        end;
-                    Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
-                        case TxState of
-                            committed_read_only ->
-                                case IsStatic of
-                                    false ->
-                                        {ok, {TxId, Transaction#transaction.snapshot_vc}};
-                                    true ->
-                                        {ok, {TxId, lists:reverse(ReturnReadSet), Transaction#transaction.snapshot_vc}}
-                                end;
-                            committed ->
-	                            %% Execute post_commit_hooks
-	                            _Result = execute_post_commit_hooks(ClientOps),
-	                            %% TODO: What happens if commit hook fails?
-                                DcId = ?DC_META_UTIL:get_my_dc_id(),
-                                CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                    DcId, CommitTime, Transaction#transaction.snapshot_vc),
-                                case IsStatic of
-                                    false ->
-                                        {ok, {TxId, CausalClock}};
-                                    true ->
-                                        {ok, {TxId, lists:reverse(ReturnReadSet), CausalClock}}
-                                end;
-                            aborted ->
-                                {aborted, TxId};
-                            Reason ->
-                                {TxId, Reason}
-                        end;
-                    physics ->
-                        TxnDependencyVC = Transaction#transaction.snapshot_vc,
-                        case TxState of
-                            committed_read_only ->
-                                case IsStatic of
-                                    false ->
-                                        {ok, {TxId, TxnDependencyVC}};
-                                    true ->
-                                        {ok, {TxId, lists:reverse(ReturnReadSet), TxnDependencyVC}}
-                                end;
-                            committed ->
-                                DcId = ?DC_UTIL:get_my_dc_id(),
-                                CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                    DcId, CommitTime, TxnDependencyVC),
-                                case IsStatic of
-                                    false ->
-                                        {ok, {TxId, CausalClock}};
-                                    true ->
-                                        {ok, {TxId, lists:reverse(ReturnReadSet), CausalClock}}
-                                end;
-                            aborted ->
-                                {aborted, TxId};
-                            Reason ->
-                                {TxId, Reason}
-                        end
+            TxId = Transaction#transaction.txn_id,
+            Reply = case Transaction#transaction.transactional_protocol of
+                        ec ->
+                            case TxState of
+                                committed_read_only ->
+                                    case IsStatic of
+                                        false ->
+                                            {ok, {TxId, vectorclock:new()}};
+                                        true ->
+                                            {ok, {TxId, lists:reverse(ReturnReadSet), vectorclock:new()}}
+                                    end;
+                                committed ->
+                                    %% Execute post_commit_hooks
+                                    _Result = execute_post_commit_hooks(ClientOps),
+                                    %% TODO: What happens if commit hook fails?
+                                    case IsStatic of
+                                        false ->
+                                            {ok, {TxId, vectorclock:new()}};
+                                        true ->
+                                            {ok, {TxId, lists:reverse(ReturnReadSet), vectorclock:new()}}
+                                    end;
+                                aborted ->
+                                    {aborted, TxId};
+                                Reason ->
+                                    {TxId, Reason}
+                            end;
+                        Protocol when ((Protocol == gr) or (Protocol == clocksi)) ->
+                            case TxState of
+                                committed_read_only ->
+                                    case IsStatic of
+                                        false ->
+                                            {ok, {TxId, Transaction#transaction.snapshot_vc}};
+                                        true ->
+                                            {ok, {TxId, lists:reverse(ReturnReadSet), Transaction#transaction.snapshot_vc}}
+                                    end;
+                                committed ->
+                                    %% Execute post_commit_hooks
+                                    _Result = execute_post_commit_hooks(ClientOps),
+                                    %% TODO: What happens if commit hook fails?
+                                    DcId = ?DC_META_UTIL:get_my_dc_id(),
+                                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                                     DcId, CommitTime, Transaction#transaction.snapshot_vc),
+                                    case IsStatic of
+                                        false ->
+                                            {ok, {TxId, CausalClock}};
+                                        true ->
+                                            {ok, {TxId, lists:reverse(ReturnReadSet), CausalClock}}
+                                    end;
+                                aborted ->
+                                    {aborted, TxId};
+                                Reason ->
+                                    {TxId, Reason}
+                            end;
+                        physics ->
+                            TxnDependencyVC = Transaction#transaction.snapshot_vc,
+                            case TxState of
+                                committed_read_only ->
+                                    case IsStatic of
+                                        false ->
+                                            {ok, {TxId, TxnDependencyVC}};
+                                        true ->
+                                            {ok, {TxId, lists:reverse(ReturnReadSet), TxnDependencyVC}}
+                                    end;
+                                committed ->
+                                    DcId = ?DC_UTIL:get_my_dc_id(),
+                                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                                     DcId, CommitTime, TxnDependencyVC),
+                                    case IsStatic of
+                                        false ->
+                                            {ok, {TxId, CausalClock}};
+                                        true ->
+                                            {ok, {TxId, lists:reverse(ReturnReadSet), CausalClock}}
+                                    end;
+                                aborted ->
+                                    {aborted, TxId};
+                                Reason ->
+                                    {TxId, Reason}
+                            end
 
-                end,
+                    end,
             _Res = gen_fsm:reply(From, Reply);
        true -> ok
     end,
@@ -998,6 +1081,13 @@ reply_to_client(SD = #tx_coord_state{from = From, transaction = Transaction, ret
         true ->
             {next_state, start_tx, init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict, Freshness)};
         false ->
+%%            {_, RetryNumber} = SD#tx_coord_state.consistency_check_tuple,
+%%            case RetryNumber of
+%%                0 ->
+%%                    nada;
+%%                _ ->
+%%                    lager:info("retried this number of times: ~p ", [RetryNumber])
+%%            end,
             {stop, normal, SD}
     end.
 
@@ -1046,7 +1136,7 @@ terminate(_Reason, _SN, _SD) ->
 get_snapshot_time(Strict) ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
     {ok, VecSnapshotTime} = ?DC_UTIL:get_stable_snapshot(),
-%%    lager:info("MY STRICT SNAPSHOT TIME IS : ~p",[VecSnapshotTime]),
+    %%    lager:info("MY STRICT SNAPSHOT TIME IS : ~p",[VecSnapshotTime]),
 
     %%    lager:info("VecSnapshotTime=~p", [VecSnapshotTime]),
     case Strict of
@@ -1055,7 +1145,7 @@ get_snapshot_time(Strict) ->
         false ->
             DcId = ?DC_META_UTIL:get_my_dc_id(),
             SnapshotTime = vectorclock:set_clock_of_dc(DcId, Now, VecSnapshotTime),
-%%            lager:info("MY FRESH SNAPSHOT TIME IS : ~p",[SnapshotTime]),
+            %%            lager:info("MY FRESH SNAPSHOT TIME IS : ~p",[SnapshotTime]),
             {ok, SnapshotTime}
     end.
 
@@ -1077,27 +1167,27 @@ get_snapshot_time(Strict) ->
 
 main_test_() ->
     {foreach,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            fun empty_prepare_test/1,
-            fun timeout_test/1,
+     fun setup/0,
+     fun cleanup/1,
+     [
+      fun empty_prepare_test/1,
+      fun timeout_test/1,
 
-            fun update_single_abort_test/1,
-            fun update_single_success_test/1,
-            fun update_multi_abort_test1/1,
-            fun update_multi_abort_test2/1,
-            fun update_multi_success_test/1,
+      fun update_single_abort_test/1,
+      fun update_single_success_test/1,
+      fun update_multi_abort_test1/1,
+      fun update_multi_abort_test2/1,
+      fun update_multi_success_test/1,
 
-            fun read_single_fail_test/1,
-            fun read_success_test/1,
+      fun read_single_fail_test/1,
+      fun read_success_test/1,
 
-            fun downstream_fail_test/1,
-            fun get_snapshot_time_test/0,
-            fun wait_for_clock_test/0
-        ]}.
+      fun downstream_fail_test/1,
+      fun get_snapshot_time_test/0,
+      fun wait_for_clock_test/0
+     ]}.
 
-% Setup and Cleanup
+                                                % Setup and Cleanup
 setup() ->
     {ok, Pid} = clocksi_interactive_tx_coord_fsm:start_link(self(), ignore),
     Pid.
@@ -1107,71 +1197,71 @@ cleanup(Pid) ->
 
 empty_prepare_test(Pid) ->
     fun() ->
-        ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 timeout_test(Pid) ->
     fun() ->
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {timeout, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {timeout, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_abort_test(Pid) ->
     fun() ->
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_single_success_test(Pid) ->
     fun() ->
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
-        ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_abort_test1(Pid) ->
     fun() ->
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_abort_test2(Pid) ->
     fun() ->
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
-        ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {fail, nothing, nothing}}, infinity)),
+            ?assertMatch({aborted, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 update_multi_success_test(Pid) ->
     fun() ->
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
-        ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {success, nothing, nothing}}, infinity)),
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 read_single_fail_test(Pid) ->
     fun() ->
-        ?assertEqual({error, mock_read_fail},
-            gen_fsm:sync_send_event(Pid, {read, {read_fail, nothing}}, infinity))
+            ?assertEqual({error, mock_read_fail},
+                         gen_fsm:sync_send_event(Pid, {read, {read_fail, nothing}}, infinity))
     end.
 
 read_success_test(Pid) ->
     fun() ->
-        ?assertEqual({ok, 2},
-            gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity)),
-        ?assertEqual({ok, [a]},
-            gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
-        ?assertEqual({ok, mock_value},
-            gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
-        ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
+            ?assertEqual({ok, 2},
+                         gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity)),
+            ?assertEqual({ok, [a]},
+                         gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
+            ?assertEqual({ok, mock_value},
+                         gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
+            ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 
 downstream_fail_test(Pid) ->
     fun() ->
-        ?assertEqual({error, mock_downstream_fail},
-            gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
+            ?assertEqual({error, mock_downstream_fail},
+                         gen_fsm:sync_send_event(Pid, {update, {downstream_fail, nothing, nothing}}, infinity))
     end.
 
 

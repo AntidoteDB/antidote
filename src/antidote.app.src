@@ -44,7 +44,7 @@
   %%        true -> the materializer vnode will log staleness in log files that can later be processed.
   %%        false -> this option will be disabled.
      {env, [{txn_cert, false},
-         {txn_prot, clocksi},
+         {txn_prot, physics},
          {stable_strict, false},
          {freshness, true},
          {enable_logging, false},

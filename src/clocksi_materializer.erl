@@ -83,19 +83,19 @@ materialize(Type, Transaction, #snapshot_get_response{
 	ops_list=Ops,
 	materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}}, MatState)->
 	FirstId=get_first_id(Ops),
-	PrevOpCommitParams=case ProtocolIndependentSnapshotCommitParams of
-		{CommitVC, DepVC, _ReadTime}->
-			%% the following is used for setting the read time of a snapshot.
-			%% Initially, we start with the current clock time of the vnode, that will be used
-			%% in the case the
-			NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
-			{CommitVC, DepVC, NowVC};
-		_->
-			ProtocolIndependentSnapshotCommitParams
-	end,
+%%	PrevOpCommitParams=case ProtocolIndependentSnapshotCommitParams of
+%%		{CommitVC, DepVC, _ReadTime}->
+%%			%% the following is used for setting the read time of a snapshot.
+%%			%% Initially, we start with the current clock time of the vnode, that will be used
+%%			%% in the case the
+%%			NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
+%%			{CommitVC, DepVC, NowVC};
+%%		_->
+%%			ProtocolIndependentSnapshotCommitParams
+%%	end,
 	{ok, OpList, NewLastOp, LastOpCt, IsNewSS, NumberOfNonAppliedOps}=
 		materialize_intern(Type, [], LastOp, FirstId, ProtocolIndependentSnapshotCommitParams, Transaction,
-			Ops, PrevOpCommitParams, false, 0, 0),
+			Ops, ProtocolIndependentSnapshotCommitParams, false, 0, 0),
 	ok=materializer_vnode:log_number_of_non_applied_ops(MatState, NumberOfNonAppliedOps, Transaction#transaction.txn_id),
 	case apply_operations(Type, Snapshot, 0, OpList) of
 		{ok, NewSS, Count}->
@@ -257,7 +257,10 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 -spec should_apply_operation(operation_payload(), dc_and_commit_time(), snapshot_time(), transaction(),
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
 %% the case where freshness = true means that , no matter what protocol or configuration, we should return the latest version available.
-should_apply_operation(_Op, {OpDC, OpCT}, _OpDependencyVC, #transaction{freshness = true}, _, _PrevIncludedOpParams)->
+should_apply_operation(_Op, {OpDC, OpCT}, OpDependencyVC, #transaction{transactional_protocol=physics, freshness = true}, {_SnapshotCT, _SnapshotDep, SnapshotRT}, _PrevIncludedOpParams)->
+	OpCommitVC = vectorclock:set_clock_of_dc(OpDC, OpCT, OpDependencyVC),
+	{true, false, {OpCommitVC, OpDependencyVC, SnapshotRT}};
+should_apply_operation(_Op, {OpDC, OpCT}, _OpDependencyVC, #transaction{transactional_protocol = ec}, _, _PrevIncludedOpParams)->
 	{true,false, vectorclock:set_clock_of_dc(OpDC, OpCT, vectorclock:new())};
 should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{transactional_protocol=physics}, {SnapshotCT, _SnapshotDep, _SnapshotRT}, PrevIncludedOpParams)->
 	TxId = Transaction#transaction.txn_id,
@@ -302,6 +305,10 @@ should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transactio
 %%			lager:info("~n Op too old, already in the snapshot, do nothing."),
 			{false, true, {PrevOpCT, PrevOpDep, PrevOpRT}}
 	end;
+
+should_apply_operation(_Op, {OpDc, OpCommitTime}, OperationSnapshotTime, #transaction{freshness = true}, _LastSnapshot, _PrevTime) ->
+	OpSSCommit = vectorclock:set_clock_of_dc(OpDc, OpCommitTime, OperationSnapshotTime),
+	{true, false, OpSSCommit};
 
 should_apply_operation(Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Transaction, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
