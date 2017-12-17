@@ -482,10 +482,10 @@ get_prepare_time(Transaction, Strict) ->
                 true ->
                     case Strict of
                         true ->
-                            lager:info("not_waiting"),
+%%                            lager:info("not_waiting"),
                             holi;
                         false ->
-                            lager:info("waiting ~p", [(SnapshotClock - NowInMicrosec) div 1000]),
+%%                            lager:info("waiting ~p", [(SnapshotClock - NowInMicrosec) div 1000]),
                             timer:sleep((SnapshotClock - NowInMicrosec) div 1000)
                     end,
                     SnapshotClock +1;
