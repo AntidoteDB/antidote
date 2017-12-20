@@ -86,13 +86,14 @@
 %%-spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
 
 %% Calls init
--spec start_link(atom()) -> {ok, pid()}.
-%%start_link() ->
-%%    gen_server:start_link({local, generate_server_name(node())}, ?MODULE, []).
+-spec start_link(atom()) -> {ok, pid()} | ignore | {error, term()}.
 start_link(Name) ->
-    N = generate_server_name(node()),
-    lager:info("k_stable starting link ~p with ~p", [Name, N]),
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Name]).
+    lager:info("~p start link!", [?MODULE]),
+    gen_server:start_link({global, generate_server_name(node())}, ?MODULE, [Name], []).
+%%start_link(Name) ->
+%%    N = generate_server_name(node()),
+%%    lager:info("k_stable starting link ~p with ~p", [Name, N]),
+%%    gen_server:start_link({local, ?MODULE}, ?MODULE, [Name]).
 
 
 %% Called with new inter-dc TXs (or heartbeat). Updates the state.
