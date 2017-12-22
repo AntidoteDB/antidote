@@ -33,8 +33,8 @@
     get_active_txns/2,
     prepare/2,
     commit/3,
-    single_commit/3,
-    single_commit_sync/3,
+    single_commit/2,
+    single_commit_sync/2,
     abort/2,
     now_microsec/1,
     reverse_and_filter_updates_per_key/3,
@@ -170,16 +170,16 @@ prepare(ListofNodes, Transaction) ->
 %% @doc Sends prepare+commit to a single partition
 %%      Called by a Tx coordinator when the tx only
 %%      affects one partition
-single_commit([{Node, WriteSet}], Transaction, DependencyVC) ->
+single_commit([{Node, WriteSet}], Transaction) ->
     riak_core_vnode_master:command(Node,
-        {single_commit, Transaction, WriteSet, DependencyVC},
+        {single_commit, Transaction, WriteSet},
         {fsm, undefined, self()},
         ?CLOCKSI_MASTER).
 
 
-single_commit_sync([{Node, WriteSet}], Transaction, DependencyVC) ->
+single_commit_sync([{Node, WriteSet}], Transaction) ->
     riak_core_vnode_master:sync_command(Node,
-        {single_commit, Transaction, WriteSet, DependencyVC},
+        {single_commit, Transaction, WriteSet},
         ?CLOCKSI_MASTER).
 
 
@@ -326,7 +326,7 @@ handle_command({prepare, Transaction, WriteSet}, _Sender,
 %% @doc This is the only partition being updated by a transaction,
 %%      thus this function performs both the prepare and commit for the
 %%      coordinator that sent the request.
-handle_command({single_commit, Transaction, WriteSet, DependencyVC}, _Sender,
+handle_command({single_commit, Transaction, WriteSet}, _Sender,
   State = #state{partition = _Partition,
       committed_tx = CommittedTx,
       prepared_tx = PreparedTx,
@@ -338,12 +338,13 @@ handle_command({single_commit, Transaction, WriteSet, DependencyVC}, _Sender,
     NewState = State#state{prepared_dict = NewPreparedDict},
     case Result of
         {ok, _} ->
-            CommitParams = case Transaction#transaction.transactional_protocol of
-                               physics ->
-                                   {NewPrepareTime, DependencyVC};
-                               Protocol when ((Protocol == gr) or (Protocol== clocksi) or (Protocol== ec)) ->
-                                   {NewPrepareTime, Transaction#transaction.snapshot_vc}
-                           end,
+            CommitParams = PrepareTime,
+%%                case Transaction#transaction.transactional_protocol of
+%%                               physics ->
+%%                                   {NewPrepareTime, DependencyVC};
+%%                               Protocol when ((Protocol == gr) or (Protocol== clocksi) or (Protocol== ec)) ->
+%%                                   {NewPrepareTime, Transaction#transaction.snapshot_vc}
+%%                           end,
             ResultCommit = commit(Transaction, CommitParams, WriteSet, CommittedTx, NewState),
             case ResultCommit of
                 {ok, committed, NewPreparedDict2} ->
@@ -522,13 +523,15 @@ reset_prepared(PreparedTx, [{Key, _Type, _Operation} | Rest], TxId, Time, Active
     reset_prepared(PreparedTx, Rest, TxId, Time, ActiveTxs).
 
 commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
-    {CommitTime, SnapshotVC} = CommitParameters,
+    CommitTime = CommitParameters,
+    CausalDepVC = Transaction#transaction.snapshot_vc,
+%%    {CommitTime, SnapshotVC} = CommitParameters,
     TxId = Transaction#transaction.txn_id,
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     LogRecord = #log_operation{tx_id = TxId,
 			    op_type = commit,
 			    log_payload = #commit_log_payload{commit_time = {DcId, CommitTime},
-							     causal_dependencies=SnapshotVC}},
+							     causal_dependencies= CausalDepVC}},
     case Updates of
         [{Key, _Type, _Update} | _Rest] ->
 	    case application:get_env(antidote,txn_cert) of
@@ -542,8 +545,8 @@ commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
             [Node] = log_utilities:get_preflist_from_key(Key),
             case logging_vnode:append_commit(Node, LogId, LogRecord) of
                 {ok, _} ->
-                    FinalCommitParams =
-                    {{DcId, CommitTime}, SnapshotVC},
+                    FinalCommitParams ={DcId, CommitTime},
+%%                    FinalCommitParams ={{DcId, CommitTime}, CausalDepVC},
                     case update_materializer(Updates, Transaction, FinalCommitParams) of
                         ok ->
                             NewPreparedDict = clean_and_notify(TxId, Updates, State),
@@ -675,22 +678,22 @@ check_prepared(_TxId, PreparedTx, Key) ->
 update_materializer(DownstreamOps, Transaction, CommitParams) ->
     DcId = dc_meta_data_utilities:get_my_dc_id(),
     ReversedDownstreamOps = lists:reverse(DownstreamOps),
-    case Transaction#transaction.transactional_protocol of
-        physics ->
-            {{DcId, CommitTime}, DependencyVC} = CommitParams,
-            UpdateFunction = fun({Key, Type, {OpParam, _OpCommitVC}}, AccIn) ->
-                CommittedDownstreamOp =
-                    #operation_payload{
-                        key = Key,
-                        type = Type,
-                        op_param = OpParam,
-                        dependency_vc = DependencyVC,
-                        dc_and_commit_time = {DcId, CommitTime},
-                        txid = Transaction#transaction.txn_id},
-                [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
-                             end;
-        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol== ec)) ->
-            {{DcId, CommitTime}, _SnapshotVC} = CommitParams,
+%%    case Transaction#transaction.transactional_protocol of
+%%        physics ->
+%%            {{DcId, CommitTime}, DependencyVC} = CommitParams,
+%%            UpdateFunction = fun({Key, Type, {OpParam, _OpCommitVC}}, AccIn) ->
+%%                CommittedDownstreamOp =
+%%                    #operation_payload{
+%%                        key = Key,
+%%                        type = Type,
+%%                        op_param = OpParam,
+%%                        dependency_vc = DependencyVC,
+%%                        dc_and_commit_time = {DcId, CommitTime},
+%%                        txid = Transaction#transaction.txn_id},
+%%                [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
+%%                             end;
+%%        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol== ec)) ->
+            {DcId, CommitTime} = CommitParams,
             UpdateFunction = fun({Key, Type, Op}, AccIn) ->
                 CommittedDownstreamOp =
                     #operation_payload{
@@ -701,7 +704,7 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
                         dc_and_commit_time = {DcId, CommitTime},
                         txid = Transaction#transaction.txn_id},
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
-                             end
+%%                             end
     end,
     Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
     Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),

@@ -147,8 +147,9 @@ init_state(StayAlive, FullCommit, IsStatic, Protocol, Strict) ->
         return_accumulator= [],
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
-        stable_strict=Strict
+        stable_strict=Strict,
         %% The following are needed by the physics protocol
+        version_max = vectorclock:new()
     }.
 
 -spec generate_name(pid()) -> atom().
@@ -408,11 +409,20 @@ execute_op({OpType, Args}, Sender,
       updated_partitions=Updated_partitions}) ->
     case OpType of
         prepare ->
+
+            NewState = case SD0#tx_coord_state.transactional_protocol of
+                physics ->
+                    NewTx = Transaction#transaction{snapshot_vc = SD0#tx_coord_state.version_max},
+%%                    lager:info("version_max ~p", [SD0#tx_coord_state.version_max]),
+                    SD0#tx_coord_state{transaction = NewTx};
+                _ ->
+                    SD0
+            end,
             case Args of
                 two_phase ->
-                    prepare_2pc(SD0#tx_coord_state{from = Sender, commit_protocol = Args});
+                    prepare_2pc(NewState#tx_coord_state{from = Sender, commit_protocol = Args});
                 _ ->
-                    prepare(SD0#tx_coord_state{from = Sender, commit_protocol = Args})
+                    prepare(NewState#tx_coord_state{from = Sender, commit_protocol = Args})
             end;
         read->
             {Key, Type}=Args,
@@ -490,7 +500,7 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
   CoordState= #tx_coord_state{num_to_read = NumToRead,
       return_accumulator= ReadSet,
       internal_read_set = InternalReadSet,
-%%      transactional_protocol = TransactionalProtocol,
+      transactional_protocol = TransactionalProtocol,
       transaction=Transaction}) ->
     %%TODO: type is hard-coded..
     
@@ -498,19 +508,19 @@ receive_read_objects_result({ok, {Key, Type, {Snapshot, SnapshotCommitParams}}},
     Value2 = Type:value(SnapshotAfterMyUpdates),
     ReadSet1 = clocksi_static_tx_coord_fsm:replace(ReadSet, Key, Value2),
     NewInternalReadSet = orddict:store(Key, {Snapshot, SnapshotCommitParams}, InternalReadSet),
-%%    SD1 = case TransactionalProtocol of
-%%              physics ->
-%%                  update_physics_metadata(CoordState, SnapshotCommitParams);
-%%              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
-%%                  CoordState
-%%          end,
+    SD1 = case TransactionalProtocol of
+              physics ->
+                  update_physics_metadata(CoordState, SnapshotCommitParams);
+              Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
+                  CoordState
+          end,
     case NumToRead of
         1 ->
-            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
-            {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
+            gen_fsm:reply(SD1#tx_coord_state.from, {ok, lists:reverse(ReadSet1)}),
+            {next_state, execute_op, SD1#tx_coord_state{num_to_read = 0, internal_read_set = NewInternalReadSet}};
         _ ->
             {next_state, receive_read_objects_result,
-                CoordState#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
+                SD1#tx_coord_state{internal_read_set = NewInternalReadSet, return_accumulator= ReadSet1, num_to_read = NumToRead - 1}}
     end.
 
 -spec apply_tx_updates_to_snapshot (key(), #tx_coord_state{}, transaction(), type(), snapshot()) -> snapshot().
@@ -564,45 +574,45 @@ update_coordinator_state(InitCoordState, DownstreamOp, _SnapshotParameters, Key,
 
 %% @doc Updates the metadata for the physics protocol
 
-%%-spec update_physics_metadata(#tx_coord_state{}, {vectorclock(), vectorclock(), vectorclock()} | ignore) -> #tx_coord_state{}.
-%%update_physics_metadata(State, ignore) ->
-%%    State;
-%%
-%%update_physics_metadata(State, ReadMetadata) ->
+-spec update_physics_metadata(#tx_coord_state{}, {vectorclock(), vectorclock(), vectorclock()} | ignore) -> #tx_coord_state{}.
+update_physics_metadata(State, ignore) ->
+    State;
+
+update_physics_metadata(State, CommitVC) ->
 %%    {CommitVC, _DepVC, _ReadTimeVC} = ReadMetadata,
-%%    NewVC = vectorclock:new(),
-%%    case CommitVC of
-%%        NewVC ->
-%%            State;
-%%        _ ->
-%%%%            Transaction = State#tx_coord_state.transaction,
-%%            VersionMax = State#tx_coord_state.version_max,
-%%            NewVersionMax = vectorclock:max([VersionMax, CommitVC]),
-%%%%            CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
-%%%%            DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
-%%%%            NewDepUpB=
-%%%%                case DepUpbound of
-%%%%                    NewVC->
-%%%%                        ReadTimeVC;
-%%%%                    _->
-%%%%                        vectorclock:min([ReadTimeVC, DepUpbound])
-%%%%                end,
-%%%%            NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
-%%%%            lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
-%%%%            lager:info("~nDepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
-%%            %%            lager:info("~nNewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
-%%            %%            lager:info("~nVersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
-%%%%            NewTransaction = Transaction#transaction{
-%%            %%                physics_read_metadata = #physics_read_metadata{
-%%            %%                    Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
-%%            %%                    dep_upbound = NewDepUpB,
-%%            %%                    commit_time_lowbound = NewCTLowB}},
-%%            State#tx_coord_state{
-%%                %%        keys_access_time = NewKeysAccessTime,
-%%                version_max = NewVersionMax
-%%                %%            , transaction = NewTransaction
-%%            }
-%%    end.
+    NewVC = vectorclock:new(),
+    case CommitVC of
+        NewVC ->
+            State;
+        _ ->
+%%            Transaction = State#tx_coord_state.transaction,
+            VersionMax = State#tx_coord_state.version_max,
+            NewVersionMax = vectorclock:max([VersionMax, CommitVC]),
+%%            CommitTimeLowbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.commit_time_lowbound,
+%%            DepUpbound = State#tx_coord_state.transaction#transaction.physics_read_metadata#physics_read_metadata.dep_upbound,
+%%            NewDepUpB=
+%%                case DepUpbound of
+%%                    NewVC->
+%%                        ReadTimeVC;
+%%                    _->
+%%                        vectorclock:min([ReadTimeVC, DepUpbound])
+%%                end,
+%%            NewCTLowB = vectorclock:max([DepVC, CommitTimeLowbound]),
+%%            lager:info("~nCommitVC = ~p~n DepVC = ~p~n ReadTimeVC = ~p", [CommitVC, DepVC, ReadTimeVC]),
+%%            lager:info("~nDepUpbound = ~p~n, CommitTimeLowbound = ~p", [DepUpbound, CommitTimeLowbound]),
+            %%            lager:info("~nNewDepUpB = ~p~n, NewCTLowB = ~p", [NewDepUpB, NewCTLowB]),
+            %%            lager:info("~nVersionMax = ~p~n, NewVersionMax = ~p", [VersionMax, NewVersionMax]),
+%%            NewTransaction = Transaction#transaction{
+            %%                physics_read_metadata = #physics_read_metadata{
+            %%                    Todo: CHECK THE FOLLOWING LINE FOR THE MULTIPLE DC case.
+            %%                    dep_upbound = NewDepUpB,
+            %%                    commit_time_lowbound = NewCTLowB}},
+            State#tx_coord_state{
+                %%        keys_access_time = NewKeysAccessTime,
+                version_max = NewVersionMax
+                %%            , transaction = NewTransaction
+            }
+    end.
 
 
 %% @doc this state sends a prepare message to all updated partitions and goes
@@ -627,7 +637,7 @@ prepare(SD0 = #tx_coord_state{
                         SD0#tx_coord_state{state = prepared}}
             end;
         [_] ->
-            ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction, Transaction#transaction.snapshot_vc),
+            ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction),
             {next_state, single_committing,
                 SD0#tx_coord_state{state = committing, num_to_ack = 1}};
         [_ | _] ->
@@ -666,18 +676,18 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
     transaction = Transaction,
     updated_partitions = Updated_partitions}) ->
     MaxPrepareTime = max(PrepareTime, ReceivedPrepareTime),
-    PrepareParams = case Transaction#transaction.transactional_protocol of
-                        physics ->
-                            {MaxPrepareTime, Transaction#transaction.snapshot_vc};
-                        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
-                            {MaxPrepareTime, no_dep_vc}
-                    end,
+    PrepareParams = MaxPrepareTime,
+%%    PrepareParams = case Transaction#transaction.transactional_protocol of
+%%                        physics ->
+%%                            {MaxPrepareTime, Transaction#transaction.snapshot_vc};
+%%                        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
+%%                            {MaxPrepareTime, no_dep_vc}
+%%                    end,
     case NumToAck of 1 ->
         case CommitProtocol of
             two_phase ->
                 case FullCommit of
                     true ->
-
                         ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, PrepareParams),
                         {next_state, receive_committed,
                             S0#tx_coord_state{num_to_ack = NumToAck, commit_time = MaxPrepareTime, state = committing}};
@@ -752,7 +762,8 @@ committing_2pc(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
         0 ->
             reply_to_client(SD0#tx_coord_state{state = committed_read_only, from = Sender});
         _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, Transaction#transaction.snapshot_vc}),
+%%            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, Transaction#transaction.snapshot_vc}),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
                 SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
@@ -769,7 +780,8 @@ committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
         0 ->
             reply_to_client(SD0#tx_coord_state{state = committed_read_only, from = Sender});
         _ ->
-            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, Transaction#transaction.snapshot_vc}),
+%%            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, {Commit_time, Transaction#transaction.snapshot_vc}),
+            ok = ?CLOCKSI_VNODE:commit(Updated_partitions, Transaction, Commit_time),
             {next_state, receive_committed,
                 SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
@@ -1048,7 +1060,7 @@ update_single_abort_test(Pid) ->
 
 update_single_success_test(Pid) ->
     fun() ->
-        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {single_commit, nothing, nothing}}, infinity)),
+        ?assertEqual(ok, gen_fsm:sync_send_event(Pid, {update, {single_commit, nothing}}, infinity)),
         ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))
     end.
 

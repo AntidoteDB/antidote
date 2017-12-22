@@ -83,16 +83,17 @@ materialize(Type, Transaction, #snapshot_get_response{
 	ops_list=Ops,
 	materialized_snapshot=#materialized_snapshot{last_op_id=LastOp, value=Snapshot}}, MatState)->
 	FirstId=get_first_id(Ops),
-	PrevOpCommitParams=case ProtocolIndependentSnapshotCommitParams of
-		{CommitVC, DepVC, _ReadTime}->
-			%% the following is used for setting the read time of a snapshot.
-			%% Initially, we start with the current clock time of the vnode, that will be used
-			%% in the case the
-			NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
-			{CommitVC, DepVC, NowVC};
-		_->
-			ProtocolIndependentSnapshotCommitParams
-	end,
+	PrevOpCommitParams=ProtocolIndependentSnapshotCommitParams,
+%%		case ProtocolIndependentSnapshotCommitParams of
+%%		{CommitVC, DepVC, _ReadTime}->
+%%			%% the following is used for setting the read time of a snapshot.
+%%			%% Initially, we start with the current clock time of the vnode, that will be used
+%%			%% in the case the
+%%			NowVC=vectorclock:set_clock_of_dc(dc_utilities:get_my_dc_id(), dc_utilities:now_microsec(), vectorclock:new()),
+%%			{CommitVC, DepVC, NowVC};
+%%		_->
+%%			ProtocolIndependentSnapshotCommitParams
+%%	end,
 	{ok, OpList, NewLastOp, LastOpCt, IsNewSS, NumberOfNonAppliedOps}=
 		materialize_intern(Type, [], LastOp, FirstId, ProtocolIndependentSnapshotCommitParams, Transaction,
 			Ops, PrevOpCommitParams, false, 0, 0),
@@ -258,10 +259,11 @@ materialize_intern_perform(Type, OpList, FirstNotIncludedOperationId, FirstHole,
 			snapshot_time() | ignore, snapshot_time()) -> {boolean(),boolean(),snapshot_time()}.
 should_apply_operation(_Op, {OpDC, OpCT}, _OpDependencyVC, #transaction{transactional_protocol=ec}, _, _PrevIncludedOpParams)->
 	{true,false, vectorclock:set_clock_of_dc(OpDC, OpCT, vectorclock:new())};
-should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{transactional_protocol=physics}, {SnapshotCT, _SnapshotDep, _SnapshotRT}, PrevIncludedOpParams)->
+should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transaction{transactional_protocol=physics}, SnapshotCT, PrevIncludedOpParams)->
 	TxId = Transaction#transaction.txn_id,
 	OpCommitVC = vectorclock:set_clock_of_dc(OpDC, OpCT, OpDependencyVC),
-	{PrevOpCT, PrevOpDep, PrevOpRT} = PrevIncludedOpParams,
+%%	{PrevOpCT, PrevOpDep, PrevOpRT} = PrevIncludedOpParams,
+	PrevOpCT = PrevIncludedOpParams,
 	%% first, check if the op is not already included in the object snapshot.
 %%	lager:info("IS OP IN SNAPSHOT CALLED WITH ~n
 %%	Op ~p ~n, {OpDC, OpCT}  ~p ~n, OpDependencyVC  ~p ~n, Transaction  ~p ~n  SnapshotCT  ~p ~n PrevIncludedOpParams ~p ~n ~p~n ~p ~n",
@@ -285,21 +287,24 @@ should_apply_operation(Op, {OpDC, OpCT}, OpDependencyVC, Transaction=#transactio
 					%% the final read time is given by the newest included op.
 %%					lager:info("~n REPLYING ~p", [{true, false, {vectorclock:to_list(FinalCT), vectorclock:to_list(FinalDep), vectorclock:to_list(PrevOpRT)}}]),
 %%					{true, false, {FinalCT, FinalDep, PrevOpRT}};
-					{true, false, {OpCommitVC, OpDependencyVC, PrevOpRT}};
+%%					{true, false, {OpCommitVC, OpDependencyVC, PrevOpRT}};
+					{true, false, OpCommitVC};
 
 				false->
 %%					lager:info("~n OP INCOMPATIBLE, WILL  NOT NOT NOT INCLUDE"),
 					%% the operation was not already in snapshot, but is incompatible (too new).
 					%% now update the commit time of our output
-					ReadTimeOfNextOp=vectorclock:set_clock_of_dc(OpDC, OpCT-1, OpDependencyVC),
-					FinalRT=vectorclock:min([PrevOpRT, ReadTimeOfNextOp]),
+%%					ReadTimeOfNextOp=vectorclock:set_clock_of_dc(OpDC, OpCT-1, OpDependencyVC),
+%%					FinalRT=vectorclock:min([PrevOpRT, ReadTimeOfNextOp]),
 %%					lager:info("~n REPLYING ~p", [{false, false, {vectorclock:to_list(PrevOpCT), vectorclock:to_list(PrevOpDep), vectorclock:to_list(FinalRT)}}]),
-					{false, false, {PrevOpCT, PrevOpDep, FinalRT}}
+%%					{false, false, {PrevOpCT, PrevOpDep, FinalRT}}
+						{false, false, PrevOpCT}
 			end;
 		false->
 			%% the operation is older than the snapshot, discard.
 %%			lager:info("~n Op too old, already in the snapshot, do nothing."),
-			{false, true, {PrevOpCT, PrevOpDep, PrevOpRT}}
+%%			{false, true, {PrevOpCT, PrevOpDep, PrevOpRT}}
+			{false, true, PrevOpCT}
 	end;
 
 should_apply_operation(Op, {OpDc, OpCommitTime}, OperationSnapshotTime, Transaction, LastSnapshot, PrevTime) ->

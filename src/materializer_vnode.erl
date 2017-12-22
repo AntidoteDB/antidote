@@ -546,7 +546,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	        lager:debug("Cache for Key ~p is empty",[Key]),
 	        {NewMaterializedSnapshotRecord, SnapshotCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
 	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
-	        ok=materializer_vnode:log_number_of_non_applied_ops(MatState, 0, TxnId),
+%%	        ok=materializer_vnode:log_number_of_non_applied_ops(MatState, 0, TxnId),
 %%	        lager:debug("internal read returning: ",[{ok, {NewSnapshot, SnapshotCommitParams}}]),
             {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
@@ -727,14 +727,14 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%		and (vectorclock:le(DepClock, DepUpbound) orelse (DepUpbound == NewVC)).
 
 -spec create_empty_materialized_snapshot_record(transaction(), type()) -> {#materialized_snapshot{}, vectorclock() | {vectorclock(), vectorclock(), vectorclock()}}.
-create_empty_materialized_snapshot_record(Transaction, Type) ->
+create_empty_materialized_snapshot_record(_Transaction, Type) ->
 	NewVC = vectorclock:new(),
-	case Transaction#transaction.transactional_protocol of
-        physics ->
-	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {NewVC, NewVC, NewVC}};
-        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
-            {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, NewVC}
-    end.
+%%	case Transaction#transaction.transactional_protocol of
+%%        physics ->
+%%	        {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, {NewVC, NewVC, NewVC}};
+%%        Protocol when ((Protocol == gr) or (Protocol == clocksi) or (Protocol == ec)) ->
+            {#materialized_snapshot{last_op_id = 0, value = clocksi_materializer:new(Type)}, NewVC}.
+%%    end.
 
 %% returns true if op is more recent than SS (i.e. is not in the ss)
 %% returns false otw
@@ -767,10 +767,11 @@ snapshot_insert_gc(Key, SnapshotDict, ShouldGc, #mat_state{snapshot_cache = Snap
             PrunedSnapshots = vector_orddict:sublist(SnapshotDict, 1, ?SNAPSHOT_MIN),
             FirstOp = vector_orddict:last(PrunedSnapshots),
             {CommitParameters, _S} = FirstOp,
-	        CT = case CommitParameters of
-		        {CTa, _, _} -> CTa;
-		        _-> CommitParameters
-	        end,
+%%	        CT = case CommitParameters of
+%%		        {CTa, _, _} -> CTa;
+%%		        _-> CommitParameters
+%%	        end,
+	        CT = CommitParameters,
 	    CommitTime = lists:foldl(fun({CParams1,_Snapshot}, Acc) ->
 						    CT1 = case CParams1 of
 							    {CTb, _, _} -> CTb;

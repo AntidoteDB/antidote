@@ -56,7 +56,7 @@
 	 set_clock_of_dc/3,
 	 abort/2,
 	 commit/3,
-	 single_commit/3,
+	 single_commit/2,
 	 get_stable_snapshot/0
         ]).
 
@@ -104,7 +104,7 @@ abort(UpdatedPartitions, _Transactions) ->
     Self = self(),
     lists:foreach(fun({Fsm,Rest}) -> gen_fsm:send_event(Fsm, {ack_abort, Self, Rest}) end, UpdatedPartitions).
 
-single_commit(UpdatedPartitions, _Transaction, _DepVC) ->
+single_commit(UpdatedPartitions, _Transaction) ->
     Self = self(),
     lists:foreach(fun({Fsm,Rest}) -> gen_fsm:send_event(Fsm, {prepare, Self, Rest}) end, UpdatedPartitions).
 
