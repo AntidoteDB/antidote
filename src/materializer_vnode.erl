@@ -102,7 +102,8 @@ update(Key, DownstreamOp, Transaction) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp, Transaction},
-        materializer_vnode_master).
+        materializer_vnode_master,
+	    infinity).
 
 %%@doc write snapshot to cache for future read, snapshots are stored
 %%     one at a time into the ets table
@@ -149,7 +150,8 @@ open_staleness_log(Partition) ->
 get_staleness_log(Partition) ->
 	riak_core_vnode_master:sync_command({Partition, node()},
 		{get_staleness_log},
-		materializer_vnode_master).
+		materializer_vnode_master,
+		infinity).
 
 -spec truncate_all_staleness_logs() -> {ok | term()}.
 truncate_all_staleness_logs() ->
@@ -198,7 +200,8 @@ log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonApp
 		ok->
 			ok;
 		{error, no_such_log}->
-			{error, {no_such_log, StalenessLog}}
+			ok
+%%			{error, {no_such_log, StalenessLog}}
 	end.
 
 -spec merge_staleness_files_into_table() -> atom() | {error, reason()}.
@@ -938,15 +941,16 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 	        case internal_read(Key, Type, NewTransaction, State, true) of
 		        {ok, _} ->
 			        %% Have to get the new ops dict because the interal_read can change it
-			        {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
+%%			        {Length1, ListLen1} = ets:lookup_element(OpsCache, Key, 2),
 %%			        lager:info("BEFORE GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length, ListLen]),
 %%			        lager:info("AFTER GC: Key ~p,  Length ~p,  ListLen ~p",[Key, Length1, ListLen1]),
 %%			        case Length1 == Length of
 %%				        true ->
 %%					        {error, operation_gc_did_not_clean_ops};
 %%				        false ->
-					        true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]),
-					        ok;
+%%					        true = ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]),
+%%					        ok;
+			            op_insert_gc(Key, DownstreamOp, State, Transaction);
 %%			        end;
 		        {error, Reason} ->
 			        {error, {op_gc_error, Reason}}
