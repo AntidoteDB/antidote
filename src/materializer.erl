@@ -87,7 +87,7 @@ check_operation(Op) ->
 
 -ifdef(TEST).
 
-%% @doc Testing update with pn_counter.
+%% Testing update with pn_counter.
 update_pncounter_test() ->
     Type = antidote_crdt_counter,
     Counter = create_snapshot(Type),
@@ -96,7 +96,7 @@ update_pncounter_test() ->
     {ok, Counter2} = update_snapshot(Type, Counter, Op),
     ?assertEqual(1, Type:value(Counter2)).
 
-%% @doc Testing pn_counter with update log
+%% Testing pn_counter with update log
 materializer_counter_withlog_test() ->
     Type = antidote_crdt_counter,
     Counter = create_snapshot(Type),
@@ -109,7 +109,7 @@ materializer_counter_withlog_test() ->
     Counter2 = materialize_eager(Type, Counter, Ops),
     ?assertEqual(7, Type:value(Counter2)).
 
-%% @doc Testing counter with empty update log
+%% Testing counter with empty update log
 materializer_counter_emptylog_test() ->
     Type = antidote_crdt_counter,
     Counter = create_snapshot(Type),
@@ -118,22 +118,22 @@ materializer_counter_emptylog_test() ->
     Counter2 = materialize_eager(Type, Counter, Ops),
     ?assertEqual(0, Type:value(Counter2)).
 
-%% @doc Testing non-existing crdt
+%% Testing non-existing crdt
 materializer_error_nocreate_test() ->
     ?assertException(error, undef, create_snapshot(bla)).
 
-%% @doc Testing crdt with invalid update operation
+%% Testing crdt with invalid update operation
 materializer_error_invalidupdate_test() ->
     Type = antidote_crdt_counter,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
     ?assertEqual({error, {unexpected_operation,
-                    {non_existing_op_type,{non_existing_op,actor1}},
-                    antidote_crdt_counter}}, 
+                    {non_existing_op_type, {non_existing_op, actor1}},
+                    antidote_crdt_counter}},
                  materialize_eager(Type, Counter, Ops)).
 
-%% @doc Testing that the function check_operations works properly
+%% Testing that the function check_operations works properly
 check_operations_test() ->
     Operations =
         [{read, {key1, antidote_crdt_counter}},

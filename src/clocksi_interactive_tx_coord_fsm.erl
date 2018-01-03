@@ -29,6 +29,7 @@
 
 -include("antidote.hrl").
 
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -define(DC_META_UTIL, mock_partition_fsm).
@@ -38,6 +39,9 @@
 -define(CLOCKSI_VNODE, mock_partition_fsm).
 -define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
 -define(LOGGING_VNODE, mock_partition_fsm).
+-define(PROMETHEUS_GAUGE, mock_partition_fsm).
+-define(PROMETHEUS_COUNTER, mock_partition_fsm).
+
 -else.
 -define(DC_META_UTIL, dc_meta_data_utilities).
 -define(DC_UTIL, dc_utilities).
@@ -46,6 +50,8 @@
 -define(CLOCKSI_VNODE, clocksi_vnode).
 -define(CLOCKSI_DOWNSTREAM, clocksi_downstream).
 -define(LOGGING_VNODE, logging_vnode).
+-define(PROMETHEUS_GAUGE, prometheus_gauge).
+-define(PROMETHEUS_COUNTER, prometheus_counter).
 -endif.
 
 
@@ -182,6 +188,8 @@ start_tx_internal(From, ClientClock, Properties, SD = #tx_coord_state{stay_alive
         false ->
             From ! {ok, TransactionId}
     end,
+    % a new transaction was started, increment metrics
+    ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
     SD#tx_coord_state{transaction = Transaction, num_to_read = 0, properties = Properties}.
 
 -spec create_transaction_record(snapshot_time() | ignore,
@@ -282,6 +290,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
                                     {ok, {TxId, [], CausalClock}};
 
                                 abort ->
+                                    % TODO increment aborted transaction metrics?
                                     {error, aborted};
 
                                 {error, Reason} ->
@@ -301,6 +310,7 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
     end.
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
+    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
     WriteSet = case lists:keyfind(Partition, 1, UpdatedPartitions) of
@@ -323,6 +333,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     end.
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
+    ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
     {Key, Type, Update} = Op,
     Partition = ?LOG_UTIL:get_key_partition(Key),
 
@@ -436,6 +447,7 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transaction=Transaction}) ->
     ExecuteReads = fun({Key, Type}, AccState) ->
+        ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read_async]),
         Partition = ?LOG_UTIL:get_key_partition(Key),
         ok = clocksi_vnode:async_read_data_item(Partition, Transaction, Key, Type),
         ReadKeys = AccState#tx_coord_state.return_accumulator,
@@ -539,8 +551,7 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
 
     %% Swap keys with their appropiate read values
     ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
-    %% TODO: Why use the old snapshot, instead of UpdatedSnapshot?
-    NewReadSet = orddict:store(Key, Snapshot, ReadSet),
+    NewReadSet = orddict:store(Key, UpdatedSnapshot, ReadSet),
 
     %% Loop back to the same state until we process all the replies
     case NumToRead > 1 of
@@ -839,6 +850,7 @@ reply_to_client(SD = #tx_coord_state{
                     end;
 
                 aborted ->
+                    ?PROMETHEUS_COUNTER:inc(antidote_aborted_transactions_total),
                     case ReturnAcc of
                         {error, Reason} ->
                             {error, Reason};
@@ -856,6 +868,9 @@ reply_to_client(SD = #tx_coord_state{
                     From ! Reply
             end
     end,
+
+    % transaction is finished, decrement count
+    ?PROMETHEUS_GAUGE:dec(antidote_open_transactions),
 
     case StayAlive of
         true ->
@@ -962,6 +977,7 @@ main_test_() ->
 % Setup and Cleanup
 setup() ->
     {ok, Pid} = clocksi_interactive_tx_coord_fsm:start_link(self(), ignore),
+
     Pid.
 cleanup(Pid) ->
     case process_info(Pid) of undefined -> io:format("Already cleaned");
@@ -1021,11 +1037,11 @@ read_single_fail_test(Pid) ->
 
 read_success_test(Pid) ->
     fun() ->
-        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, riak_dt_gcounter}}, infinity),
+        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, antidote_crdt_counter}}, infinity),
         ?assertEqual({ok, 2},
-            {ok, riak_dt_gcounter:value(State)}),
+            {ok, antidote_crdt_counter:value(State)}),
         ?assertEqual({ok, [a]},
-            gen_fsm:sync_send_event(Pid, {read, {set, riak_dt_gset}}, infinity)),
+            gen_fsm:sync_send_event(Pid, {read, {set, antidote_crdt_gset}}, infinity)),
         ?assertEqual({ok, mock_value},
             gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
         ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))

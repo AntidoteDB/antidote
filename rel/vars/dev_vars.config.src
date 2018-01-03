@@ -14,10 +14,10 @@
 {pb_port,           @PBPORT@}.
 {pubsub_port,       @PUBSUBPORT@}.
 {logreader_port,    @LOGREADERPORT@}.
+{metrics_port,      @METRICSPORT@}.
 
 %%
 %% etc/vm.args
 %%
 {node,         "@NODE@"}.
 {cookie,       "antidote"}.
-

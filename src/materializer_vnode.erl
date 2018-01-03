@@ -415,7 +415,7 @@ get_from_snapshot_log(Key, Type, SnapshotTime) ->
 
 %% @doc Store a new key snapshot in the in-memory cache at the given commit time.
 %%
-%%      If `ShouldGC` is true, it will try to prune the in-memory cache before inserting.
+%%      If `ShouldGC' is true, it will try to prune the in-memory cache before inserting.
 %%
 -spec store_snapshot(
     TxId :: txid() | ignore,
@@ -682,7 +682,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache})->
 
 -ifdef(TEST).
 
-%% @doc Testing belongs_to_snapshot returns true when a commit time
+%% Testing belongs_to_snapshot returns true when a commit time
 %% is smaller than a snapshot time
 belongs_to_snapshot_test()->
     CommitTime1a= 1,
@@ -706,7 +706,7 @@ belongs_to_snapshot_test()->
     ?assertEqual(false, belongs_to_snapshot_op(
                   vectorclock:from_list([{1, CommitTime4a}, {2, CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 
-%% @doc This tests to make sure when garbage collection happens, no updates are lost
+%% This tests to make sure when garbage collection happens, no updates are lost
 gc_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
@@ -774,7 +774,7 @@ gc_test() ->
     {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, [], false, MatState),
     ?assertEqual(13, Type:value(Res13)).
 
-%% @doc This tests to make sure operation lists can be large and resized
+%% This tests to make sure operation lists can be large and resized
 large_list_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
@@ -941,7 +941,7 @@ read_nonexisting_key_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
-    Type = riak_dt_gcounter,
+    Type = antidote_crdt_counter,
     {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1, 1}, {dc2, 0}]), ignore, [], false, MatState),
     ?assertEqual(0, Type:value(ReadResult)).
 

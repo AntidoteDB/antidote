@@ -57,7 +57,10 @@
          abort/2,
          commit/3,
          single_commit/2,
-         get_stable_snapshot/0]).
+         get_stable_snapshot/0,
+         inc/2,
+         inc/1,
+         dec/1]).
 
 -record(state, {
         key :: atom()}).
@@ -117,13 +120,13 @@ read_data_item(_IndexNode, _Transaction, Key, _Type, _Ws) ->
         read_fail ->
             {error, mock_read_fail};
         counter ->
-            Counter = riak_dt_gcounter:new(),
-            {ok, Counter1} = riak_dt_gcounter:update(increment, haha, Counter),
-            {ok, Counter2} = riak_dt_gcounter:update(increment, nono, Counter1),
+            Counter = antidote_crdt_counter:new(),
+            {ok, Counter1} = antidote_crdt_counter:update(1, Counter),
+            {ok, Counter2} = antidote_crdt_counter:update(1, Counter1),
             {ok, Counter2};
         set ->
-            Set = riak_dt_gset:new(),
-            {ok, Set1} = riak_dt_gset:update({add, a}, haha, Set),
+            Set = antidote_crdt_gset:new(),
+            {ok, Set1} = antidote_crdt_gset:update([a], Set),
             {ok, Set1};
         _ ->
             {ok, mock_value}
@@ -200,3 +203,6 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 terminate(_Reason, _SN, _SD) ->
     ok.
 
+inc(_, _) -> ok.
+dec(_) -> ok.
+inc(_) -> ok.

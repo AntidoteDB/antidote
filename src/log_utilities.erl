@@ -126,7 +126,7 @@ check_log_record_version(LogRecord) ->
 
 
 
-%% @doc Testing remove_node_from_preflist
+%% Testing remove_node_from_preflist
 remove_node_from_preflist_test()->
     Preflist = [{partition1, node},
                 {partition2, node},
@@ -134,7 +134,7 @@ remove_node_from_preflist_test()->
     ?assertEqual([partition1, partition2, partition3],
                  remove_node_from_preflist(Preflist)).
 
-%% @doc Testing convert key
+%% Testing convert key
 convert_key_test()->
     ?assertEqual(1, convert_key(1)),
     ?assertEqual(1, convert_key(-1)),
