@@ -46,7 +46,9 @@
   encode_handoff_item/2,
   is_empty/1,
   terminate/2,
-  delete/1]).
+  delete/1,
+  handle_overload_command/3,
+  handle_overload_info/2]).
 
 %% State
 -record(state, {
@@ -94,6 +96,11 @@ encode_handoff_item(_ObjectName, _ObjectValue) -> <<>>.
 is_empty(State) -> {true, State}.
 terminate(_Reason, _ModState) -> ok.
 delete(State) -> {ok, State}.
+handle_overload_command(_, _, _) ->
+    ok.
+handle_overload_info(_, _) ->
+    ok.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -spec call(partition_id(), {txn, #interdc_txn{}} | {log_reader_resp, binary()}) -> ok.
