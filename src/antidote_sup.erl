@@ -101,7 +101,6 @@ init(_Args) ->
     Config = [{mods, [{elli_prometheus, []}
                      ]}
              ],
-    % TODO replace static definition of port by config parameter
     MetricsPort = application:get_env(antidote, metrics_port, 3001),
     ElliOpts = [{callback, elli_middleware}, {callback_args, Config}, {port, MetricsPort}],
     Elli = {elli_server,

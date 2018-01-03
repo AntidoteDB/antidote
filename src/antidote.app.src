@@ -54,14 +54,10 @@
   %%        true -> writes to disk done by the logging_vnode are enabled
   %%        false -> writes to disk are disabled, this improves performance when benchmarking.
   %%        WARNING: disabling logging makes updates non-recoverable after shutting down antidote or under failures.
-  %% %% collect_metrics_staleness
-  %%        true -> periodically calculates staleness and record it in exometer which can be read by monitoring
-  %%        tools. It is false by default. Changing this parameter during run time
-  %%        has no effect.
 
   {env, [{txn_cert, true}, {txn_prot, clocksi}, {recover_from_log, true},
          {recover_meta_data_on_start, true}, {sync_log, false},
-         {collect_metric_staleness, false}, {enable_logging, true},
+         {enable_logging, true},
          {auto_start_read_servers, true}
         ]}
  ]}.
