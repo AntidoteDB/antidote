@@ -1,0 +1,41 @@
+FROM erlang:19
+
+ENV HANDOFF_PORT "8099"
+ENV PB_PORT "8087"
+ENV PB_IP "0.0.0.0"
+ENV PBSUB_PORT "8086"
+ENV LOGREADER_PORT "8085"
+ENV RING_STATE_DIR "data/ring"
+ENV PLATFORM_DATA_DIR "data"
+ENV NODE_NAME "antidote@127.0.0.1"
+ENV SHORT_NAME "false"
+
+RUN set -xe \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+ADD _build/default/rel/antidote /opt/antidote
+
+RUN set -xe \
+  && sed -i -e '$i,{kernel, [{inet_dist_listen_min, 9100}, {inet_dist_listen_max, 9100}]}' /opt/antidote/releases/0.0.1/sys.config
+
+ADD Dockerfiles/start_and_attach.sh /opt/antidote/
+ADD Dockerfiles/entrypoint.sh /
+
+RUN chmod a+x /opt/antidote/start_and_attach.sh \
+  && chmod a+x /entrypoint.sh
+
+# Distributed Erlang Port Mapper
+EXPOSE 4368
+# Ports for Antidote
+EXPOSE 8085 8086 8087 8099
+
+# Antidote RPC
+EXPOSE 9100
+
+VOLUME /opt/antidote/data
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/opt/antidote/start_and_attach.sh"]

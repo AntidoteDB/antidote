@@ -57,7 +57,10 @@
          abort/2,
          commit/3,
          single_commit/2,
-         get_stable_snapshot/0]).
+         get_stable_snapshot/0,
+         inc/2,
+         inc/1,
+         dec/1]).
 
 -record(state, {
         key :: atom()}).
@@ -200,3 +203,6 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 terminate(_Reason, _SN, _SD) ->
     ok.
 
+inc(_, _) -> ok.
+dec(_) -> ok.
+inc(_) -> ok.

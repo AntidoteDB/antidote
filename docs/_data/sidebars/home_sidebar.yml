@@ -22,6 +22,9 @@ entries:
     url: /quick_start.html
     output: web, pdf
 
+  - title: Java Client
+    url: /java_client.html
+    output: web, pdf
 
   - title: Overview
     output: web, pdf
@@ -62,6 +65,10 @@ entries:
 
     - title: Native API
       url: /rawapi.html
+      output: web, pdf
+
+    - title: Datatypes
+      url: /crdts.html
       output: web, pdf
 
     - title: Protocol Buffer API
