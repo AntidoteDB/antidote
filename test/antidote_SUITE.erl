@@ -69,12 +69,12 @@ end_per_testcase(_, _) ->
 
 all() ->
     [
-     dummy_test,
-     static_txn_single_object,
-     static_txn_single_object_clock,
-     static_txn_multi_objects,
-     static_txn_multi_objects_clock,
-     interactive_txn,
+     % dummy_test,
+     % static_txn_single_object,
+     % static_txn_single_object_clock,
+     % static_txn_multi_objects,
+     % static_txn_multi_objects_clock,
+     % interactive_txn,
      random_test
     ].
 
@@ -218,7 +218,7 @@ random_test(Config) ->
     N = length(Nodes),
 
                                                 % Distribute the updates randomly over all DCs
-    NumWrites = 100,
+    NumWrites = 10,
     ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid nondeterminism in tests
 
     Obj = {log_test_key1, antidote_crdt_counter, antidote_bucket},
@@ -236,7 +236,21 @@ random_test(Config) ->
                 {ok, [Res], _} = rpc:call(FirstNode, antidote, read_objects, [ignore, [], [Obj]]),
                 Res
         end,
-    Delay = 1000,
-    Retry = 360000 div Delay, %wait for max 1 min
-    ok = test_utils:wait_until_result(G, NumWrites, Retry, Delay),
+    Delay = 100,
+    Retry = 36000 div Delay, %wait for max 1 min
+    %ok = test_utils:wait_until_result(G, NumWrites, Retry, Delay),
+    %pass
+    Res = test_utils:wait_until_result(G, NumWrites, Retry, Delay),
+       ReadRes = G(),
+       {ok, [Logs]} = rpc:call(FirstNode, antidote, get_log_operations, [[{Obj, dict:new()}]]),
+       Len = length(Logs),
+       ct:print("Logs ~p, ~n Length ~p", [Logs, Len]),    
+       ct:print("ReadRes ~p", [ReadRes]),
+       Debug = rpc:call(FirstNode, materializer_vnode, get_debug_info, [{log_test_key1, antidote_bucket}, antidote_crdt_counter]),
+       ct:print("Debug ~p", [Debug]),
+        {ok, [ObjectState], _} = rpc:call(FirstNode, antidote, get_objects, [ignore, [], [Obj]]),
+                
+       ct:print("Object ~p", [ObjectState]),
+       
+       ?assertMatch(ok, Res),
     pass.

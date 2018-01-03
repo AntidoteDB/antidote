@@ -25,17 +25,17 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 %% Number of snapshots to trigger GC
--define(SNAPSHOT_THRESHOLD, 4).
+-define(SNAPSHOT_THRESHOLD, 3).
 %% Number of snapshots to keep after GC
--define(SNAPSHOT_MIN, 2).
+-define(SNAPSHOT_MIN, 1).
 %% Number of ops to keep before GC
--define(OPS_THRESHOLD, 20).
+-define(OPS_THRESHOLD, 10).
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
--define(RESIZE_THRESHOLD, 5).
+-define(RESIZE_THRESHOLD, 20).
 %% Only store the new SS if the following number of ops
 %% were applied to the previous SS
--define(MIN_OP_STORE_SS, 5).
+-define(MIN_OP_STORE_SS, 1).
 %% Expected time to wait until the logging vnode is up
 -define(LOG_STARTUP_WAIT, 1000).
 
@@ -49,6 +49,7 @@
          read/6,
          store_ss/3,
          update/2,
+         get_debug_info/2,
          belongs_to_snapshot_op/3]).
 
 %% Callbacks
@@ -178,6 +179,18 @@ handle_command({store_ss, Key, Snapshot, CommitTime}, _Sender, State) ->
     internal_store_ss(Key, Snapshot, CommitTime, false, State),
     {noreply, State};
 
+handle_command({debug, Key, Type}, _Sender, State = #state{
+                                                          ops_cache=OpsCache,
+                                                         snapshot_cache=SnapshotCache}) ->
+             S = ets:lookup(SnapshotCache, Key),
+             O = ets:lookup(OpsCache, Key),
+             {ok, Snapshot} = clocksi_interactive_tx_coord_fsm:get_snapshot_time(),
+             SS = get_from_snapshot_cache(ignore, Key, Type, Snapshot, State),
+
+             {reply, {ok, O, S, Snapshot, SS}, State}; 
+
+
+
 handle_command(load_from_log, _Sender, State=#state{partition=Partition}) ->
     IsReady = try
                 case load_from_log_to_tables(Partition, State) of
@@ -261,7 +274,10 @@ terminate(_Reason, _State=#state{ops_cache=OpsCache, snapshot_cache=SnapshotCach
     end,
     ok.
 
-
+get_debug_info(Key, Type) ->
+       IndexNode = log_utilities:get_key_partition(Key),
+       riak_core_vnode_master:sync_command(IndexNode, {debug, Key, Type},
+                                               materializer_vnode_master).
 
 %%---------------- Internal Functions -------------------%%
 
@@ -371,7 +387,7 @@ internal_read(Key, Type, MinSnapshotTime, TxId, _PropertyList, ShouldGc, State) 
     State :: #state{}
 ) -> #snapshot_get_response{}.
 
-get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
+get_from_snapshot_cache(TxId, Key, Type, MinSnapshotTime, State = #state{
     ops_cache=OpsCache,
     snapshot_cache=SnapshotCache
 }) ->
@@ -387,10 +403,10 @@ get_from_snapshot_cache(TxId, Key, Type, MinSnaphsotTime, State = #state{
             update_snapshot_from_cache(BaseVersion, Key, OpsCache);
 
         [{_, SnapshotDict}] ->
-            case vector_orddict:get_smaller(MinSnaphsotTime, SnapshotDict) of
+            case vector_orddict:get_smaller(MinSnapshotTime, SnapshotDict) of
                 {undefined, _} ->
                     %% No in-memory snapshot, get it from replication log
-                    get_from_snapshot_log(Key, Type, MinSnaphsotTime);
+                    get_from_snapshot_log(Key, Type, MinSnapshotTime);
 
                 FoundVersion ->
                     %% Snapshot was present, now update it with the operations found in the cache.

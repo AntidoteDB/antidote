@@ -50,7 +50,7 @@
 new() ->
   {[], 0}.
 
-%% @doc Get the first appropiate element from the dict according to a =< ordering.
+%% @doc Get the first appropriate element from the dict according to a =< ordering.
 %%
 %%      get_smaller(Clock, Dict) will return {{DClock, _}=Entry, IsFirst},
 %%      where Entry is the most recent entry such that DClock =< Clock.
