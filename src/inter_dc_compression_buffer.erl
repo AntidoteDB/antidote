@@ -244,9 +244,7 @@ noop_test() ->
                               300,
                               250)
     ],
-    Expected = inter_dc_txn_from_ops([], 0, 3, 2, 300, 250),
-    % ?debugFmt("~p~n", [compress(Buffer)]),
-    % ?debugFmt("~p~n", [Expected]),
+    Expected = inter_dc_txn_from_ops([{key, bucket, antidote_crdt_orset, []}], 0, 2, 2, 300, 250),
     ?assertEqual(compress(Buffer), Expected).
 
 orset_test() ->
