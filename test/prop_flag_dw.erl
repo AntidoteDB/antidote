@@ -18,29 +18,30 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_fat_counter).
+-module(prop_flag_dw).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_fat_counter_spec/0, fat_counter_op/0, fat_counter_spec/1]).
+-export([prop_flag_dw_spec/0, op/0, spec/1]).
+
+prop_flag_dw_spec() ->
+ crdt_properties:crdt_satisfies_spec(flag_dw, fun op/0, fun spec/1).
 
 
-prop_fat_counter_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_fat_counter, fun fat_counter_op/0, fun fat_counter_spec/1).
+spec(Operations) ->
+  LatestOps = crdt_properties:latest_operations(Operations),
+  Enables = [enable || {enable, {}} <- LatestOps],
+  Disables = [disable || {disable, {}} <- LatestOps],
+  % returns true, when there is an enable-operation and no disable operation among the latest operations:
+  Enables =/= [] andalso Disables == [].
 
-
-fat_counter_spec(Operations1) ->
-  Operations = crdt_properties:filter_resets(Operations1),
-  lists:sum([X || {_, {increment, X}} <- Operations])
-    - lists:sum([X || {_, {decrement, X}} <- Operations]).
-
-% generates a random counter operation
-fat_counter_op() ->
+% generates a random operation
+op() ->
   oneof([
-    {increment, integer()},
-    {decrement, integer()},
+    {enable, {}},
+    {disable, {}},
     {reset, {}}
   ]).
 

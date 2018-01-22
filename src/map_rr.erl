@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module antidote_crdt_map_rr - A CRDT map datatype with a reset functionality
+%% @doc module map_rr - A CRDT map datatype with a reset functionality
 %%
 %% Inserting a new element in the map:
 %%  if element already there -> do nothing
@@ -45,7 +45,7 @@
 %% Resetting the map means removing all the current entries
 %%
 
--module(antidote_crdt_map_rr).
+-module(map_rr).
 
 -behaviour(antidote_crdt).
 
@@ -241,13 +241,13 @@ is_bottom(Map) ->
 reset1_test() ->
   Map0 = new(),
   % DC1: a.incr
-  {ok, Incr1} = downstream({update, {{a, antidote_crdt_fat_counter}, {increment, 1}}}, Map0),
+  {ok, Incr1} = downstream({update, {{a, counter_fat}, {increment, 1}}}, Map0),
   {ok, Map1a} = update(Incr1, Map0),
   % DC1 reset
   {ok, Reset1} = downstream({reset, {}}, Map1a),
   {ok, Map1b} = update(Reset1, Map1a),
   % DC2 a.remove
-  {ok, Remove1} = downstream({remove, {a, antidote_crdt_fat_counter}}, Map0),
+  {ok, Remove1} = downstream({remove, {a, counter_fat}}, Map0),
   {ok, Map2a} = update(Remove1, Map0),
   % DC2 --> DC1
   {ok, Map1c} = update(Remove1, Map1b),
@@ -255,7 +255,7 @@ reset1_test() ->
   {ok, Reset2} = downstream({reset, {}}, Map1c),
   {ok, Map1d} = update(Reset2, Map1c),
   % DC1: a.incr
-  {ok, Incr2} = downstream({update, {{a, antidote_crdt_fat_counter}, {increment, 2}}}, Map1d),
+  {ok, Incr2} = downstream({update, {{a, counter_fat}, {increment, 2}}}, Map1d),
   {ok, Map1e} = update(Incr2, Map1d),
 
   io:format("Map0 = ~p~n", [Map0]),
@@ -272,24 +272,24 @@ reset1_test() ->
   io:format("Map1e = ~p~n", [Map1e]),
 
   ?assertEqual([], value(Map0)),
-  ?assertEqual([{{a, antidote_crdt_fat_counter}, 1}], value(Map1a)),
+  ?assertEqual([{{a, counter_fat}, 1}], value(Map1a)),
   ?assertEqual([], value(Map1b)),
   ?assertEqual([], value(Map2a)),
   ?assertEqual([], value(Map1c)),
   ?assertEqual([], value(Map1d)),
-  ?assertEqual([{{a, antidote_crdt_fat_counter}, 2}], value(Map1e)).
+  ?assertEqual([{{a, counter_fat}, 2}], value(Map1e)).
 
 
 reset2_test() ->
   Map0 = new(),
   % DC1: s.add
-  {ok, Add1} = downstream({update, {{s, antidote_crdt_set_rw}, {add, a}}}, Map0),
+  {ok, Add1} = downstream({update, {{s, set_rw}, {add, a}}}, Map0),
   {ok, Map1a} = update(Add1, Map0),
   % DC1 reset
   {ok, Reset1} = downstream({reset, {}}, Map1a),
   {ok, Map1b} = update(Reset1, Map1a),
   % DC2 s.remove
-  {ok, Remove1} = downstream({remove, {s, antidote_crdt_set_rw}}, Map0),
+  {ok, Remove1} = downstream({remove, {s, set_rw}}, Map0),
   {ok, Map2a} = update(Remove1, Map0),
   % DC2 --> DC1
   {ok, Map1c} = update(Remove1, Map1b),
@@ -297,7 +297,7 @@ reset2_test() ->
   {ok, Reset2} = downstream({reset, {}}, Map1c),
   {ok, Map1d} = update(Reset2, Map1c),
   % DC1: s.add
-  {ok, Add2} = downstream({update, {{s, antidote_crdt_set_rw}, {add, b}}}, Map1d),
+  {ok, Add2} = downstream({update, {{s, set_rw}, {add, b}}}, Map1d),
   {ok, Map1e} = update(Add2, Map1d),
 
   io:format("Map0 = ~p~n"   , [value(Map0)]),
@@ -314,21 +314,21 @@ reset2_test() ->
   io:format("Map1e = ~p~n"  , [value(Map1e)]),
 
   ?assertEqual([], value(Map0)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, [a]}], value(Map1a)),
+  ?assertEqual([{{s, set_rw}, [a]}], value(Map1a)),
   ?assertEqual([], value(Map1b)),
   ?assertEqual([], value(Map2a)),
   ?assertEqual([], value(Map1c)),
   ?assertEqual([], value(Map1d)),
-  ?assertEqual([{{s, antidote_crdt_set_rw}, [b]}], value(Map1e)).
+  ?assertEqual([{{s, set_rw}, [b]}], value(Map1e)).
 
 prop1_test() ->
   Map0 = new(),
   % DC1: s.add
-  {ok, Add1} = downstream({update, {{a, antidote_crdt_map_rr}, {update, {{a, antidote_crdt_set_rw}, {add, a}}}}}, Map0),
+  {ok, Add1} = downstream({update, {{a, map_rr}, {update, {{a, set_rw}, {add, a}}}}}, Map0),
   {ok, Map1a} = update(Add1, Map0),
 
   % DC1 reset
-  {ok, Reset1} = downstream({remove, {a, antidote_crdt_map_rr}}, Map1a),
+  {ok, Reset1} = downstream({remove, {a, map_rr}}, Map1a),
   {ok, Map1b} = update(Reset1, Map1a),
 
   io:format("Map0 = ~p~n", [Map0]),
@@ -338,17 +338,17 @@ prop1_test() ->
   io:format("Map1b = ~p~n", [Map1b]),
 
   ?assertEqual([], value(Map0)),
-  ?assertEqual([{{a, antidote_crdt_map_rr}, [{{a, antidote_crdt_set_rw}, [a]}]}], value(Map1a)),
+  ?assertEqual([{{a, map_rr}, [{{a, set_rw}, [a]}]}], value(Map1a)),
   ?assertEqual([], value(Map1b)).
 
 prop2_test() ->
   Map0 = new(),
   % DC1: update remove
-  {ok, Add1} = downstream({update, [{{b, antidote_crdt_map_rr}, {remove, {a, antidote_crdt_set_rw}}}]}, Map0),
+  {ok, Add1} = downstream({update, [{{b, map_rr}, {remove, {a, set_rw}}}]}, Map0),
   {ok, Map1a} = update(Add1, Map0),
 
   % DC2 remove
-  {ok, Remove2} = downstream({remove, {b, antidote_crdt_map_rr}}, Map0),
+  {ok, Remove2} = downstream({remove, {b, map_rr}}, Map0),
   {ok, Map2a} = update(Remove2, Map0),
 
   % pull DC2 -> DC1
@@ -375,14 +375,14 @@ remove_test() ->
   ?assertEqual([], value(M1)),
   ?assertEqual(true, is_bottom(M1)),
   M2 = upd({update, [
-      {{<<"a">>, antidote_crdt_orset}, {add, <<"1">>}},
-      {{<<"b">>, antidote_crdt_mvreg}, {assign, <<"2">>}},
-      {{<<"c">>, antidote_crdt_fat_counter}, {increment, 1}}
+      {{<<"a">>, set_aw}, {add, <<"1">>}},
+      {{<<"b">>, register_mv}, {assign, <<"2">>}},
+      {{<<"c">>, counter_fat}, {increment, 1}}
     ]}, M1),
   ?assertEqual([
-      {{<<"a">>, antidote_crdt_orset}, [<<"1">>]},
-      {{<<"b">>, antidote_crdt_mvreg}, [<<"2">>]},
-      {{<<"c">>, antidote_crdt_fat_counter}, 1}
+      {{<<"a">>, set_aw}, [<<"1">>]},
+      {{<<"b">>, register_mv}, [<<"2">>]},
+      {{<<"c">>, counter_fat}, 1}
   ], value(M2)),
   ?assertEqual(false, is_bottom(M2)),
   M3 = upd({reset, {}}, M2),

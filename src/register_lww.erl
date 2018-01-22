@@ -18,9 +18,13 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module antidote_crdt_gset - An operation based grow-only set
+%% @doc module register_lww - An operation based last-writer-wins register
+%% Each operation is assigned a timestamp, which is guaranteed to be greater than
+%% the current timestamp.
+%% The current value of the register is the value assigned with the greatest timestamp
+%% or the empty binary if there was no assignment yet.
 
--module(antidote_crdt_gset).
+-module(register_lww).
 
 -behaviour(antidote_crdt).
 
@@ -39,33 +43,40 @@
           require_state_downstream/1
         ]).
 
--type gset() :: ordsets:ordset(member()).
--type gset_op() :: {add, member()}
-                 | {add_all, [member()]}.
+-export_type([register_lww/0, register_lww_op/0]).
 
--type gset_effect() :: gset().
--type member() :: term().
+-opaque register_lww() :: {non_neg_integer(), term()}.
+
+-type register_lww_op() :: {assign, term(), non_neg_integer()}  | {assign, term()}.
 
 new() ->
-    ordsets:new().
+  {0, <<>>}.
 
-value(Set) ->
-    Set.
+value({_Time, Val}) ->
+    Val.
 
--spec downstream(gset_op(), gset()) -> {ok, gset_effect()}.
-downstream({add, Elem}, _State) ->
-  {ok, ordsets:from_list([Elem])};
-downstream({add_all, Elems}, _State) ->
-  {ok, ordsets:from_list(Elems)}.
+-spec downstream(register_lww_op(), register_lww()) -> {ok, term()}.
+downstream({assign, Value, Time}, {OldTime, _OldValue}) ->
+  {ok, {max(Time, OldTime + 1), Value}};
+downstream({assign, Value}, State) ->
+  downstream({assign, Value, make_micro_epoch()}, State).
+
+make_micro_epoch() ->
+    {Mega, Sec, Micro} = os:timestamp(),
+    (Mega * 1000000 + Sec) * 1000000 + Micro.
+
 
 update(Effect, State) ->
-  {ok, ordsets:union(State, Effect)}.
+  % take the state with maximum time, if times are equal use maximum state
+  {ok, max(Effect, State)}.
 
-require_state_downstream(_Operation) -> false.
 
-is_operation({add, _}) -> true;
-is_operation({add_all, _}) -> true;
-is_operation(_) -> false.
+require_state_downstream(_Operation) -> true.
+
+is_operation({assign, _Value}) -> true;
+is_operation({assign, _Value, _Time}) -> true;
+is_operation(_Other) -> false.
+
 
 equal(CRDT1, CRDT2) ->
     CRDT1 == CRDT2.
@@ -79,8 +90,8 @@ from_binary(Bin) ->
 -ifdef(test).
 all_test() ->
     S0 = new(),
-    {ok, Downstream} = downstream({add, a}, S0),
+    {ok, Downstream} = downstream({assign, a}, S0),
     {ok, S1} = update(Downstream, S0),
-    ?assertEqual(1, riak_dt_gset:stat(element_count, S1)).
+    ?assertEqual(a, value(S1)).
 
 -endif.

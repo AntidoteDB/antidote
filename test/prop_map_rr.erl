@@ -18,32 +18,43 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_map_aw).
+-module(prop_map_rr).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_map_spec/0]).
+-export([prop_map_rr_spec/0]).
+
+prop_map_rr_spec() ->
+ crdt_properties:crdt_satisfies_partial_spec(map_rr, fun op/0, fun spec/2).
 
 
-prop_map_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_map_aw, fun op/0, fun spec/1).
-
-
-spec(Operations1) ->
-  Operations = lists:flatmap(fun(Op) -> normalizeOp(Op, Operations1) end, Operations1),
-  % the keys in the map are the ones that were updated and not deleted yet
-  Keys = lists:usort([Key ||
-    % has an update
-    {AddClock, {update, {Key, _}}} <- Operations,
-    % no remove after the update:
-    [] == [Y || {RemoveClock, {remove, Y}} <- Operations, Key == Y, crdt_properties:clock_le(AddClock, RemoveClock)]
-  ]),
+spec(Operations1, Value) ->
+  Operations = normalize(Operations1),
+  % Collect all keys from all all updates
+  Keys = allKeys(Operations),
   GroupedByKey = [{Key, nestedOps(Operations, Key)}  || Key <- Keys],
-  NestedSpec = [{{Key,Type}, nestedSpec(Type, Ops)} || {{Key,Type}, Ops} <- GroupedByKey],
-  %% TODO add reset operations
-  lists:sort(NestedSpec).
+  KeyCheck =
+    fun({{Key,Type},Ops}) ->
+      ?WHENFAIL(
+        begin
+          io:format("~n~nOperations1 = ~p~n", [Operations1]),
+          io:format("Operations = ~p~n", [Operations]),
+          io:format("GroupedByKey = ~p~n", [GroupedByKey])
+        end,
+        nestedSpec(Type, Ops, map_rr:get({Key,Type}, Value))
+      )
+    end,
+  conjunction(
+    [{Key, KeyCheck({{Key,Type}, Ops})}
+     || {{Key,Type}, Ops} <- GroupedByKey]).
+
+normalize(Operations) ->
+   lists:flatmap(fun(Op) -> normalizeOp(Op, Operations) end, Operations).
+
+allKeys(Operations) ->
+  lists:usort([Key || {_AddClock, {update, {Key, _}}} <- Operations]).
 
 nestedOps(Operations, {_,Type}=Key) ->
   Resets =
@@ -54,9 +65,11 @@ nestedOps(Operations, {_,Type}=Key) ->
     end,
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
-nestedSpec(antidote_crdt_map_aw, Ops) -> spec(Ops);
-nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
-nestedSpec(antidote_crdt_integer, Ops) -> prop_crdt_integer:spec(Ops).
+nestedSpec(map_rr, Ops, Value) -> spec(Ops, Value);
+% nestedSpec(set_aw, Ops) -> prop_set_aw:spec(Ops);
+% nestedSpec(counter_fat, Ops) -> prop_counter_fat:spec(Ops);
+nestedSpec(set_rw, Ops, Value) ->
+  (crdt_properties:spec_to_partial(fun prop_set_rw:spec/1))(Ops, Value).
 
 % normalizes operations (update-lists into single update-operations)
 normalizeOp({Clock, {update, List}}, _) when is_list(List) ->
@@ -67,9 +80,8 @@ normalizeOp({Clock, {batch, {Updates, Removes}}}, _) ->
   [{Clock, {update, X}} || X <- Updates]
    ++ [{Clock, {remove, X}} || X <- Removes];
 normalizeOp({Clock, {reset, {}}}, Operations) ->
-  % reset is like removing all current keys
-  Map = spec(crdt_properties:subcontext(Clock, Operations)),
-  Keys = [Key || {Key, _Val} <- Map],
+  % reset is like remove on all keys
+  Keys = allKeys(normalize(crdt_properties:subcontext(Clock, Operations))),
   [{Clock, {remove, X}} || X <- Keys];
 normalizeOp(X, _) -> [X].
 
@@ -102,13 +114,14 @@ removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
 nestedOp(Size) ->
   oneof(
     [
-      {{key(), antidote_crdt_integer}, prop_crdt_integer:op()},
-      {{key(), antidote_crdt_orset}, prop_crdt_orset:set_op()}
+      % {{key(), counter_fat}, prop_counter_fat:op()},
+      % {{key(), set_aw}, prop_set_aw:op()},
+      {{key(), set_rw}, prop_set_rw:op()}
     ]
     ++
     if
       Size > 1 ->
-        [{{key(), antidote_crdt_map_aw}, ?LAZY(op(Size div 2))}];
+        [{{key(), map_rr}, ?LAZY(op(Size div 2))}];
       true -> []
     end
     ).
@@ -116,10 +129,10 @@ nestedOp(Size) ->
 typed_key() -> {key(), crdt_type()}.
 
 crdt_type() ->
-  oneof([antidote_crdt_integer, antidote_crdt_orset, antidote_crdt_map_aw]).
+  oneof([set_rw, map_rr]).
 
 key() ->
-  oneof([a,b,c,d]).
+  oneof([key1,key2,key3,key4]).
 
 
 

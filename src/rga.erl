@@ -35,7 +35,7 @@
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
 %% @end
--module(antidote_crdt_rga).
+-module(rga).
 
 -behaviour(antidote_crdt).
 

@@ -18,28 +18,44 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_mvreg).
+-module(prop_integer).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_mvreg_spec/0]).
+-export([prop_integer_spec/0, op/0, spec/1]).
 
 
-prop_mvreg_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_mvreg, fun op/0, fun spec/1).
+prop_integer_spec() ->
+ crdt_properties:crdt_satisfies_spec(integer, fun op/0, fun spec/1).
 
 
-spec(Operations) ->
-  lists:sort([Val || {assign, Val}  <- crdt_properties:latest_operations(Operations)]).
+spec(Operations1) ->
+  Operations = [normalizeOp(Op) || Op <- Operations1],
+  ConcurrentValues =
+    [{Clock, Val} || {Clock, {set, Val}} <- Operations,
+      [] == [Clock2 || {Clock2, {set, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)]],
+  ConcurrentValues2 =
+    case ConcurrentValues of
+      [] -> [{#{}, 0}];
+      _ -> ConcurrentValues
+    end,
+  Delta =
+    fun(Clock) ->
+      lists:sum([X || {C, {increment, X}} <- Operations, not crdt_properties:clock_le(C, Clock)])
+    end,
+  WithDelta = [Val + Delta(Clock) || {Clock,Val} <- ConcurrentValues2],
+  lists:max(WithDelta).
 
-
+normalizeOp({Clock, {reset, {}}}) -> {Clock, {set, 0}};
+normalizeOp(Op) -> Op.
 
 % generates a random counter operation
 op() ->
-  frequency([
-    {5, {assign, oneof([a,b,c,d,e,f,g,h,i])}},
-    {1, {reset, {}}}
+  oneof([
+    {set, integer()},
+    {increment, integer()},
+    {reset, {}}
   ]).
 

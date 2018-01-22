@@ -22,7 +22,7 @@
 %% An operation-based Disable-wins Flag CRDT.
 
 %% @end
--module(antidote_crdt_flag_dw).
+-module(flag_dw).
 
 %% Callbacks
 -export([ new/0,
@@ -47,10 +47,10 @@
 -define(V1_VERS, 1).
 
 -export_type([flag_dw/0]).
--opaque flag_dw() :: {antidote_crdt_flag:tokens(), antidote_crdt_flag:tokens()}.
+-opaque flag_dw() :: {flag_helper:tokens(), flag_helper:tokens()}.
 
 %% SeenTokens, NewEnableTokens, NewDisableTokens
--type downstream_op() :: {antidote_crdt_flag:tokens(), antidote_crdt_flag:tokens(), antidote_crdt_flag:tokens()}.
+-type downstream_op() :: {flag_helper:tokens(), flag_helper:tokens(), flag_helper:tokens()}.
 
 -spec new() -> flag_dw().
 new() ->
@@ -60,11 +60,11 @@ new() ->
 value({EnableTokens, DisableTokens}) ->
   DisableTokens == [] andalso EnableTokens =/= [].
 
--spec downstream(antidote_crdt_flag:op(), flag_dw()) -> {ok, downstream_op()}.
+-spec downstream(flag_helper:op(), flag_dw()) -> {ok, downstream_op()}.
 downstream({disable, {}}, {EnableTokens, DisableTokens}) ->
-  {ok, {EnableTokens ++ DisableTokens, [], [antidote_crdt_flag:unique()]}};
+  {ok, {EnableTokens ++ DisableTokens, [], [flag_helper:unique()]}};
 downstream({enable, {}}, {EnableTokens, DisableTokens}) ->
-  {ok, {EnableTokens ++ DisableTokens, [antidote_crdt_flag:unique()], []}};
+  {ok, {EnableTokens ++ DisableTokens, [flag_helper:unique()], []}};
 downstream({reset, {}}, {EnableTokens, DisableTokens}) ->
   {ok, {EnableTokens ++ DisableTokens, [], []}}.
 
@@ -78,7 +78,7 @@ downstream({reset, {}}, {EnableTokens, DisableTokens}) ->
   equal(Flag1, Flag2) ->
     Flag1 == Flag2.
 
--spec to_binary(flag_dw()) -> antidote_crdt_flag:binary_flag().
+-spec to_binary(flag_dw()) -> flag_helper:binary_flag().
   to_binary(Flag) ->
     %% @TODO something smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Flag))/binary>>.
@@ -87,12 +87,12 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     %% @TODO something smarter
     {ok, binary_to_term(Bin)}.
 
-is_operation(A) -> antidote_crdt_flag:is_operation(A).
+is_operation(A) -> flag_helper:is_operation(A).
 
 is_bottom(Flag) ->
   Flag == new().
 
-require_state_downstream(A) -> antidote_crdt_flag:require_state_downstream(A).
+require_state_downstream(A) -> flag_helper:require_state_downstream(A).
 
 
 %% ===================================================================

@@ -18,20 +18,20 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_orset).
+-module(prop_set_aw).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_orset_spec/0, set_op/0, add_wins_set_spec/1]).
+-export([prop_set_aw_spec/0, op/0, spec/1]).
 
 
-prop_orset_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_orset, fun set_op/0, fun add_wins_set_spec/1).
+prop_set_aw_spec() ->
+ crdt_properties:crdt_satisfies_spec(set_aw, fun op/0, fun spec/1).
 
 
-add_wins_set_spec(Operations1) ->
+spec(Operations1) ->
   Operations = lists:flatmap(fun normalizeOperation/1, Operations1),
   lists:usort(
     % all X,
@@ -52,8 +52,8 @@ normalizeOperation({Clock, {remove_all, Elems}}) ->
 normalizeOperation(X) ->
   [X].
 
-% generates a random counter operation
-set_op() ->
+% generates a random operation
+op() ->
   oneof([
     {add, set_element()},
     {add_all, list(set_element())},
@@ -64,4 +64,3 @@ set_op() ->
 
 set_element() ->
   oneof([a,b]).
-

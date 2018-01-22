@@ -35,7 +35,7 @@
 %% concurrent updates can be reconciled.
 %% This could be optimized for certain types
 
--module(antidote_crdt_map_aw).
+-module(map_aw).
 
 -behaviour(antidote_crdt).
 
@@ -200,24 +200,22 @@ distinct([]) -> true;
 distinct([X|Xs]) ->
   not lists:member(X, Xs) andalso distinct(Xs).
 
-
-
-
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
+
 -ifdef(TEST).
 
 reset1_test() ->
   Set0 = new(),
   % DC1: a.incr
-  {ok, Incr1} = downstream({update, {{a, antidote_crdt_integer}, {increment, 1}}}, Set0),
+  {ok, Incr1} = downstream({update, {{a, integer}, {increment, 1}}}, Set0),
   {ok, Set1a} = update(Incr1, Set0),
   % DC1 reset
   {ok, Reset1} = downstream({reset, {}}, Set1a),
   {ok, Set1b} = update(Reset1, Set1a),
   % DC2 a.remove
-  {ok, Remove1} = downstream({remove, {a, antidote_crdt_integer}}, Set0),
+  {ok, Remove1} = downstream({remove, {a, integer}}, Set0),
   {ok, Set2a} = update(Remove1, Set0),
   % DC2 --> DC1
   {ok, Set1c} = update(Remove1, Set1b),
@@ -225,18 +223,11 @@ reset1_test() ->
   {ok, Reset2} = downstream({reset, {}}, Set1c),
   {ok, Set1d} = update(Reset2, Set1c),
   % DC1: a.incr
-  {ok, Incr2} = downstream({update, {{a, antidote_crdt_integer}, {increment, 0}}}, Set1d),
+  {ok, Incr2} = downstream({update, {{a, integer}, {increment, 0}}}, Set1d),
   {ok, Set1e} = update(Incr2, Set1d),
 
   ?assertEqual([], value(Set2a)),
   ?assertEqual([], value(Set1d)),
-  ?assertEqual([{{a, antidote_crdt_integer}, 1}], value(Set1e)).
-
-
-
-
+  ?assertEqual([{{a, integer}, 1}], value(Set1e)).
 
 -endif.
-
-
-

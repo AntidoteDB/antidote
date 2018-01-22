@@ -18,44 +18,31 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_integer).
+-module(prop_set_go).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_counter_spec/0, op/0, spec/1]).
+-export([prop_set_go_spec/0]).
 
 
-prop_counter_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_integer, fun op/0, fun spec/1).
+prop_set_go_spec() ->
+ crdt_properties:crdt_satisfies_spec(set_go, fun op/0, fun spec/1).
 
 
-spec(Operations1) ->
-  Operations = [normalizeOp(Op) || Op <- Operations1],
-  ConcurrentValues =
-    [{Clock, Val} || {Clock, {set, Val}} <- Operations,
-      [] == [Clock2 || {Clock2, {set, _}} <- Operations, Clock =/= Clock2, crdt_properties:clock_le(Clock, Clock2)]],
-  ConcurrentValues2 =
-    case ConcurrentValues of
-      [] -> [{#{}, 0}];
-      _ -> ConcurrentValues
-    end,
-  Delta =
-    fun(Clock) ->
-      lists:sum([X || {C, {increment, X}} <- Operations, not crdt_properties:clock_le(C, Clock)])
-    end,
-  WithDelta = [Val + Delta(Clock) || {Clock,Val} <- ConcurrentValues2],
-  lists:max(WithDelta).
-
-normalizeOp({Clock, {reset, {}}}) -> {Clock, {set, 0}};
-normalizeOp(Op) -> Op.
+spec(Operations) ->
+  lists:usort(
+       [X || {_, {add, X}} <- Operations]
+    ++ [X || {_, {add_all, Xs}} <- Operations, X <- Xs]
+  ).
 
 % generates a random counter operation
 op() ->
   oneof([
-    {set, integer()},
-    {increment, integer()},
-    {reset, {}}
+    {add, set_element()},
+    {add_all, list(set_element())}
   ]).
 
+set_element() ->
+  oneof([a,b,c,d]).

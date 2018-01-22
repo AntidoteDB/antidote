@@ -18,17 +18,17 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_lwwreg).
+-module(prop_register_lww).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_lwwreg_spec/0]).
+-export([prop_register_lww_spec/0]).
 
 
-prop_lwwreg_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_lwwreg, fun op/0, fun spec/1).
+prop_register_lww_spec() ->
+ crdt_properties:crdt_satisfies_spec(register_lww, fun op/0, fun spec/1).
 
 
 spec(Operations) ->

@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% crdt_orset: A convergent, replicated, operation based observe remove set
+%% crdt_set_aw: A convergent, replicated, operation based observe remove set
 %%
 %% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
@@ -31,7 +31,7 @@
 %% remove_all that removes a list of elements from the set; update, that contains
 %% a list of previous four commands.
 %%
-%% This file is adapted from riak_dt_orset, a state-based implementation of
+%% This file is adapted from riak_dt_set_aw, a state-based implementation of
 %% Observed-Remove Set.
 %% The changes are as follows:
 %% 1. `generate_downstream/3' is added, as this is necessary for op-based CRDTs.
@@ -42,7 +42,7 @@
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
 %% @end
--module(antidote_crdt_orset).
+-module(set_aw).
 
 -include("antidote_crdt.hrl").
 
@@ -65,12 +65,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([orset/0, binary_orset/0, orset_op/0]).
--opaque orset() :: orddict:orddict(member(), tokens()).
+-export_type([set_aw/0, binary_set_aw/0, set_aw_op/0]).
+-opaque set_aw() :: orddict:orddict(member(), tokens()).
 
--type binary_orset() :: binary(). %% A binary that from_binary/1 will operate on.
+-type binary_set_aw() :: binary(). %% A binary that from_binary/1 will operate on.
 
--type orset_op() ::
+-type set_aw_op() ::
       {add, member()}
     | {remove, member()}
     | {add_all, [member()]}
@@ -88,60 +88,60 @@
 -type token() :: binary().
 -type tokens() :: [token()].
 
--spec new() -> orset().
+-spec new() -> set_aw().
 new() ->
     orddict:new().
 
-%% @doc return all existing elements in the `orset()'.
--spec value(orset()) -> [member()].
-value(ORSet) ->
-    orddict:fetch_keys(ORSet).
+%% @doc return all existing elements in the `set_aw()'.
+-spec value(set_aw()) -> [member()].
+value(Set_aw) ->
+    orddict:fetch_keys(Set_aw).
 
 %% @doc generate downstream operations.
 %% If the operation is add or add_all, generate unique tokens for
 %% each element and fetches the current supporting tokens.
 %% If the operation is remove or remove_all, fetches current
-%% supporting tokens of these elements existing in the `orset()'.
--spec downstream(orset_op(), orset()) -> {ok, downstream_op()}.
-downstream({add, Elem}, ORSet) ->
-    downstream({add_all, [Elem]}, ORSet);
-downstream({add_all, Elems}, ORSet) ->
+%% supporting tokens of these elements existing in the `set_aw()'.
+-spec downstream(set_aw_op(), set_aw()) -> {ok, downstream_op()}.
+downstream({add, Elem}, Set_aw) ->
+    downstream({add_all, [Elem]}, Set_aw);
+downstream({add_all, Elems}, Set_aw) ->
     CreateDownstream = fun(Elem, CurrentTokens) ->
         Token = unique(),
         {Elem, [Token], CurrentTokens}
     end,
-    DownstreamOps = create_downstreams(CreateDownstream, lists:usort(Elems), ORSet, []),
+    DownstreamOps = create_downstreams(CreateDownstream, lists:usort(Elems), Set_aw, []),
     {ok, lists:reverse(DownstreamOps)};
-downstream({remove, Elem}, ORSet) ->
-    downstream({remove_all, [Elem]}, ORSet);
-downstream({remove_all, Elems}, ORSet) ->
+downstream({remove, Elem}, Set_aw) ->
+    downstream({remove_all, [Elem]}, Set_aw);
+downstream({remove_all, Elems}, Set_aw) ->
     CreateDownstream = fun(Elem, CurrentTokens) ->
         {Elem, [], CurrentTokens}
     end,
-    DownstreamOps = create_downstreams(CreateDownstream, lists:usort(Elems), ORSet, []),
+    DownstreamOps = create_downstreams(CreateDownstream, lists:usort(Elems), Set_aw, []),
     {ok, lists:reverse(DownstreamOps)};
-downstream({reset, {}}, ORSet) ->
+downstream({reset, {}}, Set_aw) ->
     % reset is like removing all elements
-    downstream({remove_all, value(ORSet)}, ORSet).
+    downstream({remove_all, value(Set_aw)}, Set_aw).
 
-%% @doc apply downstream operations and update an `orset()'.
--spec update(downstream_op(), orset()) -> {ok, orset()}.
-update(DownstreamOp, ORSet) ->
-    {ok, apply_downstreams(DownstreamOp, ORSet)}.
+%% @doc apply downstream operations and update an `set_aw()'.
+-spec update(downstream_op(), set_aw()) -> {ok, set_aw()}.
+update(DownstreamOp, Set_aw) ->
+    {ok, apply_downstreams(DownstreamOp, Set_aw)}.
 
--spec equal(orset(), orset()) -> boolean().
-equal(ORSetA, ORSetB) ->
+-spec equal(set_aw(), set_aw()) -> boolean().
+equal(Set_awA, Set_awB) ->
     % Everything inside is ordered, so this should work
-    ORSetA == ORSetB.
+    Set_awA == Set_awB.
 
 -include_lib("riak_dt/include/riak_dt_tags.hrl").
 -define(TAG, ?DT_ORSET_TAG).
 -define(V1_VERS, 1).
 
--spec to_binary(orset()) -> binary_orset().
-to_binary(ORSet) ->
+-spec to_binary(set_aw()) -> binary_set_aw().
+to_binary(Set_aw) ->
     %% @TODO something smarter
-    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(ORSet))/binary>>.
+    <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Set_aw))/binary>>.
 
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     %% @TODO something smarter
@@ -153,7 +153,7 @@ unique() ->
     crypto:strong_rand_bytes(20).
 
 %% @private generic downstream op creation for adds and removals
-create_downstreams(_CreateDownstream, [], _ORSet, DownstreamOps) ->
+create_downstreams(_CreateDownstream, [], _Set_aw, DownstreamOps) ->
     DownstreamOps;
 create_downstreams(CreateDownstream, Elems, [], DownstreamOps) ->
     lists:foldl(
@@ -164,37 +164,37 @@ create_downstreams(CreateDownstream, Elems, [], DownstreamOps) ->
         DownstreamOps,
         Elems
     );
-create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|ORSetRest]=ORSet, DownstreamOps) ->
+create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|Set_awRest]=Set_aw, DownstreamOps) ->
     if
         Elem1 == Elem2 ->
             DownstreamOp = CreateDownstream(Elem1, Tokens),
-            create_downstreams(CreateDownstream, ElemsRest, ORSetRest, [DownstreamOp|DownstreamOps]);
+            create_downstreams(CreateDownstream, ElemsRest, Set_awRest, [DownstreamOp|DownstreamOps]);
         Elem1 > Elem2 ->
-            create_downstreams(CreateDownstream, Elems, ORSetRest, DownstreamOps);
+            create_downstreams(CreateDownstream, Elems, Set_awRest, DownstreamOps);
         true ->
             DownstreamOp = CreateDownstream(Elem1, Tokens),
-            create_downstreams(CreateDownstream, ElemsRest, ORSet, [DownstreamOp|DownstreamOps])
+            create_downstreams(CreateDownstream, ElemsRest, Set_aw, [DownstreamOp|DownstreamOps])
     end.
 
-%% @private apply a list of downstream ops to a given orset
-apply_downstreams([], ORSet) ->
-    ORSet;
+%% @private apply a list of downstream ops to a given set_aw
+apply_downstreams([], Set_aw) ->
+    Set_aw;
 apply_downstreams(Ops, []) ->
     lists:foldl(
-        fun({Elem, ToAdd, ToRemove}, ORSet) ->
-            ORSet ++ apply_downstream(Elem, [], ToAdd, ToRemove)
+        fun({Elem, ToAdd, ToRemove}, Set_aw) ->
+            Set_aw ++ apply_downstream(Elem, [], ToAdd, ToRemove)
         end,
         [],
         Ops
     );
-apply_downstreams([{Elem1, ToAdd, ToRemove}|OpsRest]=Ops, [{Elem2, CurrentTokens}|ORSetRest]=ORSet) ->
+apply_downstreams([{Elem1, ToAdd, ToRemove}|OpsRest]=Ops, [{Elem2, CurrentTokens}|Set_awRest]=Set_aw) ->
     if
         Elem1 == Elem2 ->
-            apply_downstream(Elem1, CurrentTokens, ToAdd, ToRemove) ++ apply_downstreams(OpsRest, ORSetRest);
+            apply_downstream(Elem1, CurrentTokens, ToAdd, ToRemove) ++ apply_downstreams(OpsRest, Set_awRest);
         Elem1 > Elem2 ->
-            [{Elem2, CurrentTokens} | apply_downstreams(Ops, ORSetRest)];
+            [{Elem2, CurrentTokens} | apply_downstreams(Ops, Set_awRest)];
         true ->
-            apply_downstream(Elem1, [], ToAdd, ToRemove) ++ apply_downstreams(OpsRest, ORSet)
+            apply_downstream(Elem1, [], ToAdd, ToRemove) ++ apply_downstreams(OpsRest, Set_aw)
     end.
 
 %% @private create an orddict entry from a downstream op
@@ -325,15 +325,15 @@ concurrent_add_test() ->
     ?assertEqual([], value(Set5)).
 
 binary_test() ->
-    ORSet1 = new(),
-    BinaryORSet1 = to_binary(ORSet1),
-    {ok, ORSet2} = from_binary(BinaryORSet1),
-    ?assert(equal(ORSet1, ORSet2)),
+    Set_aw1 = new(),
+    BinarySet_aw1 = to_binary(Set_aw1),
+    {ok, Set_aw2} = from_binary(BinarySet_aw1),
+    ?assert(equal(Set_aw1, Set_aw2)),
 
-    {ok, Op1} = downstream({add, <<"foo">>}, ORSet1),
-    {ok, ORSet3} = update(Op1, ORSet1),
-    BinaryORSet3 = to_binary(ORSet3),
-    {ok, ORSet4} = from_binary(BinaryORSet3),
-    ?assert(equal(ORSet3, ORSet4)).
+    {ok, Op1} = downstream({add, <<"foo">>}, Set_aw1),
+    {ok, Set_aw3} = update(Op1, Set_aw1),
+    BinarySet_aw3 = to_binary(Set_aw3),
+    {ok, Set_aw4} = from_binary(BinarySet_aw3),
+    ?assert(equal(Set_aw3, Set_aw4)).
 
 -endif.

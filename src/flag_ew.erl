@@ -22,7 +22,7 @@
 %% An operation-based Enable-wins Flag CRDT.
 
 %% @end
--module(antidote_crdt_flag_ew).
+-module(flag_ew).
 
 %% Callbacks
 -export([ new/0,
@@ -47,10 +47,10 @@
 -define(V1_VERS, 1).
 
 -export_type([flag_ew/0]).
--opaque flag_ew() :: antidote_crdt_flag:flag().
+-opaque flag_ew() :: flag_helper:flag().
 
 %% SeenTokens, NewTokens
--type downstream_op() :: {antidote_crdt_flag:tokens(), antidote_crdt_flag:tokens()}.
+-type downstream_op() :: {flag_helper:tokens(), flag_helper:tokens()}.
 
 -spec new() -> flag_ew().
 new() ->
@@ -60,11 +60,11 @@ new() ->
 value(EnableTokens) ->
   EnableTokens =/= [].
 
--spec downstream(antidote_crdt_flag:op(), flag_ew()) -> {ok, downstream_op()}.
+-spec downstream(flag_helper:op(), flag_ew()) -> {ok, downstream_op()}.
 downstream({disable, {}}, Tokens) ->
   {ok, {Tokens, []}};
 downstream({enable, {}}, Tokens) ->
-  {ok, {Tokens, [antidote_crdt_flag:unique()]}};
+  {ok, {Tokens, [flag_helper:unique()]}};
 downstream({reset, {}}, Tokens) ->
   {ok, {Tokens, []}}.
 
@@ -77,7 +77,7 @@ downstream({reset, {}}, Tokens) ->
   equal(Flag1, Flag2) ->
     Flag1 == Flag2. % Everything inside is ordered, so this should work
 
--spec to_binary(flag_ew()) -> antidote_crdt_flag:binary_flag().
+-spec to_binary(flag_ew()) -> flag_helper:binary_flag().
   to_binary(Flag) ->
     %% @TODO something smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Flag))/binary>>.
@@ -86,12 +86,12 @@ from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     %% @TODO something smarter
     {ok, binary_to_term(Bin)}.
 
-is_operation(A) -> antidote_crdt_flag:is_operation(A).
+is_operation(A) -> flag_helper:is_operation(A).
 
 is_bottom(Flag) ->
   Flag == new().
 
-require_state_downstream(A) -> antidote_crdt_flag:require_state_downstream(A).
+require_state_downstream(A) -> flag_helper:require_state_downstream(A).
 
 %% ===================================================================
 %% EUnit tests

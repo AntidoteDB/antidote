@@ -18,29 +18,31 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_flag_ew).
+-module(prop_counter_pn).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_flag_ew_spec/0, op/0, spec/1]).
+-export([prop_counter_pn_spec/0, op/0, spec/1]).
 
-prop_flag_ew_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_flag_ew, fun op/0, fun spec/1).
+
+prop_counter_pn_spec() ->
+ crdt_properties:crdt_satisfies_spec(counter_pn, fun op/0, fun spec/1).
 
 
 spec(Operations) ->
-  LatestOps = crdt_properties:latest_operations(Operations),
-  Enables = [enable || {enable, {}} <- LatestOps],
-  % returns true, when there is an enable-operation among the latest operations:
-  Enables =/= [].
+  lists:sum([X || {_, {increment, X}} <- Operations])
+    + lists:sum([1 || {_, increment} <- Operations])
+    - lists:sum([X || {_, {decrement, X}} <- Operations])
+    - lists:sum([1 || {_, decrement} <- Operations]).
 
-% generates a random operation
+% generates a random counter operation
 op() ->
   oneof([
-    {enable, {}},
-    {disable, {}},
-    {reset, {}}
+    increment,
+    decrement,
+    {increment, integer()},
+    {decrement, integer()}
   ]).
 

@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuite tests="59" failures="0" errors="0" skipped="0" time="0.362" name="file &quot;antidote_crdt.app&quot;">
+  <testcase time="0.000" name="counter_b:0 new_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 increment_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 localPermisisons_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 decrement_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 decrement_increment_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 transfer_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 value_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 binary_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_b:0 is_operation_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_fat:0 new_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.014" name="counter_fat:0 update_increment_test">
+    <system-out>FatCnt0 = []
+Increment1 = {&lt;&lt;62,229,225,101,155,99,133,91,227,61,11,235,224,164,183,38,103,
+                164,236,116&gt;&gt;,
+              5}
+FatCnt1 = [{&lt;&lt;62,229,225,101,155,99,133,91,227,61,11,235,224,164,183,38,103,
+              164,236,116&gt;&gt;,
+            5}]
+Decrement1 = {&lt;&lt;109,42,58,116,201,67,165,127,35,89,44,40,33,170,78,250,42,8,
+                202,146&gt;&gt;,
+              -2}
+FatCnt2 = [{&lt;&lt;62,229,225,101,155,99,133,91,227,61,11,235,224,164,183,38,103,
+              164,236,116&gt;&gt;,
+            5},
+           {&lt;&lt;109,42,58,116,201,67,165,127,35,89,44,40,33,170,78,250,42,8,202,
+              146&gt;&gt;,
+            -2}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 new_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 value_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 update_increment_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 update_increment_by_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 update_decrement_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 update_negative_params_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 equal_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="counter_pn:0 binary_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="flag_ew:0 prop1_test (module 'flag_ew')">
+    <system-out>Reset1Effect = {[&lt;&lt;195,210,219,190,70,145,56,165,234,10,186,120,85,149,20,34,
+                   217,1,76,53&gt;&gt;],
+                []}
+Enable1Effect = {[],
+                 [&lt;&lt;195,210,219,190,70,145,56,165,234,10,186,120,85,149,20,
+                    34,217,1,76,53&gt;&gt;]}
+Flag1a = [&lt;&lt;195,210,219,190,70,145,56,165,234,10,186,120,85,149,20,34,217,1,
+            76,53&gt;&gt;]
+Flag1b = []
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_aw:0 reset1_test (module 'map_aw')">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_go:0 new_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_go:0 update_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_go:0 update2_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_rr:0 reset1_test">
+    <system-out>Map0 = {dict,0,16,16,8,80,48,
+             {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+             {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Incr1 = {[{{a,counter_fat},
+           {ok,{&lt;&lt;90,217,140,224,131,4,221,75,106,101,16,227,80,36,80,12,72,7,
+                  129,117&gt;&gt;,
+                1}}}],
+         []}
+Map1a = {dict,1,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],
+                [[{a,counter_fat},
+                  {&lt;&lt;90,217,140,224,131,4,221,75,106,101,16,227,80,36,80,12,72,
+                     7,129,117&gt;&gt;,
+                   1}]]}}}
+Reset1 = {[],
+          [{{a,counter_fat},
+            {ok,[&lt;&lt;90,217,140,224,131,4,221,75,106,101,16,227,80,36,80,12,
+                   72,7,129,117&gt;&gt;]}}]}
+Map1b = {dict,0,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Remove1 = {[],[{{a,counter_fat},{ok,[]}}]}
+Map2a = {dict,0,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Map1c = {dict,0,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Reset2 = {[],[]}
+Map1d = {dict,0,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Incr2 = {[{{a,counter_fat},
+           {ok,{&lt;&lt;174,93,117,201,201,242,76,191,204,5,14,247,5,12,185,175,182,
+                  100,250,90&gt;&gt;,
+                2}}}],
+         []}
+Map1e = {dict,1,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],
+                [[{a,counter_fat},
+                  {&lt;&lt;174,93,117,201,201,242,76,191,204,5,14,247,5,12,185,175,
+                     182,100,250,90&gt;&gt;,
+                   2}]]}}}
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_rr:0 reset2_test">
+    <system-out>Map0 = []
+Add1 = {[{{s,set_rw},
+          {ok,[{a,[],
+                  [&lt;&lt;144,186,153,131,6,149,158,26,233,139,32,221,203,9,0,167,
+                     190,251,115,6&gt;&gt;],
+                  []}]}}],
+        []}
+Map1a = [{{s,set_rw},[a]}]
+Reset1 = {[],
+          [{{s,set_rw},
+            {ok,[{a,[&lt;&lt;144,186,153,131,6,149,158,26,233,139,32,221,203,9,0,
+                       167,190,251,115,6&gt;&gt;],
+                    [],[]}]}}]}
+Map1b = []
+Remove1 = {[],[{{s,set_rw},{ok,[]}}]}
+Map2a = []
+Map1c = []
+Reset2 = {[],[]}
+Map1d = []
+Add2 = {[{{s,set_rw},
+          {ok,[{b,[],
+                  [&lt;&lt;78,143,165,77,13,204,180,77,155,72,128,231,234,175,100,
+                     249,27,226,211,37&gt;&gt;],
+                  []}]}}],
+        []}
+Map1e = [{{s,set_rw},[b]}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_rr:0 prop1_test">
+    <system-out>Map0 = {dict,0,16,16,8,80,48,
+             {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+             {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Add1 = {[{{a,map_rr},
+          {ok,{[{{a,set_rw},
+                 {ok,[{a,[],
+                         [&lt;&lt;144,188,135,255,56,206,22,48,242,17,67,44,94,225,
+                            106,0,102,160,98,53&gt;&gt;],
+                         []}]}}],
+               []}}}],
+        []}
+Map1a = {dict,1,16,16,8,80,48,
+         {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+         {{[],[],[],[],[],[],[],[],[],
+           [[{a,map_rr}|
+             {dict,1,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[[{a,set_rw},
+                  {a,
+                   {[&lt;&lt;144,188,135,255,56,206,22,48,242,17,67,44,94,225,106,0,
+                       102,160,98,53&gt;&gt;],
+                    []}}]],
+                [],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}]],
+           [],[],[],[],[],[]}}}
+Reset1 = {[],
+          [{{a,map_rr},
+            {ok,{[],
+                 [{{a,set_rw},
+                   {ok,[{a,[&lt;&lt;144,188,135,255,56,206,22,48,242,17,67,44,94,
+                              225,106,0,102,160,98,53&gt;&gt;],
+                           [],[]}]}}]}}}]}
+Map1b = {dict,0,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_rr:0 prop2_test">
+    <system-out>Map0 = {dict,0,16,16,8,80,48,
+             {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+             {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Add1 = {[{{b,map_rr},{ok,{[],[{{a,set_rw},{ok,[]}}]}}}],[]}
+Map1a = {dict,0,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+Remove2 = {[],[{{b,map_rr},{ok,{[],[]}}}]}
+Map1b = {dict,0,16,16,8,80,48,
+              {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
+              {{[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="map_rr:0 remove_test">
+    <system-out>M3 state = []
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="register_mv:0 reset_test (module 'register_mv')">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 new_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 generate_downstream_invalid_position_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 generate_downstream_empty_rga_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 generate_downstream_non_empty_rga_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 add_right_in_empty_rga_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 add_right_in_non_empty_rga_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 insert_in_the_middle_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 remove_first_element_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 remove_middle_element_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 remove_last_element_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 insert_right_of_a_remove_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 purge_tombstones_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 concurrent_updates_in_two_replicas_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="rga:0 is_operation_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_aw:0 new_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_aw:0 add_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_aw:0 value_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_aw:0 remove_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_aw:0 remove2_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_aw:0 concurrent_add_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_aw:0 binary_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.001" name="set_rw:0 reset1_test">
+    <system-out>ResetEffect = []
+Add1Effect = [{a,[],
+                 [&lt;&lt;9,61,116,97,215,219,20,86,213,51,25,178,50,111,152,180,
+                    194,50,186,185&gt;&gt;],
+                 []}]
+Add2Effect = [{a,[],
+                 [&lt;&lt;71,28,40,1,175,57,53,5,247,160,193,248,52,124,178,189,60,
+                    234,133,117&gt;&gt;],
+                 []}]
+Set1a = []
+Set1b = [{a,{[&lt;&lt;9,61,116,97,215,219,20,86,213,51,25,178,50,111,152,180,194,50,
+                186,185&gt;&gt;],
+             []}}]
+Set2a = [{a,{[&lt;&lt;71,28,40,1,175,57,53,5,247,160,193,248,52,124,178,189,60,234,
+                133,117&gt;&gt;],
+             []}}]
+Set2b = [{a,{[&lt;&lt;71,28,40,1,175,57,53,5,247,160,193,248,52,124,178,189,60,234,
+                133,117&gt;&gt;],
+             []}}]
+Set2c = [{a,{[&lt;&lt;71,28,40,1,175,57,53,5,247,160,193,248,52,124,178,189,60,234,
+                133,117&gt;&gt;,
+              &lt;&lt;9,61,116,97,215,219,20,86,213,51,25,178,50,111,152,180,194,50,
+                186,185&gt;&gt;],
+             []}}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_rw:0 reset2_test">
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_rw:0 add_test">
+    <system-out>Set0 = []
+Set1 = [{a,{[&lt;&lt;37,12,247,140,101,213,116,236,245,70,75,244,120,124,111,177,94,
+               115,136,49&gt;&gt;],
+            []}}]
+Set2 = [{a,{[&lt;&lt;37,12,247,140,101,213,116,236,245,70,75,244,120,124,111,177,94,
+               115,136,49&gt;&gt;],
+            []}},
+        {b,{[&lt;&lt;131,76,3,181,249,16,141,78,102,33,17,146,57,89,204,124,242,251,
+               152,110&gt;&gt;],
+            []}}]
+Add1Effect = [{a,[],
+                 [&lt;&lt;37,12,247,140,101,213,116,236,245,70,75,244,120,124,111,
+                    177,94,115,136,49&gt;&gt;],
+                 []}]
+Add2Effect = [{b,[],
+                 [&lt;&lt;131,76,3,181,249,16,141,78,102,33,17,146,57,89,204,124,
+                    242,251,152,110&gt;&gt;],
+                 []}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_rw:0 prop1_test">
+    <system-out>ResetEffect = []
+Add3Effect = [{b,[],
+                 [&lt;&lt;126,192,154,139,181,139,79,137,228,17,57,195,98,27,220,
+                    129,183,194,162,71&gt;&gt;],
+                 []}]
+Set1a = []
+Set3a = [{b,{[&lt;&lt;126,192,154,139,181,139,79,137,228,17,57,195,98,27,220,129,
+                183,194,162,71&gt;&gt;],
+             []}}]
+Set1b = [{b,{[&lt;&lt;126,192,154,139,181,139,79,137,228,17,57,195,98,27,220,129,
+                183,194,162,71&gt;&gt;],
+             []}}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_rw:0 prop2_test">
+    <system-out>Remove1Effect = [{b,[],[],
+                    [&lt;&lt;237,78,51,60,180,91,33,189,155,79,254,87,26,186,31,
+                       197,173,44,142,128&gt;&gt;]}]
+Add3Effect = [{a,[],
+                 [&lt;&lt;171,11,140,120,32,164,139,106,199,202,155,28,89,150,30,
+                    165,212,251,197,140&gt;&gt;],
+                 []}]
+Set1a = [{b,{[],
+             [&lt;&lt;237,78,51,60,180,91,33,189,155,79,254,87,26,186,31,197,173,
+                44,142,128&gt;&gt;]}}]
+Set3a = [{a,{[&lt;&lt;171,11,140,120,32,164,139,106,199,202,155,28,89,150,30,165,
+                212,251,197,140&gt;&gt;],
+             []}}]
+Set1b = [{a,{[&lt;&lt;171,11,140,120,32,164,139,106,199,202,155,28,89,150,30,165,
+                212,251,197,140&gt;&gt;],
+             []}},
+         {b,{[],
+             [&lt;&lt;237,78,51,60,180,91,33,189,155,79,254,87,26,186,31,197,173,
+                44,142,128&gt;&gt;]}}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_rw:0 prop3_test">
+    <system-out>Reset3Effect = []
+Add2Effect = [{a,[],
+                 [&lt;&lt;2,163,95,200,95,230,178,240,63,46,227,141,200,45,69,127,
+                    69,42,149,163&gt;&gt;],
+                 []}]
+Set2a = [{a,{[&lt;&lt;2,163,95,200,95,230,178,240,63,46,227,141,200,45,69,127,69,42,
+                149,163&gt;&gt;],
+             []}}]
+Set3a = []
+Set3b = [{a,{[&lt;&lt;2,163,95,200,95,230,178,240,63,46,227,141,200,45,69,127,69,42,
+                149,163&gt;&gt;],
+             []}}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_rw:0 prop4_test">
+    <system-out>Reset3Effect = []
+Add2Effect = [{a,[],
+                 [&lt;&lt;95,199,58,253,22,138,220,2,162,254,99,234,151,250,191,58,
+                    44,131,56,116&gt;&gt;],
+                 []}]
+Set2a = [{a,{[&lt;&lt;95,199,58,253,22,138,220,2,162,254,99,234,151,250,191,58,44,
+                131,56,116&gt;&gt;],
+             []}}]
+Set3a = []
+Set3b = [{a,{[&lt;&lt;95,199,58,253,22,138,220,2,162,254,99,234,151,250,191,58,44,
+                131,56,116&gt;&gt;],
+             []}}]
+
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="set_rw:0 prop5_test">
+    <system-out>Reset2Effect = [{a,[&lt;&lt;111,20,9,38,112,164,37,29,179,54,244,118,35,168,32,8,78,
+                      10,26,12&gt;&gt;],
+                   [],[]}]
+Add2Effect = [{a,[],
+                 [&lt;&lt;111,20,9,38,112,164,37,29,179,54,244,118,35,168,32,8,78,
+                    10,26,12&gt;&gt;],
+                 []}]
+Set2a = [{a,{[&lt;&lt;111,20,9,38,112,164,37,29,179,54,244,118,35,168,32,8,78,10,26,
+                12&gt;&gt;],
+             []}}]
+Set2b = []
+
+    </system-out>
+  </testcase>
+</testsuite>

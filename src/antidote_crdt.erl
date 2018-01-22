@@ -19,29 +19,46 @@
 %% -------------------------------------------------------------------
 
 %% antidote_crdt.erl : behaviour for op-based CRDTs
+%% Naming pattern of antidote crdts: <type>_<semantics>
+%% if there is only one kind of semantics implemented for a certain type
+%% only the type is used in the name e.g. rga
+%% counter_pn: PN-Counter aka Posistive Negative Counter
+%% counter_b: Bounded Counter
+%% counter_fat: Fat Counter
+%% integer: Integer (Experimental)
+%% flag_ew: Enable Wins Flag aka EW-Flag
+%% flag_dw: Disable Wins Flag DW-Flag
+%% set_go: Grow Only Set aka G-Set
+%% set_aw: Add Wins Set aka AW-Set, previously OR-Set (Observed Remove Set)
+%% set_rw: Remove Wins Set aka RW-Set
+%% register_lww: Last Writer Wins Register aka LWW-Reg
+%% register_mv: MultiValue Register aka MV-Reg
+%% map_go: Grow Only Map aka G-Map
+%% map_aw: Add Wins Map aka AW-Map (Experimental)
+%% map_rr: Recursive Resets Map akak RR-Map
+%% rga: Replicated Growable Array (Experimental)
+
 
 
 -module(antidote_crdt).
 
 -include("antidote_crdt.hrl").
 
--define(CRDTS, [antidote_crdt_counter,
-                antidote_crdt_orset,
-                antidote_crdt_gset,
-                antidote_crdt_rga,
-                antidote_crdt_bcounter,
-                antidote_crdt_mvreg,
-                antidote_crdt_map,
-                antidote_crdt_lwwreg,
-                antidote_crdt_gmap,
-                antidote_crdt_set_rw,
-                antidote_crdt_integer,
-                antidote_crdt_map_aw,
-                antidote_crdt_map_rr,
-                antidote_crdt_fat_counter,
-                antidote_crdt_flag_ew,
-                antidote_crdt_flag_dw
-               ]).
+-define(CRDTS, [counter_pn,
+                counter_b,
+                counter_fat,
+                integer,
+                flag_ew,
+                flag_dw,
+                set_go,
+                set_aw,
+                set_rw,
+                register_lww,
+                register_mv,
+                map_go,
+                map_aw,
+                map_rr,
+                rga]).
 
 -export([is_type/1
         ]).

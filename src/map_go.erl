@@ -18,14 +18,14 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module antidote_crdt_gmap - A grow-only map
+%% @doc module map_go - A grow-only map
 %%
 %% This map simply forwards all operations to the embedded CRDTs.
 %% There is no real remove-operation.
 %%
 %% The reset operation, forwards the reset to all values in the map.
 
--module(antidote_crdt_gmap).
+-module(map_go).
 
 -behaviour(antidote_crdt).
 
@@ -38,31 +38,31 @@
 -endif.
 
 
--type gmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
--type gmap_op() ::
+-type map_go() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
+-type map_go_op() ::
     {update, nested_op()}
   | {update, [nested_op()]}
   | {reset, {}}.
 -type nested_op() :: {{Key::term(), Type::atom() }, Op::term()}.
--type gmap_effect() ::
+-type map_go_effect() ::
     {update, nested_downstream()}
   | {update, [nested_downstream()]}.
 -type nested_downstream() :: {{Key::term(), Type::atom() }, Op::term()}.
 
--spec new() -> gmap().
+-spec new() -> map_go().
 new() ->
     dict:new().
 
--spec value(gmap()) -> [{{Key::term(), Type::atom()}, Value::term()}].
+-spec value(map_go()) -> [{{Key::term(), Type::atom()}, Value::term()}].
 value(Map) ->
   lists:sort([{{Key, Type}, Type:value(Value)} || {{Key, Type}, Value} <- dict:to_list(Map)]).
 
--spec require_state_downstream(gmap_op()) -> boolean().
+-spec require_state_downstream(map_go_op()) -> boolean().
 require_state_downstream(_Op) ->
   true.
 
 
--spec downstream(gmap_op(), gmap()) -> {ok, gmap_effect()}.
+-spec downstream(map_go_op(), map_go()) -> {ok, map_go_effect()}.
 downstream({update, {{Key, Type}, Op}}, CurrentMap) ->
     % TODO could be optimized for some types
     CurrentValue = case dict:is_key({Key, Type}, CurrentMap) of
@@ -87,7 +87,7 @@ downstream({reset, {}}, CurrentMap) ->
   DownstreamResets = lists:flatmap(Reset, dict:to_list(CurrentMap)),
   {ok, {update, DownstreamResets}}.
 
--spec update(gmap_effect(), gmap()) -> {ok, gmap()}.
+-spec update(map_go_effect(), map_go()) -> {ok, map_go()}.
 update({update, {{Key, Type}, Op}}, Map) ->
     case dict:is_key({Key, Type}, Map) of
       true -> {ok, dict:update({Key, Type}, fun(V) -> {ok, Value} = Type:update(Op, V), Value end, Map)};
@@ -149,18 +149,18 @@ new_test() ->
 
 update_test() ->
     Map1 = new(),
-    {ok, DownstreamOp} = downstream({update, {{key1, antidote_crdt_lwwreg}, {assign, <<"test">>}}}, Map1),
-    ?assertMatch({update, {{key1, antidote_crdt_lwwreg}, {_TS, <<"test">>}}}, DownstreamOp),
+    {ok, DownstreamOp} = downstream({update, {{key1, register_lww}, {assign, <<"test">>}}}, Map1),
+    ?assertMatch({update, {{key1, register_lww}, {_TS, <<"test">>}}}, DownstreamOp),
     {ok, Map2} = update(DownstreamOp, Map1),
-    ?assertEqual([{{key1, antidote_crdt_lwwreg}, <<"test">>}], value(Map2)).
+    ?assertEqual([{{key1, register_lww}, <<"test">>}], value(Map2)).
 
 update2_test() ->
   Map1 = new(),
-  {ok, Effect1} = downstream({update, [{{a, antidote_crdt_orset}, {add, a}}]}, Map1),
+  {ok, Effect1} = downstream({update, [{{a, set_aw}, {add, a}}]}, Map1),
   {ok, Map2} = update(Effect1, Map1),
   {ok, Effect2} = downstream({reset, {}}, Map2),
   {ok, Map3} = update(Effect2, Map2),
-  ?assertEqual([{{a, antidote_crdt_orset}, []}], value(Map3)).
+  ?assertEqual([{{a, set_aw}, []}], value(Map3)).
 
 -endif.
 
