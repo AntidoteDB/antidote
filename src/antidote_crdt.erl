@@ -47,7 +47,6 @@
 -define(CRDTS, [counter_pn,
                 counter_b,
                 counter_fat,
-                integer,
                 flag_ew,
                 flag_dw,
                 set_go,
@@ -56,9 +55,7 @@
                 register_lww,
                 register_mv,
                 map_go,
-                map_aw,
-                map_rr,
-                rga]).
+                map_rr]).
 
 -export([is_type/1
         ]).
