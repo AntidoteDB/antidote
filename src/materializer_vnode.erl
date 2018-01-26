@@ -546,7 +546,7 @@ internal_read(Key, Type, Transaction, MatState, ShouldGc) ->
 %%	        lager:debug("Cache for Key ~p is empty",[Key]),
 	        {NewMaterializedSnapshotRecord, SnapshotCommitParams} = create_empty_materialized_snapshot_record(Transaction, Type),
 	        NewSnapshot = NewMaterializedSnapshotRecord#materialized_snapshot.value,
-	        ok=materializer_vnode:log_number_of_non_applied_ops(MatState, 0, TxnId),
+%%	        ok=materializer_vnode:log_number_of_non_applied_ops(MatState, 0, TxnId),
 %%	        lager:debug("internal read returning: ",[{ok, {NewSnapshot, SnapshotCommitParams}}]),
             {ok, {NewSnapshot, SnapshotCommitParams}};
         [Tuple] ->
