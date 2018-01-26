@@ -274,7 +274,8 @@ check_clock(Key, Transaction, PreparedCache, Partition, MatState) ->
                         no_staleness_log ->
                             dites_bonjour;
                         StalenessLog ->
-                            ok = materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew, Transaction#transaction.txn_id)
+                            materializer_vnode:log_number_of_non_applied_ops(StalenessLog, Partition, clock_skew, Transaction#transaction.txn_id),
+                            ok
                     end,
                     % lager:info("Waiting... Reason: clock skew"),
                     {not_ready, (T_TS-Time) div 1000+1};
