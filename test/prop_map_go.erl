@@ -38,14 +38,8 @@ spec(Operations1) ->
   NestedSpec = [{{Key,Type}, nestedSpec(Type, Ops)} || {{Key,Type}, Ops} <- GroupedByKey],
   lists:sort(NestedSpec).
 
-nestedOps(Operations, {_,Type}=Key) ->
-  Resets =
-      case Type:is_operation({reset, {}}) of
-        true ->
-          [{Clock, {reset, {}}} || {Clock, {reset, {}}} <- Operations];
-        false -> []
-      end,
-  Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
+nestedOps(Operations, Key) ->
+  [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
 nestedSpec(map_go, Ops) -> spec(Ops);
 nestedSpec(set_aw, Ops) -> prop_set_aw:spec(Ops);
@@ -60,14 +54,10 @@ normalizeOp(X) -> [X].
 % generates a random operation
 op() -> ?SIZED(Size, op(Size)).
 op(Size) ->
-  frequency([
-    % nested updates
-    {10, {update, oneof([
+  {update, oneof([
         nestedOp(Size),
         ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))
-      ])}},
-    {1, {reset, {}}}
-  ]).
+      ])}.
 
 removeDuplicateKeys([], _) -> [];
 removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
