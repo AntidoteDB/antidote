@@ -198,7 +198,8 @@ log_number_of_non_applied_snapshot_and_ops_internal(StalenessLog, NumberOfNonApp
 		ok->
 			ok;
 		{error, no_such_log}->
-			{error, {no_such_log, StalenessLog}}
+%%			{error, {no_such_log, StalenessLog}}
+			ok
 	end.
 
 -spec merge_staleness_files_into_table() -> atom() | {error, reason()}.
