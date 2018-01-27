@@ -100,7 +100,7 @@ update_objects(Pid, Updates, {interactive, TxId}) ->
             case antidote_pb_codec: decode_response(Result) of
                 {opresponse, ok} -> ok;
                 {error, Reason} -> {error, Reason};
-                Other -> {error, Other}
+                Other -> Other
             end
     end;
 
@@ -116,7 +116,8 @@ update_objects(Pid, Updates, {static, TxId}) ->
                 {commit_transaction, CommitTimeStamp} ->
                     antidotec_pb_socket:store_commit_time(Pid, CommitTimeStamp),
                     ok;
-                {error, Reason} -> {error, Reason}
+                {error, Reason} -> {error, Reason};
+                Other -> {error, Other}
             end
     end.
             
