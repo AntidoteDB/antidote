@@ -100,7 +100,7 @@ update_objects(Pid, Updates, {interactive, TxId}) ->
             case antidote_pb_codec: decode_response(Result) of
                 {opresponse, ok} -> ok;
                 {error, Reason} -> {error, Reason};
-                Other -> Other
+                Other -> {error, Other}
             end
     end;
 
