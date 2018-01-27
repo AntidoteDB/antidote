@@ -7,7 +7,7 @@ tarAll () {
     local logfolder="/benchLogs/Log"
     local result_f_name="node-${own_node_name}-$1-$2-StalenessResults.tar"
     cd
-    cd antidote
+    cd /tmp/antidote
     command="tar czf ../${result_f_name} ${datafolder} ${logfolder}"
     echo "[NODE] $own_node_name : running "$command
     $command
