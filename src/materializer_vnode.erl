@@ -945,7 +945,7 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 %%				        true ->
 %%					        {error, operation_gc_did_not_clean_ops};
 %%				        false ->
-					        case ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}] of
+					        case ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}]) of
 						        true ->
 							        ok;
 						        _->
