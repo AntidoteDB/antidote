@@ -549,7 +549,11 @@ commit(Transaction, CommitParameters, Updates, CommittedTx, State) ->
                             NewPreparedDict = clean_and_notify(TxId, Updates, State),
                             {ok, committed, NewPreparedDict};
                         {error, update_materializer, Reason} ->
-                            {error, update_materializer, Reason}
+                            {error, {update_materializer, Reason}};
+                        {error, Reason} ->
+                            {error, Reason};
+                        Other ->
+                            {error, Other}
                     end;
                 {error, timeout} ->
                     {error, timeout}
