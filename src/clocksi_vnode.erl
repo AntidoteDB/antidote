@@ -707,13 +707,19 @@ update_materializer(DownstreamOps, Transaction, CommitParams) ->
                 [materializer_vnode:update(Key, CommittedDownstreamOp, Transaction) | AccIn]
                              end
     end,
-    Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
-    Failures = lists:filter(fun(Elem) -> Elem /= ok end, Results),
-    case Failures of
-        [] ->
-            ok;
-        Other ->
-            {error, update_materializer, Other}
+    try
+        Results = lists:foldl(UpdateFunction, [], ReversedDownstreamOps),
+        Failures = lists:filter(fun(Elem) ->
+            Elem /= ok end, Results),
+        case Failures of
+            [] ->
+                ok;
+            Other ->
+                {error, update_materializer, Other}
+        end
+    catch
+        _:Reason ->
+            {error, update_materializer, Reason}
     end.
 
 %% Internal functions
