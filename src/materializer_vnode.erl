@@ -955,7 +955,10 @@ op_insert_gc(Key, DownstreamOp, State = #mat_state{ops_cache = OpsCache}, Transa
 			        catch
 				        _:Reason ->
 					        lager:error("materializer_vnode: error: ~p~n retrying", [Reason]),
-					        op_insert_gc(Key, DownstreamOp, State, Transaction)
+					        lager:error("function ets:update_element(OpsCache, Key, [{Length1 + ?FIRST_OP, {NewId, DownstreamOp}}, {2, {Length1 + 1, ListLen1}}])
+					        called with arguments: ~n OpsCache ~p, Key ~p~n, Length1 ~p~n FIRST_OP ~p~n NewId ~p~n DownstreamOp ~p~n, Length1 ~p ListLen1~p",
+						        [OpsCache, Key, Length1, ?FIRST_OP, NewId, DownstreamOp, Length1, ListLen1]),
+					        ok
 			        end;
 		        {error, Reason} ->
 			        {error, {op_gc_error, Reason}}
