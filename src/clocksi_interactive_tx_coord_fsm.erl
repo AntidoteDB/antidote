@@ -785,6 +785,14 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
             reply_to_client(S0#tx_coord_state{state = committed});
         _ ->
             {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
+    end;
+
+receive_committed(_, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
+    case NumToAck of
+        1 ->
+            abort(S0);
+        _ ->
+            {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
     end.
 
 %% @doc when an error occurs or an updated partition
