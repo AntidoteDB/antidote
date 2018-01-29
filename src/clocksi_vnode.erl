@@ -180,7 +180,7 @@ single_commit([{Node, WriteSet}], Transaction, DependencyVC) ->
 single_commit_sync([{Node, WriteSet}], Transaction, DependencyVC) ->
     riak_core_vnode_master:sync_command(Node,
         {single_commit, Transaction, WriteSet, DependencyVC},
-        ?CLOCKSI_MASTER).
+        ?CLOCKSI_MASTER, infinity).
 
 
 %% @doc Sends a commit request to a Node involved in a tx identified by TxId

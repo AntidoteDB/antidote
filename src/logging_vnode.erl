@@ -99,7 +99,7 @@ asyn_read_from(Preflist, Log, From) ->
 read_from(Node, LogId, From) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read_from, LogId, From},
-					?LOGGING_MASTER).
+					?LOGGING_MASTER, infinity).
 
 %% @doc Sends a `read' asynchronous command to the Logs in `Preflist'
 -spec asyn_read(preflist(), key()) -> ok.
@@ -121,7 +121,7 @@ get_stable_time(Node) ->
 read(Node, Log) ->
     riak_core_vnode_master:sync_command(Node,
                                         {read, Log},
-                                        ?LOGGING_MASTER).
+                                        ?LOGGING_MASTER, infinity).
 
 %% @doc Sends an `append' asyncrhonous command to the Logs in `Preflist'
 -spec asyn_append(index_node(), key(), #log_operation{}, pid()) -> ok.

@@ -102,7 +102,7 @@ update(Key, DownstreamOp, Transaction) ->
     Preflist = log_utilities:get_preflist_from_key(Key),
     IndexNode = hd(Preflist),
     riak_core_vnode_master:sync_command(IndexNode, {update, Key, DownstreamOp, Transaction},
-        materializer_vnode_master).
+        materializer_vnode_master, infinity).
 
 %%@doc write snapshot to cache for future read, snapshots are stored
 %%     one at a time into the ets table
@@ -149,7 +149,7 @@ open_staleness_log(Partition) ->
 get_staleness_log(Partition) ->
 	riak_core_vnode_master:sync_command({Partition, node()},
 		{get_staleness_log},
-		materializer_vnode_master).
+		materializer_vnode_master, infinity).
 
 -spec truncate_all_staleness_logs() -> {ok | term()}.
 truncate_all_staleness_logs() ->

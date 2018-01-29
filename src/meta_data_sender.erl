@@ -112,7 +112,7 @@ start_link(Name,UpdateFunction, MergeFunction, InitialLocal, InitialMerged) ->
 -spec start(atom()) -> ok.
 start(Name) ->
     gen_fsm:sync_send_event(list_to_atom(atom_to_list(Name) ++ atom_to_list(?MODULE)),
-			    start).
+			    start, infinity).
 
 -spec put_meta_dict(atom(),partition_id(), dict:dict()) -> ok.
 put_meta_dict(Name,Partition,Dict) ->
