@@ -1,8 +1,8 @@
-#antidote_pb
+# antidote_pb
 
 Erlang client for antiodote protocol buffer interface
 
-###Interface for transactions
+### Interface for transactions
      
 * start\_transaction (Pid, timestamp, properties) --> transaction\_descriptor
   
