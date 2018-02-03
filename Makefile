@@ -13,9 +13,6 @@ deps:
 clean:
 	@${REBAR} clean
 
-DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	xmerl webtool eunit syntax_tools compiler mnesia public_key snmp
-
 include tools.mk
 
 typer:
