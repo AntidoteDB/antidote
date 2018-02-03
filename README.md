@@ -1,8 +1,6 @@
-# antidote_pb
+# Erlang client for Antiodote
 
-Erlang client for antiodote protocol buffer interface
-
-### Interface for transactions
+## Interface for transactions
      
 * start\_transaction (Pid, timestamp, properties) --> transaction\_descriptor
   
@@ -36,8 +34,7 @@ Example:
 * commit\_transaction (Pid, transaction_descriptor) --> {ok,timestamp} OR aborted
 
 
-Example
-======
+## Example
     
     %% Starts pb socket
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
