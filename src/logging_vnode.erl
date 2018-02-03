@@ -65,7 +65,9 @@
          encode_handoff_item/2,
          handle_coverage/4,
          handle_info/2,
-         handle_exit/3]).
+         handle_exit/3,
+         handle_overload_command/3,
+         handle_overload_info/2]).
 
 -ignore_xref([start_vnode/1]).
 
@@ -831,6 +833,11 @@ handle_info({sync, Log, LogId},
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) ->
     {stop, not_implemented, State}.
+
+handle_overload_command(_, _, _) ->
+    ok.
+handle_overload_info(_, _) ->
+    ok.
 
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.

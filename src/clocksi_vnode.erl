@@ -50,7 +50,10 @@
     handle_handoff_data/2,
     encode_handoff_item/2,
     handle_coverage/4,
-    handle_exit/3]).
+    handle_exit/3,
+    handle_overload_command/3,
+    handle_overload_info/2]).
+
 
 -ignore_xref([start_vnode/1]).
 
@@ -424,6 +427,11 @@ terminate(_Reason, #state{partition = Partition} = _State) ->
             lager:error("Error closing table ~p", [Reason])
     end,
     clocksi_readitem_server:stop_read_servers(Partition, ?READ_CONCURRENCY),
+    ok.
+
+handle_overload_command(_, _, _) ->
+    ok.
+handle_overload_info(_, _) ->
     ok.
 
 %%%===================================================================
