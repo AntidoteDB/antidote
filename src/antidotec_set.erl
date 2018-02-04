@@ -47,7 +47,6 @@
 -opaque antidote_set() :: #antidote_set{}.
 
 -ifdef(TEST).
--compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 

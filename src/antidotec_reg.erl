@@ -43,7 +43,6 @@
 -opaque antidote_reg() :: #antidote_reg{}.
 
 -ifdef(TEST).
--compile(export_all).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 

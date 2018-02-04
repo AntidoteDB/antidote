@@ -1,24 +1,17 @@
+REBAR := ./rebar3
+
 .PHONY: rel deps test
 
 all: deps compile
 
 compile: deps
-	@./rebar compile
-
-app:
-	@./rebar compile skip_deps=true
+	@${REBAR} compile
 
 deps:
-	@./rebar get-deps
+	@${REBAR} deps
 
 clean:
-	@./rebar clean
-
-distclean: clean
-	@./rebar delete-deps
-
-DIALYZER_APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
-	xmerl webtool eunit syntax_tools compiler mnesia public_key snmp
+	@${REBAR} clean
 
 include tools.mk
 
