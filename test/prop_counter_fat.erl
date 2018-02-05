@@ -28,7 +28,7 @@
 
 
 prop_counter_fat_spec() ->
- crdt_properties:crdt_satisfies_spec(counter_fat, fun op/0, fun spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_counter_fat, fun op/0, fun spec/1).
 
 
 spec(Operations1) ->

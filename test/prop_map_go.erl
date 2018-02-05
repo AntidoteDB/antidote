@@ -28,7 +28,7 @@
 
 
 prop_map_go_spec() ->
- crdt_properties:crdt_satisfies_spec(map_go, fun op/0, fun spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_map_go, fun op/0, fun spec/1).
 
 
 spec(Operations1) ->
@@ -41,9 +41,9 @@ spec(Operations1) ->
 nestedOps(Operations, Key) ->
   [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
-nestedSpec(map_go, Ops) -> spec(Ops);
-nestedSpec(set_aw, Ops) -> prop_set_aw:spec(Ops);
-nestedSpec(counter_pn, Ops) -> prop_counter_pn:spec(Ops).
+nestedSpec(antidote_crdt_map_go, Ops) -> spec(Ops);
+nestedSpec(antidote_crdt_set_aw, Ops) -> prop_set_aw:spec(Ops);
+nestedSpec(antidote_crdt_counter_pn, Ops) -> prop_counter_pn:spec(Ops).
 
 
 normalizeOp({Clock, {update, List}}) when is_list(List) ->
@@ -71,13 +71,13 @@ nestedOp(Size) ->
     [
       % TODO add other type (orset) and recursive maps
       % TODO make sure that keys are unique here and in the is_operation check
-      {{key(), set_aw}, prop_set_aw:op()},
-      {{key(), counter_pn}, prop_counter_pn:op()}
+      {{key(), antidote_crdt_set_aw}, prop_set_aw:op()},
+      {{key(), antidote_crdt_counter_pn}, prop_counter_pn:op()}
     ]
     ++
     if
       Size > 1 ->
-        [{{key(), map_go}, ?LAZY(op(Size div 2))}];
+        [{{key(), antidote_crdt_map_go}, ?LAZY(op(Size div 2))}];
       true -> []
     end
     ).

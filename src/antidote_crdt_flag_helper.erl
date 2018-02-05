@@ -22,7 +22,7 @@
 %% A helper for operation-based flags, enable wins flag and disable wins flag.
 
 %% @end
--module(flag_helper).
+-module(antidote_crdt_flag_helper).
 
 
 %% Callbacks

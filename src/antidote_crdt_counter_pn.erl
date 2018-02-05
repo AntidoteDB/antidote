@@ -18,10 +18,10 @@
 %%
 %% -------------------------------------------------------------------
 
-%% counter_pn: A convergent, replicated, operation
+%% antidote_crdt_counter_pn: A convergent, replicated, operation
 %% based PN-Counter
 
--module(counter_pn).
+-module(antidote_crdt_counter_pn).
 
 -behaviour(antidote_crdt).
 
@@ -47,11 +47,11 @@
               {decrement, integer()}.
 -type effect() :: integer().
 
-%% @doc Create a new, empty 'counter_pn'
+%% @doc Create a new, empty 'antidote_crdt_counter_pn'
 new() ->
     0.
 
-%% @doc Create 'counter_pn' with initial value
+%% @doc Create 'antidote_crdt_counter_pn' with initial value
 -spec new(integer()) -> state().
 new(Value) when is_integer(Value) ->
     Value;

@@ -27,7 +27,7 @@
 -export([prop_map_rr_spec/0]).
 
 prop_map_rr_spec() ->
- crdt_properties:crdt_satisfies_partial_spec(map_rr, fun op/0, fun spec/2).
+ crdt_properties:crdt_satisfies_partial_spec(antidote_crdt_map_rr, fun op/0, fun spec/2).
 
 
 spec(Operations1, Value) ->
@@ -43,7 +43,7 @@ spec(Operations1, Value) ->
           io:format("Operations = ~p~n", [Operations]),
           io:format("GroupedByKey = ~p~n", [GroupedByKey])
         end,
-        nestedSpec(Type, Ops, map_rr:get({Key,Type}, Value))
+        nestedSpec(Type, Ops, antidote_crdt_map_rr:get({Key,Type}, Value))
       )
     end,
   conjunction(
@@ -65,10 +65,10 @@ nestedOps(Operations, {_,Type}=Key) ->
     end,
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
-nestedSpec(map_rr, Ops, Value) -> spec(Ops, Value);
-% nestedSpec(set_aw, Ops) -> prop_set_aw:spec(Ops);
-% nestedSpec(counter_fat, Ops) -> prop_counter_fat:spec(Ops);
-nestedSpec(set_rw, Ops, Value) ->
+nestedSpec(antidote_crdt_map_rr, Ops, Value) -> spec(Ops, Value);
+% nestedSpec(antidote_crdt_set_aw, Ops) -> prop_set_aw:spec(Ops);
+% nestedSpec(antidote_crdt_counter_fat, Ops) -> prop_counter_fat:spec(Ops);
+nestedSpec(antidote_crdt_set_rw, Ops, Value) ->
   (crdt_properties:spec_to_partial(fun prop_set_rw:spec/1))(Ops, Value).
 
 % normalizes operations (update-lists into single update-operations)
@@ -114,14 +114,14 @@ removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
 nestedOp(Size) ->
   oneof(
     [
-      % {{key(), counter_fat}, prop_counter_fat:op()},
-      % {{key(), set_aw}, prop_set_aw:op()},
-      {{key(), set_rw}, prop_set_rw:op()}
+      % {{key(), antidote_crdt_counter_fat}, prop_counter_fat:op()},
+      % {{key(), antidote_crdt_set_aw}, prop_set_aw:op()},
+      {{key(), antidote_crdt_set_rw}, prop_set_rw:op()}
     ]
     ++
     if
       Size > 1 ->
-        [{{key(), map_rr}, ?LAZY(op(Size div 2))}];
+        [{{key(), antidote_crdt_map_rr}, ?LAZY(op(Size div 2))}];
       true -> []
     end
     ).
@@ -129,7 +129,7 @@ nestedOp(Size) ->
 typed_key() -> {key(), crdt_type()}.
 
 crdt_type() ->
-  oneof([set_rw, map_rr]).
+  oneof([antidote_crdt_set_rw, antidote_crdt_map_rr]).
 
 key() ->
   oneof([key1,key2,key3,key4]).

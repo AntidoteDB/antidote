@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% counter_fat: A convergent, replicated, operation based Fat Counter
+%% antidote_crdt_counter_fat: A convergent, replicated, operation based Fat Counter
 %% The state of this fat counter is list of pairs where each pair is an integer
 %% and a related token.
 %% Basically when the counter recieves {increment, N} or {decrement, N} it generates
@@ -28,7 +28,7 @@
 %% functionaility, On reset(), all seen tokens are removed.
 %% link to paper: http://haslab.uminho.pt/cbm/files/a3-younes.pdf
 
--module(counter_fat).
+-module(antidote_crdt_counter_fat).
 
 -behaviour(antidote_crdt).
 

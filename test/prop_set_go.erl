@@ -28,7 +28,7 @@
 
 
 prop_set_go_spec() ->
- crdt_properties:crdt_satisfies_spec(set_go, fun op/0, fun spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_set_go, fun op/0, fun spec/1).
 
 
 spec(Operations) ->

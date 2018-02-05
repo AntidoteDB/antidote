@@ -28,7 +28,7 @@
 
 
 prop_register_lww_spec() ->
- crdt_properties:crdt_satisfies_spec(register_lww, fun op/0, fun spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_register_lww, fun op/0, fun spec/1).
 
 
 spec(Operations) ->

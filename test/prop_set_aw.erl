@@ -28,7 +28,7 @@
 
 
 prop_set_aw_spec() ->
- crdt_properties:crdt_satisfies_spec(set_aw, fun op/0, fun spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_set_aw, fun op/0, fun spec/1).
 
 
 spec(Operations1) ->

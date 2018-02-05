@@ -18,13 +18,13 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module register_lww - An operation based last-writer-wins register
+%% @doc module antidote_crdt_register_lww - An operation based last-writer-wins register
 %% Each operation is assigned a timestamp, which is guaranteed to be greater than
 %% the current timestamp.
 %% The current value of the register is the value assigned with the greatest timestamp
 %% or the empty binary if there was no assignment yet.
 
--module(register_lww).
+-module(antidote_crdt_register_lww).
 
 -behaviour(antidote_crdt).
 
@@ -43,11 +43,11 @@
           require_state_downstream/1
         ]).
 
--export_type([register_lww/0, register_lww_op/0]).
+-export_type([antidote_crdt_register_lww/0, antidote_crdt_register_lww_op/0]).
 
--opaque register_lww() :: {non_neg_integer(), term()}.
+-opaque antidote_crdt_register_lww() :: {non_neg_integer(), term()}.
 
--type register_lww_op() :: {assign, term(), non_neg_integer()}  | {assign, term()}.
+-type antidote_crdt_register_lww_op() :: {assign, term(), non_neg_integer()}  | {assign, term()}.
 
 new() ->
   {0, <<>>}.
@@ -55,7 +55,7 @@ new() ->
 value({_Time, Val}) ->
     Val.
 
--spec downstream(register_lww_op(), register_lww()) -> {ok, term()}.
+-spec downstream(antidote_crdt_register_lww_op(), antidote_crdt_register_lww()) -> {ok, term()}.
 downstream({assign, Value, Time}, {OldTime, _OldValue}) ->
   {ok, {max(Time, OldTime + 1), Value}};
 downstream({assign, Value}, State) ->

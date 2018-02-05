@@ -27,7 +27,7 @@
 -export([prop_flag_ew_spec/0, op/0, spec/1]).
 
 prop_flag_ew_spec() ->
- crdt_properties:crdt_satisfies_spec(flag_ew, fun op/0, fun spec/1).
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_flag_ew, fun op/0, fun spec/1).
 
 
 spec(Operations) ->

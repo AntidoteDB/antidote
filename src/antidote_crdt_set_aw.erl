@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% crdt_set_aw: A convergent, replicated, operation based observe remove set
+%% crdt_antidote_crdt_set_aw: A convergent, replicated, operation based observe remove set
 %%
 %% Copyright (c) 2007-2012 Basho Technologies, Inc.  All Rights Reserved.
 %%
@@ -31,7 +31,7 @@
 %% remove_all that removes a list of elements from the set; update, that contains
 %% a list of previous four commands.
 %%
-%% This file is adapted from riak_dt_set_aw, a state-based implementation of
+%% This file is adapted from riak_dt_antidote_crdt_set_aw, a state-based implementation of
 %% Observed-Remove Set.
 %% The changes are as follows:
 %% 1. `generate_downstream/3' is added, as this is necessary for op-based CRDTs.
@@ -42,7 +42,7 @@
 %% Convergent and Commutative Replicated Data Types. http://hal.upmc.fr/inria-00555588/
 %%
 %% @end
--module(set_aw).
+-module(antidote_crdt_set_aw).
 
 -include("antidote_crdt.hrl").
 
@@ -65,12 +65,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([set_aw/0, binary_set_aw/0, set_aw_op/0]).
--opaque set_aw() :: orddict:orddict(member(), tokens()).
+-export_type([antidote_crdt_set_aw/0, binary_antidote_crdt_set_aw/0, antidote_crdt_set_aw_op/0]).
+-opaque antidote_crdt_set_aw() :: orddict:orddict(member(), tokens()).
 
--type binary_set_aw() :: binary(). %% A binary that from_binary/1 will operate on.
+-type binary_antidote_crdt_set_aw() :: binary(). %% A binary that from_binary/1 will operate on.
 
--type set_aw_op() ::
+-type antidote_crdt_set_aw_op() ::
       {add, member()}
     | {remove, member()}
     | {add_all, [member()]}
@@ -88,12 +88,12 @@
 -type token() :: binary().
 -type tokens() :: [token()].
 
--spec new() -> set_aw().
+-spec new() -> antidote_crdt_set_aw().
 new() ->
     orddict:new().
 
-%% @doc return all existing elements in the `set_aw()'.
--spec value(set_aw()) -> [member()].
+%% @doc return all existing elements in the `antidote_crdt_set_aw()'.
+-spec value(antidote_crdt_set_aw()) -> [member()].
 value(Set_aw) ->
     orddict:fetch_keys(Set_aw).
 
@@ -101,8 +101,8 @@ value(Set_aw) ->
 %% If the operation is add or add_all, generate unique tokens for
 %% each element and fetches the current supporting tokens.
 %% If the operation is remove or remove_all, fetches current
-%% supporting tokens of these elements existing in the `set_aw()'.
--spec downstream(set_aw_op(), set_aw()) -> {ok, downstream_op()}.
+%% supporting tokens of these elements existing in the `antidote_crdt_set_aw()'.
+-spec downstream(antidote_crdt_set_aw_op(), antidote_crdt_set_aw()) -> {ok, downstream_op()}.
 downstream({add, Elem}, Set_aw) ->
     downstream({add_all, [Elem]}, Set_aw);
 downstream({add_all, Elems}, Set_aw) ->
@@ -124,12 +124,12 @@ downstream({reset, {}}, Set_aw) ->
     % reset is like removing all elements
     downstream({remove_all, value(Set_aw)}, Set_aw).
 
-%% @doc apply downstream operations and update an `set_aw()'.
--spec update(downstream_op(), set_aw()) -> {ok, set_aw()}.
+%% @doc apply downstream operations and update an `antidote_crdt_set_aw()'.
+-spec update(downstream_op(), antidote_crdt_set_aw()) -> {ok, antidote_crdt_set_aw()}.
 update(DownstreamOp, Set_aw) ->
     {ok, apply_downstreams(DownstreamOp, Set_aw)}.
 
--spec equal(set_aw(), set_aw()) -> boolean().
+-spec equal(antidote_crdt_set_aw(), antidote_crdt_set_aw()) -> boolean().
 equal(Set_awA, Set_awB) ->
     % Everything inside is ordered, so this should work
     Set_awA == Set_awB.
@@ -138,7 +138,7 @@ equal(Set_awA, Set_awB) ->
 -define(TAG, ?DT_ORSET_TAG).
 -define(V1_VERS, 1).
 
--spec to_binary(set_aw()) -> binary_set_aw().
+-spec to_binary(antidote_crdt_set_aw()) -> binary_antidote_crdt_set_aw().
 to_binary(Set_aw) ->
     %% @TODO something smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Set_aw))/binary>>.
@@ -176,7 +176,7 @@ create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, Tokens}|S
             create_downstreams(CreateDownstream, ElemsRest, Set_aw, [DownstreamOp|DownstreamOps])
     end.
 
-%% @private apply a list of downstream ops to a given set_aw
+%% @private apply a list of downstream ops to a given antidote_crdt_set_aw
 apply_downstreams([], Set_aw) ->
     Set_aw;
 apply_downstreams(Ops, []) ->

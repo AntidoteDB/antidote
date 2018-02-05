@@ -18,9 +18,9 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc module set_go - An operation based grow-only set
+%% @doc module antidote_crdt_set_go - An operation based grow-only set
 
--module(set_go).
+-module(antidote_crdt_set_go).
 
 -behaviour(antidote_crdt).
 
@@ -39,11 +39,11 @@
           require_state_downstream/1
         ]).
 
--type set_go() :: ordsets:ordset(member()).
--type set_go_op() :: {add, member()}
+-type antidote_crdt_set_go() :: ordsets:ordset(member()).
+-type antidote_crdt_set_go_op() :: {add, member()}
                  | {add_all, [member()]}.
 
--type set_go_effect() :: set_go().
+-type antidote_crdt_set_go_effect() :: antidote_crdt_set_go().
 -type member() :: term().
 
 new() ->
@@ -52,7 +52,7 @@ new() ->
 value(Set) ->
     Set.
 
--spec downstream(set_go_op(), set_go()) -> {ok, set_go_effect()}.
+-spec downstream(antidote_crdt_set_go_op(), antidote_crdt_set_go()) -> {ok, antidote_crdt_set_go_effect()}.
 downstream({add, Elem}, _State) ->
   {ok, ordsets:from_list([Elem])};
 downstream({add_all, Elems}, _State) ->
@@ -81,6 +81,6 @@ all_test() ->
     S0 = new(),
     {ok, Downstream} = downstream({add, a}, S0),
     {ok, S1} = update(Downstream, S0),
-    ?assertEqual(1, riak_dt_set_go:stat(element_count, S1)).
+    ?assertEqual(1, riak_dt_antidote_crdt_set_go:stat(element_count, S1)).
 
 -endif.
