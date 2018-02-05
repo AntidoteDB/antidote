@@ -5,4 +5,3 @@ TEST-file_"antidote_crdt.app".xml
 src/*.swp
 test/*.swp
 *.beam
-TEST-file_antidote_crdt.app.xml
