@@ -46,21 +46,21 @@
 -define(TAG, 77).
 -define(V1_VERS, 1).
 
--export_type([antidote_crdt_flag_ew/0]).
--opaque antidote_crdt_flag_ew() :: antidote_crdt_flag_helper:flag().
+-export_type([flag_ew/0]).
+-opaque flag_ew() :: antidote_crdt_flag_helper:flag().
 
 %% SeenTokens, NewTokens
 -type downstream_op() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
 
--spec new() -> antidote_crdt_flag_ew().
+-spec new() -> flag_ew().
 new() ->
   [].
 
--spec value(antidote_crdt_flag_ew()) -> boolean().
+-spec value(flag_ew()) -> boolean().
 value(EnableTokens) ->
   EnableTokens =/= [].
 
--spec downstream(antidote_crdt_flag_helper:op(), antidote_crdt_flag_ew()) -> {ok, downstream_op()}.
+-spec downstream(antidote_crdt_flag_helper:op(), flag_ew()) -> {ok, downstream_op()}.
 downstream({disable, {}}, Tokens) ->
   {ok, {Tokens, []}};
 downstream({enable, {}}, Tokens) ->
@@ -68,16 +68,16 @@ downstream({enable, {}}, Tokens) ->
 downstream({reset, {}}, Tokens) ->
   {ok, {Tokens, []}}.
 
--spec update(downstream_op(), antidote_crdt_flag_ew()) -> {ok, antidote_crdt_flag_ew()}.
+-spec update(downstream_op(), flag_ew()) -> {ok, flag_ew()}.
   update({SeenTokens, NewTokens}, CurrentTokens) ->
     FinalTokens = (CurrentTokens ++ NewTokens) -- SeenTokens,
     {ok, FinalTokens}.
 
--spec equal(antidote_crdt_flag_ew(), antidote_crdt_flag_ew()) -> boolean().
+-spec equal(flag_ew(), flag_ew()) -> boolean().
   equal(Flag1, Flag2) ->
     Flag1 == Flag2. % Everything inside is ordered, so this should work
 
--spec to_binary(antidote_crdt_flag_ew()) -> antidote_crdt_flag_helper:binary_flag().
+-spec to_binary(flag_ew()) -> antidote_crdt_flag_helper:binary_flag().
   to_binary(Flag) ->
     %% @TODO something smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Flag))/binary>>.

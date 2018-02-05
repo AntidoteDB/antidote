@@ -46,21 +46,21 @@
 -define(TAG, 77).
 -define(V1_VERS, 1).
 
--export_type([antidote_crdt_flag_dw/0]).
--opaque antidote_crdt_flag_dw() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
+-export_type([flag_dw/0]).
+-opaque flag_dw() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
 
 %% SeenTokens, NewEnableTokens, NewDisableTokens
 -type downstream_op() :: {antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens(), antidote_crdt_flag_helper:tokens()}.
 
--spec new() -> antidote_crdt_flag_dw().
+-spec new() -> flag_dw().
 new() ->
   {[], []}.
 
--spec value(antidote_crdt_flag_dw()) -> boolean().
+-spec value(flag_dw()) -> boolean().
 value({EnableTokens, DisableTokens}) ->
   DisableTokens == [] andalso EnableTokens =/= [].
 
--spec downstream(antidote_crdt_flag_helper:op(), antidote_crdt_flag_dw()) -> {ok, downstream_op()}.
+-spec downstream(antidote_crdt_flag_helper:op(), flag_dw()) -> {ok, downstream_op()}.
 downstream({disable, {}}, {EnableTokens, DisableTokens}) ->
   {ok, {EnableTokens ++ DisableTokens, [], [antidote_crdt_flag_helper:unique()]}};
 downstream({enable, {}}, {EnableTokens, DisableTokens}) ->
@@ -68,17 +68,17 @@ downstream({enable, {}}, {EnableTokens, DisableTokens}) ->
 downstream({reset, {}}, {EnableTokens, DisableTokens}) ->
   {ok, {EnableTokens ++ DisableTokens, [], []}}.
 
--spec update(downstream_op(), antidote_crdt_flag_dw()) -> {ok, antidote_crdt_flag_dw()}.
+-spec update(downstream_op(), flag_dw()) -> {ok, flag_dw()}.
   update({SeenTokens, NewEnableTokens, NewDisableTokens}, {CurrentEnableTokens, CurrentDisableTokens}) ->
     FinalEnableTokens = (CurrentEnableTokens ++ NewEnableTokens) -- SeenTokens,
     FinalDisableTokens = (CurrentDisableTokens ++ NewDisableTokens) -- SeenTokens,
     {ok, {FinalEnableTokens, FinalDisableTokens}}.
 
--spec equal(antidote_crdt_flag_dw(), antidote_crdt_flag_dw()) -> boolean().
+-spec equal(flag_dw(), flag_dw()) -> boolean().
   equal(Flag1, Flag2) ->
     Flag1 == Flag2.
 
--spec to_binary(antidote_crdt_flag_dw()) -> antidote_crdt_flag_helper:binary_flag().
+-spec to_binary(flag_dw()) -> antidote_crdt_flag_helper:binary_flag().
   to_binary(Flag) ->
     %% @TODO something smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Flag))/binary>>.
