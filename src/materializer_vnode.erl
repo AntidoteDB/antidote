@@ -63,7 +63,10 @@
          handle_handoff_data/2,
          encode_handoff_item/2,
          handle_coverage/4,
-         handle_exit/3]).
+         handle_exit/3,
+         handle_overload_command/3,
+         handle_overload_info/2
+  ]).
 
 -type op_and_id() :: {non_neg_integer(), #clocksi_payload{}}.
 -record(state, {
@@ -246,6 +249,11 @@ delete(State=#state{ops_cache=_OpsCache}) ->
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) ->
     {stop, not_implemented, State}.
+
+handle_overload_command(_, _, _) ->
+    ok.
+handle_overload_info(_, _) ->
+    ok.
 
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.

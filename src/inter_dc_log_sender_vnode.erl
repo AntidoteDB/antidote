@@ -51,7 +51,9 @@
   encode_handoff_item/2,
   is_empty/1,
   terminate/2,
-  delete/1]).
+  delete/1,
+  handle_overload_command/3,
+  handle_overload_info/2]).
 
 %% Vnode state
 -record(state, {
@@ -155,6 +157,10 @@ delete(State) ->
 terminate(_Reason, State) ->
     _ = del_timer(State),
   ok.
+handle_overload_command(_, _, _) ->
+    ok.
+handle_overload_info(_, _) ->
+    ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 
