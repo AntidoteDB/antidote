@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_flag_dw).
+-module(prop_flag_dw).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").

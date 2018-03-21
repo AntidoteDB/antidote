@@ -1,7 +1,7 @@
 %% -*- coding: utf-8 -*-
 %% --------------------------------------------------------------------------
 %%
-%% crdt_bcounter: A convergent, replicated, operation based bounded counter.
+%% antidote_crdt_counter_b: A convergent, replicated, operation-based bounded counter.
 %%
 %% --------------------------------------------------------------------------
 
@@ -12,7 +12,7 @@
 %% All operations on this CRDT are monotonic and do not keep extra tombstones.
 %% @end
 
--module(antidote_crdt_bcounter).
+-module(antidote_crdt_counter_b).
 
 -behaviour(antidote_crdt).
 
@@ -40,23 +40,23 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([bcounter/0, binary_bcounter/0, bcounter_op/0, id/0]).
+-export_type([antidote_crdt_counter_b/0, binary_antidote_crdt_counter_b/0, antidote_crdt_counter_b_op/0, id/0]).
 
--opaque bcounter() :: {orddict:orddict(), orddict:orddict()}.
--type binary_bcounter() :: binary().
--type bcounter_op() :: bcounter_anon_op() | bcounter_src_op().
--type bcounter_anon_op() :: {transfer, {pos_integer(), id(), id()}} |
+-opaque antidote_crdt_counter_b() :: {orddict:orddict(), orddict:orddict()}.
+-type binary_antidote_crdt_counter_b() :: binary().
+-type antidote_crdt_counter_b_op() :: antidote_crdt_counter_b_anon_op() | antidote_crdt_counter_b_src_op().
+-type antidote_crdt_counter_b_anon_op() :: {transfer, {pos_integer(), id(), id()}} |
     {increment, {pos_integer(), id()}} | {decrement, {pos_integer(), id()}}.
--type bcounter_src_op() :: {bcounter_anon_op(), id()}.
+-type antidote_crdt_counter_b_src_op() :: {antidote_crdt_counter_b_anon_op(), id()}.
 -opaque id() :: term. %% A replica's identifier.
 
-%% @doc Return a new, empty `bcounter()'.
--spec new() -> bcounter().
+%% @doc Return a new, empty `antidote_crdt_counter_b()'.
+-spec new() -> antidote_crdt_counter_b().
 new() ->
     {orddict:new(), orddict:new()}.
 
-%% @doc Return the available permissions of replica `Id' in a `bcounter()'.
--spec localPermissions(id(), bcounter()) -> non_neg_integer().
+%% @doc Return the available permissions of replica `Id' in a `antidote_crdt_counter_b()'.
+-spec localPermissions(id(), antidote_crdt_counter_b()) -> non_neg_integer().
 localPermissions(Id, {P, D}) ->
     Received = lists:foldl(
                  fun(
@@ -88,8 +88,8 @@ localPermissions(Id, {P, D}) ->
             Received - Granted
     end.
 
-%% @doc Return the total available permissions in a `bcounter()'.
--spec permissions(bcounter()) -> non_neg_integer().
+%% @doc Return the total available permissions in a `antidote_crdt_counter_b()'.
+-spec permissions(antidote_crdt_counter_b()) -> non_neg_integer().
 permissions({P, D}) ->
     TotalIncrements = orddict:fold(
                         fun
@@ -105,8 +105,8 @@ permissions({P, D}) ->
                         end, 0, D),
     TotalIncrements - TotalDecrements.
 
-%% @doc Return the read value of a given `bcounter()', itself.
--spec value(bcounter()) -> bcounter().
+%% @doc Return the read value of a given `antidote_crdt_counter_b()', itself.
+-spec value(antidote_crdt_counter_b()) -> antidote_crdt_counter_b().
 value(Counter) -> Counter.
 
 %% @doc Generate a downstream operation.
@@ -114,13 +114,13 @@ value(Counter) -> Counter.
 %% which specify the operation and amount, or `{transfer, pos_integer(), id()}'
 %% that additionally specifies the target replica.
 %% The second parameter is an `actor()' who identifies the source replica,
-%% and the third parameter is a `bcounter()' which holds the current snapshot.
+%% and the third parameter is a `antidote_crdt_counter_b()' which holds the current snapshot.
 %%
 %% Return a tuple containing the operation and source replica.
 %% This operation fails and returns `{error, no_permissions}'
 %% if it tries to consume resources unavailable to the source replica
 %% (which prevents logging of forbidden attempts).
--spec downstream(bcounter_op(), bcounter()) -> {ok, term()} | {error, no_permissions}.
+-spec downstream(antidote_crdt_counter_b_op(), antidote_crdt_counter_b()) -> {ok, term()} | {error, no_permissions}.
 downstream({increment, {V, Actor}}, _Counter) when is_integer(V), V > 0 ->
     {ok, {{increment, V}, Actor}};
 downstream({decrement, {V, Actor}}, Counter) when is_integer(V), V > 0 ->
@@ -134,11 +134,11 @@ generate_downstream_check(Op, Actor, Counter, V) ->
        Available < V -> {error, no_permissions}
     end.
 
-%% @doc Update a `bcounter()' with a downstream operation,
+%% @doc Update a `antidote_crdt_counter_b()' with a downstream operation,
 %% usually created with `generate_downstream'.
 %%
-%% Return the resulting `bcounter()' after applying the operation.
--spec update(term(), bcounter()) -> {ok, bcounter()}.
+%% Return the resulting `antidote_crdt_counter_b()' after applying the operation.
+-spec update(term(), antidote_crdt_counter_b()) -> {ok, antidote_crdt_counter_b()}.
 update({{increment, V}, Id}, Counter) ->
     increment(Id, V, Counter);
 update({{decrement, V}, Id}, Counter) ->
@@ -158,12 +158,12 @@ decrement(Id, V, {P, D}) ->
 transfer(From, To, V, {P, D}) ->
     {ok, {orddict:update_counter({From, To}, V, P), D}}.
 
-%% doc Return the binary representation of a `bcounter()'.
--spec to_binary(bcounter()) -> binary().
+%% doc Return the binary representation of a `antidote_crdt_counter_b()'.
+-spec to_binary(antidote_crdt_counter_b()) -> binary().
 to_binary(C) -> term_to_binary(C).
 
-%% doc Return a `bcounter()' from its binary representation.
--spec from_binary(binary()) -> {ok, bcounter()}.
+%% doc Return a `antidote_crdt_counter_b()' from its binary representation.
+-spec from_binary(binary()) -> {ok, antidote_crdt_counter_b()}.
 from_binary(<<B/binary>>) -> {ok, binary_to_term(B)}.
 
 %% @doc The following operation verifies
@@ -199,7 +199,7 @@ apply_op(Op, Counter) ->
     {ok, NewCounter} = update(OP_DS, Counter),
     NewCounter.
 
-%% Tests creating a new `bcounter()'.
+%% Tests creating a new `antidote_crdt_counter_b()'.
 new_test() ->
     ?assertEqual({[], []}, new()).
 
@@ -271,22 +271,22 @@ transfer_test() ->
 
 %% Tests the function `value()'.
 value_test() ->
-    %% Test on `bcounter()' resulting from applying all kinds of operation.
+    %% Test on `antidote_crdt_counter_b()' resulting from applying all kinds of operation.
     Counter0 = new(),
     Counter1 = apply_op({increment, {10, r1}}, Counter0),
     Counter2 = apply_op({decrement, {6, r1}}, Counter1),
     Counter3 = apply_op({transfer, {2, r2, r1}}, Counter2),
-    %% Assert `value()' returns `bcounter()' itself.
+    %% Assert `value()' returns `antidote_crdt_counter_b()' itself.
     ?assertEqual(Counter3, value(Counter3)).
 
 %% Tests serialization functions `to_binary()' and `from_binary()'.
 binary_test() ->
-    %% Test on `bcounter()' resulting from applying all kinds of operation.
+    %% Test on `antidote_crdt_counter_b()' resulting from applying all kinds of operation.
     Counter0 = new(),
     Counter1 = apply_op({increment, {10, r1}}, Counter0),
     Counter2 = apply_op({decrement, {6, r1}}, Counter1),
     Counter3 = apply_op({transfer, {2, r2, r1}}, Counter2),
-    %% Assert marshaling and unmarshaling holds the same `bcounter()'.
+    %% Assert marshaling and unmarshaling holds the same `antidote_crdt_counter_b()'.
     B = to_binary(Counter3),
     ?assertEqual({ok, Counter3}, from_binary(B)).
 

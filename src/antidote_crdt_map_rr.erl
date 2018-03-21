@@ -241,13 +241,13 @@ is_bottom(Map) ->
 reset1_test() ->
   Map0 = new(),
   % DC1: a.incr
-  {ok, Incr1} = downstream({update, {{a, antidote_crdt_fat_counter}, {increment, 1}}}, Map0),
+  {ok, Incr1} = downstream({update, {{a, antidote_crdt_counter_fat}, {increment, 1}}}, Map0),
   {ok, Map1a} = update(Incr1, Map0),
   % DC1 reset
   {ok, Reset1} = downstream({reset, {}}, Map1a),
   {ok, Map1b} = update(Reset1, Map1a),
   % DC2 a.remove
-  {ok, Remove1} = downstream({remove, {a, antidote_crdt_fat_counter}}, Map0),
+  {ok, Remove1} = downstream({remove, {a, antidote_crdt_counter_fat}}, Map0),
   {ok, Map2a} = update(Remove1, Map0),
   % DC2 --> DC1
   {ok, Map1c} = update(Remove1, Map1b),
@@ -255,7 +255,7 @@ reset1_test() ->
   {ok, Reset2} = downstream({reset, {}}, Map1c),
   {ok, Map1d} = update(Reset2, Map1c),
   % DC1: a.incr
-  {ok, Incr2} = downstream({update, {{a, antidote_crdt_fat_counter}, {increment, 2}}}, Map1d),
+  {ok, Incr2} = downstream({update, {{a, antidote_crdt_counter_fat}, {increment, 2}}}, Map1d),
   {ok, Map1e} = update(Incr2, Map1d),
 
   io:format("Map0 = ~p~n", [Map0]),
@@ -272,12 +272,12 @@ reset1_test() ->
   io:format("Map1e = ~p~n", [Map1e]),
 
   ?assertEqual([], value(Map0)),
-  ?assertEqual([{{a, antidote_crdt_fat_counter}, 1}], value(Map1a)),
+  ?assertEqual([{{a, antidote_crdt_counter_fat}, 1}], value(Map1a)),
   ?assertEqual([], value(Map1b)),
   ?assertEqual([], value(Map2a)),
   ?assertEqual([], value(Map1c)),
   ?assertEqual([], value(Map1d)),
-  ?assertEqual([{{a, antidote_crdt_fat_counter}, 2}], value(Map1e)).
+  ?assertEqual([{{a, antidote_crdt_counter_fat}, 2}], value(Map1e)).
 
 
 reset2_test() ->
@@ -375,14 +375,14 @@ remove_test() ->
   ?assertEqual([], value(M1)),
   ?assertEqual(true, is_bottom(M1)),
   M2 = upd({update, [
-      {{<<"a">>, antidote_crdt_orset}, {add, <<"1">>}},
-      {{<<"b">>, antidote_crdt_mvreg}, {assign, <<"2">>}},
-      {{<<"c">>, antidote_crdt_fat_counter}, {increment, 1}}
+      {{<<"a">>, antidote_crdt_set_aw}, {add, <<"1">>}},
+      {{<<"b">>, antidote_crdt_register_mv}, {assign, <<"2">>}},
+      {{<<"c">>, antidote_crdt_counter_fat}, {increment, 1}}
     ]}, M1),
   ?assertEqual([
-      {{<<"a">>, antidote_crdt_orset}, [<<"1">>]},
-      {{<<"b">>, antidote_crdt_mvreg}, [<<"2">>]},
-      {{<<"c">>, antidote_crdt_fat_counter}, 1}
+      {{<<"a">>, antidote_crdt_set_aw}, [<<"1">>]},
+      {{<<"b">>, antidote_crdt_register_mv}, [<<"2">>]},
+      {{<<"c">>, antidote_crdt_counter_fat}, 1}
   ], value(M2)),
   ?assertEqual(false, is_bottom(M2)),
   M3 = upd({reset, {}}, M2),

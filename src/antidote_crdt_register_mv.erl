@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_dt_mvreg: A DVVSet based multi value register
+%% riak_dt_antidote_crdt_register_mv: A DVVSet based multi value register
 %%
 %% Copyright (c) 2007-2013 Basho Technologies, Inc.  All Rights Reserved.
 %%
@@ -31,7 +31,7 @@
 %%
 %% @end
 
--module(antidote_crdt_mvreg).
+-module(antidote_crdt_register_mv).
 
 -behaviour(antidote_crdt).
 
@@ -53,34 +53,34 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([mvreg/0, mvreg_op/0]).
+-export_type([antidote_crdt_register_mv/0, antidote_crdt_register_mv_op/0]).
 
 %% TODO: make opaque
--type mvreg() :: [{term(), uniqueToken()}].
+-type antidote_crdt_register_mv() :: [{term(), uniqueToken()}].
 -type uniqueToken() :: term().
--type mvreg_effect() ::
+-type antidote_crdt_register_mv_effect() ::
     {Value::term(), uniqueToken(), Overridden::[uniqueToken()]}
   | {reset, Overridden::[uniqueToken()]}.
 
 
--type mvreg_op() :: {assign, term()}.
+-type antidote_crdt_register_mv_op() :: {assign, term()}.
 
 
-%% @doc Create a new, empty `mvreg()'
--spec new() -> mvreg().
+%% @doc Create a new, empty `antidote_crdt_register_mv()'
+-spec new() -> antidote_crdt_register_mv().
 new() ->
     [].
 
 
 
-%% @doc The values of this `mvreg()'. Multiple values can be returned,
+%% @doc The values of this `antidote_crdt_register_mv()'. Multiple values can be returned,
 %% since there can be diverged value in this register.
--spec value(mvreg()) -> [term()].
+-spec value(antidote_crdt_register_mv()) -> [term()].
 value(MVReg) ->
     [V || {V, _} <- MVReg].
 
 
--spec downstream(mvreg_op(), mvreg()) -> {ok, mvreg_effect()}.
+-spec downstream(antidote_crdt_register_mv_op(), antidote_crdt_register_mv()) -> {ok, antidote_crdt_register_mv_effect()}.
 downstream({assign, Value}, MVReg) ->
     Token = unique(),
     Overridden = [Tok || {_, Tok} <- MVReg],
@@ -94,7 +94,7 @@ unique() ->
     crypto:strong_rand_bytes(20).
 
 
--spec update(mvreg_effect(), mvreg()) -> {ok, mvreg()}.
+-spec update(antidote_crdt_register_mv_effect(), antidote_crdt_register_mv()) -> {ok, antidote_crdt_register_mv()}.
 update({Value, Token, Overridden}, MVreg) ->
     % remove overridden values
     MVreg2 = [{V, T} || {V, T} <- MVreg, not lists:member(T, Overridden)],
@@ -110,19 +110,19 @@ insert_sorted(A, [X|Xs]) when A < X -> [A, X|Xs];
 insert_sorted(A, [X|Xs]) -> [X|insert_sorted(A, Xs)].
 
 
--spec equal(mvreg(), mvreg()) -> boolean().
+-spec equal(antidote_crdt_register_mv(), antidote_crdt_register_mv()) -> boolean().
 equal(MVReg1, MVReg2) ->
     MVReg1 == MVReg2.
 
 -define(TAG, 85).
 -define(V1_VERS, 1).
 
--spec to_binary(mvreg()) -> binary().
+-spec to_binary(antidote_crdt_register_mv()) -> binary().
 to_binary(MVReg) ->
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(MVReg))/binary>>.
 
-%% @doc Decode binary `mvreg()'
--spec from_binary(binary()) -> {ok, mvreg()} | {error, term()}.
+%% @doc Decode binary `antidote_crdt_register_mv()'
+-spec from_binary(binary()) -> {ok, antidote_crdt_register_mv()} | {error, term()}.
 from_binary(<<?TAG:8/integer, ?V1_VERS:8/integer, Bin/binary>>) ->
     {ok, riak_dt:from_binary(Bin)}.
 

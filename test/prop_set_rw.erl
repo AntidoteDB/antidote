@@ -18,31 +18,33 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_orset).
+-module(prop_set_rw).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_orset_spec/0, set_op/0, add_wins_set_spec/1]).
+-export([prop_set_rw_spec/0, op/0, spec/1]).
 
 
-prop_orset_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_orset, fun set_op/0, fun add_wins_set_spec/1).
+prop_set_rw_spec() ->
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_set_rw, fun op/0, fun spec/1).
 
 
-add_wins_set_spec(Operations1) ->
-  Operations = lists:flatmap(fun normalizeOperation/1, Operations1),
-  lists:usort(
-    % all X,
-    [X ||
-      % such that there is an add operation for X
-      {AddClock, {add, X}} <- Operations,
-      % and there is no remove operation after the add
-      [] == [Y || {RemoveClock, {remove, Y}} <- Operations, X == Y, crdt_properties:clock_le(AddClock, RemoveClock)],
-      % and there is no reset operation after the add
-      [] == [{reset, {}} || {ResetClock, {reset, {}}} <- Operations, crdt_properties:clock_le(AddClock, ResetClock)]
-    ]).
+spec(Operations1) ->
+  Operations2 = crdt_properties:filter_resets(Operations1),
+  Operations = lists:flatmap(fun normalizeOperation/1, Operations2),
+  RemoveClocks =
+    fun(X) ->
+      [Clock || {Clock, {remove, Y}} <- Operations, X == Y]
+    end,
+  Removed =
+    fun(X) ->
+      % there is a remove for X which is not followed by an add
+      lists:any(fun(RemClock) -> [] == [Y || {AddClock, {add, Y}} <- Operations, X == Y, crdt_properties:clock_le(RemClock, AddClock)] end, RemoveClocks(X))
+    end,
+  Added = [X || {_, {add, X}} <- Operations],
+  [X || X <- lists:usort(Added), not Removed(X)].
 
 % transforms add_all and remove_all into single operations
 normalizeOperation({Clock, {add_all, Elems}}) ->
@@ -53,7 +55,7 @@ normalizeOperation(X) ->
   [X].
 
 % generates a random counter operation
-set_op() ->
+op() ->
   oneof([
     {add, set_element()},
     {add_all, list(set_element())},

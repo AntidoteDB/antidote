@@ -18,14 +18,12 @@
 %%
 %% -------------------------------------------------------------------
 
-%% antidote_crdt_pncounter: A convergent, replicated, operation
+%% antidote_crdt_counter_pn: A convergent, replicated, operation
 %% based PN-Counter
 
--module(antidote_crdt_counter).
+-module(antidote_crdt_counter_pn).
 
 -behaviour(antidote_crdt).
-
--include("antidote_crdt.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -43,19 +41,25 @@
           require_state_downstream/1
         ]).
 
-%% @doc Create a new, empty 'pncounter()'
+
+-type state() :: integer().
+-type op() :: {increment, integer()} |
+              {decrement, integer()}.
+-type effect() :: integer().
+
+%% @doc Create a new, empty 'antidote_crdt_counter_pn'
 new() ->
     0.
 
-%% @doc Create 'pncounter()' with initial value
--spec new(integer()) -> pncounter().
+%% @doc Create 'antidote_crdt_counter_pn' with initial value
+-spec new(integer()) -> state().
 new(Value) when is_integer(Value) ->
     Value;
 new(_) ->
     new().
 
 %% @doc The single, total value of a `pncounter()'
--spec value(pncounter()) -> integer().
+-spec value(state()) -> integer().
 value(PNCnt) when is_integer(PNCnt) ->
     PNCnt.
 
@@ -63,7 +67,7 @@ value(PNCnt) when is_integer(PNCnt) ->
 %% The first parameter is either `increment' or `decrement' or the two tuples
 %% `{increment, pos_integer()}' or `{decrement, pos_integer()}'. The second parameter
 %%  is the pncounter (this parameter is not actually used).
--spec downstream(pncounter_update(), pncounter()) -> {ok, pncounter_effect()}.
+-spec downstream(op(), state()) -> {ok, effect()}.
 downstream(increment, _PNCnt) ->
     {ok, 1};
 downstream(decrement, _PNCnt) ->
@@ -81,17 +85,17 @@ downstream({decrement, By}, _PNCnt) when is_integer(By) ->
 %% The 2nd argument is the `pncounter()' to update.
 %%
 %% returns the updated `pncounter()'
--spec update(pncounter_effect(), pncounter()) -> {ok, pncounter()}.
+-spec update(effect(), state()) -> {ok, state()}.
 update(N, PNCnt) ->
     {ok, PNCnt + N}.
 
 %% @doc Compare if two `pncounter()' are equal. Only returns `true()' if both
 %% of their positive and negative entries are equal.
--spec equal(pncounter(), pncounter()) -> boolean().
+-spec equal(state(), state()) -> boolean().
 equal(PNCnt1, PNCnt2) ->
     PNCnt1 =:= PNCnt2.
 
--spec to_binary(pncounter()) -> binary().
+-spec to_binary(state()) -> binary().
 to_binary(PNCounter) ->
     term_to_binary(PNCounter).
 

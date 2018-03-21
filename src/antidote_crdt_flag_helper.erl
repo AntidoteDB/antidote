@@ -19,10 +19,10 @@
 %% -------------------------------------------------------------------
 
 %% @doc
-%% A wrapper for operation-based flags, enable wins flag and disable wins flag.
+%% A helper for operation-based flags, enable wins flag and disable wins flag.
 
 %% @end
--module(antidote_crdt_flag).
+-module(antidote_crdt_flag_helper).
 
 
 %% Callbacks

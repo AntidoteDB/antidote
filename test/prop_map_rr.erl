@@ -18,15 +18,15 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_map_rr).
+-module(prop_map_rr).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_map_spec/0]).
+-export([prop_map_rr_spec/0]).
 
-prop_map_spec() ->
+prop_map_rr_spec() ->
  crdt_properties:crdt_satisfies_partial_spec(antidote_crdt_map_rr, fun op/0, fun spec/2).
 
 
@@ -66,10 +66,10 @@ nestedOps(Operations, {_,Type}=Key) ->
   Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
 nestedSpec(antidote_crdt_map_rr, Ops, Value) -> spec(Ops, Value);
-% nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
-% nestedSpec(antidote_crdt_big_counter, Ops) -> prop_crdt_big_counter:big_counter_spec(Ops);
+% nestedSpec(antidote_crdt_set_aw, Ops) -> prop_set_aw:spec(Ops);
+% nestedSpec(antidote_crdt_counter_fat, Ops) -> prop_counter_fat:spec(Ops);
 nestedSpec(antidote_crdt_set_rw, Ops, Value) ->
-  (crdt_properties:spec_to_partial(fun prop_crdt_set_rw:rem_wins_set_spec/1))(Ops, Value).
+  (crdt_properties:spec_to_partial(fun prop_set_rw:spec/1))(Ops, Value).
 
 % normalizes operations (update-lists into single update-operations)
 normalizeOp({Clock, {update, List}}, _) when is_list(List) ->
@@ -114,9 +114,9 @@ removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
 nestedOp(Size) ->
   oneof(
     [
-      % {{key(), prop_crdt_big_counter}, prop_crdt_big_counter:big_counter_op()},
-      % {{key(), antidote_crdt_orset}, prop_crdt_orset:set_op()},
-      {{key(), antidote_crdt_set_rw}, prop_crdt_set_rw:set_op()}
+      % {{key(), antidote_crdt_counter_fat}, prop_counter_fat:op()},
+      % {{key(), antidote_crdt_set_aw}, prop_set_aw:op()},
+      {{key(), antidote_crdt_set_rw}, prop_set_rw:op()}
     ]
     ++
     if

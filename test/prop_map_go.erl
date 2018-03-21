@@ -18,17 +18,17 @@
 %%
 %% -------------------------------------------------------------------
 
--module(prop_crdt_gmap).
+-module(prop_map_go).
 
 -define(PROPER_NO_TRANS, true).
 -include_lib("proper/include/proper.hrl").
 
 %% API
--export([prop_gmap_spec/0]).
+-export([prop_map_go_spec/0]).
 
 
-prop_gmap_spec() ->
- crdt_properties:crdt_satisfies_spec(antidote_crdt_gmap, fun op/0, fun spec/1).
+prop_map_go_spec() ->
+ crdt_properties:crdt_satisfies_spec(antidote_crdt_map_go, fun op/0, fun spec/1).
 
 
 spec(Operations1) ->
@@ -38,18 +38,12 @@ spec(Operations1) ->
   NestedSpec = [{{Key,Type}, nestedSpec(Type, Ops)} || {{Key,Type}, Ops} <- GroupedByKey],
   lists:sort(NestedSpec).
 
-nestedOps(Operations, {_,Type}=Key) ->
-  Resets =
-      case Type:is_operation({reset, {}}) of
-        true ->
-          [{Clock, {reset, {}}} || {Clock, {reset, {}}} <- Operations];
-        false -> []
-      end,
-  Resets ++ [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
+nestedOps(Operations, Key) ->
+  [{Clock, NestedOp} || {Clock, {update, {Key2, NestedOp}}} <- Operations, Key == Key2].
 
-nestedSpec(antidote_crdt_gmap, Ops) -> spec(Ops);
-nestedSpec(antidote_crdt_orset, Ops) -> prop_crdt_orset:add_wins_set_spec(Ops);
-nestedSpec(antidote_crdt_counter, Ops) -> prop_crdt_counter:counter_spec(Ops).
+nestedSpec(antidote_crdt_map_go, Ops) -> spec(Ops);
+nestedSpec(antidote_crdt_set_aw, Ops) -> prop_set_aw:spec(Ops);
+nestedSpec(antidote_crdt_counter_pn, Ops) -> prop_counter_pn:spec(Ops).
 
 
 normalizeOp({Clock, {update, List}}) when is_list(List) ->
@@ -60,14 +54,10 @@ normalizeOp(X) -> [X].
 % generates a random operation
 op() -> ?SIZED(Size, op(Size)).
 op(Size) ->
-  frequency([
-    % nested updates
-    {10, {update, oneof([
+  {update, oneof([
         nestedOp(Size),
         ?LET(L, list(nestedOp(Size div 2)), removeDuplicateKeys(L, []))
-      ])}},
-    {1, {reset, {}}}
-  ]).
+      ])}.
 
 removeDuplicateKeys([], _) -> [];
 removeDuplicateKeys([{Key,Op}|Rest], Keys) ->
@@ -81,13 +71,13 @@ nestedOp(Size) ->
     [
       % TODO add other type (orset) and recursive maps
       % TODO make sure that keys are unique here and in the is_operation check
-      {{key(), antidote_crdt_orset}, prop_crdt_orset:set_op()},
-      {{key(), antidote_crdt_counter}, prop_crdt_counter:counter_op()}
+      {{key(), antidote_crdt_set_aw}, prop_set_aw:op()},
+      {{key(), antidote_crdt_counter_pn}, prop_counter_pn:op()}
     ]
     ++
     if
       Size > 1 ->
-        [{{key(), antidote_crdt_gmap}, ?LAZY(op(Size div 2))}];
+        [{{key(), antidote_crdt_map_go}, ?LAZY(op(Size div 2))}];
       true -> []
     end
     ).
@@ -95,8 +85,3 @@ nestedOp(Size) ->
 
 key() ->
   oneof([a,b,c,d]).
-
-
-
-
-

@@ -65,12 +65,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export_type([set/0, binary_set/0, set_op/0]).
--opaque set() :: orddict:orddict(term(), {tokens(), tokens()}).
+-export_type([antidote_crdt_set_rw/0, binary_antidote_crdt_set_rw/0, antidote_crdt_set_rw_op/0]).
+-opaque antidote_crdt_set_rw() :: orddict:orddict(term(), {tokens(), tokens()}).
 
--type binary_set() :: binary(). %% A binary that from_binary/1 will operate on.
+-type binary_antidote_crdt_set_rw() :: binary(). %% A binary that from_binary/1 will operate on.
 
--type set_op() ::
+-type antidote_crdt_set_rw_op() ::
       {add, member()}
     | {remove, member()}
     | {add_all, [member()]}
@@ -84,15 +84,15 @@
 -type token() :: term().
 -type tokens() :: [token()].
 
--spec new() -> set().
+-spec new() -> antidote_crdt_set_rw().
 new() ->
   orddict:new().
 
--spec value(set()) -> [member()].
+-spec value(antidote_crdt_set_rw()) -> [member()].
 value(RWSet) ->
   [Elem || {Elem, {_, []}} <- RWSet].
 
--spec downstream(set_op(), set()) -> {ok, downstream_op()}.
+-spec downstream(antidote_crdt_set_rw_op(), antidote_crdt_set_rw()) -> {ok, downstream_op()}.
 downstream({add, Elem}, RWSet) ->
   downstream({add_all, [Elem]}, RWSet);
 downstream({add_all, Elems}, RWSet) ->
@@ -146,7 +146,7 @@ create_downstreams(CreateDownstream, [Elem1|ElemsRest]=Elems, [{Elem2, {AddToken
 unique() ->
     crypto:strong_rand_bytes(20).
 
--spec update(downstream_op(), set()) -> {ok, set()}.
+-spec update(downstream_op(), antidote_crdt_set_rw()) -> {ok, antidote_crdt_set_rw()}.
   update(DownstreamOp, RWSet) ->
     RWSet1 = apply_downstreams(DownstreamOp, RWSet),
     RWSet2 = [Entry || {_, {AddTokens, RemoveTokens}} = Entry <- RWSet1, AddTokens =/= [] orelse RemoveTokens =/= []],
@@ -175,14 +175,14 @@ apply_downstream(Elem, SeenTokens, ToAdd, ToRemove, CurrentAddTokens, CurrentRem
 
 
 
--spec equal(set(), set()) -> boolean().
+-spec equal(antidote_crdt_set_rw(), antidote_crdt_set_rw()) -> boolean().
 equal(ORDictA, ORDictB) ->
     ORDictA == ORDictB. % Everything inside is ordered, so this should work
 
 -define(TAG, 77).
 -define(V1_VERS, 1).
 
--spec to_binary(set()) -> binary_set().
+-spec to_binary(antidote_crdt_set_rw()) -> binary_antidote_crdt_set_rw().
 to_binary(Set) ->
     %% @TODO something smarter
     <<?TAG:8/integer, ?V1_VERS:8/integer, (term_to_binary(Set))/binary>>.
