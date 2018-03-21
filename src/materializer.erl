@@ -89,7 +89,7 @@ check_operation(Op) ->
 
 %% Testing update with pn_counter.
 update_pncounter_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Op = 1,
@@ -98,7 +98,7 @@ update_pncounter_test() ->
 
 %% Testing pn_counter with update log
 materializer_counter_withlog_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [1,
@@ -111,7 +111,7 @@ materializer_counter_withlog_test() ->
 
 %% Testing counter with empty update log
 materializer_counter_emptylog_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [],
@@ -124,27 +124,27 @@ materializer_error_nocreate_test() ->
 
 %% Testing crdt with invalid update operation
 materializer_error_invalidupdate_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Counter = create_snapshot(Type),
     ?assertEqual(0, Type:value(Counter)),
     Ops = [{non_existing_op_type, {non_existing_op, actor1}}],
     ?assertEqual({error, {unexpected_operation,
                     {non_existing_op_type, {non_existing_op, actor1}},
-                    antidote_crdt_counter}},
+                    antidote_crdt_counter_pn}},
                  materialize_eager(Type, Counter, Ops)).
 
 %% Testing that the function check_operations works properly
 check_operations_test() ->
     Operations =
-        [{read, {key1, antidote_crdt_counter}},
-         {update, {key1, antidote_crdt_counter, increment}}
+        [{read, {key1, antidote_crdt_counter_pn}},
+         {update, {key1, antidote_crdt_counter_pn, increment}}
         ],
     ?assertEqual(ok, check_operations(Operations)),
 
-    Operations2 = [{read, {key1, antidote_crdt_counter}},
-        {update, {key1, antidote_crdt_counter, {{add, elem}, a}}},
-        {update, {key2, antidote_crdt_counter, {increment, a}}},
-        {read, {key1, antidote_crdt_counter}}],
+    Operations2 = [{read, {key1, antidote_crdt_counter_pn}},
+        {update, {key1, antidote_crdt_counter_pn, {{add, elem}, a}}},
+        {update, {key2, antidote_crdt_counter_pn, {increment, a}}},
+        {read, {key1, antidote_crdt_counter_pn}}],
     ?assertMatch({error, _}, check_operations(Operations2)).
 
 -endif.

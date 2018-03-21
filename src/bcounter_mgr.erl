@@ -47,7 +47,7 @@
 
 -record(state, {req_queue, last_transfers, transfer_timer}).
 -define(LOG_UTIL, log_utilities).
--define(DATA_TYPE, antidote_crdt_bcounter).
+-define(DATA_TYPE, antidote_crdt_counter_b).
 
 
 

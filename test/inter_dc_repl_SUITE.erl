@@ -77,7 +77,7 @@ simple_replication_test(Config) ->
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key = simple_replication_test,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     update_counters(Node1, [Key], [1], ignore, static),
     update_counters(Node1, [Key], [1], ignore, static),
     {ok, CommitTime} = update_counters(Node1, [Key], [1], ignore, static),
@@ -90,7 +90,7 @@ simple_replication_test(Config) ->
 multiple_keys_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Key = multiple_keys_test,
     lists:foreach( fun(_) ->
                            multiple_writes(Node1, Key, Type, 1, 10, rpl)
@@ -129,7 +129,7 @@ causality_test(Config) ->
     %% result set should not contain e
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Type = antidote_crdt_orset,
+    Type = antidote_crdt_set_aw,
     Key = causality_test,
     {ok, CommitTime1} = update_sets(Node1, [Key], [{add, first}], ignore),
     {ok, CommitTime2} = update_sets(Node1, [Key], [{add, second}], CommitTime1),
@@ -148,7 +148,7 @@ atomicity_test(Config) ->
     Key1 = atomicity_test1,
     Key2 = atomicity_test2,
     Key3 = atomicity_test3,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
 
     Caller = self(),
     ContWrite = fun() ->
@@ -216,7 +216,7 @@ check_read(Node, Objects, Expected, Clock, TxId) ->
 
 update_counters(Node, Keys, IncValues, Clock, TxId) ->
     Updates = lists:map(fun({Key, Inc}) ->
-                                {{Key, antidote_crdt_counter, ?BUCKET}, increment, Inc}
+                                {{Key, antidote_crdt_counter_pn, ?BUCKET}, increment, Inc}
                         end,
                         lists:zip(Keys, IncValues)
                        ),
@@ -232,7 +232,7 @@ update_counters(Node, Keys, IncValues, Clock, TxId) ->
 
 update_sets(Node, Keys, Ops, Clock) ->
     Updates = lists:map(fun({Key, {Op, Param}}) ->
-                                {{Key, antidote_crdt_orset, ?BUCKET}, Op, Param}
+                                {{Key, antidote_crdt_set_aw, ?BUCKET}, Op, Param}
                         end,
                         lists:zip(Keys, Ops)
                        ),

@@ -120,13 +120,13 @@ read_data_item(_IndexNode, _Transaction, Key, _Type, _Ws) ->
         read_fail ->
             {error, mock_read_fail};
         counter ->
-            Counter = antidote_crdt_counter:new(),
-            {ok, Counter1} = antidote_crdt_counter:update(1, Counter),
-            {ok, Counter2} = antidote_crdt_counter:update(1, Counter1),
+            Counter = antidote_crdt_counter_pn:new(),
+            {ok, Counter1} = antidote_crdt_counter_pn:update(1, Counter),
+            {ok, Counter2} = antidote_crdt_counter_pn:update(1, Counter1),
             {ok, Counter2};
         set ->
-            Set = antidote_crdt_gset:new(),
-            {ok, Set1} = antidote_crdt_gset:update([a], Set),
+            Set = antidote_crdt_set_go:new(),
+            {ok, Set1} = antidote_crdt_set_go:update([a], Set),
             {ok, Set1};
         _ ->
             {ok, mock_value}

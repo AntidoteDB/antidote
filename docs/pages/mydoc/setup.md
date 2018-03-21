@@ -159,21 +159,21 @@ Start a node (if you haven't done it yet):
 
 Perform a write operation (example):
 
-        CounterObj = {my_counter, antidote_crdt_counter, my_bucket}.
+        CounterObj = {my_counter, antidote_crdt_counter_pn, my_bucket}.
         {ok, TxId} = antidote:start_transaction(ignore, []).
         ok = antidote:update_objects([{CounterObj, increment, 1}], TxId).
         {ok, _CommitTime} = antidote:commit_transaction(TxId).
 
 You can also update objects with a single call as follows:
 
-      CounterObj = {my_counter, antidote_crdt_counter, my_bucket}.
+      CounterObj = {my_counter, antidote_crdt_counter_pn, my_bucket}.
       {ok, _CommitTime} = antidote:update_objects(ignore, [], [{CounterObj, increment, 1}]).
 
 #### Reading
 
 Perform a read operation (example):
 
-      CounterObj = {my_counter, antidote_crdt_counter, my_bucket}.
+      CounterObj = {my_counter, antidote_crdt_counter_pn, my_bucket}.
       {ok, TxId} = antidote:start_transaction(ignore, []).
       {ok, [CounterVal]} = antidote:read_objects([CounterObj], TxId).
       {ok, _CommitTime3} = antidote:commit_transaction(TxId).
@@ -181,7 +181,7 @@ Perform a read operation (example):
 
 Or in a single call:
 
-    CounterObj = {my_counter, antidote_crdt_counter, my_bucket}.
+    CounterObj = {my_counter, antidote_crdt_counter_pn, my_bucket}.
     {ok, Res, _CommitTime} = antidote:read_objects(ignore, [], [CounterObj]).
     [CounterVal] = Res.
 

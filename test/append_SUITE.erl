@@ -45,7 +45,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
--define(TYPE, antidote_crdt_counter).
+-define(TYPE, antidote_crdt_counter_pn).
 -define(BUCKET, append_bucket).
 
 init_per_suite(Config) ->
