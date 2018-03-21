@@ -79,7 +79,7 @@ simple_replication_test(Config) ->
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key = simple_replication_test_dc,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
 
     update_counters(Node1, [Key], [1], ignore, static),
     update_counters(Node1, [Key], [1], ignore, static),
@@ -108,7 +108,7 @@ parallel_writes_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
     Key = parallel_writes_test,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Pid = self(),
     spawn(?MODULE, multiple_writes, [Node1, Key, Pid]),
     spawn(?MODULE, multiple_writes, [Node2, Key, Pid]),
@@ -157,7 +157,7 @@ failure_test(Config) ->
         {ok, false} ->
             pass;
         _ ->
-            Type = antidote_crdt_counter,
+            Type = antidote_crdt_counter_pn,
             Key = multiplde_dc_failure_test,
 
             update_counters(Node1, [Key], [1], ignore, static),
@@ -193,7 +193,7 @@ failure_test(Config) ->
 blocking_test(Config) ->
     Clusters = proplists:get_value(clusters, Config),
     [Node1, Node2, Node3 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Key = blocking_test,
 
     %% Drop the heartbeat messages at DC3, allowing its
@@ -225,7 +225,7 @@ replicated_set_test(Config) ->
     [Node1, Node2 | _Nodes] =  [ hd(Cluster)|| Cluster <- Clusters ],
 
     Key1 = replicated_set_test,
-    Type = antidote_crdt_orset,
+    Type = antidote_crdt_set_aw,
 
     lager:info("Writing 100 elements to set!!!"),
 
@@ -262,7 +262,7 @@ check_read(Node, Objects, Expected, Clock, TxId) ->
 
 update_counters(Node, Keys, IncValues, Clock, TxId) ->
     Updates = lists:map(fun({Key, Inc}) ->
-                                {{Key, antidote_crdt_counter, ?BUCKET}, increment, Inc}
+                                {{Key, antidote_crdt_counter_pn, ?BUCKET}, increment, Inc}
                         end,
                         lists:zip(Keys, IncValues)
                        ),
@@ -278,7 +278,7 @@ update_counters(Node, Keys, IncValues, Clock, TxId) ->
 
 update_sets(Node, Keys, Ops, Clock) ->
     Updates = lists:map(fun({Key, {Op, Param}}) ->
-                                {{Key, antidote_crdt_orset, ?BUCKET}, Op, Param}
+                                {{Key, antidote_crdt_set_aw, ?BUCKET}, Op, Param}
                         end,
                         lists:zip(Keys, Ops)
                        ),

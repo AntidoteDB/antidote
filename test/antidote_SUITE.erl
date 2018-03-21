@@ -82,7 +82,7 @@ dummy_test(Config) ->
     [Node1, Node2 | _Nodes] = proplists:get_value(nodes, Config),
     ct:print("Test on ~p!", [Node1]),
     Key = antidote_key,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     Object = {Key, Type, Bucket},
     Update = {Object, increment, 1},
@@ -104,7 +104,7 @@ dummy_test(Config) ->
 static_txn_single_object(Config) ->
     [Node1 | _Nodes] = proplists:get_value(nodes, Config),
     Key = antidote_key_static1,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     Object = {Key, Type, Bucket},
     Update = {Object, increment, 1},
@@ -116,7 +116,7 @@ static_txn_single_object(Config) ->
 static_txn_single_object_clock(Config) ->
     [Node1 | _Nodes] = proplists:get_value(nodes, Config),
     Key = antidote_key_static2,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     Object = {Key, Type, Bucket},
     Update = {Object, increment, 1},
@@ -130,7 +130,7 @@ static_txn_single_object_clock(Config) ->
 
 static_txn_multi_objects(Config) ->
     [Node1 | _Nodes] = proplists:get_value(nodes, Config),
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     Keys = [antidote_static_m1, antidote_static_m2, antidote_static_m3, antidote_static_m4],
     IncValues = [1, 2, 3, 4],
@@ -148,7 +148,7 @@ static_txn_multi_objects(Config) ->
 
 static_txn_multi_objects_clock(Config) ->
     [Node1 | _Nodes] = proplists:get_value(nodes, Config),
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     Keys = [antidote_static_mc1, antidote_static_mc2, antidote_static_mc3, antidote_static_mc4],
     IncValues = [1, 2, 3, 4],
@@ -170,7 +170,7 @@ static_txn_multi_objects_clock(Config) ->
 
 interactive_txn(Config) ->
     [Node | _Nodes] = proplists:get_value(nodes, Config),
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Bucket = antidote_bucket,
     Keys = [antidote_int_m1, antidote_int_m2, antidote_int_m3, antidote_int_m4],
     IncValues = [1, 2, 3, 4],
@@ -221,7 +221,7 @@ random_test(Config) ->
     NumWrites = 100,
     ListIds = [rand_compat:uniform(N) || _ <- lists:seq(1, NumWrites)], % TODO avoid nondeterminism in tests
 
-    Obj = {log_test_key1, antidote_crdt_counter, antidote_bucket},
+    Obj = {log_test_key1, antidote_crdt_counter_pn, antidote_bucket},
     F = fun(Elem) ->
                 Node = lists:nth(Elem, Nodes),
                 ct:print("Inc at node: ~p", [Node]),

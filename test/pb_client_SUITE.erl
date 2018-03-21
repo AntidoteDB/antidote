@@ -102,7 +102,7 @@ start_stop_test(_Config) ->
 simple_transaction_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bound_object = {pb_client_SUITE_simple_transaction_test, antidote_crdt_counter, bucket},
+    Bound_object = {pb_client_SUITE_simple_transaction_test, antidote_crdt_counter_pn, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     rpc:call(Node, antidote, commit_transaction, [TxId]).
@@ -111,7 +111,7 @@ simple_transaction_test(Config) ->
 read_write_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
-    Bound_object = {pb_client_SUITE_read_write_test, antidote_crdt_counter, bucket},
+    Bound_object = {pb_client_SUITE_read_write_test, antidote_crdt_counter_pn, bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
     {ok, [0]} = rpc:call(Node, antidote, read_objects, [[Bound_object], TxId]),
     ok = rpc:call(Node, antidote, update_objects, [[{Bound_object, increment, 1}], TxId]),
@@ -121,7 +121,7 @@ read_write_test(Config) ->
 %% Single object rea
 get_empty_crdt_test(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
+    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter_pn, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     {ok, [Val]} = antidotec_pb:read_objects(Pid, [Bound_object], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
@@ -130,7 +130,7 @@ get_empty_crdt_test(_Config) ->
 
 client_fail_test(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
+    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter_pn, <<"bucket">>},
     {ok, _TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
     % Client fails and starts next transaction:
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
@@ -142,7 +142,7 @@ client_fail_test(_Config) ->
 
 client_fail_test2(_Config) ->
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter, <<"bucket">>},
+    Bound_object = {<<"pb_client_SUITE_get_empty_crdt_test">>, antidote_crdt_counter_pn, <<"bucket">>},
     {ok, _TxIdFail} = antidotec_pb:start_transaction(Pid, ignore, {}),
     % Client fails and starts next transaction:
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
@@ -163,7 +163,7 @@ client_fail_test2(_Config) ->
 pb_test_counter_read_write(_Config) ->
     Key = <<"pb_client_SUITE_pb_test_counter_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, antidote_crdt_counter, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_counter_pn, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     ok = antidotec_pb:update_objects(Pid, [{Bound_object, increment, 1}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
@@ -177,7 +177,7 @@ pb_test_counter_read_write(_Config) ->
 pb_test_set_read_write(_Config) ->
     Key = <<"pb_client_SUITE_pb_test_set_read_write">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, antidote_crdt_orset, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_set_aw, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid, ignore, {}),
     ok = antidotec_pb:update_objects(Pid, [{Bound_object, add, <<"a">>}], TxId),
     {ok, _} = antidotec_pb:commit_transaction(Pid, TxId),
@@ -206,7 +206,7 @@ update_counter_crdt_test(_Config) ->
     update_counter_crdt(Key, Bucket, Amount).
 
 update_counter_crdt(Key, Bucket, Amount) ->
-    BObj = {Key, antidote_crdt_counter, Bucket},
+    BObj = {Key, antidote_crdt_counter_pn, Bucket},
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
     Obj = antidotec_counter:new(),
     Obj2 = antidotec_counter:increment(Amount, Obj),
@@ -222,7 +222,7 @@ update_counter_crdt_and_read_test(_Config) ->
     Key = <<"pb_client_SUITE_update_counter_crdt_and_read_test">>,
     Amount = 15,
     pass = update_counter_crdt(Key, <<"bucket">>, Amount),
-    pass = get_crdt_check_value(Key, antidote_crdt_counter, <<"bucket">>, Amount).
+    pass = get_crdt_check_value(Key, antidote_crdt_counter_pn, <<"bucket">>, Amount).
 
 get_crdt_check_value(Key, Type, Bucket, Expected) ->
     lager:info("Verifying value of updated CRDT..."),
@@ -239,7 +239,7 @@ get_crdt_check_value(Key, Type, Bucket, Expected) ->
 update_set_read_test(_Config) ->
     Key = <<"pb_client_SUITE_update_set_read_test">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, antidote_crdt_orset, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_set_aw, <<"bucket">>},
     Set = antidotec_set:new(),
     Set1 = antidotec_set:add(<<"a">>, Set),
     Set2 = antidotec_set:add(<<"b">>, Set1),
@@ -262,7 +262,7 @@ update_set_read_test(_Config) ->
 update_reg_test(_Config) ->
     Key = <<"pb_client_SUITE_update_reg_test">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, antidote_crdt_lwwreg, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_register_lww, <<"bucket">>},
     {ok, TxId} = antidotec_pb:start_transaction(Pid,
                                                 ignore, {}),
     ok = antidotec_pb:update_objects(Pid,
@@ -300,7 +300,7 @@ crdt_integer_test(_Config) ->
 crdt_mvreg_test(_Config) ->
     Key = <<"pb_client_SUITE_crdt_mvreg_test">>,
     {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, antidote_crdt_mvreg, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_register_mv, <<"bucket">>},
     {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
     ok = antidotec_pb:update_objects(Pid1, [{Bound_object, assign, <<"a">>}], Tx1),
     {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
@@ -334,21 +334,21 @@ crdt_set_rw_test(_Config) ->
 crdt_gmap_test(_Config) ->
   Key = <<"pb_client_SUITE_crdt_map_aw_test">>,
   {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-  Bound_object = {Key, antidote_crdt_gmap, <<"bucket">>},
+  Bound_object = {Key, antidote_crdt_map_go, <<"bucket">>},
   {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
   ok = antidotec_pb:update_objects(Pid1, [
     {Bound_object, update, {{<<"a">>, antidote_crdt_integer}, {set, 42}}}], Tx1),
   ok = antidotec_pb:update_objects(Pid1, [
     {Bound_object, update, [
-      {{<<"b">>, antidote_crdt_lwwreg}, {assign, <<"X">>}},
-      {{<<"c">>, antidote_crdt_mvreg}, {assign, <<"Paul">>}},
-      {{<<"d">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"b">>, antidote_crdt_register_lww}, {assign, <<"X">>}},
+      {{<<"c">>, antidote_crdt_register_mv}, {assign, <<"Paul">>}},
+      {{<<"d">>, antidote_crdt_set_aw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
       {{<<"e">>, antidote_crdt_set_rw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
-      {{<<"f">>, antidote_crdt_counter}, {increment , 7}},
-      {{<<"g">>, antidote_crdt_gmap}, {update, [
+      {{<<"f">>, antidote_crdt_counter_pn}, {increment , 7}},
+      {{<<"g">>, antidote_crdt_map_go}, {update, [
         {{<<"x">>, antidote_crdt_integer}, {set, 17}}
       ]}},
-      {{<<"h">>, antidote_crdt_map_aw}, {update, [
+      {{<<"h">>, antidote_crdt_map_rr}, {update, [
         {{<<"x">>, antidote_crdt_integer}, {set, 15}}
       ]}}
     ]}], Tx1),
@@ -359,15 +359,15 @@ crdt_gmap_test(_Config) ->
   {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
   ExpectedRes = {map, [
     {{<<"a">>, antidote_crdt_integer}, 42},
-    {{<<"b">>, antidote_crdt_lwwreg}, <<"X">>},
-    {{<<"c">>, antidote_crdt_mvreg}, [<<"Paul">>]},
-    {{<<"d">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"b">>, antidote_crdt_register_lww}, <<"X">>},
+    {{<<"c">>, antidote_crdt_register_mv}, [<<"Paul">>]},
+    {{<<"d">>, antidote_crdt_set_aw}, [<<"Apple">>, <<"Banana">>]},
     {{<<"e">>, antidote_crdt_set_rw}, [<<"Apple">>, <<"Banana">>]},
-    {{<<"f">>, antidote_crdt_counter}, 7},
-    {{<<"g">>, antidote_crdt_gmap}, [
+    {{<<"f">>, antidote_crdt_counter_pn}, 7},
+    {{<<"g">>, antidote_crdt_map_go}, [
       {{<<"x">>, antidote_crdt_integer}, 17}
     ]},
-    {{<<"h">>, antidote_crdt_map_aw}, [
+    {{<<"h">>, antidote_crdt_map_rr}, [
       {{<<"x">>, antidote_crdt_integer}, 15}
     ]}
   ]},
@@ -377,43 +377,43 @@ crdt_gmap_test(_Config) ->
 crdt_map_aw_test(_Config) ->
   Key = <<"pb_client_SUITE_crdt_map_aw_test">>,
   {ok, Pid1} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-  Bound_object = {Key, antidote_crdt_map_aw, <<"bucket">>},
+  Bound_object = {Key, antidote_crdt_map_rr, <<"bucket">>},
   {ok, Tx1} = antidotec_pb:start_transaction(Pid1, ignore, {}),
   ok = antidotec_pb:update_objects(Pid1, [
     {Bound_object, update, {{<<"a">>, antidote_crdt_integer}, {set, 42}}}], Tx1),
   ok = antidotec_pb:update_objects(Pid1, [
     {Bound_object, update, [
-      {{<<"b">>, antidote_crdt_lwwreg}, {assign, <<"X">>}},
-      {{<<"b1">>, antidote_crdt_lwwreg}, {assign, <<"X1">>}},
-      {{<<"b2">>, antidote_crdt_lwwreg}, {assign, <<"X2">>}},
-      {{<<"b3">>, antidote_crdt_lwwreg}, {assign, <<"X3">>}},
-      {{<<"b4">>, antidote_crdt_lwwreg}, {assign, <<"X4">>}},
-      {{<<"b5">>, antidote_crdt_lwwreg}, {assign, <<"X5">>}},
-      {{<<"c">>, antidote_crdt_mvreg}, {assign, <<"Paul">>}},
-      {{<<"d">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"b">>, antidote_crdt_register_lww}, {assign, <<"X">>}},
+      {{<<"b1">>, antidote_crdt_register_lww}, {assign, <<"X1">>}},
+      {{<<"b2">>, antidote_crdt_register_lww}, {assign, <<"X2">>}},
+      {{<<"b3">>, antidote_crdt_register_lww}, {assign, <<"X3">>}},
+      {{<<"b4">>, antidote_crdt_register_lww}, {assign, <<"X4">>}},
+      {{<<"b5">>, antidote_crdt_register_lww}, {assign, <<"X5">>}},
+      {{<<"c">>, antidote_crdt_register_mv}, {assign, <<"Paul">>}},
+      {{<<"d">>, antidote_crdt_set_aw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
       {{<<"e">>, antidote_crdt_set_rw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
-      {{<<"f">>, antidote_crdt_counter}, {increment , 7}},
-      {{<<"g">>, antidote_crdt_gmap}, {update, [
+      {{<<"f">>, antidote_crdt_counter_pn}, {increment , 7}},
+      {{<<"g">>, antidote_crdt_map_go}, {update, [
         {{<<"x">>, antidote_crdt_integer}, {set, 17}}
       ]}},
-      {{<<"h">>, antidote_crdt_map_aw}, {update, [
+      {{<<"h">>, antidote_crdt_map_rr}, {update, [
         {{<<"x">>, antidote_crdt_integer}, {set, 15}}
       ]}}
     ]}], Tx1),
   ok = antidotec_pb:update_objects(Pid1, [
-    {Bound_object, remove, {<<"b1">>, antidote_crdt_lwwreg}}], Tx1),
+    {Bound_object, remove, {<<"b1">>, antidote_crdt_register_lww}}], Tx1),
   ok = antidotec_pb:update_objects(Pid1,
     [{Bound_object, remove, [
-      {<<"b2">>, antidote_crdt_lwwreg},
-      {<<"b3">>, antidote_crdt_lwwreg}]}
+      {<<"b2">>, antidote_crdt_register_lww},
+      {<<"b3">>, antidote_crdt_register_lww}]}
     ], Tx1),
   ok = antidotec_pb:update_objects(Pid1,
     [{Bound_object, batch,
       {[ % updates
-        {{<<"i">>, antidote_crdt_lwwreg}, {assign, <<"X">>}}
+        {{<<"i">>, antidote_crdt_register_lww}, {assign, <<"X">>}}
       ], [ % removes
-        {<<"b4">>, antidote_crdt_lwwreg},
-        {<<"b5">>, antidote_crdt_lwwreg}
+        {<<"b4">>, antidote_crdt_register_lww},
+        {<<"b5">>, antidote_crdt_register_lww}
       ]}}
     ], Tx1),
   {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx1),
@@ -423,18 +423,18 @@ crdt_map_aw_test(_Config) ->
   {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
   ExpectedRes = {map, [
     {{<<"a">>, antidote_crdt_integer}, 42},
-    {{<<"b">>, antidote_crdt_lwwreg}, <<"X">>},
-    {{<<"c">>, antidote_crdt_mvreg}, [<<"Paul">>]},
-    {{<<"d">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"b">>, antidote_crdt_register_lww}, <<"X">>},
+    {{<<"c">>, antidote_crdt_register_mv}, [<<"Paul">>]},
+    {{<<"d">>, antidote_crdt_set_aw}, [<<"Apple">>, <<"Banana">>]},
     {{<<"e">>, antidote_crdt_set_rw}, [<<"Apple">>, <<"Banana">>]},
-    {{<<"f">>, antidote_crdt_counter}, 7},
-    {{<<"g">>, antidote_crdt_gmap}, [
+    {{<<"f">>, antidote_crdt_counter_pn}, 7},
+    {{<<"g">>, antidote_crdt_map_go}, [
       {{<<"x">>, antidote_crdt_integer}, 17}
     ]},
-    {{<<"h">>, antidote_crdt_map_aw}, [
+    {{<<"h">>, antidote_crdt_map_rr}, [
       {{<<"x">>, antidote_crdt_integer}, 15}
     ]},
-    {{<<"i">>, antidote_crdt_lwwreg}, <<"X">>}
+    {{<<"i">>, antidote_crdt_register_lww}, <<"X">>}
   ]},
   ?assertEqual(ExpectedRes, Val),
   _Disconnected = antidotec_pb_socket:stop(Pid1).
@@ -449,18 +449,18 @@ crdt_map_rr_test(_Config) ->
     {Bound_object, update, {{<<"a">>, antidote_crdt_integer}, {set, 42}}}], Tx1),
   ok = antidotec_pb:update_objects(Pid1, [
     {Bound_object, update, [
-      {{<<"b">>, antidote_crdt_mvreg}, {assign, <<"X">>}},
-      {{<<"b1">>, antidote_crdt_mvreg}, {assign, <<"X1">>}},
-      {{<<"b2">>, antidote_crdt_mvreg}, {assign, <<"X2">>}},
-      {{<<"b3">>, antidote_crdt_mvreg}, {assign, <<"X3">>}},
-      {{<<"b4">>, antidote_crdt_mvreg}, {assign, <<"X4">>}},
-      {{<<"b5">>, antidote_crdt_mvreg}, {assign, <<"X5">>}},
-      {{<<"c">>, antidote_crdt_mvreg}, {assign, <<"Paul">>}},
-      {{<<"d">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
-      {{<<"e">>, antidote_crdt_orset}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"b">>, antidote_crdt_register_mv}, {assign, <<"X">>}},
+      {{<<"b1">>, antidote_crdt_register_mv}, {assign, <<"X1">>}},
+      {{<<"b2">>, antidote_crdt_register_mv}, {assign, <<"X2">>}},
+      {{<<"b3">>, antidote_crdt_register_mv}, {assign, <<"X3">>}},
+      {{<<"b4">>, antidote_crdt_register_mv}, {assign, <<"X4">>}},
+      {{<<"b5">>, antidote_crdt_register_mv}, {assign, <<"X5">>}},
+      {{<<"c">>, antidote_crdt_register_mv}, {assign, <<"Paul">>}},
+      {{<<"d">>, antidote_crdt_set_aw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
+      {{<<"e">>, antidote_crdt_set_aw}, {add_all, [<<"Apple">>, <<"Banana">>]}},
       {{<<"f">>, antidote_crdt_fat_counter}, {increment , 7}},
       {{<<"g">>, antidote_crdt_map_rr}, {update, [
-        {{<<"q">>, antidote_crdt_mvreg}, {assign, <<"Hello">>}},
+        {{<<"q">>, antidote_crdt_register_mv}, {assign, <<"Hello">>}},
         {{<<"x">>, antidote_crdt_fat_counter}, {increment, 17}}
       ]}},
       {{<<"h">>, antidote_crdt_map_rr}, {update, [
@@ -468,19 +468,19 @@ crdt_map_rr_test(_Config) ->
       ]}}
     ]}], Tx1),
   ok = antidotec_pb:update_objects(Pid1, [
-    {Bound_object, remove, {<<"b1">>, antidote_crdt_mvreg}}], Tx1),
+    {Bound_object, remove, {<<"b1">>, antidote_crdt_register_mv}}], Tx1),
   ok = antidotec_pb:update_objects(Pid1,
     [{Bound_object, remove, [
-      {<<"b2">>, antidote_crdt_mvreg},
-      {<<"b3">>, antidote_crdt_mvreg}]}
+      {<<"b2">>, antidote_crdt_register_mv},
+      {<<"b3">>, antidote_crdt_register_mv}]}
     ], Tx1),
   ok = antidotec_pb:update_objects(Pid1,
     [{Bound_object, batch,
       {[ % updates
-        {{<<"i">>, antidote_crdt_mvreg}, {assign, <<"X">>}}
+        {{<<"i">>, antidote_crdt_register_mv}, {assign, <<"X">>}}
       ], [ % removes
-        {<<"b4">>, antidote_crdt_mvreg},
-        {<<"b5">>, antidote_crdt_mvreg}
+        {<<"b4">>, antidote_crdt_register_mv},
+        {<<"b5">>, antidote_crdt_register_mv}
       ]}}
     ], Tx1),
   ok = antidotec_pb:update_objects(Pid1, [
@@ -492,15 +492,15 @@ crdt_map_rr_test(_Config) ->
   {ok, _} = antidotec_pb:commit_transaction(Pid1, Tx3),
   ExpectedRes = {map, [
     {{<<"a">>, antidote_crdt_integer}, 42},
-    {{<<"b">>, antidote_crdt_mvreg}, [<<"X">>]},
-    {{<<"c">>, antidote_crdt_mvreg}, [<<"Paul">>]},
-    {{<<"d">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
-    {{<<"e">>, antidote_crdt_orset}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"b">>, antidote_crdt_register_mv}, [<<"X">>]},
+    {{<<"c">>, antidote_crdt_register_mv}, [<<"Paul">>]},
+    {{<<"d">>, antidote_crdt_set_aw}, [<<"Apple">>, <<"Banana">>]},
+    {{<<"e">>, antidote_crdt_set_aw}, [<<"Apple">>, <<"Banana">>]},
     {{<<"f">>, antidote_crdt_fat_counter}, 7},
     {{<<"h">>, antidote_crdt_map_rr}, [
       {{<<"x">>, antidote_crdt_fat_counter}, 15}
     ]},
-    {{<<"i">>, antidote_crdt_mvreg}, [<<"X">>]}
+    {{<<"i">>, antidote_crdt_register_mv}, [<<"X">>]}
   ]},
   ?assertEqual(ExpectedRes, Val),
   _Disconnected = antidotec_pb_socket:stop(Pid1).
@@ -531,7 +531,7 @@ crdt_flag_test(_Config, FlagCrdt) ->
 static_transaction_test(_Config) ->
     Key = <<"pb_client_SUITE_static_transaction_test">>,
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
-    Bound_object = {Key, antidote_crdt_orset, <<"bucket">>},
+    Bound_object = {Key, antidote_crdt_set_aw, <<"bucket">>},
     Set = antidotec_set:new(),
     Set1 = antidotec_set:add(<<"a">>, Set),
     Set2 = antidotec_set:add(<<"b">>, Set1),

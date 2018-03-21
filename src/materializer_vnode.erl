@@ -720,7 +720,7 @@ gc_test() ->
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
     DC1 = 1,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
 
     %% Make 10 snapshots
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
@@ -788,7 +788,7 @@ large_list_test() ->
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
     DC1 = 1,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
     %% Make 1000 updates to grow the list, whithout generating a snapshot to perform the gc
@@ -811,7 +811,7 @@ large_list_test() ->
 
 generate_payload(SnapshotTime, CommitTime, Prev, _Name) ->
     Key = mycount,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     DC1 = 1,
 
     {ok, Op1} = Type:downstream({increment, 1}, Prev),
@@ -827,7 +827,7 @@ seq_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     DC1 = 1,
     S1 = Type:new(),
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
@@ -864,7 +864,7 @@ multipledc_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     DC1 = 1,
     DC2 = 2,
     S1 = Type:new(),
@@ -903,7 +903,7 @@ concurrent_write_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     Key = mycount,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     DC1 = local,
     DC2 = remote,
     S1 = Type:new(),
@@ -949,7 +949,7 @@ read_nonexisting_key_test() ->
     OpsCache = ets:new(ops_cache, [set]),
     SnapshotCache = ets:new(snapshot_cache, [set]),
     MatState = #mat_state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     {ok, ReadResult} = internal_read(key, Type, vectorclock:from_list([{dc1, 1}, {dc2, 0}]), ignore, [], false, MatState),
     ?assertEqual(0, Type:value(ReadResult)).
 

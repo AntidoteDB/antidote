@@ -279,7 +279,7 @@ materialize_eager(Type, Snapshot, Ops) ->
 -ifdef(TEST).
 
 materializer_clocksi_test()->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     PNCounter = new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     %%  need to add the snapshot time for these for the test to pass
@@ -319,7 +319,7 @@ materializer_clocksi_test()->
 %% the left and right of it in the list are taken.  When this snapshot is then used for a future
 %% read with a different timestamp, this missing value must be checked.
 materializer_missing_op_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     PNCounter = new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
@@ -354,7 +354,7 @@ materializer_missing_op_test() ->
 %% This can happen for example if an update is commited before the DCs have been connected.
 %% It ensures that when we read using a snapshot with and without all the DCs we still include the correct updates.
 materializer_missing_dc_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     PNCounter = new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
@@ -398,7 +398,7 @@ materializer_missing_dc_test() ->
     ?assertEqual({4, vectorclock:from_list([{1, 3}, {2, 2}])}, {Type:value(PNCounter3), CommitTime3}).
 
 materializer_clocksi_concurrent_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     PNCounter = new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Op1 = #clocksi_payload{key = abc, type = Type,
@@ -433,7 +433,7 @@ materializer_clocksi_concurrent_test() ->
 
 %% Testing gcounter with empty update log
 materializer_clocksi_noop_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     PNCounter = new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     Ops = [],
@@ -444,7 +444,7 @@ materializer_clocksi_noop_test() ->
     ?assertEqual(0, Type:value(PNCounter3)).
 
 materializer_eager_clocksi_test()->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     PNCounter = new(Type),
     ?assertEqual(0, Type:value(PNCounter)),
     % test - no ops
@@ -460,7 +460,7 @@ materializer_eager_clocksi_test()->
     ?assertEqual(10, Type:value(PNCounter3)).
 
 is_op_in_snapshot_test() ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Op1 = #clocksi_payload{key = abc, type = Type,
                            op_param = {increment, 2},
                            commit_time = {dc1, 1}, txid = 1, snapshot_time=vectorclock:from_list([{dc1, 1}])},

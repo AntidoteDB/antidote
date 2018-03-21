@@ -94,7 +94,7 @@ The [tab2list](http://erlang.org/doc/man/ets.html#tab2list-1) function - ```ets:
   29,
   {1,
    {clocksi_payload,{my_counter,my_bucket},
-                    antidote_crdt_counter,1,
+                    antidote_crdt_counter_pn,1,
                     {dict,1,16,16,8,80,48,
                           {[],[],[],[],[],[],[],[],[],...},
                           {{[],[],[],[],[],[],[],...}}},
@@ -103,7 +103,7 @@ The [tab2list](http://erlang.org/doc/man/ets.html#tab2list-1) function - ```ets:
                     {tx_id,1489504668106333,<0.5317.0>}}},
   {2,
    {clocksi_payload,{my_counter,my_bucket},
-                    antidote_crdt_counter,1,
+                    antidote_crdt_counter_pn,1,
                     {dict,1,16,16,8,80,48,
                           {[],[],[],[],[],[],[],[],...},
                           {{[],[],[],[],[],[],...}}},
@@ -133,7 +133,7 @@ The [file2tab](http://erlang.org/doc/man/ets.html#file2tab-2) - ```ets:file2tab(
 Supposing the following interaction with Antidote
 
 ```erlang 
-CounterObj = {my_counter, antidote_crdt_counter, my_bucket},
+CounterObj = {my_counter, antidote_crdt_counter_pn, my_bucket},
 CounterVal = rpc:call(Node, antidote, read_objects, [ignore, [], [CounterObj]]),
 {ok, CT}  = rpc:call(Node, antidote, update_objects, [ignore, [], [{CounterObj, increment, 1}]])
 ```
@@ -173,7 +173,7 @@ Contents
   1,
   {1,
    {clocksi_payload,{my_counter,my_bucket},
-                    antidote_crdt_counter,1,
+                    antidote_crdt_counter_pn,1,
                     {dict,1,16,16,8,80,48,
                           {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]},
                           {{[[{'antidote@127.0.0.1',{1490,186897,598677}}|
@@ -193,7 +193,7 @@ Pattern
 ```erlang
 clocksi_payload {
 	key={my_counter,my_bucket}
-	type=antidote_crdt_counter
+	type=antidote_crdt_counter_pn
 	op_param=1
 	snapshot_time={dict,1,16,16,8,80,48, {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}, {{[[{'antidote@127.0.0.1',{1490,186897,598677}}|1490186922302506]],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}}}
 	commit_time {
@@ -371,7 +371,7 @@ Update record
           update,
           {update_log_payload,
               {<<"5548">>,<<"antidote_bench_bucket">>},
-              undefined,antidote_crdt_counter,-1}}}}
+              undefined,antidote_crdt_counter_pn,-1}}}}
   ```
 
 Contents

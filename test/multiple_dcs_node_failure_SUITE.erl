@@ -86,7 +86,7 @@ cluster_failure_test(Config) ->
             pass;
         _ ->
             Key = cluster_failure_test,
-            Type = antidote_crdt_counter,
+            Type = antidote_crdt_counter_pn,
 
             update_counters(Node1, [Key], [1], ignore, static),
             update_counters(Node1, [Key], [1], ignore, static),
@@ -135,7 +135,7 @@ multiple_cluster_failure_test(Config) ->
             Node2 = hd(Cluster2),
 
             Key = multiple_cluster_failure_test,
-            Type = antidote_crdt_counter,
+            Type = antidote_crdt_counter_pn,
 
             update_counters(Node1, [Key], [1], ignore, static),
             update_counters(Node1, [Key], [1], ignore, static),
@@ -178,7 +178,7 @@ update_during_cluster_failure_test(Config) ->
         _ ->
 
             Key = update_during_cluster_failure_test,
-            Type = antidote_crdt_counter,
+            Type = antidote_crdt_counter_pn,
 
             update_counters(Node1, [Key], [1], ignore, static),
             update_counters(Node1, [Key], [1], ignore, static),
@@ -238,7 +238,7 @@ check_read(Node, Objects, Expected, Clock, TxId) ->
 
 update_counters(Node, Keys, IncValues, Clock, TxId) ->
     Updates = lists:map(fun({Key, Inc}) ->
-                                {{Key, antidote_crdt_counter, ?BUCKET}, increment, Inc}
+                                {{Key, antidote_crdt_counter_pn, ?BUCKET}, increment, Inc}
                         end,
                         lists:zip(Keys, IncValues)
                        ),

@@ -67,7 +67,7 @@ read_pncounter_log_recovery_test(Config) ->
         {ok, false} ->
             pass;
         _ ->
-            Type = antidote_crdt_counter,
+            Type = antidote_crdt_counter_pn,
             Key = log_value_test,
             Obj = {Key, Type, bucket},
 

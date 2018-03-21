@@ -128,7 +128,7 @@ check_read(Node, Objects, Expected, Clock, TxId) ->
 
 update_counters(Node, Keys, IncValues, Clock, TxId) ->
     Updates = lists:map(fun({Key, Inc}) ->
-                                {{Key, antidote_crdt_counter, ?BUCKET}, increment, Inc}
+                                {{Key, antidote_crdt_counter_pn, ?BUCKET}, increment, Inc}
                         end,
                         lists:zip(Keys, IncValues)
                        ),
@@ -144,7 +144,7 @@ update_counters(Node, Keys, IncValues, Clock, TxId) ->
 
 update_sets(Node, Keys, Ops, TxId) ->
     Updates = lists:map(fun({Key, {Op, Param}}) ->
-                                {{Key, antidote_crdt_orset, ?BUCKET}, Op, Param}
+                                {{Key, antidote_crdt_set_aw, ?BUCKET}, Op, Param}
                         end,
                         lists:zip(Keys, Ops)
                        ),
@@ -165,15 +165,15 @@ clocksi_test1(Config) ->
     update_counters(FirstNode, [], [], ignore, static),
 
     %% A read before an update returns empty
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, static),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 0, ignore, static),
 
     %% Read what you wrote
     update_counters(FirstNode, [Key1, Key2], [1, 1], ignore, static),
-    check_read_keys(FirstNode, [Key1, Key2], antidote_crdt_counter, [1, 1], ignore, static),
+    check_read_keys(FirstNode, [Key1, Key2], antidote_crdt_counter_pn, [1, 1], ignore, static),
 
     %% Multiple updates to a key in a transaction works
     update_counters(FirstNode, [Key1, Key1], [1, 1], ignore, static),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 3, ignore, static),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 3, ignore, static),
     pass.
 
 %% @doc The following function tests that ClockSI can run an interactive tx.
@@ -187,22 +187,22 @@ clocksi_test2(Config) ->
     Key2=clocksi_test2_key2,
     Key3=clocksi_test2_key3,
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 0, ignore, TxId),
 
     update_counters(FirstNode, [Key1], [1], ignore, TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 1, ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 1, ignore, TxId),
 
     update_counters(FirstNode, [Key2], [1], ignore, TxId),
-    check_read_key(FirstNode, Key2, antidote_crdt_counter, 1, ignore, TxId),
+    check_read_key(FirstNode, Key2, antidote_crdt_counter_pn, 1, ignore, TxId),
 
     update_counters(FirstNode, [Key3], [1], ignore, TxId),
-    check_read_key(FirstNode, Key3, antidote_crdt_counter, 1, ignore, TxId),
+    check_read_key(FirstNode, Key3, antidote_crdt_counter_pn, 1, ignore, TxId),
 
     CommitResult = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
     ?assertMatch({ok, _}, CommitResult),
     {ok, CausalSnapshot} = CommitResult,
 
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 1, CausalSnapshot, static),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 1, CausalSnapshot, static),
     lager:info("Test2 passed"),
     pass.
 
@@ -220,10 +220,10 @@ clocksi_test_prepare(Config) ->
     Key2 = find_key_same_node(FirstNode, IndexNode, 1),
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 0, ignore, TxId),
 
     update_counters(FirstNode, [Key1], [1], ignore, TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 1, ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 1, ignore, TxId),
 
     %% Start 2 phase commit, but do not commit
     CommitTime=rpc:call(FirstNode, cure, clocksi_iprepare, [TxId]),
@@ -237,7 +237,7 @@ clocksi_test_prepare(Config) ->
     %% start another transaction that updates the same partition
     {ok, TxId1 } = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
     update_counters(FirstNode, [Key2], [1], ignore, TxId1),
-    check_read_key(FirstNode, Key2, antidote_crdt_counter, 1, ignore, TxId1),
+    check_read_key(FirstNode, Key2, antidote_crdt_counter_pn, 1, ignore, TxId1),
 
     %% Start 2 phase commit for second transaction, but do not commit.
     CommitTime1 = rpc:call(FirstNode, cure, clocksi_iprepare, [TxId1]),
@@ -248,7 +248,7 @@ clocksi_test_prepare(Config) ->
 
     %% Read should return the value committed by transaction 1. But should not be
     %% blocked by the transaction 2 which is in commit phase, because it updates a different key.
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 1, ignore, TxIdRead),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 1, ignore, TxIdRead),
 
     End1 = rpc:call(FirstNode, cure, clocksi_icommit, [TxId1]),
     ?assertMatch({ok, {_Txid, _CausalSnapshot}}, End1),
@@ -282,21 +282,21 @@ clocksi_test5(Config) ->
     Key1=clocksi_test5_key1,
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    check_read_key(FirstNode, Key1, antidote_crdt_orset, [], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_set_aw, [], ignore, TxId),
 
     update_sets(FirstNode, [Key1], [{add, a}], TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_orset, [a], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_set_aw, [a], ignore, TxId),
 
     update_sets(FirstNode, [Key1], [{add, b}], TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_orset, [a, b], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_set_aw, [a, b], ignore, TxId),
 
     update_sets(FirstNode, [Key1], [{remove, a}], TxId),
-    check_read_key(FirstNode, Key1, antidote_crdt_orset, [b], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_set_aw, [b], ignore, TxId),
 
     End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
     ?assertMatch({ok, _CausalSnapshot}, End),
     {ok, CausalSnapshot} = End,
-    check_read_key(FirstNode, Key1, antidote_crdt_orset, [b], CausalSnapshot, static),
+    check_read_key(FirstNode, Key1, antidote_crdt_set_aw, [b], CausalSnapshot, static),
     lager:info("Test5 passed"),
     pass.
 
@@ -308,24 +308,24 @@ clocksi_multiple_updates_per_txn_test(Config) ->
     FirstNode = hd(Nodes),
     lager:info("Test6 started"),
     Key1=clocksi_multiple_updates_per_txn_key1,
-    BoundObj = {Key1, antidote_crdt_mvreg, ?BUCKET},
+    BoundObj = {Key1, antidote_crdt_register_mv, ?BUCKET},
 
     {ok, TxId} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [], ignore, TxId),
 
     ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"a">>}], TxId]),
-    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"a">>], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"a">>], ignore, TxId),
 
     ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"b">>}], TxId]),
-    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"b">>], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"b">>], ignore, TxId),
 
     ok = rpc:call(FirstNode, cure, update_objects, [[{BoundObj, assign, <<"c">>}], TxId]),
-    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"c">>], ignore, TxId),
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], ignore, TxId),
 
     End = rpc:call(FirstNode, cure, commit_transaction, [TxId]),
     ?assertMatch({ok, _CausalSnapshot}, End),
     {ok, CausalSnapshot} = End,
-    check_read_key(FirstNode, Key1, antidote_crdt_mvreg, [<<"c">>], CausalSnapshot, static),
+    check_read_key(FirstNode, Key1, antidote_crdt_register_mv, [<<"c">>], CausalSnapshot, static),
 
     lager:info("Test6 passed"),
     pass.
@@ -338,7 +338,7 @@ clocksi_single_key_update_read_test(Config) ->
     FirstNode = hd(Nodes),
     Key = clocksi_single_key_update_read_test_key1,
     {ok, CommitTime} = update_counters(FirstNode, [Key, Key], [1, 1], ignore, static),
-    check_read_key(FirstNode, Key, antidote_crdt_counter, 2, CommitTime, static),
+    check_read_key(FirstNode, Key, antidote_crdt_counter_pn, 2, CommitTime, static),
 
     lager:info("clocksi_single_key_update_read_test passed"),
     pass.
@@ -352,9 +352,9 @@ clocksi_multiple_key_update_read_test(Config) ->
     Key3 = clocksi_multiple_key_update_read_test_key3,
     {ok, CommitTime} = update_counters(FirstNode, [Key1, Key2, Key3], [1, 10, 1], ignore, static),
 
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 1, CommitTime, static),
-    check_read_key(FirstNode, Key2, antidote_crdt_counter, 10, CommitTime, static),
-    check_read_key(FirstNode, Key3, antidote_crdt_counter, 1, CommitTime, static),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 1, CommitTime, static),
+    check_read_key(FirstNode, Key2, antidote_crdt_counter_pn, 10, CommitTime, static),
+    check_read_key(FirstNode, Key3, antidote_crdt_counter_pn, 1, CommitTime, static),
 
     pass.
 
@@ -366,7 +366,7 @@ clocksi_test4(Config) ->
     FirstNode = hd(Nodes),
     Key1 = clocksi_test4_key1,
     {ok, TxId1} = rpc:call(FirstNode, cure, start_transaction, [ignore, []]),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, TxId1),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 0, ignore, TxId1),
 
     {ok, _CT} = rpc:call(FirstNode, cure, commit_transaction, [TxId1]),
     pass.
@@ -399,7 +399,7 @@ clocksi_test_read_time(Config) ->
     lager:info("Tx1 Committed."),
 
     lager:info("Tx2 Reading..."),
-    check_read_key(FirstNode, Key1, antidote_crdt_counter, 0, ignore, TxId1),
+    check_read_key(FirstNode, Key1, antidote_crdt_counter_pn, 0, ignore, TxId1),
 
     %% prepare and commit the second transaction.
     {ok, _CommitTime} = rpc:call(FirstNode, cure, commit_transaction, [TxId1]),
@@ -412,7 +412,7 @@ clocksi_test_read_wait(Config) ->
     Nodes = proplists:get_value(nodes, Config),
 
     Key1 = clocksi_test_read_wait_key1,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     %% Start a new tx, update a key read_wait_test, and send prepare.
 
     FirstNode = hd(Nodes),
@@ -522,7 +522,7 @@ clocksi_test_no_update_property(Config) ->
     Key =
     clockSI_test_no_update_property_key1,
     Bucket = bucket,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     {ok, _} = rpc:call(FirstNode, antidote, update_objects,
                       [ignore, [], [{{Key, Type, Bucket}, increment, 1}]]),
 
@@ -575,7 +575,7 @@ clocksi_multiple_read_update_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     Key = get_random_key(),
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     NTimes = 100,
     Obj = {Key, Type, ?BUCKET},
     {ok, [Result1], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
@@ -588,7 +588,7 @@ clocksi_multiple_read_update_test(Config) ->
 
 %% @doc Test updating prior to a read.
 read_update_test(Node, Key) ->
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     Obj = {Key, Type, ?BUCKET},
     {ok, [Result1], _} = rpc:call(Node, cure, read_objects, [ignore, [], [Obj]]),
     update_counters(Node, [Key], [1], ignore, static),
@@ -608,7 +608,7 @@ clocksi_concurrency_test(Config) ->
     Node = hd(Nodes),
     %% read txn starts before the write txn's prepare phase,
     Key = clocksi_conc,
-    Type = antidote_crdt_counter,
+    Type = antidote_crdt_counter_pn,
     {ok, TxId1} = rpc:call(Node, cure, start_transaction, [ignore, []]),
     update_counters(Node, [Key], [1], ignore, TxId1),
     rpc:call(Node, cure, clocksi_iprepare, [TxId1]),
@@ -635,11 +635,11 @@ clocksi_parallel_ops_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     Bucket = test_bucket,
-    Bound_object1 = {parallel_key1, antidote_crdt_counter, Bucket},
-    Bound_object2 = {parallel_key2, antidote_crdt_counter, Bucket},
-    Bound_object3 = {parallel_key3, antidote_crdt_counter, Bucket},
-    Bound_object4 = {parallel_key4, antidote_crdt_counter, Bucket},
-    Bound_object5 = {parallel_key5, antidote_crdt_counter, Bucket},
+    Bound_object1 = {parallel_key1, antidote_crdt_counter_pn, Bucket},
+    Bound_object2 = {parallel_key2, antidote_crdt_counter_pn, Bucket},
+    Bound_object3 = {parallel_key3, antidote_crdt_counter_pn, Bucket},
+    Bound_object4 = {parallel_key4, antidote_crdt_counter_pn, Bucket},
+    Bound_object5 = {parallel_key5, antidote_crdt_counter_pn, Bucket},
     {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
 
     %% update 5 different objects
@@ -685,11 +685,11 @@ clocksi_static_parallel_writes_test(Config) ->
     Nodes = proplists:get_value(nodes, Config),
     Node = hd(Nodes),
     Bucket = test_bucket,
-    Bound_object1 = {parallel_key6, antidote_crdt_counter, Bucket},
-    Bound_object2 = {parallel_key7, antidote_crdt_counter, Bucket},
-    Bound_object3 = {parallel_key8, antidote_crdt_counter, Bucket},
-    Bound_object4 = {parallel_key9, antidote_crdt_counter, Bucket},
-    Bound_object5 = {parallel_key10, antidote_crdt_counter, Bucket},
+    Bound_object1 = {parallel_key6, antidote_crdt_counter_pn, Bucket},
+    Bound_object2 = {parallel_key7, antidote_crdt_counter_pn, Bucket},
+    Bound_object3 = {parallel_key8, antidote_crdt_counter_pn, Bucket},
+    Bound_object4 = {parallel_key9, antidote_crdt_counter_pn, Bucket},
+    Bound_object5 = {parallel_key10, antidote_crdt_counter_pn, Bucket},
     %% update 5 different objects
     {ok, CT} = rpc:call(Node, cure, update_objects,
                         [ignore, [],
