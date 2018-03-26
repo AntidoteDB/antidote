@@ -15,6 +15,7 @@ permalink: index.html
 *  You need to serve millions of customers around the world with low latency responses?
 *  You are tired of fixing inconsistencies in your key-value store?
 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/oWUNCsFy-r0" frameborder="0" allowfullscreen></iframe>
 
 ## Why Antidote? ##
 
@@ -108,7 +109,7 @@ Antidote is the first to provide all of these features in one data store:
 *  Operation-based CRDT support
 *  Partial Replication
 
-The [Whitepaper](https://syncfree.lip6.fr/index.php/white-papers) gives a comprehensive
+The [Whitepaper](https://pages.lip6.fr/syncfree/index.php/white-papers.html) gives a comprehensive
 overview of Antidote's design goals.
 
 Hint: Some features are still experimental and are not available on the master branch.

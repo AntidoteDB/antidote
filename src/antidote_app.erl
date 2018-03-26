@@ -58,12 +58,6 @@ start(_StartType, _StartArgs) ->
             ok = riak_api_pb_service:register(?SERVICES),
 
             _IsRestart = inter_dc_manager:check_node_restart(),
-            case application:get_env(antidote, collect_metric_staleness) of
-              {ok, true} ->
-                  antidote_sup:start_metrics_collection();
-              _ ->
-                  ok
-            end,
 
             case application:get_env(antidote, auto_start_read_servers) of
                 {ok, true} ->

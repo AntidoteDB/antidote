@@ -48,8 +48,7 @@
          check_tables_ready/0,
          read/6,
          store_ss/3,
-         update/2,
-         belongs_to_snapshot_op/3]).
+         update/2]).
 
 %% Callbacks
 -export([init/1,
@@ -64,7 +63,10 @@
          handle_handoff_data/2,
          encode_handoff_item/2,
          handle_coverage/4,
-         handle_exit/3]).
+         handle_exit/3,
+         handle_overload_command/3,
+         handle_overload_info/2
+  ]).
 
 -type op_and_id() :: {non_neg_integer(), #clocksi_payload{}}.
 -record(state, {
@@ -247,6 +249,11 @@ delete(State=#state{ops_cache=_OpsCache}) ->
 
 handle_coverage(_Req, _KeySpaces, _Sender, State) ->
     {stop, not_implemented, State}.
+
+handle_overload_command(_, _, _) ->
+    ok.
+handle_overload_info(_, _) ->
+    ok.
 
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
@@ -492,16 +499,6 @@ materialize_snapshot(TxId, Key, Type, SnapshotTime, ShouldGC, State, SnapshotRes
             end
     end.
 
-%% Should be called doesn't belong in SS
-%% returns true if op is more recent than SS (i.e. is not in the ss)
-%% returns false otw
--spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
-belongs_to_snapshot_op(ignore, {_OpDc, _OpCommitTime}, _OpSs) ->
-    true;
-belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
-    OpSs1 = dict:store(OpDc, OpCommitTime, OpSs),
-    not vectorclock:le(OpSs1, SSTime).
-
 %% @doc Operation to insert a Snapshot in the cache and start
 %%      Garbage collection triggered by reads.
 -spec snapshot_insert_gc(key(), vector_orddict:vector_orddict(),
@@ -569,7 +566,7 @@ prune_ops({Len, OpsTuple}, Threshold)->
     %% one for including
     {NewSize, NewOps} = check_filter(fun({_OpId, Op}) ->
                                          OpCommitTime=Op#clocksi_payload.commit_time,
-                                         (belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
+                                         (materializer:belongs_to_snapshot_op(Threshold, OpCommitTime, Op#clocksi_payload.snapshot_time))
                                      end, ?FIRST_OP, ?FIRST_OP+Len, ?FIRST_OP, OpsTuple, 0, []),
     case NewSize of
         0 ->
@@ -641,30 +638,6 @@ op_insert_gc(Key, DownstreamOp, State = #state{ops_cache = OpsCache}) ->
     end.
 
 -ifdef(TEST).
-
-%% Testing belongs_to_snapshot returns true when a commit time
-%% is smaller than a snapshot time
-belongs_to_snapshot_test()->
-    CommitTime1a= 1,
-    CommitTime2a= 1,
-    CommitTime1b= 1,
-    CommitTime2b= 7,
-    SnapshotClockDC1 = 5,
-    SnapshotClockDC2 = 5,
-    CommitTime3a= 5,
-    CommitTime4a= 5,
-    CommitTime3b= 10,
-    CommitTime4b= 10,
-
-    SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
-    ?assertEqual(true, belongs_to_snapshot_op(
-                 vectorclock:from_list([{1, CommitTime1a}, {2, CommitTime1b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-    ?assertEqual(true, belongs_to_snapshot_op(
-                 vectorclock:from_list([{1, CommitTime2a}, {2, CommitTime2b}]), {2, SnapshotClockDC2}, SnapshotVC)),
-    ?assertEqual(false, belongs_to_snapshot_op(
-                  vectorclock:from_list([{1, CommitTime3a}, {2, CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
-    ?assertEqual(false, belongs_to_snapshot_op(
-                  vectorclock:from_list([{1, CommitTime4a}, {2, CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 
 %% This tests to make sure when garbage collection happens, no updates are lost
 gc_test() ->

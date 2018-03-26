@@ -207,7 +207,7 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
 is_op_in_snapshot(TxId, Op, {OpDc, OpCommitTime}, OperationSnapshotTime, SnapshotTime, LastSnapshot, PrevTime) ->
     %% First check if the op was already included in the previous snapshot
     %% Is the "or TxId ==" part necessary and correct????
-    case materializer_vnode:belongs_to_snapshot_op(
+    case materializer:belongs_to_snapshot_op(
            LastSnapshot, {OpDc, OpCommitTime}, OperationSnapshotTime) or (TxId == Op#clocksi_payload.txid) of
         true ->
             %% If not, check if it should be included in the new snapshot
