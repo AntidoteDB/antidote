@@ -674,61 +674,26 @@ gc_test() ->
     DC1 = 1,
     Type = antidote_crdt_counter,
 
-    %% Make 10 snapshots
     State = #state{ops_cache = OpsCache, snapshot_cache = SnapshotCache},
 
-    {ok, Res0} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2}]), ignore, [], false, State),
-    ?assertEqual(0, Type:value(Res0)),
-
-    op_insert_gc(Key, generate_payload(10, 11, Res0, a1), State),
-    {ok, Res1} = internal_read(Key, Type, vectorclock:from_list([{DC1, 12}]), ignore, [], false, State),
-    ?assertEqual(1, Type:value(Res1)),
-
-    op_insert_gc(Key, generate_payload(20, 21, Res1, a2), State),
-    {ok, Res2} = internal_read(Key, Type, vectorclock:from_list([{DC1, 22}]), ignore, [], false, State),
-    ?assertEqual(2, Type:value(Res2)),
-
-    op_insert_gc(Key, generate_payload(30, 31, Res2, a3), State),
-    {ok, Res3} = internal_read(Key, Type, vectorclock:from_list([{DC1, 32}]), ignore, [], false, State),
-    ?assertEqual(3, Type:value(Res3)),
-
-    op_insert_gc(Key, generate_payload(40, 41, Res3, a4), State),
-    {ok, Res4} = internal_read(Key, Type, vectorclock:from_list([{DC1, 42}]), ignore, [], false, State),
-    ?assertEqual(4, Type:value(Res4)),
-
-    op_insert_gc(Key, generate_payload(50, 51, Res4, a5), State),
-    {ok, Res5} = internal_read(Key, Type, vectorclock:from_list([{DC1, 52}]), ignore, [], false, State),
-    ?assertEqual(5, Type:value(Res5)),
-
-    op_insert_gc(Key, generate_payload(60, 61, Res5, a6), State),
-    {ok, Res6} = internal_read(Key, Type, vectorclock:from_list([{DC1, 62}]), ignore, [], false, State),
-    ?assertEqual(6, Type:value(Res6)),
-
-    op_insert_gc(Key, generate_payload(70, 71, Res6, a7), State),
-    {ok, Res7} = internal_read(Key, Type, vectorclock:from_list([{DC1, 72}]), ignore, [], false, State),
-    ?assertEqual(7, Type:value(Res7)),
-
-    op_insert_gc(Key, generate_payload(80, 81, Res7, a8), State),
-    {ok, Res8} = internal_read(Key, Type, vectorclock:from_list([{DC1, 82}]), ignore, [], false, State),
-    ?assertEqual(8, Type:value(Res8)),
-
-    op_insert_gc(Key, generate_payload(90, 91, Res8, a9), State),
-    {ok, Res9} = internal_read(Key, Type, vectorclock:from_list([{DC1, 92}]), ignore, [], false, State),
-
-    ?assertEqual(9, Type:value(Res9)),
-
-    op_insert_gc(Key, generate_payload(100, 101, Res9, a10), State),
+    %% Make max. number of snapshots
+    lists:map(
+      fun(N) ->
+        {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1, N * 10 + 2}]), ignore, [], false, State),
+        ?assertEqual(N, Type:value(Res)),
+        op_insert_gc(Key, generate_payload(N * 10, N * 10 + 1, Res, a), State)
+      end,lists:seq(0, SNAPSHOT_THRESHOLD)),
 
     %% Insert some new values
 
-    op_insert_gc(Key, generate_payload(15, 111, Res1, a11), State),
-    op_insert_gc(Key, generate_payload(16, 121, Res1, a12), State),
+    op_insert_gc(Key, generate_payload(15, 111, 1, a), State),
+    op_insert_gc(Key, generate_payload(16, 121, 1, a), State),
 
     %% Trigger the clean
     {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1, 102}]), ignore, [], true, State),
     ?assertEqual(10, Type:value(Res10)),
 
-    op_insert_gc(Key, generate_payload(102, 131, Res9, a13), State),
+    op_insert_gc(Key, generate_payload(102, 131, 9, a), State),
 
     %% Be sure you didn't loose any updates
     {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, [], true, State),
@@ -748,7 +713,7 @@ large_list_test() ->
     ?assertEqual(0, Type:value(Res0)),
 
     lists:foreach(fun(Val) ->
-                      op_insert_gc(Key, generate_payload(10, 11+Val, Res0, Val), State)
+                      op_insert_gc(Key, generate_payload(10, 11+Val, Res0, mycount), State)
                   end, lists:seq(1, 1000)),
 
     {ok, Res1000} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2000}]), ignore, [], false, State),
@@ -756,13 +721,12 @@ large_list_test() ->
 
     %% Now check everything is ok as the list shrinks from generating new snapshots
     lists:foreach(fun(Val) ->
-                  op_insert_gc(Key, generate_payload(10+Val, 11+Val, Res0, Val), State),
+                  op_insert_gc(Key, generate_payload(10+Val, 11+Val, Res0, mycount), State),
                   {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1, 2000}]), ignore, [], false, State),
                   ?assertEqual(Val, Type:value(Res))
               end, lists:seq(1001, 1100)).
 
-generate_payload(SnapshotTime, CommitTime, Prev, _Name) ->
-    Key = mycount,
+generate_payload(SnapshotTime, CommitTime, Prev, Key) ->
     Type = antidote_crdt_counter,
     DC1 = 1,
 
