@@ -53,15 +53,15 @@ Calling `antidotec_pb_socket:start(?ADDRESS, ?PORT)` starts this proxy and retur
 
 ```erlang
     %% Information on key, type, and bucket
-    KeyInfo = {Key, antidote_crdt_counter, <<"bucket">>},
+    KeyInfo = {Key, antidote_crdt_counter_pn, <<"bucket">>},
     %% Create a new counter update proxy locally
     Cntr = antidotec_counter:new(0),
     %% Increment the counter by 1
     Obj = antidotec_counter:increment(1, Cntr),
     ok = antidotec_pb:update_objects(Pid, antidotec_counter:to_ops(KeyInfor, Obj), TxId).
 
-    Obj1 = {Key1, antidote_crdt_counter, <<"bucket">>},
-    Obj2 = {Key2, antidote_crdt_counter, <<"bucket">>},
+    Obj1 = {Key1, antidote_crdt_counter_pn, <<"bucket">>},
+    Obj2 = {Key2, antidote_crdt_counter_pn, <<"bucket">>},
     %% Read values of two objects
     {ok, [Val1, Val2]} = antidotec_pb:read_objects(Pid, [Obj1, Obj2], TxId),
     Value = antidotec_counter:value(Val1). %% assuming Obj1 is of type counter
@@ -88,8 +88,8 @@ The following code snippet increments two counters atomically.
     %% Starts pb socket
     {ok, Pid} = antidotec_pb_socket:start(?ADDRESS, ?PORT),
 
-    Counter1 = {Key1, antidote_crdt_counter, Bucket},
-    Counter2 = {Key2, antidote_crdt_counter, Bucket},
+    Counter1 = {Key1, antidote_crdt_counter_pn, Bucket},
+    Counter2 = {Key2, antidote_crdt_counter_pn, Bucket},
     LocalObj = antidotec_counter:increment(Amount, antidotec_counter:new(0)),
 
     {ok, TxId} = antidotec_pb:start_transaction(Pid, term_to_binary(ignore), {}),

@@ -1,7 +1,7 @@
 version: '2'
 services:
   antidote:
-    image: antidotedb/antidote:local
+    image: antidotedb/antidote:latest
     environment:
       NODE_NAME: "antidote@antidote"
       SHORT_NAME: "true"
@@ -13,7 +13,7 @@ services:
       - "9090:9090"
     volumes:
       - ".:/data"
-    command: "-config.file=/data/prometheus.yml"
+    command: "--config.file=/data/prometheus.yml"
     depends_on:
       - antidote
   grafana:

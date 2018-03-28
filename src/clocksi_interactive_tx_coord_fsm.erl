@@ -1037,11 +1037,11 @@ read_single_fail_test(Pid) ->
 
 read_success_test(Pid) ->
     fun() ->
-        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, antidote_crdt_counter}}, infinity),
+        {ok, State} = gen_fsm:sync_send_event(Pid, {read, {counter, antidote_crdt_counter_pn}}, infinity),
         ?assertEqual({ok, 2},
-            {ok, antidote_crdt_counter:value(State)}),
+            {ok, antidote_crdt_counter_pn:value(State)}),
         ?assertEqual({ok, [a]},
-            gen_fsm:sync_send_event(Pid, {read, {set, antidote_crdt_gset}}, infinity)),
+            gen_fsm:sync_send_event(Pid, {read, {set, antidote_crdt_set_go}}, infinity)),
         ?assertEqual({ok, mock_value},
             gen_fsm:sync_send_event(Pid, {read, {mock_type, mock_partition_fsm}}, infinity)),
         ?assertMatch({ok, _}, gen_fsm:sync_send_event(Pid, {prepare, empty}, infinity))

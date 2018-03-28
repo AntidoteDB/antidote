@@ -31,29 +31,33 @@
     {ok, op()} | {error, atom()}.
 generate_downstream_op(Transaction, IndexNode, Key, Type, Update, WriteSet, InternalReadSet) ->
     %% TODO: Check if read can be omitted for some types as registers
-    Result = case orddict:find(Key, InternalReadSet) of
-        {ok, S} ->
-            S;
-
-        error ->
-            case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
-                {ok, S}->
-                    S;
-
-                {error, Reason}->
-                    {error, {gen_downstream_read_failed, Reason}}
-            end
-    end,
+    NeedState = Type:require_state_downstream(Update),
+    Result =
+        %% If state is needed to generate downstream, get it from txn buffer or materializer cache.
+        case NeedState of
+          true ->
+            case orddict:find(Key, InternalReadSet) of
+              {ok, S} ->
+                  S;
+              error ->
+                  case clocksi_vnode:read_data_item(IndexNode, Transaction, Key, Type, WriteSet) of
+                      {ok, S}->
+                          S;
+                      {error, Reason}->
+                          {error, {gen_downstream_read_failed, Reason}}
+                  end
+            end;
+          false ->
+              {ok, ignore} %Use a dummy value
+        end,
     case Result of
         {error, R} ->
             {error, R}; %% {error, Reason} is returned here.
-
         Snapshot ->
             case Type of
-                antidote_crdt_bcounter ->
+                antidote_crdt_counter_b ->
                     %% bcounter data-type.
                     bcounter_mgr:generate_downstream(Key, Update, Snapshot);
-
                 _ ->
                     Type:downstream(Update, Snapshot)
             end

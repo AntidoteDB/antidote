@@ -17,11 +17,11 @@ The interface of these CRDTs specify the operations and the parameters that can 
 In the following, we specify the supported `{operation(), op_param()}` pair for each of the supported CRDTs. 
 The first element in the tuple specifies the update operation, and the second item indicates the corresponding parameters.
 
-##### antidote_crdt_counter #####
+##### antidote_crdt_counter_pn #####
     {increment, integer()}
     {decrement, integer()}
 
-##### antidote_crdt_orset #####
+##### antidote_crdt_set_aw #####
     {add, term()}
     {remove, term()}
     {add_all, [term()]}
@@ -33,11 +33,11 @@ The first element in the tuple specifies the update operation, and the second it
     {add_all, {[term()], actor()}}
     {remove_all, {[term()], actor()}}
 
-##### antidote_crdt_lwwreg #####
+##### antidote_crdt_register_lww #####
     {assign, {term(), non_neg_integer()}}
     {assign, term()}.
 
-##### antidote_crdt_map #####
+##### antidote_crdt_map_rr #####
     {update, {[map_field_update() | map_field_op()], actorordot()}}.
 
     -type actorordot() :: riak_dt:actor() | riak_dt:dot().
@@ -46,7 +46,7 @@ The first element in the tuple specifies the update operation, and the second it
     -type crdt_op() :: term(). %% Valid riak_dt updates
     -type field() :: term()
 
-##### antidote_crdt_mvreg #####
+##### antidote_crdt_register_mv #####
     {assign, {term(), non_neg_integer()}}
     {assign, term()}
     {propagate, {term(), non_neg_integer()}}
@@ -84,7 +84,7 @@ The interface of interactive transaction is:
 #### Example ####
 
 ```erlang
-     CounterObj = {my_counter, antidote_crdt_counter, my_bucket},
+     CounterObj = {my_counter, antidote_crdt_counter_pn, my_bucket},
 
      %% Read and increment counter by 1
      {ok, TxId} = rpc:call(Node, antidote, start_transaction, [ignore, []]),
@@ -119,8 +119,8 @@ It is not possible to read and update in the same transaction.
 #### Example ####
 
 ```erlang
-    CounterObj = {my_counter, antidote_crdt_counter, my_bucket},
-    SetObj = {my_set, antidote_crdt_orset, my_bucket},
+    CounterObj = {my_counter, antidote_crdt_counter_pn, my_bucket},
+    SetObj = {my_set, antidote_crdt_set_aw, my_bucket},
     {ok, CT1} = rpc:call(Node, antidote, update_objects, [ignore, [], [{CounterObj, increment, 1}]]),
     {ok, Result, CT2} = rpc:call(Node, antidote, read_objects, [CT1, [], [CounterObj, SetObj]]),
     [CounterVal, SetVal] = Result.

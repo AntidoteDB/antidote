@@ -26,8 +26,8 @@ Pre-commit hooks takes one argument which is the client issued update operation 
 Following is a pre-commit hook which modifies single increment  to increment by two.
 
 ```erlang
-my_increment_hook({ {Key, Bucket}, antidote_crdt_counter, {increment, 1} }) ->
-    {ok, { {Key, Bucket}, antidote_crdt_counter, {increment, 2} }}.
+my_increment_hook({ {Key, Bucket}, antidote_crdt_counter_pn, {increment, 1} }) ->
+    {ok, { {Key, Bucket}, antidote_crdt_counter_pn, {increment, 2} }}.
 ```
 
 ## Post-commit hooks
@@ -44,7 +44,7 @@ Following is a post commit hook which increments a commit-count for every update
 ```erlang
     my_commit_count_hook({ { Key, Bucket }, Type, OP }) ->
         _Result = antidote:update_objects(ignore, [],
-                                          [{ {Key, antidote_crdt_counter, commitcount}, increment, 1}]),
+                                          [{ {Key, antidote_crdt_counter_pn, commitcount}, increment, 1}]),
         {ok, { {Key, Bucket}, Type, OP} }.
 ```
 
