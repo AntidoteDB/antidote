@@ -25,11 +25,11 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 %% Number of snapshots to trigger GC
--define(SNAPSHOT_THRESHOLD, 4).
+-define(SNAPSHOT_THRESHOLD, 10).
 %% Number of snapshots to keep after GC
--define(SNAPSHOT_MIN, 2).
+-define(SNAPSHOT_MIN, 3).
 %% Number of ops to keep before GC
--define(OPS_THRESHOLD, 20).
+-define(OPS_THRESHOLD, 50).
 %% If after the op GC there are only this many or less spaces
 %% free in the op list then increase the list size
 -define(RESIZE_THRESHOLD, 5).
@@ -655,7 +655,7 @@ gc_test() ->
         {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1, N * 10 + 2}]), ignore, [], false, State),
         ?assertEqual(N, Type:value(Res)),
         op_insert_gc(Key, generate_payload(N * 10, N * 10 + 1, Res, a), State)
-      end,lists:seq(0, SNAPSHOT_THRESHOLD)),
+    end,lists:seq(0, ?SNAPSHOT_THRESHOLD)),
 
     %% Insert some new values
 
@@ -664,13 +664,13 @@ gc_test() ->
 
     %% Trigger the clean
     {ok, Res10} = internal_read(Key, Type, vectorclock:from_list([{DC1, 102}]), ignore, [], true, State),
-    ?assertEqual(10, Type:value(Res10)),
+    ?assertEqual(11, Type:value(Res10)),
 
     op_insert_gc(Key, generate_payload(102, 131, 9, a), State),
 
     %% Be sure you didn't loose any updates
     {ok, Res13} = internal_read(Key, Type, vectorclock:from_list([{DC1, 142}]), ignore, [], true, State),
-    ?assertEqual(13, Type:value(Res13)).
+    ?assertEqual(14, Type:value(Res13)).
 
 %% This tests to make sure operation lists can be large and resized
 large_list_test() ->
