@@ -655,7 +655,7 @@ gc_test() ->
         {ok, Res} = internal_read(Key, Type, vectorclock:from_list([{DC1, N * 10 + 2}]), ignore, [], false, State),
         ?assertEqual(N, Type:value(Res)),
         op_insert_gc(Key, generate_payload(N * 10, N * 10 + 1, Res, a), State)
-    end,lists:seq(0, ?SNAPSHOT_THRESHOLD)),
+      end, lists:seq(0, ?SNAPSHOT_THRESHOLD)),
 
     %% Insert some new values
 
