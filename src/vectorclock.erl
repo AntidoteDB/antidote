@@ -41,27 +41,24 @@
 
 
 -type actor() :: any().
--type vectorclock() :: dict:dict(actor(), non_neg_integer()).
+-type vectorclock() :: #{actor() => non_neg_integer()}.
 -export_type([vectorclock/0]).
 
 -spec new() -> vectorclock().
 new() ->
-    dict:new().
+    maps:new().
 
 -spec get_clock_of_dc(any(), vectorclock()) -> non_neg_integer().
 get_clock_of_dc(Key, VectorClock) ->
-  case dict:find(Key, VectorClock) of
-    {ok, Value} -> Value;
-    error -> 0
-  end.
+  maps:get(Key, VectorClock, 0).
 
 -spec set_clock_of_dc(any(), non_neg_integer(), vectorclock()) -> vectorclock().
 set_clock_of_dc(Key, Value, VectorClock) ->
-  dict:store(Key, Value, VectorClock).
+  VectorClock#{Key => Value}.
 
 -spec from_list([{any(), non_neg_integer()}]) -> vectorclock().
 from_list(List) ->
-    dict:from_list(List).
+  maps:from_list(List).
 
 -spec max([vectorclock()]) -> vectorclock().
 max([]) -> new();
@@ -75,7 +72,7 @@ min([V1, V2|T]) -> min([merge(fun erlang:min/2, V1, V2)|T]).
 
 -spec merge(fun((non_neg_integer(), non_neg_integer()) -> non_neg_integer()), vectorclock(), vectorclock()) -> vectorclock().
 merge(F, V1, V2) ->
-  AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+  AllDCs = maps:keys(maps:merge(V1, V2)),
   Func = fun(DC) ->
     A = get_clock_of_dc(DC, V1),
     B = get_clock_of_dc(DC, V2),
@@ -85,8 +82,7 @@ merge(F, V1, V2) ->
 
 -spec for_all_keys(fun((non_neg_integer(), non_neg_integer()) -> boolean()), vectorclock(), vectorclock()) -> boolean().
 for_all_keys(F, V1, V2) ->
-  %% We could but do not care about duplicate DC keys - finding duplicates is not worth the effort
-  AllDCs = dict:fetch_keys(V1) ++ dict:fetch_keys(V2),
+  AllDCs = maps:keys(maps:merge(V1, V2)),
   Func = fun(DC) ->
     A = get_clock_of_dc(DC, V1),
     B = get_clock_of_dc(DC, V2),
@@ -95,13 +91,23 @@ for_all_keys(F, V1, V2) ->
   lists:all(Func, AllDCs).
 
 -spec eq(vectorclock(), vectorclock()) -> boolean().
-eq(V1, V2) -> for_all_keys(fun(A, B) -> A == B end, V1, V2).
+eq(V1, V2) -> le(V1, V2) andalso le(V2, V1).
 
 -spec le(vectorclock(), vectorclock()) -> boolean().
-le(V1, V2) -> for_all_keys(fun(A, B) -> A =< B end, V1, V2).
+le(V1, V2) ->
+  try
+    maps:fold(fun (DC, V, true) ->
+                case V =< get_clock_of_dc(DC, V2) of
+                  true -> true;
+                  false -> throw(false)
+                end
+              end, true, V1)
+  catch
+    false -> false
+  end .
 
 -spec ge(vectorclock(), vectorclock()) -> boolean().
-ge(V1, V2) -> for_all_keys(fun(A, B) -> A >= B end, V1, V2).
+ge(V1, V2) -> le(V2, V1).
 
 -spec all_dots_smaller(vectorclock(), vectorclock()) -> boolean().
 all_dots_smaller(V1, V2) -> for_all_keys(fun(A, B) -> A < B end, V1, V2).
@@ -110,10 +116,29 @@ all_dots_smaller(V1, V2) -> for_all_keys(fun(A, B) -> A < B end, V1, V2).
 all_dots_greater(V1, V2) -> for_all_keys(fun(A, B) -> A > B end, V1, V2).
 
 -spec gt(vectorclock(), vectorclock()) -> boolean().
-gt(V1, V2) -> ge(V1, V2) and (not eq(V1, V2)).
+gt(V1, V2) -> lt(V2, V1).
 
 -spec lt(vectorclock(), vectorclock()) -> boolean().
-lt(V1, V2) -> le(V1, V2) and (not eq(V1, V2)).
+lt(V1, V2) ->
+  try
+    maps:fold(fun (DC, V, Acc) ->
+                X = get_clock_of_dc(DC, V2),
+                case V =< X of
+                  true -> Acc orelse V < X;
+                  false -> throw(false)
+                end
+              end, false, V1)
+    orelse
+    maps:fold(fun (DC, V, _) ->
+                X = get_clock_of_dc(DC, V1),
+                case V > X of
+                  true -> throw(true);
+                  false -> false
+                end
+              end, false, V2)
+  catch
+    R -> R
+  end .
 
 -spec conc(vectorclock(), vectorclock()) -> boolean().
 conc(V1, V2) -> (not ge(V1, V2)) andalso (not le(V1, V2)).
@@ -135,6 +160,12 @@ vectorclock_test() ->
     ?assertEqual(le(V1, V4), false),
     ?assertEqual(eq(V1, V4), false),
     ?assertEqual(ge(V1, V5), false).
+
+
+vectorclock_lt_test() ->
+  ?assertEqual(lt(from_list([{a, 1}]), from_list([{a,1}, {b, 1}])), true),
+  ?assertEqual(lt(from_list([{a, 1}]), from_list([{a,1}])), false),
+  ?assertEqual(lt(from_list([{a, 2}]), from_list([{a,1}])), false).
 
 vectorclock_max_test() ->
   V1 = vectorclock:from_list([{1, 5}, {2, 4}]),
