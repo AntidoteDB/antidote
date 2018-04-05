@@ -23,12 +23,14 @@
 -module(antidote).
 
 -include("antidote.hrl").
+-include("querying.hrl").
 
 %% API for applications
 -export([ start/0, stop/0,
           start_transaction/2,
           read_objects/2,
           read_objects/3,
+          query_objects/2,
           update_objects/2,
           update_objects/3,
           abort_transaction/1,
@@ -140,6 +142,14 @@ read_objects(Objects, TxId) ->
                   -> {ok, list(), vectorclock()} | {error, reason()}.
 read_objects(Clock, Properties, Objects) ->
     cure:read_objects(Clock, Properties, Objects).
+
+%%%%%%%%%%%%%%%%%%% QUERY ZONE %%%%%%%%%%%%%%%%%%%
+
+-spec query_objects(filter(), txid()) -> {ok, [term()]} | {error, reason()}.
+query_objects(Filter, TxId) ->
+    query_optimizer:query_filter(Filter, TxId).
+
+%%%%%%%%%%%%%%%% END OF QUERY ZONE %%%%%%%%%%%%%%%
 
 %% Returns a list containing tuples of object state and commit time for each
 %% of those objects
