@@ -14,8 +14,9 @@
 -define(TABLE_NAME_DT, antidote_crdt_lwwreg).
 -define(COLUMNS, {names}).
 -define(PK_COLUMN, {pk}).
+-define(TABLE_METADATA_KEY, '#tables').
+-define(TABLE_METADATA_DT, antidote_crdt_gmap).
 -define(AQL_METADATA_BUCKET, aql_metadata).
--define(AQL_METADATA_KEY, '#tables').
 -define(SHADOW_COL_DT, antidote_crdt_gmap).
 -define(SHADOW_COL_ENTRY_DT, antidote_crdt_mvreg).
 -define(STATE_COL, '#st').
@@ -37,14 +38,22 @@
 
 %% Indexes definitions
 -define(INDEX(IndexName, TableName, Attributes), {IndexName, TableName, Attributes}).
+-define(is_index(Index), is_tuple(Index) andalso tuple_size(Index) =:= 3).
 -define(PINDEX_PREFIX, "#_").
 -define(SINDEX_PREFIX, "#2i_").
 -define(PINDEX_DT, antidote_crdt_gset).
 -define(SINDEX_DT, antidote_crdt_orset).
+-define(INDEX_UPDATE(TableName, IndexName, EntryKey, EntryValue), {TableName, IndexName, {EntryKey, EntryValue}}).
+-define(is_index_upd(Update), is_tuple(Update) andalso tuple_size(Update) =:= 3).
+-define(RECORD_UPD_TYPE, record).
+-define(TABLE_UPD_TYPE, table).
+-define(METADATA_UPD_TYPE, metadata).
+-define(OTHER_UPD_TYPE, other).
 
 %% Query definitions
 -define(CONDITION(Column, Comparator, Value), {Column, Comparator, Value}).
 -define(WILDCARD, {wildcard, ignore}).
+-define(OBJECT_UPDATE(Key, Type, Bucket, Op, Param), {{Key, Type, Bucket}, Op, Param}).
 
 %% Types
 -type filter() :: [filter_content()].

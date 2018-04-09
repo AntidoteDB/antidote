@@ -35,8 +35,12 @@
          foreign_keys/1,
          indexes/1,
          column_names/1,
+         tables_metadata/1,
+         table_metadata/2,
+         is_primary_key/2,
          shadow_column_state/4,
-         record_data/3]).
+         record_data/3,
+         lookup_column/2]).
 
 table(?TABLE(TName, _Policy, _Cols, _SCols, _Idx)) -> TName.
 
@@ -52,16 +56,28 @@ column_names(Table) ->
     Columns = columns(Table),
     maps:get(?COLUMNS, Columns).
 
-%shadow_column_state(TableName, ShadowCols, RecordData, TxId) when is_list(ShadowCols) ->
-%    TNameAtom = querying_commons:to_atom(TableName),
-%    shadow_column_state(TNameAtom, ShadowCols, RecordData, TxId, []);
-%shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
-%    shadow_column_state(TableName, [ShadowCol], RecordData, TxId).
+tables_metadata(TxId) ->
+    ObjKey = querying_commons:build_keys(?TABLE_METADATA_KEY, ?TABLE_DT, ?AQL_METADATA_BUCKET),
+    [Meta] = querying_commons:read_keys(ObjKey, TxId),
+    Meta.
 
-% RecordData representes a single record, i.e. a list of tuples on the form:
+table_metadata(TableName, TxId) ->
+    Metadata = tables_metadata(TxId),
+    TableNameAtom = querying_commons:to_atom(TableName),
+    MetadataKey = {TableNameAtom, ?TABLE_NAME_DT},
+    case proplists:get_value(MetadataKey, Metadata) of
+        undefined -> [];
+        TableMeta -> TableMeta
+    end.
+
+is_primary_key(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(Cols) ->
+    ColList = maps:get(?PK_COLUMN, Cols),
+    lists:member(ColumnName, ColList).
+
+% RecordData represents a single record, i.e. a list of tuples on the form:
 % {{col_name, datatype}, value}
 shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
-    io:format(">> shadow_column_state:~n", []),
+    %io:format(">> shadow_column_state:~n", []),
     ?FK(FkName, FkType, _RefTable, _RefCol) = ShadowCol,
     %%io:format("ShadowCol: ~p~n", [ShadowCol]),
     ColName = {column_name(FkName), type_to_crdt(FkType, undefined)},
@@ -74,16 +90,32 @@ shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
     %io:format("ShColData: ~p~n", [ShColData]),
     RefColName = {RefColValue, ?SHADOW_COL_ENTRY_DT},
     State = lookup_column(RefColName, ShColData),
-    io:format("State: ~p~n", [State]),
+    %io:format("State: ~p~n", [State]),
     State.
-    %shadow_column_state(TableName, Tail, RecordData, TxId, lists:append(Acc, [State]));
-%shadow_column_state(_TableName, [], _RecordData, _TxId, Acc) ->
-%    Acc.
 
-record_data(TableName, PKey, TxId) ->
-    PKeyAtom = querying_commons:to_atom(PKey),
-    ObjKey = querying_commons:build_keys(PKeyAtom, ?TABLE_DT, TableName),
-    querying_commons:read_keys(ObjKey, TxId).
+record_data(PKeys, TableName, TxId) when is_list(PKeys) ->
+    PKeyAtoms = lists:map(fun(PKey) -> querying_commons:to_atom(PKey) end, PKeys),
+    ObjKeys = querying_commons:build_keys(PKeyAtoms, ?TABLE_DT, TableName),
+    case querying_commons:read_keys(ObjKeys, TxId) of
+        [[]] -> [];
+        ObjValues -> ObjValues
+    end;
+record_data(PKey, TableName, TxId) ->
+    record_data([PKey], TableName, TxId).
+    %PKeyAtom = querying_commons:to_atom(PKey),
+    %ObjKey = querying_commons:build_keys(PKeyAtom, ?TABLE_DT, TableName),
+    %querying_commons:read_keys(ObjKey, TxId).
+
+lookup_column(_ColumnName, []) -> [];
+lookup_column({ColumnName, CRDT}, Record) ->
+    proplists:get_value({ColumnName, CRDT}, Record);
+lookup_column(ColumnName, Record) ->
+    Aux = lists:dropwhile(fun(?ATTRIBUTE(Column, _Type, _Value)) ->
+        Column /= ColumnName end, Record),
+    case Aux of
+        [] -> undefined;
+        [?ATTRIBUTE(_Column, _Type, Value) | _] -> Value
+    end.
 
 %% ====================================================================
 %% Internal functions
@@ -97,14 +129,3 @@ type_to_crdt(?AQL_BOOLEAN, _) -> ?CRDT_BOOLEAN;
 type_to_crdt(?AQL_COUNTER_INT, {_, _}) -> ?CRDT_BCOUNTER_INT;
 type_to_crdt(?AQL_COUNTER_INT, _) -> ?CRDT_COUNTER_INT;
 type_to_crdt(?AQL_VARCHAR, _) -> ?CRDT_VARCHAR.
-
-lookup_column(_ColumnName, []) -> [];
-lookup_column(ColumnName, Record) ->
-    proplists:get_value(ColumnName, Record).
-%lookup_column(ColumnName, Data) when is_list(Data) ->
-%    lookup_column(ColumnName, Data, []).
-%lookup_column(ColumnName, [Record | Tail], Acc) ->
-%    NewAcc = lists:append(Acc, [proplists:get_value(ColumnName, Record)]),
-%    lookup_column(ColumnName, Tail, NewAcc);
-%lookup_column(_ColumnName, [], Acc) ->
-%    Acc.

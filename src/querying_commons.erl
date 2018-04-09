@@ -56,16 +56,6 @@ build_keys([], [], _Bucket, Acc) ->
 read_keys([], _TxId) -> [[]];
 read_keys(ObjKeys, TxId) when is_list(ObjKeys) ->
     %% TODO read objects from Cure or Materializer?
-    %io:format("read_keys:~n", []),
-    %io:format("ObjKeys: ~p~n", [ObjKeys]),
-    %case cure:read_objects(ObjKeys, TxId) of
-    %    {ok, Objs} ->
-    %        io:format("Objs: ~p~n", [Objs]),
-    %        Objs;
-    %    Error ->
-    %        io:format("An error occurred: ~p~n", [Error]),
-    %        Error
-    %end;
     {ok, Objs} = cure:read_objects(ObjKeys, TxId),
     Objs;
 read_keys(ObjKey, TxId) ->

@@ -163,7 +163,10 @@ get_objects(Clock, Objects, Properties) ->
 update_objects(Updates, TxId) ->
     case type_check(Updates) of
         ok ->
-            cure:update_objects(Updates, TxId);
+            case indexing:check_object_updates(Updates, TxId) of
+                [] -> cure:update_objects(Updates, TxId);
+                IdxUpds -> cure:update_objects(lists:append(Updates, IdxUpds), TxId)
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
