@@ -70,6 +70,7 @@ get_address() ->
 -spec get_address_list() -> {[partition_id()], [socket_address()]}.
 get_address_list() ->
     PartitionList = dc_utilities:get_my_partitions(),
+    {ok, List} = inet:getif(),
     List1 = [Ip1 || {Ip1, _, _} <- List],
     %% get host name from node name
     [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
