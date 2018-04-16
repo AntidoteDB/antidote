@@ -4,20 +4,13 @@
 -mode(compile).
 
 -export([
-    pmap/2,
-    wait_until/3,
-    check_ready_nodes/1,
-    wait_ready/1,
-    wait_until_result/4,
-    wait_until_offline/1,
-    wait_until_disconnected/2,
-    wait_until_connected/2,
-    wait_until_registered/2,
-    connect_cluster/1,
-    join_cluster/1
+    exec_join/2
 ]).
 
-
+%% Usage: join_nodes.erl createdc 'script@host' 'antidote@host1' 'antidote@host2'
+%%        join_nodes.erl connectdcs 'script@host' 'antidote@host1' 'antidote@host2'
+%% createdc : connects nodes with in a dc to distribute data among the nodes.
+%% connectdc : connect two dcs to start replicating data between them.
 main([Func, ScriptNodeName | AntidoteNodeNames]) ->
     case net_kernel:start([list_to_atom(ScriptNodeName), longnames]) of
         {ok, _Pid} ->
