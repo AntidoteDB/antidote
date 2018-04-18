@@ -62,7 +62,6 @@
     start_link/3,
     start_link/4,
     start_link/5,
-
     generate_name/1,
     perform_singleitem_operation/4,
     perform_singleitem_update/5,
@@ -79,8 +78,7 @@
     stop/1]).
 
 %% states
--export([
-    execute_op/2,
+-export([execute_op/2,
     execute_op/3,
     start_tx/2,
     committing_2pc/3,
@@ -91,13 +89,7 @@
     receive_aborted/2,
     receive_read_objects_result/2,
     receive_logging_responses/2,
-    receive_committed/2,
-
-    perform_update/6,
-    perform_read/4
-
-
-]).
+    receive_committed/2]).
 
 %% TODO convert statem
 %% TODO use statem to make abort, reply_to_client, and prepare an internal state
@@ -142,6 +134,7 @@ start_link(From, Clientclock, Properties) ->
 start_link(From) ->
     start_link(From, ignore, antidote:get_default_txn_properties()).
 
+%% TODO spec
 stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 
 %% @doc This is a standalone function for directly contacting the read
@@ -882,7 +875,6 @@ replace_first([NotMyKey|Rest], Key, NewKey) ->
     [NotMyKey|replace_first(Rest, Key, NewKey)].
 
 
-
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
     Partition = ?LOG_UTIL:get_key_partition(Key),
@@ -905,6 +897,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
             end,
             {error, Reason}
     end.
+
 
 perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalReadSet) ->
     ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [update]),
