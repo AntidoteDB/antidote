@@ -96,7 +96,6 @@
     perform_read/4,
     finish_op/3,
 
-    process_prepared/2,
     perform_singleitem_update/5,
     perform_singleitem_operation/4
 
