@@ -93,7 +93,6 @@
     receive_logging_responses/2,
     receive_committed/2,
 
-    get_snapshot_time/0,
     perform_update/6,
     perform_read/4
 
