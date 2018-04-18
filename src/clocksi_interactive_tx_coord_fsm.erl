@@ -83,6 +83,7 @@
     start_tx/2,
     committing/3,
     single_committing/2,
+    committing_single/3,
 
     receive_prepared/2,
     receive_aborted/2,
@@ -100,7 +101,6 @@
     finish_op/3,
 
     process_prepared/2,
-    committing_single/3,
     perform_singleitem_update/5,
     perform_singleitem_operation/4
 
@@ -448,6 +448,8 @@ receive_logging_responses(Response, S0 = #tx_coord_state{
     end.
 
 
+%%%== receive_committed
+
 %% @doc the fsm waits for acks indicating that each partition has successfully
 %%      committed the tx and finishes operation.
 %%      Should we retry sending the committed message if we don't receive a
@@ -462,6 +464,23 @@ receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
             end;
         _ ->
             {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
+    end.
+
+
+%%%== committing_single
+
+%% @doc There was only a single partition with an update in this transaction
+%%      so the transaction has already been committed
+%%      so just wait for the commit message from the client
+committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transaction, commit_time = Commit_time}) ->
+    case reply_to_client(SD0#tx_coord_state{
+        prepare_time = Commit_time,
+        from = Sender,
+        commit_time = Commit_time,
+        state = committed
+    }) of
+        {start_tx, Data} -> {next_state, start_tx, Data};
+        {stop, normal, Data} -> {stop, normal, Data}
     end.
 
 %% =============================================================================
@@ -1051,12 +1070,6 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
 
 
 
-%% @doc There was only a single partition with an update in this transaction
-%%      so the transaction has already been committed
-%%      so just wait for the commit message from the client
-committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transaction,
-    commit_time = Commit_time}) ->
-    reply_to_client(SD0#tx_coord_state{prepare_time = Commit_time, from = Sender, commit_time = Commit_time, state = committed}).
 
 
 
