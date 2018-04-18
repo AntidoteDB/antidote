@@ -65,7 +65,8 @@
 
     generate_name/1,
     perform_singleitem_operation/4,
-    perform_singleitem_update/5
+    perform_singleitem_update/5,
+    finish_op/3
 ]).
 
 %% gen_fsm callbacks
@@ -95,8 +96,7 @@
     init_state/4,
     get_snapshot_time/0,
     perform_update/6,
-    perform_read/4,
-    finish_op/3
+    perform_read/4
 
 
 ]).
@@ -143,9 +143,6 @@ start_link(From, Clientclock, Properties) ->
 -spec start_link(pid()) -> {ok, pid()}.
 start_link(From) ->
     start_link(From, ignore, antidote:get_default_txn_properties()).
-
-finish_op(From, Key, Result) ->
-    gen_fsm:send_event(From, {Key, Result}).
 
 stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
 
@@ -233,6 +230,10 @@ perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+%% TODO spec
+finish_op(From, Key, Result) ->
+    gen_fsm:send_event(From, {Key, Result}).
 
 %%%===================================================================
 %%% States
