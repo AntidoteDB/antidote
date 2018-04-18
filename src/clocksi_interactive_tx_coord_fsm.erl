@@ -79,21 +79,17 @@
 -export([
     execute_op/2,
     execute_op/3,
-    committing_2pc/3,
     start_tx/2,
+    committing_2pc/3,
     committing/3,
     single_committing/2,
     committing_single/3,
-
     receive_prepared/2,
     receive_aborted/2,
     receive_read_objects_result/2,
     receive_logging_responses/2,
     receive_committed/2,
 
-
-
-    create_transaction_record/5,
     init_state/4,
     get_snapshot_time/0,
     perform_update/6,
@@ -520,8 +516,6 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
         stay_alive = StayAlive,
         properties = Properties
     }.
-
-
 
 
 %% @doc TODO
