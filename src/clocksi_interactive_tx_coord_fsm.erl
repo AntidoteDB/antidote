@@ -88,6 +88,7 @@
     receive_aborted/2,
     receive_read_objects_result/2,
     receive_logging_responses/2,
+    receive_committed/2,
 
 
 
@@ -100,7 +101,6 @@
 
     process_prepared/2,
     committing_single/3,
-    receive_committed/2,
     perform_singleitem_update/5,
     perform_singleitem_operation/4
 
@@ -447,6 +447,22 @@ receive_logging_responses(Response, S0 = #tx_coord_state{
             end
     end.
 
+
+%% @doc the fsm waits for acks indicating that each partition has successfully
+%%      committed the tx and finishes operation.
+%%      Should we retry sending the committed message if we don't receive a
+%%      reply from every partition?
+%%      What delivery guarantees does sending messages provide?
+receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
+    case NumToAck of
+        1 ->
+            case reply_to_client(S0#tx_coord_state{state = committed}) of
+                {start_tx, Data} -> {next_state, start_tx, Data};
+                {stop, normal, Data} -> {stop, normal, Data}
+            end;
+        _ ->
+            {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
+    end.
 
 %% =============================================================================
 
@@ -1044,18 +1060,6 @@ committing_single(commit, Sender, SD0 = #tx_coord_state{transaction = _Transacti
 
 
 
-%% @doc the fsm waits for acks indicating that each partition has successfully
-%%      committed the tx and finishes operation.
-%%      Should we retry sending the committed message if we don't receive a
-%%      reply from every partition?
-%%      What delivery guarantees does sending messages provide?
-receive_committed(committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) ->
-    case NumToAck of
-        1 ->
-            reply_to_client(S0#tx_coord_state{state = committed});
-        _ ->
-            {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
-    end.
 
 %% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
