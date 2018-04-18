@@ -20,7 +20,7 @@
 %% @doc The coordinator for a given Clock SI interactive transaction.
 %%      It handles the state of the tx and executes the operations sequentially
 %%      by sending each operation to the responsible clockSI_vnode of the
-%%      involved key. when a tx is finalized (committed or aborted, the fsm
+%%      involved key. When a tx is finalized (committed or aborted, the fsm
 %%      also finishes.
 
 -module(clocksi_interactive_tx_coord_fsm).
@@ -69,16 +69,19 @@
 ]).
 
 %% gen_fsm callbacks
--export([init/1,
+-export([
+    init/1,
     code_change/4,
     handle_event/3,
     handle_info/3,
     handle_sync_event/4,
     terminate/3,
-    stop/1]).
+    stop/1
+]).
 
 %% states
--export([execute_op/2,
+-export([
+    execute_op/2,
     execute_op/3,
     start_tx/2,
     committing_2pc/3,
@@ -89,12 +92,12 @@
     receive_aborted/2,
     receive_read_objects_result/2,
     receive_logging_responses/2,
-    receive_committed/2]).
+    receive_committed/2
+]).
 
 %% TODO convert statem
 %% TODO use statem to make abort, reply_to_client, and prepare an internal state
 %% TODO (https://stackoverflow.com/questions/6052954/is-it-bad-to-send-a-message-to-self-in-init)
-
 
 %%%===================================================================
 %%% API
@@ -237,6 +240,7 @@ init([From, ClientClock, Properties, StayAlive]) ->
     BaseState = init_state(StayAlive, false, false, Properties),
     State = start_tx_internal(From, ClientClock, Properties, BaseState),
     {ok, execute_op, State};
+
 %% @doc Initialize static transaction with Operations.
 init([From, ClientClock, Properties, StayAlive, Operations]) ->
     BaseState = init_state(StayAlive, true, true, Properties),
@@ -252,9 +256,11 @@ init([From, ClientClock, Properties, StayAlive, Operations]) ->
 execute_op(timeout, State = #tx_coord_state{operations = Operations, from = From}) ->
     execute_op(Operations, From, State).
 
-%% update kept for backwards compatibility with tests. TODO fix tests?
+
+%% update kept for backwards compatibility with tests.
 execute_op({update, Args}, Sender, State) ->
     execute_op({update_objects, [Args]}, Sender, State);
+
 execute_op({OpType, Args}, Sender, State) ->
     %% TODO statem reply
     case execute_command(OpType, Args, Sender, State) of
@@ -345,6 +351,7 @@ receive_prepared(timeout, S0) ->
 %% @doc TODO
 start_tx({start_tx, From, ClientClock, Properties}, SD) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, SD)};
+
 %% Used by static update and read transactions
 start_tx({start_tx, From, ClientClock, Properties, Operation}, SD) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
@@ -569,7 +576,6 @@ code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 terminate(_Reason, _SN, _SD) -> ok.
 
-
 %%%===================================================================
 %%% Internal Functions
 %%%===================================================================
@@ -650,7 +656,6 @@ execute_command(prepare, Protocol, Sender, State0) ->
             prepare(State)
     end;
 
-
 %% @doc Perform a single read, synchronous
 execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
     transaction=Transaction,
@@ -664,7 +669,6 @@ execute_command(read, {Key, Type}, Sender, State = #tx_coord_state{
             NewInternalReadSet = orddict:store(Key, ReadResult, InternalReadSet),
             {{ok, ReadResult}, execute_op, State#tx_coord_state{internal_read_set=NewInternalReadSet}}
     end;
-
 
 %% @doc Read a batch of objects, asynchronous
 execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transaction=Transaction}) ->
@@ -683,7 +687,6 @@ execute_command(read_objects, Objects, Sender, State = #tx_coord_state{transacti
     ),
 
     {receive_read_objects_result, NewCoordState#tx_coord_state{from=Sender}};
-
 
 %% @doc Perform update operations on a batch of Objects
 execute_command(update_objects, UpdateOps, Sender, State = #tx_coord_state{transaction=Transaction}) ->
@@ -842,6 +845,7 @@ apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot)->
 get_snapshot_time(ClientClock) ->
     wait_for_clock(ClientClock).
 
+
 -spec get_snapshot_time() -> {ok, snapshot_time()}.
 get_snapshot_time() ->
     Now = dc_utilities:now_microsec() - ?OLD_SS_MICROSEC,
@@ -869,8 +873,10 @@ wait_for_clock(Clock) ->
 %% yields error if there the element to be replaced is not in the list
 replace_first([], _, _) ->
     error;
+
 replace_first([Key|Rest], Key, NewKey) ->
     [NewKey|Rest];
+
 replace_first([NotMyKey|Rest], Key, NewKey) ->
     [NotMyKey|replace_first(Rest, Key, NewKey)].
 
@@ -963,6 +969,7 @@ append_updated_partitions(UpdatedPartitions, WriteSet, Partition, Update) ->
     AllUpdates = {Partition, [Update | WriteSet]},
     lists:keyreplace(Partition, 1, UpdatedPartitions, AllUpdates).
 
+
 -spec async_log_propagation(index_node(), txid(), key(), type(), op()) -> ok.
 async_log_propagation(Partition, TxId, Key, Type, Record) ->
     LogRecord = #log_operation{
@@ -973,10 +980,6 @@ async_log_propagation(Partition, TxId, Key, Type, Record) ->
 
     LogId = ?LOG_UTIL:get_logid_from_key(Key),
     ?LOGGING_VNODE:asyn_append(Partition, LogId, LogRecord, {fsm, undefined, self()}).
-
-
-
-
 
 
 %% @doc this function sends a prepare message to all updated partitions and goes
@@ -1050,13 +1053,6 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
         _ ->
             {receive_prepared, S0#tx_coord_state{num_to_ack = NumToAck - 1, prepare_time = MaxPrepareTime}}
     end.
-
-
-
-
-
-
-
 
 
 %% @doc when an error occurs or an updated partition
@@ -1200,6 +1196,5 @@ wait_for_clock_test() ->
     VecClock = dc_utilities:now_microsec(),
     {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
     ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime2)).
-
 
 -endif.
