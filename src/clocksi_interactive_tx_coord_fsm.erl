@@ -56,11 +56,15 @@
 
 
 %% API
--export([start_link/1,
-         start_link/2,
-         start_link/3,
-         start_link/4,
-         start_link/5]).
+-export([
+    start_link/1,
+    start_link/2,
+    start_link/3,
+    start_link/4,
+    start_link/5,
+
+    generate_name/1
+]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -98,24 +102,22 @@
     committing_single/3,
     receive_committed/2,
     perform_singleitem_update/5,
-    perform_singleitem_operation/4,
+    perform_singleitem_operation/4
 
-    %% not a state
-%%    prepare/1,
-%%    prepare_2pc/1,
-%%    reply_to_client/1,
-%%    generate_name/1
-    abort/1,
-    abort/2
 ]).
 
 %% TODO convert statem
 %% TODO use statem to make abort, reply_to_client, and prepare an internal state
 %% TODO (https://stackoverflow.com/questions/6052954/is-it-bad-to-send-a-message-to-self-in-init)
 
+
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+%% used in cure.erl
+-spec generate_name(pid()) -> atom().
+generate_name(From) -> list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
 -spec start_link(pid(), clock_time() | ignore, txn_properties(), boolean(), [op_param()]) -> {ok, pid()}.
 start_link(From, Clientclock, Properties, StayAlive, Operations) ->
@@ -125,6 +127,7 @@ start_link(From, Clientclock, Properties, StayAlive, Operations) ->
         false ->
             gen_fsm:start_link(?MODULE, [From, Clientclock, Properties, StayAlive, Operations], [])
     end.
+
 -spec start_link(pid(), clock_time() | ignore, txn_properties(), boolean()) -> {ok, pid()}.
 start_link(From, Clientclock, Properties, StayAlive) ->
     case StayAlive of
@@ -484,10 +487,6 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     }.
 
 
-%% @doc TODO
--spec generate_name(pid()) -> atom().
-generate_name(From) ->
-    list_to_atom(pid_to_list(From) ++ "interactive_cord").
 
 
 %% @doc TODO
@@ -505,6 +504,7 @@ start_tx_internal(From, ClientClock, Properties, State = #tx_coord_state{stay_al
 %% @doc TODO
 -spec create_transaction_record(snapshot_time() | ignore,
     boolean(), pid() | undefined, boolean(), txn_properties()) -> {tx(), txid()}.
+%%noinspection ErlangUnresolvedFunction
 create_transaction_record(ClientClock, StayAlive, From, _IsStatic, Properties) ->
     %% Seed the random because you pick a random read server, this is stored in the process state
     _Res = rand_compat:seed(erlang:phash2([node()]), erlang:monotonic_time(), erlang:unique_integer()),
@@ -687,10 +687,11 @@ reply_to_client(SD = #tx_coord_state{
                                     {error, Reason};
                                 _ ->
                                     {error, {aborted, TxId}}
-                            end;
+                            end
 
-                        Reason ->
-                            {TxId, Reason}
+                        %% can never match (dialyzer)
+%%                        Reason ->
+%%                            {TxId, Reason}
                     end,
             case is_pid(Node) of
                 false ->
@@ -1068,16 +1069,6 @@ abort(SD0 = #tx_coord_state{transaction = Transaction,
             ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
             {receive_aborted, SD0#tx_coord_state{num_to_ack = NumToAck, state = aborted}}
     end.
-
-abort(abort, State) ->
-    abort(State);
-
-abort({prepared, _}, State) ->
-    abort(State);
-
-abort(_, State) ->
-    abort(State).
-
 
 
 execute_post_commit_hooks(Ops) ->
