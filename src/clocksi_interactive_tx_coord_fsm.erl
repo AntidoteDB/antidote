@@ -63,7 +63,9 @@
     start_link/4,
     start_link/5,
 
-    generate_name/1
+    generate_name/1,
+    perform_singleitem_operation/4,
+    perform_singleitem_update/5
 ]).
 
 %% gen_fsm callbacks
@@ -94,10 +96,8 @@
     get_snapshot_time/0,
     perform_update/6,
     perform_read/4,
-    finish_op/3,
+    finish_op/3
 
-    perform_singleitem_update/5,
-    perform_singleitem_operation/4
 
 ]).
 
@@ -148,6 +148,91 @@ finish_op(From, Key, Result) ->
     gen_fsm:send_event(From, {Key, Result}).
 
 stop(Pid) -> gen_fsm:sync_send_all_state_event(Pid, stop).
+
+%% @doc This is a standalone function for directly contacting the read
+%%      server located at the vnode of the key being read.  This read
+%%      is supposed to be light weight because it is done outside of a
+%%      transaction fsm and directly in the calling thread.
+%%      It either returns the object value or the object state.
+-spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
+    {ok, val() | term(), snapshot_time()} | {error, reason()}.
+perform_singleitem_operation(Clock, Key, Type, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
+    %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
+    Preflist = log_utilities:get_preflist_from_key(Key),
+    IndexNode = hd(Preflist),
+    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction, []) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, Snapshot} ->
+            %% Read only transaction has no commit, hence return the snapshot time
+            CommitTime = Transaction#transaction.vec_snapshot_time,
+            {ok, Snapshot, CommitTime}
+    end.
+
+%% @doc This is a standalone function for directly contacting the update
+%%      server vnode.  This is lighter than creating a transaction
+%%      because the update/prepare/commit are all done at one time
+-spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
+perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
+    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
+    Partition = ?LOG_UTIL:get_key_partition(Key),
+    %% Execute pre_commit_hook if any
+    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
+        {Key, Type, Params1} ->
+            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, [], []) of
+                {ok, DownstreamRecord} ->
+                    UpdatedPartitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
+                    TxId = Transaction#transaction.txn_id,
+                    LogRecord = #log_operation{
+                        tx_id=TxId,
+                        op_type=update,
+                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
+                    },
+                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
+                    case ?LOGGING_VNODE:append(Partition, LogId, LogRecord) of
+                        {ok, _} ->
+                            case ?CLOCKSI_VNODE:single_commit_sync(UpdatedPartitions, Transaction) of
+                                {committed, CommitTime} ->
+
+                                    %% Execute post commit hook
+                                    case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
+                                        {error, Reason} ->
+                                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
+                                        _ ->
+                                            ok
+                                    end,
+
+                                    TxId = Transaction#transaction.txn_id,
+                                    DcId = ?DC_META_UTIL:get_my_dc_id(),
+
+                                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
+                                        DcId,
+                                        CommitTime,
+                                        Transaction#transaction.vec_snapshot_time
+                                    ),
+
+                                    {ok, {TxId, [], CausalClock}};
+
+                                abort ->
+                                    % TODO increment aborted transaction metrics?
+                                    {error, aborted};
+
+                                {error, Reason} ->
+                                    {error, Reason}
+                            end;
+
+                        Error ->
+                            {error, Error}
+                    end;
+
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %%%===================================================================
 %%% States
@@ -798,91 +883,6 @@ replace_first([NotMyKey|Rest], Key, NewKey) ->
     [NotMyKey|replace_first(Rest, Key, NewKey)].
 
 
-%% @doc This is a standalone function for directly contacting the read
-%%      server located at the vnode of the key being read.  This read
-%%      is supposed to be light weight because it is done outside of a
-%%      transaction fsm and directly in the calling thread.
-%%      It either returns the object value or the object state.
-
--spec perform_singleitem_operation(snapshot_time() | ignore, key(), type(), clocksi_readitem_server:read_property_list()) ->
-    {ok, val() | term(), snapshot_time()} | {error, reason()}.
-perform_singleitem_operation(Clock, Key, Type, Properties) ->
-    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
-    %%OLD: {Transaction, _TransactionId} = create_transaction_record(ignore, update_clock, false, undefined, true),
-    Preflist = log_utilities:get_preflist_from_key(Key),
-    IndexNode = hd(Preflist),
-    case clocksi_readitem_server:read_data_item(IndexNode, Key, Type, Transaction, []) of
-        {error, Reason} ->
-            {error, Reason};
-        {ok, Snapshot} ->
-            %% Read only transaction has no commit, hence return the snapshot time
-            CommitTime = Transaction#transaction.vec_snapshot_time,
-            {ok, Snapshot, CommitTime}
-    end.
-
-%% @doc This is a standalone function for directly contacting the update
-%%      server vnode.  This is lighter than creating a transaction
-%%      because the update/prepare/commit are all done at one time
--spec perform_singleitem_update(snapshot_time() | ignore, key(), type(), {op(), term()}, list()) -> {ok, {txid(), [], snapshot_time()}} | {error, term()}.
-perform_singleitem_update(Clock, Key, Type, Params, Properties) ->
-    {Transaction, _TransactionId} = create_transaction_record(Clock, false, undefined, true, Properties),
-    Partition = ?LOG_UTIL:get_key_partition(Key),
-    %% Execute pre_commit_hook if any
-    case antidote_hooks:execute_pre_commit_hook(Key, Type, Params) of
-        {Key, Type, Params1} ->
-            case ?CLOCKSI_DOWNSTREAM:generate_downstream_op(Transaction, Partition, Key, Type, Params1, [], []) of
-                {ok, DownstreamRecord} ->
-                    UpdatedPartitions = [{Partition, [{Key, Type, DownstreamRecord}]}],
-                    TxId = Transaction#transaction.txn_id,
-                    LogRecord = #log_operation{
-                        tx_id=TxId,
-                        op_type=update,
-                        log_payload=#update_log_payload{key=Key, type=Type, op=DownstreamRecord}
-                    },
-                    LogId = ?LOG_UTIL:get_logid_from_key(Key),
-                    case ?LOGGING_VNODE:append(Partition, LogId, LogRecord) of
-                        {ok, _} ->
-                            case ?CLOCKSI_VNODE:single_commit_sync(UpdatedPartitions, Transaction) of
-                                {committed, CommitTime} ->
-
-                                    %% Execute post commit hook
-                                    case antidote_hooks:execute_post_commit_hook(Key, Type, Params1) of
-                                        {error, Reason} ->
-                                            lager:info("Post commit hook failed. Reason ~p", [Reason]);
-                                        _ ->
-                                            ok
-                                    end,
-
-                                    TxId = Transaction#transaction.txn_id,
-                                    DcId = ?DC_META_UTIL:get_my_dc_id(),
-
-                                    CausalClock = ?VECTORCLOCK:set_clock_of_dc(
-                                        DcId,
-                                        CommitTime,
-                                        Transaction#transaction.vec_snapshot_time
-                                    ),
-
-                                    {ok, {TxId, [], CausalClock}};
-
-                                abort ->
-                                    % TODO increment aborted transaction metrics?
-                                    {error, aborted};
-
-                                {error, Reason} ->
-                                    {error, Reason}
-                            end;
-
-                        Error ->
-                            {error, Error}
-                    end;
-
-                {error, Reason} ->
-                    {error, Reason}
-            end;
-
-        {error, Reason} ->
-            {error, Reason}
-    end.
 
 perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
     ?PROMETHEUS_COUNTER:inc(antidote_operations_total, [read]),
