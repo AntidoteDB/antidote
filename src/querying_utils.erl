@@ -26,7 +26,12 @@
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
--module(querying_commons).
+-module(querying_utils).
+
+-define(CRDT_INDEX, antidote_crdt_gindex).
+-define(CRDT_MAP, antidote_crdt_gmap).
+-define(CRDT_SET, antidote_crdt_orset).
+-define(INVALID_OP_MSG(Operation, CRDT), ["The operation ", Operation, " is not part of the ", CRDT, " specification"]).
 
 %% API
 -export([build_keys/3,
@@ -34,7 +39,10 @@
          write_keys/3,
          to_atom/1,
          to_list/1,
-         remove_duplicates/1]).
+         remove_duplicates/1,
+         create_crdt_update/3,
+         is_list_of_lists/1,
+         is_subquery/1]).
 
 build_keys([], _Types, _Bucket) -> [];
 build_keys(Keys, Types, Bucket) when is_list(Keys) and is_list(Types) ->
@@ -87,3 +95,45 @@ remove_duplicates(Other) ->
         true -> Other;
         false -> throw(lists:concat(["Cannot remove duplicates in this object: ", Other]))
     end.
+
+create_crdt_update({_Key, ?CRDT_MAP, _Bucket} = ObjKey, UpdateOp, Value) ->
+    Update = map_update(Value),
+    {ObjKey, UpdateOp, Update};
+create_crdt_update({_Key, ?CRDT_INDEX, _Bucket} = ObjKey, UpdateOp, Value) ->
+    Update = index_update(Value),
+    {ObjKey, UpdateOp, Update};
+create_crdt_update(ObjKey, UpdateOp, Value) ->
+    set_update(ObjKey, UpdateOp, Value).
+
+map_update({{Key, CRDT}, {Op, Value} = Operation}) ->
+    case CRDT:is_operation(Operation) of
+        true -> [{{Key, CRDT}, {Op, Value}}];
+        false -> throw(lists:concat(?INVALID_OP_MSG(Operation, CRDT)))
+    end.
+index_update({CRDT, Key, {Op, Value} = Operation}) ->
+    case CRDT:is_operation(Operation) of
+        true -> [{CRDT, Key, {Op, Value}}];
+        false -> throw(lists:concat(?INVALID_OP_MSG(Operation, CRDT)))
+    end;
+index_update({CRDT, Key, Operations}) when is_list(Operations) ->
+    lists:foldl(fun(Op, Acc) ->
+        lists:append(Acc, index_update({CRDT, Key, Op}))
+    end, [], Operations);
+index_update(Values) when is_list(Values) ->
+    lists:foldl(fun(Update, Acc) ->
+        lists:append(Acc, index_update(Update))
+    end, [], Values).
+
+set_update({_Key, ?CRDT_SET, _Bucket} = ObjKey, UpdateOp, Value) ->
+    case ?CRDT_SET:is_operation(UpdateOp) of
+        true -> {ObjKey, UpdateOp, Value};
+        false -> throw(lists:concat(?INVALID_OP_MSG(UpdateOp, ?CRDT_SET)))
+    end.
+
+is_list_of_lists(List) when is_list(List) ->
+    NotDropped = lists:dropwhile(fun(Elem) -> is_list(Elem) end, List),
+    NotDropped =:= [];
+is_list_of_lists(_) -> false.
+
+is_subquery({sub, Conditions}) when is_list(Conditions) -> true;
+is_subquery(_) -> false.

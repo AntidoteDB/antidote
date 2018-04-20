@@ -40,7 +40,9 @@
          is_primary_key/2,
          shadow_column_state/4,
          record_data/3,
-         lookup_column/2]).
+         get_column/2,
+         lookup_value/2,
+         crdt_to_op/2]).
 
 table(?TABLE(TName, _Policy, _Cols, _SCols, _Idx)) -> TName.
 
@@ -57,13 +59,13 @@ column_names(Table) ->
     maps:get(?COLUMNS, Columns).
 
 tables_metadata(TxId) ->
-    ObjKey = querying_commons:build_keys(?TABLE_METADATA_KEY, ?TABLE_DT, ?AQL_METADATA_BUCKET),
-    [Meta] = querying_commons:read_keys(ObjKey, TxId),
+    ObjKey = querying_utils:build_keys(?TABLE_METADATA_KEY, ?TABLE_DT, ?AQL_METADATA_BUCKET),
+    [Meta] = querying_utils:read_keys(ObjKey, TxId),
     Meta.
 
 table_metadata(TableName, TxId) ->
     Metadata = tables_metadata(TxId),
-    TableNameAtom = querying_commons:to_atom(TableName),
+    TableNameAtom = querying_utils:to_atom(TableName),
     MetadataKey = {TableNameAtom, ?TABLE_NAME_DT},
     case proplists:get_value(MetadataKey, Metadata) of
         undefined -> [];
@@ -82,21 +84,21 @@ shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
     %%io:format("ShadowCol: ~p~n", [ShadowCol]),
     ColName = {column_name(FkName), type_to_crdt(FkType, undefined)},
     %%io:format("ColName: ~p~n", [ColName]),
-    RefColValue = lookup_column(ColName, RecordData),
+    RefColValue = lookup_value(ColName, RecordData),
     %%io:format("RefColValue: ~p~n", [RefColValue]),
-    StateObjKey = querying_commons:build_keys({TableName, FkName}, ?SHADOW_COL_DT, ?AQL_METADATA_BUCKET),
+    StateObjKey = querying_utils:build_keys({TableName, FkName}, ?SHADOW_COL_DT, ?AQL_METADATA_BUCKET),
     %%io:format("StateObjKey: ~p~n", [StateObjKey]),
-    [ShColData] = querying_commons:read_keys(StateObjKey, TxId),
+    [ShColData] = querying_utils:read_keys(StateObjKey, TxId),
     %io:format("ShColData: ~p~n", [ShColData]),
     RefColName = {RefColValue, ?SHADOW_COL_ENTRY_DT},
-    State = lookup_column(RefColName, ShColData),
+    State = lookup_value(RefColName, ShColData),
     %io:format("State: ~p~n", [State]),
     State.
 
 record_data(PKeys, TableName, TxId) when is_list(PKeys) ->
-    PKeyAtoms = lists:map(fun(PKey) -> querying_commons:to_atom(PKey) end, PKeys),
-    ObjKeys = querying_commons:build_keys(PKeyAtoms, ?TABLE_DT, TableName),
-    case querying_commons:read_keys(ObjKeys, TxId) of
+    PKeyAtoms = lists:map(fun(PKey) -> querying_utils:to_atom(PKey) end, PKeys),
+    ObjKeys = querying_utils:build_keys(PKeyAtoms, ?TABLE_DT, TableName),
+    case querying_utils:read_keys(ObjKeys, TxId) of
         [[]] -> [];
         ObjValues -> ObjValues
     end;
@@ -106,16 +108,41 @@ record_data(PKey, TableName, TxId) ->
     %ObjKey = querying_commons:build_keys(PKeyAtom, ?TABLE_DT, TableName),
     %querying_commons:read_keys(ObjKey, TxId).
 
-lookup_column(_ColumnName, []) -> [];
-lookup_column({ColumnName, CRDT}, Record) ->
-    proplists:get_value({ColumnName, CRDT}, Record);
-lookup_column(ColumnName, Record) ->
+get_column(_ColumnName, []) -> [];
+get_column(ColumnName, Record) ->
     Aux = lists:dropwhile(fun(?ATTRIBUTE(Column, _Type, _Value)) ->
         Column /= ColumnName end, Record),
     case Aux of
         [] -> undefined;
-        [?ATTRIBUTE(_Column, _Type, Value) | _] -> Value
+        [Col | _] -> Col
     end.
+
+lookup_value(_ColumnName, []) -> [];
+lookup_value({ColumnName, CRDT}, Record) ->
+    proplists:get_value({ColumnName, CRDT}, Record);
+lookup_value(ColumnName, Record) ->
+    case get_column(ColumnName, Record) of
+        ?ATTRIBUTE(_Column, _Type, Value) -> Value;
+        undefined -> undefined
+    end.
+
+crdt_to_op(?CRDT_INTEGER, Value) -> {set, Value};
+crdt_to_op(?CRDT_VARCHAR, Value) -> {assign, Value};
+crdt_to_op(?CRDT_BOOLEAN, Value) ->
+    case Value of
+        true -> {enable, {}};
+        false -> {disable, {}}
+    end;
+crdt_to_op(?CRDT_BCOUNTER_INT, Value) when is_tuple(Value) ->
+    {Inc, Dec} = Value,
+    IncList = orddict:to_list(Inc),
+    DecList = orddict:to_list(Dec),
+    SumInc = lists:sum([Val || {_Ids, Val} <- IncList]),
+    SumDec = lists:sum([Val || {_Ids, Val} <- DecList]),
+    IncUpdate = increment_counter(SumInc),
+    DecUpdate = decrement_counter(SumDec),
+    lists:flatten([IncUpdate, DecUpdate]);
+crdt_to_op(_, _) -> {error, invalid_crdt}.
 
 %% ====================================================================
 %% Internal functions
@@ -129,3 +156,16 @@ type_to_crdt(?AQL_BOOLEAN, _) -> ?CRDT_BOOLEAN;
 type_to_crdt(?AQL_COUNTER_INT, {_, _}) -> ?CRDT_BCOUNTER_INT;
 type_to_crdt(?AQL_COUNTER_INT, _) -> ?CRDT_COUNTER_INT;
 type_to_crdt(?AQL_VARCHAR, _) -> ?CRDT_VARCHAR.
+
+%sum_values({_Ids, Value}, Acc) -> Acc + Value.
+
+increment_counter(0) -> [];
+increment_counter(Value) when is_integer(Value) ->
+    bcounter_op(increment, Value).
+
+decrement_counter(0) -> [];
+decrement_counter(Value) when is_integer(Value) ->
+    bcounter_op(decrement, Value).
+
+bcounter_op(Op, Value) ->
+    {Op, {Value, term}}.

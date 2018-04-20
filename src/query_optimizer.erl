@@ -74,11 +74,11 @@ query_filter(Filter, TxId) when is_list(Filter) ->
     end.
 
 get_partial_object(Key, Type, Bucket, Filter, TxId) ->
-    ObjectKey = querying_commons:build_keys(Key, Type, Bucket),
-    [Object] = querying_commons:read_keys(ObjectKey, TxId),
+    ObjectKey = querying_utils:build_keys(Key, Type, Bucket),
+    [Object] = querying_utils:read_keys(ObjectKey, TxId),
     {ok, apply_projection(Filter, Object)}.
 get_partial_object(ObjectKey, Filter, TxId) when is_tuple(ObjectKey) ->
-    [Object] = querying_commons:read_keys(ObjectKey, TxId),
+    [Object] = querying_utils:read_keys(ObjectKey, TxId),
     {ok, apply_projection(Filter, Object)}.
 get_partial_object(Object, Filter) when is_list(Object) ->
     {ok, apply_projection(Filter, Object)}.
@@ -96,33 +96,45 @@ conditions(Filter) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-apply_filter(Conditions, Table, TxId) when is_list(Conditions) ->
-    %%io:format(">> apply_filter:~n", []),
+apply_filter(Conditions, Table, TxId) ->
+    io:format(">> apply_filter:~n", []),
     io:format("Conditions: ~p~n", [Conditions]),
-    lists:foldl(fun(Conjunction, FinalRes) ->
-        PartialResult = iterate_conditions(Conjunction, Table, TxId, []),
-        ResultSet = sets:from_list(PartialResult),
-        %%io:format("ResultSet: ~p~n", [ResultSet]),
-        sets:union(FinalRes, ResultSet)
-    end, sets:new(), Conditions).
+    case is_disjunction(Conditions) of
+        true ->
+            lists:foldl(fun(Conjunction, FinalRes) ->
+                PartialResult = iterate_conditions(Conjunction, Table, TxId, []),
+                ResultSet = sets:from_list(PartialResult),
+                %%io:format("ResultSet: ~p~n", [ResultSet]),
+                sets:union(FinalRes, ResultSet)
+            end, sets:new(), Conditions);
+        false -> throw("The current condition is not valid")
+    end.
 
-iterate_conditions([Cond | Tail], Table, TxId, _Acc) when is_list(Cond) ->
-    io:format("(is_list) Current Cond: ~p~n", [Cond]),
-    FiltObjects = apply_filter(Cond, Table, TxId),
-    ResultToList = case is_list(FiltObjects) of
-                       false -> sets:to_list(FiltObjects);
-                       true -> FiltObjects
-                   end,
-    %%io:format("RecordObjs: ~p~n", [ResultToList]),
-    iterate_conditions(Tail, Table, TxId, ResultToList);
+iterate_conditions([{sub, Conds} = Cond | Tail], Table, TxId, Acc) ->
+    io:format("(is_subquery) Current Cond: ~p~n", [Cond]),
+    iterate_conditions([Conds | Tail], Table, TxId, Acc);
 iterate_conditions([Cond | Tail], Table, TxId, Acc) ->
-    io:format("Current Cond: ~p~n", [Cond]),
-    RecordObjs = case Acc of
-                     [] -> retrieve_and_filter(Cond, Table, TxId);
-                     _Else -> filter_objects(Cond, Acc)
-                 end,
-    %%io:format("RecordObjs: ~p~n", [RecordObjs]),
-    iterate_conditions(Tail, Table, TxId, RecordObjs);
+    case is_disjunction(Cond) of
+        true ->
+            io:format("(is_disjunction) Current Cond: ~p~n", [Cond]),
+            FiltObjects = apply_filter(Cond, Table, TxId),
+            ResultToList = case is_list(FiltObjects) of
+                               false -> sets:to_list(FiltObjects);
+                               true -> FiltObjects
+                           end,
+            %%io:format("RecordObjs: ~p~n", [ResultToList]),
+            iterate_conditions(Tail, Table, TxId, ResultToList);
+        false ->
+            io:format("Current Cond: ~p~n", [Cond]),
+            RecordObjs = case Acc of
+                             [] -> retrieve_and_filter(Cond, Table, TxId);
+                             _Else -> filter_objects(Cond, Acc)
+                         end,
+            %%io:format("RecordObjs: ~p~n", [RecordObjs]),
+            iterate_conditions(Tail, Table, TxId, RecordObjs)
+    end;
+%iterate_conditions([Cond | Tail], Table, TxId, Acc) ->
+%    ;
 iterate_conditions([], _Table, _TxId, Acc) ->
     Acc.
 
@@ -138,11 +150,11 @@ retrieve_and_filter(Condition, Table, TxId) ->
                    true ->
                        io:format("Primary Key? Yes~n", []),
                        ReadKeys = case Op of
-                           equality -> querying_commons:to_atom(Value);
+                           equality -> querying_utils:to_atom(Value);
                            _Op ->
                                PIndexObject = indexing:read_index(primary, TableName, TxId),
                                io:format("Index: ~p~n", [PIndexObject]),
-                               filter_keys(comp_to_predicate(Op, querying_commons:to_atom(Value)), PIndexObject)
+                               filter_keys(comp_to_predicate(Op, querying_utils:to_atom(Value)), PIndexObject)
                        end,
                        read_records(ReadKeys, TableName, TxId);
                    false ->
@@ -164,7 +176,9 @@ retrieve_and_filter(Condition, Table, TxId) ->
                                io:format("Index: ~p~n", [SIndexObject]),
                                IndexedKeys = indexing:get_indexed_values(SIndexObject),
                                FilteredIdxKeys = filter_keys(comp_to_predicate(Op, Value), IndexedKeys),
+                               io:format("FilteredIdxKeys: ~p~n", [FilteredIdxKeys]),
                                PKs = indexing:get_primary_keys(FilteredIdxKeys, SIndexObject),
+                               io:format("PKs: ~p~n", [PKs]),
                                read_records(PKs, TName, TxId)
                        end
                end,
@@ -266,6 +280,11 @@ apply_projection(_Projection, [], Acc) ->
 read_records(PKey, TableName, TxId) ->
     table_utils:record_data(PKey, TableName, TxId).
     %read_records([PKey], TableName, TxId).
+
+is_disjunction(Query) ->
+    querying_utils:is_list_of_lists(Query).
+%is_subquery(Query) ->
+%    querying_commons:is_subquery(Query).
 
 %%====================================================================
 %% Eunit tests
