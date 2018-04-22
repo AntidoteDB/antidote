@@ -107,8 +107,8 @@ downstream({update, {Type, Key, Op}}, {_Type, _Index, Indirection} = GIndex) ->
             {ok, {update, {Type, Key, DownstreamOp}}};
         _Else -> {error, wrong_type}
     end;
-downstream({update, Ops}, CurrentMap) when is_list(Ops) ->
-    {ok, {update, lists:map(fun(Op) -> {ok, DSOp} = downstream({update, Op}, CurrentMap), DSOp end, Ops)}}.
+downstream({update, Ops}, GIndex) when is_list(Ops) ->
+    {ok, {update, lists:map(fun(Op) -> {ok, DSOp} = downstream({update, Op}, GIndex), DSOp end, Ops)}}.
 
 -spec update(gindex_effect(), gindex()) -> {ok, gindex()}.
 update({update, {Type, Key, Op}}, {_Type, Index, Indirection}) ->

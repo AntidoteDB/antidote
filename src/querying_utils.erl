@@ -36,7 +36,9 @@
 %% API
 -export([build_keys/3,
          read_keys/2,
+         read_keys/1,
          write_keys/3,
+         write_keys/1,
          to_atom/1,
          to_list/1,
          remove_duplicates/1,
@@ -62,6 +64,8 @@ build_keys([], [], _Bucket, Acc) ->
     Acc.
 
 read_keys([], _TxId) -> [[]];
+read_keys(ObjKeys, ignore) ->
+    read_keys(ObjKeys);
 read_keys(ObjKeys, TxId) when is_list(ObjKeys) ->
     %% TODO read objects from Cure or Materializer?
     {ok, Objs} = cure:read_objects(ObjKeys, TxId),
@@ -69,8 +73,18 @@ read_keys(ObjKeys, TxId) when is_list(ObjKeys) ->
 read_keys(ObjKey, TxId) ->
     read_keys([ObjKey], TxId).
 
+read_keys([]) -> [[]];
+read_keys(ObjKeys) when is_list(ObjKeys) ->
+    {ok, Objs, _} = cure:read_objects(ignore, [], ObjKeys),
+    Objs;
+read_keys(ObjKey) ->
+    read_keys([ObjKey]).
+
 write_keys(_ObjKeys, Updates, TxId) ->
     cure:update_objects(Updates, TxId).
+
+write_keys(Updates) ->
+    cure:update_objects(ignore, [], Updates).
 
 to_atom(Term) when is_list(Term) ->
     list_to_atom(Term);
