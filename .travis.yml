@@ -1,6 +1,5 @@
 language: erlang
 otp_release:
-  - 18.3
   - 19.1
 install:
   - make
@@ -12,6 +11,6 @@ script:
   - make dialyzer
   - make lint
 notifications:
-  email: christopher.meiklejohn@gmail.com
+  email: bieniusa@cs.uni-kl.de
 sudo: required
 dist: trusty
