@@ -24,12 +24,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--export([create_snapshot/1,
-         update_snapshot/3,
-         materialize_eager/3,
-         check_operations/1,
-         check_operation/1
-        ]).
+-export([
+    create_snapshot/1,
+    update_snapshot/3,
+    materialize_eager/3,
+    check_operations/1,
+    check_operation/1,
+    belongs_to_snapshot_op/3]).
 
 %% @doc Creates an empty CRDT
 -spec create_snapshot(type()) -> snapshot().
@@ -84,6 +85,17 @@ check_operation(Op) ->
         _ ->
             false
     end.
+
+%% Should be called doesn't belong in SS
+%% returns true if op is more recent than SS (i.e. is not in the ss)
+%% returns false otw
+-spec belongs_to_snapshot_op(snapshot_time() | ignore, dc_and_commit_time(), snapshot_time()) -> boolean().
+belongs_to_snapshot_op(ignore, {_OpDc, _OpCommitTime}, _OpSs) ->
+    true;
+belongs_to_snapshot_op(SSTime, {OpDc, OpCommitTime}, OpSs) ->
+    OpSs1 = dict:store(OpDc, OpCommitTime, OpSs),
+    not vectorclock:le(OpSs1, SSTime).
+
 
 -ifdef(TEST).
 
@@ -147,4 +159,27 @@ check_operations_test() ->
         {read, {key1, antidote_crdt_counter_pn}}],
     ?assertMatch({error, _}, check_operations(Operations2)).
 
+%% Testing belongs_to_snapshot returns true when a commit time
+%% is smaller than a snapshot time
+belongs_to_snapshot_test() ->
+    CommitTime1a = 1,
+    CommitTime2a = 1,
+    CommitTime1b = 1,
+    CommitTime2b = 7,
+    SnapshotClockDC1 = 5,
+    SnapshotClockDC2 = 5,
+    CommitTime3a = 5,
+    CommitTime4a = 5,
+    CommitTime3b = 10,
+    CommitTime4b = 10,
+
+    SnapshotVC=vectorclock:from_list([{1, SnapshotClockDC1}, {2, SnapshotClockDC2}]),
+    ?assertEqual(true, belongs_to_snapshot_op(
+                 vectorclock:from_list([{1, CommitTime1a}, {2, CommitTime1b}]), {1, SnapshotClockDC1}, SnapshotVC)),
+    ?assertEqual(true, belongs_to_snapshot_op(
+                 vectorclock:from_list([{1, CommitTime2a}, {2, CommitTime2b}]), {2, SnapshotClockDC2}, SnapshotVC)),
+    ?assertEqual(false, belongs_to_snapshot_op(
+                  vectorclock:from_list([{1, CommitTime3a}, {2, CommitTime3b}]), {1, SnapshotClockDC1}, SnapshotVC)),
+    ?assertEqual(false, belongs_to_snapshot_op(
+                  vectorclock:from_list([{1, CommitTime4a}, {2, CommitTime4b}]), {2, SnapshotClockDC2}, SnapshotVC)).
 -endif.

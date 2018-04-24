@@ -298,13 +298,3 @@
     %% true if this is the most recent snapshot in the cache
     is_newest_snapshot :: boolean()
 }).
-
-%% This record keeps the state of the materializer vnode
-%% It is defined here as it is also used by the
-%% clocksi_read_item_fsm as pointers to the materializer's ets caches
--record(mat_state, {
-    partition :: partition_id(),
-    ops_cache :: cache_id(),
-    snapshot_cache :: cache_id(),
-    is_ready :: boolean()
-}).
