@@ -53,8 +53,17 @@
 %% Fetch the local address of a log_reader socket.
 -spec get_address() -> socket_address().
 get_address() ->
-  {ok, List} = inet:getif(),
-  {Ip, _, _} = hd(List),
+  %% first try resolving our hostname according to the node name
+  [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
+  Ip = case inet:getaddr(Hostname, inet) of
+    {ok, HostIp} -> HostIp;
+    {error, _} ->
+      %% cannot resolve hostname locally, fall back to interface ip
+      %% TODO check if we do not return a link-local address
+      {ok, List} = inet:getif(),
+      {IIp, _, _} = hd(List),
+      IIp
+  end,
   Port = application:get_env(antidote, logreader_port, ?DEFAULT_LOGREADER_PORT),
   {Ip, Port}.
 
@@ -62,8 +71,15 @@ get_address() ->
 get_address_list() ->
     PartitionList = dc_utilities:get_my_partitions(),
     {ok, List} = inet:getif(),
+    List1 = [Ip1 || {Ip1, _, _} <- List],
+    %% get host name from node name
+    [_, Hostname] = string:tokens(atom_to_list(erlang:node()), "@"),
+    IpList = case inet:getaddr(Hostname, inet) of
+      {ok, HostIp} -> [HostIp|List1];
+      {error, _} -> List1
+    end,
     Port = application:get_env(antidote, logreader_port, ?DEFAULT_LOGREADER_PORT),
-    AddressList = [{Ip1, Port} || {Ip1, _, _} <- List, Ip1 /= {127, 0, 0, 1}],
+    AddressList = [{Ip1, Port} || Ip1 <- IpList, Ip1 /= {127, 0, 0, 1}],
     {PartitionList, AddressList}.
 
 -spec send_response(binary(), #inter_dc_query_state{}) -> ok.

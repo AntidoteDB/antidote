@@ -170,19 +170,19 @@ materialize_intern_perform(Type, OpList, LastOp, FirstHole, SnapshotCommitTime, 
                      case (is_op_in_snapshot(TxId, Op, OpCom, OpSS, MinSnapshotTime, SnapshotCommitTime, LastOpCt)) of
                          {true, _, NewOpCt} ->
                              %% Include the new op because it has a timestamp bigger than the snapshot being generated
-                             {ok, [Op | OpList], NewOpCt, false, true, FirstHole};
+                             {ok, [Op | OpList], NewOpCt, true, FirstHole};
                          {false, false, _} ->
                              %% Dont include the op
-                             {ok, OpList, LastOpCt, false, NewSS, OpId-1}; % no update
+                             {ok, OpList, LastOpCt, NewSS, OpId-1}; % no update
                          {false, true, _} ->
                              %% Dont Include the op, because it was already in the SS
-                             {ok, OpList, LastOpCt, true, NewSS, FirstHole}
+                             {ok, OpList, LastOpCt, NewSS, FirstHole}
                      end;
                  false -> %% Op is not for this {Key, Type}
                      erlang:error(corrupted_ops_cache)
              end,
     case Result of
-        {ok, NewOpList1, NewLastOpCt, _, NewSS1, NewHole} ->
+        {ok, NewOpList1, NewLastOpCt, NewSS1, NewHole} ->
             materialize_intern(Type, NewOpList1, LastOp, NewHole, SnapshotCommitTime,
                                MinSnapshotTime, Rest, TxId, NewLastOpCt, NewSS1, Location)
     end.
