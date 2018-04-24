@@ -19,7 +19,7 @@
                         clocksi_readitem_sup,clocksi_static_tx_coord_fsm,
                         clocksi_static_tx_coord_sup,
                         clocksi_static_tx_coord_worker_sup,
-                        clocksi_updateitem_fsm,clocksi_vnode,crdt_bcounter,
+                        clocksi_vnode,crdt_bcounter,
                         crdt_orset,crdt_pncounter,crdt_rga,
                         dc_meta_data_utilities,dc_utilities,
                         inter_dc_dep_vnode,inter_dc_log_reader_query,
