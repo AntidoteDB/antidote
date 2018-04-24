@@ -1,6 +1,6 @@
 language: erlang
 otp_release:
-  - 19.1
+  - 19.3
 install:
   - make
   - ./rebar3 update
@@ -11,6 +11,6 @@ script:
   - make dialyzer
   - make lint
 notifications:
-  email: christopher.meiklejohn@gmail.com
+  email: bieniusa@cs.uni-kl.de
 sudo: required
 dist: trusty
