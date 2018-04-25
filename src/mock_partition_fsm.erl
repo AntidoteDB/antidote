@@ -164,14 +164,15 @@ prepare(UpdatedPartitions, _Transaction) ->
 %% a mock fsm will only receive a single update so only need to store a
 %% single updated key. In contrast, clocksi_vnode may receive multiple
 %% update request for a single transaction.
-execute_op({update_data_item, Key}, _From, State) ->
+execute_op({update_data_item, Key}, From, State) ->
     Result = case Key of
                 fail_update ->
                     {error, mock_downstream_fail};
                 _ ->
                     ok
             end,
-    {reply, Result, execute_op, State#state{key=Key}}.
+    gen_statem:reply(From, Result),
+    {next_state, execute_op, State#state{key=Key}}.
 
 execute_op({prepare, From, [{Key, _, _}|_]}, State) ->
     Result = case Key of

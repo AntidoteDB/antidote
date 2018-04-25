@@ -284,7 +284,8 @@ execute_op({OpType, Args}, Sender, State) ->
             {next_state, receive_logging_responses, Data, 0};
 
         {Reply, execute_op, Data} ->
-            {reply, Reply, execute_op, Data};
+            gen_statem:reply(Sender, Reply),
+            {next_state, execute_op, Data};
 
         {stop, normal, Data} ->
             {stop, normal, Data}
@@ -388,7 +389,7 @@ committing(commit, Sender, SD0 = #tx_coord_state{transaction = Transaction,
 single_committing({committed, CommitTime}, State = #tx_coord_state{from = From, full_commit = FullCommit}) ->
     case FullCommit of
         false ->
-            gen_fsm:reply(From, {ok, CommitTime}),
+            gen_statem:reply(From, {ok, CommitTime}),
             {next_state, committing_single, State#tx_coord_state{commit_time = CommitTime, state = committing}};
         true ->
             %% TODO statem reply
@@ -460,7 +461,7 @@ receive_read_objects_result({ok, {Key, Type, Snapshot}}, CoordState = #tx_coord_
             }};
 
         false ->
-            gen_fsm:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadValues)}),
+            gen_statem:reply(CoordState#tx_coord_state.from, {ok, lists:reverse(ReadValues)}),
             {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewReadSet}}
     end.
 
@@ -511,7 +512,7 @@ receive_logging_responses(Response, S0 = #tx_coord_state{
                                     {stop, normal, Data}
                             end ;
                         false ->
-                            gen_fsm:reply(S0#tx_coord_state.from, NewAcc),
+                            gen_statem:reply(S0#tx_coord_state.from, NewAcc),
                             {next_state, execute_op, S0#tx_coord_state{num_to_read=0, return_accumulator=[]}}
                     end;
 
@@ -734,7 +735,7 @@ prepare_2pc(SD0 = #tx_coord_state{
             SnapshotTime = Transaction#transaction.snapshot_time,
             case FullCommit of
                 false ->
-                    gen_fsm:reply(From, {ok, SnapshotTime}),
+                    gen_statem:reply(From, {ok, SnapshotTime}),
                     {committing_2pc, SD0#tx_coord_state{state = committing, commit_time = SnapshotTime}};
                 true ->
                     reply_to_client(SD0#tx_coord_state{state = committed_read_only})
@@ -803,7 +804,7 @@ reply_to_client(SD = #tx_coord_state{
                     end,
             case is_pid(Node) of
                 false ->
-                    gen_fsm:reply(Node, Reply);
+                    gen_statem:reply(Node, Reply);
                 true ->
                     From ! Reply
             end
@@ -899,7 +900,7 @@ perform_read({Key, Type}, UpdatedPartitions, Transaction, Sender) ->
         {error, Reason} ->
             case Sender of
                 undefined -> ok;
-                _ -> gen_fsm:reply(Sender, {error, Reason})
+                _ -> gen_statem:reply(Sender, {error, Reason})
             end,
             {error, Reason}
     end.
@@ -1001,7 +1002,7 @@ prepare(SD0 = #tx_coord_state{
                             reply_to_client(SD0#tx_coord_state{state = committed_read_only});
 
                         false ->
-                            gen_fsm:reply(From, {ok, SnapshotTime}),
+                            gen_statem:reply(From, {ok, SnapshotTime}),
                             {committing, SD0#tx_coord_state{state = committing, commit_time = SnapshotTime}}
                     end;
                 _ ->
@@ -1034,7 +1035,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                         {receive_committed,
                             S0#tx_coord_state{num_to_ack = length(UpdatedPartitions), commit_time = MaxPrepareTime, state = committing}};
                     false ->
-                        gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                        gen_statem:reply(From, {ok, MaxPrepareTime}),
                         {committing_2pc,
                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
                 end;
@@ -1045,7 +1046,7 @@ process_prepared(ReceivedPrepareTime, S0 = #tx_coord_state{num_to_ack = NumToAck
                         {receive_committed,
                             S0#tx_coord_state{num_to_ack = length(UpdatedPartitions), commit_time = MaxPrepareTime, state = committing}};
                     false ->
-                        gen_fsm:reply(From, {ok, MaxPrepareTime}),
+                        gen_statem:reply(From, {ok, MaxPrepareTime}),
                         {committing,
                             S0#tx_coord_state{prepare_time = MaxPrepareTime, commit_time = MaxPrepareTime, state = committing}}
                 end
