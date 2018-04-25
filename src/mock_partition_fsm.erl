@@ -26,6 +26,8 @@
 
 -module(mock_partition_fsm).
 
+-behavior(gen_fsm).
+
 -include("antidote.hrl").
 
 %% API
