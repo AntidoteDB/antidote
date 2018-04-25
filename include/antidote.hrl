@@ -176,11 +176,14 @@
 }).
 
 %%---------------------------------------------------------------------
--type downstream_record() :: term().
 -type actor() :: term().
 -type key() :: term().
--type op() :: {update, downstream_record()}.
 -type type() :: atom().
+-type op_name() :: atom().
+-type op_param() :: term().
+-type op() :: {op_name(), op_param()}.
+-type effect() :: term().
+
 -type dcid() :: 'undefined' | {atom(),tuple()}. %% TODO, is this the only structure that is returned by riak_core_ring:cluster_name(Ring)?
 -type snapshot_time() :: vectorclock:vectorclock().
 -type clock_time() :: non_neg_integer().
@@ -194,7 +197,7 @@
 -record(clocksi_payload, {
     key :: key(),
     type :: type(),
-    op_param :: op(),
+    op_param :: effect(),
     snapshot_time :: snapshot_time(),
     commit_time :: dc_and_commit_time(),
     txid :: txid()
@@ -230,14 +233,12 @@
 -type inter_dc_conn_err() :: {error, {partition_num_mismatch, non_neg_integer(), non_neg_integer()}
                            | {error, connection_error}}.
 
--type op_name() :: atom().
--type op_param() :: term().
 -type bound_object() :: {key(), type(), bucket()}.
 
 -type module_name() :: atom().
 -type function_name() :: atom().
 
--export_type([key/0, op/0, crdt/0, val/0, reason/0, preflist/0,
+-export_type([key/0, effect/0, crdt/0, val/0, reason/0, preflist/0,
               log/0, op_id/0, payload/0, partition_id/0,
               type/0, snapshot/0, txid/0, tx/0,
               bucket/0,
@@ -245,7 +246,8 @@
               op_param/0, op_name/0,
               bound_object/0,
               module_name/0,
-              function_name/0]).
+              function_name/0,
+              clocksi_payload/0]).
 
 %%---------------------------------------------------------------------
 %% @doc Data Type: state
