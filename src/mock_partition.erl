@@ -31,36 +31,40 @@
 -include("antidote.hrl").
 
 %% API
--export([start_link/0]).
+-export([
+    start_link/0,
+    append/3,
+    asyn_append/4,
+    get_my_dc_id/0,
+    get_clock_of_dc/2,
+    get_preflist_from_key/1,
+    read_data_item/5,
+    generate_downstream_op/7,
+    get_key_partition/1,
+    get_logid_from_key/1,
+    update_data_item/5,
+    prepare/2,
+    value/1,
+    set_clock_of_dc/3,
+    abort/2,
+    commit/3,
+    single_commit/2,
+    get_stable_snapshot/0,
+    inc/2,
+    inc/1,
+    dec/1
+]).
 
-%% Callbacks
--export([init/1,
-         callback_mode/0,
-         execute_op/4,
-         execute_op/3,
-         code_change/4,
-         append/3,
-         asyn_append/4,
-         terminate/3]).
+%% States
+-export([execute_op/3]).
 
--export([get_my_dc_id/0,
-         get_clock_of_dc/2,
-         get_preflist_from_key/1,
-         read_data_item/5,
-         generate_downstream_op/7,
-         get_key_partition/1,
-         get_logid_from_key/1,
-         update_data_item/5,
-         prepare/2,
-         value/1,
-         set_clock_of_dc/3,
-         abort/2,
-         commit/3,
-         single_commit/2,
-         get_stable_snapshot/0,
-         inc/2,
-         inc/1,
-         dec/1]).
+%% statem Callbacks
+-export([
+    init/1,
+    callback_mode/0,
+    terminate/3,
+    code_change/4
+]).
 
 -record(state, {
         key :: atom()}).
@@ -71,6 +75,16 @@
 
 start_link() ->
     gen_statem:start_link(?MODULE, [], []).
+
+append(_Node, _LogId, _LogRecord) ->
+    {ok, {0, node}}.
+
+asyn_append(_Node, _LogId, _LogRecord, ReplyTo) ->
+    case ReplyTo of
+        ignore -> ok;
+        {_, _, Pid} -> gen_fsm:send_event(Pid, {ok, 0})
+    end,
+    ok.
 
 %% @doc Initialize the state.
 init([]) ->
@@ -140,37 +154,33 @@ generate_downstream_op(_Transaction, _IndexNode, Key, _Type, _Param, _Ws, _Rs) -
             {ok, mock_downsteam}
     end.
 
-append(_Node, _LogId, _LogRecord) ->
-    {ok, {0, node}}.
-
-asyn_append(_Node, _LogId, _LogRecord, ReplyTo) ->
-    case ReplyTo of ignore ->
-        ok;
-        {_, _, Pid} ->
-            gen_fsm:send_event(Pid, {ok, 0})
-    end,
-    ok.
 
 update_data_item(FsmRef, _Transaction, Key, _Type, _DownstreamRecord) ->
-    gen_fsm:sync_send_event(FsmRef, {update_data_item, Key}).
+    gen_statem:call(FsmRef, {update_data_item, Key}).
 
 prepare(UpdatedPartitions, _Transaction) ->
     Self = self(),
     lists:foreach(fun({Fsm, Rest}) -> gen_statem:cast(Fsm, {prepare, Self, Rest}) end, UpdatedPartitions).
 
+inc(_, _) -> ok.
+dec(_) -> ok.
+inc(_) -> ok.
+
+%%%===================================================================
+%%% STATE FUNCTIONS
+%%%===================================================================
+
 %% We spawn a new mock_partition for each update request, therefore
 %% a mock will only receive a single update so only need to store a
 %% single updated key. In contrast, clocksi_vnode may receive multiple
 %% update request for a single transaction.
-execute_op(cast, {update_data_item, Key}, From, State) ->
+execute_op({call, From}, {update_data_item, Key}, State) ->
     Result = case Key of
-                fail_update ->
-                    {error, mock_downstream_fail};
-                _ ->
-                    ok
-            end,
-    gen_statem:reply(From, Result),
-    {next_state, execute_op, State#state{key=Key}}.
+                fail_update -> {error, mock_downstream_fail};
+                _ -> ok
+             end,
+    gen_fsm:send_event(From, Result),
+    {next_state, execute_op, State#state{key=Key}};
 
 execute_op(cast, {prepare, From, [{Key, _, _}|_]}, State) ->
     Result = case Key of
@@ -186,15 +196,13 @@ execute_op(cast, {ack_abort, From, _}, State) ->
     gen_fsm:send_event(From, ack_abort),
     {stop, normal, State}.
 
-%% =====================================================================
+%%%===================================================================
+%%% statem CALLBACK FUNCTIONS
+%%%=====================================================================
 
 callback_mode() -> state_functions.
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _SD) ->
-    ok.
+terminate(_Reason, _SN, _SD) -> ok.
 
-inc(_, _) -> ok.
-dec(_) -> ok.
-inc(_) -> ok.
