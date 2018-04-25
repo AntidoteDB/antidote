@@ -82,7 +82,7 @@ append(_Node, _LogId, _LogRecord) ->
 asyn_append(_Node, _LogId, _LogRecord, ReplyTo) ->
     case ReplyTo of
         ignore -> ok;
-        {_, _, Pid} -> gen_fsm:send_event(Pid, {ok, 0})
+        {_, _, Pid} -> gen_statem:cast(Pid, {ok, 0})
     end,
     ok.
 
@@ -179,7 +179,7 @@ execute_op({call, From}, {update_data_item, Key}, State) ->
                 fail_update -> {error, mock_downstream_fail};
                 _ -> ok
              end,
-    gen_fsm:send_event(From, Result),
+    gen_statem:cast(From, Result),
     {next_state, execute_op, State#state{key=Key}};
 
 execute_op(cast, {prepare, From, [{Key, _, _}|_]}, State) ->
@@ -189,11 +189,11 @@ execute_op(cast, {prepare, From, [{Key, _, _}|_]}, State) ->
                 timeout -> timeout;
                 _ -> abort
             end,
-    gen_fsm:send_event(From, Result),
+    gen_statem:cast(From, Result),
     {next_state, execute_op, State};
 
 execute_op(cast, {ack_abort, From, _}, State) ->
-    gen_fsm:send_event(From, ack_abort),
+    gen_statem:cast(From, ack_abort),
     {stop, normal, State}.
 
 %%%===================================================================
