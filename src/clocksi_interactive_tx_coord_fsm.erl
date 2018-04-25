@@ -284,7 +284,6 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
         {Reply, execute_op, Data} ->
             {next_state, execute_op, Data, [{reply, Sender, Reply}]};
 
-        %% TODO check if this is a valid statem transition
         {stop, normal, Data} ->
             {stop, normal, Data}
     end.
@@ -302,7 +301,6 @@ committing_2pc({call, Sender}, commit, State = #tx_coord_state{transaction = Tra
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
-            %% TODO statem reply
             case reply_to_client(State#tx_coord_state{state = committed_read_only, from = Sender}) of
                 {start_tx, Data} -> {next_state, start_tx, Data};
                 {stop, normal, Data} -> {stop, normal, Data}
@@ -466,6 +464,9 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #tx_
 %% sends a log operation per update, to the vnode responsible of the updated
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
+%% TODO before pull request: this is called in mock_partition line 192; why is this not wrapped in cast?
+receive_logging_responses(timeout, _Response, _State) ->
+    receive_logging_responses(cast, timeout, _State);
 receive_logging_responses(cast, Response, S0 = #tx_coord_state{
     is_static = IsStatic,
     num_to_read = NumToReply,
@@ -559,6 +560,12 @@ committing_single({call, Sender}, commit, SD0 = #tx_coord_state{commit_time = Co
 
 %% TODO add to all state functions
 %%handle_sync_event(stop, _From, _StateName, StateData) -> {stop, normal, ok, StateData}.
+
+%%handle_call(From, stop, Data) ->
+%%    {stop_and_reply, normal,  {reply, From, ok}, Data}.
+%%
+%%handle_info(Info, StateName, Data) ->
+%%    {stop, {shutdown, {unexpected, Info, StateName}}, StateName, Data}.
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
