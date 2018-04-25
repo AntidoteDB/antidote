@@ -32,15 +32,15 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--define(DC_META_UTIL, mock_partition_fsm).
--define(DC_UTIL, mock_partition_fsm).
--define(VECTORCLOCK, mock_partition_fsm).
--define(LOG_UTIL, mock_partition_fsm).
--define(CLOCKSI_VNODE, mock_partition_fsm).
--define(CLOCKSI_DOWNSTREAM, mock_partition_fsm).
--define(LOGGING_VNODE, mock_partition_fsm).
--define(PROMETHEUS_GAUGE, mock_partition_fsm).
--define(PROMETHEUS_COUNTER, mock_partition_fsm).
+-define(DC_META_UTIL, mock_partition).
+-define(DC_UTIL, mock_partition).
+-define(VECTORCLOCK, mock_partition).
+-define(LOG_UTIL, mock_partition).
+-define(CLOCKSI_VNODE, mock_partition).
+-define(CLOCKSI_DOWNSTREAM, mock_partition).
+-define(LOGGING_VNODE, mock_partition).
+-define(PROMETHEUS_GAUGE, mock_partition).
+-define(PROMETHEUS_COUNTER, mock_partition).
 
 -else.
 -define(DC_META_UTIL, dc_meta_data_utilities).
