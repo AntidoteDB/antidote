@@ -214,11 +214,12 @@ init([Name, UpdateFunction, MergeFunction, InitialLocal, InitialMerged]) ->
                                 should_check_nodes=true}}.
 
 send_meta_data({call, Sender}, start, State) ->
-    gen_statem:reply(Sender, ok),
-    {next_state, send_meta_data, State#state{should_check_nodes=true}, ?META_DATA_SLEEP};
+    {next_state, send_meta_data, State#state{should_check_nodes=true},
+        [ {reply, Sender, ok}, {state_timeout, ?META_DATA_SLEEP, timeout} ]
+    };
 
-%% TODO same problem as timeout in coord_fsm
-send_meta_data(timeout, _, State) ->
+%% internal timeout transition
+send_meta_data(state_timeout, timeout, State) ->
     send_meta_data(cast, timeout, State);
 send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                                        update_function = UpdateFunction,
@@ -241,7 +242,9 @@ send_meta_data(cast, timeout, State = #state{last_result = LastResult,
                 false ->
                     LastResult
             end,
-    {next_state, send_meta_data, State#state{last_result = Store, should_check_nodes=WillChange}, ?META_DATA_SLEEP}.
+    {next_state, send_meta_data, State#state{last_result = Store, should_check_nodes=WillChange},
+        [ {state_timeout, ?META_DATA_SLEEP, timeout} ]
+    }.
 
 callback_mode() -> state_functions.
 
