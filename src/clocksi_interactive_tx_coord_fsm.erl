@@ -258,6 +258,7 @@ execute_op({call, Sender}, {update, Args}, State) ->
     execute_op({call, Sender}, {update_objects, [Args]}, State);
 
 execute_op({call, Sender}, {OpType, Args}, State) ->
+%%    io:format(user, "~n~n~n ~p~n~p~n~p~n~p ~n", [Sender,OpType, Args, State]),
     case execute_command(OpType, Args, Sender, State) of
         {committing_2pc, Data} ->
             {next_state, committing_2pc, Data};
@@ -289,7 +290,6 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
             {stop, normal, Data}
     end.
 
-
 %%%== committing_2pc
 
 %% @doc after receiving all prepare_times, send the commit message to all
@@ -310,7 +310,6 @@ committing_2pc({call, Sender}, commit, State = #tx_coord_state{transaction = Tra
             ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, CommitTime),
             {next_state, receive_committed, State#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
-
 
 %%%== receive_prepared
 
@@ -341,7 +340,11 @@ receive_prepared(cast, timeout, S0) ->
         {receive_aborted, State} -> {next_state, receive_aborted, State};
         {start_tx, State} -> {next_state, start_tx, State};
         {stop, normal, Data} -> {stop, normal, Data}
-    end.
+    end;
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_prepared(info, {_EventType, EventValue}, State) ->
+    receive_prepared(cast, EventValue, State).
 
 
 %%%== start_tx
@@ -353,8 +356,11 @@ start_tx(cast, {start_tx, From, ClientClock, Properties}, SD) ->
 %% Used by static update and read transactions
 start_tx(cast, {start_tx, From, ClientClock, Properties, Operation}, SD) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
-        SD#tx_coord_state{is_static = true, operations = Operation, from = From}), [{state_timeout, 0, timeout}]}.
+        SD#tx_coord_state{is_static = true, operations = Operation, from = From}), [{state_timeout, 0, timeout}]};
 
+%% capture regular events (e.g. logging_vnode responses)
+start_tx(info, {_EventType, EventValue}, State) ->
+    start_tx(cast, EventValue, State).
 
 
 %%%== committing
@@ -379,7 +385,6 @@ committing({call, Sender}, commit, SD0 = #tx_coord_state{transaction = Transacti
                 SD0#tx_coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
 
-
 %%%== single_committing
 
 %% @doc TODO
@@ -403,7 +408,11 @@ single_committing(cast, timeout, S0) ->
         {receive_aborted, State} -> {next_state, receive_aborted, State};
         {start_tx, State} -> {next_state, start_tx, State};
         {stop, normal, Data} -> {stop, normal, Data}
-    end.
+    end;
+
+%% capture regular events (e.g. logging_vnode responses)
+single_committing(info, {_EventType, EventValue}, State) ->
+    single_committing(cast, EventValue, State).
 
 
 %%%== receive_aborted
@@ -424,8 +433,11 @@ receive_aborted(cast, ack_abort, State = #tx_coord_state{num_to_ack = NumToAck})
             {next_state, receive_aborted, State#tx_coord_state{num_to_ack = NumToAck - 1}}
     end;
 
-receive_aborted(cast, _, State) ->
-    {next_state, receive_aborted, State}.
+receive_aborted(cast, _, State) -> {next_state, receive_aborted, State};
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_aborted(info, {_EventType, EventValue}, State) ->
+    receive_aborted(cast, EventValue, State).
 
 
 %%%== receive_read_objects_result
@@ -439,7 +451,7 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #tx_
     %% TODO: type is hard-coded..
     UpdatedSnapshot = apply_tx_updates_to_snapshot(Key, CoordState, Type, Snapshot),
 
-    %% Swap keys with their appropiate read values
+    %% Swap keys with their appropriate read values
     ReadValues = replace_first(ReadKeys, Key, UpdatedSnapshot),
     NewReadSet = orddict:store(Key, UpdatedSnapshot, ReadSet),
 
@@ -455,7 +467,11 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #tx_
         false ->
             {next_state, execute_op, CoordState#tx_coord_state{num_to_read = 0, internal_read_set = NewReadSet},
                 [{reply, CoordState#tx_coord_state.from, {ok, lists:reverse(ReadValues)}}]}
-    end.
+    end;
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_read_objects_result(info, {_EventType, EventValue}, State) ->
+    receive_read_objects_result(cast, EventValue, State).
 
 
 %%%== receive_logging_responses
@@ -519,7 +535,11 @@ receive_logging_responses(cast, Response, S0 = #tx_coord_state{
                         {stop, normal, Data} -> {stop, normal, Data}
                     end
             end
-    end.
+    end;
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_logging_responses(info, {_EventType, EventValue}, State) ->
+    receive_logging_responses(cast, EventValue, State).
 
 
 %%%== receive_committed
@@ -538,7 +558,11 @@ receive_committed(cast, committed, S0 = #tx_coord_state{num_to_ack = NumToAck}) 
             end;
         _ ->
             {next_state, receive_committed, S0#tx_coord_state{num_to_ack = NumToAck - 1}}
-    end.
+    end;
+
+%% capture regular events (e.g. logging_vnode responses)
+receive_committed(info, {_EventType, EventValue}, State) ->
+    receive_committed(cast, EventValue, State).
 
 
 %%%== committing_single
