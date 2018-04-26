@@ -249,7 +249,8 @@ init([From, ClientClock, Properties, StayAlive, Operations]) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-execute_op(cast, timeout, State = #tx_coord_state{operations = Operations, from = From}) ->
+%% TODO these seem to only get triggered by internal timeouts
+execute_op(timeout, _TimeoutPeriod, State = #tx_coord_state{operations = Operations, from = From}) ->
     execute_op({call, From}, Operations, State);
 
 %% update kept for backwards compatibility with tests.
@@ -464,9 +465,9 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #tx_
 %% sends a log operation per update, to the vnode responsible of the updated
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
-%% TODO before pull request: this is called in mock_partition line 192; why is this not wrapped in cast?
-receive_logging_responses(timeout, _Response, _State) ->
-    receive_logging_responses(cast, timeout, _State);
+%% TODO apparently timeout transition is triggered directly
+receive_logging_responses(timeout, _TimeoutPeriod, State) ->
+    receive_logging_responses(cast, timeout, State);
 receive_logging_responses(cast, Response, S0 = #tx_coord_state{
     is_static = IsStatic,
     num_to_read = NumToReply,
