@@ -241,7 +241,7 @@ init([From, ClientClock, Properties, StayAlive]) ->
 init([From, ClientClock, Properties, StayAlive, Operations]) ->
     BaseState = init_state(StayAlive, true, true, Properties),
     State = start_tx_internal(From, ClientClock, Properties, BaseState),
-    {ok, execute_op, State#tx_coord_state{operations = Operations, from = From}, 0}.
+    {ok, execute_op, State#tx_coord_state{operations = Operations, from = From}, [{state_timeout, 0, timeout}]}.
 
 
 %%%== execute_op
@@ -249,8 +249,8 @@ init([From, ClientClock, Properties, StayAlive, Operations]) ->
 %% @doc Contact the leader computed in the prepare state for it to execute the
 %%      operation, wait for it to finish (synchronous) and go to the prepareOP
 %%       to execute the next operation.
-%% TODO these seem to only get triggered by internal timeouts
-execute_op(timeout, _TimeoutPeriod, State = #tx_coord_state{operations = Operations, from = From}) ->
+%% internal state timeout
+execute_op(state_timeout, timeout, State = #tx_coord_state{operations = Operations, from = From}) ->
     execute_op({call, From}, Operations, State);
 
 %% update kept for backwards compatibility with tests.
@@ -280,7 +280,7 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
         {receive_logging_responses, Data} ->
             {next_state, receive_logging_responses, Data};
         {receive_logging_responses, Data, 0} ->
-            {next_state, receive_logging_responses, Data, 0};
+            {next_state, receive_logging_responses, Data, [{state_timeout, 0, timeout}]};
 
         {Reply, execute_op, Data} ->
             {next_state, execute_op, Data, [{reply, Sender, Reply}]};
@@ -353,7 +353,7 @@ start_tx(cast, {start_tx, From, ClientClock, Properties}, SD) ->
 %% Used by static update and read transactions
 start_tx(cast, {start_tx, From, ClientClock, Properties, Operation}, SD) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
-        SD#tx_coord_state{is_static = true, operations = Operation, from = From}), 0}.
+        SD#tx_coord_state{is_static = true, operations = Operation, from = From}), [{state_timeout, 0, timeout}]}.
 
 
 
@@ -460,14 +460,14 @@ receive_read_objects_result(cast, {ok, {Key, Type, Snapshot}}, CoordState = #tx_
 
 %%%== receive_logging_responses
 
+%% internal state timeout
+receive_logging_responses(state_timeout, timeout, State) ->
+    receive_logging_responses(cast, timeout, State);
 %% @doc This state reached after an execute_op(update_objects[Params]).
 %% update_objects calls the perform_update function, which asynchronously
 %% sends a log operation per update, to the vnode responsible of the updated
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
-%% TODO apparently timeout transition is triggered directly
-receive_logging_responses(timeout, _TimeoutPeriod, State) ->
-    receive_logging_responses(cast, timeout, State);
 receive_logging_responses(cast, Response, S0 = #tx_coord_state{
     is_static = IsStatic,
     num_to_read = NumToReply,
