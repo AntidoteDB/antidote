@@ -35,9 +35,12 @@
          foreign_keys/1,
          indexes/1,
          column_names/1,
+         all_column_names/1,
          tables_metadata/1,
          table_metadata/2,
          is_primary_key/2,
+         is_column/2,
+         is_foreign_key/2,
          shadow_column_state/4,
          record_data/3,
          get_column/2,
@@ -58,6 +61,11 @@ column_names(Table) ->
     Columns = columns(Table),
     maps:get(?COLUMNS, Columns).
 
+all_column_names(Table) ->
+    TCols = column_names(Table),
+    SCols = lists:map(fun(?FK(FKName, _FKType, _RefTable, _RefCol)) -> FKName end, foreign_keys(Table)),
+    lists:append([['#st'], TCols, SCols]).
+
 tables_metadata(TxId) ->
     ObjKey = querying_utils:build_keys(?TABLE_METADATA_KEY, ?TABLE_DT, ?AQL_METADATA_BUCKET),
     [Meta] = querying_utils:read_keys(ObjKey, TxId),
@@ -75,6 +83,18 @@ table_metadata(TableName, TxId) ->
 is_primary_key(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(Cols) ->
     ColList = maps:get(?PK_COLUMN, Cols),
     lists:member(ColumnName, ColList).
+
+is_column(ColumnName, ?TABLE(_TName, _Policy, Cols, _FKeys, _Idx)) when is_map(Cols) ->
+    ColList = maps:get(?COLUMNS, Cols),
+    lists:member(ColumnName, ColList).
+
+is_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx)) ->
+    Aux = lists:dropwhile(fun(?FK(FkName, _FkType, _RefTable, _RefCol)) ->
+        ColumnName /= FkName end, FKeys),
+    case Aux of
+        [] -> false;
+        [_Col | _] -> true
+    end.
 
 % RecordData represents a single record, i.e. a list of tuples on the form:
 % {{col_name, datatype}, value}
@@ -108,7 +128,12 @@ record_data(PKey, TableName, TxId) ->
     %ObjKey = querying_commons:build_keys(PKeyAtom, ?TABLE_DT, TableName),
     %querying_commons:read_keys(ObjKey, TxId).
 
-get_column(_ColumnName, []) -> [];
+get_column(_ColumnName, []) -> undefined;
+get_column({ColumnName, CRDT}, Record) ->
+    case proplists:lookup({ColumnName, CRDT}, Record) of
+        none -> undefined;
+        Entry -> Entry
+    end;
 get_column(ColumnName, Record) ->
     Aux = lists:dropwhile(fun(?ATTRIBUTE(Column, _Type, _Value)) ->
         Column /= ColumnName end, Record),

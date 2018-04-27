@@ -35,6 +35,9 @@
 -module(antidote_crdt_gindex).
 -behaviour(antidote_crdt).
 
+-define(LOWER_BOUND_PRED, [greater, greatereq]).
+-define(UPPER_BOUND_PRED, [lesser, lessereq]).
+
 %% API
 -export([new/0,
          new/1,
@@ -66,24 +69,29 @@
 
 -spec new() -> gindex().
 new() ->
-    {undefined, orddict:new(), dict:new()}.
+    {undefined, gb_trees:empty(), dict:new()}. %% TODO benchmark the possible choices for the index: dict, orddict, gb_trees
 
 -spec new(term()) -> gindex().
 new(Type) ->
     case antidote_crdt:is_type(Type) of
-        true -> {Type, orddict:new(), dict:new()};
+        true -> {Type, gb_trees:empty(), dict:new()};
         false -> new()
     end.
 
 -spec value(gindex_query()) -> indexmap().
 value({range, LowerPred, UpperPred, {_Type, Index, _Indirection}}) ->
-    orddict:filter(fun(Key, _Value) ->
-        LowerPred(Key) andalso UpperPred(Key)
-    end, Index);
+    case validate_pred(lower, LowerPred) andalso validate_pred(upper, UpperPred) of
+        true ->
+            LowerBoundKey = lookup_lower_bound(LowerPred, Index),
+            Iterator = gb_trees:iterator_from(LowerBoundKey, Index),
+            iterate_and_filter({UpperPred, [key]}, gb_trees:next(Iterator), []);
+        false ->
+            throw("Some of the predicates don't respect a range query")
+    end;
 value({get, Key, {_Type, Index, _Indirection}}) ->
-    case orddict:find(Key, Index) of
-        {ok, Value} -> orddict:store(Key, Value, orddict:new());
-        error -> {error, key_not_found}
+    case gb_trees:lookup(Key, Index) of
+        {value, Value} -> {Key, Value};
+        none -> {error, key_not_found}
     end;
 value({lookup, Key, {Type, _Index, Indirection} = GIndex}) ->
     case dict:find(Key, Indirection) of
@@ -93,7 +101,7 @@ value({lookup, Key, {Type, _Index, Indirection} = GIndex}) ->
         error -> {error, key_not_found}
     end;
 value({_Type, Index, _Indirection}) ->
-    Index.
+    gb_trees:to_list(Index).
 
 -spec downstream(gindex_op(), gindex()) -> {ok, gindex_effect()} | invalid_type().
 downstream({update, {Type, Key, Op}}, {_Type, _Index, Indirection} = GIndex) ->
@@ -112,14 +120,19 @@ downstream({update, Ops}, GIndex) when is_list(Ops) ->
 
 -spec update(gindex_effect(), gindex()) -> {ok, gindex()}.
 update({update, {Type, Key, Op}}, {_Type, Index, Indirection}) ->
-    NewIndirection = case dict:is_key(Key, Indirection) of
-                         true ->
-                             dict:update(Key, fun(V) -> {ok, Value} = Type:update(Op, V), Value end, Indirection);
-                         false ->
-                             {ok, NewValueUpdated} = Type:update(Op, Type:new()),
-                             dict:store(Key, NewValueUpdated, Indirection)
+    {OldValue, NewValue} = case dict:find(Key, Indirection) of
+        {ok, Value} ->
+            {ok, ValueUpdated} = Type:update(Op, Value),
+            {Value, ValueUpdated};
+        error ->
+            NewCRDT = Type:new(),
+            {ok, NewValueUpdated} = Type:update(Op, NewCRDT),
+            {undefined, NewValueUpdated}
     end,
-    NewIndex = update_index(get_value(Type, Key, NewIndirection), Key, Index),
+
+    NewIndirection = dict:store(Key, NewValue, Indirection),
+
+    NewIndex = update_index(get_value(Type, OldValue), get_value(Type, NewValue), Key, Index),
     {ok, {Type, NewIndex, NewIndirection}};
 update({update, Ops}, Map) ->
     apply_ops(Ops, Map).
@@ -179,22 +192,30 @@ index_type({_Index, Indirection}, Default) ->
         _Else -> undefined
     end.
 
-update_index(EntryKey, EntryValue, Index) ->
-    RemoveOld = orddict:fold(fun(Key, Value, Acc) ->
-        case ordsets:is_element(EntryValue, Value) of
-            true -> orddict:store(Key, ordsets:del_element(EntryValue, Value), Acc);
-            false -> orddict:store(Key, Value, Acc)
-        end
-    end, orddict:new(), Index),
-    orddict:update(EntryKey, fun(Set) ->
-        ordsets:add_element(EntryValue, Set)
-    end, ordsets:add_element(EntryValue, ordsets:new()), RemoveOld).
+update_index(OldEntryKey, NewEntryKey, EntryValue, Index) ->
+    Removed = case gb_trees:lookup(OldEntryKey, Index) of
+        {value, Set} ->
+            case ordsets:is_element(EntryValue, Set) of
+                true -> gb_trees:update(OldEntryKey, ordsets:del_element(EntryValue, Set), Index);
+                false -> full_search(EntryValue, Index)
+            end;
+        none -> Index
+    end,
 
-get_value(Type, Key, Indirection) ->
-    CRDTValue = dict:fetch(Key, Indirection),
+    UseSet = case gb_trees:lookup(NewEntryKey, Removed) of
+                 {value, Set2} -> Set2;
+                 none -> ordsets:new()
+             end,
+    gb_trees:enter(NewEntryKey, ordsets:add_element(EntryValue, UseSet), Removed).
+
+get_value(_Type, undefined) -> undefined;
+get_value(Type, CRDTValue) ->
     Value = Type:value(CRDTValue),
     calc_value(Type, Value).
 
+%% A special case for a bounded counter, where the value of an index entry
+%% supported by this CRDT corresponds to the difference between the sum of
+%% increments and the sum of decrements.
 calc_value(antidote_crdt_bcounter, {Inc, Dec}) ->
     IncList = orddict:to_list(Inc),
     DecList = orddict:to_list(Dec),
@@ -227,14 +248,60 @@ distinct([]) -> true;
 distinct([X | Xs]) ->
     not lists:member(X, Xs) andalso distinct(Xs).
 
+lookup_lower_bound(_LowerPred, {0, _Tree}) -> nil;
+lookup_lower_bound(LowerPred, {Size, Tree}) when Size > 0 ->
+    lookup_lower_bound(LowerPred, Tree, nil).
+lookup_lower_bound(_LowerPred, nil, Final) ->
+    Final;
+lookup_lower_bound(LowerPred, {Key, _Value, Left, Right}, Final) ->
+    case apply_pred(LowerPred, Key) of
+        true -> lookup_lower_bound(LowerPred, Left, Key);
+        false -> lookup_lower_bound(LowerPred, Right, Final)
+    end.
+
+iterate_and_filter(_Predicate, none, Acc) ->
+    Acc;
+iterate_and_filter({Fun, Params} = Predicate, {Key, Value, Iter}, Acc) ->
+    Result = case Params of
+                 [key] -> apply_pred(Fun, Key);
+                 [value, V] -> apply_pred(Fun, [Value, V])
+             end,
+    case Result of
+        true -> iterate_and_filter(Predicate, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
+        false -> iterate_and_filter(Predicate, gb_trees:next(Iter), Acc)
+    end.
+
+full_search(EntryValue, Index) ->
+    Iterator = gb_trees:iterator(Index),
+    FilterFun = fun([Set, V]) -> ordsets:is_element(V, Set) end,
+    case iterate_and_filter({FilterFun, [value, EntryValue]}, gb_trees:next(Iterator), []) of
+        [] -> Index;
+        Entries ->
+            lists:foldl(fun({Key, Value}, AccIndex) ->
+                gb_trees:update(Key, ordsets:del_element(EntryValue, Value), AccIndex)
+            end, Index, Entries)
+    end.
+
+validate_pred(lower, {Type, _Func}) ->
+    lists:member(Type, ?LOWER_BOUND_PRED);
+validate_pred(upper, {Type, _Func}) ->
+    lists:member(Type, ?UPPER_BOUND_PRED).
+
+apply_pred({_Type, Func}, Param) ->
+    Func(Param).
+
 %% ===================================================================
 %% EUnit tests
 %% ===================================================================
 -ifdef(TEST).
+
+tree_insertions(Number, TreeAcc) ->
+    gb_trees:enter(Number, Number, TreeAcc).
+
 new_test() ->
-    ?assertEqual({undefined, orddict:new(), dict:new()}, new()),
-    ?assertEqual({undefined, orddict:new(), dict:new()}, new(dummytype)),
-    ?assertEqual({antidote_crdt_lwwreg, orddict:new(), dict:new()}, new(antidote_crdt_lwwreg)).
+    ?assertEqual({undefined, gb_trees:empty(), dict:new()}, new()),
+    ?assertEqual({undefined, gb_trees:empty(), dict:new()}, new(dummytype)),
+    ?assertEqual({antidote_crdt_lwwreg, gb_trees:empty(), dict:new()}, new(antidote_crdt_lwwreg)).
 
 update_test() ->
     Index1 = new(antidote_crdt_lwwreg),
@@ -276,5 +343,38 @@ equal_test() ->
     ?assertEqual(false, equal(Index1, Index2)),
     ?assertEqual(false, equal(Index2, Index3)),
     ?assertEqual(false, equal(Index2, Index4)).
+
+bound_search_test() ->
+    Func = fun(Key) -> Key >= 3 end,
+    Pred = {lower, Func},
+    Tree1 = gb_trees:empty(),
+    Tree2 = gb_trees:enter(1, 1, Tree1),
+    Tree3 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(1, 10)),
+    Tree4 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(2, 20, 2)),
+    Tree5 = lists:foldl(fun tree_insertions/2, Tree1, lists:reverse(lists:seq(1, 5))),
+    Tree6 = lists:foldl(fun tree_insertions/2, Tree1, [1, 2]),
+
+    ?assertEqual(nil, lookup_lower_bound(Pred, Tree1)),
+    ?assertEqual(nil, lookup_lower_bound(Pred, Tree2)),
+    ?assertEqual(3, lookup_lower_bound(Pred, Tree3)),
+    ?assertEqual(4, lookup_lower_bound(Pred, Tree4)),
+    ?assertEqual(3, lookup_lower_bound(Pred, Tree5)),
+    ?assertEqual(nil, lookup_lower_bound(Pred, Tree6)).
+
+range_test() ->
+    Index1 = new(),
+    Updates = [
+        {antidote_crdt_lwwreg, "col1", {assign, 1}}, {antidote_crdt_lwwreg, "col2", {assign, 2}},
+        {antidote_crdt_lwwreg, "col3", {assign, 3}}, {antidote_crdt_lwwreg, "col4", {assign, 4}},
+        {antidote_crdt_lwwreg, "col5", {assign, 5}}, {antidote_crdt_lwwreg, "col6", {assign, 6}}
+    ],
+    {ok, DownstreamOp1} = downstream({update, Updates}, Index1),
+    {ok, Index2} = update(DownstreamOp1, Index1),
+    Func1 = fun(Term) -> Term >= 3 end,
+    Func2 = fun(Term) -> Term < 6 end,
+    LowerPred1 = {lower, Func1},
+    UpperPred1 = {upper, Func2},
+    ?assertEqual([], value({range, LowerPred1, UpperPred1, Index1})),
+    ?assertEqual([{3, ["col3"]}, {4, ["col4"]}, {5, ["col5"]}], value({range, LowerPred1, UpperPred1, Index2})).
 
 -endif.

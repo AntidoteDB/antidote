@@ -44,7 +44,8 @@
          remove_duplicates/1,
          create_crdt_update/3,
          is_list_of_lists/1,
-         is_subquery/1]).
+         is_subquery/1,
+         replace/3]).
 
 build_keys([], _Types, _Bucket) -> [];
 build_keys(Keys, Types, Bucket) when is_list(Keys) and is_list(Types) ->
@@ -151,3 +152,7 @@ is_list_of_lists(_) -> false.
 
 is_subquery({sub, Conditions}) when is_list(Conditions) -> true;
 is_subquery(_) -> false.
+
+replace(N, Element, List) when N >= 0 andalso N < length(List)->
+    {First, [_H | Second]} = lists:split(N, List),
+    lists:append(First, [Element | Second]).
