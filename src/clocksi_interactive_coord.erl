@@ -300,16 +300,12 @@ execute_op({call, Sender}, {update, Args}, State) ->
 
 execute_op({call, Sender}, {OpType, Args}, State) ->
     case execute_command(OpType, Args, Sender, State) of
-        {committing_2pc, Data} ->
-            {next_state, committing_2pc, Data};
         {committing_2pc, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing_2pc, Data, Actions};
         {receive_prepared, Data} ->
             {next_state, receive_prepared, Data};
         {start_tx, Data} ->
             {next_state, start_tx, Data};
-        {committing, Data} ->
-            {next_state, committing, Data};
         {committing, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing, Data, Actions};
         {single_committing, Data} ->
@@ -362,12 +358,8 @@ receive_prepared(cast, {prepared, ReceivedPrepareTime}, State) ->
             {next_state, receive_committed, Data};
         {receive_prepared, Data} ->
             {next_state, receive_prepared, Data};
-        {committing_2pc, Data} ->
-            {next_state, committing_2pc, Data};
         {committing_2pc, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing_2pc, Data, Actions};
-        {committing, Data} ->
-            {next_state, committing, Data};
         {committing, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing, Data, Actions}
     end;
@@ -554,8 +546,6 @@ receive_logging_responses(cast, Response, State = #coord_state{
                                     {next_state, receive_prepared, Data};
                                 {start_tx, Data} ->
                                     {next_state, start_tx, Data};
-                                {committing, Data} ->
-                                    {next_state, committing, Data};
                                 {committing, Data, Actions = [{reply, _, _}]} ->
                                     {next_state, committing, Data, Actions};
                                 {single_committing, Data} ->
@@ -987,7 +977,7 @@ perform_update(Op, UpdatedPartitions, Transaction, _Sender, ClientOps, InternalR
 
         {Key, Type, PostHookUpdate} ->
 
-            %% Generate the appropiate state operations based on older snapshots
+            %% Generate the appropriate state operations based on older snapshots
             GenerateResult = ?CLOCKSI_DOWNSTREAM:generate_downstream_op(
                 Transaction,
                 Partition,
