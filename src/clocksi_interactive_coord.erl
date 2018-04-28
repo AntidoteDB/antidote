@@ -299,7 +299,6 @@ execute_op({call, Sender}, {update, Args}, State) ->
     execute_op({call, Sender}, {update_objects, [Args]}, State);
 
 execute_op({call, Sender}, {OpType, Args}, State) ->
-%%    io:format(user, "~n~n~n ~p~n~p~n~p~n~p ~n", [Sender,OpType, Args, State]),
     case execute_command(OpType, Args, Sender, State) of
         {committing_2pc, Data} ->
             {next_state, committing_2pc, Data};
@@ -376,10 +375,10 @@ receive_prepared(cast, {prepared, ReceivedPrepareTime}, State) ->
 receive_prepared(cast ,abort, State) ->
     receive_prepared(cast, timeout, State);
 
-receive_prepared(cast, timeout, S0) ->
-    case abort(S0) of
-        {receive_aborted, State} -> {next_state, receive_aborted, State};
-        {start_tx, State} -> {next_state, start_tx, State};
+receive_prepared(cast, timeout, State) ->
+    case abort(State) of
+        {receive_aborted, NewState} -> {next_state, receive_aborted, NewState};
+        {start_tx, NewState} -> {next_state, start_tx, NewState};
         {stop, normal, Data} -> {stop, normal, Data}
     end;
 
@@ -391,13 +390,13 @@ receive_prepared(info, {_EventType, EventValue}, State) ->
 %%%== start_tx
 
 %% @doc TODO
-start_tx(cast, {start_tx, From, ClientClock, Properties}, SD) ->
-    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, SD)};
+start_tx(cast, {start_tx, From, ClientClock, Properties}, State) ->
+    {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, State)};
 
 %% Used by static update and read transactions
-start_tx(cast, {start_tx, From, ClientClock, Properties, Operation}, SD) ->
+start_tx(cast, {start_tx, From, ClientClock, Properties, Operation}, State) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
-        SD#coord_state{is_static = true, operations = Operation, from = From}), [{state_timeout, 0, timeout}]};
+        State#coord_state{is_static = true, operations = Operation, from = From}), [{state_timeout, 0, timeout}]};
 
 %% capture regular events (e.g. logging_vnode responses)
 start_tx(info, {_EventType, EventValue}, State) ->
@@ -410,20 +409,20 @@ start_tx(info, {_EventType, EventValue}, State) ->
 %%      updated partitions, and go to the "receive_committed" state.
 %%      This state is used when no commit message from the client is
 %%      expected
-committing({call, Sender}, commit, SD0 = #coord_state{transaction = Transaction,
+committing({call, Sender}, commit, State = #coord_state{transaction = Transaction,
     updated_partitions = UpdatedPartitions,
     commit_time = Commit_time}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
-            case reply_to_client(SD0#coord_state{state = committed_read_only, from = Sender}) of
+            case reply_to_client(State#coord_state{state = committed_read_only, from = Sender}) of
                 {start_tx, Data} -> {next_state, start_tx, Data};
                 {stop, normal, Data} -> {stop, normal, Data}
             end;
         _ ->
             ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, Commit_time),
             {next_state, receive_committed,
-                SD0#coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
+                State#coord_state{num_to_ack = NumToAck, from = Sender, state = committing}}
     end.
 
 %%%== single_committing
@@ -444,10 +443,10 @@ single_committing(cast, {committed, CommitTime}, State = #coord_state{from = Fro
 single_committing(cast, abort, State) ->
     single_committing(cast, timeout, State);
 
-single_committing(cast, timeout, S0) ->
-    case abort(S0) of
-        {receive_aborted, State} -> {next_state, receive_aborted, State};
-        {start_tx, State} -> {next_state, start_tx, State};
+single_committing(cast, timeout, State) ->
+    case abort(State) of
+        {receive_aborted, NewState} -> {next_state, receive_aborted, NewState};
+        {start_tx, NewState} -> {next_state, start_tx, NewState};
         {stop, normal, Data} -> {stop, normal, Data}
     end;
 
@@ -525,7 +524,7 @@ receive_logging_responses(state_timeout, timeout, State) ->
 %% sends a log operation per update, to the vnode responsible of the updated
 %% key. After sending all those messages, the coordinator reaches this state
 %% to receive the responses of the vnodes.
-receive_logging_responses(cast, Response, S0 = #coord_state{
+receive_logging_responses(cast, Response, State = #coord_state{
     is_static = IsStatic,
     num_to_read = NumToReply,
     return_accumulator = ReturnAcc
@@ -540,7 +539,7 @@ receive_logging_responses(cast, Response, S0 = #coord_state{
     %% Loop back to the same state until we process all the replies
     case NumToReply > 1 of
         true ->
-            {next_state, receive_logging_responses, S0#coord_state{
+            {next_state, receive_logging_responses, State#coord_state{
                 num_to_read=NumToReply - 1,
                 return_accumulator=NewAcc
             }};
@@ -550,7 +549,7 @@ receive_logging_responses(cast, Response, S0 = #coord_state{
                 ok ->
                     case IsStatic of
                         true ->
-                            case prepare(S0) of
+                            case prepare(State) of
                                 {receive_prepared, Data} ->
                                     {next_state, receive_prepared, Data};
                                 {start_tx, Data} ->
@@ -565,14 +564,14 @@ receive_logging_responses(cast, Response, S0 = #coord_state{
                                     {stop, normal, Data}
                             end;
                         false ->
-                            {next_state, execute_op, S0#coord_state{num_to_read=0, return_accumulator=[]},
-                                [{reply, S0#coord_state.from, NewAcc}]}
+                            {next_state, execute_op, State#coord_state{num_to_read=0, return_accumulator=[]},
+                                [{reply, State#coord_state.from, NewAcc}]}
                     end;
 
                 _ ->
-                    case abort(S0) of
-                        {receive_aborted, State} -> {next_state, receive_aborted, State};
-                        {start_tx, State} -> {next_state, start_tx, State};
+                    case abort(State) of
+                        {receive_aborted, NewState} -> {next_state, receive_aborted, NewState};
+                        {start_tx, NewState} -> {next_state, start_tx, NewState};
                         {stop, normal, Data} -> {stop, normal, Data}
                     end
             end
@@ -590,15 +589,15 @@ receive_logging_responses(info, {_EventType, EventValue}, State) ->
 %%      Should we retry sending the committed message if we don't receive a
 %%      reply from every partition?
 %%      What delivery guarantees does sending messages provide?
-receive_committed(cast, committed, S0 = #coord_state{num_to_ack = NumToAck}) ->
+receive_committed(cast, committed, State = #coord_state{num_to_ack = NumToAck}) ->
     case NumToAck of
         1 ->
-            case reply_to_client(S0#coord_state{state = committed}) of
+            case reply_to_client(State#coord_state{state = committed}) of
                 {start_tx, Data} -> {next_state, start_tx, Data};
                 {stop, normal, Data} -> {stop, normal, Data}
             end;
         _ ->
-            {next_state, receive_committed, S0#coord_state{num_to_ack = NumToAck - 1}}
+            {next_state, receive_committed, State#coord_state{num_to_ack = NumToAck - 1}}
     end;
 
 %% capture regular events (e.g. logging_vnode responses)
@@ -611,8 +610,8 @@ receive_committed(info, {_EventType, EventValue}, State) ->
 %% @doc There was only a single partition with an update in this transaction
 %%      so the transaction has already been committed
 %%      so just wait for the commit message from the client
-committing_single({call, Sender}, commit, SD0 = #coord_state{commit_time = Commit_time}) ->
-    case reply_to_client(SD0#coord_state{
+committing_single({call, Sender}, commit, State = #coord_state{commit_time = Commit_time}) ->
+    case reply_to_client(State#coord_state{
         prepare_time = Commit_time,
         from = Sender,
         commit_time = Commit_time,
@@ -789,7 +788,7 @@ execute_command(update_objects, UpdateOps, Sender, State = #coord_state{transact
 
 %% @doc function called when 2pc is forced independently of the number of partitions
 %%      involved in the txs.
-prepare_2pc(SD0 = #coord_state{
+prepare_2pc(State = #coord_state{
     transaction = Transaction,
     updated_partitions = UpdatedPartitions, full_commit = FullCommit, from = From}) ->
     case UpdatedPartitions of
@@ -797,22 +796,22 @@ prepare_2pc(SD0 = #coord_state{
             SnapshotTime = Transaction#transaction.snapshot_time,
             case FullCommit of
                 false ->
-                    {committing_2pc, SD0#coord_state{state = committing, commit_time = SnapshotTime},
+                    {committing_2pc, State#coord_state{state = committing, commit_time = SnapshotTime},
                         [{reply, From, {ok, SnapshotTime}}]};
                 true ->
-                    reply_to_client(SD0#coord_state{state = committed_read_only})
+                    reply_to_client(State#coord_state{state = committed_read_only})
             end;
         [_|_] ->
             ok = ?CLOCKSI_VNODE:prepare(UpdatedPartitions, Transaction),
             Num_to_ack = length(UpdatedPartitions),
             {receive_prepared,
-                SD0#coord_state{num_to_ack = Num_to_ack, state = prepared}}
+                State#coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
 
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
-reply_to_client(SD = #coord_state{
+reply_to_client(State = #coord_state{
     from=From,
     state=TxState,
     is_static=IsStatic,
@@ -879,7 +878,7 @@ reply_to_client(SD = #coord_state{
         true ->
             {start_tx, init_state(StayAlive, FullCommit, IsStatic, [])};
         false ->
-            {stop, normal, SD}
+            {stop, normal, State}
     end.
 
 
@@ -1047,7 +1046,7 @@ async_log_propagation(Partition, TxId, Key, Type, Record) ->
 
 %% @doc this function sends a prepare message to all updated partitions and goes
 %%      to the "receive_prepared"state.
-prepare(SD0 = #coord_state{
+prepare(State = #coord_state{
     from=From,
     num_to_read=NumToRead,
     full_commit=FullCommit,
@@ -1061,28 +1060,28 @@ prepare(SD0 = #coord_state{
                 0 ->
                     case FullCommit of
                         true ->
-                            reply_to_client(SD0#coord_state{state = committed_read_only});
+                            reply_to_client(State#coord_state{state = committed_read_only});
 
                         false ->
-                            {committing, SD0#coord_state{state = committing, commit_time = SnapshotTime},
+                            {committing, State#coord_state{state = committing, commit_time = SnapshotTime},
                                 [{reply, From, {ok, SnapshotTime}}]}
                     end;
                 _ ->
-                    {receive_prepared, SD0#coord_state{state = prepared}}
+                    {receive_prepared, State#coord_state{state = prepared}}
             end;
 
         [_] ->
             ok = ?CLOCKSI_VNODE:single_commit(UpdatedPartitions, Transaction),
-            {single_committing, SD0#coord_state{state = committing, num_to_ack = 1}};
+            {single_committing, State#coord_state{state = committing, num_to_ack = 1}};
 
         [_|_] ->
             ok = ?CLOCKSI_VNODE:prepare(UpdatedPartitions, Transaction),
             Num_to_ack = length(UpdatedPartitions),
-            {receive_prepared, SD0#coord_state{num_to_ack = Num_to_ack, state = prepared}}
+            {receive_prepared, State#coord_state{num_to_ack = Num_to_ack, state = prepared}}
     end.
 
 
-process_prepared(ReceivedPrepareTime, S0 = #coord_state{num_to_ack = NumToAck,
+process_prepared(ReceivedPrepareTime, State = #coord_state{num_to_ack = NumToAck,
     commit_protocol = CommitProtocol, full_commit = FullCommit,
     from = From, prepare_time = PrepareTime,
     transaction = Transaction,
@@ -1095,9 +1094,9 @@ process_prepared(ReceivedPrepareTime, S0 = #coord_state{num_to_ack = NumToAck,
                     true ->
                         ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
                         {receive_committed,
-                            S0#coord_state{num_to_ack = length(UpdatedPartitions), commit_time = MaxPrepareTime, state = committing}};
+                            State#coord_state{num_to_ack = length(UpdatedPartitions), commit_time = MaxPrepareTime, state = committing}};
                     false ->
-                        {committing_2pc, S0#coord_state{
+                        {committing_2pc, State#coord_state{
                             prepare_time = MaxPrepareTime,
                             commit_time = MaxPrepareTime,
                             state = committing
@@ -1108,14 +1107,14 @@ process_prepared(ReceivedPrepareTime, S0 = #coord_state{num_to_ack = NumToAck,
                     true ->
                         ok = ?CLOCKSI_VNODE:commit(UpdatedPartitions, Transaction, MaxPrepareTime),
                         {receive_committed,
-                            S0#coord_state{
+                            State#coord_state{
                                 num_to_ack = length(UpdatedPartitions),
                                 commit_time = MaxPrepareTime,
                                 state = committing
                             }
                         };
                     false ->
-                        {committing, S0#coord_state{
+                        {committing, State#coord_state{
                             prepare_time = MaxPrepareTime,
                             commit_time = MaxPrepareTime,
                             state = committing
@@ -1123,21 +1122,21 @@ process_prepared(ReceivedPrepareTime, S0 = #coord_state{num_to_ack = NumToAck,
                 end
         end;
         _ ->
-            {receive_prepared, S0#coord_state{num_to_ack = NumToAck - 1, prepare_time = MaxPrepareTime}}
+            {receive_prepared, State#coord_state{num_to_ack = NumToAck - 1, prepare_time = MaxPrepareTime}}
     end.
 
 
 %% @doc when an error occurs or an updated partition
 %% does not pass the certification check, the transaction aborts.
-abort(SD0 = #coord_state{transaction = Transaction,
+abort(State = #coord_state{transaction = Transaction,
     updated_partitions = UpdatedPartitions}) ->
     NumToAck = length(UpdatedPartitions),
     case NumToAck of
         0 ->
-            reply_to_client(SD0#coord_state{state = aborted});
+            reply_to_client(State#coord_state{state = aborted});
         _ ->
             ok = ?CLOCKSI_VNODE:abort(UpdatedPartitions, Transaction),
-            {receive_aborted, SD0#coord_state{num_to_ack = NumToAck, state = aborted}}
+            {receive_aborted, State#coord_state{num_to_ack = NumToAck, state = aborted}}
     end.
 
 
