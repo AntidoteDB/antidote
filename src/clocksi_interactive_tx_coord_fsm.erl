@@ -226,6 +226,47 @@ finish_op(From, Key, Result) ->
     gen_statem:cast(From, {Key, Result}).
 
 %%%===================================================================
+%%% Internal State
+%%%===================================================================
+
+%%---------------------------------------------------------------------
+%% @doc Data Type: state
+%% where:
+%%    from: the pid of the calling process.
+%%    txid: transaction id handled by this fsm, as defined in src/antidote.hrl.
+%%    updated_partitions: the partitions where update operations take place.
+%%    num_to_ack: when sending prepare_commit,
+%%                number of partitions that have acked.
+%%    num_to_read: when sending read requests
+%%                 number of partitions that are asked.
+%%    prepare_time: transaction prepare time.
+%%    commit_time: transaction commit time.
+%%    state: state of the transaction: {active|prepared|committing|committed}
+%%----------------------------------------------------------------------
+
+-record(tx_coord_state, {
+    from :: undefined | {pid(), term()} | pid(),
+    transaction :: undefined | tx(),
+    updated_partitions :: list(),
+    client_ops :: list(), % list of upstream updates, used for post commit hooks
+    num_to_ack :: non_neg_integer(),
+    num_to_read :: non_neg_integer(),
+    prepare_time :: clock_time(),
+    commit_time :: undefined | clock_time(),
+    commit_protocol :: term(),
+    state :: active | prepared | committing
+    | committed | committed_read_only
+    | undefined | aborted,
+    operations :: undefined | list() | {update_objects, list()},
+    return_accumulator :: list() | ok | {error, reason()},
+    internal_read_set :: orddict:orddict(),
+    is_static :: boolean(),
+    full_commit :: boolean(),
+    properties :: txn_properties(),
+    stay_alive :: boolean()
+}).
+
+%%%===================================================================
 %%% States
 %%%===================================================================
 
