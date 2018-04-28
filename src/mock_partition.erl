@@ -179,7 +179,10 @@ execute_op({call, From}, {update_data_item, Key}, State) ->
                 fail_update -> {error, mock_downstream_fail};
                 _ -> ok
              end,
-    gen_fsm:send_event(From, Result),
+    %% current responses (from logging_vnode)
+%%    gen_fsm:send_event(From, Result),
+    %% how it should be sent
+    gen_statem:cast(From, Result),
     {next_state, execute_op, State#state{key=Key}};
 
 execute_op(cast, {prepare, From, [{Key, _, _}|_]}, State) ->
@@ -189,15 +192,13 @@ execute_op(cast, {prepare, From, [{Key, _, _}|_]}, State) ->
                 timeout -> timeout;
                 _ -> abort
             end,
-%%    gen_statem:cast(From, Result),
-    gen_fsm:send_event(From, Result),
+    gen_statem:cast(From, Result),
+%%    gen_fsm:send_event(From, Result),
     {next_state, execute_op, State};
 
 execute_op(cast, {ack_abort, From, _}, State) ->
-    %% current responses
-    gen_fsm:send_event(From, ack_abort),
-    %% how it should be sent
-%%    gen_statem:cast(From, ack_abort),
+%%    gen_fsm:send_event(From, ack_abort),
+    gen_statem:cast(From, ack_abort),
     {stop, normal, State}.
 
 %%%===================================================================
