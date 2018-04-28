@@ -137,7 +137,7 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
         true -> %% Execute the fast path
             FormattedObjects = format_read_params(Objects),
             [{Key, Type}] = FormattedObjects,
-            {ok, Val, CommitTime} = clocksi_interactive_tx_coord_fsm:
+            {ok, Val, CommitTime} = clocksi_interactive_coord:
                 perform_singleitem_operation(Clock, Key, Type, Properties),
             {ok, transform_reads([Val], StateOrValue, Objects), CommitTime};
         false ->
@@ -192,13 +192,13 @@ transform_reads(States, StateOrValue, Objects) ->
 clocksi_istart_tx(Clock, Properties, KeepAlive) ->
     TxPid = case KeepAlive of
                 true ->
-                    whereis(clocksi_interactive_tx_coord_fsm:generate_name(self()));
+                    whereis(clocksi_interactive_coord:generate_name(self()));
                 false ->
                     undefined
             end,
     _ = case TxPid of
             undefined ->
-                {ok, _} = clocksi_interactive_tx_coord_sup:start_fsm([self(), Clock,
+                {ok, _} = clocksi_interactive_coord_sup:start_fsm([self(), Clock,
                                                                       Properties, KeepAlive]);
             TxPid ->
                 ok = gen_statem:cast(TxPid, {start_tx, self(), Clock, Properties})

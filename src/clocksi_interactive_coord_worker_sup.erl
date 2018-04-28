@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
--module(clocksi_interactive_tx_coord_worker_sup).
+-module(clocksi_interactive_coord_worker_sup).
 -author("Christopher Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behavior(supervisor).
