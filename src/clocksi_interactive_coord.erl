@@ -302,7 +302,7 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
     case execute_command(OpType, Args, Sender, State) of
         {committing_2pc, Data} ->
             {next_state, committing_2pc, Data};
-        {committing_2pc, Data, Actions = [{reply,_,_}]} ->
+        {committing_2pc, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing_2pc, Data, Actions};
         {receive_prepared, Data} ->
             {next_state, receive_prepared, Data};
@@ -310,7 +310,7 @@ execute_op({call, Sender}, {OpType, Args}, State) ->
             {next_state, start_tx, Data};
         {committing, Data} ->
             {next_state, committing, Data};
-        {committing, Data, Actions = [{reply,_,_}]} ->
+        {committing, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing, Data, Actions};
         {single_committing, Data} ->
             {next_state, single_committing, Data};
@@ -364,15 +364,15 @@ receive_prepared(cast, {prepared, ReceivedPrepareTime}, State) ->
             {next_state, receive_prepared, Data};
         {committing_2pc, Data} ->
             {next_state, committing_2pc, Data};
-        {committing_2pc, Data, Actions = [{reply,_,_}]} ->
+        {committing_2pc, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing_2pc, Data, Actions};
         {committing, Data} ->
             {next_state, committing, Data};
-        {committing, Data, Actions = [{reply,_,_}]} ->
+        {committing, Data, Actions = [{reply, _, _}]} ->
             {next_state, committing, Data, Actions}
     end;
 
-receive_prepared(cast ,abort, State) ->
+receive_prepared(cast, abort, State) ->
     receive_prepared(cast, timeout, State);
 
 receive_prepared(cast, timeout, State) ->
@@ -556,7 +556,7 @@ receive_logging_responses(cast, Response, State = #coord_state{
                                     {next_state, start_tx, Data};
                                 {committing, Data} ->
                                     {next_state, committing, Data};
-                                {committing, Data, Actions = [{reply,_,_}]} ->
+                                {committing, Data, Actions = [{reply, _, _}]} ->
                                     {next_state, committing, Data, Actions};
                                 {single_committing, Data} ->
                                     {next_state, single_committing, Data};
@@ -1118,7 +1118,7 @@ process_prepared(ReceivedPrepareTime, State = #coord_state{num_to_ack = NumToAck
                             prepare_time = MaxPrepareTime,
                             commit_time = MaxPrepareTime,
                             state = committing
-                        },[{reply, From, {ok, MaxPrepareTime}}]}
+                        }, [{reply, From, {ok, MaxPrepareTime}}]}
                 end
         end;
         _ ->
