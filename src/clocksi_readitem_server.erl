@@ -264,14 +264,14 @@ return(Coordinator, Key, Type, Transaction, PropertyList, Partition) ->
         {ok, Snapshot} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
-                    gen_fsm:send_event(Sender, {ok, {Key, Type, Snapshot}});
+                    gen_statem:cast(Sender, {ok, {Key, Type, Snapshot}});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {ok, Snapshot})
             end;
         {error, Reason} ->
             case Coordinator of
                 {fsm, Sender} -> %% Return Type and Value directly here.
-                    gen_fsm:send_event(Sender, {error, Reason});
+                    gen_statem:cast(Sender, {error, Reason});
                 _ ->
                     _Ignore=gen_server:reply(Coordinator, {error, Reason})
             end
