@@ -28,8 +28,8 @@
 
 
 
-%-include("antidote.hrl").
-%-include("inter_dc_repl.hrl").
+-include("antidote.hrl").
+-include("inter_dc_repl.hrl").
 
 
 -record(state, {req_queue,local_locks,lock_requests, last_transfers, transfer_timer,dets_ref}).
@@ -86,7 +86,7 @@ dets_info() ->
 %% Sends lock_request([locks()],dcid) messages to all other DCs.
 required(Locks,TxId,Timestamp,Local_Locks) ->
 	%remote_lock_request(MyDCId, RemoteId, Key, Locks), TODO
-	New_Local_Locks=orddict:store(TxId,{required,Locks,Timestamp},Local_Locks).
+	_New_Local_Locks=orddict:store(TxId,{required,Locks,Timestamp},Local_Locks).
     % TODO
     %Adds {required,[locks()],txid,timestamp} to local_locks
     %Sends lock_request([locks()],dcid) messages to all other DCs.
@@ -271,11 +271,11 @@ received_lock(Lock,From,Amount,Dets_ref)->
 %% Returns true if the lock is currently owned by this DC
 %% Returns false if it is not owned by this DC
 check_lock(Lock,Dets_Ref) ->
-    case dets:lookup(?DETS_FILE_NAME,Lock) of
-		[{Lock,{{send,DCID1,Send_List},{received,DCID2,Received_List}}}] ->
+    case dets:lookup(Dets_Ref,Lock) of   %case dets:lookup(?DETS_FILE_NAME,Lock) of -- old version
+		[{Lock,{{send,_DCID1,Send_List},{received,_DCID2,Received_List}}}] ->
 		    Total_Send = lists:foldl(fun({_To,Amount},Acc) -> Acc+Amount end,0,Send_List),
 	        Total_Received = lists:foldl(fun({_From,Amount},Acc) -> Acc+Amount end,0,Received_List),
-	        Has_Lock = Total_Send < Total_Received;
+	        _Has_Lock = Total_Send < Total_Received;
 		[] -> false;
 		{error,Reason} ->
 			{error,Reason}
@@ -302,10 +302,16 @@ other_dcs_list() ->
 %% sends a message to all other DCs requesting the Locks.
 remote_lock_request(MyDCId, Key, Locks) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
-    BinaryMsg = term_to_binary({request_permissions,
-                                {remote_lock_request, {Locks, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
-    inter_dc_query:perform_request(?LOCK_MGR_REQUEST, {RemoteId, LocalPartition},
-                                   BinaryMsg, fun lock_mgr:request_response/2).
+	Other_DCs_List = other_dcs_list(),
+	lists:foldl(
+	fun(RemoteId,AccIn) -> 
+		BinaryMsg = term_to_binary({request_permissions,
+        	{remote_lock_request, {Locks, MyDCId}}, LocalPartition, MyDCId, RemoteId}),
+	    [inter_dc_query:perform_request(?LOCK_MGR_REQUEST, {RemoteId, LocalPartition},
+	    	BinaryMsg, fun lock_mgr:request_response/2) | AccIn]
+	end
+	,[],Other_DCs_List).
+    
 %TODO
 %% Takes TODO as input
 %% sends a message to the speciefed other DC containing the lock information
@@ -417,7 +423,7 @@ handle_info(transfer_periodic, #state{lock_requests=Old_Lock_Requests,local_lock
 			        false ->  
 						% lock is currently NOT used and therefore may be send to another DC
 						% TODO also remove the corresponding lock request from the lock request list.
-						New_Dets_Ref = send_lock(Lock,DCID,Dets_Ref_2);
+						_New_Dets_Ref = send_lock(Lock,DCID,Dets_Ref_2);
 	                true -> 
 						% Lock is currently used and therefore may not be send to another DC
 						Dets_Ref_2
