@@ -37,11 +37,13 @@
 
 -define(LOWER_BOUND_PRED, [greater, greatereq]).
 -define(UPPER_BOUND_PRED, [lesser, lessereq]).
+-define(WRONG_PRED, "Some of the predicates don't respect a range query").
 
 %% API
 -export([new/0,
          new/1,
          value/1,
+         value/2,
          downstream/2,
          update/2,
          equal/2,
@@ -58,7 +60,13 @@
 -type indexmap() :: orddict:orddict(Key::term(), NestedState::term()).
 -type indirectionmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
 
--type gindex_query() :: {range, gindex()} | gindex().
+-type pred_type() :: greater | greatereq | lesser | lessereq.
+-type pred_func() :: fun().
+-type predicate() :: {pred_type(), pred_func()}.
+
+-type gindex_query() :: {range, predicate(), predicate()} |
+                        {get, term()} |
+                        {lookup, term()}.
 
 -type gindex_op() :: {update, nested_op()} | {update, [nested_op()]}.
 -type nested_op() :: {{Key::term(), Type::atom()}, Op::term()}.
@@ -66,6 +74,12 @@
 -type nested_downstream() :: {{Key::term(), Type::atom()}, Op::term()}.
 
 -type invalid_type() :: {error, wrong_type}.
+-type key_not_found() :: {error, key_not_found}.
+-type wrong_predicate() :: erlang:throw(string()).
+-type value_output() :: [{term(), term()}] | {term(), term()} |
+                        invalid_type() |
+                        key_not_found() |
+                        wrong_predicate().
 
 -spec new() -> gindex().
 new() ->
@@ -78,30 +92,32 @@ new(Type) ->
         false -> new()
     end.
 
--spec value(gindex_query()) -> indexmap().
-value({range, LowerPred, UpperPred, {_Type, Index, _Indirection}}) ->
+-spec value(gindex()) -> indexmap().
+value({_Type, Index, _Indirection}) ->
+    gb_trees:to_list(Index).
+
+-spec value(gindex_query(), gindex()) -> value_output().
+value({range, {LowerPred, UpperPred}}, {_Type, Index, _Indirection}) ->
     case validate_pred(lower, LowerPred) andalso validate_pred(upper, UpperPred) of
         true ->
             LowerBoundKey = lookup_lower_bound(LowerPred, Index),
             Iterator = gb_trees:iterator_from(LowerBoundKey, Index),
             iterate_and_filter({UpperPred, [key]}, gb_trees:next(Iterator), []);
         false ->
-            throw("Some of the predicates don't respect a range query")
+            throw(?WRONG_PRED)
     end;
-value({get, Key, {_Type, Index, _Indirection}}) ->
+value({get, Key}, {_Type, Index, _Indirection}) ->
     case gb_trees:lookup(Key, Index) of
         {value, Value} -> {Key, Value};
         none -> {error, key_not_found}
     end;
-value({lookup, Key, {Type, _Index, Indirection} = GIndex}) ->
+value({lookup, Key}, {Type, _Index, Indirection} = GIndex) ->
     case dict:find(Key, Indirection) of
         {ok, Value} ->
             CRDTValue = Type:value(Value),
             value({get, CRDTValue, GIndex});
         error -> {error, key_not_found}
-    end;
-value({_Type, Index, _Indirection}) ->
-    gb_trees:to_list(Index).
+    end.
 
 -spec downstream(gindex_op(), gindex()) -> {ok, gindex_effect()} | invalid_type().
 downstream({update, {Type, Key, Op}}, {_Type, _Index, Indirection} = GIndex) ->
@@ -346,7 +362,7 @@ equal_test() ->
 
 bound_search_test() ->
     Func = fun(Key) -> Key >= 3 end,
-    Pred = {lower, Func},
+    Pred = {greatereq, Func},
     Tree1 = gb_trees:empty(),
     Tree2 = gb_trees:enter(1, 1, Tree1),
     Tree3 = lists:foldl(fun tree_insertions/2, Tree1, lists:seq(1, 10)),
@@ -372,9 +388,9 @@ range_test() ->
     {ok, Index2} = update(DownstreamOp1, Index1),
     Func1 = fun(Term) -> Term >= 3 end,
     Func2 = fun(Term) -> Term < 6 end,
-    LowerPred1 = {lower, Func1},
-    UpperPred1 = {upper, Func2},
-    ?assertEqual([], value({range, LowerPred1, UpperPred1, Index1})),
-    ?assertEqual([{3, ["col3"]}, {4, ["col4"]}, {5, ["col5"]}], value({range, LowerPred1, UpperPred1, Index2})).
+    LowerPred1 = {greatereq, Func1},
+    UpperPred1 = {lesser, Func2},
+    ?assertEqual([], value({range, {LowerPred1, UpperPred1}}, Index1)),
+    ?assertEqual([{3, ["col3"]}, {4, ["col4"]}, {5, ["col5"]}], value({range, {LowerPred1, UpperPred1}}, Index2)).
 
 -endif.

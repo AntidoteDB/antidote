@@ -176,8 +176,12 @@ obtain_objects(Clock, Properties, Objects, StayAlive, StateOrValue) ->
 transform_reads(States, StateOrValue, Objects) ->
     case StateOrValue of
             object_state -> States;
-            object_value -> lists:map(fun({State, {_Key, Type, _Bucket}}) ->
-                                          Type:value(State) end,
+            object_value -> lists:map(fun({State, ReadObj}) ->
+                                          case ReadObj of
+                                              {{_K, Type, _B}, Op, Args} -> Type:value({Op, Args}, State);
+                                              {_Key, Type, _Bucket} -> Type:value(State)
+                                          end
+                                      end,
                                       lists:zip(States, Objects))
     end.
 
@@ -247,7 +251,11 @@ gr_snapshot_obtain(ClientClock, Objects, StateOrValue) ->
     end.
 
 format_read_params(ReadObjects) ->
-    lists:map(fun({Key, Type, Bucket}) ->
+    lists:map(fun(ReadObj) ->
+                      {Key, Type, Bucket} = case ReadObj of
+                                                {{_K, _T, _B} = BoundObject, _Op, _Args} -> BoundObject;
+                                                {K, T, B} -> {K, T, B}
+                                            end,
                       {{Key, Bucket}, Type}
               end, ReadObjects).
 

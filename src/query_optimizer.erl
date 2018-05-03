@@ -378,18 +378,18 @@ projection_test() ->
     Result = apply_projection(['Col1', 'Col2'], Objects),
     ?assertEqual(Result, ExpectedResult1).
 
-filter_test() ->
-    Objects = [
-        [{{'Col1', crdt}, "A1"}, {{'Col2', crdt}, "Sam"}, {{'Col3', crdt}, 2016}],
-        [{{'Col1', crdt}, "A2"}, {{'Col2', crdt}, "Jon"}, {{'Col3', crdt}, 2008}],
-        [{{'Col1', crdt}, "A3"}, {{'Col2', crdt}, "Rob"}, {{'Col3', crdt}, 2012}]
-    ],
-    Condition1 = {'Col3', {greater, ignore}, 2008},
-    ExpectedResult1 = [
-        [{{'Col1', crdt}, "A1"}, {{'Col2', crdt}, "Sam"}, {{'Col3', crdt}, 2016}],
-        [{{'Col1', crdt}, "A3"}, {{'Col2', crdt}, "Rob"}, {{'Col3', crdt}, 2012}]
-    ],
-    Result = filter_objects(Condition1, Objects),
-    ?assertEqual(Result, ExpectedResult1).
+%%filter_test() ->
+%%    Objects = [
+%%        [{{'Col1', crdt}, "A1"}, {{'Col2', crdt}, "Sam"}, {{'Col3', crdt}, 2016}],
+%%        [{{'Col1', crdt}, "A2"}, {{'Col2', crdt}, "Jon"}, {{'Col3', crdt}, 2008}],
+%%        [{{'Col1', crdt}, "A3"}, {{'Col2', crdt}, "Rob"}, {{'Col3', crdt}, 2012}]
+%%    ],
+%%    Condition1 = {'Col3', {greater, ignore}, 2008},
+%%    ExpectedResult1 = [
+%%        [{{'Col1', crdt}, "A1"}, {{'Col2', crdt}, "Sam"}, {{'Col3', crdt}, 2016}],
+%%        [{{'Col1', crdt}, "A3"}, {{'Col2', crdt}, "Rob"}, {{'Col3', crdt}, 2012}]
+%%    ],
+%%    Result = filter_objects(Condition1, Objects),
+%%    ?assertEqual(Result, ExpectedResult1).
 
 -endif.
