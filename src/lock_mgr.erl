@@ -85,7 +85,8 @@ dets_info() ->
 %% Adds {required,[locks()],txid,timestamp} to local_locks
 %% Sends lock_request([locks()],dcid) messages to all other DCs.
 required(Locks,TxId,Timestamp,Local_Locks) ->
-	%remote_lock_request(MyDCId, RemoteId, Key, Locks), TODO
+    DCID = dc_meta_data_utilities:get_my_dc_id(),
+	remote_lock_request(DCID, 0, Locks),  % TODO Key value ? (currently 0)
 	_New_Local_Locks=orddict:store(TxId,{required,Locks,Timestamp},Local_Locks).
     % TODO
     %Adds {required,[locks()],txid,timestamp} to local_locks
@@ -93,13 +94,13 @@ required(Locks,TxId,Timestamp,Local_Locks) ->
 
 
 
-%% Takes a list of locks, a transaction id, the local_locks and the dets_ref table reference as input
+%% Takes a list of locks, a transaction id, the local_locks as input
 %% Returns the updated lokal_locks list if all specified locks are owned by this DC and not in use by another transaction.
 %% Returns {missing_locks,Missing_Locks} if at least one lock is not owned by this DC or is currently used by another transaction.
 %% Updates the local_locks list if the locks were available  
-using(Locks,TxId,Local_Locks,Dets_Ref) ->
+using(Locks,TxId,Local_Locks) ->
 	Missing_Locks = lists:foldl(fun(Lock,AccIn)-> 
-			case check_lock(Lock, Dets_Ref) of
+			case check_lock(Lock) of
 				true -> AccIn;
 				false -> [Lock|AccIn]
 	 		end
@@ -183,15 +184,16 @@ clear_old_lock_requests(Lock_Requests,Timeout)->
         end, 
     orddict:new(),Lock_Requests).
 
+
+
+
 % Data sturcture: dets_ref : {[lock,{{send,dcid,[{to,amount}]},{received,dcid,[{from,amount}]}}]}
-
-
 
 
 %% Takes the lock to send, the DC to send it to and the dets_ref table reference
 %% Returns updated Dets_ref table and sends a message to the specified DC
 %% Returns Dets_ref if the lock was not owned by this dc
-%% still sends the information to the target DC to make up for lost messages.
+%% Allways send a messge to the other DC, even if the lock may currently not be send or is not owned, to make up for lost messages
 %% Updates the {send,dcid,[{to,amount}]} entry of dets_ref of the specified lock
 send_lock(Lock,To,Dets_ref)->
 	case dets:lookup(?DETS_FILE_NAME,Lock) of
@@ -199,8 +201,7 @@ send_lock(Lock,To,Dets_ref)->
 		    Total_Send = lists:foldl(fun({_To,Amount},Acc) -> Acc+Amount end,0,Send_List),
 	        Total_Received = lists:foldl(fun({_From,Amount},Acc) -> Acc+Amount end,0,Received_List),
 	        Has_Lock = Total_Send < Total_Received,
-			DCID = erlang:timestamp(),
-            % DCID = dc_meta_data_utilities:get_my_dc_id(), TODO - use when integrated.
+            DCID = dc_meta_data_utilities:get_my_dc_id(),
 			case Has_Lock of
 				true ->
 					case lists:keyfind(To,1,Send_List) of
@@ -234,8 +235,7 @@ send_lock(Lock,To,Dets_ref)->
 
 
 		{error,_Reason} ->
-			DCID = erlang:timestamp(),
-            % DCID = dc_meta_data_utilities:get_my_dc_id(), TODO - use when integrated.
+            DCID = dc_meta_data_utilities:get_my_dc_id(),
 			dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[{To,0}]},{received,DCID,[]}}})
 			% sending the the total amount of locks again is not required here, since a lock was never send.
 	end.
@@ -261,25 +261,43 @@ received_lock(Lock,From,Amount,Dets_ref)->
                     end
 	        end;
         {error,_Reason} -> 
-            DCID = erlang:timestamp(),
-            % DCID = dc_meta_data_utilities:get_my_dc_id(), TODO - use when integrated.
+            DCID = dc_meta_data_utilities:get_my_dc_id(),
             dets:insert(?DETS_FILE_NAME,{Lock,{{send,DCID,[]},{received,DCID,[{From,Amount}]}}})
     end.
 
 
-%% Takes a Lock and the dets_ref table reference as input
-%% Returns true if the lock is currently owned by this DC
+%% Takes a Lock as input
+%% Returns true if the lock is currently owned by this DC 
 %% Returns false if it is not owned by this DC
-check_lock(Lock,Dets_Ref) ->
-    case dets:lookup(Dets_Ref,Lock) of   %case dets:lookup(?DETS_FILE_NAME,Lock) of -- old version
+%% (Dets_Ref is only changed if this DC is the leader and the lock did not jet exist)
+check_lock(Lock) ->
+    case dets:lookup(?DETS_FILE_NAME,Lock) of   
 		[{Lock,{{send,_DCID1,Send_List},{received,_DCID2,Received_List}}}] ->
 		    Total_Send = lists:foldl(fun({_To,Amount},Acc) -> Acc+Amount end,0,Send_List),
 	        Total_Received = lists:foldl(fun({_From,Amount},Acc) -> Acc+Amount end,0,Received_List),
 	        _Has_Lock = Total_Send < Total_Received;
-		[] -> false;
+		[] -> 
+			case am_i_leader() of
+				true -> 
+					MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+					dets:insert(?DETS_FILE_NAME,{Lock,{{send,MyDCId,[]},{received,MyDCId,[{MyDCId,1}]}}}),
+					true;
+				false -> false
+			end;
 		{error,Reason} ->
 			{error,Reason}
 	end.
+
+%% Returns true if this DC is the leader, else false is returned
+%% The leader may create locks
+%% Uses the ordering of orddict to decide the leader (the first key)
+am_i_leader() -> 
+	MyDCId = dc_meta_data_utilities:get_my_dc_id(),
+    AllDCIDs = dc_meta_data_utilities:get_dc_ids(true),
+	Ordd = orddict:new(),
+    OrddAllDCIDs = lists:foldl(fun(Id, DCIDs) -> orddict:store(Id,0,DCIDs) end, Ordd, AllDCIDs),
+	{Key,_Value} = hd(OrddAllDCIDs),
+	Key== MyDCId.
 	
 % ===================================================================
 % Handling remote requests
@@ -297,8 +315,10 @@ other_dcs_list() ->
                              end, [], OtherDCDescriptors),
 	lists:sort(OtherDCIds).
 	
-%TODO
-%% Takes TODO as input
+
+%% MyDCId : DCID of this DC
+%% Key : ? TODO
+%% Locks : list of locks that are to be requested
 %% sends a message to all other DCs requesting the Locks.
 remote_lock_request(MyDCId, Key, Locks) ->
     {LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
@@ -312,8 +332,12 @@ remote_lock_request(MyDCId, Key, Locks) ->
 	end
 	,[],Other_DCs_List).
     
-%TODO
-%% Takes TODO as input
+
+%% Lock : Lock to send to another DC
+%% Amount : Total number of times the lock was send to that DC from this DC
+%% MyDCId : DCID of this DC
+%% RemoteId : DCID of the DC the lock is send to
+%% Key : ? TODO
 %% sends a message to the speciefed other DC containing the lock information
 remote_send_lock(Lock,Amount,MyDCId, RemoteId, Key) ->
 	{LocalPartition, _} = ?LOG_UTIL:get_key_partition(Key),
@@ -375,14 +399,14 @@ handle_call({stateinfo}, _From, #state{}=State) ->
 	{reply, State , State};
 handle_call({lockinfo}, _From, #state{local_locks= Lock}=State) ->
 	{reply, Lock, State};
-handle_call({dets_info}, _From, #state{dets_ref= Dets_Ref}=State) ->
-	{reply, dets:match(Dets_Ref,'_'),State};
+handle_call({dets_info}, _From, State) ->
+	{reply, dets:match(?DETS_FILE_NAME,'$1'),State};
 
 %% Tries to aquire the specified locks for the transaction.
 %% If all locks are currently owned by this DC and not used by another transaction then ok is returned.
 %% If at least one lock is not owned by this DC then {error, Reason} is returned and it automatically requests the missing locks from other DCs.
-handle_call({get_locks,TxId,Locks}, _From, #state{local_locks=Local_Locks,dets_ref= Dets_Ref}=State) ->
-    case using(Locks, TxId, Local_Locks,Dets_Ref) of
+handle_call({get_locks,TxId,Locks}, _From, #state{local_locks=Local_Locks}=State) ->
+    case using(Locks, TxId, Local_Locks) of
 		{missing_locks, Missing_Locks} ->
             New_Local_Locks2=required(Locks, TxId, erlang:timestamp(), Local_Locks),
 			{reply, {missing_locks, Missing_Locks} , State#state{local_locks=New_Local_Locks2}};
