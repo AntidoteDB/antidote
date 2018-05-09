@@ -40,6 +40,7 @@
          create_index_hooks/1,
          check_object_update/1,
          read_index/3,
+         read_index_function/4,
          create_index/2,
          build_index_updates/2,
          apply_updates/2,
@@ -145,6 +146,17 @@ read_index(secondary, {TableName, IndexName}, TxId) ->
     ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
     [IdxObj] = querying_utils:read_keys(ObjKeys, TxId),
     %io:format("IdxObj: ~p~n", [IdxObj]),
+    IdxObj.
+
+read_index_function(primary, TableName, {Function, Args}, TxId) ->
+    IndexName = generate_pindex_key(TableName),
+    ObjKeys = querying_utils:build_keys(IndexName, ?PINDEX_DT, ?AQL_METADATA_BUCKET),
+    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
+    IdxObj;
+read_index_function(secondary, {TableName, IndexName}, {Function, Args}, TxId) ->
+    FullIndexName = generate_sindex_key(TableName, IndexName),
+    ObjKeys = querying_utils:build_keys(FullIndexName, ?SINDEX_DT, ?AQL_METADATA_BUCKET),
+    [IdxObj] = querying_utils:read_function(ObjKeys, {Function, Args}, TxId),
     IdxObj.
 
 %% TODO
@@ -333,7 +345,7 @@ fill_index(ObjUpdate) ->
             lists:foldl(fun(Index, Acc) ->
                 io:format("A new index was created...~n", []),
                 ?INDEX(IndexName, TableName, [IndexedColumn]) = Index, %% TODO support more than one column
-                [PrimaryKey] = maps:get(?PK_COLUMN, table_utils:columns(Table)),
+                [PrimaryKey] = table_utils:primary_key_name(Table),
                 io:format("PrimaryKey: ~p~n", [PrimaryKey]),
                 PIndexObject = read_index(primary, TableName, ignore),
                 SIndexObject = read_index(secondary, {TableName, IndexName}, ignore),

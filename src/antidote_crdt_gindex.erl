@@ -57,14 +57,15 @@
 
 -type gindex() :: {gindex_type(), indexmap(), indirectionmap()}.
 -type gindex_type() :: atom().
--type indexmap() :: orddict:orddict(Key::term(), NestedState::term()).
+-type gb_tree_node() :: nil | {_, _, _, _}.
+-type indexmap() :: {non_neg_integer(), gb_tree_node()}.
 -type indirectionmap() :: dict:dict({Key::term(), Type::atom()}, NestedState::term()).
 
 -type pred_type() :: greater | greatereq | lesser | lessereq.
 -type pred_func() :: fun().
--type predicate() :: {pred_type(), pred_func()}.
+-type predicate() :: {pred_type(), pred_func()} | infinity.
 
--type gindex_query() :: {range, predicate(), predicate()} |
+-type gindex_query() :: {range, {predicate(), predicate()}} |
                         {get, term()} |
                         {lookup, term()}.
 
@@ -92,7 +93,7 @@ new(Type) ->
         false -> new()
     end.
 
--spec value(gindex()) -> indexmap().
+-spec value(gindex()) -> value_output().
 value({_Type, Index, _Indirection}) ->
     gb_trees:to_list(Index).
 
@@ -100,8 +101,11 @@ value({_Type, Index, _Indirection}) ->
 value({range, {LowerPred, UpperPred}}, {_Type, Index, _Indirection}) ->
     case validate_pred(lower, LowerPred) andalso validate_pred(upper, UpperPred) of
         true ->
-            LowerBoundKey = lookup_lower_bound(LowerPred, Index),
-            Iterator = gb_trees:iterator_from(LowerBoundKey, Index),
+            %io:format("gindex: ~p~n", [Index]),
+            Iterator = case LowerPred of
+                           infinity -> gb_trees:iterator(Index);
+                           _ -> gb_trees:iterator_from(lookup_lower_bound(LowerPred, Index), Index)
+                       end,
             iterate_and_filter({UpperPred, [key]}, gb_trees:next(Iterator), []);
         false ->
             throw(?WRONG_PRED)
@@ -277,6 +281,8 @@ lookup_lower_bound(LowerPred, {Key, _Value, Left, Right}, Final) ->
 
 iterate_and_filter(_Predicate, none, Acc) ->
     Acc;
+iterate_and_filter({infinity, _} = Predicate, {Key, Value, Iter}, Acc) ->
+    iterate_and_filter(Predicate, gb_trees:next(Iter), lists:append(Acc, [{Key, Value}]));
 iterate_and_filter({Fun, Params} = Predicate, {Key, Value, Iter}, Acc) ->
     Result = case Params of
                  [key] -> apply_pred(Fun, Key);
@@ -298,6 +304,7 @@ full_search(EntryValue, Index) ->
             end, Index, Entries)
     end.
 
+validate_pred(_BoundType, infinity) -> true;
 validate_pred(lower, {Type, _Func}) ->
     lists:member(Type, ?LOWER_BOUND_PRED);
 validate_pred(upper, {Type, _Func}) ->

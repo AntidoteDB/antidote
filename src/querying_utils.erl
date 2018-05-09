@@ -37,6 +37,8 @@
 -export([build_keys/3,
          read_keys/2,
          read_keys/1,
+         read_function/3,
+         read_function/2,
          write_keys/3,
          write_keys/1,
          to_atom/1,
@@ -80,6 +82,23 @@ read_keys(ObjKeys) when is_list(ObjKeys) ->
     Objs;
 read_keys(ObjKey) ->
     read_keys([ObjKey]).
+
+read_function([], _Func, _TxId) -> [[]];
+read_function(ObjKeys, Function, ignore) ->
+    read_keys(ObjKeys, Function);
+read_function(ObjKeys, {Function, Args}, TxId) when is_list(ObjKeys) ->
+    %% TODO read objects from Cure or Materializer?
+    Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
+    {ok, Objs} = cure:read_objects(Reads, TxId),
+    Objs;
+read_function(ObjKey, Range, TxId) ->
+    read_function([ObjKey], Range, TxId).
+
+read_function([], _Func) -> [[]];
+read_function(ObjKeys, {Function, Args}) when is_list(ObjKeys) ->
+    Reads = lists:map(fun(Key) -> {Key, Function, Args} end, ObjKeys),
+    {ok, Objs, _} = cure:read_objects(ignore, [], Reads),
+    Objs.
 
 write_keys(_ObjKeys, Updates, TxId) ->
     cure:update_objects(Updates, TxId).

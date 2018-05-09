@@ -34,9 +34,11 @@
 
 -define(RANGE(Lower, Upper), {Lower, Upper}).
 -define(INFINITY, {open, infinity}).
+-define(EQUALITY, {greatereq, lessereq}).
+-define(NOTEQUALITY, {greater, lesser}).
 
 %% API
--export([get_range_query/1]).
+-export([get_range_query/1, lookup_range/2, to_predicate/1, to_condition/1]).
 
 get_range_query(Conditions) ->
     GroupedConds = lists:foldl(fun(Condition, MapAcc) ->
@@ -46,6 +48,7 @@ get_range_query(Conditions) ->
             false -> dict:store(Column, [{Comparison, Value}], MapAcc)
         end
     end, dict:new(), Conditions),
+    %GroupedConds = iterate_conditions(Conditions, []),
     {RangeQueries, Status} = dict:fold(fun(Col, CList, {DictAcc, CurrStatus}) ->
         case CurrStatus of
             nil -> {DictAcc, CurrStatus};
@@ -53,7 +56,9 @@ get_range_query(Conditions) ->
                 Range = get_range(CList, {?INFINITY, ?INFINITY}),
                 case Range of
                     nil -> {DictAcc, nil};
-                    Range -> {dict:store(Col, Range, DictAcc), CurrStatus}
+                    ?RANGE({LB, LV}, {RB, RV}) ->
+                        NewRange = ?RANGE(to_readable_bound({lower, LB}, LV), to_readable_bound({upper, RB}, RV)),
+                        {dict:store(Col, NewRange, DictAcc), CurrStatus}
                 end
         end
     end, {dict:new(), ok}, GroupedConds),
@@ -62,9 +67,48 @@ get_range_query(Conditions) ->
         nil -> nil
     end.
 
+lookup_range(Key, Ranges) ->
+    case dict:find(Key, Ranges) of
+        {ok, Range} -> Range;
+        error -> []
+    end.
+
+to_predicate(?RANGE({LBound, Val}, {RBound, Val})) ->
+    case {LBound, RBound} of
+        ?EQUALITY -> fun(V) -> V == Val end;
+        ?NOTEQUALITY -> fun(V) -> V /= Val end
+    end;
+to_predicate(?RANGE({LBound, LVal}, {RBound, RVal})) ->
+    LowerComp = to_pred(LBound, LVal),
+    UpperComp = to_pred(RBound, RVal),
+    {LowerComp, UpperComp}.
+
+%%to_condition(?RANGE({Bound, Val}, {Bound, Val})) ->
+%%    case Bound of
+%%        close -> ?RANGE({equality, Val}, {equality, Val});
+%%        open -> ?RANGE({notequality, Val}, {notequality, Val})
+%%    end;
+to_condition(?RANGE({LBound, LVal}, {RBound, RVal})) ->
+    %LowerBound = to_cond(LBound, LVal),
+    %UpperBound = to_cond(RBound, RVal),
+    ?RANGE(to_pred(LBound, LVal), to_pred(RBound, RVal)).
+
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+%%iterate_conditions([{sub, Conds} | Tail], DictAcc) ->
+%%    NewSub = {sub, iterate_conditions(Conds, dict:new())},
+%%    NewAcc = lists:append(DictAcc, [NewSub]),
+%%    iterate_conditions(Tail, NewAcc);
+%%iterate_conditions([Condition | Tail], DictAcc) ->
+%%    ?CONDITION(Column, {Comparison, _}, Value) = Condition,
+%%    NewDict = case dict:is_key(Column, DictAcc) of
+%%        true -> dict:update(Column, fun(CondList) -> lists:append(CondList, [{Comparison, Value}]) end, DictAcc);
+%%        false -> dict:store(Column, [{Comparison, Value}], DictAcc)
+%%    end,
+%%    iterate_conditions(Tail, lists:append(DictAcc, [NewDict]));
+%%iterate_conditions([], DictAcc) -> DictAcc.
 
 get_range([{Comparator, Value} | Tail], Range) ->
     NewRange = update_range(Comparator, Value, Range),
@@ -104,12 +148,28 @@ check_bound(lessereq) -> close;
 check_bound(equality) -> close;
 check_bound(notequality) -> open.
 
+to_cond(lower, open) -> greater;
+to_cond(lower, close) -> greatereq;
+to_cond(upper, open) -> lesser;
+to_cond(upper, close) -> lessereq.
+
 to_range(greater, Val) -> ?RANGE({open, Val}, ?INFINITY);
 to_range(greatereq, Val) -> ?RANGE({close, Val}, ?INFINITY);
 to_range(lesser, Val) -> ?RANGE(?INFINITY, {open, Val});
 to_range(lessereq, Val) -> ?RANGE(?INFINITY, {close, Val});
 to_range(equality, Val) -> ?RANGE({close, Val}, {close, Val});
 to_range(notequality, Val) -> ?RANGE({open, Val}, {open, Val}).
+
+to_pred(_, infinity) -> infinity;
+to_pred({BType, Bound}, Val) ->
+    Cond = to_cond(BType, Bound),
+    to_pred(Cond, Val);
+to_pred(CondType, Val) ->
+    {CondType, func(CondType, Val)}.
+
+to_readable_bound(_, infinity) -> {nil, infinity};
+to_readable_bound({BType, Bound}, Val) ->
+    {to_cond(BType, Bound), Val}.
 
 intersects(_, ?RANGE(?INFINITY, ?INFINITY)) -> true;
 intersects(?RANGE({open, Val}, {open, Val}), Range) ->
@@ -129,12 +189,21 @@ intersects(Range1, Range2) ->
 
 compare(_Op, _Val, infinity) -> false;
 compare(_Op, infinity, _Val) -> false;
-compare(Op, Val1, Val2) -> pred(Op, Val1, Val2).
+compare(Op, Val1, Val2) ->
+    Fun = func(Op, Val2),
+    Fun(Val1).
 
-pred(greater, Val1, Val2) -> Val1 > Val2;
-pred(greatereq, Val1, Val2) -> Val1 >= Val2;
-pred(lesser, Val1, Val2) -> Val1 < Val2;
-pred(lessereq, Val1, Val2) -> Val1 =< Val2.
+%pred(greater, Val1, Val2) -> Val1 > Val2;
+%pred(greatereq, Val1, Val2) -> Val1 >= Val2;
+%pred(lesser, Val1, Val2) -> Val1 < Val2;
+%pred(lessereq, Val1, Val2) -> Val1 =< Val2.
+
+func(greater, Val) -> fun(V) -> V > Val end;
+func(greatereq, Val) -> fun(V) -> V >= Val end;
+func(lesser, Val) -> fun(V) -> V < Val end;
+func(lessereq, Val) -> fun(V) -> V =< Val end;
+func(equality, Val) -> fun(V) -> V == Val end;
+func(notequality, Val) -> fun(V) -> V /= Val end.
 
 det_bound_pred(close, close) -> open;
 det_bound_pred(_, _) -> close.
@@ -171,9 +240,9 @@ range_test() ->
     Conditions4 = lists:append(Conditions, [{'Col2', {equality, ignore}, 2000}]),
     Conditions5 = [{'Col1', {greater, ignore}, 2008}],
 
-    Expected = [{'Col1', ?RANGE({open, 2008}, {open, 2016})}, {'Col2', ?RANGE({open, 500}, {open, 1000})}],
-    Expected2 = [{'Col1', ?RANGE({close, 2010}, {close, 2010})}, {'Col2', ?RANGE({open, 500}, {open, 1000})}],
-    Expected3 = [{'Col1', ?RANGE({open, 2008}, ?INFINITY)}],
+    Expected = [{'Col1', ?RANGE({greater, 2008}, {lesser, 2016})}, {'Col2', ?RANGE({greater, 500}, {lesser, 1000})}],
+    Expected2 = [{'Col1', ?RANGE({greatereq, 2010}, {lessereq, 2010})}, {'Col2', ?RANGE({greater, 500}, {lesser, 1000})}],
+    Expected3 = [{'Col1', ?RANGE({greater, 2008}, {nil, infinity})}],
 
     ?assertEqual(Expected, dict:to_list(get_range_query(Conditions))),
     ?assertEqual(Expected, dict:to_list(get_range_query(Conditions2))),

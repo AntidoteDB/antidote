@@ -35,6 +35,7 @@
          foreign_keys/1,
          indexes/1,
          column_names/1,
+         primary_key_name/1,
          all_column_names/1,
          tables_metadata/1,
          table_metadata/2,
@@ -60,6 +61,10 @@ indexes(?TABLE(_TName, _Policy, _Cols, _SCols, Idx)) -> Idx.
 column_names(Table) ->
     Columns = columns(Table),
     maps:get(?COLUMNS, Columns).
+
+primary_key_name(Table) ->
+    Columns = columns(Table),
+    maps:get(?PK_COLUMN, Columns).
 
 all_column_names(Table) ->
     TCols = column_names(Table),
