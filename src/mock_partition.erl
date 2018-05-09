@@ -52,7 +52,8 @@
     get_stable_snapshot/0,
     inc/2,
     inc/1,
-    dec/1
+    dec/1,
+    get_locks/2
 ]).
 
 %% States
@@ -165,6 +166,15 @@ prepare(UpdatedPartitions, _Transaction) ->
 inc(_, _) -> ok.
 dec(_) -> ok.
 inc(_) -> ok.
+
+
+
+% added for lock tests
+
+get_locks([a,b], _TransactionId) ->
+    {ok,dict:new()};
+get_locks([b,c], _TransactionId) ->
+    {missing_locks, [b,c]}.
 
 %%%===================================================================
 %%% STATE FUNCTIONS

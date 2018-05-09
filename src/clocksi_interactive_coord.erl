@@ -32,6 +32,8 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-define(How_LONG_TO_WAIT_FOR_LOCKS,1000).
+-define(LOCK_MGR,mock_partition).
 -define(DC_META_UTIL, mock_partition).
 -define(DC_UTIL, mock_partition).
 -define(VECTORCLOCK, mock_partition).
@@ -42,7 +44,10 @@
 -define(PROMETHEUS_GAUGE, mock_partition).
 -define(PROMETHEUS_COUNTER, mock_partition).
 
+
 -else.
+-define(How_LONG_TO_WAIT_FOR_LOCKS,2000).
+-define(LOCK_MGR,lock_mgr).
 -define(DC_META_UTIL, dc_meta_data_utilities).
 -define(DC_UTIL, dc_utilities).
 -define(VECTORCLOCK, vectorclock).
@@ -134,7 +139,8 @@ start_link(From) ->
     start_link(From, ignore, antidote:get_default_txn_properties()).
 
 %% TODO spec
-stop(Pid) -> gen_statem:stop(Pid).
+stop(Pid) -> 
+    gen_statem:stop(Pid).
 
 %% @doc This is a standalone function for directly contacting the read
 %%      server located at the vnode of the key being read.  This read
@@ -263,7 +269,8 @@ finish_op(From, Key, Result) ->
     is_static :: boolean(),
     full_commit :: boolean(),
     properties :: txn_properties(),
-    stay_alive :: boolean()
+    stay_alive :: boolean(),
+    transactionid :: txid()   % #Locks
 }).
 
 %%%===================================================================
@@ -273,9 +280,16 @@ finish_op(From, Key, Result) ->
 %%%== init
 
 %% @doc Initialize the state.
+%% #Locks
 init([From, ClientClock, Properties, StayAlive]) ->
     BaseState = init_state(StayAlive, false, false, Properties),
-    State = start_tx_internal(From, ClientClock, Properties, BaseState),
+    
+    Locks = lists:keyfind(locks,1,Properties),
+    State = case Locks of
+        false -> start_tx_internal(From, ClientClock, Properties, BaseState);
+
+        {locks,Locks_List} -> start_tx_internal_with_locks(From, ClientClock, Properties, BaseState,Locks_List)
+    end,
     {ok, execute_op, State};
 
 %% @doc Initialize static transaction with Operations.
@@ -386,6 +400,7 @@ start_tx(cast, {start_tx, From, ClientClock, Properties}, State) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties, State)};
 
 %% Used by static update and read transactions
+%% TODO start_tx_internal_with_locks if lock are required (if that is necessary for static operations)
 start_tx(cast, {start_tx, From, ClientClock, Properties, Operation}, State) ->
     {next_state, execute_op, start_tx_internal(From, ClientClock, Properties,
         State#coord_state{is_static = true, operations = Operation, from = From}), [{state_timeout, 0, timeout}]};
@@ -624,8 +639,18 @@ committing_single({call, Sender}, commit, State = #coord_state{commit_time = Com
 
 code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
-terminate(_Reason, _SN, _SD) -> ok.
+%% #Locks
+%% Release the locks when the transaction terminates
+terminate(_Reason, _SN = #coord_state{properties = Properties, transactionid = TransactionId}, _SD) -> 
 
+    Locks = lists:keyfind(locks,1,Properties),
+    case Locks of
+        false -> ok;
+        {locks,Locks} -> 
+            ?LOCK_MGR:release_locks(TransactionId),
+            ok
+    end;
+terminate(_Reason, _SN, _SD) -> ok.
 callback_mode() -> state_functions.
 
 %%%===================================================================
@@ -633,6 +658,7 @@ callback_mode() -> state_functions.
 %%%===================================================================
 
 %% @doc TODO
+%% #Locks
 init_state(StayAlive, FullCommit, IsStatic, Properties) ->
     #coord_state{
         transaction = undefined,
@@ -648,9 +674,47 @@ init_state(StayAlive, FullCommit, IsStatic, Properties) ->
         return_accumulator = [],
         internal_read_set = orddict:new(),
         stay_alive = StayAlive,
-        properties = Properties
+        properties = Properties,
+        transactionid = 0
     }.
+%% @doc TODO
+%% #Locks
+start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic},Locks) ->
+    {Transaction, TransactionId} = create_transaction_record(ClientClock, StayAlive, From, false, Properties),
+    case get_locks(?How_LONG_TO_WAIT_FOR_LOCKS, TransactionId, Locks) of
+        {ok,Snapshot} -> wait_for_clock(Snapshot),
+            case IsStatic of
+            true -> ok;
+            false -> From ! {ok, TransactionId}   
+            end,
+            % a new transaction was started, increment metrics
+            ?PROMETHEUS_GAUGE:inc(antidote_open_transactions),
+            State#coord_state{transaction = Transaction, num_to_read = 0, properties = Properties, transactionid = TransactionId};
+        
+        % TODO Necessary to send an error message to From, when the lock were not aquired ?
+        {locks_not_available,Missing_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
+            {stop, "Missing Locks: "++lists:flatten(io_lib:format("~p",[Missing_Locks]))}
+    end.
+    
 
+%% @doc This function tries to aquire the specified locks, if this fails it will retry after 500ms
+%% for a maximum number of times (Timeout div 500).
+%% #Locks
+-spec get_locks(non_neg_integer(),txid(),[key()]) -> {ok,snapshot_time()} | {locks_not_available,[key()]}.
+get_locks(Timeout,TransactionId,Locks) ->
+    Result = ?LOCK_MGR:get_locks(Locks, TransactionId),
+    case Result of
+        {ok,Snapshot_Time} -> {ok,Snapshot_Time};
+        {missing_locks, Missing_Locks} ->
+            case Timeout > 500 of
+                true ->
+                    timer:sleep(500),
+                    NewTimeout = Timeout-500,
+                    get_locks(NewTimeout, TransactionId, Locks);
+                false -> {locks_not_available,Missing_Locks}
+            end
+    end.
+    
 
 %% @doc TODO
 start_tx_internal(From, ClientClock, Properties, State = #coord_state{stay_alive = StayAlive, is_static = IsStatic}) ->
@@ -801,6 +865,7 @@ prepare_2pc(State = #coord_state{
 
 %% @doc when the transaction has committed or aborted,
 %%       a reply is sent to the client that started the transaction.
+%% #Locks
 reply_to_client(State = #coord_state{
     from=From,
     state=TxState,
@@ -1258,6 +1323,23 @@ wait_for_clock_test() ->
     {ok, SnapshotTime2} = wait_for_clock(vectorclock:from_list([{mock_dc, VecClock}])),
     ?assertMatch([{mock_dc, _}], dict:to_list(SnapshotTime2)).
 
+% New #Locks tests
+start_link_with_locks_available_test() ->
+    Clientclock = ignore,
+    Properties = [{locks,[a,b]}],
+    StayAlive = false,
+    {ok, Pid} = clocksi_interactive_coord:start_link(self(), Clientclock, Properties, StayAlive),
+    ok = clocksi_interactive_coord:stop(Pid).
+
+start_link_with_locks_not_available_test() ->
+    Clientclock = ignore,
+    StayAlive = false,
+    Properties = [{locks,[b,c]}],
+    {ok, Pid} = clocksi_interactive_coord:start_link(self(), Clientclock, Properties, StayAlive),
+    case process_info(Pid) of undefined -> ok;
+        _ -> clocksi_interactive_coord:stop(Pid),
+             {error,"Process should not be up"}
+    end.
 -endif.
 
 

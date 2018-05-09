@@ -157,7 +157,7 @@
 
 -define(CLOCKSI_TIMEOUT, 1000).
 
--type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify}].
+-type txn_properties() :: [{update_clock, boolean()} | {certify, use_default | certify | dont_certify} | {locks, [key()]}].
 
 -record(transaction, {
     snapshot_time :: snapshot_time(),
