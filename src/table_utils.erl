@@ -104,7 +104,7 @@ is_foreign_key(ColumnName, ?TABLE(_TName, _Policy, _Cols, FKeys, _Idx)) ->
 % RecordData represents a single record, i.e. a list of tuples on the form:
 % {{col_name, datatype}, value}
 shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
-    io:format(">> shadow_column_state:~n", []),
+    %io:format(">> shadow_column_state:~n", []),
     ?FK(FkName, FkType, _RefTable, _RefCol) = ShadowCol,
     %%io:format("ShadowCol: ~p~n", [ShadowCol]),
     ColName = {column_name(FkName), type_to_crdt(FkType, undefined)},
@@ -112,7 +112,7 @@ shadow_column_state(TableName, ShadowCol, RecordData, TxId) ->
     RefColValue = lookup_value(ColName, RecordData),
     %%io:format("RefColValue: ~p~n", [RefColValue]),
     StateObjKey = querying_utils:build_keys({TableName, FkName}, ?SHADOW_COL_DT, ?AQL_METADATA_BUCKET),
-    io:format("StateObjKey: ~p~n", [StateObjKey]),
+    %io:format("StateObjKey: ~p~n", [StateObjKey]),
     [ShColData] = querying_utils:read_keys(StateObjKey, TxId),
     %io:format("ShColData: ~p~n", [ShColData]),
     RefColName = {RefColValue, ?SHADOW_COL_ENTRY_DT},
@@ -129,9 +129,6 @@ record_data(PKeys, TableName, TxId) when is_list(PKeys) ->
     end;
 record_data(PKey, TableName, TxId) ->
     record_data([PKey], TableName, TxId).
-    %PKeyAtom = querying_commons:to_atom(PKey),
-    %ObjKey = querying_commons:build_keys(PKeyAtom, ?TABLE_DT, TableName),
-    %querying_commons:read_keys(ObjKey, TxId).
 
 get_column(_ColumnName, []) -> undefined;
 get_column({ColumnName, CRDT}, Record) ->
@@ -186,8 +183,6 @@ type_to_crdt(?AQL_BOOLEAN, _) -> ?CRDT_BOOLEAN;
 type_to_crdt(?AQL_COUNTER_INT, {_, _}) -> ?CRDT_BCOUNTER_INT;
 type_to_crdt(?AQL_COUNTER_INT, _) -> ?CRDT_COUNTER_INT;
 type_to_crdt(?AQL_VARCHAR, _) -> ?CRDT_VARCHAR.
-
-%sum_values({_Ids, Value}, Acc) -> Acc + Value.
 
 increment_counter(0) -> [];
 increment_counter(Value) when is_integer(Value) ->

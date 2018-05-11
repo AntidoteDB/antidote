@@ -83,11 +83,6 @@ to_predicate(?RANGE({LBound, LVal}, {RBound, RVal})) ->
     UpperComp = to_pred(RBound, RVal),
     {LowerComp, UpperComp}.
 
-%%to_condition(?RANGE({Bound, Val}, {Bound, Val})) ->
-%%    case Bound of
-%%        close -> ?RANGE({equality, Val}, {equality, Val});
-%%        open -> ?RANGE({notequality, Val}, {notequality, Val})
-%%    end;
 to_condition(?RANGE({LBound, LVal}, {RBound, RVal})) ->
     %LowerBound = to_cond(LBound, LVal),
     %UpperBound = to_cond(RBound, RVal),
@@ -96,20 +91,6 @@ to_condition(?RANGE({LBound, LVal}, {RBound, RVal})) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-
-%%iterate_conditions([{sub, Conds} | Tail], DictAcc) ->
-%%    NewSub = {sub, iterate_conditions(Conds, dict:new())},
-%%    NewAcc = lists:append(DictAcc, [NewSub]),
-%%    iterate_conditions(Tail, NewAcc);
-%%iterate_conditions([Condition | Tail], DictAcc) ->
-%%    ?CONDITION(Column, {Comparison, _}, Value) = Condition,
-%%    NewDict = case dict:is_key(Column, DictAcc) of
-%%        true -> dict:update(Column, fun(CondList) -> lists:append(CondList, [{Comparison, Value}]) end, DictAcc);
-%%        false -> dict:store(Column, [{Comparison, Value}], DictAcc)
-%%    end,
-%%    iterate_conditions(Tail, lists:append(DictAcc, [NewDict]));
-%%iterate_conditions([], DictAcc) -> DictAcc.
-
 get_range([{Comparator, Value} | Tail], Range) ->
     NewRange = update_range(Comparator, Value, Range),
     get_range(Tail, NewRange);
@@ -192,11 +173,6 @@ compare(_Op, infinity, _Val) -> false;
 compare(Op, Val1, Val2) ->
     Fun = func(Op, Val2),
     Fun(Val1).
-
-%pred(greater, Val1, Val2) -> Val1 > Val2;
-%pred(greatereq, Val1, Val2) -> Val1 >= Val2;
-%pred(lesser, Val1, Val2) -> Val1 < Val2;
-%pred(lessereq, Val1, Val2) -> Val1 =< Val2.
 
 func(greater, Val) -> fun(V) -> V > Val end;
 func(greatereq, Val) -> fun(V) -> V >= Val end;

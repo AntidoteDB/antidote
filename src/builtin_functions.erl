@@ -61,8 +61,10 @@ find_first(Value, _List) -> Value.
 
 is_function({FuncName, Args}) ->
     case validate_func(FuncName, Args) of
-        {_Func, _Arity} -> io:format("is_function: true~n"), true;
-        _ -> io:format("is_function: false~n"), false
+        {_Func, _Arity} -> %io:format("is_function: true~n"),
+            true;
+        _ -> %io:format("is_function: false~n"),
+            false
     end.
 
 %% Parses a string that denotes the header of a function, on the form:

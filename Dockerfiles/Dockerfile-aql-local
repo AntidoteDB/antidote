@@ -1,0 +1,48 @@
+FROM mweber/antidotedb
+
+#ENV HANDOFF_PORT "8099"
+#ENV PB_PORT "8087"
+#ENV PB_IP "0.0.0.0"
+#ENV PBSUB_PORT "8086"
+#ENV LOGREADER_PORT "8085"
+#ENV RING_STATE_DIR "data/ring"
+#ENV PLATFORM_DATA_DIR "data"
+#ENV NODE_NAME "antidote@127.0.0.1"
+#ENV SHORT_NAME "false"
+
+ADD _build/default/rel/antidote /usr/src/antidote
+
+#RUN ls -l /usr/src/antidote
+
+RUN set -xe \
+	&& cd /usr/src/antidote \
+	&& rm -rf lib/eleveldb-* lib/erlzmq-* \
+	&& cp -r /usr/src/antidote/* /opt/antidote
+#	&& rm -rf lib/antidote-*
+
+#RUN ls -l /opt/antidote
+
+#ADD _build/default/rel/antidote/lib/antidote-0.0.1 /opt/antidote/lib/antidote-0.0.1
+#ADD _build/default/rel/antidote/releases /opt/antidote/releases
+
+#RUN ls -l /opt/antidote/releases/0.0.1
+
+ADD Dockerfiles/start_and_attach.sh /opt/antidote/
+#ADD Dockerfiles/entrypoint.sh /
+
+RUN chmod a+x /opt/antidote/start_and_attach.sh
+#  && chmod a+x /entrypoint.sh
+
+# Distributed Erlang Port Mapper
+#EXPOSE 4368
+# Ports for Antidote
+#EXPOSE 8085 8086 8087 8099
+
+# Antidote RPC
+#EXPOSE 9100
+
+#VOLUME /opt/antidote/data
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["/opt/antidote/start_and_attach.sh"]

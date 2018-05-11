@@ -44,7 +44,7 @@
 
 %% TODO support more than one table per filter, for supporting join queries
 query_filter(Filter, TxId) when is_list(Filter) ->
-    io:format(">> query_filter:~n", []),
+    %io:format(">> query_filter:~n", []),
 
     TableName = table(Filter),
     Table = table_utils:table_metadata(TableName, TxId),
@@ -52,7 +52,7 @@ query_filter(Filter, TxId) when is_list(Filter) ->
     ProjectionCols = projection(Filter),
     Conditions = conditions(Filter),
 
-    io:format("Table: ~p~n", [Table]),
+    %io:format("Table: ~p~n", [Table]),
 
     FilteredResult =
         case Conditions of
@@ -66,8 +66,8 @@ query_filter(Filter, TxId) when is_list(Filter) ->
                        false -> sets:to_list(FilteredResult);
                        true -> FilteredResult
                    end,
-    io:format("ResultToList: ~p~n", [ResultToList]),
-    io:format("ProjectionCols: ~p~n", [ProjectionCols]),
+    %io:format("ResultToList: ~p~n", [ResultToList]),
+    %io:format("ProjectionCols: ~p~n", [ProjectionCols]),
     case ProjectionCols of
         ?WILDCARD ->
             {ok, apply_projection(table_utils:column_names(Table), ResultToList)};
@@ -99,8 +99,8 @@ conditions(Filter) ->
 %% Internal functions
 %% ====================================================================
 apply_filter(Conditions, Table, TxId) ->
-    io:format(">> apply_filter:~n", []),
-    io:format("Conditions: ~p~n", [Conditions]),
+    %io:format(">> apply_filter:~n", []),
+    %io:format("Conditions: ~p~n", [Conditions]),
     case is_disjunction(Conditions) of
         true ->
             lists:foldl(fun(Conjunction, FinalRes) ->
@@ -128,7 +128,7 @@ read_subqueries([{sub, Conds} | Tail], Table, TxId, RemainConds, PartialRes) ->
                        nil -> ResultSet;
                        _Else -> sets:intersection(PartialRes, ResultSet)
                    end,
-    io:format("Intersection: ~p~n", [Intersection]),
+    %io:format("Intersection: ~p~n", [Intersection]),
     read_subqueries(Tail, Table, TxId, RemainConds, Intersection);
 read_subqueries([Cond | Tail], Table, TxId, RemainConds, PartialRes) ->
     read_subqueries(Tail, Table, TxId, lists:append(RemainConds, [Cond]), PartialRes);
@@ -137,33 +137,16 @@ read_subqueries([], _Table, _TxId, RemainConds, nil) ->
 read_subqueries([], Table, TxId, RemainConds, PartialRes) ->
     AddFks = get_shadow_columns(Table, sets:to_list(PartialRes), TxId),
     {RemainConds, AddFks}.
-%%process_subqueries([], Table, TxId, RemainConds, PartialRes) ->
-%%    SIndexes = lists:foldl(fun(Condition, Acc) ->
-%%        case is_disjunction(Condition) of
-%%            true ->
-%%                AuxRes = apply_filter(Condition, Table, TxId),
-%%                ResultSet = case is_list(AuxRes) of
-%%                                true -> sets:from_list(AuxRes);
-%%                                false -> AuxRes
-%%                            end,
-%%                sets:intersection(PartialRes, ResultSet);
-%%            false ->
-%%                ?CONDITION(Column, _Comp, _Val) = Condition,
-%%                SIndexes = table_utils:indexes(Table),
-%%                SIndex = find_index_by_attribute(Column, SIndexes),
-%%                lists:append(Acc, SIndex)
-%%        end
-%%    end, [], RemainConds),
 
 read_remaining(_Conditions, _Table, [], _TxId) -> [];
 read_remaining(Conditions, Table, CurrentData, TxId) ->
-    io:format(">> process_remaining:~n"),
+    %io:format(">> process_remaining:~n"),
     %io:format("Conditions: ~p~n", [Conditions]),
     %io:format("Table: ~p~n", [Table]),
     %io:format("CurrentData: ~p~n", [CurrentData]),
     TableName = table_utils:table(Table),
     RangeQueries = range_queries:get_range_query(Conditions),
-    io:format("RangeQueries: ~p~n", [RangeQueries]),
+    %io:format("RangeQueries: ~p~n", [RangeQueries]),
     case RangeQueries of
         nil -> [];
         _Else ->
@@ -185,22 +168,22 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                                 end
                         end
                     end, {[], []}, RangeQueries),
-                    io:format("Remain: ~p~n", [Remain]),
-                    io:format("Indexes: ~p~n", [Indexes]),
+                    %io:format("Remain: ~p~n", [Remain]),
+                    %io:format("Indexes: ~p~n", [Indexes]),
                     LeastKeys = lists:foldl(fun(Index, Curr) ->
                         ReadKeys = case Index of
                                        {primary, TableName} ->
                                            IdxData = indexing:read_index(primary, TableName, TxId),
                                            [PKCol] = table_utils:primary_key_name(Table),
-                                           io:format("IdxData: ~p~n", [IdxData]),
-                                           io:format("PKCol: ~p~n", [PKCol]),
+                                           %io:format("IdxData: ~p~n", [IdxData]),
+                                           %io:format("PKCol: ~p~n", [PKCol]),
                                            GetRange = range_queries:lookup_range(PKCol, RangeQueries),
-                                           io:format("GetRange: ~p~n", [GetRange]),
+                                           %io:format("GetRange: ~p~n", [GetRange]),
                                            FilterFun = read_pk_predicate(GetRange),
                                            ordsets:from_list(filter_keys(FilterFun, IdxData));
                                        {secondary, {Name, TName, [Col]}} -> %% TODO support more columns
                                            GetRange = range_queries:lookup_range(Col, RangeQueries),
-                                           io:format("GetRange: ~p~n", [GetRange]),
+                                           %io:format("GetRange: ~p~n", [GetRange]),
                                            IdxData = case range_type(GetRange) of
                                                          equality ->
                                                              {{_, Val}, {_, Val}} = GetRange,
@@ -214,7 +197,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                                                              indexing:read_index_function(secondary,
                                                                  {TName, Name}, {range, range_queries:to_condition(GetRange)}, TxId)
                                                      end,
-                                           io:format("IdxData: ~p~n", [IdxData]),
+                                           %io:format("IdxData: ~p~n", [IdxData]),
                                            %IdxData = indexing:read_index_function(secondary, {TName, Name}, {range, GetRange}, TxId),
                                            lists:foldl(fun({_IdxCol, PKs}, Set) ->
                                                %% there's an assumption that the accumulator will never have repeated keys
@@ -226,7 +209,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             Curr -> ordsets:intersection(Curr, ReadKeys)
                         end
                     end, nil, Indexes),
-                    io:format("LeastKeys: ~p~n", [LeastKeys]),
+                    %io:format("LeastKeys: ~p~n", [LeastKeys]),
                     case LeastKeys of
                         nil ->
                             %% TODO this is a must change: iterate the range queries and filter
@@ -234,7 +217,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                         LeastKeys ->
                             KeyList = ordsets:to_list(LeastKeys),
                             Objects = read_records(KeyList, TableName, TxId),
-                            io:format("Objects: ~p~n", [Objects]),
+                            %io:format("Objects: ~p~n", [Objects]),
                             ObjsData = lists:foldl(fun(RemainCol, AccObjs) ->
                                 GetRange = range_queries:lookup_range(RemainCol, RangeQueries),
                                 FilterFun = read_predicate(GetRange),
@@ -243,7 +226,7 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
                             get_shadow_columns(Table, ObjsData, TxId)
                     end;
                 CurrentData -> %% TODO
-                    io:format("CurrentData: ~p~n", [CurrentData]),
+                    %io:format("CurrentData: ~p~n", [CurrentData]),
                     ObjsData = lists:foldl(fun(Condition, PartRes) ->
                         filter_objects(Condition, Table, PartRes, TxId)
                     end, CurrentData, Conditions),
@@ -253,15 +236,15 @@ read_remaining(Conditions, Table, CurrentData, TxId) ->
     end.
 
 
-iterate_conditions([{sub, Conds} = Cond | Tail], Table, TxId, Acc) ->
-    io:format(">> iterate_conditions:~n", []),
-    io:format("(is_subquery) Current Cond: ~p~n", [Cond]),
+iterate_conditions([{sub, Conds} = _Cond | Tail], Table, TxId, Acc) ->
+    %io:format(">> iterate_conditions:~n", []),
+    %io:format("(is_subquery) Current Cond: ~p~n", [Cond]),
     iterate_conditions([Conds | Tail], Table, TxId, Acc);
 iterate_conditions([Cond | Tail], Table, TxId, Acc) ->
-    io:format(">> iterate_conditions:~n", []),
+    %io:format(">> iterate_conditions:~n", []),
     case is_disjunction(Cond) of
         true ->
-            io:format("(is_disjunction) Current Cond: ~p~n", [Cond]),
+            %io:format("(is_disjunction) Current Cond: ~p~n", [Cond]),
             FiltObjects = apply_filter(Cond, Table, TxId),
             ResultToList = case is_list(FiltObjects) of
                                false -> sets:to_list(FiltObjects);
@@ -270,7 +253,7 @@ iterate_conditions([Cond | Tail], Table, TxId, Acc) ->
             %%io:format("RecordObjs: ~p~n", [ResultToList]),
             iterate_conditions(Tail, Table, TxId, ResultToList);
         false ->
-            io:format("Current Cond: ~p~n", [Cond]),
+            %io:format("Current Cond: ~p~n", [Cond]),
             RecordObjs = case Acc of
                              [] -> retrieve_and_filter(Cond, Table, TxId);
                              _Else -> filter_objects(Cond, Table, Acc, TxId)
@@ -282,17 +265,17 @@ iterate_conditions([], _Table, _TxId, Acc) ->
     Acc.
 
 retrieve_and_filter(Condition, Table, TxId) ->
-    io:format(">> retrieve_and_filter:~n", []),
+    %io:format(">> retrieve_and_filter:~n", []),
 
     ?CONDITION(Column, _Comparison, _Value) = Condition,
-    TableName = table_utils:table(Table),
-    io:format("Condition: ~p~n", [Condition]),
-    io:format("TableName: ~p~n", [TableName]),
+    %TableName = table_utils:table(Table),
+    %io:format("Condition: ~p~n", [Condition]),
+    %io:format("TableName: ~p~n", [TableName]),
     ObjData = case is_func(Column) of
                   true -> function_filtering(Condition, Table, TxId);
                   false -> column_filtering(Condition, Table, TxId)
     end,
-    io:format("ObjData: ~p~n", [ObjData]),
+    %io:format("ObjData: ~p~n", [ObjData]),
     %ObjData.
     %% read shadow columns as well and add them and their resp. values to the object
     get_shadow_columns(Table, ObjData, TxId).
@@ -326,14 +309,16 @@ function_filtering({Func, Predicate}, Table, Records, TxId) ->
                                false -> ?ATTRIBUTE(_C, _T, V) = table_utils:get_column(ConditionCol, Record), V
                            end,
 
-                io:format("ColValue: ~p~n", [ColValue]),
+                %io:format("ColValue: ~p~n", [ColValue]),
                 ReplaceArgs = querying_utils:replace(ColPos, ColValue, Args),
                 Result = builtin_functions:exec({FuncName, ReplaceArgs}),
                 %Pred = comp_to_predicate(Op, querying_utils:to_atom(Value)),
-                io:format("Result: ~p~n", [Result]),
+                %io:format("Result: ~p~n", [Result]),
                 case Predicate(Result) of
-                    true -> io:format("Predicate(Result) = true~n", []), lists:append(Acc, [Record]);
-                    false -> io:format("Predicate(Result) = false~n", []), Acc
+                    true -> %io:format("Predicate(Result) = true~n", []),
+                        lists:append(Acc, [Record]);
+                    false -> %io:format("Predicate(Result) = false~n", []),
+                        Acc
                 end
             end, [], Records);
         false -> throw(lists:concat(["Invalid function: ", Func]))
@@ -453,7 +438,7 @@ find_index_by_attribute(_Attribute, _Idx) -> [].
 
 get_shadow_columns(_Table, [], _TxId) -> [];
 get_shadow_columns(Table, RecordsData, TxId) ->
-    io:format(">> get_shadow_columns:~n", []),
+    %io:format(">> get_shadow_columns:~n", []),
     TableName = table_utils:table(Table),
     ForeignKeys = table_utils:foreign_keys(Table),
 
@@ -470,7 +455,7 @@ get_shadow_columns(Table, RecordsData, TxId) ->
             end
         end, Acc)
     end, RecordsData, ForeignKeys),
-    io:format("NewRecordsData: ~p~n", [NewRecordsData]),
+    %io:format("NewRecordsData: ~p~n", [NewRecordsData]),
     NewRecordsData.
 
 shadow_column_spec(FkName, Table) ->
