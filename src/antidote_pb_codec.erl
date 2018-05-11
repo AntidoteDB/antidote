@@ -349,54 +349,58 @@ encode_read_objects(Objects, TxId) ->
 %%AWMAP = 9;
 %%RWSET = 10;
 
-encode_type(antidote_crdt_counter) -> 'COUNTER';
-encode_type(antidote_crdt_fat_counter) -> 'FATCOUNTER';
-encode_type(antidote_crdt_orset) -> 'ORSET';
-encode_type(antidote_crdt_lwwreg) -> 'LWWREG';
-encode_type(antidote_crdt_mvreg) -> 'MVREG';
-encode_type(antidote_crdt_integer) -> 'INTEGER';
-encode_type(antidote_crdt_gmap) -> 'GMAP';
-encode_type(antidote_crdt_map_aw) -> 'AWMAP';
+encode_type(antidote_crdt_counter_pn) -> 'COUNTER';
+encode_type(antidote_crdt_counter_fat) -> 'FATCOUNTER';
+encode_type(antidote_crdt_set_aw) -> 'ORSET';
+encode_type(antidote_crdt_register_lww) -> 'LWWREG';
+encode_type(antidote_crdt_register_mv) -> 'MVREG';
+encode_type(antidote_crdt_map_go) -> 'GMAP';
 encode_type(antidote_crdt_set_rw) -> 'RWSET';
-encode_type(antidote_crdt_map_rr) -> 'RRMAP'.
+encode_type(antidote_crdt_map_rr) -> 'RRMAP';
+encode_type(antidote_crdt_flag_ew) -> 'FLAG_EW';
+encode_type(antidote_crdt_flag_dw) -> 'FLAG_DW';
+encode_type(T) -> erlang:error({unknown_crdt_type, T}).
 
 
-decode_type('COUNTER') -> antidote_crdt_counter;
-decode_type('FATCOUNTER') -> antidote_crdt_fat_counter;
-decode_type('ORSET') -> antidote_crdt_orset;
-decode_type('LWWREG') -> antidote_crdt_lwwreg;
-decode_type('MVREG') -> antidote_crdt_mvreg;
-decode_type('INTEGER') -> antidote_crdt_integer;
-decode_type('GMAP') -> antidote_crdt_gmap;
-decode_type('AWMAP') -> antidote_crdt_map_aw;
+decode_type('COUNTER') -> antidote_crdt_counter_pn;
+decode_type('FATCOUNTER') -> antidote_crdt_counter_fat;
+decode_type('ORSET') -> antidote_crdt_set_aw;
+decode_type('LWWREG') -> antidote_crdt_register_lww;
+decode_type('MVREG') -> antidote_crdt_register_mv;
+decode_type('GMAP') -> antidote_crdt_map_go;
 decode_type('RWSET') -> antidote_crdt_set_rw;
-decode_type('RRMAP') -> antidote_crdt_map_rr.
+decode_type('RRMAP') -> antidote_crdt_map_rr;
+decode_type('FLAG_EW') -> antidote_crdt_flag_ew;
+decode_type('FLAG_DW') -> antidote_crdt_flag_dw;
+decode_type(T) -> erlang:error({unknown_crdt_type_protobuf, T}).
 
 
 %%%%%%%%%%%%%%%%%%%%%%
 % CRDT operations
 
 
-encode_update_operation(antidote_crdt_counter, Op_Param) ->
+encode_update_operation(_Type, {reset, {}}) ->
+  #'ApbUpdateOperation'{resetop = #'ApbCrdtReset'{}};
+encode_update_operation(antidote_crdt_counter_pn, Op_Param) ->
   #'ApbUpdateOperation'{counterop = encode_counter_update(Op_Param)};
-encode_update_operation(antidote_crdt_fat_counter, Op_Param) ->
-  #'ApbUpdateOperation'{counterop = encode_counter_update(Op_Param)};
-encode_update_operation(antidote_crdt_orset, Op_Param) ->
+encode_update_operation(antidote_crdt_counter_fat, Op_Param) ->
+  #'ApbUpdateOperation'{counterop = encode_counter_update(Op_Param)};  
+encode_update_operation(antidote_crdt_set_aw, Op_Param) ->
   #'ApbUpdateOperation'{setop = encode_set_update(Op_Param)};
 encode_update_operation(antidote_crdt_set_rw, Op_Param) ->
   #'ApbUpdateOperation'{setop = encode_set_update(Op_Param)};
-encode_update_operation(antidote_crdt_lwwreg, Op_Param) ->
+encode_update_operation(antidote_crdt_register_lww, Op_Param) ->
   #'ApbUpdateOperation'{regop = encode_reg_update(Op_Param)};
-encode_update_operation(antidote_crdt_mvreg, Op_Param) ->
+encode_update_operation(antidote_crdt_register_mv, Op_Param) ->
   #'ApbUpdateOperation'{regop = encode_reg_update(Op_Param)};
-encode_update_operation(antidote_crdt_integer, Op_Param) ->
-  #'ApbUpdateOperation'{integerop = encode_integer_update(Op_Param)};
-encode_update_operation(antidote_crdt_gmap, Op_Param) ->
-  #'ApbUpdateOperation'{mapop = encode_map_update(Op_Param)};
-encode_update_operation(antidote_crdt_map_aw, Op_Param) ->
+encode_update_operation(antidote_crdt_map_go, Op_Param) ->
   #'ApbUpdateOperation'{mapop = encode_map_update(Op_Param)};
 encode_update_operation(antidote_crdt_map_rr, Op_Param) ->
   #'ApbUpdateOperation'{mapop = encode_map_update(Op_Param)};
+encode_update_operation(antidote_crdt_flag_ew, Op_Param) ->
+  #'ApbUpdateOperation'{flagop = encode_flag_update(Op_Param)};
+encode_update_operation(antidote_crdt_flag_dw, Op_Param) ->
+  #'ApbUpdateOperation'{flagop = encode_flag_update(Op_Param)};
 encode_update_operation(Type, _Op) ->
   throw({invalid_type, Type}).
 
@@ -406,10 +410,12 @@ decode_update_operation(#'ApbUpdateOperation'{setop = Op}) when Op /= undefined 
   decode_set_update(Op);
 decode_update_operation(#'ApbUpdateOperation'{regop = Op}) when Op /= undefined ->
   decode_reg_update(Op);
-decode_update_operation(#'ApbUpdateOperation'{integerop = Op}) when Op /= undefined ->
-  decode_integer_update(Op);
 decode_update_operation(#'ApbUpdateOperation'{mapop = Op}) when Op /= undefined ->
-  decode_map_update(Op).
+  decode_map_update(Op);
+decode_update_operation(#'ApbUpdateOperation'{flagop = Op}) when Op /= undefined ->
+  decode_flag_update(Op);
+decode_update_operation(#'ApbUpdateOperation'{resetop = #'ApbCrdtReset'{}}) ->
+  {reset, {}}.
 
 %%decode_update_operation(#'Apbupdateoperation'{mapop = Op}) when Op /= undefined ->
 %%  decode_map_update(Op);
@@ -421,26 +427,26 @@ decode_update_operation(#'ApbUpdateOperation'{mapop = Op}) when Op /= undefined 
 encode_read_object_resp({{_Key, Type, _Bucket}, Val}) ->
   encode_read_object_resp(Type, Val).
 
-encode_read_object_resp(antidote_crdt_lwwreg, Val) ->
-  #'ApbReadObjectResp'{reg = #'ApbGetRegResp'{value = Val}};
-encode_read_object_resp(antidote_crdt_mvreg, Vals) ->
-  #'ApbReadObjectResp'{mvreg = #'ApbGetMVRegResp'{values = Vals}};
-encode_read_object_resp(antidote_crdt_counter, Val) ->
-  #'ApbReadObjectResp'{counter = #'ApbGetCounterResp'{value = Val}};
-encode_read_object_resp(antidote_crdt_fat_counter, Val) ->
-  #'ApbReadObjectResp'{counter = #'ApbGetCounterResp'{value = Val}};
-encode_read_object_resp(antidote_crdt_orset, Val) ->
-  #'ApbReadObjectResp'{set = #'ApbGetSetResp'{value = Val}};
+encode_read_object_resp(antidote_crdt_register_lww, Val) ->
+    #'ApbReadObjectResp'{reg=#'ApbGetRegResp'{value=Val}};
+encode_read_object_resp(antidote_crdt_register_mv, Vals) ->
+    #'ApbReadObjectResp'{mvreg = #'ApbGetMVRegResp'{values = Vals}};
+encode_read_object_resp(antidote_crdt_counter_pn, Val) ->
+    #'ApbReadObjectResp'{counter=#'ApbGetCounterResp'{value=Val}};
+encode_read_object_resp(antidote_crdt_counter_fat, Val) ->
+    #'ApbReadObjectResp'{counter=#'ApbGetCounterResp'{value=Val}};
+encode_read_object_resp(antidote_crdt_set_aw, Val) ->
+    #'ApbReadObjectResp'{set=#'ApbGetSetResp'{value=Val}};
 encode_read_object_resp(antidote_crdt_set_rw, Val) ->
-  #'ApbReadObjectResp'{set = #'ApbGetSetResp'{value = Val}};
-encode_read_object_resp(antidote_crdt_integer, Val) ->
-  #'ApbReadObjectResp'{int = #'ApbGetIntegerResp'{value = Val}};
-encode_read_object_resp(antidote_crdt_gmap, Val) ->
-  #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
-encode_read_object_resp(antidote_crdt_map_aw, Val) ->
-  #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
+    #'ApbReadObjectResp'{set=#'ApbGetSetResp'{value=Val}};
+encode_read_object_resp(antidote_crdt_map_go, Val) ->
+    #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
 encode_read_object_resp(antidote_crdt_map_rr, Val) ->
-  #'ApbReadObjectResp'{map = encode_map_get_resp(Val)}.
+    #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
+encode_read_object_resp(antidote_crdt_flag_ew, Val) ->
+    #'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}};
+encode_read_object_resp(antidote_crdt_flag_dw, Val) ->
+    #'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}}.
 
 % TODO why does this use counter instead of antidote_crdt_counter etc.?
 decode_read_object_resp(#'ApbReadObjectResp'{counter = #'ApbGetCounterResp'{value = Val}}) ->
@@ -451,10 +457,10 @@ decode_read_object_resp(#'ApbReadObjectResp'{reg = #'ApbGetRegResp'{value = Val}
   {reg, Val};
 decode_read_object_resp(#'ApbReadObjectResp'{mvreg = #'ApbGetMVRegResp'{values = Vals}}) ->
   {mvreg, Vals};
-decode_read_object_resp(#'ApbReadObjectResp'{int = #'ApbGetIntegerResp'{value = Val}}) ->
-  {integer, Val};
-decode_read_object_resp(#'ApbReadObjectResp'{map = MapResp = #'ApbGetMapResp'{}}) ->
-  {map, decode_map_get_resp(MapResp)}.
+decode_read_object_resp(#'ApbReadObjectResp'{map = MapResp=#'ApbGetMapResp'{}}) ->
+    {map, decode_map_get_resp(MapResp)};
+decode_read_object_resp(#'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}}) ->
+    {flag, Val}.
 
 % set updates
 
@@ -515,17 +521,17 @@ decode_reg_update(Update) ->
   #'ApbRegUpdate'{value = Value} = Update,
   {assign, Value}.
 
-% integer updates
+% flag updates
 
-encode_integer_update({set, Value}) ->
-  #'ApbIntegerUpdate'{set = Value};
-encode_integer_update({increment, Value}) ->
-  #'ApbIntegerUpdate'{inc = Value}.
+encode_flag_update({enable, {}}) ->
+    #'ApbFlagUpdate'{value = true};
+encode_flag_update({disable, {}}) ->
+    #'ApbFlagUpdate'{value = false}.
 
-decode_integer_update(#'ApbIntegerUpdate'{set = Value}) when is_integer(Value) ->
-  {set, Value};
-decode_integer_update(#'ApbIntegerUpdate'{inc = Value}) when is_integer(Value) ->
-  {increment, Value}.
+decode_flag_update(#'ApbFlagUpdate'{value = true}) ->
+    {enable, {}};
+decode_flag_update(#'ApbFlagUpdate'{value = false}) ->
+    {disable, {}}.
 
 % map updates
 
@@ -616,8 +622,8 @@ start_transaction_test() ->
       Msg#'ApbStartTransaction'.properties)).
 
 read_transaction_test() ->
-  Objects = [{<<"key1">>, antidote_crdt_counter, <<"bucket1">>},
-    {<<"key2">>, antidote_crdt_orset, <<"bucket2">>}],
+  Objects = [{<<"key1">>, antidote_crdt_counter_pn, <<"bucket1">>},
+    {<<"key2">>, antidote_crdt_set_aw, <<"bucket2">>}],
   TxId = term_to_binary({12}),
   %% Dummy value, structure of TxId is opaque to client
   EncRecord = antidote_pb_codec:encode_read_objects(Objects, TxId),
@@ -648,12 +654,12 @@ read_transaction_test() ->
     antidote_pb_codec:decode_response(ResMsg)).
 
 update_types_test() ->
-  Updates = [{{<<"1">>, antidote_crdt_counter, <<"2">>}, increment, 1},
-    {{<<"2">>, antidote_crdt_counter, <<"2">>}, increment, 1},
-    {{<<"a">>, antidote_crdt_orset, <<"2">>}, add, <<"3">>},
-    {{<<"b">>, antidote_crdt_counter, <<"2">>}, increment, 2},
-    {{<<"c">>, antidote_crdt_orset, <<"2">>}, add, <<"4">>},
-    {{<<"a">>, antidote_crdt_orset, <<"2">>}, add_all, [<<"5">>, <<"6">>]}
+    Updates = [ {{<<"1">>, antidote_crdt_counter_pn, <<"2">>}, increment , 1},
+                {{<<"2">>, antidote_crdt_counter_pn, <<"2">>}, increment , 1},
+                {{<<"a">>, antidote_crdt_set_aw, <<"2">>}, add , <<"3">>},
+                {{<<"b">>, antidote_crdt_counter_pn, <<"2">>}, increment , 2},
+                {{<<"c">>, antidote_crdt_set_aw, <<"2">>}, add, <<"4">>},
+                {{<<"a">>, antidote_crdt_set_aw, <<"2">>}, add_all , [<<"5">>,<<"6">>]}
   ],
   TxId = term_to_binary({12}),
   %% Dummy value, structure of TxId is opaque to client
@@ -705,24 +711,24 @@ crdt_encode_decode_test() ->
   %% encoding the following operations and decoding them again, should give the same result
 
   % Counter
-  ?TestCrdtOperationCodec(antidote_crdt_counter, increment, 1),
-  ?TestCrdtResponseCodec(antidote_crdt_counter, counter, 42),
+  ?TestCrdtOperationCodec(antidote_crdt_counter_pn, increment, 1),
+  ?TestCrdtResponseCodec(antidote_crdt_counter_pn, counter, 42),
 
   % lww-register
-  ?TestCrdtOperationCodec(antidote_crdt_lwwreg, assign, <<"hello">>),
-  ?TestCrdtResponseCodec(antidote_crdt_lwwreg, reg, <<"blub">>),
+  ?TestCrdtOperationCodec(antidote_crdt_register_lww, assign, <<"hello">>),
+  ?TestCrdtResponseCodec(antidote_crdt_register_lww, reg, <<"blub">>),
 
 
   % mv-register
-  ?TestCrdtOperationCodec(antidote_crdt_mvreg, assign, <<"hello">>),
-  ?TestCrdtResponseCodec(antidote_crdt_mvreg, mvreg, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TestCrdtOperationCodec(antidote_crdt_register_mv, assign, <<"hello">>),
+  ?TestCrdtResponseCodec(antidote_crdt_register_mv, mvreg, [<<"a">>, <<"b">>, <<"c">>]),
 
   % set
-  ?TestCrdtOperationCodec(antidote_crdt_orset, add, <<"hello">>),
-  ?TestCrdtOperationCodec(antidote_crdt_orset, add_all, [<<"a">>, <<"b">>, <<"c">>]),
-  ?TestCrdtOperationCodec(antidote_crdt_orset, remove, <<"hello">>),
-  ?TestCrdtOperationCodec(antidote_crdt_orset, remove_all, [<<"a">>, <<"b">>, <<"c">>]),
-  ?TestCrdtResponseCodec(antidote_crdt_orset, set, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TestCrdtOperationCodec(antidote_crdt_set_aw, add, <<"hello">>),
+  ?TestCrdtOperationCodec(antidote_crdt_set_aw, add_all, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TestCrdtOperationCodec(antidote_crdt_set_aw, remove, <<"hello">>),
+  ?TestCrdtOperationCodec(antidote_crdt_set_aw, remove_all, [<<"a">>, <<"b">>, <<"c">>]),
+  ?TestCrdtResponseCodec(antidote_crdt_set_aw, set, [<<"a">>, <<"b">>, <<"c">>]),
 
   % same for remove wins set:
   ?TestCrdtOperationCodec(antidote_crdt_set_rw, add, <<"hello">>),
@@ -731,39 +737,41 @@ crdt_encode_decode_test() ->
   ?TestCrdtOperationCodec(antidote_crdt_set_rw, remove_all, [<<"a">>, <<"b">>, <<"c">>]),
   ?TestCrdtResponseCodec(antidote_crdt_set_rw, set, [<<"a">>, <<"b">>, <<"c">>]),
 
-  % integer
-  ?TestCrdtOperationCodec(antidote_crdt_integer, set, 13),
-  ?TestCrdtOperationCodec(antidote_crdt_integer, increment, 7),
-  ?TestCrdtResponseCodec(antidote_crdt_integer, integer, 123),
-
   % map
-  ?TestCrdtOperationCodec(antidote_crdt_map_aw, update, {{<<"key">>, antidote_crdt_integer}, {set, 42}}),
-  ?TestCrdtOperationCodec(antidote_crdt_map_aw, update, [
-    {{<<"a">>, antidote_crdt_integer}, {set, 42}},
-    {{<<"b">>, antidote_crdt_orset}, {add, <<"x">>}}]),
-  ?TestCrdtOperationCodec(antidote_crdt_map_aw, remove, {<<"key">>, antidote_crdt_integer}),
-  ?TestCrdtOperationCodec(antidote_crdt_map_aw, remove, [
-    {<<"a">>, antidote_crdt_integer},
-    {<<"b">>, antidote_crdt_integer}]),
-  ?TestCrdtOperationCodec(antidote_crdt_map_aw, batch, {
-    [{{<<"a">>, antidote_crdt_integer}, {set, 42}},
-      {{<<"b">>, antidote_crdt_orset}, {add, <<"x">>}}],
-    [{<<"a">>, antidote_crdt_integer},
-      {<<"b">>, antidote_crdt_integer}]}),
+  ?TestCrdtOperationCodec(antidote_crdt_map_rr, update, {{<<"key">>, antidote_crdt_register_mv}, {assign, <<"42">>}}),
+  ?TestCrdtOperationCodec(antidote_crdt_map_rr, update, [
+    {{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
+    {{<<"b">>, antidote_crdt_set_aw}, {add, <<"x">>}}]),
+  ?TestCrdtOperationCodec(antidote_crdt_map_rr, remove, {<<"key">>, antidote_crdt_register_mv}),
+  ?TestCrdtOperationCodec(antidote_crdt_map_rr, remove, [
+    {<<"a">>, antidote_crdt_register_mv},
+    {<<"b">>, antidote_crdt_register_mv}]),
+  ?TestCrdtOperationCodec(antidote_crdt_map_rr, batch, {
+    [ {{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
+      {{<<"b">>, antidote_crdt_set_aw}, {add, <<"x">>}}],
+    [ {<<"a">>, antidote_crdt_register_mv},
+      {<<"b">>, antidote_crdt_register_mv}]}),
 
-  ?TestCrdtResponseCodec(antidote_crdt_map_aw, map, [
-    {{<<"a">>, antidote_crdt_integer}, 42}
+  ?TestCrdtResponseCodec(antidote_crdt_map_rr, map, [
+    {{<<"a">>, antidote_crdt_register_mv}, <<"42">>}
   ]),
 
   % gmap
-  ?TestCrdtOperationCodec(antidote_crdt_gmap, update, {{<<"key">>, antidote_crdt_integer}, {set, 42}}),
-  ?TestCrdtOperationCodec(antidote_crdt_gmap, update, [
-    {{<<"a">>, antidote_crdt_integer}, {set, 42}},
-    {{<<"b">>, antidote_crdt_orset}, {add, <<"x">>}}]),
-  ?TestCrdtResponseCodec(antidote_crdt_gmap, map, [
-    {{<<"a">>, antidote_crdt_integer}, 42}
+  ?TestCrdtOperationCodec(antidote_crdt_map_go, update, {{<<"key">>, antidote_crdt_register_mv}, {assign, <<"42">>}}),
+  ?TestCrdtOperationCodec(antidote_crdt_map_go, update, [
+    {{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
+    {{<<"b">>, antidote_crdt_set_aw}, {add, <<"x">>}}]),
+  ?TestCrdtResponseCodec(antidote_crdt_map_go, map, [
+    {{<<"a">>, antidote_crdt_register_mv}, <<"42">>}
   ]),
 
+  % flag
+  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, enable, {}),
+  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, disable, {}),
+  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, reset, {}),
+  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, enable, {}),
+  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, disable, {}),
+  ?TestCrdtOperationCodec(antidote_crdt_flag_ew, reset, {}),
 
   ok.
 

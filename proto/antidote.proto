@@ -8,12 +8,12 @@ enum CRDT_type {
     ORSET = 4;
     LWWREG = 5;
     MVREG = 6;
-    INTEGER = 7;
     GMAP = 8;
-    AWMAP = 9;
     RWSET = 10;
     RRMAP = 11;
     FATCOUNTER = 12;
+    FLAG_EW = 13;
+    FLAG_DW = 14;
 }
 
 
@@ -76,21 +76,6 @@ message ApbGetMVRegResp {
 }
 
 //------------------
-// Integer
-
-message ApbIntegerUpdate {
-    // choose one of the following:
-    // increment the integer
-    optional sint64 inc = 1;
-    // set the integer to a number
-    optional sint64 set = 2;
-}
-
-message ApbGetIntegerResp {
-    required sint64 value = 1;
-}
-
-//------------------
 // Map
 
 
@@ -118,6 +103,16 @@ message ApbMapEntry {
     required ApbReadObjectResp value = 2;
 }
 
+//-------------------
+// Flags
+
+message ApbFlagUpdate {
+    required bool value = 1;
+}
+
+message ApbGetFlagResp {
+    required bool value = 1;
+}
 
 // General reset operation
 message ApbCrdtReset {
@@ -162,9 +157,9 @@ message ApbUpdateOperation { // TODO use this above
     optional ApbCounterUpdate counterop = 1;
     optional ApbSetUpdate setop = 2;
     optional ApbRegUpdate regop = 3;
-    optional ApbIntegerUpdate integerop = 4;
     optional ApbMapUpdate mapop = 5;
     optional ApbCrdtReset resetop = 6;
+    optional ApbFlagUpdate flagop = 7;
 }
 
 // Objects to be updated
@@ -214,8 +209,8 @@ message ApbReadObjectResp {
     optional ApbGetSetResp set = 2;
     optional ApbGetRegResp reg = 3;
     optional ApbGetMVRegResp mvreg = 4;
-    optional ApbGetIntegerResp int = 5;
     optional ApbGetMapResp map = 6;
+    optional ApbGetFlagResp flag = 7;
 }
 message ApbReadObjectsResp {
     required bool success = 1;
