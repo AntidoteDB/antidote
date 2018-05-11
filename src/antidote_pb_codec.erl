@@ -27,7 +27,7 @@
 
 -export([encode/2,
   decode/2,
-  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_error_message/2, decode_error_message/1, encode_start_transaction/2, encode_txn_properties/1, encode_abort_transaction/1, encode_commit_transaction/1, encode_update_op/3, encode_static_update_objects/3, encode_bound_object/3, encode_type/1, encode_static_read_objects/3, encode_start_transaction_response/1, encode_operation_response/1, encode_commit_response/1, encode_read_objects_response/1, encode_read_object_resp/1, encode_static_read_objects_response/2, encode_error_code/1, decode_txn_properties/1, decode_type/1, decode_error_code/1]).
+  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_start_transaction/2, encode_txn_properties/1, encode_abort_transaction/1, encode_commit_transaction/1, encode_update_op/3, encode_static_update_objects/3, encode_bound_object/3, encode_type/1, encode_static_read_objects/3, encode_start_transaction_response/1, encode_operation_response/1, encode_commit_response/1, encode_read_objects_response/1, encode_read_object_resp/1, encode_static_read_objects_response/2, encode_error_code/1, decode_txn_properties/1, decode_type/1, decode_error_code/1, encode_error_resp/2, decode_error_resp/1, encode_message/1, decode_message/1]).
 
 -define(TYPE_COUNTER, counter).
 -define(TYPE_SET, set).
@@ -54,40 +54,77 @@
 | #'ApbReadObjectsResp'{}
 .
 
-message_codes() ->
-  [
-    {0,   'ApbErrorResp'},
-    {107, 'ApbRegUpdate'},
-    {108, 'ApbGetRegResp'},
-    {109, 'ApbCounterUpdate'},
-    {110, 'ApbGetCounterResp'},
-    {111, 'ApbOperationResp'},
-    {112, 'ApbSetUpdate'},
-    {113, 'ApbGetSetResp'},
-    {114, 'ApbTxnProperties'},
-    {115, 'ApbBoundObject'},
-    {116, 'ApbReadObjects'},
-    {117, 'ApbUpdateOp'},
-    {118, 'ApbUpdateObjects'},
-    {119, 'ApbStartTransaction'},
-    {120, 'ApbAbortTransaction'},
-    {121, 'ApbCommitTransaction'},
-    {122, 'ApbStaticUpdateObjects'},
-    {123, 'ApbStaticReadObjects'},
-    {124, 'ApbStartTransactionResp'},
-    {125, 'ApbReadObjectResp'},
-    {126, 'ApbReadObjectsResp'},
-    {127, 'ApbCommitResp'},
-    {128, 'ApbStaticReadObjectsResp'}
-  ].
+-type binary_message_with_code() :: {pos_integer(), iolist()}.
 
-% TODO can make these more efficient
-messageTypeToCode(Type) ->
-  [Code] = [C || {C, T} <- message_codes(), T == Type],
-  Code.
-messageCodeToType(Code) ->
-  {ok, Type} = orddict:find(Code, message_codes()),
-  Type.
+-type request() ::
+    {start_transaction, {Clock::binary(), Properties::list()}}
+  | {abort_transaction, TxId::binary()}
+  | {commit_transaction, TxId::binary()}
+  | {update_objects, {Updates::list(), TxId::binary()}}
+  | {static_update_objects, {Clock::binary(), Properties::list(), Updates::list()}}
+  | {static_read_objects, {Clock::binary(), Properties::list(), Objects::list()}}
+  | {read_objects, {Objects::list(), TxId::binary()}}.
+
+-type response() ::
+    {error_resp, {ErrorCode::integer(), Message::binary()}}
+  | {start_transaction_resp, Resp::any()}
+  | {commit_resp, Resp::any()}
+  | {static_read_objects_resp, {ok, Results::list(), CommitTime::binary()}}
+  | {read_objects_resp, Resp::list()}.
+
+-type message() :: request() | response().
+
+
+
+
+messageTypeToCode('ApbErrorResp') -> 0;
+messageTypeToCode('ApbRegUpdate') -> 107;
+messageTypeToCode('ApbGetRegResp') -> 108;
+messageTypeToCode('ApbCounterUpdate') -> 109;
+messageTypeToCode('ApbGetCounterResp') -> 110;
+messageTypeToCode('ApbOperationResp') -> 111;
+messageTypeToCode('ApbSetUpdate') -> 112;
+messageTypeToCode('ApbGetSetResp') -> 113;
+messageTypeToCode('ApbTxnProperties') -> 114;
+messageTypeToCode('ApbBoundObject') -> 115;
+messageTypeToCode('ApbReadObjects') -> 116;
+messageTypeToCode('ApbUpdateOp') -> 117;
+messageTypeToCode('ApbUpdateObjects') -> 118;
+messageTypeToCode('ApbStartTransaction') -> 119;
+messageTypeToCode('ApbAbortTransaction') -> 120;
+messageTypeToCode('ApbCommitTransaction') -> 121;
+messageTypeToCode('ApbStaticUpdateObjects') -> 122;
+messageTypeToCode('ApbStaticReadObjects') -> 123;
+messageTypeToCode('ApbStartTransactionResp') -> 124;
+messageTypeToCode('ApbReadObjectResp') -> 125;
+messageTypeToCode('ApbReadObjectsResp') -> 126;
+messageTypeToCode('ApbCommitResp') -> 127;
+messageTypeToCode('ApbStaticReadObjectsResp') -> 128.
+
+messageCodeToType(0) -> 'ApbErrorResp';
+messageCodeToType(107) -> 'ApbRegUpdate';
+messageCodeToType(108) -> 'ApbGetRegResp';
+messageCodeToType(109) -> 'ApbCounterUpdate';
+messageCodeToType(110) -> 'ApbGetCounterResp';
+messageCodeToType(111) -> 'ApbOperationResp';
+messageCodeToType(112) -> 'ApbSetUpdate';
+messageCodeToType(113) -> 'ApbGetSetResp';
+messageCodeToType(114) -> 'ApbTxnProperties';
+messageCodeToType(115) -> 'ApbBoundObject';
+messageCodeToType(116) -> 'ApbReadObjects';
+messageCodeToType(117) -> 'ApbUpdateOp';
+messageCodeToType(118) -> 'ApbUpdateObjects';
+messageCodeToType(119) -> 'ApbStartTransaction';
+messageCodeToType(120) -> 'ApbAbortTransaction';
+messageCodeToType(121) -> 'ApbCommitTransaction';
+messageCodeToType(122) -> 'ApbStaticUpdateObjects';
+messageCodeToType(123) -> 'ApbStaticReadObjects';
+messageCodeToType(124) -> 'ApbStartTransactionResp';
+messageCodeToType(125) -> 'ApbReadObjectResp';
+messageCodeToType(126) -> 'ApbReadObjectsResp';
+messageCodeToType(127) -> 'ApbCommitResp';
+messageCodeToType(128) -> 'ApbStaticReadObjectsResp'.
+
 
 -spec encode_msg(sendable()) -> iolist().
 encode_msg(Msg) ->
@@ -99,6 +136,48 @@ encode_msg(Msg) ->
 decode_msg(Code, Msg) ->
   MsgType = messageCodeToType(Code),
   antidote_pb:decode_msg(Msg, MsgType).
+
+
+-spec encode_message(message()) -> sendable().
+encode_message({start_transaction, {Clock, Properties}}) ->
+  encode_start_transaction(Clock, Properties);
+encode_message({abort_transaction, TxId}) ->
+  encode_abort_transaction(TxId);
+encode_message({commit_transaction, TxId}) ->
+  encode_commit_transaction(TxId);
+encode_message({update_objects, {Updates, TxId}}) ->
+  encode_update_objects(Updates, TxId);
+encode_message({static_update_objects, {Clock, Properties, Updates}}) ->
+  encode_static_update_objects(Clock, Properties, Updates);
+encode_message({static_read_objects, {Clock, Properties, Objects}}) ->
+  encode_static_read_objects(Clock, Properties, Objects);
+encode_message({read_objects, {Objects, TxId}}) ->
+  encode_read_objects(Objects, TxId);
+encode_message({error_response, {ErrorCode, Message}}) ->
+  encode_error_resp(ErrorCode, Message);
+encode_message({start_transaction_response, Resp}) ->
+  encode_start_transaction_response(Resp);
+encode_message({commit_response, Resp}) ->
+  encode_commit_response(Resp);
+encode_message({static_read_objects_response, {ok, Results, CommitTime}}) ->
+  encode_static_read_objects_response(Results, CommitTime);
+encode_message({read_objects_response, Resp}) ->
+  encode_read_objects_response(Resp).
+
+-spec decode_message(sendable()) -> message().
+decode_message(#'ApbStartTransaction'{}) -> ok;
+decode_message(#'ApbAbortTransaction'{}) -> ok;
+decode_message(#'ApbCommitTransaction'{}) -> ok;
+decode_message(#'ApbUpdateObjects'{}) -> ok;
+decode_message(#'ApbStaticUpdateObjects'{}) -> ok;
+decode_message(#'ApbStaticReadObjects'{}) -> ok;
+decode_message(#'ApbReadObjects'{}) -> ok;
+
+decode_message(#'ApbErrorResp'{}) -> ok;
+decode_message(#'ApbStartTransactionResp'{}) -> ok;
+decode_message(#'ApbCommitResp'{}) -> ok;
+decode_message(#'ApbStaticReadObjectsResp'{}) -> ok;
+decode_message(#'ApbReadObjectsResp'{}) -> ok.
 
 
 % general encode function
@@ -180,11 +259,11 @@ decode_error_code(1) -> timeout;
 decode_error_code(C) -> {error_code, C}.
 
 
-encode_error_message(ErrorCode, Message) ->
+encode_error_resp(ErrorCode, Message) ->
   #'ApbErrorResp'{errcode = encode_error_code(ErrorCode), errmsg = Message}.
 
-decode_error_message(#'ApbErrorResp'{errcode = ErrorCode, errmsg = Message}) ->
-  {decode_error_message(ErrorCode), Message}.
+decode_error_resp(#'ApbErrorResp'{errcode = ErrorCode, errmsg = Message}) ->
+  {decode_error_code(ErrorCode), Message}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%
@@ -394,7 +473,7 @@ encode_update_operation(_Type, {reset, {}}) ->
 encode_update_operation(antidote_crdt_counter_pn, Op_Param) ->
   #'ApbUpdateOperation'{counterop = encode_counter_update(Op_Param)};
 encode_update_operation(antidote_crdt_counter_fat, Op_Param) ->
-  #'ApbUpdateOperation'{counterop = encode_counter_update(Op_Param)};  
+  #'ApbUpdateOperation'{counterop = encode_counter_update(Op_Param)};
 encode_update_operation(antidote_crdt_set_aw, Op_Param) ->
   #'ApbUpdateOperation'{setop = encode_set_update(Op_Param)};
 encode_update_operation(antidote_crdt_set_rw, Op_Param) ->
