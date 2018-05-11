@@ -27,7 +27,7 @@
 
 -export([encode/2,
   decode/2,
-  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2]).
+  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_error_message/2, decode_error_message/1]).
 
 -define(TYPE_COUNTER, counter).
 -define(TYPE_SET, set).
@@ -40,7 +40,8 @@
 
 % these are all top-level messages which can be sent on the wire
 -type sendable() ::
-#'ApbStartTransaction'{}
+  #'ApbErrorResp'{}
+| #'ApbStartTransaction'{}
 | #'ApbStartTransactionResp'{}
 | #'ApbAbortTransaction'{}
 | #'ApbCommitTransaction'{}
@@ -55,6 +56,7 @@
 
 message_codes() ->
   [
+    {0,   'ApbErrorResp'},
     {107, 'ApbRegUpdate'},
     {108, 'ApbGetRegResp'},
     {109, 'ApbCounterUpdate'},
@@ -174,7 +176,15 @@ encode_error_code(timeout) -> 1;
 encode_error_code(_Other) -> 0.
 
 decode_error_code(0) -> unknown;
-decode_error_code(1) -> timeout.
+decode_error_code(1) -> timeout;
+decode_error_code(C) -> {error_code, C}.
+
+
+encode_error_message(ErrorCode, Message) ->
+  #'ApbErrorResp'{errcode = encode_error_code(ErrorCode), errmsg = Message}.
+
+decode_error_message(#'ApbErrorResp'{errcode = ErrorCode, errmsg = Message}) ->
+  {decode_error_message(ErrorCode), Message}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%
