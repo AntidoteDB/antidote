@@ -27,7 +27,7 @@
 
 -export([encode/2,
   decode/2,
-  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_error_message/2, decode_error_message/1]).
+  decode_response/1, encode_read_objects/2, decode_bound_object/1, encode_update_objects/2, decode_update_op/1, encode_msg/1, decode_msg/2, encode_error_message/2, decode_error_message/1, encode_start_transaction/2, encode_txn_properties/1, encode_abort_transaction/1, encode_commit_transaction/1, encode_update_op/3, encode_static_update_objects/3, encode_bound_object/3, encode_type/1, encode_static_read_objects/3, encode_start_transaction_response/1, encode_operation_response/1, encode_commit_response/1, encode_read_objects_response/1, encode_read_object_resp/1, encode_static_read_objects_response/2, encode_error_code/1, decode_txn_properties/1, decode_type/1, decode_error_code/1]).
 
 -define(TYPE_COUNTER, counter).
 -define(TYPE_SET, set).
