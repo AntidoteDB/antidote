@@ -39,6 +39,8 @@
 % encoding on wire (used to be decode_msg and encode_msg)
 
 % these are all top-level messages which can be sent on the wire
+-export_type([sendable/0, request/0, response/0, message/0, update/0]).
+
 -type sendable() ::
   #'ApbErrorResp'{}
 | #'ApbStartTransaction'{}
@@ -54,54 +56,57 @@
 | #'ApbReadObjectsResp'{}
 .
 
--type binary_message_with_code() :: {pos_integer(), iolist()}.
+-type bound_object() :: {Key :: binary(), Type :: atom(), Bucket :: binary()}.
+-type update() :: {Object :: bound_object(), Op :: atom(), Param :: any()}.
+-type error_code() :: unknown |  timeout | {error_code, integer()}.
+
 
 -type request() ::
-    {start_transaction, {Clock::binary(), Properties::list()}}
-  | {abort_transaction, TxId::binary()}
-  | {commit_transaction, TxId::binary()}
-  | {update_objects, {Updates::list(), TxId::binary()}}
-  | {static_update_objects, {Clock::binary(), Properties::list(), Updates::list()}}
-  | {static_read_objects, {Clock::binary(), Properties::list(), Objects::list()}}
-  | {read_objects, {Objects::list(), TxId::binary()}}.
+  {start_transaction, {Clock :: binary(), Properties :: list()}}
+| {abort_transaction, TxId :: binary()}
+| {commit_transaction, TxId :: binary()}
+| {update_objects, {Updates :: [update()], TxId :: binary()}}
+| {static_update_objects, {Clock :: binary(), Properties :: list(), Updates :: [update()]}}
+| {static_read_objects, {Clock :: binary(), Properties :: list(), Objects :: [bound_object()]}}
+| {read_objects, {Objects :: [bound_object()], TxId :: binary()}}.
 
 -type response() ::
-    {error_resp, {ErrorCode::integer(), Message::binary()}}
-  | {start_transaction_resp, Resp::any()}
-  | {commit_resp, Resp::any()}
-  | {static_read_objects_resp, {ok, Results::list(), CommitTime::binary()}}
-  | {read_objects_resp, Resp::list()}.
+  {error_resp, {ErrorCode :: error_code(), Message :: binary()}}
+| {start_transaction_resp, Resp :: atom()}
+| {error_response, Resp :: any()}
+| {static_read_objects_resp, {ok, Results :: list(), CommitTime :: binary()}}
+| {read_objects_resp, Resp :: list()}.
 
 -type message() :: request() | response().
 
 
 
 
-messageTypeToCode('ApbErrorResp') -> 0;
-messageTypeToCode('ApbRegUpdate') -> 107;
-messageTypeToCode('ApbGetRegResp') -> 108;
-messageTypeToCode('ApbCounterUpdate') -> 109;
-messageTypeToCode('ApbGetCounterResp') -> 110;
-messageTypeToCode('ApbOperationResp') -> 111;
-messageTypeToCode('ApbSetUpdate') -> 112;
-messageTypeToCode('ApbGetSetResp') -> 113;
-messageTypeToCode('ApbTxnProperties') -> 114;
-messageTypeToCode('ApbBoundObject') -> 115;
-messageTypeToCode('ApbReadObjects') -> 116;
-messageTypeToCode('ApbUpdateOp') -> 117;
-messageTypeToCode('ApbUpdateObjects') -> 118;
-messageTypeToCode('ApbStartTransaction') -> 119;
-messageTypeToCode('ApbAbortTransaction') -> 120;
-messageTypeToCode('ApbCommitTransaction') -> 121;
-messageTypeToCode('ApbStaticUpdateObjects') -> 122;
-messageTypeToCode('ApbStaticReadObjects') -> 123;
-messageTypeToCode('ApbStartTransactionResp') -> 124;
-messageTypeToCode('ApbReadObjectResp') -> 125;
-messageTypeToCode('ApbReadObjectsResp') -> 126;
-messageTypeToCode('ApbCommitResp') -> 127;
+messageTypeToCode('ApbErrorResp')             -> 0;
+messageTypeToCode('ApbRegUpdate')             -> 107;
+messageTypeToCode('ApbGetRegResp')            -> 108;
+messageTypeToCode('ApbCounterUpdate')         -> 109;
+messageTypeToCode('ApbGetCounterResp')        -> 110;
+messageTypeToCode('ApbOperationResp')         -> 111;
+messageTypeToCode('ApbSetUpdate')             -> 112;
+messageTypeToCode('ApbGetSetResp')            -> 113;
+messageTypeToCode('ApbTxnProperties')         -> 114;
+messageTypeToCode('ApbBoundObject')           -> 115;
+messageTypeToCode('ApbReadObjects')           -> 116;
+messageTypeToCode('ApbUpdateOp')              -> 117;
+messageTypeToCode('ApbUpdateObjects')         -> 118;
+messageTypeToCode('ApbStartTransaction')      -> 119;
+messageTypeToCode('ApbAbortTransaction')      -> 120;
+messageTypeToCode('ApbCommitTransaction')     -> 121;
+messageTypeToCode('ApbStaticUpdateObjects')   -> 122;
+messageTypeToCode('ApbStaticReadObjects')     -> 123;
+messageTypeToCode('ApbStartTransactionResp')  -> 124;
+messageTypeToCode('ApbReadObjectResp')        -> 125;
+messageTypeToCode('ApbReadObjectsResp')       -> 126;
+messageTypeToCode('ApbCommitResp')            -> 127;
 messageTypeToCode('ApbStaticReadObjectsResp') -> 128.
 
-messageCodeToType(0) -> 'ApbErrorResp';
+messageCodeToType(0)   -> 'ApbErrorResp';
 messageCodeToType(107) -> 'ApbRegUpdate';
 messageCodeToType(108) -> 'ApbGetRegResp';
 messageCodeToType(109) -> 'ApbCounterUpdate';
@@ -137,7 +142,6 @@ decode_msg(Code, Msg) ->
   MsgType = messageCodeToType(Code),
   antidote_pb:decode_msg(Msg, MsgType).
 
-
 -spec encode_message(message()) -> sendable().
 encode_message({start_transaction, {Clock, Properties}}) ->
   encode_start_transaction(Clock, Properties);
@@ -165,19 +169,50 @@ encode_message({read_objects_response, Resp}) ->
   encode_read_objects_response(Resp).
 
 -spec decode_message(sendable()) -> message().
-decode_message(#'ApbStartTransaction'{}) -> ok;
-decode_message(#'ApbAbortTransaction'{}) -> ok;
-decode_message(#'ApbCommitTransaction'{}) -> ok;
-decode_message(#'ApbUpdateObjects'{}) -> ok;
-decode_message(#'ApbStaticUpdateObjects'{}) -> ok;
-decode_message(#'ApbStaticReadObjects'{}) -> ok;
-decode_message(#'ApbReadObjects'{}) -> ok;
+decode_message(#'ApbStartTransaction'{properties = Properties, timestamp = Clock}) ->
+  {start_transaction, {Clock, decode_txn_properties(Properties)}};
+decode_message(#'ApbAbortTransaction'{transaction_descriptor = TxId}) ->
+  {abort_transaction, binary_to_term(TxId)};
+decode_message(#'ApbCommitTransaction'{transaction_descriptor = TxId}) ->
+  {commit_transaction, binary_to_term(TxId)};
+decode_message(#'ApbUpdateObjects'{updates = Updates, transaction_descriptor = TxId}) ->
+  {update_objects, {[decode_update_op(U) || U <- Updates], binary_to_term(TxId)}};
+decode_message(#'ApbStaticUpdateObjects'{updates = Updates, transaction = Tx}) ->
+  Clock = Tx#'ApbStartTransaction'.timestamp,
+  Properties = decode_txn_properties(Tx#'ApbStartTransaction'.properties),
+  {static_update_objects, {Clock, Properties, [decode_update_op(U) || U <- Updates]}};
+decode_message(#'ApbStaticReadObjects'{objects = Objects, transaction = Tx}) ->
+  Clock = Tx#'ApbStartTransaction'.timestamp,
+  Properties = decode_txn_properties(Tx#'ApbStartTransaction'.properties),
+  {static_read_objects, {Clock, Properties, [decode_bound_object(O) || O <- Objects]}};
+decode_message(#'ApbReadObjects'{boundobjects = Objects, transaction_descriptor = TxId}) ->
+  {read_objects, {[decode_bound_object(O) || O <- Objects], binary_to_term(TxId)}};
 
-decode_message(#'ApbErrorResp'{}) -> ok;
-decode_message(#'ApbStartTransactionResp'{}) -> ok;
-decode_message(#'ApbCommitResp'{}) -> ok;
-decode_message(#'ApbStaticReadObjectsResp'{}) -> ok;
-decode_message(#'ApbReadObjectsResp'{}) -> ok.
+decode_message(#'ApbErrorResp'{errcode = ErrorCode, errmsg = Message}) ->
+  {error_response, {decode_error_code(ErrorCode), Message}};
+decode_message(#'ApbStartTransactionResp'{success = Success, transaction_descriptor = TxId, errorcode = ErrorCode}) ->
+  Resp = case Success of
+    true -> {ok, binary_to_term(TxId)};
+    false -> {error, decode_error_code(ErrorCode)}
+  end,
+  {start_transaction_response, Resp};
+decode_message(#'ApbCommitResp'{success = Success, errorcode = ErrorCode, commit_time = Time}) ->
+  Resp = case Success of
+    true -> {ok, binary_to_term(Time)};
+    false -> {error, decode_error_code(ErrorCode)}
+  end,
+  {commit_response, Resp};
+decode_message(#'ApbStaticReadObjectsResp'{objects = Objects, committime = Time}) ->
+  Results = [decode_read_object_resp(O) || O <- Objects],
+  {static_read_objects_response, {ok, Results, binary_to_term(Time)}};
+decode_message(#'ApbReadObjectsResp'{success = Success, errorcode = ErrorCode, objects = Objects}) ->
+  case Success of
+    true ->
+      Resp = [decode_read_object_resp(O) || O <- Objects],
+      {read_objects_response, Resp};
+    false ->
+      {error, decode_error_code(ErrorCode)}
+  end.
 
 
 % general encode function
@@ -252,7 +287,7 @@ decode(_Other, _) ->
 
 encode_error_code(unknown) -> 0;
 encode_error_code(timeout) -> 1;
-encode_error_code(_Other) -> 0.
+encode_error_code(_Other)  -> 0.
 
 decode_error_code(0) -> unknown;
 decode_error_code(1) -> timeout;
@@ -276,7 +311,7 @@ encode_start_transaction(Clock, Properties) ->
         properties = encode_txn_properties(Properties)};
     _ ->
       #'ApbStartTransaction'{timestamp = Clock,
-        properties = encode_txn_properties(Properties)}
+        properties                     = encode_txn_properties(Properties)}
   end.
 
 
@@ -318,7 +353,7 @@ encode_static_update_objects(Clock, Properties, Updates) ->
     encode_update_op(Update) end,
     Updates),
   #'ApbStaticUpdateObjects'{transaction = EncTransaction,
-    updates = EncUpdates}.
+    updates                             = EncUpdates}.
 
 
 decode_update_op(Obj) ->
@@ -349,7 +384,7 @@ encode_update_objects(Updates, TxId) ->
 
 encode_static_read_objects_response(Results, CommitTime) ->
   #'ApbStaticReadObjectsResp'{
-    objects = encode_read_objects_response({ok, Results}),
+    objects    = encode_read_objects_response({ok, Results}),
     committime = encode_commit_response({ok, CommitTime})}.
 
 
@@ -383,7 +418,7 @@ decode_response(#'ApbOperationResp'{success = true}) ->
 decode_response(#'ApbOperationResp'{success = false, errorcode = Reason}) ->
   {error, decode_error_code(Reason)};
 decode_response(#'ApbStartTransactionResp'{success = true,
-  transaction_descriptor = TxId}) ->
+  transaction_descriptor                           = TxId}) ->
   {start_transaction, TxId};
 decode_response(#'ApbStartTransactionResp'{success = false, errorcode = Reason}) ->
   {error, decode_error_code(Reason)};
@@ -401,7 +436,7 @@ decode_response(#'ApbReadObjectsResp'{success = true, objects = Objects}) ->
 decode_response(#'ApbReadObjectResp'{} = ReadObjectResp) ->
   decode_read_object_resp(ReadObjectResp);
 decode_response(#'ApbStaticReadObjectsResp'{objects = Objects,
-  committime = CommitTime}) ->
+  committime                                        = CommitTime}) ->
   {read_objects, Values} = decode_response(Objects),
   {commit_transaction, TimeStamp} = decode_response(CommitTime),
   {static_read_objects_resp, Values, TimeStamp};
@@ -418,7 +453,7 @@ encode_static_read_objects(Clock, Properties, Objects) ->
     encode_bound_object(Object) end,
     Objects),
   #'ApbStaticReadObjects'{transaction = EncTransaction,
-    objects = EncObjects}.
+    objects                           = EncObjects}.
 
 encode_read_objects(Objects, TxId) ->
   BoundObjects = lists:map(fun(Object) ->
@@ -438,30 +473,30 @@ encode_read_objects(Objects, TxId) ->
 %%AWMAP = 9;
 %%RWSET = 10;
 
-encode_type(antidote_crdt_counter_pn) -> 'COUNTER';
-encode_type(antidote_crdt_counter_fat) -> 'FATCOUNTER';
-encode_type(antidote_crdt_set_aw) -> 'ORSET';
+encode_type(antidote_crdt_counter_pn)   -> 'COUNTER';
+encode_type(antidote_crdt_counter_fat)  -> 'FATCOUNTER';
+encode_type(antidote_crdt_set_aw)       -> 'ORSET';
 encode_type(antidote_crdt_register_lww) -> 'LWWREG';
-encode_type(antidote_crdt_register_mv) -> 'MVREG';
-encode_type(antidote_crdt_map_go) -> 'GMAP';
-encode_type(antidote_crdt_set_rw) -> 'RWSET';
-encode_type(antidote_crdt_map_rr) -> 'RRMAP';
-encode_type(antidote_crdt_flag_ew) -> 'FLAG_EW';
-encode_type(antidote_crdt_flag_dw) -> 'FLAG_DW';
-encode_type(T) -> erlang:error({unknown_crdt_type, T}).
+encode_type(antidote_crdt_register_mv)  -> 'MVREG';
+encode_type(antidote_crdt_map_go)       -> 'GMAP';
+encode_type(antidote_crdt_set_rw)       -> 'RWSET';
+encode_type(antidote_crdt_map_rr)       -> 'RRMAP';
+encode_type(antidote_crdt_flag_ew)      -> 'FLAG_EW';
+encode_type(antidote_crdt_flag_dw)      -> 'FLAG_DW';
+encode_type(T)                          -> erlang:error({unknown_crdt_type, T}).
 
 
-decode_type('COUNTER') -> antidote_crdt_counter_pn;
+decode_type('COUNTER')    -> antidote_crdt_counter_pn;
 decode_type('FATCOUNTER') -> antidote_crdt_counter_fat;
-decode_type('ORSET') -> antidote_crdt_set_aw;
-decode_type('LWWREG') -> antidote_crdt_register_lww;
-decode_type('MVREG') -> antidote_crdt_register_mv;
-decode_type('GMAP') -> antidote_crdt_map_go;
-decode_type('RWSET') -> antidote_crdt_set_rw;
-decode_type('RRMAP') -> antidote_crdt_map_rr;
-decode_type('FLAG_EW') -> antidote_crdt_flag_ew;
-decode_type('FLAG_DW') -> antidote_crdt_flag_dw;
-decode_type(T) -> erlang:error({unknown_crdt_type_protobuf, T}).
+decode_type('ORSET')      -> antidote_crdt_set_aw;
+decode_type('LWWREG')     -> antidote_crdt_register_lww;
+decode_type('MVREG')      -> antidote_crdt_register_mv;
+decode_type('GMAP')       -> antidote_crdt_map_go;
+decode_type('RWSET')      -> antidote_crdt_set_rw;
+decode_type('RRMAP')      -> antidote_crdt_map_rr;
+decode_type('FLAG_EW')    -> antidote_crdt_flag_ew;
+decode_type('FLAG_DW')    -> antidote_crdt_flag_dw;
+decode_type(T)            -> erlang:error({unknown_crdt_type_protobuf, T}).
 
 
 %%%%%%%%%%%%%%%%%%%%%%
@@ -517,25 +552,25 @@ encode_read_object_resp({{_Key, Type, _Bucket}, Val}) ->
   encode_read_object_resp(Type, Val).
 
 encode_read_object_resp(antidote_crdt_register_lww, Val) ->
-    #'ApbReadObjectResp'{reg=#'ApbGetRegResp'{value=Val}};
+  #'ApbReadObjectResp'{reg = #'ApbGetRegResp'{value = Val}};
 encode_read_object_resp(antidote_crdt_register_mv, Vals) ->
-    #'ApbReadObjectResp'{mvreg = #'ApbGetMVRegResp'{values = Vals}};
+  #'ApbReadObjectResp'{mvreg = #'ApbGetMVRegResp'{values = Vals}};
 encode_read_object_resp(antidote_crdt_counter_pn, Val) ->
-    #'ApbReadObjectResp'{counter=#'ApbGetCounterResp'{value=Val}};
+  #'ApbReadObjectResp'{counter = #'ApbGetCounterResp'{value = Val}};
 encode_read_object_resp(antidote_crdt_counter_fat, Val) ->
-    #'ApbReadObjectResp'{counter=#'ApbGetCounterResp'{value=Val}};
+  #'ApbReadObjectResp'{counter = #'ApbGetCounterResp'{value = Val}};
 encode_read_object_resp(antidote_crdt_set_aw, Val) ->
-    #'ApbReadObjectResp'{set=#'ApbGetSetResp'{value=Val}};
+  #'ApbReadObjectResp'{set = #'ApbGetSetResp'{value = Val}};
 encode_read_object_resp(antidote_crdt_set_rw, Val) ->
-    #'ApbReadObjectResp'{set=#'ApbGetSetResp'{value=Val}};
+  #'ApbReadObjectResp'{set = #'ApbGetSetResp'{value = Val}};
 encode_read_object_resp(antidote_crdt_map_go, Val) ->
-    #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
+  #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
 encode_read_object_resp(antidote_crdt_map_rr, Val) ->
-    #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
+  #'ApbReadObjectResp'{map = encode_map_get_resp(Val)};
 encode_read_object_resp(antidote_crdt_flag_ew, Val) ->
-    #'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}};
+  #'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}};
 encode_read_object_resp(antidote_crdt_flag_dw, Val) ->
-    #'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}}.
+  #'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}}.
 
 % TODO why does this use counter instead of antidote_crdt_counter etc.?
 decode_read_object_resp(#'ApbReadObjectResp'{counter = #'ApbGetCounterResp'{value = Val}}) ->
@@ -546,10 +581,10 @@ decode_read_object_resp(#'ApbReadObjectResp'{reg = #'ApbGetRegResp'{value = Val}
   {reg, Val};
 decode_read_object_resp(#'ApbReadObjectResp'{mvreg = #'ApbGetMVRegResp'{values = Vals}}) ->
   {mvreg, Vals};
-decode_read_object_resp(#'ApbReadObjectResp'{map = MapResp=#'ApbGetMapResp'{}}) ->
-    {map, decode_map_get_resp(MapResp)};
+decode_read_object_resp(#'ApbReadObjectResp'{map = MapResp = #'ApbGetMapResp'{}}) ->
+  {map, decode_map_get_resp(MapResp)};
 decode_read_object_resp(#'ApbReadObjectResp'{flag = #'ApbGetFlagResp'{value = Val}}) ->
-    {flag, Val}.
+  {flag, Val}.
 
 % set updates
 
@@ -613,14 +648,14 @@ decode_reg_update(Update) ->
 % flag updates
 
 encode_flag_update({enable, {}}) ->
-    #'ApbFlagUpdate'{value = true};
+  #'ApbFlagUpdate'{value = true};
 encode_flag_update({disable, {}}) ->
-    #'ApbFlagUpdate'{value = false}.
+  #'ApbFlagUpdate'{value = false}.
 
 decode_flag_update(#'ApbFlagUpdate'{value = true}) ->
-    {enable, {}};
+  {enable, {}};
 decode_flag_update(#'ApbFlagUpdate'{value = false}) ->
-    {disable, {}}.
+  {disable, {}}.
 
 % map updates
 
@@ -652,7 +687,7 @@ decode_map_update(#'ApbMapUpdate'{updates = Updates, removedKeys = Keys}) ->
 
 encode_map_nested_update({{Key, Type}, Update}) ->
   #'ApbMapNestedUpdate'{
-    key = encode_map_key({Key, Type}),
+    key    = encode_map_key({Key, Type}),
     update = encode_update_operation(Type, Update)
   }.
 
@@ -664,7 +699,7 @@ decode_map_nested_update(#'ApbMapNestedUpdate'{key = KeyEnc, update = UpdateEnc}
 encode_map_key({Key, Type}) ->
   ?assert_binary(Key),
   #'ApbMapKey'{
-    key = Key,
+    key  = Key,
     type = encode_type(Type)
   }.
 
@@ -681,7 +716,7 @@ decode_map_get_resp(#'ApbGetMapResp'{entries = Entries}) ->
 
 encode_map_entry({{Key, Type}, Val}) ->
   #'ApbMapEntry'{
-    key = encode_map_key({Key, Type}),
+    key   = encode_map_key({Key, Type}),
     value = encode_read_object_resp(Type, Val)
   }.
 
@@ -743,12 +778,12 @@ read_transaction_test() ->
     antidote_pb_codec:decode_response(ResMsg)).
 
 update_types_test() ->
-    Updates = [ {{<<"1">>, antidote_crdt_counter_pn, <<"2">>}, increment , 1},
-                {{<<"2">>, antidote_crdt_counter_pn, <<"2">>}, increment , 1},
-                {{<<"a">>, antidote_crdt_set_aw, <<"2">>}, add , <<"3">>},
-                {{<<"b">>, antidote_crdt_counter_pn, <<"2">>}, increment , 2},
-                {{<<"c">>, antidote_crdt_set_aw, <<"2">>}, add, <<"4">>},
-                {{<<"a">>, antidote_crdt_set_aw, <<"2">>}, add_all , [<<"5">>,<<"6">>]}
+  Updates = [{{<<"1">>, antidote_crdt_counter_pn, <<"2">>}, increment, 1},
+    {{<<"2">>, antidote_crdt_counter_pn, <<"2">>}, increment, 1},
+    {{<<"a">>, antidote_crdt_set_aw, <<"2">>}, add, <<"3">>},
+    {{<<"b">>, antidote_crdt_counter_pn, <<"2">>}, increment, 2},
+    {{<<"c">>, antidote_crdt_set_aw, <<"2">>}, add, <<"4">>},
+    {{<<"a">>, antidote_crdt_set_aw, <<"2">>}, add_all, [<<"5">>, <<"6">>]}
   ],
   TxId = term_to_binary({12}),
   %% Dummy value, structure of TxId is opaque to client
@@ -836,9 +871,9 @@ crdt_encode_decode_test() ->
     {<<"a">>, antidote_crdt_register_mv},
     {<<"b">>, antidote_crdt_register_mv}]),
   ?TestCrdtOperationCodec(antidote_crdt_map_rr, batch, {
-    [ {{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
+    [{{<<"a">>, antidote_crdt_register_mv}, {assign, <<"42">>}},
       {{<<"b">>, antidote_crdt_set_aw}, {add, <<"x">>}}],
-    [ {<<"a">>, antidote_crdt_register_mv},
+    [{<<"a">>, antidote_crdt_register_mv},
       {<<"b">>, antidote_crdt_register_mv}]}),
 
   ?TestCrdtResponseCodec(antidote_crdt_map_rr, map, [
