@@ -32,7 +32,7 @@
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--define(How_LONG_TO_WAIT_FOR_LOCKS,1000).
+-define(How_LONG_TO_WAIT_FOR_LOCKS,501).
 -define(LOCK_MGR,mock_partition).
 -define(DC_META_UTIL, mock_partition).
 -define(DC_UTIL, mock_partition).
@@ -46,7 +46,7 @@
 
 
 -else.
--define(How_LONG_TO_WAIT_FOR_LOCKS,2000).
+-define(How_LONG_TO_WAIT_FOR_LOCKS,501).
 -define(LOCK_MGR,lock_mgr).
 -define(DC_META_UTIL, dc_meta_data_utilities).
 -define(DC_UTIL, dc_utilities).
@@ -693,24 +693,36 @@ start_tx_internal_with_locks(From, ClientClock, Properties, State = #coord_state
         
         % TODO Necessary to send an error message to From, when the lock were not aquired ?
         {locks_not_available,Missing_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
-            {stop, "Missing Locks: "++lists:flatten(io_lib:format("~p",[Missing_Locks]))}
+            From ! {error,Missing_Locks},
+            {stop, "Missing Locks: "++lists:flatten(io_lib:format("~p",[Missing_Locks]))};
+        {locks_in_use,Tx_Using_The_Locks} ->    % TODO is this the right way to abort the transaction if it was not possible to aquire the locks
+            From ! {error,Tx_Using_The_Locks},
+            {stop, "Transaction using the locks: "}   %%TODO
     end.
     
 
-%% @doc This function tries to aquire the specified locks, if this fails it will retry after 500ms
-%% for a maximum number of times (Timeout div 500).
+%% @doc This function tries to aquire the specified locks, if this fails it will retry after 100ms
+%% for a maximum number of times (Timeout div 100).
 %% #Locks
--spec get_locks(non_neg_integer(),txid(),[key()]) -> {ok,snapshot_time()} | {locks_not_available,[key()]}.
+-spec get_locks(non_neg_integer(),txid(),[key()]) -> {ok,snapshot_time()} | {locks_not_available,[key()]} | {missing_locks, [{txid(),[key()]}]}.
 get_locks(Timeout,TransactionId,Locks) ->
     Result = ?LOCK_MGR:get_locks(Locks, TransactionId),
     case Result of
         {ok,Snapshot_Time} -> {ok,Snapshot_Time};
-        {missing_locks, Missing_Locks} ->
-            case Timeout > 500 of
+        {locks_in_use,Tx_Using_The_Locks} ->
+            case Timeout > 100 of
                 true ->
-                    timer:sleep(500),
-                    NewTimeout = Timeout-500,
-                    get_locks(NewTimeout, TransactionId, Locks);
+                    timer:sleep(100),
+                    NewTimeout1 = Timeout-100,
+                    get_locks(NewTimeout1, TransactionId, Locks);
+                false -> {locks_in_use,Tx_Using_The_Locks}
+            end;
+        {missing_locks, Missing_Locks} ->
+            case Timeout > 100 of
+                true ->
+                    timer:sleep(100),
+                    NewTimeout2 = Timeout-100,
+                    get_locks(NewTimeout2, TransactionId, Locks);
                 false -> {locks_not_available,Missing_Locks}
             end
     end.
@@ -875,7 +887,9 @@ reply_to_client(State = #coord_state{
     commit_time=CommitTime,
     full_commit=FullCommit,
     transaction=Transaction,
-    return_accumulator=ReturnAcc
+    return_accumulator=ReturnAcc,
+    transactionid=TransactionId,
+    properties=Properties
 }) ->
     case From of
         undefined ->
@@ -931,6 +945,12 @@ reply_to_client(State = #coord_state{
 
     case StayAlive of
         true ->
+            Locks = lists:keyfind(locks,1,Properties),
+            case Locks of
+                false -> ok;
+                {locks,Locks} -> 
+                    ?LOCK_MGR:release_locks(TransactionId)
+            end,
             {start_tx, init_state(StayAlive, FullCommit, IsStatic, [])};
         false ->
             {stop, normal, State}

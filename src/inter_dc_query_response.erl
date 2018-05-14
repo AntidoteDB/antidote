@@ -27,6 +27,8 @@
 -export([start_link/1,
          get_entries/2,
          request_permissions/2,
+         request_locks/2,
+         send_locks/2,
          generate_server_name/1]).
 -export([init/1,
          handle_cast/2,
@@ -53,7 +55,14 @@ get_entries(BinaryQuery, QueryState) ->
 -spec request_permissions(binary(), #inter_dc_query_state{}) -> ok.
 request_permissions(BinaryRequest, QueryState) ->
     ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_permissions, BinaryRequest, QueryState}).
-
+%% #Locks
+-spec send_locks(binary(), #inter_dc_query_state{}) -> ok.
+send_locks(BinaryRequest, QueryState) ->
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {send_locks, BinaryRequest, QueryState}).
+%% #Locks
+-spec request_locks(binary(), #inter_dc_query_state{}) -> ok.
+request_locks(BinaryRequest, QueryState) ->
+    ok = gen_server:cast(generate_server_name(rand_compat:uniform(?INTER_DC_QUERY_CONCURRENCY)), {request_locks, BinaryRequest, QueryState}).
 %% ===================================================================
 %% gen_server callbacks
 %% ===================================================================
@@ -68,6 +77,20 @@ handle_cast({get_entries, BinaryQuery, QueryState}, State) ->
     BinaryPartition = inter_dc_txn:partition_to_bin(Partition),
     FullResponse = <<BinaryPartition/binary, BinaryResp/binary>>,
     ok = inter_dc_query_receive_socket:send_response(FullResponse, QueryState),
+    {noreply, State};
+%% #Locks
+handle_cast({send_locks, BinaryRequest, QueryState}, State) ->
+    {send_locks, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
+    BinaryResp = BinaryRequest,
+    ok = lock_mgr:send_locks_remote(Operation),
+    ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
+    {noreply, State};
+%% #Locks
+handle_cast({request_locks, BinaryRequest, QueryState}, State) ->
+    {request_locks, Operation, _Partition, _From, _To} = binary_to_term(BinaryRequest),
+    BinaryResp = BinaryRequest,
+    ok = lock_mgr:request_locks_remote(Operation),
+    ok = inter_dc_query_receive_socket:send_response(BinaryResp, QueryState),
     {noreply, State};
 
 handle_cast({request_permissions, BinaryRequest, QueryState}, State) ->
