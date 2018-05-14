@@ -39,7 +39,7 @@
 % encoding on wire (used to be decode_msg and encode_msg)
 
 % these are all top-level messages which can be sent on the wire
--export_type([sendable/0, request/0, response/0, message/0, update/0]).
+-export_type([sendable/0, request/0, response/0, message/0, update/0, read_result/0]).
 
 -type sendable() ::
   #'ApbErrorResp'{}
@@ -59,7 +59,13 @@
 -type bound_object() :: {Key :: binary(), Type :: atom(), Bucket :: binary()}.
 -type update() :: {Object :: bound_object(), Op :: atom(), Param :: any()}.
 -type error_code() :: unknown |  timeout | {error_code, integer()}.
-
+-type read_result() ::
+  {counter, integer()}
+| {set, [binary()]}
+| {reg, binary()}
+| {mvreg, [binary()]}
+| {map, [{{Key :: binary(), Type :: atom()}, Value :: read_result()}]}
+| {flag, boolean()}.
 
 -type request() ::
   {start_transaction, {Clock :: binary(), Properties :: list()}}
@@ -72,8 +78,8 @@
 
 -type response() ::
   {error_resp, {ErrorCode :: error_code(), Message :: binary()}}
-| {start_transaction_resp, Resp :: atom()}
-| {error_response, Resp :: any()}
+| {start_transaction_resp, Resp :: {ok, TxId :: binary} | {error, Reason::any()}}
+| {error_response, {error_code(), Message :: binary()}}
 | {static_read_objects_resp, {ok, Results :: list(), CommitTime :: binary()}}
 | {read_objects_resp, Resp :: list()}.
 
